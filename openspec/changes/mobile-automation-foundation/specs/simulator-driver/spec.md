@@ -13,12 +13,16 @@ The driver SHALL list Simulators with identifier, name, runtime version and stat
 - **WHEN** a client launches an app with a custom environment variable
 - **THEN** the app starts and the variable is visible to the process
 
-### Requirement: No component installed in the Simulator
-Tree reads, input and frame capture SHALL work on a freshly created Simulator without building, installing or launching any test runner or helper inside it.
+### Requirement: No test runner and no per-app build
+Tree reads, input and frame capture SHALL work on a freshly created Simulator without building or installing any application, test runner or helper into it and without invoking build tools per app. A helper process spawned into the Simulator from the host is permitted only if it needs no installation, no code signing and no per-app build, and is ready to serve within 500 ms of being spawned; its presence and readiness time SHALL be reported in the target status.
 
 #### Scenario: Fresh Simulator
 - **WHEN** a Simulator is created, booted, and an app launched, with no build tools invoked
 - **THEN** a snapshot, a tap and a frame all succeed
+
+#### Scenario: Spawned helper is reported
+- **WHEN** the driver spawns a helper into the Simulator to read the tree
+- **THEN** the target status names the helper and its readiness time, and no application or runner was installed
 
 ### Requirement: Foreground tree read
 The driver SHALL read the foreground application's accessibility tree with identifiers, labels, values, roles and frames, SHALL mark the read as degraded when the tree is sparse or truncated, and SHALL report when the foreground is owned by system UI rather than the application.
@@ -31,15 +35,19 @@ The driver SHALL read the foreground application's accessibility tree with ident
 - **WHEN** the read returns only a root for a visibly populated screen
 - **THEN** the snapshot is marked degraded with the reason
 
-### Requirement: Input transport negotiation
-The driver SHALL detect which input transport the booted runtime and installed Xcode support and select it automatically. When no transport works the driver SHALL fail with a diagnostic naming the runtime and Xcode versions and the transports tried.
+### Requirement: Input transport selection
+The driver SHALL select the input transport from the host's CoreSimulator and Xcode versions, because the host injects the same input service into every booted Simulator, and SHALL NOT probe a transport in a way that disables another for the rest of the boot. The driver SHALL open the input session and wait for the transport's activation reply before the first action, queueing input meanwhile, so that no event is dropped. When no transport works the driver SHALL fail with a diagnostic naming the CoreSimulator, Xcode and runtime versions and the transports tried.
 
-#### Scenario: Mixed runtimes
-- **WHEN** two Simulators with different runtime versions are booted
-- **THEN** each receives input through the transport valid for its runtime and the target status names it
+#### Scenario: Two runtimes on one host
+- **WHEN** two Simulators with different runtime versions are booted on one host
+- **THEN** both receive input through the transport selected for that host and each target status names it
+
+#### Scenario: Input before activation
+- **WHEN** a tap is requested immediately after the input session is opened
+- **THEN** the tap is delivered once activation completes and the response reports the activation wait
 
 #### Scenario: Unsupported combination
-- **WHEN** neither transport works for a runtime
+- **WHEN** no transport works for the host and runtime
 - **THEN** input commands fail with a diagnostic naming the versions and the transports tried
 
 ### Requirement: Input actions
