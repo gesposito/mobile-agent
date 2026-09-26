@@ -31,3 +31,8 @@ Every reference fixture (SwiftUI, Expo, Compose) implements exactly this, so the
 
 ## Determinism
 - no randomness, no network, no time-dependent text, no external dependencies beyond what each fixture's README lists
+
+## Navigation and state
+- only the selected tab's screen is present in the accessibility tree; the other tabs' content is not exposed
+- screen state persists across tab switches: typed text, `login-status`, the list's scroll position and any open detail, the animation toggle and `system-permission-status` are unchanged when the user leaves a tab and returns
+- implementations may keep screens mounted but hidden from accessibility, or lift state to the root and mount only the selected screen; both satisfy the two rules above
