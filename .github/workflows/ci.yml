@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          # Standard cargo cache paths plus the install tracker (.crates*), without
+          # which a restored ~/.cargo/bin/just makes `cargo install just` refuse to overwrite.
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install --no-self-update
+      - name: Install just
+        # TODO: run through Socket Firewall (sfw cargo install) like local installs.
+        run: cargo install just --locked
+      - run: just build
+      - run: just lint
+      - run: just fmt-check
+      - run: just test
+
+  macos:
+    name: macOS (Xcode ${{ matrix.xcode }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: "26"
+            runner: macos-26
+          # Xcode 27 ships only on the xcode-27 preview image (actions/runner-images#14404).
+          - xcode: "27"
+            runner: xcode-27
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode ${{ matrix.xcode }}
+        id: xcode
+        run: |
+          # Keep the image default when it is already this major, else pick the newest Xcode_<major>*.app.
+          current=$(xcodebuild -version | sed -n '1s/^Xcode //p')
+          if [ "${current%%.*}" != "${{ matrix.xcode }}" ]; then
+            app=$(find /Applications -maxdepth 1 -name 'Xcode_${{ matrix.xcode }}*.app' | sort -V | tail -n 1)
+            if [ -z "$app" ]; then
+              echo "::warning::Xcode ${{ matrix.xcode }} is not installed on ${{ matrix.runner }}; skipping"
+              echo "available=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sudo xcode-select -s "$app/Contents/Developer"
+          fi
+          xcodebuild -version
+          echo "available=true" >> "$GITHUB_OUTPUT"
+      - if: steps.xcode.outputs.available == 'true'
+        uses: actions/cache@v6
+        with:
+          # Same paths as the linux job; the key adds the Xcode major so the legs never share target/.
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-xcode${{ matrix.xcode }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        if: steps.xcode.outputs.available == 'true'
+        run: rustup toolchain install --no-self-update
+      - name: Install just and the OpenSpec CLI
+        if: steps.xcode.outputs.available == 'true'
+        # TODO: run both through Socket Firewall (sfw cargo install, sfw npm install) like local installs.
+        run: |
+          cargo install just --locked
+          npm install -g @fission-ai/openspec@1.13.1
+      # Skips the Android agent and fixture builds while their scripts are absent.
+      - name: just validate
+        if: steps.xcode.outputs.available == 'true'
+        run: just validate

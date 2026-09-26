@@ -1,0 +1,6 @@
+# actionlint 1.7.12 does not know the GitHub-hosted xcode-27 preview label yet
+# (actions/runner-images#14404). Declaring it here is actionlint's mechanism for
+# labels outside its built-in list; remove the entry once actionlint ships it.
+self-hosted-runner:
+  labels:
+    - xcode-27
