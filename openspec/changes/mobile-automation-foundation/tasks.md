@@ -9,7 +9,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 1.3 Add a task runner file with build, test, agent-build, fixtures-build, bench and validate recipes, where validate runs the full validation-and-fix checklist; verify every recipe runs locally and `just validate` exits zero on the empty workspace
 - [x] 1.4 Add a CI workflow matrix (macOS per installed Xcode, Linux for Android) that runs the validate recipe; verify the workflow file passes `actionlint`
 - [x] 1.5 Write the Android agent build script using `kotlinc` and `d8` from the SDK to produce a single dex jar in `agent-android/dist`; verify the jar starts under `app_process` on an emulator and prints its version banner
-- [ ] 1.6 Scaffold the reference fixtures through Socket: an Expo React Native app via the official init (verify `sfw bun` wraps it, else use `sfw npm`), a Compose app and a SwiftUI app, each with a login screen, a scrolling list and a deterministic 500-node screen; verify each builds and the 500-node screen renders that count in the platform inspector
+- [x] 1.6 Scaffold the reference fixtures through Socket: an Expo React Native app via the official init (verify `sfw bun` wraps it, else use `sfw npm`), a Compose app and a SwiftUI app, each with a login screen, a scrolling list and a deterministic 500-node screen; verify each builds and the 500-node screen renders that count in the platform inspector
 
 ## 2. Research and de-risking spikes
 
