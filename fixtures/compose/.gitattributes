@@ -1,0 +1,4 @@
+# The POSIX start script needs LF, the Windows one CRLF; the wrapper jar is binary.
+/gradlew        text eol=lf
+*.bat           text eol=crlf
+*.jar           binary
