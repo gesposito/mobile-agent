@@ -15,5 +15,5 @@ publish = false
 unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]
-# Negative priority lets individual clippy lints listed here override the group.
-all = { level = "warn", priority = -1 }
+all = { level = "warn", priority = -2 }
+correctness = { level = "deny", priority = -1 }
