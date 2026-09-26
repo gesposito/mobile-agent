@@ -99,7 +99,19 @@ jobs:
         run: |
           cargo install just --locked
           npm install -g @fission-ai/openspec@1.13.1
-      # Skips the Android agent and fixture builds while their scripts are absent.
+      - name: Install Bun for the Expo fixture
+        if: steps.xcode.outputs.available == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install Socket Firewall
+        if: steps.xcode.outputs.available == 'true'
+        # sfw is the Socket wrapper itself, so nothing wraps its own install.
+        run: npm install -g sfw
       - name: just validate
         if: steps.xcode.outputs.available == 'true'
+        env:
+          # macOS builds the Apple-side fixtures. The Android agent and the Compose fixture need the Android SDK and a Kotlin compiler; see task 10.6 for the Linux job.
+          FIXTURES: expo,swiftui
+          SKIP_AGENT_BUILD: "1"
         run: just validate

@@ -8,6 +8,21 @@ cd "$(dirname "$0")"
 shopt -s nullglob
 scripts=(*/build.sh)
 
+# FIXTURES=name,name selects a subset (FIXTURES=none selects nothing); unset builds all.
+if [ -n "${FIXTURES:-}" ]; then
+  selected=()
+  IFS=',' read -r -a wanted <<< "$FIXTURES"
+  for name in "${wanted[@]}"; do
+    [ "$name" = "none" ] && continue
+    if [ -f "$name/build.sh" ]; then
+      selected+=("$name/build.sh")
+    else
+      echo "fixtures/$name/build.sh not present, skipping"
+    fi
+  done
+  scripts=(${selected[@]+"${selected[@]}"})
+fi
+
 if [ "${#scripts[@]}" -eq 0 ]; then
   echo "fixtures/*/build.sh not present, skipping"
   exit 0

@@ -27,7 +27,7 @@ fmt-check:
 
 # Build the Android agent, skipping when agent-android/build.sh is absent
 agent-build:
-    if [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
+    if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
 
 # Build the reference fixture apps, skipping when fixtures/build.sh is absent
 fixtures-build:
