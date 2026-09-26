@@ -28,6 +28,29 @@ Release (the default) embeds the Hermes bytecode bundle, so the app launches wit
 
 Type-check the sources with `bun run typecheck`. Metro strips types without checking them, so a type error does not fail `build.sh`.
 
+## Build (Android)
+
+```sh
+PLATFORM=android ./build.sh
+```
+
+`PLATFORM` defaults to `ios`. With `PLATFORM=android`, `build.sh` installs `node_modules/` in the same way. It prebuilds `android/` under the same rule as `ios/` (`sfw bunx expo prebuild --platform android --no-install`, with the hash in `android/.prebuild-inputs`), then runs `./gradlew --no-daemon -Pandroid.builder.sdkDownload=false :app:assembleRelease` in `android/`. stdout carries the absolute APK path, `android/app/build/outputs/apk/release/app-release.apk`.
+
+Requirements:
+
+- An Android SDK at `ANDROID_HOME` (default `ANDROID_SDK_ROOT`, then `$HOME/Library/Android/sdk`) with these packages:
+  - `platforms;android-36`
+  - `build-tools;36.0.0`, used by the app module
+  - `build-tools;35.0.0`: the Expo library modules set no build-tools version, so they fall back to the Android Gradle Plugin's default, 35.0.0
+  - `ndk;27.1.12297006` and `cmake;3.22.1`: React Native's Gradle plugin always compiles C++ for the app, and `expo-modules-core` compiles C++ too
+- A JDK 17 or newer through `JAVA_HOME` or on `PATH` (tested with Temurin 21).
+
+`-Pandroid.builder.sdkDownload=false` stops Gradle from installing a missing SDK package on its own. The build fails and names the package instead; install it with `sdkmanager --install "<package>"` from the SDK's `cmdline-tools`.
+
+The release APK embeds the Hermes bytecode bundle, so it runs without Metro. It is signed with the debug keystore from Expo's template and carries native code for `armeabi-v7a`, `arm64-v8a`, `x86` and `x86_64`, so the same APK installs on ARM and x86 emulators. `CONFIGURATION=Debug` builds `:app:assembleDebug`, which loads JavaScript from Metro; that variant has not been exercised.
+
+`./gradlew buildEnvironment` reports the versions Expo generated: Gradle 9.3.1 (wrapper), Android Gradle Plugin 8.12.0 and Kotlin Gradle plugin 2.1.20. The app compiles and targets SDK 36, with a minimum of 24.
+
 ## Install and launch
 
 ```sh
@@ -38,6 +61,17 @@ xcrun simctl terminate booted dev.mobileagent.fixture.expo
 ```
 
 Replace `booted` with a Simulator UDID to target a specific device. The app opens on the Login tab.
+
+On an Android emulator or device:
+
+```sh
+apk="$(PLATFORM=android ./build.sh)"
+adb install -r "$apk"
+adb shell am start -S -n dev.mobileagent.fixture.expo/.MainActivity
+adb shell am force-stop dev.mobileagent.fixture.expo
+```
+
+`-S` force-stops a running copy first, so the activity and its launch options start fresh.
 
 ## Debug build
 
@@ -91,7 +125,13 @@ The permission prompt text comes from `NSLocationWhenInUseUsageDescription`, whi
   ```
 
   The app reads the variable when its process starts, so pass `--terminate-running-process` if a copy may already be running.
-- **Android:** the string extra `initial_tab` on the launch intent, for example `adb shell am start -n dev.mobileagent.fixture.expo/.MainActivity --es initial_tab anim`. This path has not been exercised yet; see Android below.
+- **Android:** the string extra `initial_tab` on the launch intent:
+
+  ```sh
+  adb shell am start -S -n dev.mobileagent.fixture.expo/.MainActivity --es initial_tab big
+  ```
+
+  On an API 36 emulator this opens the Big tab.
 
 The native entry points pass the value to JavaScript as the root component's `initialTab` prop. The local config plugin `plugins/withInitialTab.js` writes that code into the generated `AppDelegate.swift` and `MainActivity.kt`, so it survives `expo prebuild --clean`. If the Expo template no longer contains the code the plugin edits, prebuild fails instead of dropping the option.
 
@@ -110,11 +150,16 @@ The Big tab has no state to keep.
 
 On the Big tab:
 
-- Exactly 500 accessibility elements carry the identifiers `cell-1` to `cell-500`. Each has role button (the Button trait on iOS) and the label `Cell <n>`. The number drawn inside a cell belongs to that cell's element and is not a separate node.
+- Exactly 500 accessibility elements carry the identifiers `cell-1` to `cell-500`. Each has role button (the Button trait on iOS) and the label `Cell <n>`. On iOS the number drawn inside a cell belongs to that cell's element and is not a separate node.
 - `big-count` is a separate header text, `500 elements`, and is not one of the 500.
 - All 500 cells mount at once, in a ScrollView flex-wrap grid with no virtualization, so the count does not depend on scroll position.
 - The grid has 20 columns, and cell size follows the window width. On a 402 pt wide iPhone 17 that gives 19 pt cells in a 20 × 25 grid that fits on screen, so tools that drop off-screen nodes still see all 500. On narrower screens the ScrollView scrolls, and all 500 stay mounted.
 - The tab bar adds five more buttons (`tab-*`). A snapshot filtered to buttons therefore returns 505 on this tab, and one filtered to the `cell-` prefix returns 500.
+- **Android:** on an API 36 emulator (1080 × 2400, 420 dpi), `adb shell uiautomator dump` of the Big tab has exactly 500 `resource-id="cell-` matches: `cell-1` to `cell-500`, each a clickable `android.widget.Button` with content-desc `Cell <n>`. The grid fits the screen as 50 px (19 dp) cells, so the dump loses none.
+
+  That matters, because the dump leaves out nodes outside the screen. A dump of the List tab lists only the 18 rows on screen, `row-1` to `row-18`, although at least 20 are mounted.
+
+  Unlike iOS, the dump also lists each cell's number as a child `android.widget.TextView` with no id. The Big tab's dump therefore holds 1021 nodes, including 505 Buttons (cells and tabs) and 505 TextViews.
 
 ## Package installs and Socket Firewall
 
@@ -132,6 +177,25 @@ It checks each tarball's SHA1 and keeps it in React Native's shared download cac
 
 The precompiled Expo module xcframeworks ship inside the npm packages, which `sfw bun install` fetched.
 
+The Android build downloads more that Socket Firewall cannot wrap:
+
+- **The Gradle 9.3.1 distribution:** the wrapper fetches it from `services.gradle.org`.
+- **Gradle plugins and Maven dependencies:** these include the Android Gradle Plugin, Kotlin, React Native, Hermes and the Expo modules' Android artifacts. They come from Google's Maven repository, Maven Central and JitPack, the repositories `android/build.gradle` declares, and are cached under `~/.gradle`.
+- **SDK packages:** `ndk;27.1.12297006`, `cmake;3.22.1` and `build-tools;35.0.0`, installed with `sdkmanager` from Google's repository. Gradle never installs these itself here; see Build (Android).
+
+`expo prebuild --platform android` uses the same bundled template as iOS and downloads nothing.
+
 ## Android
 
-Not exercised yet: this machine has no Android SDK, so no Android prebuild or Gradle build has run for this fixture. `app.json` already sets `android.package`. One thing to check when Android is exercised: React Native's built-in `SafeAreaView` is a plain View on Android, so under edge-to-edge the screens may draw beneath the status and navigation bars.
+Verified on an API 36 arm64 emulator (`sdk_gphone64_arm64`, 1080 × 2400, 420 dpi):
+
+- The release APK installs with `adb install -r`.
+- `--es initial_tab big` opens the Big tab.
+- `uiautomator dump` finds all 500 cells; see the 500-element contract.
+
+Known issue: the fixture targets SDK 36, and Expo enables edge-to-edge (`edgeToEdgeEnabled=true` in the generated `android/gradle.properties`). React Native's built-in `SafeAreaView` is a plain View on Android, so content starts under the status bar and the tab bar extends under the navigation bar:
+
+- The `big-count` header's bounds start at y = 0, and its text overlaps the status bar clock.
+- The tab labels sit under the gesture handle.
+
+Every element is still on screen and in the accessibility tree. Fixing the layout needs inset values that core React Native does not expose. `react-native-safe-area-context` provides them, but it would be a new dependency.
