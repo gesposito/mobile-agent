@@ -5,13 +5,14 @@ import { FixtureButton } from '../FixtureButton';
 import { colors } from '../theme';
 
 export const VALID_PASSWORD = 'hunter2';
+const SIGNED_OUT = 'Signed out';
 
 // The inputs are uncontrolled so fast programmatic typing never races a JS re-render;
 // onChangeText only mirrors the native text into state for the submit handler.
 export function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState(SIGNED_OUT);
 
   const submit = () => {
     Keyboard.dismiss();
@@ -47,12 +48,10 @@ export function LoginScreen() {
         importantForAutofill="no"
         style={styles.input}
       />
-      <FixtureButton testID="login-submit" label="Log in" onPress={submit} />
-      {status !== null && (
-        <Text testID="login-status" style={styles.status}>
-          {status}
-        </Text>
-      )}
+      <FixtureButton testID="login-submit" label="Sign in" onPress={submit} />
+      <Text testID="login-status" style={styles.status}>
+        {status}
+      </Text>
     </View>
   );
 }

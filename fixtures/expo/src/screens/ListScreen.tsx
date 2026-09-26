@@ -64,14 +64,13 @@ function Row({ n, onPress }: { n: number; onPress: (n: number) => void }) {
 
 function Detail({ n, onBack }: { n: number; onBack: () => void }) {
   return (
-    <View testID={`detail-${n}`} style={styles.detail}>
+    <View style={styles.detail}>
       <View style={styles.backRow}>
         <FixtureButton testID="detail-back" label="Back" onPress={onBack} />
       </View>
-      <Text accessibilityRole="header" style={styles.detailTitle}>
-        Row {n}
+      <Text testID={`detail-${n}`} style={styles.detailTitle}>
+        {`Detail ${n}`}
       </Text>
-      <Text style={styles.detailBody}>Detail view for row {n}.</Text>
     </View>
   );
 }
@@ -118,9 +117,5 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: colors.text,
-  },
-  detailBody: {
-    fontSize: 17,
-    color: colors.secondaryText,
   },
 });

@@ -1,6 +1,6 @@
 # FixtureExpo
 
-React Native reference app for the benchmark harness and the spikes. It uses Expo SDK 57 and React Native 0.86.3, with the New Architecture and Hermes; at this React Native version neither can be turned off. Its identifiers follow the contract the SwiftUI fixture uses, so the harness and the spikes can run the same flows on both.
+React Native reference app for the benchmark harness and the spikes. It uses Expo SDK 57 and React Native 0.86.3, with the New Architecture and Hermes; at this React Native version neither can be turned off. It implements the shared fixture contract in [`../CONTRACT.md`](../CONTRACT.md), as the other reference fixtures do, so the harness and the spikes run the same flows on each of them.
 
 - Bundle identifier: `dev.mobileagent.fixture.expo` (Android package too)
 - App name: `FixtureExpo`, URL scheme `fixtureexpo`
@@ -58,20 +58,23 @@ Debug builds are for working on the fixture only. Timing runs use Release.
 
 | Screen | Identifier | Element | Accessibility | Content and behaviour |
 |---|---|---|---|---|
-| Tab bar | `tab-login`, `tab-list`, `tab-big`, `tab-anim`, `tab-system` | Pressable | role button, labels `Login`, `List`, `Big`, `Anim`, `System`; the active tab has the Selected trait | Switches the screen. Switching unmounts the previous screen, so every visit starts from its initial state. |
+| Tab bar | `tab-login`, `tab-list`, `tab-big`, `tab-anim`, `tab-system` | Pressable | role button, labels `Login`, `List`, `Big`, `Anim`, `System`; the active tab has the Selected trait | Switches the screen. Switching unmounts the previous screen, so every visit starts from its initial state: typed text is cleared, and `login-status` and `system-permission-status` return to their initial text. |
 | Login | `login-username` | TextInput | label `Username` | Placeholder `Username`. Autocorrect, autocapitalisation, spell check and autofill are off. |
 | Login | `login-password` | TextInput, secure | label `Password` | Placeholder `Password`. |
-| Login | `login-submit` | Pressable | role button, label `Log in` | Dismisses the keyboard and sets `login-status`. |
-| Login | `login-status` | Text | static text | Absent until the first submit. It then reads `Welcome, <username>` when the password is `hunter2`, otherwise `Invalid credentials`. |
+| Login | `login-submit` | Pressable | role button, label `Sign in` | Dismisses the keyboard and sets `login-status`. |
+| Login | `login-status` | Text | static text | Always present. Reads `Signed out` until the first submit, then `Welcome, <username>` when the password is `hunter2`, otherwise `Invalid credentials`. |
 | List | `row-1` … `row-200` | Pressable in a FlatList | role button, label `Row <n>` | Text `Row <n>`. Tapping opens `detail-<n>`. |
-| List | `detail-<n>` | View | container, not an element | Drawn over the list, with a header `Row <n>` and the text `Detail view for row <n>.`. While it is open, the list is hidden from accessibility and keeps its scroll position. |
+| List | `detail-<n>` | Text | static text | `Detail <n>`, on a detail view drawn over the list. While the detail view is open, the list is hidden from accessibility and keeps its scroll position. |
 | List | `detail-back` | Pressable | role button, label `Back` | Closes the detail view. |
 | Big | `big-count` | Text | header | `500 elements`. |
 | Big | `cell-1` … `cell-500` | Pressable | accessible, role button, label `Cell <n>` | See the 500-element contract below. |
 | Anim | `anim-spinner` | Animated.View | accessible, role image, label `Spinner` | Turns 360° every 1000 ms with `Animated.loop` and `useNativeDriver: true`, and never settles while running. |
 | Anim | `anim-toggle` | Switch | label `Animate`, value `1` or `0` | On at mount. Turning it off stops the loop and resets the spinner to 0°. |
-| System | `system-permission` | Pressable | role button, label `Request location permission` | Calls `Location.requestForegroundPermissionsAsync()`, which shows the system When-In-Use location prompt on first use. |
-| System | `system-alert` | Pressable | role button, label `Show alert` | `Alert.alert` titled `Fixture alert` with the message `An in-app alert with a single OK button.` and one button, `OK`. |
+| System | `system-permission` | Pressable | role button, label `Request location permission` | Calls `Location.requestForegroundPermissionsAsync()`, which shows the system When-In-Use location prompt on first use, and updates `system-permission-status` with the result. |
+| System | `system-permission-status` | Text | static text | `Permission: unknown` until a request resolves, then `Permission: granted` or `Permission: denied`. The screen never reads the current authorization on mount, so the initial text does not depend on earlier runs. |
+| System | `system-alert` | Pressable | role button, label `Show in-app alert` | `Alert.alert` titled `In-app alert` with the message `This alert is presented by the app.` and one button, `OK`. |
+
+The contract gives the alert's OK button the identifier `inapp-alert-ok` where the platform allows it. React Native's `Alert.alert` cannot set an identifier on its buttons, so in this fixture the OK button has none; drivers locate it by its label, `OK`.
 
 The List tab's FlatList is virtualized, with `initialNumToRender={20}`, `windowSize={5}` and a fixed row height of 48 pt. Rows far off screen are not mounted, so they are not in the accessibility tree until they are scrolled near.
 
