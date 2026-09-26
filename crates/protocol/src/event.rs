@@ -4,7 +4,12 @@
 //! On the wire an event is a positional array `[4, stream, seq, time_us,
 //! ...]` whose remaining elements depend on the stream.
 
-use crate::message::Rotation;
+use minicbor::decode::{self, Decoder};
+use minicbor::encode::{self, Encoder, Write};
+use minicbor::{Decode, Encode};
+
+use crate::cbor::{self, Elements};
+use crate::message::{Rotation, kind};
 
 /// One event.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,4 +140,78 @@ wire_enum! {
     SHUTTING_DOWN = 2, "shutting_down";
     /// Still running with reduced ability; the message says what.
     WARNING = 3, "warning";
+}
+
+impl<C> Encode<C> for Event {
+    fn encode<W: Write>(
+        &self,
+        e: &mut Encoder<W>,
+        ctx: &mut C,
+    ) -> Result<(), encode::Error<W::Error>> {
+        let extra: u64 = match &self.payload {
+            EventPayload::Tree(_) | EventPayload::Frame(_) => 3,
+            EventPayload::Window(_) | EventPayload::Lifecycle(_) => 2,
+            EventPayload::Unknown(_) => 0,
+        };
+        e.array(4 + extra)?
+            .u8(kind::EVENT)?
+            .u8(self.stream().0)?
+            .u64(self.seq)?
+            .u64(self.time_us)?;
+        match &self.payload {
+            EventPayload::Tree(t) => {
+                e.u8(t.change.0)?.u32(t.window)?.encode_with(&t.path, ctx)?;
+            }
+            EventPayload::Window(w) => {
+                e.u8(w.change.0)?.u32(w.window)?;
+            }
+            EventPayload::Frame(f) => {
+                e.u32(f.width)?.u32(f.height)?.u8(f.rotation.0)?;
+            }
+            EventPayload::Lifecycle(l) => {
+                e.u8(l.change.0)?.str(&l.message)?;
+            }
+            EventPayload::Unknown(_) => {}
+        }
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for Event {
+    fn decode(d: &mut Decoder<'b>, ctx: &mut C) -> Result<Event, decode::Error> {
+        let at = d.position();
+        let mut items = Elements::begin(d)?;
+        let k = items.require(d, 0, "kind", |d| d.u8())?;
+        cbor::expect_kind(Some(k), kind::EVENT, at)?;
+        let stream = Stream(items.require(d, 1, "stream", |d| d.u8())?);
+        let seq = items.require(d, 2, "seq", |d| d.u64())?;
+        let time_us = items.require(d, 3, "time_us", |d| d.u64())?;
+        let payload = match stream {
+            Stream::TREE => EventPayload::Tree(TreeChange {
+                change: TreeChangeKind(items.require(d, 4, "change", |d| d.u8())?),
+                window: items.require(d, 5, "window", |d| d.u32())?,
+                path: items.require(d, 6, "path", |d| cbor::decode_vec(d, &mut *ctx))?,
+            }),
+            Stream::WINDOW => EventPayload::Window(WindowChange {
+                change: WindowChangeKind(items.require(d, 4, "change", |d| d.u8())?),
+                window: items.require(d, 5, "window", |d| d.u32())?,
+            }),
+            Stream::FRAME => EventPayload::Frame(FrameAvailable {
+                width: items.require(d, 4, "width", |d| d.u32())?,
+                height: items.require(d, 5, "height", |d| d.u32())?,
+                rotation: Rotation(items.require(d, 6, "rotation", |d| d.u8())?),
+            }),
+            Stream::LIFECYCLE => EventPayload::Lifecycle(Lifecycle {
+                change: LifecycleKind(items.require(d, 4, "change", |d| d.u8())?),
+                message: items.require(d, 5, "message", |d| d.str().map(str::to_owned))?,
+            }),
+            other => EventPayload::Unknown(other),
+        };
+        items.skip_rest(d)?;
+        Ok(Event {
+            seq,
+            time_us,
+            payload,
+        })
+    }
 }

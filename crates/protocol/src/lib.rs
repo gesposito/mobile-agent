@@ -9,6 +9,7 @@
 mod macros;
 
 pub mod capability;
+mod cbor;
 pub mod error;
 pub mod event;
 pub mod message;

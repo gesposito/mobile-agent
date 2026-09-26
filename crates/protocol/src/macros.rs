@@ -1,4 +1,5 @@
-//! Newtypes over the integers the wire carries for enums and bitmasks.
+//! Newtypes over the integers the wire carries for enums and bitmasks. Each
+//! encodes as the plain CBOR integer it wraps (`#[cbor(transparent)]`).
 
 /// Declares a newtype over an unsigned integer that stands for an enum, with
 /// a named constant per value this protocol version defines. Other values are
@@ -13,8 +14,12 @@ macro_rules! wire_enum {
         )*
     ) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-        pub struct $name(pub $int);
+        #[derive(
+            Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, minicbor::Encode,
+            minicbor::Decode,
+        )]
+        #[cbor(transparent)]
+        pub struct $name(#[n(0)] pub $int);
 
         impl $name {
             $(
@@ -63,8 +68,9 @@ macro_rules! wire_flags {
         )*
     ) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
-        pub struct $name(pub u32);
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default, minicbor::Encode, minicbor::Decode)]
+        #[cbor(transparent)]
+        pub struct $name(#[n(0)] pub u32);
 
         impl $name {
             /// No bit set.

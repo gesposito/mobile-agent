@@ -3,19 +3,27 @@
 
 use core::fmt;
 
+use minicbor::{Decode, Encode};
+
 use crate::capability::Capabilities;
 use crate::message::Method;
 
 /// An error carried in a response or welcome, or produced by the host
 /// session on the agent's behalf (a missing capability, a passed deadline,
 /// a lost connection).
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// On the wire: `{0: code, 1: message, 2: retryable}`.
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+#[cbor(map)]
 pub struct Error {
     /// Stable snake_case code; see [`code`].
+    #[n(0)]
     pub code: String,
     /// Human-readable description, including any hint for the user.
+    #[n(1)]
     pub message: String,
     /// Whether sending the same request again can succeed.
+    #[n(2)]
     pub retryable: bool,
 }
 
@@ -76,8 +84,21 @@ pub mod code {
 
 /// Whether retrying is meaningful for a code this protocol version defines,
 /// or `None` for any other code.
-pub fn retryable(_code: &str) -> Option<bool> {
-    todo!("retryable table")
+pub fn retryable(code: &str) -> Option<bool> {
+    match code {
+        code::DEADLINE_EXCEEDED | code::BUSY | code::WINDOW_CHANGED | code::NOT_READY => Some(true),
+        code::UNKNOWN_METHOD
+        | code::INVALID_PARAMS
+        | code::CAPABILITY_MISSING
+        | code::FRAME_TOO_LARGE
+        | code::VERSION_MISMATCH
+        | code::TOKEN_MISMATCH
+        | code::FRAME_LIMIT_TOO_SMALL
+        | code::DISCONNECTED
+        | code::PROTOCOL_ERROR
+        | code::INTERNAL => Some(false),
+        _ => None,
+    }
 }
 
 impl Error {
