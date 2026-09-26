@@ -29,11 +29,11 @@ On first use of a target the driver SHALL transfer the agent and start it as a s
 - **THEN** the driver stops it and starts the current version
 
 ### Requirement: Single ownership of UI automation
-The agent SHALL hold the device's UI test automation role exclusively. If another holder is present the driver SHALL report the conflict, naming the holder when the platform reveals it, and SHALL NOT take over unless the client passes an explicit force option.
+The agent SHALL hold the device's UI test automation role exclusively. If another holder is present the driver SHALL report the conflict, naming the likely holder when it can be inferred from the device's process and instrumentation listings, and SHALL NOT take over unless the client passes an explicit force option.
 
 #### Scenario: Another tool holds automation
 - **WHEN** another automation tool is active on the device and a client attaches without force
-- **THEN** the attach fails with a conflict error naming the other holder when known
+- **THEN** the attach fails with a conflict error naming the likely holder when one can be inferred
 
 ### Requirement: Tree acquisition across windows
 The driver SHALL return the accessibility tree of every interactive window, including the keyboard and system overlays, with text, content description, resource identifier, class, bounds, and actionability per node. Depth and node limits SHALL be configurable and any truncation SHALL be flagged.
