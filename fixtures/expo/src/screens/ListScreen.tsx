@@ -1,5 +1,14 @@
-import { useCallback, useState } from 'react';
-import { FlatList, type ListRenderItem, Pressable, StyleSheet, Text, View } from 'react-native';
+import { type RefObject, useCallback, useState } from 'react';
+import {
+  FlatList,
+  type ListRenderItem,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { FixtureButton } from '../FixtureButton';
 import { colors } from '../theme';
@@ -15,15 +24,39 @@ const getItemLayout = (_data: ArrayLike<number> | null | undefined, index: numbe
   index,
 });
 
-// The detail view is drawn over the list instead of replacing it, so the list keeps its
-// scroll position; while it is open the list is hidden from accessibility.
-export function ListScreen() {
-  const [selected, setSelected] = useState<number | null>(null);
-  const detailOpen = selected !== null;
+type Props = {
+  openRow: number | null;
+  onOpenRow: (n: number | null) => void;
+  scrollOffset: RefObject<number>;
+};
+
+// The open row and the scroll offset live in the root, so both survive tab switches. The list
+// remounts on every visit and restores the offset exactly: initialScrollIndex makes the first
+// render mount the rows at that offset, and contentOffset places the scroll view there
+// (FlatList skips its own scroll to the index when contentOffset is set). The detail view is
+// drawn over the list, which is hidden from accessibility while the detail is open.
+export function ListScreen({ openRow, onOpenRow, scrollOffset }: Props) {
+  const [restore] = useState(() => ({
+    initialScrollIndex: Math.floor(scrollOffset.current / ROW_HEIGHT),
+    contentOffset: { x: 0, y: scrollOffset.current },
+  }));
+  const detailOpen = openRow !== null;
+
+  // Clamped to the scrollable range so a tab switch during a bounce stores a resting offset.
+  // Events that arrive before the content is laid out carry no usable range and are skipped.
+  const saveOffset = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const maxOffset = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height;
+      if (maxOffset > 0) {
+        scrollOffset.current = Math.min(Math.max(0, nativeEvent.contentOffset.y), maxOffset);
+      }
+    },
+    [scrollOffset],
+  );
 
   const renderItem = useCallback<ListRenderItem<number>>(
-    ({ item }) => <Row n={item} onPress={setSelected} />,
-    [],
+    ({ item }) => <Row n={item} onPress={onOpenRow} />,
+    [onOpenRow],
   );
 
   return (
@@ -40,9 +73,15 @@ export function ListScreen() {
           getItemLayout={getItemLayout}
           initialNumToRender={20}
           windowSize={5}
+          initialScrollIndex={restore.initialScrollIndex}
+          contentOffset={restore.contentOffset}
+          scrollEventThrottle={16}
+          onScroll={saveOffset}
+          onScrollEndDrag={saveOffset}
+          onMomentumScrollEnd={saveOffset}
         />
       </View>
-      {selected !== null && <Detail n={selected} onBack={() => setSelected(null)} />}
+      {openRow !== null && <Detail n={openRow} onBack={() => onOpenRow(null)} />}
     </View>
   );
 }

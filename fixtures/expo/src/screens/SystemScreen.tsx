@@ -1,28 +1,34 @@
 import * as Location from 'expo-location';
-import { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { FixtureButton } from '../FixtureButton';
 import { colors } from '../theme';
 
-type PermissionText = 'Permission: unknown' | 'Permission: granted' | 'Permission: denied';
+export type PermissionText = 'Permission: unknown' | 'Permission: granted' | 'Permission: denied';
+
+export const INITIAL_PERMISSION_TEXT: PermissionText = 'Permission: unknown';
+
+type Props = {
+  status: PermissionText;
+  onStatusChange: (status: PermissionText) => void;
+};
 
 function showAlert() {
   Alert.alert('In-app alert', 'This alert is presented by the app.', [{ text: 'OK' }]);
 }
 
-// The status reads "unknown" until a request resolves. The screen never reads the current
-// authorization on mount, so its initial text does not depend on earlier runs.
-export function SystemScreen() {
-  const [status, setStatus] = useState<PermissionText>('Permission: unknown');
-
+// The status lives in the root, so it survives tab switches, and a request that resolves after
+// the user has left the tab still updates it. It reads "unknown" until a request resolves; the
+// screen never reads the current authorization on mount, so the launch text does not depend on
+// earlier runs.
+export function SystemScreen({ status, onStatusChange }: Props) {
   const requestPermission = () => {
     Location.requestForegroundPermissionsAsync()
       .then(({ status: result }) => {
         if (result === Location.PermissionStatus.GRANTED) {
-          setStatus('Permission: granted');
+          onStatusChange('Permission: granted');
         } else if (result === Location.PermissionStatus.DENIED) {
-          setStatus('Permission: denied');
+          onStatusChange('Permission: denied');
         }
       })
       .catch((error: unknown) => {

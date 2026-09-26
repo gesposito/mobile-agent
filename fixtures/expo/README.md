@@ -4,7 +4,7 @@ React Native reference app for the benchmark harness and the spikes. It uses Exp
 
 - Bundle identifier: `dev.mobileagent.fixture.expo` (Android package too)
 - App name: `FixtureExpo`, URL scheme `fixtureexpo`
-- Runtime dependencies: `expo`, `expo-location`, `react`, `react-native`. No navigation library: the tab bar is five Pressables, and only the selected screen is rendered.
+- Runtime dependencies: `expo`, `expo-location`, `react`, `react-native`. No navigation library: the tab bar is five Pressables, only the selected screen is mounted, and screen state lives in the root component.
 - Content is fixed: nothing is random and nothing touches the network.
 
 ## Build (iOS Simulator)
@@ -58,7 +58,7 @@ Debug builds are for working on the fixture only. Timing runs use Release.
 
 | Screen | Identifier | Element | Accessibility | Content and behaviour |
 |---|---|---|---|---|
-| Tab bar | `tab-login`, `tab-list`, `tab-big`, `tab-anim`, `tab-system` | Pressable | role button, labels `Login`, `List`, `Big`, `Anim`, `System`; the active tab has the Selected trait | Switches the screen. Switching unmounts the previous screen, so every visit starts from its initial state: typed text is cleared, and `login-status` and `system-permission-status` return to their initial text. |
+| Tab bar | `tab-login`, `tab-list`, `tab-big`, `tab-anim`, `tab-system` | Pressable | role button, labels `Login`, `List`, `Big`, `Anim`, `System`; the active tab has the Selected trait | Switches the screen. Screen state survives the switch; see Navigation and state. |
 | Login | `login-username` | TextInput | label `Username` | Placeholder `Username`. Autocorrect, autocapitalisation, spell check and autofill are off. |
 | Login | `login-password` | TextInput, secure | label `Password` | Placeholder `Password`. |
 | Login | `login-submit` | Pressable | role button, label `Sign in` | Dismisses the keyboard and sets `login-status`. |
@@ -69,7 +69,7 @@ Debug builds are for working on the fixture only. Timing runs use Release.
 | Big | `big-count` | Text | header | `500 elements`. |
 | Big | `cell-1` … `cell-500` | Pressable | accessible, role button, label `Cell <n>` | See the 500-element contract below. |
 | Anim | `anim-spinner` | Animated.View | accessible, role image, label `Spinner` | Turns 360° every 1000 ms with `Animated.loop` and `useNativeDriver: true`, and never settles while running. |
-| Anim | `anim-toggle` | Switch | label `Animate`, value `1` or `0` | On at mount. Turning it off stops the loop and resets the spinner to 0°. |
+| Anim | `anim-toggle` | Switch | label `Animate`, value `1` or `0` | On at launch. Turning it off stops the loop and resets the spinner to 0°. |
 | System | `system-permission` | Pressable | role button, label `Request location permission` | Calls `Location.requestForegroundPermissionsAsync()`, which shows the system When-In-Use location prompt on first use, and updates `system-permission-status` with the result. |
 | System | `system-permission-status` | Text | static text | `Permission: unknown` until a request resolves, then `Permission: granted` or `Permission: denied`. The screen never reads the current authorization on mount, so the initial text does not depend on earlier runs. |
 | System | `system-alert` | Pressable | role button, label `Show in-app alert` | `Alert.alert` titled `In-app alert` with the message `This alert is presented by the app.` and one button, `OK`. |
@@ -79,6 +79,17 @@ The contract gives the alert's OK button the identifier `inapp-alert-ok` where t
 The List tab's FlatList is virtualized, with `initialNumToRender={20}`, `windowSize={5}` and a fixed row height of 48 pt. Rows far off screen are not mounted, so they are not in the accessibility tree until they are scrolled near.
 
 The permission prompt text comes from `NSLocationWhenInUseUsageDescription`, which the `expo-location` plugin in `app.json` writes: "FixtureExpo requests location to exercise the system permission prompt." The plugin is configured to leave out the Always and motion usage keys.
+
+## Navigation and state
+
+Only the selected tab's screen is mounted, so the other tabs' content is not in the accessibility tree. Screen state lives in the root component (`App.tsx`) rather than in the screens, so it survives tab switches, as the contract requires:
+
+- **Login:** the typed username and password, and `login-status`. The fields stay uncontrolled, so fast programmatic typing never races a JavaScript re-render; each mount seeds them from the stored text as `defaultValue`.
+- **List:** the open detail view and the exact scroll offset, which is stored on every scroll event. When the tab is shown again, the list mounts with `initialScrollIndex` at the first visible row, so those rows render in the first pass, and with `contentOffset` at the stored offset. When `contentOffset` is set, FlatList does not scroll to the index itself.
+- **Anim:** the `anim-toggle` value. The spinner's angle is not kept: returning to the tab while the toggle is on restarts the rotation from 0°.
+- **System:** `system-permission-status`. A request that resolves after the user has left the tab still updates it.
+
+The Big tab has no state to keep.
 
 ## 500-element contract
 

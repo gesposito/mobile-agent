@@ -1,22 +1,43 @@
-import { useState } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 import { Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { FixtureButton } from '../FixtureButton';
 import { colors } from '../theme';
 
 export const VALID_PASSWORD = 'hunter2';
-const SIGNED_OUT = 'Signed out';
 
-// The inputs are uncontrolled so fast programmatic typing never races a JS re-render;
-// onChangeText only mirrors the native text into state for the submit handler.
-export function LoginScreen() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [status, setStatus] = useState(SIGNED_OUT);
+export type LoginState = {
+  username: string;
+  password: string;
+  status: string;
+};
+
+export const INITIAL_LOGIN_STATE: LoginState = {
+  username: '',
+  password: '',
+  status: 'Signed out',
+};
+
+type Props = {
+  state: LoginState;
+  onChange: Dispatch<SetStateAction<LoginState>>;
+};
+
+// The inputs are uncontrolled so fast programmatic typing never races a JS re-render: each
+// mount seeds them once from the stored text, and every edit is written back to the root.
+// Updates are functional, so a submit right after the last keystroke sees that keystroke.
+export function LoginScreen({ state, onChange }: Props) {
+  const [initial] = useState(state);
 
   const submit = () => {
     Keyboard.dismiss();
-    setStatus(password === VALID_PASSWORD ? `Welcome, ${username}` : 'Invalid credentials');
+    onChange((current) => ({
+      ...current,
+      status:
+        current.password === VALID_PASSWORD
+          ? `Welcome, ${current.username}`
+          : 'Invalid credentials',
+    }));
   };
 
   return (
@@ -25,7 +46,8 @@ export function LoginScreen() {
         testID="login-username"
         accessibilityLabel="Username"
         placeholder="Username"
-        onChangeText={setUsername}
+        defaultValue={initial.username}
+        onChangeText={(username) => onChange((current) => ({ ...current, username }))}
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}
@@ -38,7 +60,8 @@ export function LoginScreen() {
         testID="login-password"
         accessibilityLabel="Password"
         placeholder="Password"
-        onChangeText={setPassword}
+        defaultValue={initial.password}
+        onChangeText={(password) => onChange((current) => ({ ...current, password }))}
         secureTextEntry
         autoCapitalize="none"
         autoCorrect={false}
@@ -50,7 +73,7 @@ export function LoginScreen() {
       />
       <FixtureButton testID="login-submit" label="Sign in" onPress={submit} />
       <Text testID="login-status" style={styles.status}>
-        {status}
+        {state.status}
       </Text>
     </View>
   );

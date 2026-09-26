@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Animated, Easing, StyleSheet, Switch, Text, useAnimatedValue, View } from 'react-native';
 
 import { colors } from '../theme';
 
 const REVOLUTION_MS = 1000;
 
-// The loop runs on the native driver. Turning the switch off stops it and resets the
-// spinner to 0 degrees, so the stopped state always renders the same frame.
-export function AnimScreen() {
-  const [running, setRunning] = useState(true);
+type Props = {
+  running: boolean;
+  onRunningChange: (running: boolean) => void;
+};
+
+// The switch value lives in the root, so it survives tab switches; the angle does not, and
+// re-entering the tab restarts the rotation from 0 degrees. The loop runs on the native
+// driver. Turning the switch off stops it and resets the spinner to 0 degrees, so the
+// stopped state always renders the same frame.
+export function AnimScreen({ running, onRunningChange }: Props) {
   const rotation = useAnimatedValue(0);
   const rotate = useMemo(
     () => rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }),
@@ -54,7 +60,7 @@ export function AnimScreen() {
           testID="anim-toggle"
           accessibilityLabel="Animate"
           value={running}
-          onValueChange={setRunning}
+          onValueChange={onRunningChange}
         />
       </View>
     </View>
