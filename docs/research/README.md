@@ -1,0 +1,5 @@
+# Research notes
+
+State-of-the-art notes that open each task group. Per design.md's Delivery process, no implementation task in a group starts before its note exists.
+
+Each note names what already exists, what this project reuses, where this design differs, and the sources, and is linked from design.md once reviewed. Notes are named by topic, for example `android-agent.md`, `simulator.md` and `protocol.md` (tasks 2.1 to 2.3).
