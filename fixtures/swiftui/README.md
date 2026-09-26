@@ -94,6 +94,14 @@ xcrun simctl privacy booted reset location dev.mobileagent.fixture.swiftui
 
 On iOS 26.5, XCTest reports the in-app alert's OK action as a button nested in a button, both carrying `inapp-alert-ok` and the same frame. That is UIKit's alert structure; the app defines one button.
 
+## Launch options
+
+The launch environment variable `FIXTURE_INITIAL_TAB` selects the tab shown at launch: `login` (default), `list`, `big`, `anim` or `system`. Any other value, including a differently cased one, falls back to `login`. `simctl` passes variables prefixed with `SIMCTL_CHILD_` to the app:
+
+```sh
+SIMCTL_CHILD_FIXTURE_INITIAL_TAB=big xcrun simctl launch booted dev.mobileagent.fixture.swiftui
+```
+
 ## Navigation and state
 
 - Only the selected tab's screen is in the accessibility tree; the tab bar controller keeps only that screen's view in the window.

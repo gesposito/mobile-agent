@@ -4,6 +4,12 @@ import UIKit
 enum FixtureTab: String, CaseIterable {
     case login, list, big, anim, system
 
+    /// The tab named by the `FIXTURE_INITIAL_TAB` launch environment variable,
+    /// or `login` when the variable is unset or names no tab.
+    static var initial: FixtureTab {
+        ProcessInfo.processInfo.environment["FIXTURE_INITIAL_TAB"].flatMap(FixtureTab.init(rawValue:)) ?? .login
+    }
+
     var title: String {
         switch self {
         case .login: "Login"
@@ -59,6 +65,7 @@ struct RootView: UIViewControllerRepresentable {
             screen.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
             return screen
         }
+        controller.selectedIndex = FixtureTab.allCases.firstIndex(of: .initial) ?? 0
         return controller
     }
 
