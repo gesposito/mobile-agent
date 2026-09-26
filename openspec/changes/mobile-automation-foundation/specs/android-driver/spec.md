@@ -86,7 +86,7 @@ The driver SHALL capture the full display as a correctly oriented image within a
 - **THEN** the returned image has landscape dimensions and correct orientation
 
 ### Requirement: Emulator fast path
-When the target is an emulator whose control endpoint is available, input and frame streaming SHALL use that endpoint and the driver SHALL report which path is active. When it is unavailable the driver SHALL fall back to the agent and emit a warning explaining how to enable the endpoint.
+When the target is an emulator whose control endpoint is available, input and frame streaming SHALL use that endpoint and the driver SHALL report which path is active. When it is unavailable the driver SHALL fall back to the agent and emit a warning explaining how to enable the endpoint, including that the emulator console can enable it at run time without a restart. Key and text input SHALL go through the agent unless the emulator declares a keyboard device, because the controller accepts and drops keys otherwise.
 
 #### Scenario: Control endpoint enabled
 - **WHEN** an emulator was started with its control endpoint enabled

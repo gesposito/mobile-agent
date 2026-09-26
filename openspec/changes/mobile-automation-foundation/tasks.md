@@ -23,7 +23,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [ ] 2.7 Spike S4: build the in-guest accessibility reader as a Rust binary for the `aarch64-apple-ios-sim` target spawned with `simctl spawn` (start from agent-device's Objective-C reader as the reference if the Rust port stalls) and the host-only translator path, reading the foreground tree of the Expo and SwiftUI fixtures, compared with an XCTest-based read; deliver `docs/spikes/s4-simulator-ax.md` with spawn-to-ready time, p50 and p95 per screen per path, and a go or no-go per path
 - [x] 2.8 Spike S5: benchmark CBOR, MessagePack, protobuf-lite, FlatBuffers and JSON on the 500-node tree and 10,000 small events in Rust and Kotlin, measuring bytes, encode and decode time and dex size delta; deliver `docs/spikes/s5-wire-format.md` and rewrite design.md D4 with the numbers and the chosen format
 - [x] 2.9 Spike S6: benchmark shell round trip, push throughput, forward and reverse setup and the connect-through round trip for the adb-server client crates, the `adb` binary and, when a device is attached, direct USB; deliver `docs/spikes/s6-adb-transport.md` and rewrite design.md D3 with the numbers
-- [ ] 2.10 Spike S7: verify the emulator control endpoint with token discovery, measure `StreamScreenshot` fps and `SendTouch` latency; deliver `docs/spikes/s7-emulator-grpc.md` with a go or no-go
+- [x] 2.10 Spike S7: verify the emulator control endpoint with token discovery, measure `StreamScreenshot` fps and `SendTouch` latency; deliver `docs/spikes/s7-emulator-grpc.md` with a go or no-go
 - [ ] 2.11 Spike review: consolidate verdicts, update design.md decisions D3, D4, D6 and D7 with measurements, adjust groups 3 to 9 for any no-go; verify `openspec validate` passes and every measured decision cites its spike
 
 ## 3. Protocol crate and agent message set
@@ -52,7 +52,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [ ] 5.1 Add failing integration tests for device listing with unauthorized and offline states, push, shell and forward against an emulator, then implement the ADB transport chosen by S6; verify red-then-green
 - [ ] 5.2 Add failing tests for first attach, compatible reuse and incompatible replacement, then implement agent deploy, reuse and replace with version checks; verify red-then-green
 - [ ] 5.3 Add a failing full-stack snapshot test, then implement the agent session driving handshake, requests and events into the mirror; verify red-then-green
-- [ ] 5.4 Add failing tests that frames arrive and taps land with the control flag and that a warning is emitted without it, then implement the emulator gRPC client from the controller proto with token discovery; verify red-then-green
+- [ ] 5.4 Add failing tests that frames arrive and taps land with the control flag and that a warning is emitted without it, then implement the emulator gRPC client from the emulator's own installed proto with token discovery, a second connection for input, RGB888 scaled streaming, deadlines on every call and the quirks listed in the S7 report; verify red-then-green
 - [ ] 5.5 Add failing tests that `status` names the active path in both emulator configurations, then implement path selection and status reporting; verify red-then-green
 
 ## 6. Simulator driver (`crates/simulator`)
@@ -98,7 +98,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 10. Integration verification
 
-- [ ] 10.1 Run the full harness on an Android emulator with the control flag on and off; verify all Android gates pass and commit the reports under `reports/`
+- [ ] 10.1 Run the full harness on an Android emulator started with `-gpu host`, with the control flag on and off; verify all Android gates pass (re-measure the 50 ms tap-to-frame gate first, since S7 measured 107 ms p50 under software rendering) and commit the reports under `reports/`
 - [ ] 10.2 Run the full harness on iOS Simulators for every installed runtime; verify all Simulator gates pass and commit the reports under `reports/`
 - [ ] 10.3 Run the harness on a physical Android device; verify tap acknowledgement and warm snapshot gates and commit the report
 - [ ] 10.4 Smoke-test a Bluesky-class React Native app on Simulator and emulator; verify snapshots are not degraded on screens where an XCTest-based tool reports sparse roots, and record the finding in `reports/`
