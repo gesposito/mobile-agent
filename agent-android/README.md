@@ -54,7 +54,7 @@ dex size:
 
 ```
 /…/agent-android/dist/mobile-agent-android.jar
-classes.dex 2281104 bytes
+classes.dex 2281104 (build-tools 36.0.0; 2277628 with build-tools 37.0.0) bytes
 ```
 
 Tool resolution:
@@ -113,7 +113,7 @@ the exit status separately, so the host can check all three.
 
 | Measure | Value |
 | --- | --- |
-| `classes.dex` | 2,281,104 bytes |
+| `classes.dex` | 2,281,104 with build-tools 36.0.0, 2,277,628 with build-tools 37.0.0, which also reads Kotlin 2.4 metadata and prints no diagnostics bytes |
 | Agent classes alone (stdlib on the classpath, not dexed) | 2,432 bytes |
 | `mobile-agent-android.jar` (deflated) | 663,748 bytes |
 | Dex contents | 1,083 classes, 12,700 method references |
