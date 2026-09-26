@@ -7,6 +7,8 @@
 //! resync names the last number the agent sent. A lossy stream (frame
 //! availability) only increases; the numbers it skips are counted as drops.
 
+use std::collections::HashMap;
+
 use crate::event::Stream;
 
 /// What to do with an event, given its stream and sequence number.
@@ -24,7 +26,26 @@ pub enum SeqCheck {
 
 /// Sequence state of every stream seen on one connection.
 #[derive(Clone, Debug, Default)]
-pub struct StreamTracker {}
+pub struct StreamTracker {
+    streams: HashMap<Stream, StreamState>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StreamState {
+    /// The last number accepted, or `None` while waiting for a resync.
+    last: Option<u64>,
+    /// Numbers a lossy stream skipped.
+    dropped: u64,
+}
+
+impl Default for StreamState {
+    fn default() -> StreamState {
+        StreamState {
+            last: Some(0),
+            dropped: 0,
+        }
+    }
+}
 
 impl StreamTracker {
     pub fn new() -> StreamTracker {
@@ -33,26 +54,45 @@ impl StreamTracker {
 
     /// Checks the next event of `stream`.
     pub fn check(&mut self, stream: Stream, seq: u64) -> SeqCheck {
-        let _ = (stream, seq);
-        todo!("check")
+        let state = self.streams.entry(stream).or_default();
+        let Some(last) = state.last else {
+            return SeqCheck::Discard;
+        };
+        if stream.is_lossy() {
+            if seq <= last {
+                return SeqCheck::Discard;
+            }
+            let dropped = seq - last - 1;
+            state.dropped += dropped;
+            state.last = Some(seq);
+            return SeqCheck::Deliver { dropped };
+        }
+        let expected = last.wrapping_add(1);
+        if seq == expected {
+            state.last = Some(seq);
+            SeqCheck::Deliver { dropped: 0 }
+        } else {
+            state.last = None;
+            SeqCheck::Gap {
+                expected,
+                received: seq,
+            }
+        }
     }
 
     /// The agent reports `stream` in sync again: `seq` is the last number it
     /// sent on it.
     pub fn resynced(&mut self, stream: Stream, seq: u64) {
-        let _ = (stream, seq);
-        todo!("resynced")
+        self.streams.entry(stream).or_default().last = Some(seq);
     }
 
     /// Whether `stream` is in sync; a stream not seen yet is.
     pub fn is_in_sync(&self, stream: Stream) -> bool {
-        let _ = stream;
-        todo!("is_in_sync")
+        self.streams.get(&stream).is_none_or(|s| s.last.is_some())
     }
 
     /// Numbers a lossy stream skipped so far.
     pub fn dropped(&self, stream: Stream) -> u64 {
-        let _ = stream;
-        todo!("dropped")
+        self.streams.get(&stream).map_or(0, |s| s.dropped)
     }
 }

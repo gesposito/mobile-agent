@@ -23,29 +23,55 @@ pub enum Alive {
 pub struct Liveness {
     interval: Duration,
     timeout: Duration,
+    last_heard: Instant,
+    last_ping: Option<Instant>,
 }
 
 impl Liveness {
+    /// Starts counting silence at `now`.
     pub fn new(interval: Duration, timeout: Duration, now: Instant) -> Liveness {
-        let _ = now;
-        Liveness { interval, timeout }
+        Liveness {
+            interval,
+            timeout,
+            last_heard: now,
+            last_ping: None,
+        }
     }
 
     /// Something arrived from the other side.
     pub fn heard(&mut self, now: Instant) {
-        let _ = now;
-        todo!("heard")
+        self.last_heard = self.last_heard.max(now);
     }
 
     /// Checks the silence at `now`; pings only when `may_ping`.
     pub fn check(&mut self, now: Instant, may_ping: bool) -> Alive {
-        let _ = (now, may_ping, self.interval, self.timeout);
-        todo!("check")
+        let silence = now.saturating_duration_since(self.last_heard);
+        if silence >= self.timeout {
+            return Alive::Dead(silence);
+        }
+        if may_ping && silence >= self.interval && now >= self.next_ping() {
+            self.last_ping = Some(now);
+            return Alive::Ping;
+        }
+        Alive::Yes
     }
 
     /// When [`Liveness::check`] next has something to do.
     pub fn next_check(&self, may_ping: bool) -> Instant {
-        let _ = may_ping;
-        todo!("next_check")
+        let dead_at = self.last_heard + self.timeout;
+        if may_ping {
+            dead_at.min(self.next_ping())
+        } else {
+            dead_at
+        }
+    }
+
+    /// One interval after the later of the last ping and the last sign of life.
+    fn next_ping(&self) -> Instant {
+        let since = match self.last_ping {
+            Some(ping) if ping > self.last_heard => ping,
+            _ => self.last_heard,
+        };
+        since + self.interval
     }
 }

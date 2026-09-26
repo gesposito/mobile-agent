@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 use super::{DisconnectReason, HandshakeError, Negotiated, PEER_TIMEOUT, PING_INTERVAL, Phase};
 use crate::capability::Capabilities;
 use crate::error::Error;
-use crate::event::{EventPayload, Stream};
+use crate::event::{Event, EventPayload, Stream};
 use crate::frame::{DEFAULT_MAX_FRAME, FrameDecoder, MIN_MAX_FRAME, Oversized, write_frame};
+use crate::liveness::{Alive, Liveness};
 use crate::message::{
-    Call, DecodeError, Hello, Message, Method, Pong, Reply, Request, Response, Welcome, kind,
+    Call, DecodeError, Hello, Message, Method, Ping, Pong, Reply, Request, Response, Welcome, kind,
 };
 
 /// Settings for an [`AgentSession`].
@@ -89,12 +90,16 @@ pub struct AgentSession {
     outbox: Vec<u8>,
     events: VecDeque<AgentEvent>,
     in_flight: HashMap<u32, InFlight>,
+    liveness: Liveness,
+    next_nonce: u64,
+    /// The last sequence number used on each stream.
+    seqs: HashMap<Stream, u64>,
 }
 
 impl AgentSession {
-    /// Starts the session; the hello is ready to send at once.
+    /// Starts the session; the hello is ready to send at once, and the
+    /// welcome must arrive within the peer timeout.
     pub fn new(config: AgentConfig, now: Instant) -> AgentSession {
-        let _ = now;
         let hello = Message::Hello(Hello {
             versions: config.versions.clone(),
             capabilities: config.capabilities,
@@ -105,11 +110,14 @@ impl AgentSession {
         let mut session = AgentSession {
             // Wide enough for a refusal even when the agent asks for less.
             decoder: FrameDecoder::new(config.max_frame.max(MIN_MAX_FRAME)),
+            liveness: Liveness::new(config.ping_interval, config.peer_timeout, now),
             config,
             state: State::AwaitingWelcome,
             outbox: Vec::new(),
             events: VecDeque::new(),
             in_flight: HashMap::new(),
+            next_nonce: 0,
+            seqs: HashMap::new(),
         };
         session.send_control(&hello);
         session
@@ -121,18 +129,24 @@ impl AgentSession {
             return;
         }
         self.decoder.push(bytes);
+        // Bytes that only feed the discard of an oversized frame are no sign of life.
+        let mut alive = !self.decoder.is_discarding();
         while !self.is_closed() {
             let frame = match self.decoder.next_frame() {
                 None => break,
                 Some(Ok(payload)) => Ok(Message::decode(payload)),
                 Some(Err(oversized)) => Err(oversized),
             };
+            alive = true;
             match frame {
                 Ok(Ok(msg)) => self.handle(msg, now),
                 Ok(Err(DecodeError::UnknownKind(_))) => {}
                 Ok(Err(e)) => self.close_with(DisconnectReason::Protocol(e.to_string())),
                 Err(oversized) => self.handle_oversized(oversized),
             }
+        }
+        if alive {
+            self.liveness.heard(now);
         }
     }
 
@@ -146,8 +160,15 @@ impl AgentSession {
 
     /// Answers requests whose deadline passed and keeps the connection alive.
     pub fn handle_timeout(&mut self, now: Instant) {
-        if self.phase() != Phase::Ready {
-            return;
+        match self.phase() {
+            Phase::Closed => return,
+            Phase::Handshake => {
+                if let Alive::Dead(silence) = self.liveness.check(now, false) {
+                    self.close_with(DisconnectReason::Silent(silence));
+                }
+                return;
+            }
+            Phase::Ready => {}
         }
         let mut expired: Vec<u32> = self
             .in_flight
@@ -162,6 +183,15 @@ impl AgentSession {
                 Error::deadline_exceeded(flight.method, id, flight.deadline_ms.unwrap_or(0));
             self.send_response(id, flight.method, Err(error));
         }
+        match self.liveness.check(now, true) {
+            Alive::Yes => {}
+            Alive::Ping => {
+                let nonce = self.next_nonce;
+                self.next_nonce = self.next_nonce.wrapping_add(1);
+                self.send_control(&Message::Ping(Ping { nonce }));
+            }
+            Alive::Dead(silence) => self.close_with(DisconnectReason::Silent(silence)),
+        }
     }
 
     /// When `handle_timeout` must next run; `None` once closed.
@@ -169,7 +199,9 @@ impl AgentSession {
         if self.is_closed() {
             return None;
         }
-        self.in_flight.values().filter_map(|f| f.deadline).min()
+        let liveness = self.liveness.next_check(self.phase() == Phase::Ready);
+        let deadline = self.in_flight.values().filter_map(|f| f.deadline).min();
+        Some(deadline.map_or(liveness, |d| d.min(liveness)))
     }
 
     /// The instant request `id` must be answered by, if it has a deadline.
@@ -190,22 +222,40 @@ impl AgentSession {
     /// or when the event exceeds the negotiated frame size; its number is
     /// used up then, so the host sees the gap and asks for a resync.
     pub fn emit(&mut self, payload: EventPayload, time_us: u64) -> Option<u64> {
-        let _ = (payload, time_us);
-        todo!("emit")
+        let State::Ready(negotiated) = &self.state else {
+            return None;
+        };
+        let limit = negotiated.max_frame;
+        let seq = self.next_seq(payload.stream());
+        let event = Message::Event(Event {
+            seq,
+            time_us,
+            payload,
+        });
+        write_frame(&event, limit, &mut self.outbox)
+            .ok()
+            .map(|()| seq)
     }
 
     /// Uses up the next sequence number of `stream` without sending an event,
     /// as when a full event queue drops one. The host sees the gap: a
     /// lossless stream then asks for a resync, a lossy one counts a drop.
     pub fn skip_event(&mut self, stream: Stream) -> Option<u64> {
-        let _ = stream;
-        todo!("skip_event")
+        if self.phase() != Phase::Ready {
+            return None;
+        }
+        Some(self.next_seq(stream))
     }
 
     /// The last sequence number sent or skipped on `stream`; 0 before the first.
     pub fn last_seq(&self, stream: Stream) -> u64 {
-        let _ = stream;
-        todo!("last_seq")
+        self.seqs.get(&stream).copied().unwrap_or(0)
+    }
+
+    fn next_seq(&mut self, stream: Stream) -> u64 {
+        let seq = self.seqs.entry(stream).or_insert(0);
+        *seq += 1;
+        *seq
     }
 
     /// Bytes to write to the connection.

@@ -11,10 +11,12 @@ use crate::capability::Capabilities;
 use crate::error::{Error, code};
 use crate::event::{Event, Stream};
 use crate::frame::{DEFAULT_MAX_FRAME, FrameDecoder, MIN_MAX_FRAME, Oversized, write_frame};
+use crate::liveness::{Alive, Liveness};
 use crate::message::{
-    Call, DecodeError, Hello, Message, Method, Pong, Reply, Request, Response, Welcome, kind,
+    Call, DecodeError, Hello, Message, Method, Ping, Pong, Reply, Request, Response, ResyncParams,
+    Welcome, kind,
 };
-use crate::sequence::StreamTracker;
+use crate::sequence::{SeqCheck, StreamTracker};
 
 /// Settings for a [`HostSession`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +92,9 @@ struct Pending {
     /// When the host stops waiting for the agent's answer: the deadline plus
     /// the grace period.
     expires: Option<Instant>,
+    /// Set for the resync requests the session sends itself; their outcome
+    /// is reported as a resync, not as a response.
+    resync: Option<Stream>,
 }
 
 /// The daemon's end of a device connection.
@@ -102,19 +107,26 @@ pub struct HostSession {
     events: VecDeque<HostEvent>,
     pending: HashMap<u32, Pending>,
     next_id: u32,
+    liveness: Liveness,
+    next_nonce: u64,
+    streams: StreamTracker,
 }
 
 impl HostSession {
+    /// Starts waiting for the agent's hello; it must arrive within the peer
+    /// timeout.
     pub fn new(config: HostConfig, now: Instant) -> HostSession {
-        let _ = now;
         HostSession {
             decoder: FrameDecoder::new(config.max_frame.max(MIN_MAX_FRAME)),
+            liveness: Liveness::new(config.ping_interval, config.peer_timeout, now),
             config,
             state: State::AwaitingHello,
             outbox: Vec::new(),
             events: VecDeque::new(),
             pending: HashMap::new(),
             next_id: 1,
+            next_nonce: 0,
+            streams: StreamTracker::new(),
         }
     }
 
@@ -124,12 +136,16 @@ impl HostSession {
             return;
         }
         self.decoder.push(bytes);
+        // Bytes that only feed the discard of an oversized frame are no sign
+        // of life: a corrupt length must not keep a dead peer alive.
+        let mut alive = !self.decoder.is_discarding();
         while !self.is_closed() {
             let frame = match self.decoder.next_frame() {
                 None => break,
                 Some(Ok(payload)) => Ok(Message::decode(payload)),
                 Some(Err(oversized)) => Err(oversized),
             };
+            alive = true;
             match frame {
                 Ok(Ok(msg)) => self.handle(msg, now),
                 // A kind a newer agent may send; nothing to do with it.
@@ -137,6 +153,9 @@ impl HostSession {
                 Ok(Err(e)) => self.close_with(DisconnectReason::Protocol(e.to_string())),
                 Err(oversized) => self.handle_oversized(oversized),
             }
+        }
+        if alive {
+            self.liveness.heard(now);
         }
     }
 
@@ -164,11 +183,16 @@ impl HostSession {
             let pending = self.pending.remove(&id).expect("listed above");
             let error =
                 Error::deadline_exceeded(pending.method, id, pending.deadline_ms.unwrap_or(0));
-            self.events.push_back(HostEvent::Response {
-                id,
-                method: pending.method,
-                result: Err(error),
-            });
+            self.resolve(id, pending, Err(error));
+        }
+        match self.liveness.check(now, self.phase() == Phase::Ready) {
+            Alive::Yes => {}
+            Alive::Ping => {
+                let nonce = self.next_nonce;
+                self.next_nonce = self.next_nonce.wrapping_add(1);
+                self.send_control(&Message::Ping(Ping { nonce }));
+            }
+            Alive::Dead(silence) => self.close_with(DisconnectReason::Silent(silence)),
         }
     }
 
@@ -177,7 +201,9 @@ impl HostSession {
         if self.is_closed() {
             return None;
         }
-        self.pending.values().filter_map(|p| p.expires).min()
+        let liveness = self.liveness.next_check(self.phase() == Phase::Ready);
+        let deadline = self.pending.values().filter_map(|p| p.expires).min();
+        Some(deadline.map_or(liveness, |d| d.min(liveness)))
     }
 
     /// Sends a request, returning its id. Fails at once, sending nothing, when
@@ -189,6 +215,32 @@ impl HostSession {
         call: Call,
         deadline: Option<Duration>,
         now: Instant,
+    ) -> Result<u32, Error> {
+        self.send(call, deadline, now, None)
+    }
+
+    /// Asks the agent to resynchronize `stream`; the outcome arrives as
+    /// [`HostEvent::Resynced`] or [`HostEvent::ResyncFailed`].
+    pub fn resync(&mut self, stream: Stream, now: Instant) -> Result<u32, Error> {
+        self.send(
+            Call::Resync(ResyncParams { stream }),
+            None,
+            now,
+            Some(stream),
+        )
+    }
+
+    /// Sequence state of the event streams.
+    pub fn streams(&self) -> &StreamTracker {
+        &self.streams
+    }
+
+    fn send(
+        &mut self,
+        call: Call,
+        deadline: Option<Duration>,
+        now: Instant,
+        resync: Option<Stream>,
     ) -> Result<u32, Error> {
         let (capabilities, limit) = match &self.state {
             State::Ready(n) => (n.capabilities, n.max_frame),
@@ -222,6 +274,7 @@ impl HostSession {
                 method,
                 deadline_ms,
                 expires,
+                resync,
             },
         );
         Ok(id)
@@ -260,18 +313,6 @@ impl HostSession {
         }
     }
 
-    /// Asks the agent to resynchronize `stream`; the outcome arrives as
-    /// [`HostEvent::Resynced`] or [`HostEvent::ResyncFailed`].
-    pub fn resync(&mut self, stream: Stream, now: Instant) -> Result<u32, Error> {
-        let _ = (stream, now);
-        todo!("resync")
-    }
-
-    /// Sequence state of the event streams.
-    pub fn streams(&self) -> &StreamTracker {
-        todo!("streams")
-    }
-
     /// Closes the session from this side, failing every pending request.
     pub fn close(&mut self) {
         if !self.is_closed() {
@@ -288,11 +329,10 @@ impl HostSession {
     }
 
     fn handle(&mut self, msg: Message, now: Instant) {
-        let _ = now;
         match (self.phase(), msg) {
             (Phase::Handshake, Message::Hello(hello)) => self.accept_hello(hello),
             (Phase::Ready, Message::Response(response)) => self.accept_response(response),
-            (Phase::Ready, Message::Event(event)) => self.events.push_back(HostEvent::Event(event)),
+            (Phase::Ready, Message::Event(event)) => self.accept_event(event, now),
             (Phase::Ready, Message::Ping(ping)) => {
                 self.send_control(&Message::Pong(Pong { nonce: ping.nonce }));
             }
@@ -379,11 +419,58 @@ impl HostSession {
                 ),
             ))
         };
-        self.events.push_back(HostEvent::Response {
-            id: response.id,
-            method: pending.method,
-            result,
-        });
+        self.resolve(response.id, pending, result);
+    }
+
+    /// Reports the outcome of a request: as a response, or for the session's
+    /// own resync requests as the stream's new state.
+    fn resolve(&mut self, id: u32, pending: Pending, result: Result<Reply, Error>) {
+        let Some(stream) = pending.resync else {
+            self.events.push_back(HostEvent::Response {
+                id,
+                method: pending.method,
+                result,
+            });
+            return;
+        };
+        match result {
+            Ok(Reply::Resync(ack)) if ack.stream == stream => {
+                self.streams.resynced(stream, ack.seq);
+                self.events.push_back(HostEvent::Resynced {
+                    stream,
+                    seq: ack.seq,
+                });
+            }
+            Ok(other) => self.events.push_back(HostEvent::ResyncFailed {
+                stream,
+                error: Error::new(
+                    code::PROTOCOL_ERROR,
+                    format!("the resync of the {stream} stream was answered with {other:?}"),
+                ),
+            }),
+            Err(error) => self
+                .events
+                .push_back(HostEvent::ResyncFailed { stream, error }),
+        }
+    }
+
+    fn accept_event(&mut self, event: Event, now: Instant) {
+        let stream = event.stream();
+        match self.streams.check(stream, event.seq) {
+            SeqCheck::Deliver { .. } => self.events.push_back(HostEvent::Event(event)),
+            SeqCheck::Gap { expected, received } => {
+                self.events.push_back(HostEvent::OutOfSync {
+                    stream,
+                    expected,
+                    received,
+                });
+                if let Err(error) = self.resync(stream, now) {
+                    self.events
+                        .push_back(HostEvent::ResyncFailed { stream, error });
+                }
+            }
+            SeqCheck::Discard => {}
+        }
     }
 
     fn handle_oversized(&mut self, oversized: Oversized) {
@@ -397,11 +484,7 @@ impl HostSession {
                 u64::from(oversized.size),
                 oversized.limit,
             );
-            self.events.push_back(HostEvent::Response {
-                id,
-                method: pending.method,
-                result: Err(error),
-            });
+            self.resolve(id, pending, Err(error));
             return;
         }
         self.events.push_back(HostEvent::FrameTooLarge(oversized));
@@ -428,11 +511,7 @@ impl HostSession {
         ids.sort_unstable();
         for id in ids {
             let pending = self.pending.remove(&id).expect("listed above");
-            self.events.push_back(HostEvent::Response {
-                id,
-                method: pending.method,
-                result: Err(Error::disconnected(&reason)),
-            });
+            self.resolve(id, pending, Err(Error::disconnected(&reason)));
         }
         self.state = State::Closed(reason.clone());
         self.events.push_back(HostEvent::Closed(reason));
