@@ -9,11 +9,12 @@ use super::{
 };
 use crate::capability::Capabilities;
 use crate::error::{Error, code};
-use crate::event::Event;
+use crate::event::{Event, Stream};
 use crate::frame::{DEFAULT_MAX_FRAME, FrameDecoder, MIN_MAX_FRAME, Oversized, write_frame};
 use crate::message::{
     Call, DecodeError, Hello, Message, Method, Pong, Reply, Request, Response, Welcome, kind,
 };
+use crate::sequence::StreamTracker;
 
 /// Settings for a [`HostSession`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,6 +57,18 @@ pub enum HostEvent {
     },
     /// An event, in order.
     Event(Event),
+    /// A lossless stream skipped or repeated a sequence number; its events
+    /// are dropped until the resync the session requested completes.
+    OutOfSync {
+        stream: Stream,
+        expected: u64,
+        received: u64,
+    },
+    /// The stream is in sync again: `seq` is the last number the agent sent
+    /// on it before its state was reset.
+    Resynced { stream: Stream, seq: u64 },
+    /// The agent could not resynchronize the stream, which stays out of sync.
+    ResyncFailed { stream: Stream, error: Error },
     /// A frame over the limit that answered no pending request.
     FrameTooLarge(Oversized),
     /// The session closed; later requests fail at once.
@@ -245,6 +258,18 @@ impl HostSession {
             State::Closed(reason) => Some(reason),
             _ => None,
         }
+    }
+
+    /// Asks the agent to resynchronize `stream`; the outcome arrives as
+    /// [`HostEvent::Resynced`] or [`HostEvent::ResyncFailed`].
+    pub fn resync(&mut self, stream: Stream, now: Instant) -> Result<u32, Error> {
+        let _ = (stream, now);
+        todo!("resync")
+    }
+
+    /// Sequence state of the event streams.
+    pub fn streams(&self) -> &StreamTracker {
+        todo!("streams")
     }
 
     /// Closes the session from this side, failing every pending request.

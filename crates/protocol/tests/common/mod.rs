@@ -29,6 +29,12 @@ pub fn agent_config(versions: &[u16], capabilities: Capabilities) -> AgentConfig
     }
 }
 
+/// The only element of `items`.
+pub fn one<T: std::fmt::Debug>(items: Vec<T>) -> T {
+    assert_eq!(items.len(), 1, "expected exactly one: {items:?}");
+    items.into_iter().next().unwrap()
+}
+
 pub fn every_capability() -> Capabilities {
     Capabilities::TREE
         | Capabilities::INPUT

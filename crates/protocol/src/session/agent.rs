@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use super::{DisconnectReason, HandshakeError, Negotiated, PEER_TIMEOUT, PING_INTERVAL, Phase};
 use crate::capability::Capabilities;
 use crate::error::Error;
+use crate::event::{EventPayload, Stream};
 use crate::frame::{DEFAULT_MAX_FRAME, FrameDecoder, MIN_MAX_FRAME, Oversized, write_frame};
 use crate::message::{
     Call, DecodeError, Hello, Message, Method, Pong, Reply, Request, Response, Welcome, kind,
@@ -182,6 +183,29 @@ impl AgentSession {
             Some(flight) => self.send_response(id, flight.method, result),
             None => Responded::NotInFlight,
         }
+    }
+
+    /// Sends an event on its payload's stream with the stream's next sequence
+    /// number and returns the number. `None` when the session is not ready,
+    /// or when the event exceeds the negotiated frame size; its number is
+    /// used up then, so the host sees the gap and asks for a resync.
+    pub fn emit(&mut self, payload: EventPayload, time_us: u64) -> Option<u64> {
+        let _ = (payload, time_us);
+        todo!("emit")
+    }
+
+    /// Uses up the next sequence number of `stream` without sending an event,
+    /// as when a full event queue drops one. The host sees the gap: a
+    /// lossless stream then asks for a resync, a lossy one counts a drop.
+    pub fn skip_event(&mut self, stream: Stream) -> Option<u64> {
+        let _ = stream;
+        todo!("skip_event")
+    }
+
+    /// The last sequence number sent or skipped on `stream`; 0 before the first.
+    pub fn last_seq(&self, stream: Stream) -> u64 {
+        let _ = stream;
+        todo!("last_seq")
     }
 
     /// Bytes to write to the connection.

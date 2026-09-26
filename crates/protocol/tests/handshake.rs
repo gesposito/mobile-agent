@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Link, agent_config, every_capability, host_config};
+use common::{Link, agent_config, every_capability, host_config, one};
 use protocol::frame::{DEFAULT_MAX_FRAME, HEADER_LEN, MIN_MAX_FRAME, write_frame};
 use protocol::message::{
     Call, FramesParams, ImageFormat, InputAck, Message, Method, Ping, Reply, Response, Rotation,
@@ -37,12 +37,6 @@ fn screenshot(bytes: usize) -> Reply {
         rotation: Rotation::R0,
         data: vec![7; bytes],
     })
-}
-
-/// The only element of `items`.
-fn one<T: std::fmt::Debug>(items: Vec<T>) -> T {
-    assert_eq!(items.len(), 1, "expected exactly one: {items:?}");
-    items.into_iter().next().unwrap()
 }
 
 /// The one request the agent has received since the last call.
