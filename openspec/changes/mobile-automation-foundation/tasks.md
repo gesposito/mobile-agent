@@ -8,7 +8,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 1.2 Create the Cargo workspace with empty crates protocol, mirror, android, simulator, daemon, cli and bench, plus `spikes/` and `docs/research/` and `docs/spikes/` directories; verify `cargo build --workspace` and `cargo clippy --workspace -- -D warnings` pass
 - [x] 1.3 Add a task runner file with build, test, agent-build, fixtures-build, bench and validate recipes, where validate runs the full validation-and-fix checklist; verify every recipe runs locally and `just validate` exits zero on the empty workspace
 - [x] 1.4 Add a CI workflow matrix (macOS per installed Xcode, Linux for Android) that runs the validate recipe; verify the workflow file passes `actionlint`
-- [ ] 1.5 Write the Android agent build script using `kotlinc` and `d8` from the SDK to produce a single dex jar in `agent-android/dist`; verify the jar starts under `app_process` on an emulator and prints its version banner
+- [x] 1.5 Write the Android agent build script using `kotlinc` and `d8` from the SDK to produce a single dex jar in `agent-android/dist`; verify the jar starts under `app_process` on an emulator and prints its version banner
 - [ ] 1.6 Scaffold the reference fixtures through Socket: an Expo React Native app via the official init (verify `sfw bun` wraps it, else use `sfw npm`), a Compose app and a SwiftUI app, each with a login screen, a scrolling list and a deterministic 500-node screen; verify each builds and the 500-node screen renders that count in the platform inspector
 
 ## 2. Research and de-risking spikes
@@ -44,6 +44,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [ ] 4.7 Add failing tests for direct text setting on the React Native input fixture and for the key-event fallback with method reporting, then implement both; verify red-then-green
 - [ ] 4.8 Add a failing landscape screenshot test, then implement screenshot capture with orientation; verify red-then-green
 - [ ] 4.9 Add failing tests that no agent process remains after daemon shutdown and that snapshots work after the app is force-stopped and relaunched, then implement stop, clean exit and survival; verify red-then-green
+- [ ] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points; verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
 
 ## 5. Android host driver (`crates/android`)
 
