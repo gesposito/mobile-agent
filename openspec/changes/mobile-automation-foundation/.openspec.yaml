@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-26
+goal: Prove the live-mirror model on Android and iOS Simulator against
+  measurable latency gates before physical iOS and agent-surface work

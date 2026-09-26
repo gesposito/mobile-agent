@@ -1,0 +1,6 @@
+target/
+node_modules/
+.DS_Store
+spikes/**/target/
+spikes/**/node_modules/
+*.log
