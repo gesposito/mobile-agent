@@ -10,7 +10,7 @@ See proposal.md for motivation. The constraints that shape the approach come fro
 - Emulators expose a gRPC controller for input and frame streaming when started with the control flag.
 - agent-browser's daemon is pure Rust, speaks CDP directly, and its command grammar is what agents already know. The exact envelope, ref syntax, snapshot line format, delta snapshots and batch semantics to mirror are catalogued in the protocol research note.
 
-Research notes (task group 2): `docs/research/protocol.md`, `docs/research/simulator.md`, `docs/research/android-agent.md`. Spike reports: `docs/spikes/s2-simulator-frames.md`.
+Research notes (task group 2): `docs/research/protocol.md`, `docs/research/simulator.md`, `docs/research/android-agent.md`. Spike reports: `docs/spikes/s2-simulator-frames.md`, `docs/spikes/s6-adb-transport.md`.
 
 ## Goals / Non-Goals
 
@@ -34,8 +34,39 @@ A daemon holds device connections, replicas and sessions; the CLI is a client ov
 ### D2. Android agent as a single-dex Kotlin program started with `app_process`
 The agent is compiled with `kotlinc` against the platform jar and dexed with `d8`, pushed to `/data/local/tmp`, and started through `adb shell` with `app_process` as the shell user, the way scrcpy's server starts. It obtains the UI automation connection through reflection on the hidden constructor and connects with the accessibility service client, then uses the tree, event listener, input injection and screenshot APIs. Alternatives: an instrumentation APK started with `am instrument` (rejected: install step, signing, test-only package handling on some OEMs, still one owner); an accessibility service app (rejected: user toggle, no screenshots without consent, real-time gesture playback); the existing UIAutomator2 server (rejected: HTTP and JSON per node, its own idle waits). Fallback to an instrumentation APK is deferred to a later change if an OEM build refuses the shell path. openatx's current client already runs a jar through `app_process` with the same reflective construction, so the novelty here is the resident binary protocol and the event mirror, not the launch path. Input acknowledgements use the hidden three-argument `injectInputEvent` overload (API 31+) or `InputManager.injectInputEvent` with `WAIT_FOR_RESULT`, whose return value is the accepted flag the spec asks for; the public synchronous overload waits for animations around touch-down and touch-up and would blow the 50 ms gate. Screenshots use only the public `UiAutomation.takeScreenshot()`, because the hidden screenshot plumbing changed in Android 16, 16 QPR2 and 17. The Kotlin standard library alone dexes to 2.28 MB, so the shipped agent is shrunk with R8 (task 4.10).
 
-### D3. ADB through the local server protocol, no `adb` binary in the hot path
-The driver speaks the ADB server protocol on port 5037 through a Rust client crate for shell, push and forward, and connects to the agent through a forwarded abstract socket. Alternatives: shelling out to `adb` (rejected: process spawn per operation); direct USB via the ADB device protocol (deferred: it conflicts with a running adb server over USB claims; keep as an option for hosts without an adb server). The agent listens on an abstract Unix socket and the handshake carries a per-launch token; it never opens a TCP port, unlike openatx's server on 0.0.0.0:9008. Whether adbd may connect to a shell-owned abstract socket through `adb forward` under Android 17's SELinux policy is unverified, so S1 and S6 test both `forward` and `reverse` (the agent connecting out to the host, as scrcpy does by default) and reverse stays as the fallback. Spike S6 measures shell round trip and push throughput for the adb-server client, direct USB and the `adb` binary before this decision is final; the numbers go here.
+### D3. ADB through the server protocol with an in-house client, agent reached over a service stream
+Replacement for D3 in design.md, recording the numbers. design.md itself is not edited here.
+
+> ### D3. ADB through the local server protocol, spoken by the driver's own client; no `adb` binary in the hot path
+> The driver speaks the adb server protocol on port 5037 with a small client in `crates/android`. It opens one server connection per request and uses:
+>
+> - `host:devices-l`, parsed so that every state is kept, including unauthorized, offline and `no permissions`;
+> - `shell,v2,raw:` for the exit status and separate stderr;
+> - sync `SEND` in 64 KiB chunks, each header written with its data;
+> - `host-serial:<serial>:forward` and `reverse:forward`, reading through the second status so device-side failures surface.
+>
+> The driver reaches the agent by opening `localabstract:<name>` as a device service after `host:transport:<serial>`. No forward rule or host port exists to leak or to reinstall after a transport reconnect, and a missing agent fails the open with `closed` instead of yielding an empty connection. Spike S6 (`docs/spikes/s6-adb-transport.md`) measured these p50 and p95 times on the API 36 emulator, own client against the `adb` binary:
+>
+> - device listing: 0.51 and 0.79 ms, against 16.73 and 18.68 ms;
+> - `echo ok` shell round trip: 5.71 and 9.16 ms, against 24.27 and 34.43 ms;
+> - push of the 663 KB agent jar: 9.88 and 12.66 ms, against 31.80 and 37.11 ms;
+> - 10 MiB push: 35.1 and 68.4 ms (285 MiB/s at p50), against 62.6 and 75.7 ms;
+> - service stream plus hello: 2.52 and 3.06 ms;
+> - forward setup plus first connect: 3.08 and 3.58 ms, against 22.30 and 24.88 ms;
+> - reverse setup, connect-out and first echo: 5.73 and 6.45 ms, against 23.85 and 26.52 ms.
+>
+> However the connection was made, an echo round trip took 1.5 to 1.7 ms at 64 B and 2.6 to 3.5 ms at 64 KiB at p50.
+>
+> Alternatives:
+>
+> - the `adb` binary (rejected: a process per operation, 16 to 22 ms more at p50 with maxima near 100 ms);
+> - the adb_client crate (rejected: its `ADBServer` runs `adb start-server` before every connection, its `reverse` reports success when adbd refuses, its `devices_long` fails the whole listing on one `no permissions` target, and it brings 84 crates, including rustls and RSA, for paths the driver does not use);
+> - the mozdevice crate (rejected: `Device::new` runs `setenforce permissive` on rooted and userdebug targets, `devices` drops every target not in the `device` state, the typed forward and reverse API is TCP-only, and shell v1 loses the exit status);
+> - direct USB via the ADB device protocol (not measured, since no device was attached; deferred because it conflicts with a running adb server over USB claims; kept as an option for hosts without an adb server).
+>
+> On API 36 with SELinux enforcing, adbd connects to an abstract socket owned by the shell-user agent, both through `adb forward` and as a service stream, and logs no denial. `adb reverse` with the agent dialing out also works and remains the fallback for a build that refuses the forward direction; Android 17 and OEM builds are unverified. The fallback is constrained. When a device-side connection arrives for a reverse destination the server has already dropped, the adb server aborts (`LOG(FATAL)` in `handle_packet`), which S6 triggered once by closing the agent's connection just before removing its rule, so that the agent's redial raced the removal. The agent therefore dials only when asked, and rules are removed only after its connections are closed. The agent listens on an abstract Unix socket named with a per-launch id and speaks first, and the handshake carries a per-launch token. It never opens a TCP port, unlike openatx's server on 0.0.0.0:9008.
+
+Spike report: `docs/spikes/s6-adb-transport.md`.
 
 ### D4. Wire format: CBOR is the candidate, the benchmark spike decides
 Frames are a 32-bit big-endian length followed by one CBOR map. Message kinds: request with id, method and params; response with id and either result or error; event with stream, sequence and payload. Rust uses a small no-std CBOR codec; the Kotlin agent hand-rolls an encoder and decoder for the fixed message set, a few hundred lines with no dependency. Alternatives: protobuf (rejected: runtime and code generation in the dex); JSON over HTTP (rejected: per-node cost and no event channel); a Rust-only serde format (rejected: the agent is not Rust). Version and capability negotiation are the first exchange on every connection. Spike S5 benchmarks CBOR against MessagePack, protobuf-lite, FlatBuffers and a JSON baseline on a 500-node tree and on 10,000 small events, encoded and decoded in both Rust and Kotlin, measuring bytes on the wire, encode and decode time, and dex size added to the agent. The format becomes final only when those numbers are recorded here. The pass criterion is at least three times smaller and faster than compact JSON on the same logical fields, with under 100 KB added to the shrunk dex. The protocol research note predicts that no format reaches 3x on the tree dataset; if S5 confirms that, D4 records the measured ratios and decides on time, dex delta, schema evolution and debuggability rather than weakening the baseline. On the Kotlin side only hand-rolled codecs and platform JSON are measured, because the library codecs would need Maven downloads that Socket Firewall cannot wrap; the report lists them as not measured for that reason.
