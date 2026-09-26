@@ -20,18 +20,18 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 2.5 Spike S2: a throwaway Rust program that boots a dedicated headless Simulator, launches the Expo fixture and captures display surface frames through the surface-changed callback with the surface cached, encoding JPEG with two candidate encoders; deliver `docs/spikes/s2-simulator-frames.md` with fps, CPU and encode time per frame and a go or no-go
 - [ ] 2.6 Spike S3: a throwaway Rust program that opens the dtuhidd XPC transport on the iOS 26.5 runtime under Xcode 27 (activation probe, queued input, one connection) and delivers taps and key events, measuring activation time and warm tap latency against the 20 ms gate; attempt the Indigo Mach transport only on a fresh boot with DeviceHub.app closed and record whether it works on this host at all; deliver `docs/spikes/s3-simulator-hid.md` with a go or no-go per transport
 - [ ] 2.7 Spike S4: build the in-guest accessibility reader as a Rust binary for the `aarch64-apple-ios-sim` target spawned with `simctl spawn` (start from agent-device's Objective-C reader as the reference if the Rust port stalls) and the host-only translator path, reading the foreground tree of the Expo and SwiftUI fixtures, compared with an XCTest-based read; deliver `docs/spikes/s4-simulator-ax.md` with spawn-to-ready time, p50 and p95 per screen per path, and a go or no-go per path
-- [ ] 2.8 Spike S5: benchmark CBOR, MessagePack, protobuf-lite, FlatBuffers and JSON on the 500-node tree and 10,000 small events in Rust and Kotlin, measuring bytes, encode and decode time and dex size delta; deliver `docs/spikes/s5-wire-format.md` and rewrite design.md D4 with the numbers and the chosen format
+- [x] 2.8 Spike S5: benchmark CBOR, MessagePack, protobuf-lite, FlatBuffers and JSON on the 500-node tree and 10,000 small events in Rust and Kotlin, measuring bytes, encode and decode time and dex size delta; deliver `docs/spikes/s5-wire-format.md` and rewrite design.md D4 with the numbers and the chosen format
 - [x] 2.9 Spike S6: benchmark shell round trip, push throughput, forward and reverse setup and the connect-through round trip for the adb-server client crates, the `adb` binary and, when a device is attached, direct USB; deliver `docs/spikes/s6-adb-transport.md` and rewrite design.md D3 with the numbers
 - [ ] 2.10 Spike S7: verify the emulator control endpoint with token discovery, measure `StreamScreenshot` fps and `SendTouch` latency; deliver `docs/spikes/s7-emulator-grpc.md` with a go or no-go
 - [ ] 2.11 Spike review: consolidate verdicts, update design.md decisions D3, D4, D6 and D7 with measurements, adjust groups 3 to 9 for any no-go; verify `openspec validate` passes and every measured decision cites its spike
 
 ## 3. Protocol crate and agent message set
 
-- [ ] 3.1 Add failing tests that round-trip every message kind (request, response, event, error with retryable flag, capability set, version list) in the format chosen by S5, then implement the schema in `crates/protocol`; verify red-then-green
+- [ ] 3.1 Add failing tests that round-trip every message kind (request, response, event, error with retryable flag, capability set, version list) in CBOR as decided by S5 (integer-keyed maps, positional event arrays, per-snapshot string table), then implement the schema in `crates/protocol` with minicbor, preallocating arrays from their length; verify red-then-green
 - [ ] 3.2 Add failing tests for the length-prefixed framing codec, including an oversized frame producing an explicit error and partial frames being buffered, then implement it; verify red-then-green
 - [ ] 3.3 Add failing tests for the handshake and capability negotiation covering common version, no common version and refusal of an unadvertised capability, then implement the state machine; verify red-then-green
 - [ ] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
-- [ ] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`; verify Kotlin output also decodes in Rust and both directions are red-then-green
+- [ ] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
 
 ## 4. Android agent (Kotlin, `agent-android`)
 
@@ -44,7 +44,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [ ] 4.7 Add failing tests for direct text setting on the React Native input fixture and for the key-event fallback with method reporting, then implement both; verify red-then-green
 - [ ] 4.8 Add a failing landscape screenshot test, then implement screenshot capture with orientation; verify red-then-green
 - [ ] 4.9 Add failing tests that no agent process remains after daemon shutdown and that snapshots work after the app is force-stopped and relaunched, then implement stop, clean exit and survival; verify red-then-green
-- [ ] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points; verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
+- [ ] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points (R8 needs the Kotlin distribution's `lib/annotations-13.0.jar` on its classpath; S5's R8 build of a codec plus platform JSON was 42,640 bytes); verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
 
 ## 5. Android host driver (`crates/android`)
 
