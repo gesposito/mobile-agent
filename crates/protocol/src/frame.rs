@@ -8,7 +8,10 @@
 
 use core::fmt;
 
-use crate::message::Message;
+use minicbor::Decoder;
+use minicbor::data::Type;
+
+use crate::message::{Message, kind};
 
 /// Bytes in a frame header.
 pub const HEADER_LEN: usize = 4;
@@ -21,10 +24,27 @@ pub const DEFAULT_MAX_FRAME: u32 = 16 * 1024 * 1024;
 /// hellos, errors and pings always fit.
 pub const MIN_MAX_FRAME: u32 = 4 * 1024;
 
+/// How many payload bytes of an oversized frame are read to find its kind
+/// and request id before the rest is discarded.
+const PEEK_LEN: usize = 32;
+
 /// Appends `msg` to `out` as one frame. Refuses a payload larger than `limit`,
 /// leaving `out` as it was.
-pub fn write_frame(_msg: &Message, _limit: u32, _out: &mut Vec<u8>) -> Result<(), FrameTooLarge> {
-    todo!("write_frame")
+pub fn write_frame(msg: &Message, limit: u32, out: &mut Vec<u8>) -> Result<(), FrameTooLarge> {
+    let start = out.len();
+    out.extend_from_slice(&[0; HEADER_LEN]);
+    msg.encode(out);
+    let size = out.len() - start - HEADER_LEN;
+    match u32::try_from(size) {
+        Ok(len) if len <= limit => {
+            out[start..start + HEADER_LEN].copy_from_slice(&len.to_be_bytes());
+            Ok(())
+        }
+        _ => {
+            out.truncate(start);
+            Err(FrameTooLarge { size, limit })
+        }
+    }
 }
 
 /// A message whose payload is larger than the frame limit, refused by the sender.
@@ -62,8 +82,18 @@ pub struct Oversized {
 }
 
 impl fmt::Display for Oversized {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!("Oversized display")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "a frame of {} bytes", self.size)?;
+        match (self.kind, self.id) {
+            (Some(k), Some(id)) => write!(f, " ({} for request {id})", kind::name(k))?,
+            (Some(k), None) => write!(f, " ({})", kind::name(k))?,
+            (None, _) => {}
+        }
+        write!(
+            f,
+            " exceeds the maximum frame size of {} bytes; its payload was discarded",
+            self.limit
+        )
     }
 }
 
@@ -73,11 +103,21 @@ impl std::error::Error for Oversized {}
 #[derive(Debug)]
 pub struct FrameDecoder {
     limit: u32,
+    buf: Vec<u8>,
+    /// Where the unconsumed bytes of `buf` start.
+    start: usize,
+    /// Bytes of an oversized frame still to drop as they arrive.
+    discard: u64,
 }
 
 impl FrameDecoder {
     pub fn new(limit: u32) -> FrameDecoder {
-        FrameDecoder { limit }
+        FrameDecoder {
+            limit,
+            buf: Vec::new(),
+            start: 0,
+            discard: 0,
+        }
     }
 
     pub fn limit(&self) -> u32 {
@@ -90,23 +130,101 @@ impl FrameDecoder {
     }
 
     /// Adds bytes read from the stream.
-    pub fn push(&mut self, _bytes: &[u8]) {
-        todo!("push")
+    pub fn push(&mut self, bytes: &[u8]) {
+        let mut bytes = bytes;
+        if self.discard > 0 {
+            let n = usize::try_from(self.discard).map_or(bytes.len(), |d| d.min(bytes.len()));
+            self.discard -= n as u64;
+            bytes = &bytes[n..];
+        }
+        if bytes.is_empty() {
+            return;
+        }
+        if self.start > 0 {
+            self.buf.drain(..self.start);
+            self.start = 0;
+        }
+        self.buf.extend_from_slice(bytes);
     }
 
     /// The next complete payload, an oversized frame's report, or `None` until
     /// more bytes arrive.
     pub fn next_frame(&mut self) -> Option<Result<&[u8], Oversized>> {
-        todo!("next_frame")
+        if self.discard > 0 || self.buf.len() - self.start < HEADER_LEN {
+            return None;
+        }
+        let body = self.start + HEADER_LEN;
+        let header: [u8; HEADER_LEN] = self.buf[self.start..body]
+            .try_into()
+            .expect("the header is HEADER_LEN bytes");
+        let declared = u32::from_be_bytes(header);
+        let len = declared as usize;
+        let have = self.buf.len() - body;
+        if declared > self.limit {
+            let wanted = len.min(PEEK_LEN);
+            if have < wanted {
+                return None;
+            }
+            let (kind, id) = peek(&self.buf[body..body + wanted]);
+            let taken = have.min(len);
+            self.start = body + taken;
+            self.discard = u64::from(declared) - taken as u64;
+            return Some(Err(Oversized {
+                size: declared,
+                limit: self.limit,
+                kind,
+                id,
+            }));
+        }
+        if have < len {
+            self.buf.reserve(len - have);
+            return None;
+        }
+        self.start = body + len;
+        Some(Ok(&self.buf[body..body + len]))
     }
 
     /// Whether the decoder is dropping the rest of an oversized frame.
     pub fn is_discarding(&self) -> bool {
-        todo!("is_discarding")
+        self.discard > 0
     }
 
     /// Bytes held for frames not yet complete.
     pub fn buffered(&self) -> usize {
-        todo!("buffered")
+        self.buf.len() - self.start
+    }
+}
+
+/// The kind and, for a request or response, the id at the start of a payload:
+/// key 0 and key 1 of a map, which the encoders write first, or element 0 of
+/// an array. Whatever cannot be read is `None`.
+fn peek(prefix: &[u8]) -> (Option<u8>, Option<u32>) {
+    let mut d = Decoder::new(prefix);
+    match d.datatype() {
+        Ok(Type::Map | Type::MapIndef) => {
+            let Ok(len) = d.map() else {
+                return (None, None);
+            };
+            let mut found_kind = None;
+            let mut id = None;
+            for _ in 0..len.unwrap_or(u64::MAX).min(4) {
+                let Ok(key) = d.i64() else { break };
+                let read = match key {
+                    0 => d.u8().map(|k| found_kind = Some(k)),
+                    1 => d.u32().map(|v| id = Some(v)),
+                    _ => d.skip(),
+                };
+                if read.is_err() || (found_kind.is_some() && id.is_some()) {
+                    break;
+                }
+            }
+            let id = id.filter(|_| matches!(found_kind, Some(kind::REQUEST | kind::RESPONSE)));
+            (found_kind, id)
+        }
+        Ok(Type::Array | Type::ArrayIndef) => match d.array() {
+            Ok(_) => (d.u8().ok(), None),
+            Err(_) => (None, None),
+        },
+        _ => (None, None),
     }
 }

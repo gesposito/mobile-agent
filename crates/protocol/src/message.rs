@@ -27,6 +27,20 @@ pub mod kind {
     pub const EVENT: u8 = 4;
     pub const PING: u8 = 5;
     pub const PONG: u8 = 6;
+
+    /// The name of a kind, for messages about frames.
+    pub fn name(kind: u8) -> &'static str {
+        match kind {
+            HELLO => "hello",
+            WELCOME => "welcome",
+            REQUEST => "request",
+            RESPONSE => "response",
+            EVENT => "event",
+            PING => "ping",
+            PONG => "pong",
+            _ => "unknown kind",
+        }
+    }
 }
 
 /// One message, the payload of one frame.
