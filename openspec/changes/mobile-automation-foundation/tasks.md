@@ -4,7 +4,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 1. Process and workspace
 
-- [ ] 1.1 Install Socket Firewall with `npm i -g sfw` and verify `sfw --version` runs and `sfw cargo fetch` completes in an empty crate
+- [x] 1.1 Install Socket Firewall with `npm i -g sfw` and verify `sfw --version` runs and `sfw cargo fetch` completes in an empty crate
 - [ ] 1.2 Create the Cargo workspace with empty crates protocol, mirror, android, simulator, daemon, cli and bench, plus `spikes/` and `docs/research/` and `docs/spikes/` directories; verify `cargo build --workspace` and `cargo clippy --workspace -- -D warnings` pass
 - [ ] 1.3 Add a task runner file with build, test, agent-build, fixtures-build, bench and validate recipes, where validate runs the full validation-and-fix checklist; verify every recipe runs locally and `just validate` exits zero on the empty workspace
 - [ ] 1.4 Add a CI workflow matrix (macOS per installed Xcode, Linux for Android) that runs the validate recipe; verify the workflow file passes `actionlint`
