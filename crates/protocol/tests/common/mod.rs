@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod samples;
+
 use std::time::{Duration, Instant};
 
 use protocol::Capabilities;
