@@ -17,6 +17,17 @@ For each attached target the mirror SHALL maintain the current set of windows, t
 - **WHEN** a target is attached and no replica exists yet
 - **THEN** the mirror performs a full acquisition, then serves the snapshot and begins applying events
 
+### Requirement: Windows without change events
+For a window whose toolkit sends no change events to the driver, the mirror SHALL re-read that window in full after every action it injected and on a periodic poll, SHALL derive the window's deltas by diffing consecutive reads, and SHALL report the read's cost and age in the snapshot's metadata so consumers can tell a fresh tree from a polled one.
+
+#### Scenario: Action on an event-less window
+- **WHEN** a client taps a control in a window that emits no change events and then requests a snapshot
+- **THEN** the snapshot reflects the tap's effect, its metadata names a full re-read as the source, and the elapsed read time is included
+
+#### Scenario: Idle event-less window
+- **WHEN** no action has been injected and the poll interval elapses
+- **THEN** the window is re-read once, and an unchanged tree produces no delta events
+
 ### Requirement: Snapshot content
 A snapshot SHALL list elements with role, accessible name, test identifier when present, value, bounds, enabled, focused and selected state, and a ref. An interactive snapshot SHALL include only actionable elements and SHALL summarize actionable content that is scrolled out of view.
 
