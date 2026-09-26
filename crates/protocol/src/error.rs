@@ -125,7 +125,7 @@ impl Error {
         Error::new(
             code::CAPABILITY_MISSING,
             format!(
-                "the agent did not advertise {} ({missing}), which {method} needs; the request was not sent",
+                "the agent did not advertise {} ({missing}), which {method} needs",
                 missing.label()
             ),
         )

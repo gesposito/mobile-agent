@@ -138,6 +138,16 @@ fn no_common_version_closes_the_connection_listing_both_sets() {
     assert_eq!(refusal.code, code::VERSION_MISMATCH);
     assert!(!refusal.retryable);
     assert!(link.agent.is_closed());
+    assert!(matches!(
+        link.agent.close_reason(),
+        Some(DisconnectReason::Handshake(HandshakeError::Refused(_)))
+    ));
+    assert!(matches!(
+        link.host.close_reason(),
+        Some(DisconnectReason::Handshake(
+            HandshakeError::NoCommonVersion { .. }
+        ))
+    ));
     let err = link
         .host
         .send_request(Call::Shutdown, None, link.t0)

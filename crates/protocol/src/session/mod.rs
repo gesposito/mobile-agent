@@ -38,8 +38,15 @@ pub const DEADLINE_GRACE: Duration = Duration::from_millis(500);
 
 /// The highest version in both lists, whatever their order.
 pub fn select_version(ours: &[u16], theirs: &[u16]) -> Option<u16> {
-    let _ = (ours, theirs);
-    todo!("select_version")
+    ours.iter().filter(|v| theirs.contains(v)).max().copied()
+}
+
+/// Where a session is, without the data each state holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Phase {
+    Handshake,
+    Ready,
+    Closed,
 }
 
 /// What the handshake settled.

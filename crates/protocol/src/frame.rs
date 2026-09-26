@@ -11,7 +11,7 @@ use core::fmt;
 use minicbor::Decoder;
 use minicbor::data::Type;
 
-use crate::message::{Message, kind};
+use crate::message::{Message, Method, kind};
 
 /// Bytes in a frame header.
 pub const HEADER_LEN: usize = 4;
@@ -79,15 +79,20 @@ pub struct Oversized {
     pub kind: Option<u8>,
     /// The request id of a request or response.
     pub id: Option<u32>,
+    /// The method of a request or response.
+    pub method: Option<Method>,
 }
 
 impl fmt::Display for Oversized {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "a frame of {} bytes", self.size)?;
-        match (self.kind, self.id) {
-            (Some(k), Some(id)) => write!(f, " ({} for request {id})", kind::name(k))?,
-            (Some(k), None) => write!(f, " ({})", kind::name(k))?,
-            (None, _) => {}
+        match (self.kind, self.method, self.id) {
+            (Some(k), Some(method), Some(id)) => {
+                write!(f, " ({method} {} for request {id})", kind::name(k))?;
+            }
+            (Some(k), None, Some(id)) => write!(f, " ({} for request {id})", kind::name(k))?,
+            (Some(k), _, None) => write!(f, " ({})", kind::name(k))?,
+            (None, ..) => {}
         }
         write!(
             f,
@@ -165,7 +170,7 @@ impl FrameDecoder {
             if have < wanted {
                 return None;
             }
-            let (kind, id) = peek(&self.buf[body..body + wanted]);
+            let (kind, id, method) = peek(&self.buf[body..body + wanted]);
             let taken = have.min(len);
             self.start = body + taken;
             self.discard = u64::from(declared) - taken as u64;
@@ -174,6 +179,7 @@ impl FrameDecoder {
                 limit: self.limit,
                 kind,
                 id,
+                method,
             }));
         }
         if have < len {
@@ -195,36 +201,41 @@ impl FrameDecoder {
     }
 }
 
-/// The kind and, for a request or response, the id at the start of a payload:
-/// key 0 and key 1 of a map, which the encoders write first, or element 0 of
-/// an array. Whatever cannot be read is `None`.
-fn peek(prefix: &[u8]) -> (Option<u8>, Option<u32>) {
+/// The kind and, for a request or response, the id and method at the start of
+/// a payload: keys 0, 1 and 2 of a map, which the encoders write first, or
+/// element 0 of an array. Whatever cannot be read is `None`.
+fn peek(prefix: &[u8]) -> (Option<u8>, Option<u32>, Option<Method>) {
     let mut d = Decoder::new(prefix);
     match d.datatype() {
         Ok(Type::Map | Type::MapIndef) => {
             let Ok(len) = d.map() else {
-                return (None, None);
+                return (None, None, None);
             };
             let mut found_kind = None;
             let mut id = None;
-            for _ in 0..len.unwrap_or(u64::MAX).min(4) {
+            let mut method = None;
+            for _ in 0..len.unwrap_or(u64::MAX).min(3) {
                 let Ok(key) = d.i64() else { break };
                 let read = match key {
                     0 => d.u8().map(|k| found_kind = Some(k)),
                     1 => d.u32().map(|v| id = Some(v)),
+                    2 => d.u16().map(|m| method = Some(Method(m))),
                     _ => d.skip(),
                 };
-                if read.is_err() || (found_kind.is_some() && id.is_some()) {
+                if read.is_err() {
                     break;
                 }
             }
-            let id = id.filter(|_| matches!(found_kind, Some(kind::REQUEST | kind::RESPONSE)));
-            (found_kind, id)
+            if matches!(found_kind, Some(kind::REQUEST | kind::RESPONSE)) {
+                (found_kind, id, method)
+            } else {
+                (found_kind, None, None)
+            }
         }
         Ok(Type::Array | Type::ArrayIndef) => match d.array() {
-            Ok(_) => (d.u8().ok(), None),
-            Err(_) => (None, None),
+            Ok(_) => (d.u8().ok(), None, None),
+            Err(_) => (None, None, None),
         },
-        _ => (None, None),
+        _ => (None, None, None),
     }
 }

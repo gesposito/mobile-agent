@@ -206,13 +206,17 @@ fn an_oversized_frame_is_refused_naming_the_limit_and_the_request() {
                 limit: 4096,
                 kind: Some(kind::RESPONSE),
                 id: Some(42),
+                method: Some(Method::SCREENSHOT),
             }),
             Ok(Message::Ping(Ping { nonce: 9 })),
         ]
     );
     let text = got[0].as_ref().unwrap_err().to_string();
     assert!(text.contains("4096"), "{text}");
-    assert!(text.contains("request 42"), "{text}");
+    assert!(
+        text.contains("screenshot response for request 42"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -277,6 +281,7 @@ fn an_oversized_frame_whose_header_cannot_be_read_still_names_the_limit() {
             limit: 4096,
             kind: None,
             id: None,
+            method: None,
         })]
     );
     assert!(got[0].as_ref().unwrap_err().to_string().contains("4096"));
