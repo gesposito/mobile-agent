@@ -36,3 +36,6 @@ Every reference fixture (SwiftUI, Expo, Compose) implements exactly this, so the
 - only the selected tab's screen is present in the accessibility tree; the other tabs' content is not exposed
 - screen state persists across tab switches: typed text, `login-status`, the list's scroll position and any open detail, the animation toggle and `system-permission-status` are unchanged when the user leaves a tab and returns
 - implementations may keep screens mounted but hidden from accessibility, or lift state to the root and mount only the selected screen; both satisfy the two rules above
+
+## Launch options
+- the launch environment variable `FIXTURE_INITIAL_TAB` with one of `login`, `list`, `big`, `anim`, `system` selects the tab shown at launch; default `login`; on iOS it is passed through `xcrun simctl launch` as `SIMCTL_CHILD_FIXTURE_INITIAL_TAB`; on Android it is the string intent extra `initial_tab` on the launch intent; unknown values fall back to `login`
