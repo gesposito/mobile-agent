@@ -14,6 +14,7 @@ pub mod error;
 pub mod event;
 pub mod frame;
 pub mod message;
+pub mod session;
 pub mod snapshot;
 
 pub use capability::Capabilities;
