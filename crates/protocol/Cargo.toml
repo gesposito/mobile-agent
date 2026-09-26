@@ -7,3 +7,6 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+minicbor = { version = "2.3.0", features = ["std", "derive"] }
