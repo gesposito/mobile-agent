@@ -31,9 +31,14 @@ if [ ! -d node_modules ]; then
   sfw bun install --frozen-lockfile >&2
 fi
 
-if [ ! -d ios ]; then
+# The generated ios/ depends on app.json, the dependencies and the local config plugins. It is
+# regenerated whenever they change, because a stale ios/ would silently lack a plugin's edits.
+prebuild_inputs="$(cat app.json package.json bun.lock plugins/*.js | shasum -a 256 | cut -d ' ' -f 1)"
+if [ ! -d ios ] || [ "$(cat ios/.prebuild-inputs 2>/dev/null)" != "$prebuild_inputs" ]; then
   require_sfw
+  rm -rf ios
   sfw bunx expo prebuild --platform ios --no-install >&2
+  echo "$prebuild_inputs" > ios/.prebuild-inputs
 fi
 
 # pod install runs unwrapped: Socket Firewall cannot wrap CocoaPods (see README).

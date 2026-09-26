@@ -12,6 +12,11 @@ export const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'system', label: 'System' },
 ];
 
+// Maps the FIXTURE_INITIAL_TAB launch option to a tab; empty or unknown values select Login.
+export function tabFromLaunchOption(value: string | undefined): TabKey {
+  return TABS.find((tab) => tab.key === value)?.key ?? 'login';
+}
+
 type Props = {
   active: TabKey;
   onSelect: (key: TabKey) => void;

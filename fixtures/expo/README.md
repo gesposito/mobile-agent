@@ -16,7 +16,7 @@ React Native reference app for the benchmark harness and the spikes. It uses Exp
 `build.sh` takes each step only when its output is missing:
 
 1. `sfw bun install --frozen-lockfile` if `node_modules/` is missing.
-2. `sfw bunx expo prebuild --platform ios --no-install` if `ios/` is missing.
+2. `sfw bunx expo prebuild --platform ios --no-install` if `ios/` is missing, or if `app.json`, `package.json`, `bun.lock` or `plugins/` changed since `ios/` was generated. `ios/.prebuild-inputs` records their hash; a changed hash deletes `ios/` and prebuilds again.
 3. `pod install` in `ios/` if `ios/Pods/` is missing.
 4. `xcodebuild -workspace ios/FixtureExpo.xcworkspace -scheme FixtureExpo -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build`
 
@@ -24,7 +24,7 @@ All build output goes to stderr. stdout carries one line, the absolute path of t
 
 Release (the default) embeds the Hermes bytecode bundle, so the app launches without a Metro server. This is the build the harness uses. The app lands in `build/Build/Products/Release-iphonesimulator/FixtureExpo.app`.
 
-`ios/`, `android/`, `build/` and `node_modules/` are generated and git-ignored. After changing `app.json` or a native dependency, regenerate the native project with `rm -rf ios build && ./build.sh`. The manual equivalent is `sfw bunx expo prebuild --platform ios --clean --no-install` followed by `pod install` in `ios/`.
+`ios/`, `android/`, `build/` and `node_modules/` are generated and git-ignored. To force a clean native build, run `rm -rf ios build && ./build.sh`. The manual equivalent is `sfw bunx expo prebuild --platform ios --clean --no-install` followed by `pod install` in `ios/`.
 
 Type-check the sources with `bun run typecheck`. Metro strips types without checking them, so a type error does not fail `build.sh`.
 
@@ -79,6 +79,21 @@ The contract gives the alert's OK button the identifier `inapp-alert-ok` where t
 The List tab's FlatList is virtualized, with `initialNumToRender={20}`, `windowSize={5}` and a fixed row height of 48 pt. Rows far off screen are not mounted, so they are not in the accessibility tree until they are scrolled near.
 
 The permission prompt text comes from `NSLocationWhenInUseUsageDescription`, which the `expo-location` plugin in `app.json` writes: "FixtureExpo requests location to exercise the system permission prompt." The plugin is configured to leave out the Always and motion usage keys.
+
+## Launch options
+
+`FIXTURE_INITIAL_TAB` selects the tab shown at launch: `login`, `list`, `big`, `anim` or `system`. It defaults to `login`, and an unknown value also selects `login`.
+
+- **iOS Simulator:** prefix the variable with `SIMCTL_CHILD_` in the environment of `xcrun simctl launch`, which passes it to the app as `FIXTURE_INITIAL_TAB`:
+
+  ```sh
+  SIMCTL_CHILD_FIXTURE_INITIAL_TAB=anim xcrun simctl launch booted dev.mobileagent.fixture.expo
+  ```
+
+  The app reads the variable when its process starts, so pass `--terminate-running-process` if a copy may already be running.
+- **Android:** the string extra `initial_tab` on the launch intent, for example `adb shell am start -n dev.mobileagent.fixture.expo/.MainActivity --es initial_tab anim`. This path has not been exercised yet; see Android below.
+
+The native entry points pass the value to JavaScript as the root component's `initialTab` prop. The local config plugin `plugins/withInitialTab.js` writes that code into the generated `AppDelegate.swift` and `MainActivity.kt`, so it survives `expo prebuild --clean`. If the Expo template no longer contains the code the plugin edits, prebuild fails instead of dropping the option.
 
 ## Navigation and state
 

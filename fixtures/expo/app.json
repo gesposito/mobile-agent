@@ -33,7 +33,8 @@
           "locationAlwaysPermission": false,
           "motionUsagePermission": false
         }
-      ]
+      ],
+      "./plugins/withInitialTab"
     ]
   }
 }

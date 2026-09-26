@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { LogBox, SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
 
-import { TabBar, type TabKey } from './src/TabBar';
+import { TabBar, type TabKey, tabFromLaunchOption } from './src/TabBar';
 import { AnimScreen } from './src/screens/AnimScreen';
 import { BigScreen } from './src/screens/BigScreen';
 import { ListScreen } from './src/screens/ListScreen';
@@ -14,11 +14,17 @@ import { colors } from './src/theme';
 // notice keeps Debug screenshots identical to Release ones.
 LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
+type Props = {
+  // The FIXTURE_INITIAL_TAB launch option, passed by the native entry points that
+  // plugins/withInitialTab.js generates.
+  initialTab?: string;
+};
+
 // Only the selected screen is mounted, so the other tabs are absent from the accessibility
 // tree. Screen state lives here, above that switch, so it survives tab switches. The list's
 // scroll offset is a ref: it changes on every scroll frame and is read only when the list mounts.
-export default function App() {
-  const [tab, setTab] = useState<TabKey>('login');
+export default function App({ initialTab }: Props) {
+  const [tab, setTab] = useState<TabKey>(() => tabFromLaunchOption(initialTab));
   const [login, setLogin] = useState<LoginState>(INITIAL_LOGIN_STATE);
   const [openRow, setOpenRow] = useState<number | null>(null);
   const listScrollOffset = useRef(0);
