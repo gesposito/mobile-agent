@@ -91,27 +91,36 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
         )
-        setContent { FixtureApp() }
+        val initialTab = FixtureTab.fromKey(intent.getStringExtra("initial_tab"))
+        setContent { FixtureApp(initialTab) }
     }
 }
 
-private enum class FixtureTab(val label: String, val tag: String) {
-    LOGIN("Login", "tab-login"),
-    LIST("List", "tab-list"),
-    BIG("Big", "tab-big"),
-    ANIM("Anim", "tab-anim"),
-    SYSTEM("System", "tab-system"),
+private enum class FixtureTab(val key: String, val label: String) {
+    LOGIN("login", "Login"),
+    LIST("list", "List"),
+    BIG("big", "Big"),
+    ANIM("anim", "Anim"),
+    SYSTEM("system", "System"),
+    ;
+
+    val tag: String get() = "tab-$key"
+
+    companion object {
+        /** The tab the launch intent's `initial_tab` extra names; Login when absent or unknown. */
+        fun fromKey(key: String?): FixtureTab = entries.firstOrNull { it.key == key } ?: LOGIN
+    }
 }
 
 /**
- * Bottom tab bar over one screen per tab, Login first. Only the selected screen is composed, so the
- * other tabs contribute nothing to the semantics tree. The saveable state holder keeps each
- * screen's saveable state (typed text, statuses, scroll position, open detail, toggle) while its
- * tab is not selected and restores it when the tab returns.
+ * Bottom tab bar over one screen per tab, starting on [initialTab]. Only the selected screen is
+ * composed, so the other tabs contribute nothing to the semantics tree. The saveable state holder
+ * keeps each screen's saveable state (typed text, statuses, scroll position, open detail, toggle)
+ * while its tab is not selected and restores it when the tab returns.
  */
 @Composable
-private fun FixtureApp() {
-    var tab by rememberSaveable { mutableStateOf(FixtureTab.LOGIN) }
+private fun FixtureApp(initialTab: FixtureTab) {
+    var tab by rememberSaveable { mutableStateOf(initialTab) }
     val screens = rememberSaveableStateHolder()
     val density = LocalDensity.current
     // Font scale is pinned so the device's font size setting cannot change the layout.
