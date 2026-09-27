@@ -144,6 +144,18 @@ enum Source<'a> {
     File(&'a Path, File),
 }
 
+/// How adbd connects a shell command's standard streams.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Stdio {
+    /// Pipes, which keep binary output intact and stderr separate. C programs
+    /// such as `getevent` then buffer their output in blocks.
+    #[default]
+    Raw,
+    /// A pseudo-terminal: programs flush every line, stderr is merged into
+    /// stdout and line ends arrive as `\r\n`.
+    Pty,
+}
+
 /// An adb server, reached over TCP on the loopback interface.
 #[derive(Debug, Clone)]
 pub struct AdbServer {
@@ -264,6 +276,13 @@ impl Device {
         let request = format!("shell,v2,raw:{command}");
         let stream = self.service(&request)?;
         Ok(ShellStream { stream, request })
+    }
+
+    /// [`Self::shell_stream`] with the command's streams connected as `stdio`
+    /// says.
+    pub fn shell_stream_with(&self, command: &str, stdio: Stdio) -> Result<ShellStream> {
+        let _ = (command, stdio);
+        todo!()
     }
 
     /// Copies the local file at `local` to `remote` with permission bits `mode`.
@@ -750,6 +769,23 @@ mod tests {
         fake.finish();
         assert_eq!(rest.stderr, b"late\n");
         assert_eq!(rest.exit, Some(0));
+    }
+
+    #[test]
+    fn a_pty_stream_asks_adbd_for_a_terminal() {
+        let fake = FakeServer::start(vec![Box::new(|s| {
+            switch_to(s, "emulator-5554");
+            expect_request(s, "shell,v2,pty:getevent -l");
+            reply(s, b"OKAY");
+            reply(s, &shell_packet(shell_id::EXIT, &[0]));
+        })]);
+        let stream = fake
+            .server()
+            .device("emulator-5554")
+            .shell_stream_with("getevent -l", Stdio::Pty)
+            .unwrap();
+        assert_eq!(stream.finish().unwrap().exit, Some(0));
+        fake.finish();
     }
 
     #[test]

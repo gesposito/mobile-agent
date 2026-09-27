@@ -16,7 +16,7 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use android::adb::{AdbServer, Device, Error, Rule, ShellPacket, State};
+use android::adb::{AdbServer, Device, Error, Rule, ShellPacket, State, Stdio};
 use common::{pattern, percentile, serial_or_skip, unique_name};
 
 const IO: Duration = Duration::from_secs(5);
@@ -249,6 +249,24 @@ fn closing_a_shell_stream_ends_the_command() {
         }
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn a_pty_stream_runs_the_command_on_a_terminal() {
+    let Some(serial) = serial_or_skip("a_pty_stream_runs_the_command_on_a_terminal") else {
+        return;
+    };
+    let device = device(&serial);
+    let piped = device.shell("tty").unwrap();
+    assert_eq!(piped.stdout_text().trim(), "not a tty");
+    let stream = device.shell_stream_with("tty", Stdio::Pty).unwrap();
+    let out = stream.finish().unwrap();
+    assert!(
+        out.stdout_text().starts_with("/dev/pts/"),
+        "{:?}",
+        out.stdout_text()
+    );
+    assert!(out.stdout.ends_with(b"\r\n"), "{:?}", out.stdout_text());
 }
 
 #[test]
