@@ -28,6 +28,14 @@ pub mod code {
     pub const TARGET_CLAIMED: &str = "target_claimed";
     /// The target has no such app installed.
     pub const APP_NOT_FOUND: &str = "app_not_found";
+    /// No element matched a selector within the command's timeout.
+    pub const ELEMENT_NOT_FOUND: &str = "element_not_found";
+    /// The target refused a tap, text, key or gesture.
+    pub const INPUT_REJECTED: &str = "input_rejected";
+    /// `press` got a key the target's platform has no code for.
+    pub const UNKNOWN_KEY: &str = "unknown_key";
+    /// Writing a file, such as a screenshot, failed.
+    pub const IO_ERROR: &str = "io_error";
     /// The daemon failed unexpectedly.
     pub const INTERNAL: &str = "internal";
 }

@@ -11,11 +11,9 @@ use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
 use super::{millis, origin, timeout, verdict_json, verdict_warning};
-use crate::wire::{Failure, Request, Success, code};
+use crate::wire::code::{self, IO_ERROR};
+use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
-
-/// Writing a file failed.
-pub(crate) const IO_ERROR: &str = "io_error";
 
 /// The snapshot options a request asks for.
 pub(super) fn snapshot_options(request: &Request) -> Result<SnapshotOptions, Failure> {

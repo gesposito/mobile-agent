@@ -9,9 +9,7 @@
 
 use crate::driver::Platform;
 use crate::wire::Failure;
-
-/// The code of keys the daemon cannot name.
-pub(crate) const UNKNOWN_KEY: &str = "unknown_key";
+use crate::wire::code::UNKNOWN_KEY;
 
 /// A key and its modifiers, in a platform's codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

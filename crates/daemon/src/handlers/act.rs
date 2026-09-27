@@ -10,11 +10,9 @@ use serde_json::{Value, json};
 use super::aim::{self, Aim};
 use super::{millis, timeout};
 use crate::keys;
-use crate::wire::{Failure, Request, Success, code};
+use crate::wire::code::{self, INPUT_REJECTED};
+use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
-
-/// The target refused the input.
-pub(crate) const INPUT_REJECTED: &str = "input_rejected";
 
 /// How long a swipe takes when the command names no duration.
 const SWIPE_DURATION: Duration = Duration::from_millis(300);

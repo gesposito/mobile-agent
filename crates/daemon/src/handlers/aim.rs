@@ -11,11 +11,9 @@ use std::time::Duration;
 
 use mirror::{Condition, Element, MirrorError, Ref, Role, Selector, SnapshotOptions, Target};
 
-use crate::wire::{Failure, code};
+use crate::wire::Failure;
+use crate::wire::code::{self, ELEMENT_NOT_FOUND};
 use crate::worker::Attached;
-
-/// No element matched a selector within the timeout.
-pub(crate) const ELEMENT_NOT_FOUND: &str = "element_not_found";
 
 /// An element argument.
 #[derive(Clone, Debug, PartialEq)]

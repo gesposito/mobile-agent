@@ -21,11 +21,23 @@ use clap::error::ErrorKind;
 use serde_json::Value;
 
 use crate::client::{Failure, Reply};
+use crate::code::{DOCTOR_FAILED, INVALID_CONFIG, UNKNOWN_COMMAND};
 
-/// A command the grammar does not know.
-pub const UNKNOWN_COMMAND: &str = "unknown_command";
-/// A settings file that cannot be read.
-pub const INVALID_CONFIG: &str = "invalid_config";
+/// The codes the CLI raises itself; the daemon's travel in its replies.
+pub mod code {
+    /// A usage error: a missing, extra or malformed argument.
+    pub const INVALID_ARGUMENT: &str = "invalid_argument";
+    /// A command the grammar does not know.
+    pub const UNKNOWN_COMMAND: &str = "unknown_command";
+    /// A settings file that cannot be read.
+    pub const INVALID_CONFIG: &str = "invalid_config";
+    /// The daemon could not be reached or started.
+    pub const DAEMON_UNAVAILABLE: &str = "daemon_unavailable";
+    /// The daemon did not answer in time.
+    pub const DAEMON_TIMEOUT: &str = "daemon_timeout";
+    /// A doctor check failed.
+    pub const DOCTOR_FAILED: &str = "doctor_failed";
+}
 
 /// The guide `help agent` prints: under 120 lines, for an agent's prompt.
 pub const AGENT_GUIDE: &str = include_str!("agent-guide.txt");
@@ -81,7 +93,7 @@ fn usage_error(error: &clap::Error, json: bool) -> i32 {
             let code = if kind == ErrorKind::InvalidSubcommand {
                 UNKNOWN_COMMAND
             } else {
-                request::INVALID_ARGUMENT
+                code::INVALID_ARGUMENT
             };
             let rendered = error.to_string();
             if json {
@@ -126,9 +138,6 @@ fn help_topic(topic: &[String], json: bool) -> i32 {
     write(&mut std::io::stdout().lock(), &text);
     0
 }
-
-/// A doctor check failed.
-pub const DOCTOR_FAILED: &str = "doctor_failed";
 
 /// Runs doctor's checks on this host and prints them.
 fn doctor_command(settings: &Settings) -> i32 {

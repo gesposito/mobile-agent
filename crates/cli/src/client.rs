@@ -21,6 +21,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
+use crate::code::{DAEMON_TIMEOUT, DAEMON_UNAVAILABLE};
+
 /// The socket's file name in the socket directory.
 pub const SOCKET_FILE: &str = "daemon.sock";
 /// The file where the daemon records its version.
@@ -42,11 +44,6 @@ const READ_MARGIN: Duration = Duration::from_secs(10);
 /// ends at its session's default, which the CLI cannot know, so the CLI
 /// waits this long for its reply.
 const MAX_TIMEOUT: Duration = Duration::from_secs(600);
-
-/// The daemon could not be reached or started.
-pub const DAEMON_UNAVAILABLE: &str = "daemon_unavailable";
-/// The daemon did not answer in time.
-pub const DAEMON_TIMEOUT: &str = "daemon_timeout";
 
 /// The socket directory: the flag or `MOBILE_AGENT_SOCKET_DIR`, else
 /// `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent`, else

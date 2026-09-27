@@ -8,9 +8,7 @@ use serde_json::{Map, Value, json};
 
 use crate::args::{Command, DiffWhat, GetWhat, SetWhat};
 use crate::client::Failure;
-
-/// A usage error the parser cannot catch.
-pub const INVALID_ARGUMENT: &str = "invalid_argument";
+use crate::code::INVALID_ARGUMENT;
 
 fn invalid(message: impl Into<String>) -> Failure {
     Failure::new(INVALID_ARGUMENT, message)

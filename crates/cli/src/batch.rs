@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 
 use crate::args::{BatchArgs, Cli, Command};
 use crate::client::{Failure, Reply};
-use crate::request::INVALID_ARGUMENT;
-use crate::{Settings, UNKNOWN_COMMAND, execute, output, write};
+use crate::code::{INVALID_ARGUMENT, UNKNOWN_COMMAND};
+use crate::{Settings, execute, output, write};
 
 /// Splits a command line into words as a POSIX shell does: whitespace
 /// separates words, single quotes keep everything up to the next single
