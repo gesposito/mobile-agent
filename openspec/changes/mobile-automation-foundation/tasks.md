@@ -33,7 +33,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 3.3 Add failing tests for the handshake and capability negotiation covering common version, no common version and refusal of an unadvertised capability, then implement the state machine; verify red-then-green
 - [x] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
 - [x] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
-- [ ] 3.6 Add failing round-trip and golden tests for per-window metadata (emits change events, owner, modal) and scroll semantics (range and position) in the protocol snapshot, then extend the Rust schema and the Kotlin codec, regenerate the goldens and have the mirror consume the new fields instead of its own side types; verify red-then-green on both sides and `codec-test.sh` green
+- [x] 3.6 Add failing round-trip and golden tests for per-window metadata (emits change events, owner, modal) and scroll semantics (range and position) in the protocol snapshot, then extend the Rust schema and the Kotlin codec, regenerate the goldens and have the mirror consume the new fields instead of its own side types; verify red-then-green on both sides and `codec-test.sh` green
 
 ## 4. Android agent (Kotlin, `agent-android`)
 
@@ -47,6 +47,8 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 4.8 Add a failing landscape screenshot test using the Compose fixture (the Expo fixture locks portrait until task 1.7 lands), then implement screenshot capture with orientation; verify red-then-green
 - [x] 4.9 Add failing tests that no agent process remains after daemon shutdown and that snapshots work after the app is force-stopped and relaunched, then implement stop, clean exit and survival; verify red-then-green
 - [x] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points (R8 needs the Kotlin distribution's `lib/annotations-13.0.jar` on its classpath; S5's R8 build of a codec plus platform JSON was 42,640 bytes); verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
+- [ ] 4.11 Add a failing test that a tree read survives the framework's integrity-check `NullPointerException` from `getChild` on debuggable builds (inject it through a test hook), then retry the child once and otherwise skip it with a truncation flag instead of failing the read; verify red-then-green
+- [ ] 4.12 Add a failing check that `test.sh` reads the agent version from `VERSION` and that the driver's reuse check treats an agent without snapshot metadata as incompatible, then bump `VERSION` to 0.2.0; verify red-then-green
 
 ## 5. Android host driver (`crates/android`)
 
