@@ -1,5 +1,14 @@
 # Workspace tasks. `just --list` describes each recipe; `just validate` runs the
 # checklist that must pass before the next task starts.
+#
+# On Linux, build, lint and test cover the Simulator driver only as a stub that
+# cannot open, without its reader or its integration tests (see
+# crates/simulator/README.md). agent-android's scripts and the Compose fixture
+# default ANDROID_HOME to $HOME/Library/Android/sdk, the macOS location, so set
+# it there. Only the Compose fixture builds on Linux: the SwiftUI fixture and
+# the Expo fixture's default iOS build need Xcode. CI's Linux job runs
+# `just validate` with FIXTURES=compose, and its macOS job with
+# FIXTURES=expo,swiftui and SKIP_AGENT_BUILD=1.
 
 [private]
 default:
@@ -33,7 +42,7 @@ agent-build:
 codec-test:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the codec cross-check"; elif ! command -v kotlinc >/dev/null 2>&1; then echo "kotlinc not present, skipping the codec cross-check"; elif [ -f agent-android/codec-test.sh ]; then agent-android/codec-test.sh --host-only; else echo "agent-android/codec-test.sh not present, skipping"; fi
 
-# Build the reference fixture apps, skipping when fixtures/build.sh is absent
+# Build the reference fixture apps, or those FIXTURES names, skipping when fixtures/build.sh is absent
 fixtures-build:
     if [ -f fixtures/build.sh ]; then fixtures/build.sh; else echo "fixtures/build.sh not present, skipping"; fi
 
@@ -46,5 +55,5 @@ bench *args:
 openspec-validate:
     openspec validate mobile-automation-foundation --strict
 
-# Run build, lint, fmt-check, test, agent-build, fixtures-build and openspec-validate, stopping at the first failure
+# Run build, lint, fmt-check, test, agent-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
 validate: build lint fmt-check test agent-build codec-test fixtures-build openspec-validate
