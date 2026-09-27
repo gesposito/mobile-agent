@@ -73,6 +73,17 @@ pub fn series(target: &Target, fixtures: &[Fixture]) -> Vec<Series> {
     planned
 }
 
+/// The targets `ids` names among `connected`, in the order named, each with
+/// the fixtures it runs.
+pub fn select(
+    connected: &[Target],
+    ids: &[String],
+    chosen: &[Fixture],
+) -> Result<Vec<(Target, Vec<Fixture>)>, String> {
+    let _ = (connected, ids, chosen);
+    Err("not written yet".to_owned())
+}
+
 /// The reference flows of `fixtures`, which the plan's flow series name.
 pub fn flows(fixtures: &[Fixture]) -> Vec<Flow> {
     fixtures.iter().copied().flat_map(flow::reference).collect()
@@ -85,6 +96,77 @@ mod tests {
     use crate::flow;
     use crate::harness::Subject;
     use crate::target::TargetClass;
+
+    fn connected() -> Vec<Target> {
+        vec![
+            Target::new("emulator-5554", TargetClass::AndroidEmulator),
+            Target::new("SIM-1", TargetClass::Simulator),
+            Target::new("R58M123", TargetClass::AndroidDevice),
+        ]
+    }
+
+    fn ids(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    #[test]
+    fn each_named_target_runs_its_platform_s_fixtures_by_default() {
+        let chosen = select(&connected(), &ids(&["SIM-1", "emulator-5554"]), &[]).unwrap();
+        let chosen: Vec<(&str, Vec<Fixture>)> = chosen
+            .iter()
+            .map(|(target, fixtures)| (target.id.as_str(), fixtures.clone()))
+            .collect();
+        assert_eq!(
+            chosen,
+            [
+                ("SIM-1", vec![Fixture::SwiftUi, Fixture::Expo]),
+                ("emulator-5554", vec![Fixture::Expo, Fixture::Compose]),
+            ]
+        );
+    }
+
+    #[test]
+    fn chosen_fixtures_run_on_every_named_target() {
+        let chosen = select(
+            &connected(),
+            &ids(&["emulator-5554", "R58M123"]),
+            &[Fixture::Compose],
+        )
+        .unwrap();
+        assert!(
+            chosen
+                .iter()
+                .all(|(_, fixtures)| *fixtures == [Fixture::Compose])
+        );
+        assert_eq!(chosen[1].0, connected()[2]);
+    }
+
+    #[test]
+    fn a_target_nobody_connected_is_refused_naming_the_connected_ones() {
+        let error = select(&connected(), &ids(&["emulator-5556"]), &[]).unwrap_err();
+        assert_eq!(
+            error,
+            "no connected target is emulator-5556; mobile-agent devices lists emulator-5554 \
+             (android-emulator), SIM-1 (simulator) and R58M123 (android-device)"
+        );
+        let error = select(&[], &ids(&["SIM-1"]), &[]).unwrap_err();
+        assert_eq!(
+            error,
+            "no connected target is SIM-1; mobile-agent devices lists none"
+        );
+        assert!(select(&connected(), &[], &[]).is_err());
+    }
+
+    #[test]
+    fn a_fixture_a_target_s_platform_lacks_is_refused() {
+        let error =
+            select(&connected(), &ids(&["emulator-5554"]), &[Fixture::SwiftUi]).unwrap_err();
+        assert_eq!(
+            error,
+            "the swiftui fixture does not run on emulator-5554, an android-emulator; its \
+             fixtures are expo and compose"
+        );
+    }
 
     #[test]
     fn each_platform_has_its_fixtures_in_report_order() {

@@ -107,6 +107,11 @@ impl CliConfig {
     }
 }
 
+/// The `mobile-agent` to drive when none is named.
+pub fn default_program() -> PathBuf {
+    PathBuf::from(TOOL)
+}
+
 /// `mobile-agent` driven through its CLI.
 #[derive(Clone, Debug)]
 pub struct CliAdapter {
@@ -147,6 +152,11 @@ struct Envelope {
 impl CliAdapter {
     pub fn new(config: CliConfig) -> Self {
         CliAdapter { config, path: None }
+    }
+
+    /// The targets `mobile-agent devices` lists.
+    pub fn devices(&self) -> Result<Vec<Target>, AdapterError> {
+        read_devices(&Value::Null).map_err(AdapterError::new)
     }
 
     fn executable(&self) -> Result<&Path, AdapterError> {
@@ -675,6 +685,12 @@ fn command_line<'a>(target: Option<&'a Target>, command: &[&'a str]) -> Vec<&'a 
     args
 }
 
+/// The targets in the data of a `devices` reply.
+fn read_devices(data: &Value) -> Result<Vec<Target>, String> {
+    let _ = data;
+    Err("not written yet".to_owned())
+}
+
 /// The envelope `--json` printed, or `None` when stdout holds none.
 fn envelope(stdout: &str) -> Option<Envelope> {
     serde_json::from_str(stdout.trim()).ok()
@@ -831,6 +847,28 @@ mod tests {
         );
         assert_eq!(command_line(None, &["shutdown"]), ["--json", "shutdown"]);
         assert_eq!(WAIT, WAIT_MS.to_string());
+    }
+
+    #[test]
+    fn devices_give_each_target_s_id_class_model_and_os() {
+        let data = json!({"devices": [
+            {"claimedBy": null, "class": "android-emulator", "id": "emulator-5554", "model": "sdk_gphone64_arm64",
+             "name": "Pixel 9", "os": "Android 16", "platform": "android"},
+            {"claimedBy": "default", "class": "simulator", "id": "B0647CDD-575F-45E9-9398-F6F5AFF23C1F",
+             "model": null, "name": "iPhone 17", "os": "iOS 26.5", "platform": "ios"}
+        ]});
+        let mut emulator = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        emulator.model = Some("sdk_gphone64_arm64".into());
+        emulator.os = Some("Android 16".into());
+        let mut simulator = Target::new(
+            "B0647CDD-575F-45E9-9398-F6F5AFF23C1F",
+            TargetClass::Simulator,
+        );
+        simulator.os = Some("iOS 26.5".into());
+        assert_eq!(read_devices(&data), Ok(vec![emulator, simulator]));
+        assert_eq!(read_devices(&json!({"devices": []})), Ok(Vec::new()));
+        let error = read_devices(&json!({"targets": []})).unwrap_err();
+        assert!(error.contains("devices"), "{error}");
     }
 
     #[test]

@@ -42,10 +42,33 @@ enum Command {
 
 #[derive(Args)]
 struct RunArgs {
+    /// A target to measure mobile-agent on, as `mobile-agent devices` lists it:
+    /// a Simulator's UDID or an adb serial; repeatable
+    #[arg(
+        long = "target",
+        value_name = "ID",
+        required_unless_present = "fake",
+        conflicts_with = "fake"
+    )]
+    targets: Vec<String>,
+
+    /// A fixture app to run on every target: swiftui, expo or compose; repeatable [default: each target's platform's, swiftui and expo on a Simulator, expo and compose on Android]
+    #[arg(long = "fixture", value_name = "FIXTURE", value_parser = ["swiftui", "expo", "compose"], conflicts_with = "fake")]
+    fixtures: Vec<String>,
+
+    /// The tool under test
+    #[arg(long, value_name = "TOOL", value_parser = ["mobile-agent"], default_value = "mobile-agent")]
+    tool: String,
+
+    /// The mobile-agent executable to drive [default: the mobile-agent beside mobile-agent-bench, else mobile-agent on PATH]
+    #[arg(long, value_name = "PATH", conflicts_with = "fake")]
+    cli: Option<PathBuf>,
+
     /// Drive the scripted fake adapter described by this JSON file as the tool
-    /// under test; its targets, series and flows make up the run
+    /// under test instead of mobile-agent; its targets, series and flows make
+    /// up the run
     #[arg(long, value_name = "SCRIPT")]
-    fake: PathBuf,
+    fake: Option<PathBuf>,
 
     /// Directory for report.json and report.md [default: target/bench/ and the UTC start time, such as target/bench/20260927T101500Z]
     #[arg(long, value_name = "DIR")]
@@ -115,7 +138,6 @@ fn load_gates(path: Option<&Path>) -> Result<GateSet, String> {
 
 fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let gates = load_gates(args.gates.as_deref())?;
-    let fake = FakeAdapter::from_json(&read(&args.fake)?)?;
     let config = RunConfig {
         iterations: args.iterations,
         warmup: args.warmup,
@@ -124,6 +146,10 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let dir = args.out.clone().unwrap_or_else(|| {
         PathBuf::from("target/bench").join(compact_timestamp(SystemTime::now()))
     });
+    let Some(script) = &args.fake else {
+        return Err("runs of mobile-agent are not written yet".to_owned());
+    };
+    let fake = FakeAdapter::from_json(&read(script)?)?;
     let mut harness = Harness::new(config, fake.targets(), fake.series()).flows(fake.flows());
     harness = harness.tool(Box::new(fake));
     if !args.no_baselines {

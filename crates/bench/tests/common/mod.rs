@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod tools;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
