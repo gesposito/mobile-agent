@@ -83,6 +83,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green
 - [x] 7.8 Add a failing scaled-frame test with age reporting, then implement frame access; verify red-then-green
 - [x] 7.9 Add a failing test that the mirror's event-less fallback recognises any `androidx.compose.` host class (the agent reports `androidx.compose.ui.platform.ComposeView` on API 36), then broaden the match; verify red-then-green
+- [ ] 7.10 Add failing tests that the mirror exposes the timestamps of the last frame and the last read per target, a call that drains pending events without triggering due reads, and settle observing app launches as window events, then implement them so the daemon can drop its own bookkeeping; verify red-then-green
 
 ## 8. Daemon and CLI (`crates/daemon`, `crates/cli`)
 
@@ -93,8 +94,9 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 8.5 Add a failing test with two fake targets expecting the ambiguity error listing both, then implement target selection flags; verify red-then-green
 - [x] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
 - [x] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
-- [ ] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
+- [x] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
 - [ ] 8.10 Add failing tests for an exact-text selector (`text==`), a `scroll --until <selector>` that scrolls until the element is visible, `open --relaunch` reporting settled only after the relaunched app's first tree, snapshot replies carrying daemon-side `readMs` and `servedFromReplica`, and `status` naming whether a target has a frame source; then implement them in the daemon and CLI; verify red-then-green
+- [ ] 8.11 Add failing tests that the daemon embeds the Android agent jar (built by `agent-android/build.sh` and included at compile time with its digest) so an installed daemon needs no source tree or `MOBILE_AGENT_JAR`, that the CLI's `--force` reaches the deploy conflict, that an agent whose session fails to start is stopped, that Android display size follows the current rotation, and that a Simulator click's watch is extended after a fresh input-transport activation; then implement them; verify red-then-green
 - [x] 8.9 Add failing tests that `click` and `tap` results carry the tap-to-first-frame-change and tap-to-first-tree-delta spans when the target has frames and events, and that `wait --settle` reports which signal ended the wait, then implement them in the daemon and CLI so the harness can measure those primitives; verify red-then-green
 
 ## 9. Benchmark harness (`crates/bench`)
