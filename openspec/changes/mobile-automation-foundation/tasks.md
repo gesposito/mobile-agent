@@ -83,14 +83,15 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 8. Daemon and CLI (`crates/daemon`, `crates/cli`)
 
-- [ ] 8.1 Add failing integration tests for a claimed target refusing another session and for idle exit, then implement the daemon with Unix socket API, target registry and session claims with force; verify red-then-green
-- [ ] 8.2 Add failing tests for interactive snapshot output and for a JSON error with code, then implement the CLI commands from the agent-cli spec; verify red-then-green
-- [ ] 8.3 Add a failing `hyperfine` gate that `status` overhead against a running daemon is under 20 ms, then implement daemon auto-start and trim CLI startup; verify red-then-green
-- [ ] 8.4 Add a failing test where the second of three batch commands fails and the third does not run, then implement batch execution with stop-on-error and aggregate JSON; verify red-then-green
-- [ ] 8.5 Add a failing test with two fake targets expecting the ambiguity error listing both, then implement target selection flags; verify red-then-green
-- [ ] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
-- [ ] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
+- [x] 8.1 Add failing integration tests for a claimed target refusing another session and for idle exit, then implement the daemon with Unix socket API, target registry and session claims with force; verify red-then-green
+- [x] 8.2 Add failing tests for interactive snapshot output and for a JSON error with code, then implement the CLI commands from the agent-cli spec; verify red-then-green
+- [x] 8.3 Add a failing `hyperfine` gate that `status` overhead against a running daemon is under 20 ms, then implement daemon auto-start and trim CLI startup; verify red-then-green
+- [x] 8.4 Add a failing test where the second of three batch commands fails and the third does not run, then implement batch execution with stop-on-error and aggregate JSON; verify red-then-green
+- [x] 8.5 Add a failing test with two fake targets expecting the ambiguity error listing both, then implement target selection flags; verify red-then-green
+- [x] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
+- [x] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
 - [ ] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
+- [ ] 8.9 Add failing tests that `click` and `tap` results carry the tap-to-first-frame-change and tap-to-first-tree-delta spans when the target has frames and events, and that `wait --settle` reports which signal ended the wait, then implement them in the daemon and CLI so the harness can measure those primitives; verify red-then-green
 
 ## 9. Benchmark harness (`crates/bench`)
 
