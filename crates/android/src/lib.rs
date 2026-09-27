@@ -1,10 +1,6 @@
 //! Android driver: adb client, agent deploy, agent session and emulator gRPC.
+//!
+//! [`adb`] speaks the adb server's smart-socket protocol with the driver's own
+//! client (design D3).
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+pub mod adb;
