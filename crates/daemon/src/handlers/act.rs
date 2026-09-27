@@ -327,8 +327,10 @@ fn stroke(area: Rect, direction: Direction, distance: f64) -> (Point, Point) {
     )
 }
 
-fn screen(target: &Attached) -> Rect {
-    Rect::new(0.0, 0.0, target.display.width, target.display.height)
+/// The screen as it is now, which a rotation turns.
+fn screen(target: &mut Attached) -> Result<Rect, Failure> {
+    let size = target.display.size()?;
+    Ok(Rect::new(0.0, 0.0, size.width, size.height))
 }
 
 fn point_param(request: &Request, key: &str) -> Result<Option<Point>, Failure> {
@@ -357,7 +359,7 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
         _ => {
             let direction = Direction::parse(request.str("direction").unwrap_or("up"))?;
             let distance = request.f64("distance")?.unwrap_or(DEFAULT_DISTANCE);
-            let (from, to) = stroke(screen(target), direction, distance);
+            let (from, to) = stroke(screen(target)?, direction, distance);
             (from, to, direction.name().into())
         }
     };
@@ -378,7 +380,7 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
             let aim = Aim::parse(given)?;
             aim::element(target, session, &aim, timeout(request)?)?.bounds
         }
-        None => screen(target),
+        None => screen(target)?,
     };
     let extent = if direction.vertical() {
         area.height()

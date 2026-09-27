@@ -260,7 +260,7 @@ pub trait Driver: Send + Sync {
 pub struct Attachment {
     pub backend: mirror::backend::Backend,
     pub apps: Box<dyn AppControl>,           // launch and terminate apps
-    pub display: Size,                       // points, for gestures no element anchors
+    pub display: Box<dyn Screen>,            // its size in points now, for gestures no element anchors
     pub config: MirrorConfig,
     pub capture: Option<Box<dyn Capture>>,   // screenshots the driver takes now
     pub report: Option<Arc<dyn Report>>,     // what status shows from the driver
@@ -351,8 +351,10 @@ wrote), reusing the agent this daemon or its predecessor started when it
 is compatible (records in `android-agents/`), replacing an incompatible
 one, and refusing another holder of UI automation (`automation_conflict`);
 selects the emulator's controller when it answers; and starts the agent
-session, whose backend the mirror runs on. The display size comes from
-`wm size`.
+session, whose backend the mirror runs on. The display's size is read
+whenever a gesture no element anchors needs it, from the `cur=` size of
+`dumpsys window displays`, which follows the current rotation (`wm size`
+reports the natural orientation's, the fallback).
 
 - apps: `open` launches by package through its launcher activity, as the
   launcher does (`am start -W -a MAIN -c LAUNCHER -n <activity>`), each

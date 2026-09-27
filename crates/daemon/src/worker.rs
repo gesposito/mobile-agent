@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
 use crate::driver::{
-    AppControl, AttachOptions, Attachment, Capture, Driver, Report, Size, TargetInfo,
+    AppControl, AttachOptions, Attachment, Capture, Driver, Report, Screen, TargetInfo,
 };
 use crate::signals::Observer;
 use crate::wire::{Failure, Success};
@@ -55,8 +55,9 @@ pub(crate) struct Attached {
     pub apps: Box<dyn AppControl>,
     /// Screenshots the driver takes on demand, if it takes them.
     pub capture: Option<Box<dyn Capture>>,
-    /// The screen size in points, for gestures no element anchors.
-    pub display: Size,
+    /// The screen, for gestures no element anchors; read as it is when a
+    /// command needs it.
+    pub display: Box<dyn Screen>,
     /// The change signals the target reported, beside the mirror.
     pub observer: Observer,
     /// Whether the target has a frame source.
@@ -75,7 +76,7 @@ impl Attached {
     /// with its worker.
     pub(crate) fn new(
         info: &TargetInfo,
-        mut attachment: Attachment,
+        attachment: Attachment,
         status: &Arc<Mutex<Status>>,
     ) -> Attached {
         let observer = Observer::default();
@@ -88,10 +89,7 @@ impl Attached {
             mirror: Mirror::new(backend, attachment.config),
             apps: attachment.apps,
             capture: attachment.capture,
-            display: attachment.display.size().unwrap_or(Size {
-                width: 0.0,
-                height: 0.0,
-            }),
+            display: attachment.display,
             observer,
             frames,
             last_action: None,

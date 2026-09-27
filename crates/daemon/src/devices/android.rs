@@ -33,8 +33,8 @@ use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{
-    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError,
-    FixedScreen, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
+    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError, Image,
+    Launch, Platform, Report, Screen, Size, TargetClass, TargetInfo, TargetReport,
 };
 use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
@@ -217,24 +217,19 @@ impl Driver for AndroidDevices {
         // Created before anything else can fail, so the agent is stopped
         // on a failure below as on a detach.
         let stop = StopAgent(session.clone());
-        let size = device.shell("wm size").map_err(adb_error)?;
-        let display = display_size(&size.stdout_text(), session.scale()).ok_or_else(|| {
-            DriverError::new(
-                ADB_FAILED,
-                format!(
-                    "cannot read the display size of {} from `wm size`: {}",
-                    target.id,
-                    size.stdout_text().trim()
-                ),
-            )
-        })?;
+        let mut display = AndroidScreen {
+            device: device.clone(),
+            scale: session.scale(),
+        };
+        // Read once here, so a display that cannot be read fails the attach.
+        display.size()?;
         Ok(Attachment {
             backend: session.backend(),
             apps: Box::new(Apps {
                 device,
                 _stop: stop,
             }),
-            display: Box::new(FixedScreen(display)),
+            display: Box::new(display),
             config: MirrorConfig::default(),
             capture: Some(Box::new(AgentScreenshots(session.clone()))),
             report: Some(Arc::new(SessionReport {
@@ -475,10 +470,47 @@ pub(crate) fn display_size(wm_size: &str, scale: f64) -> Option<Size> {
 /// The display's size in points now, from the `cur=WIDTHxHEIGHT` of
 /// `dumpsys window displays`, which follows the current rotation, at
 /// `scale` pixels per point.
-#[allow(dead_code)]
 pub(crate) fn current_display(dumpsys: &str, scale: f64) -> Option<Size> {
-    let _ = (dumpsys, scale);
-    todo!("task 8.11")
+    let (width, height) = dumpsys
+        .split_whitespace()
+        .find_map(|word| word.strip_prefix("cur="))?
+        .split_once('x')?;
+    let (width, height) = (width.parse::<f64>().ok()?, height.parse::<f64>().ok()?);
+    (scale > 0.0 && width > 0.0 && height > 0.0).then(|| Size {
+        width: width / scale,
+        height: height / scale,
+    })
+}
+
+/// An Android display, read as it is now: its size follows the rotation.
+struct AndroidScreen {
+    device: Device,
+    /// Pixels per point, which a rotation leaves alone.
+    scale: f64,
+}
+
+impl Screen for AndroidScreen {
+    fn size(&mut self) -> Result<Size, DriverError> {
+        let shown = self
+            .device
+            .shell("dumpsys window displays")
+            .map_err(adb_error)?;
+        if let Some(size) = current_display(&shown.stdout_text(), self.scale) {
+            return Ok(size);
+        }
+        // A build without the cur= size: the natural orientation's.
+        let size = self.device.shell("wm size").map_err(adb_error)?;
+        display_size(&size.stdout_text(), self.scale).ok_or_else(|| {
+            DriverError::new(
+                ADB_FAILED,
+                format!(
+                    "cannot read the display size of {} from dumpsys window displays or wm size: {}",
+                    self.device.serial(),
+                    size.stdout_text().trim()
+                ),
+            )
+        })
+    }
 }
 
 /// The launcher activity `cmd package resolve-activity --brief` printed,
