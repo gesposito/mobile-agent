@@ -1,3 +1,5 @@
 [toolchain]
 channel = "1.95.0"
 components = ["clippy", "rustfmt"]
+# The Simulator reader is cross-built for the iOS Simulator; rustup installs the target from here.
+targets = ["aarch64-apple-ios-sim"]
