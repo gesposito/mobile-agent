@@ -104,7 +104,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 9.3 Add a failing test that an absent tool is noted as skipped, then implement baseline adapters for Maestro, maestro-runner and agent-device; verify red-then-green and one baseline run
 - [x] 9.4 Add failing golden end-state tests for the login, list scroll and 500-node flows across adapters, then write the flow descriptions and adapter execution; verify red-then-green
 - [x] 9.5 Add a failing test with two injected failures expecting the reported rate, then implement failure and flake rates; verify red-then-green
-- [ ] 9.6 Add failing tests that `mobile-agent-bench run --target <id>` drives the real CLI adapter against a daemon (fake targets in tests), selects fixtures per platform, runs the golden checks then the timed series, and writes both reports; then implement it so group 10 can run the harness end to end; verify red-then-green
+- [x] 9.6 Add failing tests that `mobile-agent-bench run --target <id>` drives the real CLI adapter against a daemon (fake targets in tests), selects fixtures per platform, runs the golden checks then the timed series, and writes both reports; then implement it so group 10 can run the harness end to end; verify red-then-green
 
 ## 10. Integration verification
 
