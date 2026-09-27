@@ -40,7 +40,7 @@ src/
                 doctor), view (snapshot, diff, get, wait, screenshot), act (click,
                 fill, type, press, swipe, scroll), aim (refs and selectors)
   keys.rs       key names to Android key codes and iOS HID usages
-  signals.rs    frame and tree change times read off the event stream; a settle's ending signal
+  signals.rs    the signal a settle ended on, from the changes the mirror timed
   driver.rs     the Driver factory contract and the registration point
   devices/      the device drivers: simulator (Simulator driver), android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
@@ -150,55 +150,64 @@ not covered and not scrolled away, and fails with `element_not_found` when
 two strokes in a row change nothing (the content stopped moving), after 50
 strokes, or at its timeout.
 
-`open` waits for the launched app's first tree before it settles: until
-the replica shows the app in front with more than its root, read after the
+`open` waits for the launched app's first tree before it settles: until the
+replica shows the app in front with more than its root, read after the
 launch returned when the app was relaunched, since a read before that can
-still show the process the relaunch stopped. The app gets the waiting
-commands' default timeout (the session's, else 10000 ms) to show it, as
-the Compose fixture's 500-cell screen needs on an emulator, where the
-launch takes 1 to 2 s and the cold read 1.5 s; the screen then gets 3000 ms
-to settle (design D8). An explicit `timeout` bounds both together. It
-reports `settled` false, with a warning, when the app did not show in time
-or its screen did not settle.
+still show the process the relaunch stopped. Whatever the driver, the
+launch is noted to the mirror as a change of the window in front
+(`Mirror::note_window_change`), so every window is read again and the
+settle counts the launch as a tree change: it waits for an app that draws
+within its quiet window of the launch, even one already in front. `close`
+notes the stop the same way. The app gets the waiting commands' default
+timeout (the session's, else 10000 ms) to show it, as the Compose fixture's
+500-cell screen needs on an emulator, where the launch takes 1 to 2 s and
+the cold read 1.5 s; the screen then gets 3000 ms to settle (design D8). An
+explicit `timeout` bounds both together. It reports `settled` false, with a
+warning, when the app did not show in time or its screen did not settle.
 
 ## Tap spans and settle signals
 
-The mirror keeps when the tree and the frames last changed, and the
-frames' hashes, to itself, so the worker wraps each target's event stream
-before the mirror gets it: an observer (`signals.rs`) records the capture
-time of every frame whose hash differs from the frame before, as the mirror
-counts a frame change, and the arrival of every tree and window event. The
-mirror's tree deltas (`Mirror::deltas`) supply the rest.
+The mirror times what happens on a target (task 7.10): `Mirror::timestamps`
+gives the last frame change (the capture time of the latest frame whose
+hash differs from the frame before), the last tree change (a tree or window
+event's arrival, a noted window change, or the end of a read that found a
+delta), the last read and the last input it injected, and
+`Mirror::frame_changes_since` the frame changes since an instant. Items
+still queued in the event stream count once drained, so the daemon calls
+`Mirror::drain`, which applies them without reading the tree, before it
+looks. The mirror's tree deltas (`Mirror::deltas`) supply the rest.
 
 A click brings the replica current, notes the replica's revision, and
 dispatches the tap; `dispatchMs` runs until the input is accepted. It then
-pumps the mirror in 5 ms slices, so windows are re-read as they would be
-for a snapshot, until the first frame change after the dispatch (on
-targets with a frame source) and the first delta of a later revision have
-both arrived, until nothing has changed for the 200 ms quiet window since
-the tap or the last change, or for 1 s. When the driver's input notes say
-the tap waited for its input transport to activate, the first tap of a new
-input session, the watch waits up to 1.5 s for the first change and lasts
-up to 2.5 s: on the spike Simulator the first tap after dtuhidd activated
-changed the first frame about 202 ms and the tree about 458 ms after its
-dispatch, just past a warm watch's 200 ms. `frameChangeMs` and `treeDeltaMs`
-run from the dispatch to the frame's capture and to the delta's read, and
-are omitted when the signal never came; `watchedMs` says how long the watch
-lasted. A watch that fails after the tap went in becomes a warning.
+runs the mirror in 5 ms slices, so windows are re-read as they would be for
+a snapshot, draining before each look, until the first frame change after
+the dispatch (on targets with a frame source) and the first delta of a
+later revision have both arrived, until nothing has changed for the 200 ms
+quiet window since the tap or the last change, or for 1 s. When the
+driver's input notes say the tap waited for its input transport to
+activate, the first tap of a new input session, the watch waits up to 1.5 s
+for the first change and lasts up to 2.5 s: on the spike Simulator the
+first tap after dtuhidd activated changed the first frame about 202 ms and
+the tree about 458 ms after its dispatch, just past a warm watch's 200 ms.
+`frameChangeMs` and `treeDeltaMs` run from the dispatch to the frame's
+capture and to the delta's read, and are omitted when the signal never
+came; `watchedMs` says how long the watch lasted. A watch that fails after
+the tap went in becomes a warning.
 
 A settle wait (`wait --settle`) ends one quiet window after the latest of
-the last tree change (event or delta), the last frame change and the last
-input the daemon injected. `endedBy` names the signal whose change that
-was: `tree`, `frame`, or `both` when their last changes came within 20 ms;
-`none` when the input came later than any change or the quiet window had
-already passed when the wait began; `timeout` when the wait reached its
-maximum, with `stillChanging` naming what changed in the last quiet window.
-`--tree-only` leaves frames out, as it does for the mirror.
+the last tree change (event, noted window change or delta), the last frame
+change and the last input the mirror injected, as the mirror's timestamps
+give them. `endedBy` names the signal whose change that was: `tree`,
+`frame`, or `both` when their last changes came within 20 ms; `none` when
+the input came later than any change or the quiet window had already passed
+when the wait began; `timeout` when the wait reached its maximum, with
+`stillChanging` naming what changed in the last quiet window. `--tree-only`
+leaves frames out, as it does for the mirror.
 
 ## Reading the tree after the display changed
 
-On a window that sends no change events (every Simulator window, Compose
-on Android) the mirror re-reads after input, when frames change and on its
+On a window that sends no change events (every Simulator window, Compose on
+Android) the mirror re-reads after input, when frames change and on its
 poll, and a frame-driven re-read comes no sooner than its minimum interval
 (200 ms) after the previous read ended. A click's watch lets the mirror run
 the re-read the tap calls for at once, which on the Simulator caught the
@@ -207,12 +216,13 @@ there yet); the frames that changed next then call for a read that falls
 due after the click has replied. So `snapshot`, `diff snapshot` and every
 ref or selector argument first bring the replica up to the display
 (`Attached::catch_up`): when a frame changed after the latest tree read
-began, they wait for that re-read, at most the minimum interval plus
-100 ms. Targets without frames, and targets whose windows all send change
-events, never wait; a warm snapshot of a still screen is served from the
-replica. A screen that keeps changing its frames, such as a focused
-field's blinking cursor, can make a tree read wait for one re-read, since
-the worker's own pumps keep re-reading such a screen between commands.
+began, as the mirror's timestamps show once what arrived is drained, they
+wait for that re-read, at most the minimum interval plus 100 ms. Targets
+without frames, and targets whose windows all send change events, never
+wait; a warm snapshot of a still screen is served from the replica. A
+screen that keeps changing its frames, such as a focused field's blinking
+cursor, can make a tree read wait for one re-read, since the worker's own
+pumps keep re-reading such a screen between commands.
 
 ## Sessions and claims
 
@@ -312,10 +322,10 @@ traits:
   change events, so the mirror re-reads after input, on frames and on its
   poll.
 - events: the display's frames, their hash the thumbnail below the status
-  bar; a launch or a stop through `open` or `close` is also a window event,
-  so the mirror reads the screen again and `open`'s settle waits for the
-  launched app to draw. The subscription only hashes: encoded frames and
-  screenshots are read from the display at the size asked for.
+  bar. A launch or a stop through `open` or `close` is noted to the mirror
+  by the daemon, as for every driver. The subscription only hashes:
+  encoded frames and screenshots are read from the display at the size
+  asked for.
 - input: taps, long presses and swipes in points through the host's
   transport (dtuhidd, else Indigo); iOS key codes (`keys.rs`) are keyboard
   usages with the HID modifier byte, or consumer-page buttons (Home, Power,
@@ -509,14 +519,9 @@ Worked around here without changing `crates/mirror`:
   `Report`. Fake targets without a frame source answer `screenshot` with
   `no_frame`.
 - The mirror schedules a frame-driven re-read no sooner than its minimum
-  interval after the previous read, and exposes neither the frames' nor
-  the reads' times, so the worker records when reads began (`signals.rs`)
-  to bring the replica up to the display before a tree read.
-- The mirror records when the tree and the frames last changed and the
-  latest frame's hash, but exposes only a settle's change counts, so the
-  worker reads frame hashes and event arrivals off the event stream on its
-  way to the mirror (`signals.rs`) to time a tap's effects and a settle's
-  ending signal.
+  interval after the previous read and serves tree reads from the replica
+  meanwhile, so the worker waits for that re-read before a tree read
+  (`Attached::catch_up`), timing it with the mirror's timestamps.
 - `testing::FakeTarget` runs on a fake clock and its tap reactions are
   fixed per identifier; the fake driver adds a real-time adapter and a
   stateful device model. Its `inputs()` copies the whole history, so the
@@ -538,7 +543,8 @@ Worked around here without changing `crates/mirror`:
 | (task 8.8, Simulator adapter) | (listing, keys, errors, doctor table, status, display, text) | `devices::simulator::tests::*` |
 | (task 8.8, Android adapter) | (listing, readiness, display, launch, status, errors) | `devices::android::tests::*` |
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
-| (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::only_frames_whose_hash_changed_count_as_frame_changes`, `signals::tests::tree_and_window_events_are_tree_changes_and_others_are_not`, `signals::tests::the_tee_records_what_passes_through`, `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
+| (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
+| (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

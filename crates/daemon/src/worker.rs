@@ -10,12 +10,11 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
+use mirror::{Mirror, MirrorError, Ref, Snapshot};
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, Driver, InputNotes, Report, Screen, TargetInfo,
 };
-use crate::signals::Observer;
 use crate::wire::{Failure, Success};
 
 /// The longest the thread waits between pumps when nothing falls due.
@@ -24,6 +23,11 @@ const IDLE_PUMP: Duration = Duration::from_secs(1);
 /// How much longer than the mirror's minimum re-read interval a tree read
 /// waits for the re-read that changed frames call for.
 const CATCH_UP_MARGIN: Duration = Duration::from_millis(100);
+
+/// How long a tree read lets the mirror run before it looks again whether
+/// a read began after the last frame change: a read due for another
+/// reason, such as input, runs in the first slice.
+const CATCH_UP_SLICE: Duration = Duration::from_millis(5);
 
 /// What a command returns.
 pub(crate) type Outcome = Result<Success, Failure>;
@@ -60,12 +64,8 @@ pub(crate) struct Attached {
     /// The screen, for gestures no element anchors; read as it is when a
     /// command needs it.
     pub display: Box<dyn Screen>,
-    /// The change signals the target reported, beside the mirror.
-    pub observer: Observer,
     /// Whether the target has a frame source.
     pub frames: bool,
-    /// When the daemon last injected input.
-    pub last_action: Option<Instant>,
     sessions: HashMap<String, SessionOnTarget>,
     /// The session whose delta snapshots the mirror's delta state follows;
     /// another session's first delta snapshot starts again in full.
@@ -81,21 +81,15 @@ impl Attached {
         attachment: Attachment,
         status: &Arc<Mutex<Status>>,
     ) -> Attached {
-        let observer = Observer::default();
-        let mut backend = attachment.backend;
-        let frames = backend.frames.is_some();
-        backend.events = observer.tee(backend.events);
-        backend.tree = observer.tee_reads(backend.tree);
+        let frames = attachment.backend.frames.is_some();
         Attached {
             info: info.clone(),
-            mirror: Mirror::new(backend, attachment.config),
+            mirror: Mirror::new(attachment.backend, attachment.config),
             apps: attachment.apps,
             capture: attachment.capture,
             input_notes: attachment.input_notes,
             display: attachment.display,
-            observer,
             frames,
-            last_action: None,
             sessions: HashMap::new(),
             delta_session: None,
             status: Arc::clone(status),
@@ -107,23 +101,24 @@ impl Attached {
     /// latest read began call for another read, which the mirror schedules
     /// no sooner than its minimum re-read interval after that read; this
     /// waits for it, so a snapshot right after a tap shows what the tap
-    /// did rather than what the tap's own re-read caught.
+    /// did rather than what the tap's own re-read caught. The mirror times
+    /// both: what arrived counts once drained, without reading the tree.
     pub fn catch_up(&mut self) -> Result<(), MirrorError> {
         if !self.frames {
             return Ok(());
         }
-        self.mirror.pump()?;
-        let Some(changed) = self.observer.last_frame_change() else {
-            return Ok(());
-        };
         // The re-read falls due within the minimum interval of the last
         // read's end, which has passed.
         let deadline = Instant::now() + self.mirror.config().min_reread_interval + CATCH_UP_MARGIN;
-        while self
-            .observer
-            .last_read_started()
-            .is_none_or(|started| started <= changed)
-        {
+        loop {
+            self.mirror.drain();
+            let stamps = self.mirror.timestamps();
+            let Some(changed) = stamps.last_frame_change else {
+                return Ok(());
+            };
+            if stamps.last_read.is_some_and(|read| read.started > changed) {
+                return Ok(());
+            }
             // No window waits for frames: they send change events.
             let Some(due) = self.mirror.next_wakeup() else {
                 return Ok(());
@@ -132,16 +127,9 @@ impl Attached {
             if now >= deadline {
                 return Ok(());
             }
-            self.mirror.run_until(due.clamp(now, deadline))?;
+            let until = due.min(now + CATCH_UP_SLICE).clamp(now, deadline);
+            self.mirror.run_until(until)?;
         }
-        Ok(())
-    }
-
-    /// Injects `action` through the mirror and notes when.
-    pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
-        let outcome = self.mirror.act(action)?;
-        self.last_action = Some(Instant::now());
-        Ok(outcome)
     }
 
     /// What `session` keeps about this target.
@@ -337,7 +325,7 @@ fn serve(
 mod tests {
     use super::*;
     use crate::fake::FakeDriver;
-    use mirror::{SnapshotOptions, Target};
+    use mirror::{Action, SnapshotOptions, Target};
 
     /// The first fake target `spec` names, attached, showing each change
     /// `latency` after its cause.
@@ -369,6 +357,7 @@ mod tests {
             .unwrap();
         let fixture = ref_of(&launcher, "launcher-fixture");
         target
+            .mirror
             .act(&Action::Tap {
                 target: Target::Ref(fixture),
                 hold: None,

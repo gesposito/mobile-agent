@@ -317,6 +317,10 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         None => timeout(request)?,
     };
     target.apps.launch(&app, &launch)?;
+    // Whatever the driver, the window in front changed: every window is
+    // read again when the tree is next needed, and the settle below counts
+    // the launch as a tree change, so it waits for an app that draws late.
+    target.mirror.note_window_change();
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
@@ -382,9 +386,10 @@ fn first_tree(
         let snapshot = target.mirror.snapshot(&probe)?;
         let read_after = fresh.is_none_or(|launched| {
             target
-                .observer
-                .last_read_started()
-                .is_some_and(|started| started >= launched)
+                .mirror
+                .timestamps()
+                .last_read
+                .is_some_and(|read| read.started >= launched)
         });
         if read_after && shows(&snapshot, app) {
             return Ok(Some(Instant::now()));
@@ -417,6 +422,8 @@ fn close_app(target: &mut Attached, session: &str, _request: &Request) -> Outcom
     let app = target.session(session).app.take();
     if let Some(app) = &app {
         target.apps.terminate(app)?;
+        // As for a launch: the window in front changed.
+        target.mirror.note_window_change();
         target.set_app(None);
     }
     Ok(Success::new(json!({

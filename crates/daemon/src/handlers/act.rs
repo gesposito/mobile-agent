@@ -73,7 +73,7 @@ struct Spans {
 /// the first change is awaited up to [`FRESH_FIRST_CHANGE`] and the watch
 /// lasts up to [`FRESH_WATCH_MAX`]. The mirror keeps reading meanwhile, so
 /// a window without change events is re-read as it would be for a
-/// snapshot.
+/// snapshot, and times every change: what arrived counts once drained.
 fn watch(
     target: &mut Attached,
     start: Instant,
@@ -86,6 +86,8 @@ fn watch(
     } else {
         (DEFAULT_QUIET_WINDOW, WATCH_MAX)
     };
+    let first_frame_change =
+        |target: &Attached| target.mirror.frame_changes_since(start).first().copied();
     let tree_delta = |target: &Attached| {
         target
             .mirror
@@ -96,26 +98,20 @@ fn watch(
     };
     let mut problem = None;
     let (frame, tree) = loop {
-        let frame = target.observer.first_frame_change_since(start);
+        target.mirror.drain();
+        let frame = first_frame_change(target);
         let tree = tree_delta(target);
         if tree.is_some() && (frame.is_some() || !target.frames) {
             break (frame, tree);
         }
         let now = Instant::now();
+        // The last tree change covers events, noted window changes and the
+        // reads that found a delta, which all came after the tap's dispatch
+        // when they came after `start`.
+        let stamps = target.mirror.timestamps();
         let since_start = |at: Option<Instant>| at.filter(|&at| at >= start);
-        let last_change = [
-            since_start(target.observer.last_frame_change()),
-            since_start(target.observer.last_tree_event()),
-            target
-                .mirror
-                .deltas()
-                .last()
-                .filter(|d| d.revision > revision)
-                .map(|d| d.at),
-        ]
-        .into_iter()
-        .flatten()
-        .max();
+        let last_change =
+            since_start(stamps.last_frame_change).max(since_start(stamps.last_tree_change));
         // Quiet since the tap: the first change may still come; quiet since
         // a change: the effects are over.
         let quiet_until = match last_change {
@@ -128,10 +124,8 @@ fn watch(
         }
         if let Err(error) = target.mirror.run_until((now + WATCH_SLICE).min(deadline)) {
             problem = Some(error.to_string());
-            break (
-                target.observer.first_frame_change_since(start),
-                tree_delta(target),
-            );
+            target.mirror.drain();
+            break (first_frame_change(target), tree_delta(target));
         }
     };
     let span = |at: Option<Instant>| at.map(|at| at.saturating_duration_since(start));
@@ -175,7 +169,7 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     target.mirror.pump()?;
     let revision = target.mirror.revision();
     let started = Instant::now();
-    let outcome = target.act(&Action::Tap {
+    let outcome = target.mirror.act(&Action::Tap {
         target: aimed,
         hold,
     })?;
@@ -231,7 +225,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
     let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
-    let outcome = target.act(&Action::Text {
+    let outcome = target.mirror.act(&Action::Text {
         text,
         into: Some(reference),
         method: TextMethod::AUTO,
@@ -255,7 +249,7 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
         }
         None => None,
     };
-    let outcome = target.act(&Action::Text {
+    let outcome = target.mirror.act(&Action::Text {
         text: text.clone(),
         into,
         method: TextMethod::KEYS,
@@ -275,7 +269,7 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
 pub(super) fn press(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
     let key = request.required_str("key")?;
     let code = keys::resolve(target.info.platform, key)?;
-    let outcome = target.act(&Action::Key {
+    let outcome = target.mirror.act(&Action::Key {
         code: code.code,
         meta: code.meta,
     })?;
@@ -396,7 +390,7 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
             (from, to, direction.name().into())
         }
     };
-    let outcome = target.act(&Action::Swipe { from, to, duration })?;
+    let outcome = target.mirror.act(&Action::Swipe { from, to, duration })?;
     if !outcome.accepted {
         return Err(rejected("swipe"));
     }
@@ -432,7 +426,7 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
     while left > 0.5 && strokes < 20 {
         let step = left.min(longest);
         let (from, to) = stroke(area, direction.opposite(), step);
-        let outcome = target.act(&Action::Swipe {
+        let outcome = target.mirror.act(&Action::Swipe {
             from,
             to,
             duration: SWIPE_DURATION,
@@ -507,7 +501,7 @@ fn scroll_until(
         }
         let revision = target.mirror.revision();
         let (from, to) = stroke(area, direction.opposite(), step);
-        let outcome = target.act(&Action::Swipe {
+        let outcome = target.mirror.act(&Action::Swipe {
             from,
             to,
             duration: SWIPE_DURATION,
@@ -521,6 +515,10 @@ fn scroll_until(
             ..SettleOptions::default()
         })?;
         target.catch_up()?;
+        // The replica shows whether the stroke moved the content once the
+        // reads it called for have run, such as the full read after a
+        // window event.
+        target.mirror.pump()?;
         if target.mirror.revision() == revision {
             still += 1;
         } else {

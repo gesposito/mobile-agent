@@ -18,14 +18,12 @@
 //!   Text for a field taps it, waits for its focus and, unless keys were
 //!   asked for, selects what it holds so the text replaces it.
 //! - Apps launch with their launch environment, and a running app comes to
-//!   the front unless a relaunch is asked for. A launch or a stop is a
-//!   change of the window in front, which the event stream reports as a
-//!   window event, so the mirror reads the screen again and a settle waits
-//!   for the launch to finish drawing.
+//!   the front unless a relaunch is asked for. The daemon notes a launch or
+//!   a stop to the mirror as a change of the window in front, as it does
+//!   for every driver.
 //! - Dropping the attachment resets the target in the driver, which stops
 //!   its reader and closes its input session.
 
-use std::collections::VecDeque;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -38,7 +36,6 @@ use mirror::backend::{
     TreeSource,
 };
 use mirror::{MirrorConfig, Point};
-use protocol::event::{Event, EventPayload, WindowChange, WindowChangeKind};
 use protocol::message::{Rotation, TextMethod as WireMethod};
 use protocol::snapshot::{Node, NodeFlags, Snapshot, WindowType};
 use serde_json::{Map, Value, json};
@@ -145,8 +142,8 @@ impl Driver for SimulatorDevices {
 }
 
 /// What the parts of one target's backend share.
+#[derive(Default)]
 struct Shared {
-    created: Instant,
     /// The latest read and its scale, where text finds the field a handle
     /// names.
     last: Mutex<Option<(Snapshot, f64)>>,
@@ -155,49 +152,11 @@ struct Shared {
     frames: AtomicU64,
     /// Why the frame subscription could not start.
     frame_error: Mutex<Option<String>>,
-    /// Window events waiting for the event stream.
-    events: Mutex<VecDeque<Timed<StreamItem>>>,
     /// How long the last input waited for its transport to activate.
     activation: Mutex<Option<Duration>>,
-    /// The last window event's number.
-    window_seq: AtomicU64,
-}
-
-impl Default for Shared {
-    fn default() -> Shared {
-        Shared {
-            created: Instant::now(),
-            last: Mutex::new(None),
-            latest: Mutex::new(None),
-            frames: AtomicU64::new(0),
-            frame_error: Mutex::new(None),
-            events: Mutex::new(VecDeque::new()),
-            activation: Mutex::new(None),
-            window_seq: AtomicU64::new(0),
-        }
-    }
 }
 
 impl Shared {
-    /// Reports that the window in front changed, as an app launch or stop
-    /// changes it: the mirror reads every window again.
-    fn window_changed(&self, window: u32) {
-        let now = Instant::now();
-        let event = Event {
-            seq: self.window_seq.fetch_add(1, Ordering::Relaxed) + 1,
-            time_us: u64::try_from(now.duration_since(self.created).as_micros())
-                .unwrap_or(u64::MAX),
-            payload: EventPayload::Window(WindowChange {
-                change: WindowChangeKind::STATE,
-                window,
-            }),
-        };
-        lock(&self.events).push_back(Timed {
-            at: now,
-            item: StreamItem::Event(event),
-        });
-    }
-
     fn remember(&self, tree: &ForegroundTree) {
         *lock(&self.last) = Some((tree.snapshot.clone(), tree.scale));
     }
@@ -279,7 +238,6 @@ fn attach(driver: Arc<SimulatorDriver>, udid: &str) -> Result<Attachment, Driver
         apps: Box::new(Apps {
             driver: Arc::clone(&driver),
             udid: udid.clone(),
-            shared: Arc::clone(&shared),
             _detach: detach,
         }),
         display: Box::new(FixedScreen(display)),
@@ -341,9 +299,6 @@ struct DisplayEvents {
 
 impl EventStream for DisplayEvents {
     fn next(&mut self, deadline: Instant) -> Option<Timed<StreamItem>> {
-        if let Some(event) = lock(&self.shared.events).pop_front() {
-            return Some(event);
-        }
         let wait = deadline.saturating_duration_since(Instant::now());
         let frame = self.stream.as_ref().and_then(|stream| stream.next(wait));
         let Some(frame) = frame else {
@@ -532,7 +487,6 @@ impl InputNotes for Activations {
 struct Apps {
     driver: Arc<SimulatorDriver>,
     udid: String,
-    shared: Arc<Shared>,
     _detach: Detach,
 }
 
@@ -544,11 +498,7 @@ impl AppControl for Apps {
             terminate_running: launch.relaunch,
         };
         match self.driver.launch(&self.udid, app, &options) {
-            Ok(launched) => {
-                self.shared
-                    .window_changed(u32::try_from(launched.pid).unwrap_or_default());
-                Ok(())
-            }
+            Ok(_) => Ok(()),
             Err(failure) if installed(&self.udid, app) == Some(false) => Err(DriverError::new(
                 APP_NOT_FOUND,
                 format!(
@@ -563,9 +513,7 @@ impl AppControl for Apps {
     fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
         self.driver
             .terminate(&self.udid, app)
-            .map_err(|e| error(&e))?;
-        self.shared.window_changed(0);
-        Ok(())
+            .map_err(|e| error(&e))
     }
 }
 

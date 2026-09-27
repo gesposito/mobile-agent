@@ -45,7 +45,7 @@ pub(crate) fn element_json(element: &Element) -> Value {
 pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let options = snapshot_options(request)?;
     let started = Instant::now();
-    let reads = target.observer.reads();
+    let read_before = target.mirror.timestamps().last_read;
     target.catch_up()?;
     let snapshot = target.mirror.snapshot(&options)?;
     let mut data = Map::new();
@@ -85,7 +85,7 @@ pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) 
     data.insert("readMs".into(), millis(started.elapsed()).into());
     data.insert(
         "servedFromReplica".into(),
-        (target.observer.reads() == reads).into(),
+        (target.mirror.timestamps().last_read == read_before).into(),
     );
     // The mirror's replica revision, apart from the delta's own revision.
     data.insert("replicaRevision".into(), snapshot.revision.into());
@@ -266,16 +266,11 @@ fn settle(target: &mut Attached, request: &Request) -> Outcome {
         max,
         signals,
     })?;
-    // The tree's last change is the later of its last event and the
-    // mirror's last delta, as the settle predicate counts it.
-    let last_delta = target.mirror.deltas().last().map(|delta| delta.at);
-    let last = LastChanges {
-        tree: target.observer.last_tree_event().max(last_delta),
-        frame: (target.frames && signals != Signals::TreeOnly)
-            .then(|| target.observer.last_frame_change())
-            .flatten(),
-        action: target.last_action,
-    };
+    // The changes as the settle predicate counted them.
+    let last = LastChanges::of(
+        &target.mirror.timestamps(),
+        target.frames && signals != Signals::TreeOnly,
+    );
     let ended = ended_by(settled.settled, last, began, quiet);
     let warning = (!settled.settled).then(|| {
         format!(
