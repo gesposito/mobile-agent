@@ -14,7 +14,7 @@ The harness SHALL measure CLI process start, cold attach, first snapshot after a
 - **THEN** every listed primitive appears in the report with its percentiles and sample count
 
 ### Requirement: Latency gates
-Gates SHALL be configurable per target class with these defaults: CLI process start under 20 ms; Simulator warm snapshot p95 under 150 ms and tap dispatch p95 under 20 ms; Android emulator warm snapshot p95 under 100 ms on the reference screen and tap-to-frame-change p95 under 50 ms; cold attach under 2 s on the Simulator and under 1.5 s on Android. A run that misses any gate SHALL exit non-zero and print the failing gates in a table.
+Gates SHALL be configurable per target class with these defaults: CLI process start under 20 ms; Simulator warm snapshot p95 under 150 ms on the SwiftUI reference screen and under 250 ms on the React Native one, whose own accessibility snapshot costs about 236 ms, and tap dispatch p95 under 20 ms; Android emulator warm snapshot p95 under 100 ms on the reference screen and tap-to-frame-change p95 under 50 ms; cold attach under 2 s on the Simulator and under 1.5 s on Android. A run that misses any gate SHALL exit non-zero and print the failing gates in a table.
 
 #### Scenario: Gate missed
 - **WHEN** Simulator warm snapshot p95 measures 210 ms
