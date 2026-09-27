@@ -118,11 +118,13 @@ on a reader thread. It answers pings, acts on deadlines, hands each response
 to the caller waiting for it, and passes every other event to an `EventSink`;
 events that arrive before the sink is set are replayed to it.
 
-Measured on the API 36 emulator through `tests/agent_deploy.rs`, shared with
-other work: a first attach took 215.8 ms (process listing 14.3 ms, push
-3.5 ms, launch stream to ready line 185.6 ms, connection and handshake
-3.0 ms), a reuse 17.0 ms (listing 13.9 ms, handshake 2.0 ms), and replacing
-an older build 265.3 ms, of which stopping it took 28.2 ms.
+Measured by `tests/measure.rs` (release build, API 36 emulator, host load
+about 12, n=10 each): a launched attach took 231.4 ms at p50 and 251.1 ms at
+p95, of which the launch stream to the ready line 195.3 and 213.1 ms (the
+agent taking UI automation and waiting for an active window); a reused
+attach 15.3 and 16.8 ms, most of it the process listing. In
+`tests/agent_deploy.rs`, replacing an older build took 281.0 ms, of which
+stopping it 25.4 ms.
 
 ## Agent session
 
@@ -173,17 +175,30 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
 `Session::screenshot` asks the agent. `Session::reads`, `last_read`,
 `inputs` and `frames_received` count what went where.
 
-Measured through `tests/agent_session.rs` on the API 36 emulator, a debug
-build, shared with other work: the Compose Big screen (573 nodes, every one
-in the replica, all 500 cells with refs) took 494.6 ms for the first
-snapshot, of which the agent's cold read with its idle wait 490.5 ms; warm
-snapshots from the replica took 3.15 ms at p50 and 3.33 ms at p95 with no
-device read; a tap through the mirror on the Login tab was acknowledged in
-11.3 ms and the snapshot after it showed the Login screen 425.8 ms after the
-tap (the agent's idle wait, which ends no sooner than 200 ms after its input,
-then a cold read of the Compose window); a killed agent was reported disconnected after 29.2 ms.
-With a controller, a tab switch brought 37 frames in 3 s, 34 of them with
-distinct hashes.
+Measured by `tests/measure.rs` (release build, API 36 emulator, host load
+about 12), through a mirror on the Compose fixture's Big tab:
+
+| Measure | p50 | p95 | n |
+|---|---|---|---|
+| First snapshot (573 nodes: one tree read, the agent's cold read with its idle wait) | 562.8 ms | | 1 |
+| Warm snapshot from the replica, no device read | 0.4 ms | 0.5 ms | 100 |
+| Tap on the Login tab to the tree showing it, agent path | 245.1 ms | 466.9 ms | 5 |
+| Tap on the Big tab to the tree showing all 500 cells, agent path | 1561.2 ms | 1733.4 ms | 5 |
+| Tap on the Login tab to the tree showing it, controller path | 283.2 ms | 299.3 ms | 5 |
+| Tap on the Big tab to the tree showing all 500 cells, controller path | 1618.6 ms | 1891.6 ms | 5 |
+| Killed agent to the mirror reporting it disconnected | 15.9 ms | 17.1 ms | 5 |
+
+The time after a tap is the snapshot's own reads. The mirror reads the
+Compose window again after the tap, no sooner than 200 ms after it (the
+agent's idle wait after its own input, the session's wait after the
+controller's) and with the window's cache emptied, so the read is cold: short
+for the Login tab, long for the 573 nodes of the freshly composed Big tab. A
+check under a host load near 190 found all 500 cells in the first snapshot
+after the tap, which took 1.67 to 1.88 s and two or three reads (the action's
+re-read, then the one-second poll that fell due meanwhile). In a debug build
+of `tests/agent_session.rs` a tap was acknowledged in 7.8 to 11.3 ms through
+the mirror, and a tab switch brought 17 to 42 controller frames in 3 s, most
+with distinct hashes.
 
 ### Path selection and status
 
@@ -216,9 +231,9 @@ keyboard, the warning, and what failed since. On the API 36 emulator started
 with `-grpc 8554 -grpc-use-token`:
 
 ```
-emulator-5554: mobile-agent-android 0.1.0 over protocol 1, pid 31084, socket mobile-agent-0.1.0-p1-7885fd119835, launched
+emulator-5554: mobile-agent-android 0.1.0 over protocol 1, pid 2973, socket mobile-agent-0.1.0-p1-7fec0cb05341-9f3cf6e22dae, launched
 input: emulator controller at http://127.0.0.1:8554 (taps, long presses and swipes)
-frames: emulator controller, 15 received
+frames: emulator controller, 14 received
 screenshots: agent
 keys and text: agent; the AVD declares no keyboard, so the controller would drop keys
 ```
@@ -230,15 +245,13 @@ input: agent (taps, long presses and swipes)
 frames: none; screenshots come from the agent on demand
 screenshots: agent
 keys and text: agent
-warning: emulator control endpoint unavailable for emulator-5554 (connecting to http://127.0.0.1:59992: transport error: tcp connect error: Connection refused (os error 61)): taps and frames fall back to the agent. Start the emulator with `-grpc 8554 -grpc-use-token` to use the fast path, or enable it without a restart through the emulator console command `grpc 8554`, for example `adb -s emulator-5554 emu grpc 8554`.
+warning: emulator control endpoint unavailable for emulator-5554 (connecting to http://127.0.0.1:51770: transport error: tcp connect error: Connection refused (os error 61)): taps and frames fall back to the agent. Start the emulator with `-grpc 8554 -grpc-use-token` to use the fast path, or enable it without a restart through the emulator console command `grpc 8554`, for example `adb -s emulator-5554 emu grpc 8554`.
 ```
 
-Measured through `tests/emulator_paths.rs`, a debug build on the shared
-emulator: after a tap on the Compose fixture's Login tab through the mirror,
-the Login screen was in the tree 608.4 ms after the controller's tap and
-442.7 ms after the agent's. The controller's tap is followed by the 200 ms
-wait and a read with the agent's whole node cache emptied, where the
-agent's own tap empties only the Compose windows' cache.
+The tap measurements above compare the two paths: the controller's tap is
+followed by the session's 200 ms wait and a read with the agent's whole
+node cache emptied, where the agent's own tap empties only the Compose
+windows' cache, so the fast path does not make the tree change sooner.
 
 ## Emulator controller client
 
@@ -360,6 +373,19 @@ What the agent session tests (`tests/agent_session.rs`) do on the device:
   agent with SIGKILL; the others stop their agents.
 - The controller test subscribes to frames and taps the List tab.
 
+`tests/measure.rs` holds measurements rather than checks, ignored by default
+and run on a quiet device:
+
+```sh
+MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --release -p android \
+  --test measure -- --ignored --nocapture
+```
+
+It starts the Compose fixture on the Big tab and times launched and reused
+attaches, the first and warm snapshots through the mirror, taps between the
+Big and Login tabs on both paths, and killed agents; each line prints p50,
+p95 and the maximum.
+
 What the path selection tests (`tests/emulator_paths.rs`) do on the device:
 
 - They start the Compose fixture on the Big tab, tap its Login tab through
@@ -460,7 +486,7 @@ Requirement **Input injection**:
 
 | Scenario or clause | Tests |
 |---|---|
-| Scenario "Tap acknowledged" | agent side `input::a_tap_is_acknowledged_as_accepted_within_50_ms`; integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent` (accepted through the mirror, 11.3 ms); `session::tests::input_goes_to_the_agent_in_pixels_and_returns_its_verdict`, `session::input::tests::acknowledgements_carry_the_platforms_verdict_and_the_text_method` |
+| Scenario "Tap acknowledged" | agent side `input::a_tap_is_acknowledged_as_accepted_within_50_ms`; integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent` (accepted through the mirror in 7.8 to 11.3 ms); `session::tests::input_goes_to_the_agent_in_pixels_and_returns_its_verdict`, `session::input::tests::acknowledgements_carry_the_platforms_verdict_and_the_text_method` |
 | Taps, long presses, swipes with duration, keys, in pixels | `session::input::tests::taps_and_long_presses_go_out_in_pixels`, `session::input::tests::swipes_keep_their_duration_and_keys_their_code`, and on the controller `session::input::tests::a_swipe_on_the_controller_is_down_moves_and_up_along_the_line`, `session::input::tests::a_swipe_without_duration_still_moves_once` |
 
 Requirement **Direct text setting with fallback**:
