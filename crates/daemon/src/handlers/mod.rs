@@ -303,35 +303,53 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         relaunch: request.flag("relaunch"),
         env,
     };
-    let max = settle_max(request)?;
+    // An explicit timeout bounds the whole wait; without one, the app gets
+    // the waiting commands' default to show its first tree, as a slow cold
+    // read of a large screen needs, and the settle after it the maximum of
+    // design D8.
+    let explicit = request
+        .u64("timeout")?
+        .map(|ms| bounded("timeout", ms))
+        .transpose()?;
     let started = Instant::now();
+    let first_wait = match explicit {
+        Some(total) => total,
+        None => timeout(request)?,
+    };
     target.apps.launch(&app, &launch)?;
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
-    let deadline = started + max;
     // A relaunched app's tree is the one a read after the launch shows: the
     // one before it was the process the relaunch stopped.
     let fresh = launch.relaunch.then_some(launched);
-    let shown = first_tree(target, &app, fresh, deadline)?;
+    let shown = first_tree(target, &app, fresh, started + first_wait)?;
     let settled = match shown {
-        Some(_) => {
+        Some(at) => {
+            let max = match explicit {
+                Some(total) => (started + total).saturating_duration_since(at),
+                None => mirror::DEFAULT_SETTLE_MAX,
+            };
             target
                 .mirror
                 .settle(&mirror::SettleOptions {
-                    max: deadline.saturating_duration_since(Instant::now()),
+                    max,
                     ..mirror::SettleOptions::default()
                 })?
                 .settled
         }
         None => false,
     };
-    let warning = shown.is_none().then(|| {
-        format!(
+    let warning = match (shown, settled) {
+        (None, _) => Some(format!(
             "{app} did not show its screen within {} ms; take a snapshot to see what is in front",
-            max.as_millis()
-        )
-    });
+            first_wait.as_millis()
+        )),
+        (Some(_), false) => Some(format!(
+            "{app} showed its screen, which did not settle; wait --settle before you act on it"
+        )),
+        (Some(_), true) => None,
+    };
     Ok(Success::new(json!({
         "opened": app,
         "target": target.info.id,

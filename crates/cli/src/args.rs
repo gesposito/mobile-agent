@@ -132,7 +132,8 @@ Examples:
 
     /// Launch an app and claim its target for this session
     #[command(after_help = "\
-Waits up to 3000 ms for the app's screen to settle.
+Waits for the launched app's first tree, up to the session's default timeout
+(10000 ms), then up to 3000 ms for its screen to settle; --timeout bounds both.
 
 Examples:
   mobile-agent open dev.mobileagent.fixture.expo
@@ -339,7 +340,7 @@ pub struct OpenArgs {
     /// A launch environment variable, repeatable; an intent string extra on Android
     #[arg(long = "env", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
-    /// Longest wait for the app's screen to settle, in ms [default: 3000]
+    /// Longest wait for the app's first tree and its settling, in ms [default: the session's timeout for the tree, then 3000 to settle]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
 }

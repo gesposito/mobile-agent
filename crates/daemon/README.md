@@ -153,9 +153,13 @@ strokes, or at its timeout.
 `open` waits for the launched app's first tree before it settles: until
 the replica shows the app in front with more than its root, read after the
 launch returned when the app was relaunched, since a read before that can
-still show the process the relaunch stopped. It then waits for the screen
-to settle, the whole within `timeout` (3000 ms by default), and reports
-`settled` false, with a warning, when the app did not show in time.
+still show the process the relaunch stopped. The app gets the waiting
+commands' default timeout (the session's, else 10000 ms) to show it, as
+the Compose fixture's 500-cell screen needs on an emulator, where the
+launch takes 1 to 2 s and the cold read 1.5 s; the screen then gets 3000 ms
+to settle (design D8). An explicit `timeout` bounds both together. It
+reports `settled` false, with a warning, when the app did not show in time
+or its screen did not settle.
 
 ## Tap spans and settle signals
 
@@ -243,7 +247,8 @@ A waiting command (a wait for an element or text, or a click, fill, type,
 get or scroll on a selector) waits for its own `timeout`, else its
 session's default (`set_timeout`), else the client's `defaultTimeout`, else
 10000 ms. `wait` with `settle` and `open` wait at most 3000 ms (design D8)
-unless given `timeout`. Timeouts are at most 600000 ms.
+unless given `timeout`; `open` first waits for the launched app's first
+tree up to the waiting default. Timeouts are at most 600000 ms.
 
 The idle timer runs from the end of the last request and stands still
 while any request is in flight, so a long wait outlasts a short idle

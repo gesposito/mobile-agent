@@ -205,9 +205,10 @@ Waiting commands take `--timeout <ms>`: `wait` for an element or text, and
 `click`, `fill`, `type`, `get` and `scroll` on a selector. Without one,
 the session's default applies (`set timeout`), else `--default-timeout`,
 `MOBILE_AGENT_DEFAULT_TIMEOUT` or the config's `defaultTimeout`, else 10000
-ms. `wait --settle` and `open` wait at most 3000 ms unless given
-`--timeout`. Timeouts are at most 600000 ms. Each command's help states its
-default.
+ms. `wait --settle` waits at most 3000 ms unless given `--timeout`; `open`
+waits for the launched app's first tree up to that default, then at most
+3000 ms for its screen to settle, and `--timeout` bounds both. Timeouts
+are at most 600000 ms. Each command's help states its default.
 
 ## Batch
 
