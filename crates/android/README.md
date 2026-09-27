@@ -299,11 +299,11 @@ What the agent session tests (`tests/agent_session.rs`) do on the device:
 - The controller test subscribes to frames and taps the List tab.
 
 The device may be shared. Before a test the agent and session tests wait,
-up to a minute, until no agent runs and nothing holds UI automation. A
-session test that another user disturbs, by starting an agent or taking UI
-automation (another agent's `--force` kills ours) or by moving the fixture,
-runs again once the device is quiet, three times at most; a failure while
-nobody else is on the device fails the test.
+up to a minute, until no agent runs and nothing holds UI automation. A test
+that another user disturbs, by starting an agent or taking UI automation
+(another agent's `--force` kills ours) or by moving the fixture, runs again
+once the device is quiet, three times at most; a failure while nobody else
+is on the device fails the test.
 
 What the emulator integration tests do:
 

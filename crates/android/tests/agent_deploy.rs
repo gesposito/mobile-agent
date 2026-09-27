@@ -5,20 +5,22 @@
 //! They run only when `MOBILE_AGENT_ANDROID_SERIAL` names a device, one at a
 //! time, and need the agent jar (`agent-android/build.sh`). Every agent they
 //! start is stopped at the end, or killed by pid if the test fails first; the
-//! agents also exit on their own 10 s after their host goes away.
+//! agents also exit on their own 10 s after their host goes away. The device
+//! may be shared: a test that another user disturbs (its agent or
+//! `uiautomator` takes UI automation) runs again once the device is quiet.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use android::adb::{AdbServer, Device, ShellPacket};
+use android::adb::{AdbServer, Device, ShellPacket, ShellStream};
 use android::agent::{
     AGENT_VERSION, AgentJar, AgentState, Attached, DeployError, DeployOptions, Deployer,
     Incompatibility, JAR_MODE, Outcome, Records, Stopped, push_jar,
 };
 use common::{
-    Leftovers, agent_alive, agent_jar, agent_reporting, device_lock, serial_or_skip,
-    wait_until_quiet,
+    Disturbed, Leftovers, agent_alive, agent_jar, agent_reporting, device_lock, disturbed_by,
+    others_on, retry_when_disturbed, serial_or_skip,
 };
 use protocol::message::{Call, Reply, SnapshotParams};
 
@@ -30,6 +32,13 @@ fn options() -> DeployOptions {
     DeployOptions {
         idle_exit: Duration::from_secs(10),
         ..DeployOptions::default()
+    }
+}
+
+fn forced() -> DeployOptions {
+    DeployOptions {
+        force: true,
+        ..options()
     }
 }
 
@@ -50,22 +59,49 @@ fn packages(device: &Device) -> Vec<String> {
     list
 }
 
-fn snapshot_nodes(attached: &Attached) -> u32 {
-    let reply = attached
-        .connection
-        .call(
-            Call::Snapshot(SnapshotParams::default()),
-            Duration::from_secs(10),
-        )
-        .unwrap_or_else(|e| panic!("snapshot: {e}"));
+/// A snapshot's node count; a failure while another user of the device
+/// runs an agent (whose `--force` kills ours) is a disturbance.
+fn snapshot_nodes(device: &Device, attached: &Attached) -> Result<u32, Disturbed> {
+    let reply = attached.connection.call(
+        Call::Snapshot(SnapshotParams::default()),
+        Duration::from_secs(10),
+    );
     match reply {
-        Reply::Snapshot(s) => s.node_count,
-        other => panic!("a snapshot answered with {other:?}"),
+        Ok(Reply::Snapshot(s)) => Ok(s.node_count),
+        Ok(other) => panic!("a snapshot answered with {other:?}"),
+        Err(error) => match others_on(device, &[attached.agent.pid]) {
+            Some(who) => Err(Disturbed(format!("snapshot: {error}, while {who}"))),
+            None => panic!("snapshot: {error}"),
+        },
     }
 }
 
-fn track(leftovers: &mut Leftovers, attached: &Attached) {
+/// Attaches with `deployer` and has the agent killed if the test fails.
+fn attach(
+    deployer: &Deployer,
+    options: &DeployOptions,
+    leftovers: &mut Leftovers,
+) -> Result<Attached, Disturbed> {
+    let attached = deployer
+        .attach(options)
+        .map_err(|e| disturbed_by(deployer.device(), e))?;
     leftovers.track(attached.agent.pid, &attached.agent.socket);
+    Ok(attached)
+}
+
+/// A disturbance when an agent this test did not start runs.
+fn only_ours(deployer: &Deployer, ours: &[u32]) -> Result<(), Disturbed> {
+    let others: Vec<_> = deployer
+        .running()
+        .unwrap()
+        .into_iter()
+        .filter(|agent| !ours.contains(&agent.pid))
+        .collect();
+    if others.is_empty() {
+        Ok(())
+    } else {
+        Err(Disturbed(format!("another agent runs: {others:?}")))
+    }
 }
 
 /// Spec scenario "First attach" (android-driver, Agent deployment without
@@ -73,22 +109,25 @@ fn track(leftovers: &mut Leftovers, attached: &Attached) {
 /// driver's stop.
 #[test]
 fn a_first_attach_starts_the_agent_and_installs_nothing() {
-    let Some(serial) = serial_or_skip("a_first_attach_starts_the_agent_and_installs_nothing")
-    else {
+    let test = "a_first_attach_starts_the_agent_and_installs_nothing";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
-    let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
-    assert_eq!(deployer.state().unwrap(), AgentState::Absent);
-    let before = packages(&device);
+    retry_when_disturbed(test, &device, || first_attach(&device));
+}
 
-    let attached = deployer
-        .attach(&options())
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &attached);
+fn first_attach(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
+    match deployer.state().unwrap() {
+        AgentState::Absent => {}
+        other => return Err(Disturbed(format!("an agent runs: {other:?}"))),
+    }
+    let before = packages(device);
+
+    let attached = attach(&deployer, &options(), &mut leftovers)?;
     let Outcome::Launched(launched) = &attached.outcome else {
         panic!("a first attach reused {:?}", attached.outcome);
     };
@@ -102,18 +141,19 @@ fn a_first_attach_starts_the_agent_and_installs_nothing() {
     assert_eq!(attached.agent.protocol, protocol::PROTOCOL_VERSION);
     assert_eq!(attached.agent.agent, deployer.jar().agent_name());
     assert!(agent_alive(
-        &device,
+        device,
         attached.agent.pid,
         &attached.agent.socket
     ));
 
-    let nodes = snapshot_nodes(&attached);
+    let nodes = snapshot_nodes(device, &attached)?;
     assert!(nodes > 0, "the first snapshot is empty");
-    assert_eq!(packages(&device), before, "a package was installed");
+    assert_eq!(packages(device), before, "a package was installed");
     let jars = device
         .shell(&format!("ls /data/local/tmp/{}.jar", attached.agent.socket))
         .unwrap();
     assert!(!jars.success(), "the pushed jar is still there");
+    only_ours(&deployer, &[attached.agent.pid])?;
     match deployer.state().unwrap() {
         AgentState::Running(agent) => assert_eq!(agent.pid, attached.agent.pid),
         other => panic!("the state of a running agent is {other:?}"),
@@ -133,11 +173,13 @@ fn a_first_attach_starts_the_agent_and_installs_nothing() {
     let stopped = attached.stop(Duration::from_secs(3)).unwrap();
     assert_eq!(stopped, Stopped::Exited);
     assert!(
-        !agent_alive(&device, pid, &socket),
+        !agent_alive(device, pid, &socket),
         "the agent outlived stop"
     );
+    only_ours(&deployer, &[])?;
     assert_eq!(deployer.state().unwrap(), AgentState::Absent);
-    assert_eq!(deployer.records().get(&serial), None);
+    assert_eq!(deployer.records().get(device.serial()), None);
+    Ok(())
 }
 
 /// Spec scenario "Compatible agent reused": a later session, here a new
@@ -145,35 +187,34 @@ fn a_first_attach_starts_the_agent_and_installs_nothing() {
 /// running agent and no process is started.
 #[test]
 fn a_compatible_agent_is_reused_without_starting_a_process() {
-    let Some(serial) = serial_or_skip("a_compatible_agent_is_reused_without_starting_a_process")
-    else {
+    let test = "a_compatible_agent_is_reused_without_starting_a_process";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
-    let dir = records_dir("reuse");
+    retry_when_disturbed(test, &device, || compatible_reuse(&device));
+}
 
-    let first = Deployer::new(device.clone(), agent_jar(), Records::in_dir(&dir).unwrap())
-        .attach(&options())
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &first);
+fn compatible_reuse(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let dir = records_dir("reuse");
+    let first = Deployer::new(device.clone(), agent_jar(), Records::in_dir(&dir).unwrap());
+    let first = attach(&first, &options(), &mut leftovers)?;
     let (pid, socket) = (first.agent.pid, first.agent.socket.clone());
     // The session ends; the agent stays.
     drop(first);
 
     let later = Deployer::new(device.clone(), agent_jar(), Records::in_dir(&dir).unwrap());
     let started = Instant::now();
-    let attached = later.attach(&options()).unwrap_or_else(|e| panic!("{e}"));
+    let attached = attach(&later, &options(), &mut leftovers)?;
     let took = started.elapsed();
     assert_eq!(attached.outcome, Outcome::Reused);
     assert_eq!(attached.agent.pid, pid);
     assert_eq!(attached.agent.socket, socket);
     assert_eq!(attached.timings.push, None, "nothing is pushed on reuse");
-    let agents = later.running().unwrap();
-    assert_eq!(agents.len(), 1, "another agent process started: {agents:?}");
-    assert!(snapshot_nodes(&attached) > 0);
+    only_ours(&later, &[pid])?;
+    assert!(snapshot_nodes(device, &attached)? > 0);
     eprintln!(
         "reuse attach {:.1} ms (listing {:.1} ms, handshake {:.1} ms)",
         ms(took),
@@ -183,6 +224,7 @@ fn a_compatible_agent_is_reused_without_starting_a_process() {
 
     attached.stop(Duration::from_secs(3)).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
+    Ok(())
 }
 
 /// Spec scenario "Incompatible agent replaced": an agent of another build
@@ -190,32 +232,31 @@ fn a_compatible_agent_is_reused_without_starting_a_process() {
 /// driver stops it and starts the current build.
 #[test]
 fn an_incompatible_agent_is_replaced_by_the_current_build() {
-    let Some(serial) = serial_or_skip("an_incompatible_agent_is_replaced_by_the_current_build")
-    else {
+    let test = "an_incompatible_agent_is_replaced_by_the_current_build";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
-    let records = Records::in_memory();
+    retry_when_disturbed(test, &device, || incompatible_replacement(&device));
+}
 
-    let old_build = agent_reporting("0.0.9");
-    let old = Deployer::new(device.clone(), old_build, records.clone())
-        .attach(&options())
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &old);
+fn incompatible_replacement(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let records = Records::in_memory();
+    let old = Deployer::new(device.clone(), agent_reporting("0.0.9"), records.clone());
+    let old = attach(&old, &options(), &mut leftovers)?;
     assert_eq!(old.agent.agent, "mobile-agent-android 0.0.9");
     let (old_pid, old_socket) = (old.agent.pid, old.agent.socket.clone());
     drop(old);
 
     let current = Deployer::new(device.clone(), agent_jar(), records.clone());
+    only_ours(&current, &[old_pid])?;
     match current.state().unwrap() {
         AgentState::Incompatible(agent) => assert_eq!(agent.pid, old_pid),
         other => panic!("an older build's state is {other:?}"),
     }
-    let attached = current.attach(&options()).unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &attached);
+    let attached = attach(&current, &options(), &mut leftovers)?;
     let Outcome::Launched(launched) = &attached.outcome else {
         panic!("the older build was reused");
     };
@@ -233,21 +274,22 @@ fn an_incompatible_agent_is_replaced_by_the_current_build() {
         }
     );
     assert_eq!(replaced.stopped, Stopped::Exited, "shutdown ends it");
-    assert!(!agent_alive(&device, old_pid, &old_socket));
+    assert!(!agent_alive(device, old_pid, &old_socket));
     assert_ne!(attached.agent.pid, old_pid);
     assert_eq!(attached.agent.agent, current.jar().agent_name());
-    assert!(snapshot_nodes(&attached) > 0);
+    assert!(snapshot_nodes(device, &attached)? > 0);
     eprintln!(
         "replacement attach {:.1} ms, of which stopping the older build {:.1} ms",
         ms(attached.timings.total),
         ms(attached.timings.replace.unwrap())
     );
     attached.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
 }
 
-/// The pid of `uiautomator events` started on a stream, once it holds UI
+/// `uiautomator events` started on a stream, with its pid, once it holds UI
 /// automation; dropping the stream ends it (adbd sends SIGHUP).
-fn start_uiautomator_events(device: &Device) -> (android::adb::ShellStream, u32) {
+fn start_uiautomator_events(device: &Device) -> Result<(ShellStream, u32), Disturbed> {
     let mut stream = device
         .shell_stream("echo $$; exec uiautomator events")
         .unwrap();
@@ -262,6 +304,11 @@ fn start_uiautomator_events(device: &Device) -> (android::adb::ShellStream, u32)
         }
     }
     let pid: u32 = out.lines().next().unwrap().trim().parse().unwrap();
+    let running = |device: &Device| {
+        device
+            .shell(&format!("grep -q uiautomator /proc/{pid}/cmdline"))
+            .is_ok_and(|out| out.success())
+    };
     let held = (0..100).any(|_| {
         std::thread::sleep(Duration::from_millis(100));
         device
@@ -270,33 +317,50 @@ fn start_uiautomator_events(device: &Device) -> (android::adb::ShellStream, u32)
             .stdout_text()
             .contains("Ui Automation")
     });
-    assert!(held, "uiautomator events did not take UI automation");
-    (stream, pid)
+    if !held || !running(device) {
+        return Err(Disturbed(
+            "uiautomator events did not take UI automation".into(),
+        ));
+    }
+    Ok((stream, pid))
 }
 
 /// Spec scenario "Another tool holds automation" (Single ownership of UI
 /// automation), and the force option.
 #[test]
 fn another_tool_holding_automation_is_a_conflict_naming_it_until_forced() {
-    let Some(serial) =
-        serial_or_skip("another_tool_holding_automation_is_a_conflict_naming_it_until_forced")
-    else {
+    let test = "another_tool_holding_automation_is_a_conflict_naming_it_until_forced";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
-    let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
-    let (holder, holder_pid) = start_uiautomator_events(&device);
+    retry_when_disturbed(test, &device, || tool_conflict(&device));
+}
 
-    let error = deployer.attach(&options()).unwrap_err();
+fn tool_conflict(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
+    let (holder, holder_pid) = start_uiautomator_events(device)?;
+
+    let error = match deployer.attach(&options()) {
+        Err(DeployError::Conflict(conflict)) => DeployError::Conflict(conflict),
+        Err(other) => return Err(disturbed_by(device, other)),
+        Ok(attached) => {
+            leftovers.track(attached.agent.pid, &attached.agent.socket);
+            return Err(Disturbed(
+                "uiautomator events lost the role before the attach".into(),
+            ));
+        }
+    };
     let DeployError::Conflict(conflict) = &error else {
         panic!("expected a conflict, got {error}");
     };
     let named = conflict.holder.as_ref().expect("a likely holder");
+    if named.pid != Some(holder_pid) {
+        return Err(Disturbed(format!("another holder was named: {named}")));
+    }
     assert_eq!(named.name, "uiautomator");
-    assert_eq!(named.pid, Some(holder_pid));
     let message = error.to_string();
     assert!(message.contains("force"), "{message}");
     assert!(
@@ -305,13 +369,7 @@ fn another_tool_holding_automation_is_a_conflict_naming_it_until_forced() {
     );
     eprintln!("{message}");
 
-    let forced = deployer
-        .attach(&DeployOptions {
-            force: true,
-            ..options()
-        })
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &forced);
+    let forced = attach(&deployer, &forced(), &mut leftovers)?;
     let Outcome::Launched(launched) = &forced.outcome else {
         panic!("force reused an agent");
     };
@@ -323,30 +381,39 @@ fn another_tool_holding_automation_is_a_conflict_naming_it_until_forced() {
     assert_eq!(took_over.pid, Some(holder_pid));
     drop(holder);
     forced.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
 }
 
 /// Single ownership: an agent this host did not start (another daemon's,
 /// with its own records) is another holder; force takes over from it.
 #[test]
 fn an_agent_another_host_started_is_a_conflict_until_forced() {
-    let Some(serial) = serial_or_skip("an_agent_another_host_started_is_a_conflict_until_forced")
-    else {
+    let test = "an_agent_another_host_started_is_a_conflict_until_forced";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
-    let theirs = Deployer::new(device.clone(), agent_jar(), Records::in_memory())
-        .attach(&options())
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &theirs);
+    retry_when_disturbed(test, &device, || foreign_agent(&device));
+}
+
+fn foreign_agent(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let other_host = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
+    let theirs = attach(&other_host, &options(), &mut leftovers)?;
 
     let ours = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
     let started = Instant::now();
-    let error = ours.attach(&options()).unwrap_err();
+    let error = match ours.attach(&options()) {
+        Err(DeployError::Conflict(conflict)) => DeployError::Conflict(conflict),
+        Err(other) => return Err(disturbed_by(device, other)),
+        Ok(attached) => {
+            leftovers.track(attached.agent.pid, &attached.agent.socket);
+            return Err(Disturbed("the other host's agent went away".into()));
+        }
+    };
     let DeployError::Conflict(conflict) = &error else {
-        panic!("expected a conflict, got {error}");
+        unreachable!("matched above");
     };
     assert!(
         started.elapsed() < Duration::from_secs(1),
@@ -354,17 +421,13 @@ fn an_agent_another_host_started_is_a_conflict_until_forced() {
         started.elapsed()
     );
     let holder = conflict.holder.as_ref().expect("the other agent named");
+    if holder.pid != Some(theirs.agent.pid) {
+        return Err(Disturbed(format!("another holder was named: {holder}")));
+    }
     assert_eq!(holder.name, "mobile-agent");
-    assert_eq!(holder.pid, Some(theirs.agent.pid));
-    assert!(agent_alive(&device, theirs.agent.pid, &theirs.agent.socket));
+    assert!(agent_alive(device, theirs.agent.pid, &theirs.agent.socket));
 
-    let forced = ours
-        .attach(&DeployOptions {
-            force: true,
-            ..options()
-        })
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &forced);
+    let forced = attach(&ours, &forced(), &mut leftovers)?;
     let Outcome::Launched(launched) = &forced.outcome else {
         panic!("force reused the other host's agent");
     };
@@ -372,12 +435,9 @@ fn an_agent_another_host_started_is_a_conflict_until_forced() {
         launched.took_over.as_ref().map(|h| h.name.as_str()),
         Some("mobile-agent")
     );
-    assert!(!agent_alive(
-        &device,
-        theirs.agent.pid,
-        &theirs.agent.socket
-    ));
+    assert!(!agent_alive(device, theirs.agent.pid, &theirs.agent.socket));
     forced.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
 }
 
 /// The jar arrives read-only: adbd copies the owner's bits to group and
@@ -402,19 +462,19 @@ fn the_jar_is_pushed_read_only() {
 /// stdout, makes it write; that part needs `su` (emulator images have it).
 #[test]
 fn the_agent_outlives_its_launch_stream_and_a_closed_stdout() {
-    let Some(serial) = serial_or_skip("the_agent_outlives_its_launch_stream_and_a_closed_stdout")
-    else {
+    let test = "the_agent_outlives_its_launch_stream_and_a_closed_stdout";
+    let Some(serial) = serial_or_skip(test) else {
         return;
     };
     let _device = device_lock();
     let device = device(&serial);
-    wait_until_quiet(&device);
-    let mut leftovers = Leftovers::new(&device);
+    retry_when_disturbed(test, &device, || detached(&serial, &device));
+}
+
+fn detached(serial: &str, device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
     let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
-    let attached = deployer
-        .attach(&options())
-        .unwrap_or_else(|e| panic!("{e}"));
-    track(&mut leftovers, &attached);
+    let attached = attach(&deployer, &options(), &mut leftovers)?;
     let (pid, socket) = (attached.agent.pid, attached.agent.socket.clone());
 
     let status = device
@@ -431,13 +491,14 @@ fn the_agent_outlives_its_launch_stream_and_a_closed_stdout() {
     };
     assert_eq!(field("PPid:"), "1", "the agent is not reparented to init");
     let ignored = u64::from_str_radix(&field("SigIgn:"), 16).unwrap();
-    let (hup, pipe) = (1u64 << (1 - 1), 1u64 << (13 - 1));
-    assert_eq!(ignored & (hup | pipe), hup | pipe, "SigIgn {ignored:#x}");
+    // Signal n is bit n - 1 of the mask: SIGHUP (1) and SIGPIPE (13).
+    const HUP_AND_PIPE: u64 = 0x1001;
+    assert_eq!(ignored & HUP_AND_PIPE, HUP_AND_PIPE, "SigIgn {ignored:#x}");
 
     let root = device.shell("su 0 id -u").unwrap();
     if root.success() && root.stdout_text().trim() == "0" {
         let jar = format!("/data/local/tmp/{}.jar", common::unique_name("peer"));
-        push_jar(&device, deployer.jar(), &jar).unwrap();
+        push_jar(device, deployer.jar(), &jar).unwrap();
         let out = device
             .shell(&format!(
                 "su 0 sh -c 'CLASSPATH={jar} app_process / {} connect-check --socket {socket}'",
@@ -451,7 +512,8 @@ fn the_agent_outlives_its_launch_stream_and_a_closed_stdout() {
     } else {
         eprintln!("no su on {serial}: the agent was not made to write to its closed stdout");
     }
-    assert!(agent_alive(&device, pid, &socket), "the agent died");
-    assert!(snapshot_nodes(&attached) > 0);
+    assert!(agent_alive(device, pid, &socket), "the agent died");
+    assert!(snapshot_nodes(device, &attached)? > 0);
     attached.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
 }
