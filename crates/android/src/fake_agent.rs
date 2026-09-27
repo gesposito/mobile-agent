@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use protocol::event::EventPayload;
+use protocol::event::{EventPayload, Stream};
 use protocol::message::{Reply, Request};
 use protocol::session::{AgentConfig, AgentEvent, AgentSession, DisconnectReason};
 use protocol::{Capabilities, Error};
@@ -19,6 +19,8 @@ pub(crate) type Handler = Box<dyn FnMut(&Request) -> Option<Result<Reply, Error>
 
 enum Control {
     Emit(EventPayload),
+    /// Use up the stream's next sequence number without sending it.
+    Skip(Stream),
     /// Close the connection as if the process died.
     Close,
 }
@@ -76,6 +78,10 @@ impl FakeAgent {
 
     pub(crate) fn emit(&self, payload: EventPayload) {
         let _ = self.control.send(Control::Emit(payload));
+    }
+
+    pub(crate) fn skip(&self, stream: Stream) {
+        let _ = self.control.send(Control::Skip(stream));
     }
 
     pub(crate) fn close(&self) {
@@ -144,6 +150,9 @@ fn serve(
                 Control::Emit(payload) => {
                     let time_us = started.elapsed().as_micros() as u64;
                     session.emit(payload, time_us);
+                }
+                Control::Skip(stream) => {
+                    session.skip_event(stream);
                 }
                 Control::Close => {
                     let _ = stream.shutdown(Shutdown::Both);

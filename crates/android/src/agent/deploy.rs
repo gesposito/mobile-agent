@@ -106,6 +106,25 @@ impl fmt::Debug for AgentInfo {
 }
 
 impl AgentInfo {
+    /// The agent reached on `socket`, with what its handshake settled.
+    pub(crate) fn new(
+        serial: &str,
+        socket: &str,
+        pid: u32,
+        negotiated: &Negotiated,
+        token: &str,
+    ) -> AgentInfo {
+        AgentInfo {
+            serial: serial.to_owned(),
+            socket: socket.to_owned(),
+            pid,
+            agent: negotiated.agent.clone(),
+            protocol: negotiated.version,
+            capabilities: negotiated.capabilities,
+            token: token.to_owned(),
+        }
+    }
+
     /// The per-launch token its hello carries.
     pub fn token(&self) -> &str {
         &self.token

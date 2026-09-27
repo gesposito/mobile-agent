@@ -21,7 +21,9 @@ dependencies = [
 name = "android"
 version = "0.1.0"
 dependencies = [
+ "jpeg-encoder",
  "miniz_oxide",
+ "mirror",
  "prost",
  "protoc-bin-vendored",
  "protocol",
