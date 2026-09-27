@@ -10,6 +10,7 @@
 // The platform-neutral helpers are used only by the macOS driver.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+mod compat;
 mod driver;
 mod error;
 mod frames;
@@ -27,6 +28,7 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 
+pub use compat::{CallSite, Compatibility, Row, Status};
 pub use driver::{Frames, Input, Lifecycle};
 pub use error::{Error, Failure, Result};
 pub use frames::FrameStream;

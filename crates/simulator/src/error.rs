@@ -84,6 +84,12 @@ pub enum Error {
         target: String,
         diagnostics: crate::model::Diagnostics,
     },
+    /// The selected Xcode is outside the range the driver supports.
+    UnsupportedXcode {
+        detected: String,
+        supported: String,
+        notes: String,
+    },
     /// No input transport works for this host and runtime.
     NoInputTransport {
         /// The host's CoreSimulator and Xcode versions.
@@ -113,6 +119,7 @@ impl Error {
             Error::InputUnavailable { .. } => "input_unavailable",
             Error::NoInputTransport { .. } => "no_input_transport",
             Error::Unavailable { .. } => "target_unavailable",
+            Error::UnsupportedXcode { .. } => "unsupported_xcode",
         }
     }
 }
@@ -142,6 +149,15 @@ impl fmt::Display for Error {
             Error::InvalidArgument(reason) => f.write_str(reason),
             Error::Frame { reason } => write!(f, "frame capture failed: {reason}"),
             Error::Unsupported { what } => write!(f, "{what} is not supported"),
+            Error::UnsupportedXcode {
+                detected,
+                supported,
+                notes,
+            } => write!(
+                f,
+                "{detected} is outside the Xcode range this driver supports, {supported}; \
+                 see {notes}, or run doctor"
+            ),
             Error::Unavailable {
                 target,
                 diagnostics,

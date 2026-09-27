@@ -57,6 +57,10 @@ impl SimulatorDriver {
         match *self {}
     }
 
+    pub fn compatibility(&self) -> Result<crate::compat::Compatibility> {
+        match *self {}
+    }
+
     #[cfg(feature = "fault-injection")]
     pub fn inject_fault(&self, _target: &str) -> Result<()> {
         match *self {}

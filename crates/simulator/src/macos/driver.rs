@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use crate::compat::Compatibility;
 use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
@@ -78,13 +79,18 @@ impl SimulatorDriver {
 
     /// `open` with the input transport chosen by `options`.
     pub fn open_with(options: DriverOptions) -> Result<SimulatorDriver> {
+        SimulatorDriver::with_host(options, host::detect())
+    }
+
+    /// `open_with` on a host whose versions are `host`.
+    fn with_host(options: DriverOptions, host: HostVersions) -> Result<SimulatorDriver> {
         let context = ServiceContext::connect()?;
         let set = context.default_set()?;
         Ok(SimulatorDriver {
             context,
             set,
             options,
-            host: host::detect(),
+            host,
             targets: Mutex::new(HashMap::new()),
             unavailable: Mutex::new(HashMap::new()),
         })
@@ -144,6 +150,12 @@ impl SimulatorDriver {
         let dropped = lock(&self.targets).remove(&udid);
         drop(dropped);
         Ok(())
+    }
+
+    /// What the driver supports on this host, for `doctor`: the host's
+    /// components and every private call with where it was validated.
+    pub fn compatibility(&self) -> Result<Compatibility> {
+        unimplemented!("task 6.9: compatibility table")
     }
 
     /// Makes the next private framework call made for `target` raise an
@@ -628,6 +640,74 @@ mod tests {
                 description: String::new(),
             },
         }
+    }
+
+    /// A driver on this host's CoreSimulator that believes the selected
+    /// Xcode is `xcode`.
+    fn driver_on(xcode: &str) -> SimulatorDriver {
+        SimulatorDriver::with_host(
+            DriverOptions::default(),
+            HostVersions {
+                core_simulator: Some("1171.7".into()),
+                xcode: Some(xcode.into()),
+            },
+        )
+        .expect("the driver opens")
+    }
+
+    #[test]
+    fn commands_refuse_an_xcode_outside_the_range() {
+        let driver = driver_on("28.0 (28A5)");
+        for error in [
+            driver.devices().expect_err("listing refuses"),
+            driver
+                .boot("00000000-0000-0000-0000-000000000000")
+                .expect_err("booting refuses"),
+        ] {
+            assert_eq!(error.code(), "unsupported_xcode", "{error}");
+            let message = error.to_string();
+            assert!(
+                message.contains("28.0 (28A5)") && message.contains("26.0"),
+                "{message}"
+            );
+        }
+        let table = driver.compatibility().expect("doctor still reports");
+        let xcode = table
+            .rows
+            .iter()
+            .find(|row| row.component == "Xcode")
+            .expect("an Xcode row");
+        assert_eq!(xcode.status, crate::compat::Status::Unsupported);
+        assert!(!table.usable());
+    }
+
+    #[test]
+    fn this_host_is_within_the_range_and_the_table_says_why() {
+        let driver = SimulatorDriver::open().expect("the driver opens");
+        driver.devices().expect("commands work within the range");
+        let table = driver.compatibility().expect("a table");
+        let text = table.render();
+        for component in [
+            "Xcode",
+            "CoreSimulator",
+            "SimulatorKit",
+            "input transport",
+            "XPC symbols",
+            "frame encoder",
+        ] {
+            assert!(
+                table.rows.iter().any(|row| row.component == component),
+                "{component} is missing from:\n{text}"
+            );
+        }
+        assert!(table.usable(), "{text}");
+        assert!(
+            table
+                .call_sites
+                .iter()
+                .any(|site| site.call.contains("lookup:error:")),
+            "{text}"
+        );
     }
 
     #[test]
