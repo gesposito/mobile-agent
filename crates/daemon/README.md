@@ -367,7 +367,9 @@ session, whose backend the mirror runs on. The display size comes from
 
 Dropping the attachment stops the agent (`shutdown`, then a kill past
 2 s) and forgets its record, so `shutdown`, an idle exit and a detach
-after a failed command leave no agent behind. A daemon killed before it
+after a failed command leave no agent behind. An agent whose session
+cannot start after the attach, such as when the display density cannot be
+read, is stopped from its record the same way before the attach fails. A daemon killed before it
 could stop its agent leaves the record, and its successor reuses the agent
 if it still runs.
 

@@ -211,8 +211,9 @@ impl Driver for AndroidDevices {
         let attached = Deployer::new(device.clone(), jar, self.records())
             .attach(&deploy)
             .map_err(deploy_error)?;
-        let session = Session::start_selected(attached, SessionOptions::default(), selection)
-            .map_err(|e| DriverError::new(ADB_FAILED, e.to_string()))?;
+        let session = start_or_stop(attached, |attached| {
+            Session::start_selected(attached, SessionOptions::default(), selection)
+        })?;
         // Created before anything else can fail, so the agent is stopped
         // on a failure below as on a detach.
         let stop = StopAgent(session.clone());
@@ -252,13 +253,26 @@ fn adb_error(failure: adb::Error) -> DriverError {
 /// Starts the session over `attached` with `start`; when it cannot start,
 /// stops the agent the attach started or reused, so no agent outlives a
 /// failed attach.
-#[allow(dead_code)]
 pub(crate) fn start_or_stop(
     attached: Attached,
     start: impl FnOnce(Attached) -> Result<Session, SessionError>,
 ) -> Result<Session, DriverError> {
-    let _ = (attached, start);
-    todo!("task 8.11")
+    let deployer = attached.deployer().clone();
+    match start(attached) {
+        Ok(session) => Ok(session),
+        Err(failure) => {
+            // The session took the connection, so the agent is stopped from
+            // its record: `shutdown` on a new connection, else a kill.
+            let stopped = match deployer.stop_recorded(STOP_TIMEOUT) {
+                Ok(_) => "the agent was stopped".to_owned(),
+                Err(error) => format!("stopping the agent failed too: {error}"),
+            };
+            Err(DriverError::new(
+                ADB_FAILED,
+                format!("the agent session could not start ({failure}); {stopped}"),
+            ))
+        }
+    }
 }
 
 /// Stops the agent when dropped: `shutdown`, then a kill past
