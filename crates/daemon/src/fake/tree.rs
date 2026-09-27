@@ -76,6 +76,13 @@ impl El {
     }
 }
 
+/// SpringBoard's window id on a fake Simulator.
+const SPRINGBOARD_WINDOW: u32 = 900;
+
+/// The bit the Simulator's reader sets in an application's window id for
+/// the window of its alert.
+const ALERT_WINDOW: u32 = 1 << 30;
+
 /// One window.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Win {
@@ -465,6 +472,54 @@ impl Kit {
             owner: Owner::Target,
             modal: false,
             root,
+        }
+    }
+
+    /// SpringBoard's window on a Simulator, holding `content`: system UI,
+    /// which the reader names by its process as the owner of its windows.
+    pub fn springboard(self, content: Vec<El>) -> Win {
+        let screen = [0.0, 0.0, self.width(), self.height()];
+        Win {
+            id: SPRINGBOARD_WINDOW,
+            kind: WindowType::SYSTEM,
+            layer: 0,
+            package: Some("com.apple.springboard".to_owned()),
+            title: Some("SpringBoard".to_owned()),
+            rect: screen,
+            flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+            events: Some(false),
+            owner: Owner::System("SpringBoard".to_owned()),
+            modal: false,
+            root: El::new("XCUIElementTypeApplication", screen)
+                .desc("SpringBoard")
+                .children(content),
+        }
+    }
+
+    /// The modal window the reader gives an application's alert on a
+    /// Simulator: above `app_window`, its id the app window's with bit 30
+    /// set, titled by the alert, active and focused in the app window's
+    /// stead, holding the view that presents the alert (a transition view
+    /// with two dimming views and the alert).
+    pub fn alert_window(self, package: &str, app_window: &Win, alert: El) -> Win {
+        let screen = [0.0, 0.0, self.width(), self.height()];
+        let presenter = El::new("UITransitionView", screen).children([
+            El::new("UIView", screen),
+            El::new("UIView", screen),
+            alert.clone(),
+        ]);
+        Win {
+            id: app_window.id | ALERT_WINDOW,
+            kind: WindowType::APPLICATION,
+            layer: app_window.layer + 1,
+            package: Some(package.to_owned()),
+            title: alert.desc.clone(),
+            rect: screen,
+            flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+            events: Some(false),
+            owner: Owner::Target,
+            modal: true,
+            root: presenter,
         }
     }
 

@@ -390,8 +390,15 @@ settle windows take real time, and a device model:
 
 Android fakes use widget classes, a status bar, a keyboard window and
 dialog windows, and send window events; iOS fakes use `XCUIElementType`
-classes, alert nodes and SpringBoard's window, and send no events, so the
-mirror re-reads them as it re-reads a Simulator. Their states are `device`
+classes and send no events, so the mirror re-reads them as it re-reads a
+Simulator, and show what the Simulator's reader reports (task 6.10):
+SpringBoard's window, system UI owned by the process name `SpringBoard`,
+holds the home screen and the location prompt, so `origin` reads
+`SpringBoard` there; an in-app alert sits, with the view presenting it, in
+a modal window of its own above the app's (the app window's id with bit 30
+set, titled by the alert, active and focused in the app window's stead),
+which the mirror names `dialog "In-app alert"` in an `element_covered`
+error. Their states are `device`
 and `booted`; they have neither a capture nor a report. Emulators and
 Simulators have a frame source; Android devices have none, as design D7
 has it, so `screenshot` answers them with `no_frame`. Every change shows

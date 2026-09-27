@@ -406,13 +406,12 @@ impl Device {
         let kit = self.kit;
         let mut windows = Vec::new();
         match &self.foreground {
-            Foreground::Launcher => {
-                let package = match kit.platform {
-                    Platform::Android => "com.android.launcher3",
-                    Platform::Ios => "com.apple.springboard",
-                };
-                windows.push(kit.app_window(package, "Home", launcher(kit)));
-            }
+            Foreground::Launcher => windows.push(match kit.platform {
+                Platform::Android => kit.app_window("com.android.launcher3", "Home", launcher(kit)),
+                // The home screen is SpringBoard's, which the reader reports
+                // as system UI named by its process.
+                Platform::Ios => kit.springboard(launcher(kit)),
+            }),
             Foreground::Settings => {
                 let content = settings(kit, self.wifi);
                 windows.push(kit.app_window(self.settings_id(), "Settings", content));
@@ -615,7 +614,6 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win
         Platform::Ios if fixture.prompt => {
             // SpringBoard owns the foreground while its prompt shows, and the
             // reader reads its tree instead of the app's.
-            let screen = [0.0, 0.0, kit.width(), kit.height()];
             let question = "Allow “FixtureSwiftUI” to use your location?";
             let prompt = kit.alert(
                 question,
@@ -634,25 +632,14 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win
                     ),
                 ],
             );
-            windows.push(Win {
-                id: 900,
-                kind: protocol::snapshot::WindowType::SYSTEM,
-                layer: 10,
-                package: Some("com.apple.springboard".to_owned()),
-                title: Some("SpringBoard".to_owned()),
-                rect: screen,
-                flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
-                events: Some(false),
-                owner: Owner::System("com.apple.springboard".to_owned()),
-                modal: false,
-                root: El::new("XCUIElementTypeApplication", screen)
-                    .desc("SpringBoard")
-                    .child(prompt),
-            });
+            windows.push(kit.springboard(vec![prompt]));
             return;
         }
         Platform::Ios if fixture.alert => {
-            content.push(kit.alert(
+            // The reader moves an application's alert, with the view that
+            // presents it, to a modal window of its own above the app's,
+            // which keeps what the alert covers.
+            let alert = kit.alert(
                 "In-app alert",
                 [61.0, 360.0, 341.0, 514.0],
                 vec![
@@ -664,7 +651,12 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win
                     ),
                     kit.button("inapp-alert-ok", "OK", [61.0, 470.0, 341.0, 514.0]),
                 ],
-            ));
+            );
+            let mut app_window = kit.app_window(app, title, content);
+            app_window.flags = WindowFlags::EMPTY;
+            windows.push(kit.alert_window(app, &app_window, alert));
+            windows.push(app_window);
+            return;
         }
         Platform::Android if fixture.prompt => {
             windows.push(kit.dialog(
