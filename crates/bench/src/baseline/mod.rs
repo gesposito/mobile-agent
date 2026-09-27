@@ -1,8 +1,10 @@
 //! Baseline tools the harness compares `mobile-agent` with on the same flows:
 //! Maestro, maestro-runner and agent-device. Each adapter runs a flow through
-//! the tool's own CLI in the shape the tool's documentation gives, and a tool
-//! that is not on `PATH` is skipped with a note. Only flows run through them;
-//! none of the three exposes the spans the primitives measure.
+//! the tool's own CLI in the shape the tool's documentation gives, reads the
+//! screen through the tool's hierarchy or snapshot command for the flow's
+//! golden check and node count, and a tool that is not on `PATH` is skipped
+//! with a note. Only flows run through them; none of the three exposes the
+//! spans the primitives measure.
 
 pub mod agent_device;
 pub mod maestro;
@@ -215,8 +217,20 @@ impl Adapter for Baseline {
         matches!(subject, Subject::Flow(_))
     }
 
+    /// Runs the flow through the tool, timed, then, for a flow that records
+    /// its node count, reads the screen once more outside the timing and
+    /// counts the nodes the tool's output held.
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
-        self.run_tool(target, flow)
+        let mut sample = self.run_tool(target, flow)?;
+        if flow.count_nodes {
+            let reading = self.read_screen(target).map_err(|e| {
+                AdapterError::new(format!(
+                    "the flow ran, but its node count was not read: {e}"
+                ))
+            })?;
+            sample.nodes = Some(reading.nodes);
+        }
+        Ok(sample)
     }
 
     /// Reads the screen through the tool and summarizes it in the terms of
