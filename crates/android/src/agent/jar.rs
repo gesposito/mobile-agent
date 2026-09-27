@@ -132,9 +132,17 @@ mod tests {
 
     #[test]
     fn the_expected_version_is_the_agents_version_file() {
-        assert_eq!(AGENT_VERSION, "0.1.0");
+        let from_file = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../agent-android/VERSION"
+        ))
+        .expect("agent-android/VERSION is readable");
+        assert_eq!(AGENT_VERSION, from_file.trim());
         let jar = AgentJar::from_bytes(vec![1, 2, 3], AGENT_VERSION);
-        assert_eq!(jar.agent_name(), "mobile-agent-android 0.1.0");
+        assert_eq!(
+            jar.agent_name(),
+            format!("mobile-agent-android {AGENT_VERSION}")
+        );
         assert_eq!(jar.bytes(), &[1, 2, 3]);
         assert_eq!(jar.path(), None);
     }
