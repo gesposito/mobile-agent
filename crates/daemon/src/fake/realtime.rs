@@ -75,7 +75,11 @@ struct Shared {
 #[derive(Default)]
 struct Session {
     started: Option<Instant>,
-    /// How long the last input waited for the session to activate.
+    /// Whether it started ahead of any input, so the next input is its
+    /// first.
+    ahead: bool,
+    /// How long the last input waited for the session to activate: some
+    /// time, none at all for the first input of a session started ahead.
     waited: Option<Duration>,
 }
 
@@ -251,10 +255,11 @@ impl Shared {
         let now = Instant::now();
         let mut session = lock(&self.session);
         let started = *session.started.get_or_insert(now);
+        let first = std::mem::take(&mut session.ahead);
         let wait = (started + self.activation)
             .checked_duration_since(now)
             .filter(|wait| !wait.is_zero());
-        session.waited = wait;
+        session.waited = wait.or(first.then_some(Duration::ZERO));
         wait
     }
 }
@@ -274,9 +279,11 @@ struct FakeSession(Arc<Shared>);
 
 impl InputSession for FakeSession {
     fn start(&mut self) -> Result<(), DriverError> {
-        lock(&self.0.session)
-            .started
-            .get_or_insert_with(Instant::now);
+        let mut session = lock(&self.0.session);
+        if session.started.is_none() {
+            session.started = Some(Instant::now());
+            session.ahead = true;
+        }
         Ok(())
     }
 
@@ -561,7 +568,11 @@ mod tests {
         let started = Instant::now();
         warm.backend.input.perform(&tap).unwrap();
         assert!(started.elapsed() < Duration::from_millis(100));
-        assert_eq!(warm.input_notes.unwrap().activation_wait(), None);
+        assert_eq!(
+            warm.input_notes.unwrap().activation_wait(),
+            Some(Duration::ZERO),
+            "the first input of the session, which waited no time"
+        );
     }
 
     /// Task 8.13: a frame stream that starts after the attach, as an

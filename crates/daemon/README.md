@@ -63,6 +63,8 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
 | `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
 | `--fake-frame-delay` | `MOBILE_AGENT_FAKE_FRAME_DELAY_MS` | `0`; how long after the attach fake targets' frame streams start, in the same forms |
+| `--fake-splash` | `MOBILE_AGENT_FAKE_SPLASH_MS` | `0`; how long fake targets' fixture apps show their launch splash when their process starts |
+| `--fake-activation` | `MOBILE_AGENT_FAKE_ACTIVATION_MS` | `0`; how long after it starts a fake target's input session activates |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -173,25 +175,34 @@ two strokes in a row change nothing (the content stopped moving), after 50
 strokes, or at its timeout.
 
 `open` waits for the launched app's first tree before it settles: until the
-replica shows the app in front with more than its root, read after the
-launch returned when the app was relaunched, since a read before that can
-still show the process the relaunch stopped. Whatever the driver, the
-launch is noted to the mirror as a change of the window in front
-(`Mirror::note_window_change`), so every window is read again and the
-settle counts the launch as a tree change: it waits for an app that draws
-within its quiet window of the launch, even one already in front. `close`
-notes the stop the same way. The app gets the waiting commands' default
-timeout (the session's, else 10000 ms) to show it, as the Compose fixture's
-500-cell screen needs on an emulator, where the launch takes 1 to 2 s and
-the cold read 1.5 s; the screen then gets 3000 ms to settle (design D8). An
-explicit `timeout` bounds both together. Between the two, on a target with
-a frame source, it waits for the frame stream's first frame, at most 2 s
-from its start: the first frame is no change, so a click whose effects came
-before it would report no frame change, and an emulator's stream delivered
-its first frame up to 500 ms after the attach (a Simulator's comes with the
-subscription). It reports `settled` false, with a warning, when the app did
-not show in time or its screen did not settle, and warns when no frame
-came.
+replica shows the app in front with more than its root and more than a
+launch splash, read after the launch returned when the app was relaunched,
+since a read before that can still show the process the relaunch stopped. A
+splash lists nothing interactive in the app's windows, and in the full
+listing nothing at all (the Expo fixture's window holds an empty React
+Native root view for a few hundred ms after its first read), a single image
+(Bluesky's listed only `image [id=SplashScreenLegacy]` for seconds), or a
+single element whose identifier or class says splash; the full listing is
+taken only when the interactive one lists nothing in the app's windows.
+When only a splash showed within the app's budget, `open` warns that it
+did. Whatever the driver, the launch is noted to the mirror as a change of
+the window in front (`Mirror::note_window_change`), so every window is read
+again and the settle counts the launch as a tree change: it waits for an
+app that draws within its quiet window of the launch, even one already in
+front. `close` notes the stop the same way. The app gets the waiting
+commands' default timeout (the session's, else 10000 ms) to show it, as the
+Compose fixture's 500-cell screen needs on an emulator, where the launch
+takes 1 to 2 s and the cold read 1.5 s; the screen then gets 3000 ms to
+settle (design D8). An explicit `timeout` bounds both together. Between the
+two, on a target with a frame source, it waits for the frame stream's first
+frame, at most 2 s from its start: the first frame is no change, so a click
+whose effects came before it would report no frame change, and an
+emulator's stream delivered its first frame up to 500 ms after the attach
+(a Simulator's comes with the subscription). It starts the target's input
+session, when its driver has one, before the launch, and lets it activate,
+at most 2 s from its start, so the first click does not wait for it. It
+reports `settled` false, with a warning, when the app did not show in time
+or its screen did not settle, and warns when no frame came.
 
 ## Tap spans and settle signals
 
@@ -313,6 +324,7 @@ pub struct Attachment {
     pub capture: Option<Box<dyn Capture>>,   // screenshots the driver takes now
     pub report: Option<Arc<dyn Report>>,     // what status shows from the driver
     pub input_notes: Option<Arc<dyn InputNotes>>,  // whether the last input waited for an activation
+    pub input_session: Option<Box<dyn InputSession>>,  // starts the input session ahead of the first input
 }
 ```
 
@@ -360,7 +372,13 @@ traits:
   VolumeUp, VolumeDown, Siri). Text for a field taps it, waits up to 1.5 s
   for an editable node to take the focus and, unless keys were asked for
   (`type`), selects what the field holds with Command-A so the text
-  replaces it; a paste reports the method `direct`, typing `keys`.
+  replaces it; a paste reports the method `direct`, typing `keys`. The
+  input session starts during `open` (`InputSession`): typing nothing opens
+  it, which sends dtuhidd its activation probe without a key event, and
+  `open` lets it activate, at most 2 s from its start, so the first click
+  does not wait for dtuhidd (Bluesky's first click took 957 ms to dispatch
+  while it activated). That click is still noted as the session's first,
+  with no activation wait, so its watch waits longer for its effects.
 - apps: launched with the launch environment (`--env K=V` reaches the app
   as `K`, as `SIMCTL_CHILD_K` does through `simctl`), a running app brought
   to the front unless `--relaunch`; `app_not_found` when `simctl` finds no
@@ -479,8 +497,14 @@ app's stopped process leaves before the new one draws. Frames are produced
 as the backend is called, not on a timer. With `--fake-frame-delay` the
 frame stream starts that long after the attach, as an emulator's does once
 its gRPC subscription is up: frames captured before it are never delivered,
-and its first frame shows the screen as it is then. Screenshots are
-placeholder bytes, not an image.
+and its first frame shows the screen as it is then. With `--fake-splash` a
+fixture app whose process starts (a first launch or a relaunch) shows its
+launch splash, one image `SplashScreenLegacy` in its window, that long
+before its first screen. With `--fake-activation` the target has an input
+session that input waits for until it has been started that long, started
+by the first input or by `open`, and input notes that name the session's
+first input, as a Simulator's. Screenshots are placeholder bytes, not an
+image.
 
 ## Errors
 
@@ -578,6 +602,7 @@ Worked around here without changing `crates/mirror`:
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
 | (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
+| (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end

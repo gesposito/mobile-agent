@@ -63,7 +63,6 @@ pub(crate) struct Attached {
     /// What the driver knows about the input it dispatched last.
     pub input_notes: Option<Arc<dyn InputNotes>>,
     /// The input session, for a driver whose first input waits for it.
-    #[allow(dead_code)]
     pub input_session: Option<Box<dyn InputSession>>,
     /// The screen, for gestures no element anchors; read as it is when a
     /// command needs it.

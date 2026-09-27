@@ -8,7 +8,8 @@ mod view;
 use std::time::{Duration, Instant};
 
 use mirror::backend::Owner;
-use mirror::{Degradation, Snapshot, SnapshotOptions, Verdict};
+use mirror::{Degradation, Element, Role, Snapshot, SnapshotOptions, Verdict};
+use protocol::snapshot::WindowType;
 use serde_json::{Map, Value, json};
 
 use crate::driver::{AttachOptions, Launch, Platform, TargetInfo, TargetReport};
@@ -316,6 +317,13 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         Some(total) => total,
         None => timeout(request)?,
     };
+    // An input session that activates on the first input, as a Simulator's
+    // dtuhidd session does, starts now and activates while the app
+    // launches, so the first click does not wait for it; the click reports
+    // a session that cannot start.
+    if let Some(input) = target.input_session.as_mut() {
+        let _ = input.start();
+    }
     target.apps.launch(&app, &launch)?;
     // Whatever the driver, the window in front changed: every window is
     // read again when the tree is next needed, and the settle below counts
@@ -327,7 +335,11 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     // A relaunched app's tree is the one a read after the launch shows: the
     // one before it was the process the relaunch stopped.
     let fresh = launch.relaunch.then_some(launched);
-    let shown = first_tree(target, &app, fresh, started + first_wait)?;
+    let first = first_tree(target, &app, fresh, started + first_wait)?;
+    let shown = match first {
+        FirstTree::Shown(at) => Some(at),
+        FirstTree::Splash | FirstTree::NotShown => None,
+    };
     // The first frame is no change, so the first click would report no
     // frame change if its effects came before the frame stream's first
     // frame, which an emulator delivers a while after the attach.
@@ -352,16 +364,25 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         }
         None => false,
     };
+    let session_deadline = match explicit {
+        Some(total) => started + total.min(SESSION_WAIT),
+        None => started + SESSION_WAIT,
+    };
+    input_active(target, session_deadline)?;
     let mut warnings = Vec::new();
-    match (shown, settled) {
-        (None, _) => warnings.push(format!(
+    match (&first, settled) {
+        (FirstTree::NotShown, _) => warnings.push(format!(
             "{app} did not show its screen within {} ms; take a snapshot to see what is in front",
             first_wait.as_millis()
         )),
-        (Some(_), false) => warnings.push(format!(
+        (FirstTree::Splash, _) => warnings.push(format!(
+            "{app} showed only its launch splash for {} ms; wait for one of its elements before you act",
+            first_wait.as_millis()
+        )),
+        (FirstTree::Shown(_), false) => warnings.push(format!(
             "{app} showed its screen, which did not settle; wait --settle before you act on it"
         )),
-        (Some(_), true) => {}
+        (FirstTree::Shown(_), true) => {}
     }
     if !primed {
         warnings.push(format!(
@@ -390,6 +411,29 @@ const OPEN_SLICE: Duration = Duration::from_millis(10);
 /// a Simulator's with the subscription.
 const FIRST_FRAME_WAIT: Duration = Duration::from_secs(2);
 
+/// How long after its start `open` lets the target's input session
+/// activate: dtuhidd's first session of a boot took 270 to 330 ms (spike
+/// S3), and 957 ms under load in the Bluesky smoke test.
+const SESSION_WAIT: Duration = Duration::from_secs(2);
+
+/// Waits until `deadline` for the target's input session, if it has one,
+/// to be active, so the first input does not wait for it.
+fn input_active(target: &mut Attached, deadline: Instant) -> Result<(), Failure> {
+    loop {
+        let Some(input) = target.input_session.as_mut() else {
+            return Ok(());
+        };
+        if input.active() {
+            return Ok(());
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(());
+        }
+        target.mirror.run_until((now + OPEN_SLICE).min(deadline))?;
+    }
+}
+
 /// Waits until `deadline` for the mirror to take in the first frame of a
 /// target with a frame source; says whether it has taken one in.
 fn first_frame(target: &mut Attached, deadline: Instant) -> Result<bool, Failure> {
@@ -409,20 +453,32 @@ fn first_frame(target: &mut Attached, deadline: Instant) -> Result<bool, Failure
     }
 }
 
+/// What `open` found of the launched app.
+enum FirstTree {
+    /// Its screen showed at this instant.
+    Shown(Instant),
+    /// Only its launch splash showed within the budget.
+    Splash,
+    /// It did not show.
+    NotShown,
+}
+
 /// Waits until `deadline` for the replica to show `app` in front with more
-/// than its root, read after `fresh` when given; returns when it did.
+/// than its root and more than a launch splash, read after `fresh` when
+/// given; says when it did.
 fn first_tree(
     target: &mut Attached,
     app: &str,
     fresh: Option<Instant>,
     deadline: Instant,
-) -> Result<Option<Instant>, Failure> {
+) -> Result<FirstTree, Failure> {
     // Only what is in front and whether it is sparse matter, not the
     // listing, so one level is enough.
     let probe = SnapshotOptions {
         interactive: true,
         max_depth: Some(1),
     };
+    let mut splash = false;
     loop {
         let snapshot = target.mirror.snapshot(&probe)?;
         let read_after = fresh.is_none_or(|launched| {
@@ -433,13 +489,56 @@ fn first_tree(
                 .is_some_and(|read| read.started >= launched)
         });
         if read_after && shows(&snapshot, app) {
-            return Ok(Some(Instant::now()));
+            // A splash lists nothing interactive; only then does the full
+            // listing say whether the app shows more than one.
+            let listed = in_app_windows(&snapshot).next().is_some();
+            if listed || !is_splash(&target.mirror.snapshot(&SnapshotOptions::full())?) {
+                return Ok(FirstTree::Shown(Instant::now()));
+            }
+            splash = true;
         }
         let now = Instant::now();
         if now >= deadline {
-            return Ok(None);
+            return Ok(if splash {
+                FirstTree::Splash
+            } else {
+                FirstTree::NotShown
+            });
         }
         target.mirror.run_until((now + OPEN_SLICE).min(deadline))?;
+    }
+}
+
+/// The elements `snapshot` lists in the target's own application windows.
+fn in_app_windows(snapshot: &Snapshot) -> impl Iterator<Item = &Element> {
+    let windows: Vec<u32> = snapshot
+        .windows
+        .iter()
+        .filter(|w| w.kind == WindowType::APPLICATION && w.owner == Owner::Target)
+        .map(|w| w.id)
+        .collect();
+    snapshot
+        .elements
+        .iter()
+        .filter(move |element| windows.contains(&element.window))
+}
+
+/// Whether `listing`, a full listing, shows only a launch splash in the
+/// app's windows: nothing listed, as the Expo fixture's empty React Native
+/// root view reads, or a single image, as Bluesky's
+/// `image [id=SplashScreenLegacy]`, or a single element whose identifier or
+/// class says splash.
+fn is_splash(listing: &Snapshot) -> bool {
+    let mut listed = in_app_windows(listing);
+    match (listed.next(), listed.next()) {
+        (None, _) => true,
+        (Some(only), None) => {
+            let says_splash = |text: &str| text.to_ascii_lowercase().contains("splash");
+            only.role == Role::Image
+                || only.identifier.as_deref().is_some_and(says_splash)
+                || says_splash(&only.class)
+        }
+        _ => false,
     }
 }
 

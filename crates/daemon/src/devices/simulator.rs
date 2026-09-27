@@ -16,7 +16,9 @@
 //! - Input goes through the host's transport (dtuhidd, else Indigo) in
 //!   points; iOS key codes are keyboard usages or consumer-page buttons.
 //!   Text for a field taps it, waits for its focus and, unless keys were
-//!   asked for, selects what it holds so the text replaces it.
+//!   asked for, selects what it holds so the text replaces it. The input
+//!   session can start ahead of the first input, which then does not wait
+//!   for dtuhidd to activate.
 //! - Apps launch with their launch environment, and a running app comes to
 //!   the front unless a relaunch is asked for. The daemon notes a launch or
 //!   a stop to the mirror as a change of the window in front, as it does
@@ -25,7 +27,7 @@
 //!   its reader and closes its input session.
 
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -43,13 +45,13 @@ use simulator::{
     Button, Compatibility, DeviceInfo, DeviceState, Dispatch, ForegroundTree, FrameOptions,
     FrameStream, Frames as _, ImageFormat, Input as _, Key, LaunchOptions, Lifecycle as _,
     Modifiers, ReaderStatus, ScreenshotOptions, SimulatorDriver, Status, Swipe, TargetStatus,
-    TextMethod, Tree as _, TreeOptions,
+    TextMethod, TransportKind, Tree as _, TreeOptions,
 };
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
-    DriverError, FixedScreen, Image, InputNotes, Launch, Platform, Report, Size, TargetClass,
-    TargetInfo, TargetReport,
+    DriverError, FixedScreen, Image, InputNotes, InputSession, Launch, Platform, Report, Size,
+    TargetClass, TargetInfo, TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, UNKNOWN_KEY};
@@ -154,6 +156,9 @@ struct Shared {
     frame_error: Mutex<Option<String>>,
     /// How long the last input waited for its transport to activate.
     activation: Mutex<Option<Duration>>,
+    /// Whether the input session was started ahead of any input, so the
+    /// next input is its first.
+    started_ahead: AtomicBool,
 }
 
 impl Shared {
@@ -247,13 +252,17 @@ fn attach(driver: Arc<SimulatorDriver>, udid: &str) -> Result<Attachment, Driver
             udid: udid.clone(),
         })),
         report: Some(Arc::new(StatusReport {
-            driver,
-            udid,
+            driver: Arc::clone(&driver),
+            udid: udid.clone(),
             shared: Arc::clone(&shared),
             plan: OnceLock::new(),
         })),
-        input_notes: Some(Arc::new(Activations(shared))),
-        input_session: None,
+        input_notes: Some(Arc::new(Activations(Arc::clone(&shared)))),
+        input_session: Some(Box::new(Session {
+            driver,
+            udid,
+            shared,
+        })),
     })
 }
 
@@ -364,10 +373,13 @@ fn point(at: Point) -> simulator::Point {
 
 impl HostInput {
     /// The input went in: notes how long it waited for its transport to
-    /// activate.
+    /// activate, no time at all for the first input of a session started
+    /// ahead of it, whose effects can come as late.
     fn accepted(&self, dispatch: simulator::Result<Dispatch>) -> Result<InputAck, BackendError> {
         let dispatch = dispatch.map_err(|e| error(&e))?;
-        *lock(&self.shared.activation) = dispatch.activation_wait;
+        let first = self.shared.started_ahead.swap(false, Ordering::SeqCst);
+        *lock(&self.shared.activation) =
+            dispatch.activation_wait.or(first.then_some(Duration::ZERO));
         Ok(InputAck {
             accepted: true,
             method: None,
@@ -474,6 +486,40 @@ fn find(root: &Node, wanted: impl Fn(&Node) -> bool) -> Option<&Node> {
         stack.extend(node.children.iter().rev());
     }
     None
+}
+
+/// The Simulator's input session, which the driver opens on the first
+/// input and dtuhidd activates a while later (9 ms once dtuhidd runs, 270 to
+/// 330 ms for the first session of a boot, spike S3).
+struct Session {
+    driver: Arc<SimulatorDriver>,
+    udid: String,
+    shared: Arc<Shared>,
+}
+
+impl InputSession for Session {
+    /// Typing nothing opens the session, which sends dtuhidd its
+    /// activation probe, without a key event.
+    fn start(&mut self) -> Result<(), DriverError> {
+        let status = self.driver.status(&self.udid).map_err(|e| error(&e))?;
+        if status.input.is_some() {
+            return Ok(());
+        }
+        self.driver
+            .type_text(&self.udid, "", TextMethod::Keyboard)
+            .map_err(|e| error(&e))?;
+        self.shared.started_ahead.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Active once dtuhidd answered its probe; Indigo needs no activation.
+    fn active(&mut self) -> bool {
+        self.driver.status(&self.udid).is_ok_and(|status| {
+            status.input.is_some_and(|input| {
+                input.activation.is_some() || input.transport != TransportKind::Dtuhid
+            })
+        })
+    }
 }
 
 /// What the Simulator's input transport said about the last input.

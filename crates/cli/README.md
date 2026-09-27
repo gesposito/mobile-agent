@@ -103,9 +103,10 @@ mirror's `replicaRevision`, the `target`, the quality `verdict`, `readMs`
 (how long the daemon took to answer, device reads included) and
 `servedFromReplica` (whether it answered without reading the device)
 beside them; a degraded verdict also sets `warning`. `open` replies
-`settled` once the launched app has shown its first tree and the screen
-has settled after it, the launch counting as a change of the window in
-front, with `elapsedMs` from the launch and `firstTreeMs`;
+`settled` once the launched app has shown its first tree, past any launch
+splash, and the screen has settled after it, the launch counting as a
+change of the window in front, with `elapsedMs` from the launch and
+`firstTreeMs`;
 `status` says for each attached target whether it has a frame source
 (`frameSource`; `frames` or `no frames` in human mode). With `--delta`, `snapshot`
 becomes agent-browser's delta object, byte for byte as the mirror writes it:
@@ -379,7 +380,9 @@ timing onto the mirror's timestamps with these outputs unchanged, and
 `commands::open_and_close_are_window_changes_that_a_settle_waits_out`
 checks that a settle counts a launch and a stop on every platform.
 Task 8.13 adds `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`
-and `spans::the_first_click_after_open_reports_its_first_frame_change`.
+and `spans::the_first_click_after_open_reports_its_first_frame_change`;
+task 8.15 `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`
+and `spans::the_first_click_after_open_does_not_wait_for_the_input_session`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and
