@@ -102,6 +102,7 @@ fn script(swiftui_warm_p95: f64) -> FakeScript {
                 with_p95(30.0, 45.0),
             ),
         ],
+        flows: Vec::new(),
     }
 }
 
@@ -144,7 +145,7 @@ fn run_binary(name: &str, script: &FakeScript) -> (Output, std::path::PathBuf) {
         .arg(&script_path)
         .arg("--out")
         .arg(&out)
-        .args(["--iterations", "20", "--warmup", "3"])
+        .args(["--iterations", "20", "--warmup", "3", "--no-baselines"])
         .output()
         .unwrap();
     (output, out)

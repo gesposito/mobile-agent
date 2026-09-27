@@ -7,8 +7,10 @@
 //! summary, so the two outputs cannot disagree.
 
 pub mod adapter;
+pub mod baseline;
 pub mod fake;
 pub mod fixture;
+pub mod flow;
 pub mod gates;
 pub mod harness;
 pub mod markdown;

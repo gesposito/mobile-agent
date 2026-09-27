@@ -81,6 +81,7 @@ fn script() -> FakeScript {
             emulator_warm,
             series("emulator-5554", None, None, CliStart, ramp(4.2, 0.1)),
         ],
+        flows: Vec::new(),
     }
 }
 

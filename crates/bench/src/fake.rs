@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
 use crate::fixture::{Fixture, Screen};
+use crate::flow::Flow;
 use crate::harness::{Series, Subject};
 use crate::primitive::Primitive;
 use crate::target::Target;
@@ -22,6 +23,9 @@ pub struct FakeScript {
     pub role: Role,
     pub targets: Vec<Target>,
     pub series: Vec<FakeSeries>,
+    /// Flows the script's flow series name, which baseline tools run for real.
+    #[serde(default)]
+    pub flows: Vec<Flow>,
 }
 
 fn under_test() -> Role {
@@ -96,6 +100,11 @@ impl FakeAdapter {
     /// The targets the script declares.
     pub fn targets(&self) -> Vec<Target> {
         self.script.targets.clone()
+    }
+
+    /// The flows the script declares.
+    pub fn flows(&self) -> Vec<Flow> {
+        self.script.flows.clone()
     }
 
     /// One series per scripted series, in script order.
@@ -174,6 +183,18 @@ impl Adapter for FakeAdapter {
         })?;
         self.attempt(index)
     }
+
+    fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
+        let scenario = Scenario {
+            fixture: Some(flow.fixture),
+            screen: None,
+        };
+        let subject = Subject::Flow(flow.name.clone());
+        let index = self.find(target, &scenario, &subject).ok_or_else(|| {
+            AdapterError::new(format!("no scripted series for {subject} on {}", target.id))
+        })?;
+        self.attempt(index)
+    }
 }
 
 #[cfg(test)]
@@ -197,6 +218,7 @@ mod tests {
             role: Role::UnderTest,
             targets: vec![Target::new("SIM-1", TargetClass::Simulator)],
             series: vec![series],
+            flows: Vec::new(),
         })
     }
 

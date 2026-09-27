@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, AdapterError, Detection, Sample, Scenario};
 use crate::fixture::{Fixture, Screen};
+use crate::flow::Flow;
 use crate::primitive::Primitive;
 use crate::provenance::{
     HarnessInfo, Probe, Provenance, SystemProbe, ToolReport, ToolStatus, capture_commit,
@@ -16,23 +17,27 @@ use crate::report::{Measurement, NodeRange, Outcome, Report, SCHEMA_VERSION, Sam
 use crate::stats::{micros, summarize};
 use crate::target::Target;
 
-/// What a series measures. Serialized as `{"primitive": "<id>"}`.
+/// What a series measures. Serialized as `{"primitive": "<id>"}` or
+/// `{"flow": "<name>"}`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Subject {
     Primitive(Primitive),
+    /// The [`Flow::name`] of one of the run's flows.
+    Flow(String),
 }
 
 impl fmt::Display for Subject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Subject::Primitive(primitive) => write!(f, "{primitive}"),
+            Subject::Flow(name) => write!(f, "flow {name}"),
         }
     }
 }
 
 /// One subject measured on one target in one scenario, by every tool that
-/// supports it.
+/// supports it. A flow's series names the flow's fixture and no screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Series {
     /// The [`Target::id`] of a target in the run.
@@ -75,6 +80,7 @@ pub struct Harness {
     config: RunConfig,
     targets: Vec<Target>,
     series: Vec<Series>,
+    flows: Vec<Flow>,
     tools: Vec<Box<dyn Adapter>>,
     probe: Box<dyn Probe>,
     os: String,
@@ -87,10 +93,17 @@ impl Harness {
             config,
             targets,
             series,
+            flows: Vec::new(),
             tools: Vec::new(),
             probe: Box::new(SystemProbe),
             os: std::env::consts::OS.to_owned(),
         }
+    }
+
+    /// The flows the run's flow series name.
+    pub fn flows(mut self, flows: Vec<Flow>) -> Self {
+        self.flows = flows;
+        self
     }
 
     /// Adds a tool; tools are detected and run in the order they were added.
@@ -146,7 +159,13 @@ impl Harness {
                 if found.status == ToolStatus::Available
                     && tool.supports(target, &scenario, &series.subject)
                 {
-                    measurements.push(measure(tool.as_mut(), target, series, self.config));
+                    measurements.push(measure(
+                        tool.as_mut(),
+                        target,
+                        series,
+                        &self.flows,
+                        self.config,
+                    ));
                 }
             }
         }
@@ -193,6 +212,7 @@ fn measure(
     tool: &mut dyn Adapter,
     target: &Target,
     series: &Series,
+    flows: &[Flow],
     config: RunConfig,
 ) -> Measurement {
     let scenario = series.scenario();
@@ -203,7 +223,7 @@ fn measure(
         Ok(()) => {
             for iteration in 0..config.warmup + config.iterations {
                 let warmup = iteration < config.warmup;
-                let result = attempt(tool, target, &scenario, &series.subject);
+                let result = attempt(tool, target, &scenario, &series.subject, flows);
                 if let (Ok(sample), false) = (&result, warmup) {
                     clock.get_or_insert(sample.clock);
                 }
@@ -248,9 +268,11 @@ fn attempt(
     target: &Target,
     scenario: &Scenario,
     subject: &Subject,
+    flows: &[Flow],
 ) -> Result<Sample, AdapterError> {
     match subject {
         Subject::Primitive(primitive) => tool.measure(target, scenario, *primitive),
+        Subject::Flow(name) => todo!("run flow {name}, one of {} flows", flows.len()),
     }
 }
 

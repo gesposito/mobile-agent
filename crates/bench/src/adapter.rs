@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::fixture::{Fixture, Screen};
+use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::primitive::Primitive;
 use crate::target::Target;
@@ -116,11 +117,28 @@ pub trait Adapter {
 
     /// One attempt at `primitive`. Setup the span excludes, such as stopping the
     /// daemon before a cold attach, happens inside this call but outside the
-    /// measured span.
+    /// measured span. Tools that only run flows keep the default.
     fn measure(
         &mut self,
         target: &Target,
         scenario: &Scenario,
         primitive: Primitive,
-    ) -> Result<Sample, AdapterError>;
+    ) -> Result<Sample, AdapterError> {
+        let _ = (target, scenario);
+        Err(AdapterError::new(format!(
+            "{} does not measure {primitive}",
+            self.name()
+        )))
+    }
+
+    /// One run of `flow`, all of its steps, on `target`. The sample spans the
+    /// whole flow.
+    fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
+        let _ = target;
+        Err(AdapterError::new(format!(
+            "{} does not run flows such as {}",
+            self.name(),
+            flow.name
+        )))
+    }
 }

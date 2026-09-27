@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::SystemTime;
 
+use bench::adapter::Detection;
+use bench::baseline::{BaselineConfig, baselines};
 use bench::fake::FakeAdapter;
 use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
@@ -34,6 +36,8 @@ enum Command {
     Gates(GatesArgs),
     /// Print the default gates in the gate file format
     DefaultGates,
+    /// Look for Maestro, maestro-runner and agent-device on PATH and print what was found
+    Baselines,
 }
 
 #[derive(Args)]
@@ -58,6 +62,10 @@ struct RunArgs {
     /// Gate file replacing the default gates
     #[arg(long, value_name = "FILE")]
     gates: Option<PathBuf>,
+
+    /// Leave out Maestro, maestro-runner and agent-device even when installed
+    #[arg(long)]
+    no_baselines: bool,
 }
 
 #[derive(Args)]
@@ -76,6 +84,10 @@ fn main() -> ExitCode {
         Command::Gates(args) => judge(&args),
         Command::DefaultGates => {
             println!("{}", GateSet::defaults().to_json());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Baselines => {
+            list_baselines();
             Ok(ExitCode::SUCCESS)
         }
     };
@@ -103,14 +115,19 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
         iterations: args.iterations,
         warmup: args.warmup,
     };
-    let mut report = Harness::new(config, fake.targets(), fake.series())
-        .tool(Box::new(fake))
-        .run()?;
-    let verdict = gates.evaluate(&report);
-    report.gates = Some(verdict.clone());
     let dir = args.out.clone().unwrap_or_else(|| {
         PathBuf::from("target/bench").join(compact_timestamp(SystemTime::now()))
     });
+    let mut harness = Harness::new(config, fake.targets(), fake.series()).flows(fake.flows());
+    harness = harness.tool(Box::new(fake));
+    if !args.no_baselines {
+        for baseline in baselines(&BaselineConfig::new(dir.join("flows"))) {
+            harness = harness.tool(baseline);
+        }
+    }
+    let mut report = harness.run()?;
+    let verdict = gates.evaluate(&report);
+    report.gates = Some(verdict.clone());
     let files = report
         .write(&dir)
         .map_err(|e| format!("cannot write the report into {}: {e}", dir.display()))?;
@@ -121,6 +138,23 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     );
     print!("{}", verdict.table());
     Ok(ExitCode::from(verdict.exit_code()))
+}
+
+/// Prints each baseline tool as detection finds it.
+fn list_baselines() {
+    println!("| Tool | Status | Version | Note |");
+    println!("|---|---|---|---|");
+    for mut tool in baselines(&BaselineConfig::new(std::env::temp_dir())) {
+        let row = match tool.detect() {
+            Detection::Available { version } => format!(
+                "| {} | available | {} | — |",
+                tool.name(),
+                version.as_deref().unwrap_or("—")
+            ),
+            Detection::Absent { note } => format!("| {} | skipped | — | {note} |", tool.name()),
+        };
+        println!("{row}");
+    }
 }
 
 fn judge(args: &GatesArgs) -> Result<ExitCode, String> {
