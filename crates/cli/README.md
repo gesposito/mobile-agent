@@ -144,7 +144,9 @@ signal did not come: the target has no frame source (Android devices, per
 design D7), or the tap changed nothing. The watch lasts until both first
 effects have arrived (the frame change only on targets with frames), or
 nothing has changed for 200 ms since the tap or the last change, or 1 s;
-`watchedMs` says how long it lasted. So a tap that changes nothing replies
+after the first tap of a new input session, such as a Simulator's first
+after dtuhidd activated, it waits up to 1.5 s for the first change and
+2.5 s in all. `watchedMs` says how long it lasted. So a tap that changes nothing replies
 after about 200 ms, and on a screen that was already animating the first
 frame change can be the animation's.
 

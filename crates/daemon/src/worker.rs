@@ -56,7 +56,6 @@ pub(crate) struct Attached {
     /// Screenshots the driver takes on demand, if it takes them.
     pub capture: Option<Box<dyn Capture>>,
     /// What the driver knows about the input it dispatched last.
-    #[allow(dead_code)]
     pub input_notes: Option<Arc<dyn InputNotes>>,
     /// The screen, for gestures no element anchors; read as it is when a
     /// command needs it.

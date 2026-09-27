@@ -28,6 +28,15 @@ const MAX_STROKE: f64 = 0.8;
 /// How long a tap's effects are watched for at most.
 const WATCH_MAX: Duration = Duration::from_secs(1);
 
+/// How long the watch waits for a tap's first effect when the tap was the
+/// first input of a new input session: on a Simulator the first tap after
+/// dtuhidd activated changed the screen more than 300 ms after its
+/// dispatch, where a warm tap's first frame follows in tens of ms.
+const FRESH_FIRST_CHANGE: Duration = Duration::from_millis(1500);
+
+/// How long such a tap's effects are watched for at most.
+const FRESH_WATCH_MAX: Duration = Duration::from_millis(2500);
+
 /// How often the watch looks at what arrived; the spans come from the
 /// signals' own times, not from these looks.
 const WATCH_SLICE: Duration = Duration::from_millis(5);
@@ -60,9 +69,23 @@ struct Spans {
 /// was at `revision`: until the first frame change (when the target has
 /// frames) and the first tree delta have both arrived, or until nothing has
 /// changed for the settle quiet window since the tap or the last change,
-/// or for [`WATCH_MAX`]. The mirror keeps reading meanwhile, so a window
-/// without change events is re-read as it would be for a snapshot.
-fn watch(target: &mut Attached, start: Instant, revision: u64, dispatch: Duration) -> Spans {
+/// or for [`WATCH_MAX`]. After a `fresh` activation of the input transport
+/// the first change is awaited up to [`FRESH_FIRST_CHANGE`] and the watch
+/// lasts up to [`FRESH_WATCH_MAX`]. The mirror keeps reading meanwhile, so
+/// a window without change events is re-read as it would be for a
+/// snapshot.
+fn watch(
+    target: &mut Attached,
+    start: Instant,
+    revision: u64,
+    dispatch: Duration,
+    fresh: bool,
+) -> Spans {
+    let (first_wait, max) = if fresh {
+        (FRESH_FIRST_CHANGE, FRESH_WATCH_MAX)
+    } else {
+        (DEFAULT_QUIET_WINDOW, WATCH_MAX)
+    };
     let tree_delta = |target: &Attached| {
         target
             .mirror
@@ -92,10 +115,15 @@ fn watch(target: &mut Attached, start: Instant, revision: u64, dispatch: Duratio
         ]
         .into_iter()
         .flatten()
-        .max()
-        .map_or(start, |at| at.max(start));
-        let deadline = start + WATCH_MAX;
-        if now >= last_change + DEFAULT_QUIET_WINDOW || now >= deadline {
+        .max();
+        // Quiet since the tap: the first change may still come; quiet since
+        // a change: the effects are over.
+        let quiet_until = match last_change {
+            Some(at) => at.max(start) + DEFAULT_QUIET_WINDOW,
+            None => start + first_wait,
+        };
+        let deadline = start + max;
+        if now >= quiet_until || now >= deadline {
             break (frame, tree);
         }
         if let Err(error) = target.mirror.run_until((now + WATCH_SLICE).min(deadline)) {
@@ -155,7 +183,12 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     if !outcome.accepted {
         return Err(rejected("tap"));
     }
-    let spans = watch(target, started, revision, dispatch);
+    let fresh = target
+        .input_notes
+        .as_ref()
+        .and_then(|notes| notes.activation_wait())
+        .is_some();
+    let spans = watch(target, started, revision, dispatch, fresh);
     let point = outcome.at.unwrap_or_default();
     let mut data = Map::new();
     data.insert("clicked".into(), clicked.into());

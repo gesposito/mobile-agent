@@ -51,8 +51,8 @@ use simulator::{
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
-    DriverError, FixedScreen, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo,
-    TargetReport,
+    DriverError, FixedScreen, Image, InputNotes, Launch, Platform, Report, Size, TargetClass,
+    TargetInfo, TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, UNKNOWN_KEY};
@@ -157,6 +157,8 @@ struct Shared {
     frame_error: Mutex<Option<String>>,
     /// Window events waiting for the event stream.
     events: Mutex<VecDeque<Timed<StreamItem>>>,
+    /// How long the last input waited for its transport to activate.
+    activation: Mutex<Option<Duration>>,
     /// The last window event's number.
     window_seq: AtomicU64,
 }
@@ -170,6 +172,7 @@ impl Default for Shared {
             frames: AtomicU64::new(0),
             frame_error: Mutex::new(None),
             events: Mutex::new(VecDeque::new()),
+            activation: Mutex::new(None),
             window_seq: AtomicU64::new(0),
         }
     }
@@ -288,10 +291,10 @@ fn attach(driver: Arc<SimulatorDriver>, udid: &str) -> Result<Attachment, Driver
         report: Some(Arc::new(StatusReport {
             driver,
             udid,
-            shared,
+            shared: Arc::clone(&shared),
             plan: OnceLock::new(),
         })),
-        input_notes: None,
+        input_notes: Some(Arc::new(Activations(shared))),
     })
 }
 
@@ -403,29 +406,35 @@ fn point(at: Point) -> simulator::Point {
     simulator::Point::new(at.x, at.y)
 }
 
-fn accepted(dispatch: simulator::Result<Dispatch>) -> Result<InputAck, BackendError> {
-    dispatch.map_err(|e| error(&e))?;
-    Ok(InputAck {
-        accepted: true,
-        method: None,
-    })
+impl HostInput {
+    /// The input went in: notes how long it waited for its transport to
+    /// activate.
+    fn accepted(&self, dispatch: simulator::Result<Dispatch>) -> Result<InputAck, BackendError> {
+        let dispatch = dispatch.map_err(|e| error(&e))?;
+        *lock(&self.shared.activation) = dispatch.activation_wait;
+        Ok(InputAck {
+            accepted: true,
+            method: None,
+        })
+    }
 }
 
 impl InputSink for HostInput {
     fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError> {
+        *lock(&self.shared.activation) = None;
         let (driver, udid) = (&self.driver, self.udid.as_str());
         match input {
-            Input::Tap { at, hold: None } => accepted(driver.tap(udid, point(*at))),
+            Input::Tap { at, hold: None } => self.accepted(driver.tap(udid, point(*at))),
             Input::Tap {
                 at,
                 hold: Some(hold),
-            } => accepted(driver.press(udid, point(*at), *hold)),
+            } => self.accepted(driver.press(udid, point(*at), *hold)),
             Input::Swipe { from, to, duration } => {
-                accepted(driver.swipe(udid, &Swipe::new(point(*from), point(*to), *duration)))
+                self.accepted(driver.swipe(udid, &Swipe::new(point(*from), point(*to), *duration)))
             }
             Input::Key { code, meta } => match ios_key(*code, *meta)? {
-                IosKey::Key(key) => accepted(driver.key(udid, key)),
-                IosKey::Button(button) => accepted(driver.button(udid, button)),
+                IosKey::Key(key) => self.accepted(driver.key(udid, key)),
+                IosKey::Button(button) => self.accepted(driver.button(udid, button)),
             },
             Input::Text { text, node, method } => self.text(text, *node, *method),
         }
@@ -509,6 +518,15 @@ fn find(root: &Node, wanted: impl Fn(&Node) -> bool) -> Option<&Node> {
         stack.extend(node.children.iter().rev());
     }
     None
+}
+
+/// What the Simulator's input transport said about the last input.
+struct Activations(Arc<Shared>);
+
+impl InputNotes for Activations {
+    fn activation_wait(&self) -> Option<Duration> {
+        *lock(&self.0.activation)
+    }
 }
 
 struct Apps {

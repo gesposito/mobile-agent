@@ -172,7 +172,12 @@ pumps the mirror in 5 ms slices, so windows are re-read as they would be
 for a snapshot, until the first frame change after the dispatch (on
 targets with a frame source) and the first delta of a later revision have
 both arrived, until nothing has changed for the 200 ms quiet window since
-the tap or the last change, or for 1 s. `frameChangeMs` and `treeDeltaMs`
+the tap or the last change, or for 1 s. When the driver's input notes say
+the tap waited for its input transport to activate, the first tap of a new
+input session, the watch waits up to 1.5 s for the first change and lasts
+up to 2.5 s: on the spike Simulator the first tap after dtuhidd activated
+changed the first frame about 202 ms and the tree about 458 ms after its
+dispatch, just past a warm watch's 200 ms. `frameChangeMs` and `treeDeltaMs`
 run from the dispatch to the frame's capture and to the delta's read, and
 are omitted when the signal never came; `watchedMs` says how long the watch
 lasted. A watch that fails after the tap went in becomes a warning.
@@ -264,6 +269,7 @@ pub struct Attachment {
     pub config: MirrorConfig,
     pub capture: Option<Box<dyn Capture>>,   // screenshots the driver takes now
     pub report: Option<Arc<dyn Report>>,     // what status shows from the driver
+    pub input_notes: Option<Arc<dyn InputNotes>>,  // whether the last input waited for an activation
 }
 ```
 
