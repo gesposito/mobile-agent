@@ -41,6 +41,7 @@ const RESUBSCRIBE_AFTER: Duration = Duration::from_millis(500);
 pub struct ControllerLink {
     runtime: tokio::runtime::Runtime,
     controller: Controller,
+    endpoint: String,
 }
 
 impl std::fmt::Debug for ControllerLink {
@@ -70,11 +71,17 @@ impl ControllerLink {
         Ok(ControllerLink {
             runtime,
             controller,
+            endpoint: endpoint.uri.clone(),
         })
     }
 
     pub fn controller(&self) -> &Controller {
         &self.controller
+    }
+
+    /// The controller's address.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
     }
 
     /// Whether the AVD declares a keyboard, so keys could go this way.

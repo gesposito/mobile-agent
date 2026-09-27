@@ -74,14 +74,30 @@ pub struct Paths {
 impl Paths {
     /// Everything through the agent; `warning` says why, on an emulator.
     pub fn agent(emulator: bool, warning: Option<String>) -> Paths {
-        let _ = (emulator, warning);
-        todo!("task 5.5")
+        Paths {
+            emulator,
+            input: Path::Agent,
+            frames: None,
+            screenshots: Path::Agent,
+            keys: Path::Agent,
+            keyboard: None,
+            endpoint: None,
+            warning,
+        }
     }
 
-    /// Taps, swipes and frames through `link`'s controller at `endpoint`.
-    pub fn controller(link: &ControllerLink, endpoint: Option<&str>) -> Paths {
-        let _ = (link, endpoint);
-        todo!("task 5.5")
+    /// Taps, swipes and frames through `link`'s controller.
+    pub fn controller(link: &ControllerLink) -> Paths {
+        Paths {
+            emulator: true,
+            input: Path::Controller,
+            frames: Some(Path::Controller),
+            screenshots: Path::Agent,
+            keys: Path::Agent,
+            keyboard: Some(link.keyboard()),
+            endpoint: Some(link.endpoint().to_owned()),
+            warning: None,
+        }
     }
 }
 
@@ -102,8 +118,28 @@ pub fn select_paths(
     choice: &ControllerChoice,
     options: Options,
 ) -> Selection {
-    let _ = (serial, emulator, choice, options, emulator::resolve);
-    todo!("task 5.5")
+    let fallback = |warning: Option<String>| Selection {
+        link: None,
+        paths: Paths::agent(emulator, warning),
+    };
+    if !emulator {
+        return fallback(None);
+    }
+    let endpoint = match choice {
+        ControllerChoice::Off => return fallback(None),
+        ControllerChoice::Endpoint(endpoint) => endpoint.clone(),
+        ControllerChoice::Auto => match emulator::resolve(serial) {
+            Ok(endpoint) => endpoint,
+            Err(unavailable) => return fallback(Some(unavailable.warning())),
+        },
+    };
+    match ControllerLink::connect(&endpoint, options) {
+        Ok(link) => Selection {
+            paths: Paths::controller(&link),
+            link: Some(link),
+        },
+        Err(unavailable) => fallback(Some(unavailable.warning())),
+    }
 }
 
 /// What a session reports about its target.
@@ -135,7 +171,50 @@ impl Status {
     /// The status as lines of text: the agent, then one line per path, then
     /// the warnings.
     pub fn lines(&self) -> Vec<String> {
-        todo!("task 5.5")
+        let paths = &self.paths;
+        let how = if self.reused { "reused" } else { "launched" };
+        let mut lines = vec![format!(
+            "{}: {} over protocol {}, pid {}, socket {}, {how}",
+            self.serial, self.agent, self.protocol, self.pid, self.socket
+        )];
+        let mut input = match (paths.input, &paths.endpoint) {
+            (Path::Controller, Some(endpoint)) => {
+                format!("input: emulator controller at {endpoint}")
+            }
+            (path, _) => format!("input: {path}"),
+        };
+        input.push_str(" (taps, long presses and swipes)");
+        if let Some(error) = &self.controller_error {
+            input.push_str(&format!(
+                "; the emulator controller failed ({error}), so input goes through the agent"
+            ));
+        }
+        lines.push(input);
+        lines.push(match paths.frames {
+            Some(path) => format!("frames: {path}, {} received", self.frames_received),
+            None => "frames: none; screenshots come from the agent on demand".to_owned(),
+        });
+        lines.push(format!("screenshots: {}", paths.screenshots));
+        let keyboard = match paths.keyboard {
+            Some(false) => "; the AVD declares no keyboard, so the controller would drop keys",
+            Some(true) => {
+                "; the AVD declares a keyboard, but only the agent says whether a key was accepted"
+            }
+            None => "",
+        };
+        lines.push(format!("keys and text: {}{keyboard}", paths.keys));
+        if let Some(warning) = &paths.warning {
+            lines.push(format!("warning: {warning}"));
+        }
+        if let Some(error) = &self.frame_error {
+            lines.push(format!(
+                "warning: the frame stream failed ({error}); it is subscribed to again"
+            ));
+        }
+        if let Some(reason) = &self.disconnected {
+            lines.push(format!("disconnected: {reason}"));
+        }
+        lines
     }
 }
 

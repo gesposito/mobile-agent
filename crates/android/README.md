@@ -8,9 +8,8 @@ Host-side Android driver (design D11). So far it holds:
 - `emulator`: the client for the emulator's gRPC controller, the emulator fast
   path (design D7, task 5.4).
 - `session`: an attached agent, and the controller when there is one, behind
-  the mirror's backend traits (design D5 and D7, task 5.3).
-
-Path selection and the status report (task 5.5) come later.
+  the mirror's backend traits (design D5 and D7, task 5.3), with path
+  selection and the status report (task 5.5).
 
 ## adb client
 
@@ -179,6 +178,61 @@ then a cold read of the Compose window); a killed agent was reported disconnecte
 With a controller, a tab switch brought 37 frames in 3 s, 34 of them with
 distinct hashes.
 
+### Path selection and status
+
+`session::select_paths(serial, emulator, choice, options)` decides whether a
+session uses the emulator's controller. `emulator` comes from the target
+listing (`Target::emulator`); `choice` is `ControllerChoice::Auto` (resolve
+the endpoint from the emulator's discovery file), `Off`, or `Endpoint` (a
+given one). The resulting `Selection` goes to `Session::start_selected`.
+
+| Target | Taps and swipes | Frames | Screenshots | Keys and text | Warning |
+|---|---|---|---|---|---|
+| Emulator whose controller connects | controller | controller stream | agent | agent | none |
+| Emulator whose controller does not resolve or answer | agent | none | agent | agent | the launch flag and the console command |
+| Emulator with the controller turned off, or a device | agent | none | agent | agent | none |
+
+- Screenshots go through the agent on both paths: it returns them upright in
+  every display orientation, and the controller's frames follow the
+  emulator's own orientation, which this host did not check under a display
+  rotated by the settings.
+- Keys and text go through the agent on both paths. The controller accepts
+  and drops keys unless the AVD declares a keyboard, and even then it cannot
+  say whether the platform accepted a key; the status reports whether the AVD
+  declares one.
+- A controller that fails during the session moves input to the agent; the
+  status then names the agent for input and the failure. A failed frame
+  stream is subscribed to again and reported.
+
+`Session::status()` names the agent and the active path of each kind, the
+keyboard, the warning, and what failed since. On the API 36 emulator started
+with `-grpc 8554 -grpc-use-token`:
+
+```
+emulator-5554: mobile-agent-android 0.1.0 over protocol 1, pid 31084, socket mobile-agent-0.1.0-p1-7885fd119835, launched
+input: emulator controller at http://127.0.0.1:8554 (taps, long presses and swipes)
+frames: emulator controller, 15 received
+screenshots: agent
+keys and text: agent; the AVD declares no keyboard, so the controller would drop keys
+```
+
+With the controller's port closed:
+
+```
+input: agent (taps, long presses and swipes)
+frames: none; screenshots come from the agent on demand
+screenshots: agent
+keys and text: agent
+warning: emulator control endpoint unavailable for emulator-5554 (connecting to http://127.0.0.1:59992: transport error: tcp connect error: Connection refused (os error 61)): taps and frames fall back to the agent. Start the emulator with `-grpc 8554 -grpc-use-token` to use the fast path, or enable it without a restart through the emulator console command `grpc 8554`, for example `adb -s emulator-5554 emu grpc 8554`.
+```
+
+Measured through `tests/emulator_paths.rs`, a debug build on the shared
+emulator: after a tap on the Compose fixture's Login tab through the mirror,
+the Login screen was in the tree 608.4 ms after the controller's tap and
+442.7 ms after the agent's. The controller's tap is followed by the 200 ms
+wait and a read with the agent's whole node cache emptied, where the
+agent's own tap empties only the Compose windows' cache.
+
 ## Emulator controller client
 
 An emulator started with `-grpc <port> -grpc-use-token` writes the port and a
@@ -298,6 +352,14 @@ What the agent session tests (`tests/agent_session.rs`) do on the device:
   agent with SIGKILL; the others stop their agents.
 - The controller test subscribes to frames and taps the List tab.
 
+What the path selection tests (`tests/emulator_paths.rs`) do on the device:
+
+- They start the Compose fixture on the Big tab, tap its Login tab through
+  the mirror, and force-stop it at the end.
+- The fast-path test connects to the controller from the discovery file and
+  encodes the latest frame; the fallback test points the endpoint at a
+  closed local port and takes a screenshot through the agent.
+
 The device may be shared. Before a test the agent and session tests wait,
 up to a minute, until no agent runs and nothing holds UI automation. A test
 that another user disturbs, by starting an agent or taking UI automation
@@ -410,11 +472,12 @@ Requirement **Emulator fast path** (android-driver spec):
 
 | Scenario or clause | Tests |
 |---|---|
-| Scenario "Control endpoint enabled": taps and frames are served through it | integration `frames_arrive_scaled_to_the_working_width` and `a_touch_lands_on_the_touchscreen`; the status naming the fast path is task 5.5 |
-| Scenario "Control endpoint disabled": a warning with the launch flag | integration `a_closed_port_falls_back_with_the_launch_flag_and_console_command`; `emulator::controller::tests::a_closed_port_is_unavailable_with_the_fallback_warning`, `emulator::endpoint::tests::no_discovery_file_is_unavailable`, `emulator::endpoint::tests::a_discovery_file_without_a_grpc_port_is_unavailable`; serving taps and screenshots through the agent is tasks 5.3 and 5.5 |
-| The console can enable the endpoint at run time without a restart | `emulator::endpoint::tests::the_warning_names_the_launch_flag_and_the_console_command` |
-| Keys and text go through the agent unless the emulator declares a keyboard | `emulator::hardware::tests::keys_go_through_the_controller_only_with_a_declared_keyboard`, integration `the_display_size_and_keyboard_match_the_avd` |
-| The driver reports which path is active | task 5.5 |
+| Scenario "Control endpoint enabled": taps and frames are served through it and the target status names the fast path | integration `with_the_controller_taps_and_frames_use_it_and_the_status_names_the_fast_path` (a tap through the mirror counted on the controller, frames received and encoded, the status lines); `session::paths::tests::the_status_names_the_fast_path_and_the_keyboard`; the controller client's integration `frames_arrive_scaled_to_the_working_width`, `a_touch_lands_on_the_touchscreen` and the session's `controller_frames_arrive_on_the_event_stream_with_status_bar_free_hashes` |
+| Scenario "Control endpoint disabled": taps and screenshots are served through the agent and the status carries a warning with the launch flag | integration `without_the_controller_taps_and_screenshots_use_the_agent_and_the_status_warns` (a closed port; the tap counted on the agent, a screenshot from the agent, no frame, the warning in the status); `session::paths::tests::an_emulator_whose_controller_does_not_answer_falls_back_with_the_launch_flag`, `session::paths::tests::the_status_names_the_agent_path_and_carries_the_warning`; the controller client's integration `a_closed_port_falls_back_with_the_launch_flag_and_console_command`, `emulator::controller::tests::a_closed_port_is_unavailable_with_the_fallback_warning`, `emulator::endpoint::tests::no_discovery_file_is_unavailable`, `emulator::endpoint::tests::a_discovery_file_without_a_grpc_port_is_unavailable` |
+| The console can enable the endpoint at run time without a restart | `emulator::endpoint::tests::the_warning_names_the_launch_flag_and_the_console_command`, and the warning in both path tests above |
+| Keys and text go through the agent unless the emulator declares a keyboard | keys and text always go through the agent: `session::paths::tests::the_agent_paths_send_everything_to_the_agent`, `session::paths::tests::the_status_names_the_fast_path_and_the_keyboard` (the keyboard reported), `emulator::hardware::tests::keys_go_through_the_controller_only_with_a_declared_keyboard`, integration `the_display_size_and_keyboard_match_the_avd` |
+| The driver reports which path is active | both path tests above; `session::paths::tests::the_status_names_the_agent_its_version_and_whether_it_was_reused`, `session::paths::tests::a_controller_failure_and_a_lost_agent_are_reported` |
+| A device, or an emulator with the controller turned off, uses the agent without a warning | `session::paths::tests::a_device_uses_the_agent_without_a_warning`, `session::paths::tests::an_emulator_whose_controller_is_turned_off_uses_the_agent_without_a_warning` |
 
 Task 5.4's own checks:
 

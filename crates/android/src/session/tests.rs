@@ -52,7 +52,10 @@ fn session(handler: Handler) -> (FakeAgent, Session) {
         None,
         SCALE,
         SessionOptions::default(),
-        None,
+        Selection {
+            link: None,
+            paths: Paths::agent(false, None),
+        },
     );
     (agent, session)
 }

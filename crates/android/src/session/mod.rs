@@ -159,6 +159,8 @@ struct Inner {
     deployer: Option<Deployer>,
     scale: f64,
     options: SessionOptions,
+    /// The paths chosen when the session started.
+    paths: Paths,
     controller: Option<ControllerLink>,
     frames: Arc<Mutex<FrameStore>>,
     frames_received: Arc<AtomicU64>,
@@ -219,6 +221,22 @@ impl Session {
         options: SessionOptions,
         controller: Option<ControllerLink>,
     ) -> Result<Session, SessionError> {
+        let selection = Selection {
+            paths: controller
+                .as_ref()
+                .map_or_else(|| Paths::agent(false, None), Paths::controller),
+            link: controller,
+        };
+        Session::start_selected(attached, options, selection)
+    }
+
+    /// A session over `attached` on the paths `selection` chose (see
+    /// [`select_paths`]).
+    pub fn start_selected(
+        attached: Attached,
+        options: SessionOptions,
+        selection: Selection,
+    ) -> Result<Session, SessionError> {
         let density = attached.deployer().device().shell("wm density")?;
         let text = density.stdout_text();
         let scale = scale_from_density(&text)
@@ -231,7 +249,7 @@ impl Session {
             Some(deployer),
             scale,
             options,
-            controller,
+            selection,
         ))
     }
 
@@ -244,8 +262,12 @@ impl Session {
         deployer: Option<Deployer>,
         scale: f64,
         options: SessionOptions,
-        controller: Option<ControllerLink>,
+        selection: Selection,
     ) -> Session {
+        let Selection {
+            link: controller,
+            paths,
+        } = selection;
         let (sender, items) = mpsc::channel();
         let failed_resyncs = Arc::new(Mutex::new(Vec::new()));
         let events = sender.clone();
@@ -279,6 +301,7 @@ impl Session {
                 deployer,
                 scale,
                 options,
+                paths,
                 controller,
                 frames: pump.store,
                 frames_received: pump.received,
@@ -305,21 +328,29 @@ impl Session {
         self.inner.note_foreign_input(at);
     }
 
-    /// A session over `attached` on the paths `selection` chose (see
-    /// [`select_paths`]).
-    pub fn start_selected(
-        attached: Attached,
-        options: SessionOptions,
-        selection: Selection,
-    ) -> Result<Session, SessionError> {
-        let _ = (attached, options, selection);
-        todo!("task 5.5")
-    }
-
     /// What the session reports: the agent, the active paths, the keyboard
     /// capability, the fallback warning and what failed since.
     pub fn status(&self) -> Status {
-        todo!("task 5.5")
+        let inner = &*self.inner;
+        let controller_error = self.controller_error();
+        let mut paths = inner.paths.clone();
+        if controller_error.is_some() {
+            paths.input = Path::Agent;
+        }
+        Status {
+            serial: inner.agent.serial.clone(),
+            agent: inner.agent.agent.clone(),
+            protocol: inner.agent.protocol,
+            pid: inner.agent.pid,
+            socket: inner.agent.socket.clone(),
+            reused: inner.outcome == Outcome::Reused,
+            paths,
+            inputs: self.inputs(),
+            frames_received: self.frames_received(),
+            controller_error,
+            frame_error: self.frame_error(),
+            disconnected: self.close_reason().map(|reason| reason.to_string()),
+        }
     }
 
     /// The backend a `mirror::Mirror` runs on. Taken once: the event stream
