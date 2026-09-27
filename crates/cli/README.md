@@ -2,9 +2,204 @@
 
 `mobile-agent`, the command line of spec `agent-cli` (design D1 and D9): a
 thin client of the daemon in `crates/daemon` that speaks agent-browser's
-grammar, ref syntax and JSON envelope. It links nothing of the daemon; each
-command is one JSON request over the daemon's Unix socket, and the first
-command starts the daemon.
+grammar, ref syntax and JSON envelope, so skills and prompts written for the
+web tool carry over where devices have the same concepts. It links nothing
+of the daemon; each command is one JSON request over the daemon's Unix
+socket, and the first command starts the daemon.
+
+```sh
+cargo build --release -p cli -p daemon    # mobile-agent and mobile-agent-daemon, side by side
+target/release/mobile-agent help agent    # the guide for an agent's prompt
+```
+
+## Layout
+
+```
+src/
+  main.rs            the mobile-agent binary
+  lib.rs             run(): parse, settings, dispatch; help topics; doctor; the code module
+  args.rs            the grammar, with each command's examples and defaults
+  request.rs         a parsed command to its daemon request
+  client.rs          socket directory, auto-start, version check, retries, reply wait
+  output.rs          human output and agent-browser's JSON envelope
+  batch.rs           batch: word splitting, entries, the aggregate array
+  config.rs          settings files
+  doctor.rs          doctor's checks, the host probe, the report
+  agent-guide.txt    what help agent prints
+tests/               one file per concern: snapshot, errors, commands, sessions, lifecycle,
+                     overhead, batch, selection, timeouts, help, doctor
+```
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `devices` | lists connected targets |
+| `open <app> [--relaunch] [--env K=V]...` | launches an app, claims its target, waits for the screen to settle |
+| `close` | stops the app this session opened and releases the target |
+| `snapshot [-i] [-d N] [--delta [--full]]` | lists elements, one per line with role, name and ref |
+| `click <target>` or `click <x> <y>` (alias `tap`) `[--hold MS]` | taps a ref, a selector or a point in device points |
+| `fill <target> <text>` | replaces a field's text |
+| `type [<target>] <text>` | types key events into a field, or into the focused one |
+| `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
+| `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
+| `scroll [direction] [amount] [-s <target>]` | moves the content, in strokes |
+| `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
+| `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
+| `get text\|value\|box <target>` | reads an element |
+| `diff snapshot` | compares the screen with this session's last snapshot |
+| `batch [--bail] [command]...` | runs commands in order |
+| `status` | reports the daemon, its targets and sessions |
+| `doctor` | checks toolchains, the adb server, emulators and the daemon |
+| `set timeout <ms>` | sets this session's default timeout |
+| `shutdown` | stops the daemon |
+| `help [agent \| <command>]` | prints help, a command's help, or the agent guide |
+
+A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
+or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
+text for an element whose name or value contains it, `role=...`. Refs never
+wait; selectors wait for a match up to the command's timeout.
+
+## Global flags
+
+Each works before or after the command and has an environment twin; flags
+beat the environment, which beats the settings files.
+
+| Flag | Environment | Default |
+|---|---|---|
+| `--json` | `MOBILE_AGENT_JSON` | off |
+| `--session <name>` | `MOBILE_AGENT_SESSION` | `default` |
+| `--platform <ios\|android>` | `MOBILE_AGENT_PLATFORM` | any |
+| `--device <id>` | `MOBILE_AGENT_DEVICE` | the only target, or the one the session holds |
+| `--force` | `MOBILE_AGENT_FORCE` | off |
+| `--default-timeout <ms>` | `MOBILE_AGENT_DEFAULT_TIMEOUT` | 10000 |
+| `--config <path>` | `MOBILE_AGENT_CONFIG` | see below |
+| `--idle-timeout <time>` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h` (for a daemon this command starts) |
+| `--socket-dir <dir>` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent` |
+| `--daemon-bin <path>` (hidden) | `MOBILE_AGENT_DAEMON_BIN` | `mobile-agent-daemon` beside `mobile-agent`, else on `PATH` |
+
+Boolean variables take `1`, `true`, `yes` or `on`. Settings files are read
+as agent-browser reads its own: `--config` or `MOBILE_AGENT_CONFIG` alone,
+else `~/.mobile-agent/config.json` overlaid key by key by
+`./mobile-agent.json`. Their keys are `json`, `session`, `platform`,
+`device`, `defaultTimeout` and `idleTimeout`; others are ignored.
+
+## Output
+
+Human mode prints the listing or a short confirmation (`✓ Done`, as
+agent-browser does) on stdout and errors (`✗`) and warnings (`⚠`) on
+stderr. `--json` prints one line in agent-browser's envelope, fields in
+its order, `code` and `warning` only when set:
+
+```json
+{"success":true,"data":{"origin":"com.android.launcher3","refs":{"e1":{"name":"Home","role":"heading"},"e2":{"name":"Fixture","role":"button"},"e3":{"name":"Settings","role":"button"}},"removedRefs":[],"replicaRevision":1,"snapshot":"- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]","target":"emulator-5554","verdict":{"backend":"fake","degraded":false,"fallback":false,"reasons":[]}},"error":null}
+{"success":false,"data":null,"error":"e2 is stale: the button \"Fixture\" it named is no longer on the screen. Take a new snapshot and use its refs","code":"stale_ref"}
+```
+
+A snapshot's data holds agent-browser's `snapshot`, `origin` (the app in
+front), `refs` (`eN` to `{role, name}`) and `removedRefs` (`@eN`), with the
+mirror's `replicaRevision`, the `target` and the quality `verdict` beside
+them; a degraded verdict also sets `warning`. With `--delta`, `snapshot`
+becomes agent-browser's delta object, byte for byte as the mirror writes it:
+
+```json
+{"success":true,"data":{"origin":"com.android.launcher3","replicaRevision":1,"snapshot":{"kind":"full","refs":{"e1":{"name":"Home","role":"heading"}},"revision":1,"tree":"- heading \"Home\" [id=launcher-title, ref=e1]"},"target":"emulator-5554","verdict":{"backend":"fake","degraded":false,"fallback":false,"reasons":[]}},"error":null}
+```
+
+The other kinds are `{"baseRevision", "kind": "unchanged", "revision"}` and
+`{"baseRevision", "changes": [{"op": "add|remove|replace", "ref", ...}],
+"kind": "delta", "revision", "treeChange": {"deleteCount", "lines",
+"startLine"}}`. `crates/daemon/README.md` lists every action's data.
+
+Every failure exits with status 1 and carries a snake_case code. The CLI's
+own are `invalid_argument` (usage), `unknown_command`, `invalid_config`,
+`daemon_unavailable`, `daemon_timeout` and `doctor_failed`; the daemon's,
+such as `stale_ref`, `target_claimed` or `ambiguous_target`, arrive in its
+reply.
+
+## Daemon lifecycle
+
+Before each request the CLI reads `daemon.version` and compares it with the
+version of the daemon executable it would start (the release plus the
+executable's size and modification time). When they differ, or when no
+daemon answers, it starts that executable in its own process group, in
+`/`, with stderr appended to `daemon.log`, and waits up to 10 s until a
+daemon of that version serves the socket; the new daemon replaces one of
+another build, and concurrent first commands share one daemon. A daemon
+that fails to start is reported with the end of its log. `shutdown` never
+starts one. Requests are retried up to five times on transient errors, 200
+ms times the attempt apart, and the reply is awaited for the command's own
+timeout plus 10 s, at least 30 s; a wait that names no timeout may run to
+its session's default, which the CLI cannot know, so it is awaited up to
+the 600 s ceiling.
+
+## Timeouts
+
+Waiting commands take `--timeout <ms>`: `wait` for an element or text, and
+`click`, `fill`, `type`, `get` and `scroll` on a selector. Without one,
+the session's default applies (`set timeout`), else `--default-timeout`,
+`MOBILE_AGENT_DEFAULT_TIMEOUT` or the config's `defaultTimeout`, else 10000
+ms. `wait --settle` and `open` wait at most 3000 ms unless given
+`--timeout`. Timeouts are at most 600000 ms. Each command's help states its
+default.
+
+## Batch
+
+As agent-browser's: commands as quoted strings, split into words as a
+POSIX shell splits them, or a JSON array of argv arrays on stdin, run in
+order. `--bail` stops at the first failure. `--json` prints one array; the
+exit status is 1 when any entry failed:
+
+```json
+[{"command":["get","text","#login-status"],"error":null,"result":{"text":"Signed out"},"success":true},{"code":"unknown_ref","command":["click","@e99"],"error":"@e99 is not a ref from session \"default\"'s snapshots of emulator-5554; take a snapshot and use the refs it prints","result":null,"success":false}]
+```
+
+Entries use the batch's flags, except a `--session`, `--device`,
+`--platform` or `--force` on the entry's own line. A command that does not
+parse is a failed entry with its code; batch inside batch is refused.
+
+## Doctor
+
+`doctor` prints one line per check with ✓ (ok), ⚠ (warn), ✗ (fail) or -
+(skip), a hint below where something can be done, then the Xcode
+compatibility table. Only the daemon check fails doctor.
+
+| Check | Looks at |
+|---|---|
+| `daemon` | the daemon answers doctor (started if needed): pid and version |
+| `drivers` | the daemon's registered drivers |
+| `xcode` | `xcode-select -p` and `xcodebuild -version`; macOS only |
+| `simulator-runtimes` | the available iOS runtimes in `xcrun simctl list runtimes --json` |
+| `android-sdk` | `ANDROID_HOME`, `ANDROID_SDK_ROOT` or the default location, and `adb version` |
+| `adb-server` | `host:version` on `ANDROID_ADB_SERVER_PORT` or 5037 |
+| `emulator-control` | each running emulator's gRPC control endpoint in its discovery file; the `-grpc`, `-grpc-use-token` and `emu grpc` hint when it has none |
+| `sfw`, `just` | on `PATH`, with the install commands through Socket Firewall |
+| `xcode-compatibility` | the table's rows, which the Simulator driver supplies through `Driver::compatibility` |
+
+On this machine every check reports a status:
+
+```
+✓ daemon               running, pid 52504, version 0.1.0+47f518.18d90ed4f1375343
+⚠ drivers              no device driver is registered in this build
+    hint: set MOBILE_AGENT_FAKE_TARGETS=android to try the commands on a fake target
+✓ xcode                Xcode 27.0 (27A266a) at /Applications/Xcode.app/Contents/Developer
+✓ simulator-runtimes   iOS 26.5
+✓ android-sdk          /Users/<user>/Library/Android/sdk, adb 1.0.41 (37.0.1-15733141)
+✓ adb-server           running on port 5037, protocol 41
+✓ emulator-control     gRPC control: emulator-5554 on port 8554
+✓ sfw                  Socket Firewall Free, version 1.15.2
+✓ just                 just 1.58.0
+- xcode-compatibility  no Simulator driver has supplied the Xcode compatibility table yet
+```
+
+## Help
+
+Every command's help ends with examples and states its defaults; `help
+<command>` prints the same as `<command> --help`, and `help get text`
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 80 lines
+for an agent's prompt: the snapshot, act and snapshot-again loop, the
+listing format, refs and `stale_ref`, selectors, acting, waiting and
+settle, reading, output and codes, targets and sessions, and batch.
 
 ## Process overhead
 
@@ -21,8 +216,8 @@ hyperfine --warmup 5 --runs 300 -N --export-json overhead.json 'target/release/m
 target/release/mobile-agent shutdown
 ```
 
-On an Apple M1 Max (10 cores) under macOS 26.6.2, with a load average of 5.6 from
-parallel builds:
+On an Apple M1 Max (10 cores) under macOS 26.6.2, with a load average of 5.6
+from parallel builds:
 
 ```
 Benchmark 1: target/release/mobile-agent status
@@ -39,3 +234,49 @@ The test `overhead::status_overhead_against_a_running_daemon_is_under_20_ms`
 is the gate: it starts the daemon with a first `status`, then requires the
 median of 30 `status` runs of the debug build to stay under 20 ms, measured
 with hyperfine when it is on `PATH` and timed by the test otherwise.
+
+## Differences from agent-browser
+
+- One daemon serves every session, and sessions are claims inside it,
+  because Android allows one UI automation owner per device; agent-browser
+  runs a daemon per session. The socket is `daemon.sock`, not
+  `<session>.sock`.
+- In JSON mode a failure's message travels in the envelope on stdout, as
+  agent-browser prints it, and not also on stderr.
+- `diff snapshot` returns the mirror's element-by-element diff: `diff` is
+  its text (`added:`, `removed:`, `changed:` sections), and `modifications`,
+  `added`, `removed` and `modified` sit beside agent-browser's `changed`,
+  `additions`, `removals` and `unchanged`; there is no `--baseline` file.
+- `snapshot` has no `-c` or `-s`, `screenshot` no `--full` or `--annotate`,
+  and `close` no `--all`.
+- Every failure has a code, including an unknown ref, which agent-browser
+  leaves without one; batch entries that do not parse have one too, and
+  keep `result: null`.
+- Timeouts are capped at 10 minutes and the default is 10 s, where
+  agent-browser's is 25 s.
+- The version file names the build as well as the release.
+- A config file cannot set the socket directory, and there is no
+  namespace flag; `--socket-dir` covers both uses.
+
+## Spec requirements and their tests
+
+| Requirement | Scenario | Tests |
+|---|---|---|
+| Command grammar | Interactive snapshot output | `snapshot::an_interactive_snapshot_lists_a_heading_and_two_buttons_each_ending_with_a_ref`, `snapshot::an_ios_target_lists_the_same_launcher`, `snapshot::a_full_snapshot_also_lists_text_and_system_bars`, `snapshot::depth_limits_the_listing`, and every command in `commands::*` (devices, open and close, click by coordinates, tap, click timing, fill and type, press, scroll and swipe, screenshot, waits, an endless animation, get, diff snapshot, selectors, shutdown) |
+| Ref syntax | Stale ref | `errors::clicking_a_ref_from_before_navigation_fails_with_a_stale_ref_error_and_guidance`, `errors::refs_are_accepted_as_at_ref_equals_and_bare_forms`, `snapshot::removed_refs_name_the_refs_the_previous_snapshot_listed` |
+| Output formats | JSON error | `errors::a_failed_command_in_json_mode_prints_an_error_object_with_a_code_and_exits_non_zero`, `errors::a_failed_command_in_human_mode_writes_its_error_to_stderr_and_exits_1`, `errors::every_failure_carries_a_snake_case_code`, `errors::an_unreachable_daemon_is_reported_with_a_code`, `errors::a_usage_error_in_human_mode_goes_to_stderr`, `snapshot::the_json_snapshot_follows_agent_browser_shape`, `snapshot::delta_snapshots_start_full_then_report_unchanged_and_changes`, `output::tests::the_json_line_keeps_agent_browser_field_order_and_omits_unset_fields` |
+| Daemon lifecycle | Cold first command | `lifecycle::a_cold_devices_starts_the_daemon_and_the_next_command_reuses_it`, `lifecycle::a_daemon_of_another_version_is_replaced_by_the_next_command`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_the_next_command`, `lifecycle::concurrent_first_commands_share_one_daemon`, `lifecycle::the_idle_timeout_flag_reaches_the_daemon_the_cli_starts`, `lifecycle::a_daemon_that_fails_to_start_is_reported_with_its_error`, `overhead::status_overhead_against_a_running_daemon_is_under_20_ms`, `commands::status_reports_the_daemon_and_its_targets`; idle exit in the daemon's `idle::*` |
+| Target selection | Ambiguous target | `selection::two_targets_without_a_device_flag_fail_listing_both`, `selection::one_connected_target_is_selected_by_default`, `selection::the_device_flag_selects_a_target_by_id_or_name`, `selection::the_platform_flag_selects_the_only_target_of_its_platform`, `selection::a_platform_with_several_targets_is_still_ambiguous_among_them`, `selection::a_device_flag_naming_no_target_fails_listing_the_connected_ones`, `selection::the_device_and_platform_flags_have_environment_twins`, `selection::a_session_that_holds_one_target_keeps_using_it_without_a_flag`, `selection::no_connected_target_is_reported_with_a_code` |
+| Sessions | Claimed target | `sessions::a_claimed_target_refuses_another_session_naming_the_holder_until_forced`, `sessions::refs_are_isolated_between_sessions`, `sessions::the_session_and_json_flags_have_environment_twins`, `selection::claims_are_per_target`; the daemon's `claims::*` |
+| Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
+| Configurable timeouts | Per-command timeout | `timeouts::a_2_s_wait_fails_at_2_s_not_after_the_session_default`, `timeouts::the_session_default_applies_to_waits_that_name_no_timeout`, `timeouts::session_defaults_belong_to_their_session`, `timeouts::the_environment_default_applies_when_the_session_sets_none`, `timeouts::timeouts_are_bounded_and_must_be_numbers`, `timeouts::a_long_wait_outlasts_a_short_idle_timeout`, `help::waiting_commands_document_their_default_timeouts`, `client::tests::waits_get_their_own_timeout_plus_a_margin_and_other_commands_30_s` |
+| Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
+
+Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
+check against scripted command outputs and
+`doctor::doctor_lists_every_check_with_a_status_in_both_outputs` runs the
+command.
+
+```sh
+cargo test -p cli     # builds mobile-agent-daemon through cargo when it is missing
+```
