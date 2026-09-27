@@ -20,12 +20,24 @@ pub struct Summary {
 /// smallest sample with at least `pct` percent of all samples at or below it.
 /// `None` for no samples or a percentage outside 1..=100.
 pub fn percentile(sorted: &[u64], pct: u32) -> Option<u64> {
-    todo!("percentile {pct} of {} samples", sorted.len())
+    if sorted.is_empty() || pct == 0 || pct > 100 {
+        return None;
+    }
+    // Rank ceil(pct * n / 100) in integers, so p95 of 100 samples is rank 95.
+    let rank = (pct as usize * sorted.len()).div_ceil(100);
+    Some(sorted[rank - 1])
 }
 
 /// Summarizes samples given in any order; `None` when there are none.
 pub fn summarize(samples: &[u64]) -> Option<Summary> {
-    todo!("summarize {} samples", samples.len())
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    Some(Summary {
+        n: u32::try_from(sorted.len()).unwrap_or(u32::MAX),
+        p50_us: percentile(&sorted, 50)?,
+        p95_us: percentile(&sorted, 95)?,
+        max_us: *sorted.last()?,
+    })
 }
 
 /// Whole microseconds in `d`, saturating at `u64::MAX`.
@@ -36,7 +48,7 @@ pub fn micros(d: Duration) -> u64 {
 /// Milliseconds with three decimals, exact for whole microseconds; the unit of
 /// every duration in the markdown summary.
 pub fn ms(us: u64) -> String {
-    todo!("format {us} us")
+    format!("{}.{:03}", us / 1000, us % 1000)
 }
 
 #[cfg(test)]

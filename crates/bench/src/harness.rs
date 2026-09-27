@@ -1,14 +1,19 @@
 //! Runs series of iterations through adapters and assembles the report.
 
 use std::fmt;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::adapter::{Adapter, Scenario};
+use crate::adapter::{Adapter, AdapterError, Detection, Sample, Scenario};
 use crate::fixture::{Fixture, Screen};
 use crate::primitive::Primitive;
-use crate::provenance::{Probe, SystemProbe};
-use crate::report::Report;
+use crate::provenance::{
+    HarnessInfo, Probe, Provenance, SystemProbe, ToolReport, ToolStatus, capture_commit,
+    capture_host, capture_xcode, complete_target, utc_timestamp,
+};
+use crate::report::{Measurement, NodeRange, Outcome, Report, SCHEMA_VERSION, SampleRecord};
+use crate::stats::{micros, summarize};
 use crate::target::Target;
 
 /// What a series measures. Serialized as `{"primitive": "<id>"}`.
@@ -106,14 +111,169 @@ impl Harness {
     /// supports it, and returns the report. Fails only on a series that names a
     /// target the run does not have.
     pub fn run(&mut self) -> Result<Report, String> {
-        todo!(
-            "run {} series on {} targets with {} tools, {:?}, probing a {} host through {:p}",
-            self.series.len(),
-            self.targets.len(),
-            self.tools.len(),
-            self.config,
-            self.os,
-            self.probe
-        )
+        if let Some(series) = self
+            .series
+            .iter()
+            .find(|s| !self.targets.iter().any(|t| t.id == s.target))
+        {
+            return Err(format!(
+                "a {} series names target {}, which the run does not have",
+                series.subject, series.target
+            ));
+        }
+        let started = SystemTime::now();
+        let probe = self.probe.as_ref();
+        let host = capture_host(probe, &self.os);
+        let xcode = capture_xcode(probe);
+        let commit = capture_commit(probe);
+        let mut targets = self.targets.clone();
+        for target in &mut targets {
+            complete_target(probe, target);
+        }
+        let tools: Vec<ToolReport> = self
+            .tools
+            .iter_mut()
+            .map(|tool| detect(tool.as_mut()))
+            .collect();
+
+        let mut measurements = Vec::new();
+        for series in &self.series {
+            let Some(target) = targets.iter().find(|t| t.id == series.target) else {
+                continue;
+            };
+            let scenario = series.scenario();
+            for (tool, found) in self.tools.iter_mut().zip(&tools) {
+                if found.status == ToolStatus::Available
+                    && tool.supports(target, &scenario, &series.subject)
+                {
+                    measurements.push(measure(tool.as_mut(), target, series, self.config));
+                }
+            }
+        }
+
+        Ok(Report {
+            schema_version: SCHEMA_VERSION,
+            provenance: Provenance {
+                started_at: utc_timestamp(started),
+                finished_at: utc_timestamp(SystemTime::now()),
+                host,
+                xcode,
+                commit,
+                harness: HarnessInfo {
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
+                    iterations: self.config.iterations,
+                    warmup: self.config.warmup,
+                },
+                targets,
+                tools,
+            },
+            measurements,
+        })
+    }
+}
+
+fn detect(tool: &mut dyn Adapter) -> ToolReport {
+    let (status, version, note) = match tool.detect() {
+        Detection::Available { version } => (ToolStatus::Available, version, None),
+        Detection::Absent { note } => (ToolStatus::Skipped, None, Some(note)),
+    };
+    ToolReport {
+        name: tool.name().to_owned(),
+        role: tool.role(),
+        status,
+        version,
+        note,
+    }
+}
+
+/// Runs one series through one tool: the preparation, then the warm-up and
+/// measured iterations in order.
+fn measure(
+    tool: &mut dyn Adapter,
+    target: &Target,
+    series: &Series,
+    config: RunConfig,
+) -> Measurement {
+    let scenario = series.scenario();
+    let mut samples = Vec::new();
+    let mut clock = None;
+    let error = match tool.prepare(target, &scenario, &series.subject) {
+        Err(e) => Some(format!("preparation failed: {e}")),
+        Ok(()) => {
+            for iteration in 0..config.warmup + config.iterations {
+                let warmup = iteration < config.warmup;
+                let result = attempt(tool, target, &scenario, &series.subject);
+                if let (Ok(sample), false) = (&result, warmup) {
+                    clock.get_or_insert(sample.clock);
+                }
+                samples.push(record(iteration, warmup, result));
+            }
+            None
+        }
+    };
+    let measured: Vec<&SampleRecord> = samples.iter().filter(|s| !s.warmup).collect();
+    let latencies: Vec<u64> = measured.iter().filter_map(|s| s.us).collect();
+    let nodes = measured
+        .iter()
+        .filter_map(|s| s.nodes)
+        .fold(None, |range, n| {
+            Some(match range {
+                None => NodeRange { min: n, max: n },
+                Some(NodeRange { min, max }) => NodeRange {
+                    min: min.min(n),
+                    max: max.max(n),
+                },
+            })
+        });
+    Measurement {
+        tool: tool.name().to_owned(),
+        target: target.id.clone(),
+        target_class: target.class,
+        fixture: series.fixture,
+        screen: series.screen,
+        subject: series.subject.clone(),
+        clock,
+        iterations: config.iterations,
+        warmup: config.warmup,
+        stats: summarize(&latencies),
+        nodes,
+        error,
+        samples,
+    }
+}
+
+fn attempt(
+    tool: &mut dyn Adapter,
+    target: &Target,
+    scenario: &Scenario,
+    subject: &Subject,
+) -> Result<Sample, AdapterError> {
+    match subject {
+        Subject::Primitive(primitive) => tool.measure(target, scenario, *primitive),
+    }
+}
+
+fn record(iteration: u32, warmup: bool, result: Result<Sample, AdapterError>) -> SampleRecord {
+    match result {
+        Ok(sample) => SampleRecord {
+            iteration,
+            warmup,
+            outcome: Outcome::Pass,
+            attempts: 1,
+            us: Some(micros(sample.elapsed)),
+            nodes: sample.nodes,
+            detail: sample.detail,
+            errors: Vec::new(),
+        },
+        Err(e) => SampleRecord {
+            iteration,
+            warmup,
+            outcome: Outcome::Fail,
+            attempts: 1,
+            us: None,
+            nodes: None,
+            detail: None,
+            errors: vec![e.message],
+        },
     }
 }

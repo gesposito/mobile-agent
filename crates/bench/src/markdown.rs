@@ -1,10 +1,272 @@
 //! The markdown summary of a [`Report`]: provenance, per-series statistics and
 //! a comparison table across tools and targets. Durations are milliseconds
-//! with three decimals, exact renderings of the JSON's whole microseconds.
+//! with three decimals, exact renderings of the JSON's whole microseconds, so
+//! the two outputs agree on every number.
 
-use crate::report::Report;
+use std::fmt::Display;
+
+use crate::adapter::{Clock, Role};
+use crate::fixture::{Fixture, Screen};
+use crate::harness::Subject;
+use crate::provenance::{Provenance, ToolStatus};
+use crate::report::{Measurement, NodeRange, Report};
+use crate::stats::{Summary, ms};
 
 /// Renders `report` as markdown.
 pub fn render(report: &Report) -> String {
-    todo!("render {} measurements", report.measurements.len())
+    let p = &report.provenance;
+    let mut out = String::new();
+    out.push_str("# Benchmark report\n\n");
+    out.push_str(&format!(
+        "Started {}, finished {}. Durations are milliseconds; percentiles are \
+         nearest-rank over the measured iterations, with warm-up iterations \
+         excluded.\n\n",
+        p.started_at, p.finished_at
+    ));
+    provenance(&mut out, p);
+    measurements(&mut out, &report.measurements);
+    comparison(&mut out, report);
+    out
+}
+
+/// A markdown table being built.
+struct Table {
+    header: Vec<String>,
+    rows: Vec<Vec<String>>,
+}
+
+impl Table {
+    fn new(header: &[&str]) -> Self {
+        Table {
+            header: header.iter().map(|h| (*h).to_owned()).collect(),
+            rows: Vec::new(),
+        }
+    }
+
+    fn row(&mut self, cells: Vec<String>) {
+        self.rows.push(cells);
+    }
+
+    fn render(&self, out: &mut String) {
+        let line = |cells: &[String]| {
+            let escaped: Vec<String> = cells.iter().map(|c| escape(c)).collect();
+            format!("| {} |\n", escaped.join(" | "))
+        };
+        out.push_str(&line(&self.header));
+        out.push_str(&format!("|{}\n", "---|".repeat(self.header.len())));
+        for row in &self.rows {
+            out.push_str(&line(row));
+        }
+        out.push('\n');
+    }
+}
+
+/// A cell's text with the characters that would break a table row replaced.
+fn escape(text: &str) -> String {
+    text.replace('|', "\\|").replace('\n', " ")
+}
+
+/// The value, or a dash when there is none.
+fn or_dash<T: Display>(value: Option<T>) -> String {
+    value.map_or_else(|| "—".to_owned(), |v| v.to_string())
+}
+
+fn fixture_cell(fixture: Option<Fixture>) -> String {
+    or_dash(fixture)
+}
+
+fn screen_cell(screen: Option<Screen>) -> String {
+    or_dash(screen)
+}
+
+/// The Subject column: a primitive's id.
+fn subject_cell(subject: &Subject) -> String {
+    subject.to_string()
+}
+
+fn clock_cell(clock: Option<Clock>) -> String {
+    or_dash(clock.map(|c| match c {
+        Clock::Wall => "wall",
+        Clock::Tool => "tool",
+    }))
+}
+
+fn nodes_cell(nodes: Option<NodeRange>) -> String {
+    match nodes {
+        None => "—".to_owned(),
+        Some(NodeRange { min, max }) if min == max => max.to_string(),
+        Some(NodeRange { min, max }) => format!("{min}–{max}"),
+    }
+}
+
+fn provenance(out: &mut String, p: &Provenance) {
+    out.push_str("## Provenance\n\n");
+    let mut table = Table::new(&["Field", "Value"]);
+    let mut field = |name: &str, value: String| table.row(vec![name.to_owned(), value]);
+    field("Host hardware", or_dash(p.host.hardware.as_deref()));
+    field("Host CPU cores", or_dash(p.host.cpu_cores));
+    field("Host memory bytes", or_dash(p.host.memory_bytes));
+    field("Host OS", or_dash(p.host.os.as_deref()));
+    field(
+        "Load average at start",
+        or_dash(
+            p.host
+                .load_average
+                .map(|[one, five, fifteen]| format!("{one:.2} {five:.2} {fifteen:.2}")),
+        ),
+    );
+    field("Xcode", or_dash(p.xcode.as_deref()));
+    field(
+        "Commit under test",
+        or_dash(
+            p.commit
+                .as_ref()
+                .map(|c| format!("{} ({})", c.sha, if c.dirty { "dirty" } else { "clean" })),
+        ),
+    );
+    field(
+        "Harness",
+        format!(
+            "bench {}, {} iterations after {} warm-up",
+            p.harness.version, p.harness.iterations, p.harness.warmup
+        ),
+    );
+    table.render(out);
+
+    out.push_str("### Targets\n\n");
+    let mut targets = Table::new(&["Target", "Class", "Model", "OS", "Android API level"]);
+    for t in &p.targets {
+        targets.row(vec![
+            t.id.clone(),
+            t.class.to_string(),
+            or_dash(t.model.as_deref()),
+            or_dash(t.os.as_deref()),
+            or_dash(t.api_level),
+        ]);
+    }
+    targets.render(out);
+
+    out.push_str("### Tools\n\n");
+    let mut tools = Table::new(&["Tool", "Role", "Status", "Version", "Note"]);
+    for t in &p.tools {
+        tools.row(vec![
+            t.name.clone(),
+            match t.role {
+                Role::UnderTest => "under test",
+                Role::Baseline => "baseline",
+            }
+            .to_owned(),
+            match t.status {
+                ToolStatus::Available => "available",
+                ToolStatus::Skipped => "skipped",
+            }
+            .to_owned(),
+            or_dash(t.version.as_deref()),
+            or_dash(t.note.as_deref()),
+        ]);
+    }
+    tools.render(out);
+}
+
+fn measurements(out: &mut String, measurements: &[Measurement]) {
+    out.push_str("## Measurements\n\n");
+    let mut table = Table::new(&[
+        "Tool", "Target", "Fixture", "Screen", "Subject", "Clock", "n", "p50 ms", "p95 ms",
+        "max ms", "Nodes",
+    ]);
+    for m in measurements {
+        let stat = |pick: fn(&Summary) -> u64| or_dash(m.stats.as_ref().map(|s| ms(pick(s))));
+        table.row(vec![
+            m.tool.clone(),
+            m.target.clone(),
+            fixture_cell(m.fixture),
+            screen_cell(m.screen),
+            subject_cell(&m.subject),
+            clock_cell(m.clock),
+            m.stats.map_or(0, |s| s.n).to_string(),
+            stat(|s| s.p50_us),
+            stat(|s| s.p95_us),
+            stat(|s| s.max_us),
+            nodes_cell(m.nodes),
+        ]);
+    }
+    table.render(out);
+    let errors: Vec<&Measurement> = measurements.iter().filter(|m| m.error.is_some()).collect();
+    if !errors.is_empty() {
+        out.push_str("Series that could not run:\n\n");
+        for m in errors {
+            out.push_str(&format!(
+                "- {} on {}, {}: {}\n",
+                m.tool,
+                m.target,
+                subject_cell(&m.subject),
+                escape(m.error.as_deref().unwrap_or_default())
+            ));
+        }
+        out.push('\n');
+    }
+}
+
+/// The key of a comparison row.
+type RowKey<'a> = (&'a str, Option<Fixture>, Option<Screen>, &'a Subject);
+
+fn comparison(out: &mut String, report: &Report) {
+    out.push_str("## Comparison\n\n");
+    out.push_str(
+        "p50 / p95 in milliseconds per tool and target; — where a tool did not \
+         measure the subject.\n\n",
+    );
+    let tools: Vec<&str> = report
+        .provenance
+        .tools
+        .iter()
+        .map(|t| t.name.as_str())
+        .filter(|name| report.measurements.iter().any(|m| m.tool == *name))
+        .collect();
+    let mut keys: Vec<RowKey> = Vec::new();
+    for m in &report.measurements {
+        let key = (m.target.as_str(), m.fixture, m.screen, &m.subject);
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    let mut header = vec!["Target", "Fixture", "Screen", "Subject"];
+    header.extend(&tools);
+    let mut table = Table::new(&header);
+    for (target, fixture, screen, subject) in keys {
+        let mut row = vec![
+            target.to_owned(),
+            fixture_cell(fixture),
+            screen_cell(screen),
+            subject_cell(subject),
+        ];
+        for tool in &tools {
+            let found = report.measurements.iter().find(|m| {
+                m.tool == *tool
+                    && m.target == target
+                    && m.fixture == fixture
+                    && m.screen == screen
+                    && m.subject == *subject
+            });
+            row.push(match found {
+                None => "—".to_owned(),
+                Some(Measurement { stats: None, .. }) => "no samples".to_owned(),
+                Some(Measurement { stats: Some(s), .. }) => {
+                    format!("{} / {}", ms(s.p50_us), ms(s.p95_us))
+                }
+            });
+        }
+        table.row(row);
+    }
+    table.render(out);
+    let skipped: Vec<String> = report
+        .provenance
+        .tools
+        .iter()
+        .filter(|t| t.status == ToolStatus::Skipped)
+        .map(|t| format!("{} ({})", t.name, t.note.as_deref().unwrap_or("absent")))
+        .collect();
+    if !skipped.is_empty() {
+        out.push_str(&format!("Skipped: {}.\n\n", skipped.join("; ")));
+    }
 }

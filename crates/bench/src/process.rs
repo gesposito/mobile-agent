@@ -1,7 +1,15 @@
 //! Running a tool's process with a deadline and its output captured.
 
-use std::process::{Command, ExitStatus};
-use std::time::Duration;
+use std::io::Read;
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+/// How long output is still collected after the process exits. A tool that
+/// starts a daemon can leave it holding the pipes; its output is cut off here
+/// instead of blocking the run.
+const OUTPUT_GRACE: Duration = Duration::from_millis(250);
 
 /// A process that exited before its deadline.
 #[derive(Debug)]
@@ -18,7 +26,75 @@ pub struct Finished {
 /// once `timeout` has passed. Errors name the program and say whether it could
 /// not start or timed out.
 pub fn run(command: &mut Command, timeout: Duration) -> Result<Finished, String> {
-    todo!("run {:?} within {timeout:?}", command.get_program())
+    let program = command.get_program().to_string_lossy().into_owned();
+    let start = Instant::now();
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("cannot start {program}: {e}"))?;
+    // Both pipes drain on their own threads, so a chatty process never blocks
+    // on a full pipe while it is being waited for.
+    let stdout = child.stdout.take().map(drain);
+    let stderr = child.stderr.take().map(drain);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(e) => return Err(format!("cannot wait for {program}: {e}")),
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "{program} timed out after {} ms",
+                timeout.as_millis()
+            ));
+        }
+        thread::sleep((elapsed / 100).clamp(Duration::from_micros(50), Duration::from_millis(5)));
+    };
+    let elapsed = start.elapsed();
+    let deadline = Instant::now() + OUTPUT_GRACE;
+    Ok(Finished {
+        status,
+        stdout: collect(stdout, deadline),
+        stderr: collect(stderr, deadline),
+        elapsed,
+    })
+}
+
+/// A pipe being read to its end on its own thread.
+struct Drain {
+    reader: JoinHandle<()>,
+    bytes: Arc<Mutex<Vec<u8>>>,
+}
+
+fn drain(mut pipe: impl Read + Send + 'static) -> Drain {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&bytes);
+    let reader = thread::spawn(move || {
+        let mut chunk = [0; 8192];
+        while let Ok(n @ 1..) = pipe.read(&mut chunk) {
+            sink.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend_from_slice(&chunk[..n]);
+        }
+    });
+    Drain { reader, bytes }
+}
+
+/// What the pipe delivered by its end or by `deadline`, whichever is first.
+fn collect(drain: Option<Drain>, deadline: Instant) -> String {
+    let Some(drain) = drain else {
+        return String::new();
+    };
+    while !drain.reader.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    let bytes = drain.bytes.lock().unwrap_or_else(|e| e.into_inner());
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 #[cfg(test)]
@@ -75,6 +151,18 @@ mod tests {
         assert!(finished.status.success());
         assert_eq!(finished.stdout.len(), 220_000);
         assert_eq!(finished.stderr.len(), 220_000);
+    }
+
+    #[test]
+    fn a_background_process_holding_the_pipes_does_not_hold_the_run() {
+        let start = Instant::now();
+        let finished = run(
+            Command::new("sh").args(["-c", "sleep 3 & echo started"]),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(finished.stdout, "started\n");
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

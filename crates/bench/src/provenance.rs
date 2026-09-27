@@ -4,12 +4,15 @@
 //! the commands' output.
 
 use std::collections::BTreeMap;
-use std::time::SystemTime;
+use std::process::Command;
+use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::Role;
-use crate::target::Target;
+use crate::process;
+use crate::target::{Platform, Target};
 
 /// Runs host commands for provenance capture.
 pub trait Probe {
@@ -24,7 +27,12 @@ pub struct SystemProbe;
 
 impl Probe for SystemProbe {
     fn output(&self, program: &str, args: &[&str]) -> Option<String> {
-        todo!("run {program} {args:?}")
+        let finished =
+            process::run(Command::new(program).args(args), Duration::from_secs(10)).ok()?;
+        finished
+            .status
+            .success()
+            .then(|| finished.stdout.trim().to_owned())
     }
 }
 
@@ -128,24 +136,183 @@ pub enum ToolStatus {
 /// Reads the host's hardware, OS and load through `probe`; `os` is the value
 /// of `std::env::consts::OS` for the host.
 pub fn capture_host(probe: &dyn Probe, os: &str) -> Host {
-    todo!("capture the {os} host through {:p}", probe)
+    if os == "macos" {
+        let brand = probe.output("sysctl", &["-n", "machdep.cpu.brand_string"]);
+        let model = probe.output("sysctl", &["-n", "hw.model"]);
+        Host {
+            hardware: match (brand, model) {
+                (Some(brand), Some(model)) => Some(format!("{brand} ({model})")),
+                (brand, model) => brand.or(model),
+            },
+            cpu_cores: parsed(probe, "sysctl", &["-n", "hw.ncpu"]),
+            memory_bytes: parsed(probe, "sysctl", &["-n", "hw.memsize"]),
+            os: mac_os(probe),
+            load_average: probe
+                .output("sysctl", &["-n", "vm.loadavg"])
+                .and_then(|text| load_average(&text)),
+        }
+    } else {
+        Host {
+            hardware: probe
+                .output("grep", &["-m1", "model name", "/proc/cpuinfo"])
+                .and_then(|line| Some(line.split_once(':')?.1.trim().to_owned()))
+                .or_else(|| probe.output("uname", &["-m"])),
+            cpu_cores: parsed(probe, "nproc", &[]),
+            memory_bytes: probe
+                .output("grep", &["-m1", "MemTotal", "/proc/meminfo"])
+                .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
+                .map(|kib| kib * 1024),
+            os: probe.output("uname", &["-sr"]),
+            load_average: probe
+                .output("cat", &["/proc/loadavg"])
+                .and_then(|text| load_average(&text)),
+        }
+    }
+}
+
+fn parsed<T: FromStr>(probe: &dyn Probe, program: &str, args: &[&str]) -> Option<T> {
+    probe.output(program, args)?.trim().parse().ok()
+}
+
+/// `macOS 26.6.2 (25G83)` from `sw_vers`.
+fn mac_os(probe: &dyn Probe) -> Option<String> {
+    let name = probe.output("sw_vers", &["-productName"])?;
+    let version = probe.output("sw_vers", &["-productVersion"])?;
+    Some(match probe.output("sw_vers", &["-buildVersion"]) {
+        Some(build) => format!("{name} {version} ({build})"),
+        None => format!("{name} {version}"),
+    })
+}
+
+/// The first three numbers of `{ 3.85 4.10 5.00 }` or of `/proc/loadavg`.
+fn load_average(text: &str) -> Option<[f64; 3]> {
+    let mut numbers = text
+        .trim()
+        .trim_start_matches('{')
+        .split_whitespace()
+        .map(|word| word.parse::<f64>().ok());
+    Some([numbers.next()??, numbers.next()??, numbers.next()??])
 }
 
 /// `xcodebuild -version` condensed to one line.
 pub fn capture_xcode(probe: &dyn Probe) -> Option<String> {
-    todo!("capture Xcode through {:p}", probe)
+    let text = probe.output("xcodebuild", &["-version"])?;
+    let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
+    let version = lines.next()?;
+    Some(
+        match lines.find_map(|line| line.strip_prefix("Build version ")) {
+            Some(build) => format!("{version} ({build})"),
+            None => version.to_owned(),
+        },
+    )
 }
 
 /// The checkout's HEAD and whether tracked files differ from it.
 pub fn capture_commit(probe: &dyn Probe) -> Option<Commit> {
-    todo!("capture the commit through {:p}", probe)
+    let sha = probe.output("git", &["rev-parse", "HEAD"])?;
+    if sha.is_empty() {
+        return None;
+    }
+    let dirty = probe
+        .output("git", &["status", "--porcelain", "--untracked-files=no"])
+        .is_none_or(|status| !status.is_empty());
+    Some(Commit { sha, dirty })
 }
 
 /// Fills the target fields an adapter left empty: from `adb -s <id> shell
 /// getprop` on Android, from `xcrun simctl list devices --json` on the
 /// Simulator.
 pub fn complete_target(probe: &dyn Probe, target: &mut Target) {
-    todo!("complete {} through {:p}", target.id, probe)
+    match target.class.platform() {
+        Platform::Android => complete_android(probe, target),
+        Platform::Ios => complete_simulator(probe, target),
+    }
+}
+
+fn complete_android(probe: &dyn Probe, target: &mut Target) {
+    if target.model.is_some() && target.os.is_some() && target.api_level.is_some() {
+        return;
+    }
+    let Some(text) = probe.output("adb", &["-s", &target.id, "shell", "getprop"]) else {
+        return;
+    };
+    let props: BTreeMap<&str, &str> = text
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.trim().split_once("]: [")?;
+            Some((key.strip_prefix('[')?, value.strip_suffix(']')?))
+        })
+        .collect();
+    if target.api_level.is_none() {
+        target.api_level = props
+            .get("ro.build.version.sdk")
+            .and_then(|sdk| sdk.parse().ok());
+    }
+    if target.os.is_none() {
+        target.os = props
+            .get("ro.build.version.release")
+            .map(|release| format!("Android {release}"));
+    }
+    if target.model.is_none() {
+        let avd = props
+            .get("ro.boot.qemu.avd_name")
+            .or_else(|| props.get("ro.kernel.qemu.avd_name"));
+        target.model = match (props.get("ro.product.model"), avd) {
+            (Some(model), Some(avd)) => Some(format!("{model} (AVD {avd})")),
+            (Some(model), None) => Some((*model).to_owned()),
+            (None, Some(avd)) => Some(format!("AVD {avd}")),
+            (None, None) => None,
+        };
+    }
+}
+
+/// The part of `xcrun simctl list devices --json` provenance needs.
+#[derive(Deserialize)]
+struct SimctlList {
+    devices: BTreeMap<String, Vec<SimctlDevice>>,
+}
+
+#[derive(Deserialize)]
+struct SimctlDevice {
+    udid: String,
+    #[serde(rename = "deviceTypeIdentifier")]
+    device_type: Option<String>,
+}
+
+fn complete_simulator(probe: &dyn Probe, target: &mut Target) {
+    if target.model.is_some() && target.os.is_some() {
+        return;
+    }
+    let Some(list) = probe
+        .output("xcrun", &["simctl", "list", "devices", "--json"])
+        .and_then(|text| serde_json::from_str::<SimctlList>(&text).ok())
+    else {
+        return;
+    };
+    for (runtime, devices) in &list.devices {
+        let Some(device) = devices.iter().find(|d| d.udid == target.id) else {
+            continue;
+        };
+        if target.model.is_none() {
+            // com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro becomes iPhone 17 Pro.
+            target.model = device
+                .device_type
+                .as_deref()
+                .and_then(|id| id.rsplit_once("SimDeviceType."))
+                .map(|(_, name)| name.replace('-', " "));
+        }
+        if target.os.is_none() {
+            // com.apple.CoreSimulator.SimRuntime.iOS-26-5 becomes iOS 26.5.
+            target.os =
+                runtime
+                    .rsplit_once("SimRuntime.")
+                    .map(|(_, name)| match name.split_once('-') {
+                        Some((os, version)) => format!("{os} {}", version.replace('-', ".")),
+                        None => name.to_owned(),
+                    });
+        }
+        return;
+    }
 }
 
 impl Provenance {
@@ -154,18 +321,121 @@ impl Provenance {
     /// load averages are run-specific and never listed. An empty list means
     /// the environments matched.
     pub fn environment_differences(&self, other: &Provenance) -> Vec<String> {
-        todo!("compare {} with {}", self.started_at, other.started_at)
+        let mut found = Vec::new();
+        let (a, b) = (&self.host, &other.host);
+        differ(&mut found, "host.hardware", &a.hardware, &b.hardware);
+        differ(&mut found, "host.cpu_cores", &a.cpu_cores, &b.cpu_cores);
+        differ(
+            &mut found,
+            "host.memory_bytes",
+            &a.memory_bytes,
+            &b.memory_bytes,
+        );
+        differ(&mut found, "host.os", &a.os, &b.os);
+        differ(&mut found, "xcode", &self.xcode, &other.xcode);
+        differ(&mut found, "commit", &self.commit, &other.commit);
+        differ(&mut found, "harness", &self.harness, &other.harness);
+        for target in &self.targets {
+            let name = format!("targets[{}]", target.id);
+            let Some(theirs) = other.targets.iter().find(|t| t.id == target.id) else {
+                found.push(name);
+                continue;
+            };
+            differ(
+                &mut found,
+                format!("{name}.class"),
+                &target.class,
+                &theirs.class,
+            );
+            differ(
+                &mut found,
+                format!("{name}.model"),
+                &target.model,
+                &theirs.model,
+            );
+            differ(&mut found, format!("{name}.os"), &target.os, &theirs.os);
+            differ(
+                &mut found,
+                format!("{name}.api_level"),
+                &target.api_level,
+                &theirs.api_level,
+            );
+        }
+        for target in &other.targets {
+            if !self.targets.iter().any(|t| t.id == target.id) {
+                found.push(format!("targets[{}]", target.id));
+            }
+        }
+        for tool in &self.tools {
+            let name = format!("tools[{}]", tool.name);
+            let Some(theirs) = other.tools.iter().find(|t| t.name == tool.name) else {
+                found.push(name);
+                continue;
+            };
+            differ(&mut found, format!("{name}.role"), &tool.role, &theirs.role);
+            differ(
+                &mut found,
+                format!("{name}.status"),
+                &tool.status,
+                &theirs.status,
+            );
+            differ(
+                &mut found,
+                format!("{name}.version"),
+                &tool.version,
+                &theirs.version,
+            );
+        }
+        for tool in &other.tools {
+            if !self.tools.iter().any(|t| t.name == tool.name) {
+                found.push(format!("tools[{}]", tool.name));
+            }
+        }
+        found
+    }
+}
+
+fn differ<T: PartialEq>(found: &mut Vec<String>, name: impl Into<String>, a: &T, b: &T) {
+    if a != b {
+        found.push(name.into());
     }
 }
 
 /// RFC 3339 UTC timestamp with second precision.
 pub fn utc_timestamp(time: SystemTime) -> String {
-    todo!("format {time:?}")
+    let (y, mo, d, h, mi, s) = utc_fields(time);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
 
 /// The same instant as a compact `YYYYMMDDTHHMMSSZ` stamp for directory names.
 pub fn compact_timestamp(time: SystemTime) -> String {
-    todo!("format {time:?}")
+    let (y, mo, d, h, mi, s) = utc_fields(time);
+    format!("{y:04}{mo:02}{d:02}T{h:02}{mi:02}{s:02}Z")
+}
+
+/// Year, month, day, hour, minute and second in UTC; instants before the epoch
+/// clamp to it.
+fn utc_fields(time: SystemTime) -> (i64, u64, u64, u64, u64, u64) {
+    let secs = time.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let days = i64::try_from(secs / 86_400).unwrap_or(i64::MAX);
+    let (y, m, d) = civil_from_days(days);
+    let rem = secs % 86_400;
+    (y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// The proleptic Gregorian date `days` after 1970-01-01, by Howard Hinnant's
+/// `civil_from_days`.
+fn civil_from_days(days: i64) -> (i64, u64, u64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (year, month.unsigned_abs(), day.unsigned_abs())
 }
 
 #[cfg(test)]

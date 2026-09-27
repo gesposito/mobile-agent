@@ -1,6 +1,7 @@
 //! The run report. One value renders as JSON and as the markdown summary, so
 //! both outputs carry the same numbers.
 
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -94,12 +95,22 @@ pub struct ReportFiles {
 impl Report {
     /// Pretty-printed JSON.
     pub fn to_json(&self) -> String {
-        todo!("serialize {} measurements", self.measurements.len())
+        // Every key is a string and serde_json writes non-finite floats as
+        // null, so serializing a report cannot fail.
+        serde_json::to_string_pretty(self).expect("a report always serializes")
     }
 
     /// Parses a report written by [`Report::to_json`].
     pub fn from_json(text: &str) -> Result<Report, String> {
-        todo!("parse {} bytes", text.len())
+        let report: Report =
+            serde_json::from_str(text).map_err(|e| format!("not a benchmark report: {e}"))?;
+        if report.schema_version != SCHEMA_VERSION {
+            return Err(format!(
+                "report schema version {} is not the supported {SCHEMA_VERSION}",
+                report.schema_version
+            ));
+        }
+        Ok(report)
     }
 
     /// The markdown summary.
@@ -109,6 +120,13 @@ impl Report {
 
     /// Writes `report.json` and `report.md` into `dir`, creating it.
     pub fn write(&self, dir: &Path) -> io::Result<ReportFiles> {
-        todo!("write into {}", dir.display())
+        fs::create_dir_all(dir)?;
+        let files = ReportFiles {
+            json: dir.join("report.json"),
+            markdown: dir.join("report.md"),
+        };
+        fs::write(&files.json, self.to_json() + "\n")?;
+        fs::write(&files.markdown, self.to_markdown())?;
+        Ok(files)
     }
 }
