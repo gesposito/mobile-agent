@@ -81,7 +81,7 @@ dex size:
 
 ```
 /…/agent-android/dist/mobile-agent-android.jar
-classes.dex 123568 bytes
+classes.dex 126288 bytes
 ```
 
 Tool resolution:
@@ -222,13 +222,37 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   past either cap the walk goes on counting, up to 100,000 nodes, so
   `node_count` is the screen's full count, the omitted count is `node_count`
   minus the nodes serialized, and `truncated` names the cap that cut (bit 0
-  depth, bit 1 nodes, bit 2 a window without a root). The visible count is
-  the nodes whose `visible` flag is set. `seq` is the last tree event sent
-  before the walk began. A read whose deadline passes stops at the next node.
+  depth, bit 1 nodes, bit 2 a window without a root or with a child that
+  could not be read, below). The visible count is the nodes whose `visible`
+  flag is set. `seq` is the last tree event sent before the walk began. A
+  read whose deadline passes stops at the next node.
   With `--trace` the agent prints `trace snapshot id=<id> windows=<n>
   nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
   round_trips=<n>`, the round trips read from the accessibility client's
   interaction counter.
+- **Children that cannot be read** (task 4.11). On a debuggable build, such
+  as the emulator's `userdebug` image (`ro.debuggable=1`), `getChild` can
+  throw instead of returning a child. The walk fetches children with
+  `FLAG_PREFETCH_UNINTERRUPTIBLE`, for which the accessibility client waits
+  for a list of nodes. When two requests for the same node wait in the app
+  together, as they can while its UI thread lags (the agent's event thread
+  fetches the source of each event, which can be a node the walk is
+  fetching), the app answers the one it handles second with the first's
+  node through the single-node callback
+  (`AccessibilityInteractionController.getSatisfiedRequestInPrefetch`). If
+  that one is the walk's, the client has its answer but no list, and its
+  integrity check, which only debuggable builds run, calls `size()` on the
+  missing list: a `NullPointerException` from
+  `AccessibilityInteractionClient.checkFindAccessibilityNodeInfoResultIntegrity`.
+  A release build returns no child there instead, which the walk takes for a
+  child that went away. The agent fetches a child whose fetch throws once
+  more after 50 ms. When that throws too, the child is skipped: it counts in
+  `node_count`, so the omitted count includes it, but neither it nor its
+  subtree is serialized; `truncated` gets bit 2; its window's `emits_events`
+  is absent unless the walk met Compose; and a collection that lost it
+  reports no items in view. The read itself does not fail. The first
+  failure, with its stack trace, and the retry's outcome are logged at
+  debug level under the logcat tag `mobile-agent`.
 - **Window metadata** (task 3.6, `Semantics.kt`). Each window says whether
   its content sends change events: `false` when the walk met Compose content
   (a class under `androidx.compose.`, or a node advertising Compose's
@@ -347,9 +371,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
 
 | Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
 | --- | --- | --- |
-| `classes.dex` | 123,568 bytes | 2,428,548 bytes |
-| `mobile-agent-android.jar` (deflated) | 63,238 bytes | 727,726 bytes |
-| Dex contents | 155 classes, 759 method references | 1,224 classes, 13,366 method references |
+| `classes.dex` | 126,288 bytes | 2,433,088 bytes |
+| `mobile-agent-android.jar` (deflated) | 64,633 bytes | 729,385 bytes |
+| Dex contents | 156 classes, 770 method references | 1,227 classes, 13,384 method references |
 | Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
 `test.sh` fails when `classes.dex` is not under 300,000 bytes (task 4.10).
@@ -456,6 +480,7 @@ the agent answers by id and its tests exercise it throughout.
 | android-driver: Tree acquisition across windows | Keyboard is included | `tree::the_keyboard_window_appears_with_its_keys_when_a_field_is_focused` |
 | | Node limit reached | `tree::a_lower_node_cap_truncates_and_still_reports_the_full_count`, `tree::a_lower_depth_cap_truncates_below_it_and_still_reports_the_full_count` |
 | | Attributes of every node, 500-node screens | `tree::the_compose_500_cell_screen_returns_every_cell_with_total_and_visible_counts`, `tree::the_expo_500_cell_screen_returns_every_cell_with_total_and_visible_counts` |
+| | A child the platform fails to return (task 4.11) | `getchild::a_compose_child_whose_fetch_throws_once_is_fetched_again_and_the_read_is_complete`, `getchild::an_expo_child_whose_fetch_throws_once_is_fetched_again_and_the_read_is_complete`, `getchild::a_compose_child_whose_fetch_throws_twice_is_skipped_and_counted_as_omitted_in_a_truncated_read`, `getchild::an_expo_child_whose_fetch_throws_twice_is_skipped_and_counted_as_omitted_in_a_truncated_read` |
 | android-driver: Bounded idle waiting | Continuous animation | `idle::a_snapshot_during_an_endless_animation_returns_within_the_default_bound_plus_read_time` |
 | | No wait at all, a requested bound, a quiet screen | `idle::idle_zero_reads_at_once_during_an_animation`, `idle::a_requested_bound_caps_the_wait`, `idle::a_quiet_screen_is_read_without_waiting_for_the_bound` |
 | android-driver: Change events | Single field changes | `events::editing_one_react_native_field_emits_events_naming_that_field_only` |
@@ -479,4 +504,5 @@ the agent answers by id and its tests exercise it throughout.
 | | No process left after the host disconnects | `lifecycle::after_the_host_disconnects_the_agent_exits_within_its_idle_bound`, `lifecycle::an_agent_no_host_ever_reaches_exits_within_its_idle_bound` |
 | | App restarted | `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` |
 | | Rotation | `lifecycle::the_same_agent_serves_snapshots_across_a_rotation` |
+| Test hooks armed only with `--test-hooks` (task 4.11) | | `getchild::the_hook_variable_arms_nothing_without_the_test_hooks_flag` |
 | Banner and arguments, the shrunk dex | | `test.sh`: `--version` and no arguments print the banner, an unknown argument and `serve` without a socket name exit 2, `classes.dex` is under 300 KB, no agent process remains |

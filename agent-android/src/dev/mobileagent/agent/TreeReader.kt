@@ -3,6 +3,7 @@ package dev.mobileagent.agent
 import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import dev.mobileagent.agent.codec.Bounds
@@ -35,6 +36,12 @@ class Cancelled : RuntimeException() {
  * Each window also carries its metadata and each scrolling node its scroll
  * semantics ([Semantics]): a window whose walk meets Compose content sends
  * no change events, one the walk completed without meeting it does.
+ *
+ * A child whose fetch throws, as the platform's integrity check does on a
+ * debuggable build (see the README), is fetched once more after
+ * [RETRY_MS]. When that throws too the child is skipped: counted, so the
+ * omitted count includes it, but neither it nor its subtree serialized, and
+ * the snapshot is marked [Truncation.WINDOWS]. The read goes on either way.
  */
 class TreeReader(private val automation: Automation, private val hooks: TestHooks?) {
     companion object {
@@ -43,6 +50,12 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
 
         /** Nodes counted at most, serialized or not. */
         const val COUNT_LIMIT = 100_000
+
+        /** How long a child whose fetch threw waits for its one retry. */
+        const val RETRY_MS = 50L
+
+        /** The logcat tag of the agent's debug lines. */
+        const val LOG_TAG = "mobile-agent"
 
         /** Descendants breadth first, uninterrupted; at most 50 nodes per request. */
         private const val PREFETCH = AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_BREADTH_FIRST or
@@ -116,6 +129,9 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         @JvmField val serialize: Boolean,
     )
 
+    /** A child whose fetch threw twice. */
+    private class Unreadable(cause: RuntimeException) : Exception(cause)
+
     /** A serialized node before the tree is assembled. */
     private class Built(
         @JvmField val cls: Int,
@@ -161,6 +177,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         val rooted = BooleanArray(windows.size)
         /** Whether the walk met Compose content in each window. */
         val compose = BooleanArray(windows.size)
+        /** Whether the walk skipped a child it could not fetch in each window. */
+        val partial = BooleanArray(windows.size)
         var truncated = 0
         windows.forEachIndexed { i, w ->
             val r = root(w)
@@ -213,17 +231,26 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
             }
             // Scroll semantics look at the children, which the walk fetches anyway.
             val scrolling = if (id >= 0 && Semantics.scrolls(n)) ArrayList<AccessibilityNodeInfo>() else null
+            var skipped = false
             val count = if (item.depth >= Protocol.MAX_NODE_DEPTH) 0 else n.childCount
             if (count > 0) {
                 val childSerialized = id >= 0 && item.depth + 1 <= depthCap
                 if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
                 for (i in 0 until count) {
-                    val c = fetch(n, i) ?: continue
+                    val c = try {
+                        childOrRetry(n, i, windows[item.window].id, cancelled)
+                    } catch (e: Unreadable) {
+                        total++
+                        truncated = truncated or Truncation.WINDOWS
+                        partial[item.window] = true
+                        skipped = true
+                        continue
+                    } ?: continue
                     scrolling?.add(c)
                     queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
                 }
             }
-            if (scrolling != null) built[id].scroll = Semantics.scroll(n, scrolling)
+            if (scrolling != null) built[id].scroll = Semantics.scroll(n, scrolling, !skipped)
         }
         val complete = queue.isEmpty()
         if (!complete) truncated = truncated or Truncation.NODES
@@ -252,7 +279,7 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                 roots[i].takeIf { it >= 0 }?.let { nodes[it] },
                 emitsEvents = when {
                     compose[i] -> false
-                    !rooted[i] || !complete -> null
+                    !rooted[i] || !complete || partial[i] -> null
                     else -> true
                 },
                 ownerIndex = Semantics.systemOwner(type, packages[i])?.let { intern(it) },
@@ -271,12 +298,38 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         )
     }
 
+    /**
+     * Child `i` of `n`, a node of window `window`, fetched once more after
+     * [RETRY_MS] when the fetch throws. Throws [Unreadable] when the retry
+     * throws too, and [Cancelled] when the read is abandoned before it.
+     */
+    private fun childOrRetry(n: AccessibilityNodeInfo, i: Int, window: Int, cancelled: () -> Boolean): AccessibilityNodeInfo? {
+        try {
+            return fetch(n, i)
+        } catch (e: RuntimeException) {
+            Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw; fetching it again in $RETRY_MS ms", e)
+        }
+        if (cancelled()) throw Cancelled()
+        Thread.sleep(RETRY_MS)
+        val c = try {
+            fetch(n, i)
+        } catch (e: RuntimeException) {
+            Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw again; skipped: $e")
+            throw Unreadable(e)
+        }
+        Log.d(LOG_TAG, "child $i of ${describe(n, window)} ${if (c != null) "read" else "gone"} on the second attempt")
+        return c
+    }
+
     /** Child `i` of `n` as the platform returns it, shown to the test hooks when they are armed. */
     private fun fetch(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? {
         val c = child(n, i)
         hooks?.onChild(i, c)
         return c
     }
+
+    private fun describe(n: AccessibilityNodeInfo, window: Int): String =
+        "${n.className}${n.viewIdResourceName?.let { " $it" } ?: ""} in window $window"
 }
 
 /**

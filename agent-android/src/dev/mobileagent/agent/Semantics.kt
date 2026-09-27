@@ -153,7 +153,8 @@ object Semantics {
     }
 
     /**
-     * The scroll semantics of `n`, whose fetched children are `children`:
+     * The scroll semantics of `n`, whose fetched children are `children`,
+     * all of them unless the walk skipped one (`complete` false):
      *
      * - The axis from the directional scroll actions, else from a collection
      *   one item wide or high.
@@ -164,10 +165,11 @@ object Semantics {
      *   from the child indices when every item is a child (Settings), or at
      *   either end of the range, where the children in view are the first
      *   or the last items (a Compose lazy list names no item, and mid-list
-     *   its position stays unknown).
+     *   its position stays unknown). Each way needs every child, so a
+     *   collection that lost one reports no items in view.
      * - Otherwise a range info, as a percentage of its range.
      */
-    fun scroll(n: AccessibilityNodeInfo, children: List<AccessibilityNodeInfo>): Scroll {
+    fun scroll(n: AccessibilityNodeInfo, children: List<AccessibilityNodeInfo>, complete: Boolean): Scroll {
         var backward = false
         var forward = false
         var upOrLeft = false
@@ -205,7 +207,8 @@ object Semantics {
             }
             val count = if (byRows) collection.rowCount else collection.columnCount
             if (count > 0) {
-                return Scroll(axis, flags, ScrollRange(ScrollUnit.ITEMS, 0, count - 1), itemsInView(count, byRows, back, ahead, children))
+                val inView = if (complete) itemsInView(count, byRows, back, ahead, children) else null
+                return Scroll(axis, flags, ScrollRange(ScrollUnit.ITEMS, 0, count - 1), inView)
             }
         }
         val info = n.rangeInfo
