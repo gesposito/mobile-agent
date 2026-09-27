@@ -40,6 +40,9 @@ const UNASSIGNED: ElementId = ElementId(0);
 #[derive(Clone, Debug)]
 pub(crate) struct RNode {
     pub element: ElementId,
+    /// The node's id in the read it came from.
+    pub node_id: u32,
+    pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub depth: usize,
     pub class: Arc<str>,
@@ -141,6 +144,8 @@ pub(crate) struct Replica {
     pub last_action: Option<Instant>,
     pub tree_events: u64,
     interner: HashMap<String, Arc<str>>,
+    /// Where each element is: window and node index.
+    index: HashMap<ElementId, (usize, usize)>,
 }
 
 impl Replica {
@@ -164,6 +169,21 @@ impl Replica {
             last_action: None,
             tree_events: 0,
             interner: HashMap::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    /// Where `element` is now, as window and node indices.
+    pub fn locate(&self, element: ElementId) -> Option<(usize, usize)> {
+        self.index.get(&element).copied()
+    }
+
+    fn reindex(&mut self) {
+        self.index.clear();
+        for (w, window) in self.windows.iter().enumerate() {
+            for (i, node) in window.nodes.iter().enumerate() {
+                self.index.insert(node.element, (w, i));
+            }
         }
     }
 
@@ -388,6 +408,7 @@ impl Replica {
         }
         next_windows.sort_by_key(|w| std::cmp::Reverse(w.layer));
         self.windows = next_windows;
+        self.reindex();
         self.scale = scale;
         self.backend = Some(backend);
         self.truncated = snapshot.truncated;
@@ -477,6 +498,8 @@ impl Replica {
             let class = self.intern(class);
             nodes.push(RNode {
                 element: UNASSIGNED,
+                node_id: node.id,
+                parent,
                 children: Vec::with_capacity(node.children.len()),
                 depth,
                 class,

@@ -1,20 +1,21 @@
 //! The mirror: one target's replica and the questions it answers.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use protocol::message::TextMethod;
 use protocol::snapshot::{NodeFlags, WindowFlags, WindowType};
 
-use crate::backend::{Backend, BackendInfo, Input, Owner};
-use crate::error::MirrorError;
+use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner};
+use crate::error::{MirrorError, StaleCause};
 use crate::geometry::{Point, Rect};
-use crate::refs::Ref;
-use crate::replica::Replica;
+use crate::refs::{Lookup, Ref, RefTable};
+use crate::replica::{RNode, Replica, Win};
 use crate::snapshot::{
     Element, RefreshMode, Snapshot, SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
 };
-use crate::verdict::Verdict;
-use crate::view::View;
+use crate::verdict::{Degradation, Verdict};
+use crate::view::{self, Facts, View};
 
 /// How often a window that sends no change events is re-read when nothing
 /// else re-reads it.
@@ -92,6 +93,7 @@ pub struct Mirror {
     backend: Backend,
     config: MirrorConfig,
     replica: Replica,
+    refs: RefTable,
 }
 
 impl Mirror {
@@ -102,6 +104,7 @@ impl Mirror {
             backend,
             config,
             replica: Replica::new(),
+            refs: RefTable::new(),
         }
     }
 
@@ -171,36 +174,32 @@ impl Mirror {
     }
 
     /// A snapshot of the replica, acquiring it first when none exists.
+    /// Listed elements that are actionable, or content with a name, get
+    /// refs.
     pub fn snapshot(&mut self, options: &SnapshotOptions) -> Result<Snapshot, MirrorError> {
         self.pump()?;
         let now = self.now();
         let view = View::build(&self.replica);
         let mut elements = Vec::new();
+        let mut listed = Vec::new();
         for (w, window) in self.replica.windows.iter().enumerate() {
             for (i, node) in window.nodes.iter().enumerate() {
                 let facts = &view.windows[w][i];
                 if !facts.visible {
                     continue;
                 }
-                elements.push(Element {
-                    id: node.element,
-                    reference: None,
-                    role: facts.role,
-                    name: facts.name.clone(),
-                    identifier: node.identifier.clone(),
-                    value: facts.value.clone(),
-                    bounds: facts.rect,
-                    enabled: node.flags.contains(NodeFlags::ENABLED),
-                    focused: node.flags.contains(NodeFlags::FOCUSED),
-                    selected: node.flags.contains(NodeFlags::SELECTED),
-                    checked: facts.checked,
-                    actionable: facts.actionable,
-                    window: window.id,
-                    depth: node.depth,
-                    class: node.class.to_string(),
-                });
+                let reference = facts
+                    .bears_ref
+                    .then(|| self.refs.assign(node.element, facts.role, &facts.name));
+                if let Some(reference) = reference {
+                    listed.push((facts.signature, reference));
+                }
+                elements.push(element(window, node, facts, reference));
             }
         }
+        let replica = &self.replica;
+        self.refs.prune(|e| replica.locate(e).is_some());
+        let reasons = collisions(&listed);
         Ok(Snapshot {
             revision: self.replica.revision,
             taken_at: now,
@@ -213,12 +212,50 @@ impl Mirror {
                     .backend
                     .clone()
                     .unwrap_or_else(|| BackendInfo::new("none", false)),
-                degraded: false,
-                reasons: Vec::new(),
+                degraded: !reasons.is_empty(),
+                reasons,
             },
             windows: self.summaries(now),
             elements,
         })
+    }
+
+    /// The element `reference` names, as the replica shows it now.
+    pub fn resolve(&mut self, reference: Ref) -> Result<Element, MirrorError> {
+        self.pump()?;
+        let (w, i) = self.locate_ref(reference)?;
+        let window = &self.replica.windows[w];
+        let facts = view::facts_of(&self.replica, w, i);
+        Ok(element(window, &window.nodes[i], &facts, Some(reference)))
+    }
+
+    /// Where the element `reference` names is in the replica.
+    fn locate_ref(&self, reference: Ref) -> Result<(usize, usize), MirrorError> {
+        match self.refs.lookup(reference) {
+            Lookup::Unknown => Err(MirrorError::UnknownRef(reference.to_string())),
+            Lookup::Forgotten => Err(MirrorError::StaleRef {
+                reference,
+                cause: StaleCause::Removed,
+                was: None,
+            }),
+            Lookup::Issued(issued) => {
+                self.replica
+                    .locate(issued.element)
+                    .ok_or_else(|| MirrorError::StaleRef {
+                        reference,
+                        cause: StaleCause::Removed,
+                        was: Some((issued.role, issued.name.clone())),
+                    })
+            }
+        }
+    }
+
+    /// The point an action aims at, in device points.
+    fn aim(&mut self, target: &Target) -> Result<Point, MirrorError> {
+        match target {
+            Target::Point(point) => Ok(*point),
+            Target::Ref(reference) => Ok(self.resolve(*reference)?.bounds.center()),
+        }
     }
 
     /// Who owns the foreground: the owner of the active window, else of the
@@ -266,10 +303,7 @@ impl Mirror {
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
         let (input, at) = match action {
             Action::Tap { target, hold } => {
-                let at = match target {
-                    Target::Point(point) => *point,
-                    Target::Ref(_) => todo!("task 7.2"),
-                };
+                let at = self.aim(target)?;
                 (Input::Tap { at, hold: *hold }, Some(at))
             }
             Action::Swipe { from, to, duration } => (
@@ -287,14 +321,28 @@ impl Mirror {
                 },
                 None,
             ),
-            Action::Text { text, method, .. } => (
-                Input::Text {
-                    text: text.clone(),
-                    node: None,
-                    method: *method,
-                },
-                None,
-            ),
+            Action::Text { text, into, method } => {
+                let node = match into {
+                    Some(reference) => {
+                        self.pump()?;
+                        let (w, i) = self.locate_ref(*reference)?;
+                        let window = &self.replica.windows[w];
+                        Some(NodeHandle {
+                            window: window.id,
+                            node: window.nodes[i].node_id,
+                        })
+                    }
+                    None => None,
+                };
+                (
+                    Input::Text {
+                        text: text.clone(),
+                        node,
+                        method: *method,
+                    },
+                    None,
+                )
+            }
         };
         let ack = self.backend.input.perform(&input)?;
         let now = self.now();
@@ -304,11 +352,6 @@ impl Mirror {
             at,
             method: ack.method,
         })
-    }
-
-    /// The element `reference` names, as the replica shows it now.
-    pub fn resolve(&mut self, _reference: Ref) -> Result<Element, MirrorError> {
-        todo!("task 7.2")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.
@@ -326,4 +369,46 @@ impl Mirror {
     pub fn dump(&self) -> String {
         self.replica.dump()
     }
+}
+
+/// An element as snapshots list it.
+fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) -> Element {
+    Element {
+        id: node.element,
+        reference,
+        role: facts.role,
+        name: facts.name.clone(),
+        identifier: node.identifier.clone(),
+        value: facts.value.clone(),
+        bounds: facts.rect,
+        enabled: node.flags.contains(NodeFlags::ENABLED),
+        focused: node.flags.contains(NodeFlags::FOCUSED),
+        selected: node.flags.contains(NodeFlags::SELECTED),
+        checked: facts.checked,
+        actionable: facts.actionable,
+        window: window.id,
+        depth: node.depth,
+        class: node.class.to_string(),
+    }
+}
+
+/// The groups of listed refs that share a signature: identical siblings
+/// that only their position tells apart.
+fn collisions(listed: &[(u64, Ref)]) -> Vec<Degradation> {
+    let mut groups: Vec<Vec<Ref>> = Vec::new();
+    let mut by_signature: HashMap<u64, usize> = HashMap::new();
+    for &(signature, reference) in listed {
+        match by_signature.get(&signature) {
+            Some(&group) => groups[group].push(reference),
+            None => {
+                by_signature.insert(signature, groups.len());
+                groups.push(vec![reference]);
+            }
+        }
+    }
+    groups
+        .into_iter()
+        .filter(|refs| refs.len() > 1)
+        .map(|refs| Degradation::SiblingCollision { refs })
+        .collect()
 }
