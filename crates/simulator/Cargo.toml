@@ -33,7 +33,7 @@ libc = "0.2"
 # host; see README.md, Building) is the default, chosen by spike S2 for being
 # 2.7 to 3.1 times faster. jpeg-encoder is the dependency-free fallback, also
 # within the 30 fps budget: build with
-# `--no-default-features --features jpeg-encoder` on a host without
+# `--no-default-features --features jpeg-encoder,reader` on a host without
 # libjpeg-turbo. With both, jpeg-encoder takes over if turbojpeg cannot start.
 [features]
 default = ["turbojpeg", "reader"]

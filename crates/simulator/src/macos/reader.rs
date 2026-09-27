@@ -492,6 +492,10 @@ const SPAWN_ATTEMPTS: u32 = 2;
 #[derive(Default)]
 pub struct TreeSlot {
     state: Mutex<SlotState>,
+    /// Held while a reader spawns, so that reads arriving meanwhile wait
+    /// for that reader instead of spawning another. The state's own lock is
+    /// free during the spawn, which records on the slot (`give_up`).
+    spawning: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -515,18 +519,23 @@ impl TreeSlot {
         &self,
         spawn: impl FnOnce() -> Result<Spawned>,
     ) -> Result<std::result::Result<Arc<Reader>, String>> {
+        let _spawning = lock(&self.spawning);
+        {
+            let mut state = lock(&self.state);
+            if let Some(reader) = state.reader.as_ref().filter(|reader| reader.alive()) {
+                return Ok(Ok(Arc::clone(reader)));
+            }
+            if let Some(gone) = state.reader.take() {
+                state.last = Some(gone.status(state.spawns));
+            }
+            if let Some(why) = &state.unusable {
+                return Ok(Err(why.clone()));
+            }
+            state.spawns += 1;
+        }
+        let spawned = spawn()?;
         let mut state = lock(&self.state);
-        if let Some(reader) = state.reader.as_ref().filter(|reader| reader.alive()) {
-            return Ok(Ok(Arc::clone(reader)));
-        }
-        if let Some(gone) = state.reader.take() {
-            state.last = Some(gone.status(state.spawns));
-        }
-        if let Some(why) = &state.unusable {
-            return Ok(Err(why.clone()));
-        }
-        state.spawns += 1;
-        match spawn()? {
+        match spawned {
             Spawned::Ready(reader) => {
                 state.failures = 0;
                 let reader = Arc::new(reader);

@@ -87,7 +87,7 @@ The binary does not load libturbojpeg at run time.
 On a host without libjpeg-turbo, build the pure-Rust fallback instead:
 
 ```sh
-cargo build -p simulator --no-default-features --features jpeg-encoder
+cargo build -p simulator --no-default-features --features jpeg-encoder,reader
 ```
 
 With both features, jpeg-encoder takes over if turbojpeg cannot start. The
@@ -110,8 +110,11 @@ rustup target add aarch64-apple-ios-sim
 ```
 
 On macOS without the target, the build prints a warning, embeds nothing,
-and tree reads use the host translator; `doctor` says so.
-`MOBILE_AGENT_READER` names a prebuilt reader to embed instead. A reader
+and tree reads use the host translator; `doctor` says so. The `reader`
+feature, on by default, asks for the reader: a build without it
+(`--no-default-features --features turbojpeg`) embeds nothing on purpose,
+which is how the fallback is tested. `MOBILE_AGENT_READER` names a prebuilt
+reader to embed instead. A reader
 that fails to compile fails the build. The binary is 0.89 MB, links only
 Foundation, CoreFoundation, libobjc, libSystem and libiconv, and carries
 only the ad hoc signature the linker gives every arm64 binary. The reader's
@@ -278,9 +281,13 @@ service like any other.
 The host translator (`AXPTranslator`, answered through `-[SimDevice
 sendAccessibilityRequestAsync:completionQueue:completionHandler:]`) reads
 instead when the reader cannot run: no reader in this build, a spawn that
-fails, or a reader that exits or never says hello. After two failed spawns
-in a row the device stays on the translator until `reset_target`; a reader
-whose connection ends is replaced once within the read. The translator
+fails, or a reader that exits or never says hello. Without a reader in the
+build the first read already uses the translator; after two failed spawns
+in a row the device stays on it until `reset_target`; a reader whose
+connection ends is replaced once within the read. A spawn runs with the
+device's tree state unlocked, so what it records there cannot wait on the
+read that asked for it, while a second read of the same device waits for
+that spawn rather than starting another. The translator
 needs nothing in the guest, but makes about seven requests per element,
 flattens containers, drops the tab bar's buttons and React Native's text
 identifiers, and answers with a childless application for seconds after a
@@ -505,7 +512,7 @@ about a minute.
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
 | Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
 | Foreground tree read | Scroll semantics of scroll views (task 6.10) | `metadata::a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top`, and in `reader/`: `elements::tests::a_list_at_its_top_scrolls_forward_only`, `elements::tests::a_list_scrolled_down_scrolls_both_ways`, `elements::tests::a_list_at_its_end_scrolls_back_only`, `elements::tests::content_that_fits_its_visible_frame_does_not_scroll`, `elements::tests::content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it`, `elements::tests::a_carousel_scrolls_horizontally`, `elements::tests::content_that_scrolls_both_ways_names_no_axis`, `elements::tests::elements_without_a_scroll_area_have_no_scroll_semantics` |
-| Foreground tree read | Covered content cut under alerts, the translator fallback (task 6.6) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
+| Foreground tree read | Covered content cut under alerts, the translator fallback (tasks 6.6 and 6.11) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::a_build_without_the_reader_reads_through_the_translator` (without the `reader` feature), `macos::reader::tests::a_spawn_can_record_on_the_slot_while_it_runs`, `macos::reader::tests::a_build_without_the_reader_feature_embeds_none` (without the feature), `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
 | Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |
 | Input transport selection | Two runtimes on one host | `transport::two_simulators_get_the_hosts_transport` (both on iOS 26.5, the host's only runtime), `select::tests::the_host_core_simulator_selects_dtuhidd_from_1155_4`, `select::tests::an_unreadable_version_is_taken_as_current`, `select::tests::a_forced_transport_is_the_only_one_tried`, `select::tests::the_fallback_is_opened_only_when_the_first_fails`, `select::tests::a_transport_that_failed_on_the_target_is_skipped` |

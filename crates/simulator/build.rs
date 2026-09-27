@@ -38,10 +38,7 @@ fn main() {
     let macos = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos");
     let wanted = env::var_os("CARGO_FEATURE_READER").is_some();
     let outcome = if !wanted {
-        Err(
-            "this build leaves out the reader: it was built without the `reader` feature"
-                .to_owned(),
-        )
+        Err("it was built without the `reader` feature".to_owned())
     } else if !macos {
         Err("the Simulator driver runs only on macOS".to_owned())
     } else if let Some(prebuilt) = env::var_os("MOBILE_AGENT_READER") {
