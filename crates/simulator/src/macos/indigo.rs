@@ -33,6 +33,7 @@ use objc2::runtime::AnyObject;
 use objc2_foundation::{NSError, NSSize};
 
 use crate::error::{Error, Failure, Result};
+use crate::gate::Submitted;
 use crate::gesture::{Phase, Ratio, TouchStep};
 use crate::macos::coresim::{Device, developer_dir};
 use crate::macos::input::Transport;
@@ -269,7 +270,7 @@ impl Transport for Indigo {
         TransportKind::Indigo
     }
 
-    fn touch(&self, step: &TouchStep) -> Result<()> {
+    fn touch(&self, step: &TouchStep) -> Result<Submitted> {
         let [contact] = step.contacts[..] else {
             return Err(Error::Unsupported {
                 what: "a two-finger gesture over the Indigo transport".into(),
@@ -286,16 +287,17 @@ impl Transport for Indigo {
             Phase::Up => LEFT_MOUSE_UP,
         };
         let message = self.message(contact, event_type)?;
-        self.deliver(message)
+        self.deliver(message)?;
+        Ok(Submitted::Sent)
     }
 
-    fn button(&self, _button: Button, _down: bool) -> Result<()> {
+    fn button(&self, _button: Button, _down: bool) -> Result<Submitted> {
         Err(Error::Unsupported {
             what: "a hardware button over the Indigo transport".into(),
         })
     }
 
-    fn key(&self, _usage: u32, _down: bool) -> Result<()> {
+    fn key(&self, _usage: u32, _down: bool) -> Result<Submitted> {
         Err(Error::Unsupported {
             what: "a key over the Indigo transport, which CoreSimulator 1155.4 and later drop"
                 .into(),
@@ -305,6 +307,23 @@ impl Transport for Indigo {
     /// Every send already waited for its completion.
     fn flush(&self) -> Result<()> {
         Ok(())
+    }
+
+    /// The legacy client needs no activation.
+    fn wait_active(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn usable(&self) -> bool {
+        true
+    }
+
+    fn activation(&self) -> Option<Duration> {
+        None
+    }
+
+    fn connections(&self) -> u32 {
+        1
     }
 }
 

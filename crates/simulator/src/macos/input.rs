@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::error::Result;
+use crate::gate::Submitted;
 use crate::gesture::{Screen, TouchStep};
 use crate::macos::coresim::Device;
 use crate::model::{Button, Dispatch, Key, TransportKind};
@@ -18,21 +19,34 @@ const LEFT_CONTROL: u32 = 0xE0;
 const LEFT_OPTION: u32 = 0xE2;
 const LEFT_COMMAND: u32 = 0xE3;
 
-/// Something that puts input into a Simulator.
+/// Something that puts input into a Simulator. A transport that must
+/// activate first holds what it is handed until then.
 pub trait Transport: Send + Sync {
     fn kind(&self) -> TransportKind;
 
     /// Hands one touch event to the transport.
-    fn touch(&self, step: &TouchStep) -> Result<()>;
+    fn touch(&self, step: &TouchStep) -> Result<Submitted>;
 
     /// Presses (`down`) or releases a hardware button.
-    fn button(&self, button: Button, down: bool) -> Result<()>;
+    fn button(&self, button: Button, down: bool) -> Result<Submitted>;
 
     /// Presses or releases a key of the USB HID keyboard page.
-    fn key(&self, usage: u32, down: bool) -> Result<()>;
+    fn key(&self, usage: u32, down: bool) -> Result<Submitted>;
 
     /// Returns once every event handed over so far has been sent.
     fn flush(&self) -> Result<()>;
+
+    /// Returns once the transport is active, having sent what it held.
+    fn wait_active(&self) -> Result<()>;
+
+    /// False once the session is over; the target then opens another.
+    fn usable(&self) -> bool;
+
+    /// How long activation took, once done; `None` for a transport without.
+    fn activation(&self) -> Option<Duration>;
+
+    /// Connections opened for this session.
+    fn connections(&self) -> u32;
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -62,43 +76,51 @@ impl Target {
         }
     }
 
-    /// The target's transport, opened with `open` the first time.
+    /// The target's transport, opened with `open` the first time and again
+    /// after a session ends.
     pub fn transport(
         &self,
         open: impl FnOnce(&Device) -> Result<Arc<dyn Transport>>,
     ) -> Result<Arc<dyn Transport>> {
         let mut transport = lock(&self.transport);
-        if let Some(transport) = transport.as_ref() {
+        if let Some(transport) = transport.as_ref().filter(|t| t.usable()) {
             return Ok(transport.clone());
         }
+        // A finished session is dropped before its successor connects.
+        transport.take();
         let opened = open(&self.device)?;
         *transport = Some(opened.clone());
         Ok(opened)
     }
 
-    /// Sends a gesture's steps, each at its time after the start.
+    /// The transport already open, if any.
+    pub fn current_transport(&self) -> Option<Arc<dyn Transport>> {
+        lock(&self.transport).clone()
+    }
+
+    /// Sends a gesture's steps, each at its time after the start. An event
+    /// the transport held for its activation waits for it, and the rest of
+    /// the gesture keeps its timing from then on.
     pub fn touch(&self, transport: &dyn Transport, plan: &[TouchStep]) -> Result<Dispatch> {
         let _serial = lock(&self.serial);
-        let start = Instant::now();
-        let mut dispatched = None;
+        let mut request = Request::start(transport);
         for step in plan {
-            sleep_until(start + step.at);
-            transport.touch(step)?;
-            dispatched.get_or_insert_with(|| start.elapsed());
+            request.sleep_until(step.at);
+            let submitted = transport.touch(step)?;
+            request.submitted(submitted, step.at)?;
         }
-        transport.flush()?;
-        Ok(report(transport, start, dispatched, plan.len()))
+        request.finish(plan.len())
     }
 
     /// A short press of a hardware button.
     pub fn button(&self, transport: &dyn Transport, button: Button) -> Result<Dispatch> {
         let _serial = lock(&self.serial);
-        let start = Instant::now();
-        transport.button(button, true)?;
-        let dispatched = start.elapsed();
-        transport.button(button, false)?;
-        transport.flush()?;
-        Ok(report(transport, start, Some(dispatched), 2))
+        let mut request = Request::start(transport);
+        for down in [true, false] {
+            let submitted = transport.button(button, down)?;
+            request.submitted(submitted, Duration::ZERO)?;
+        }
+        request.finish(2)
     }
 
     /// A key press with its modifiers held around it.
@@ -113,42 +135,74 @@ impl Target {
         .into_iter()
         .filter_map(|(held, usage)| held.then_some(usage))
         .collect();
-        let start = Instant::now();
-        let mut dispatched = None;
-        for &usage in modifiers.iter().chain([&key.usage]) {
-            transport.key(usage, true)?;
-            dispatched.get_or_insert_with(|| start.elapsed());
+        let presses = modifiers
+            .iter()
+            .chain([&key.usage])
+            .map(|&usage| (usage, true));
+        let releases = [&key.usage]
+            .into_iter()
+            .chain(modifiers.iter().rev())
+            .map(|&usage| (usage, false));
+        let mut request = Request::start(transport);
+        for (usage, down) in presses.chain(releases) {
+            let submitted = transport.key(usage, down)?;
+            request.submitted(submitted, Duration::ZERO)?;
         }
-        for &usage in [&key.usage].into_iter().chain(modifiers.iter().rev()) {
-            transport.key(usage, false)?;
-        }
-        transport.flush()?;
-        Ok(report(
-            transport,
-            start,
-            dispatched,
-            2 * (modifiers.len() + 1),
-        ))
+        request.finish(2 * (modifiers.len() + 1))
     }
 }
 
-fn report(
-    transport: &dyn Transport,
-    start: Instant,
+/// The timing of one input request.
+struct Request<'a> {
+    transport: &'a dyn Transport,
+    requested: Instant,
+    /// What event times count from: the request, or the activation that
+    /// released held input.
+    base: Instant,
     dispatched: Option<Duration>,
-    events: usize,
-) -> Dispatch {
-    Dispatch {
-        transport: transport.kind(),
-        activation_wait: None,
-        dispatched: dispatched.unwrap_or_default(),
-        completed: start.elapsed(),
-        events,
-    }
+    activation_wait: Option<Duration>,
 }
 
-fn sleep_until(when: Instant) {
-    if let Some(wait) = when.checked_duration_since(Instant::now()) {
-        thread::sleep(wait);
+impl<'a> Request<'a> {
+    fn start(transport: &'a dyn Transport) -> Request<'a> {
+        let now = Instant::now();
+        Request {
+            transport,
+            requested: now,
+            base: now,
+            dispatched: None,
+            activation_wait: None,
+        }
+    }
+
+    fn sleep_until(&self, at: Duration) {
+        if let Some(wait) = (self.base + at).checked_duration_since(Instant::now()) {
+            thread::sleep(wait);
+        }
+    }
+
+    /// Records an event handed over at `at`. One the transport held waits
+    /// for the activation that sends it.
+    fn submitted(&mut self, submitted: Submitted, at: Duration) -> Result<()> {
+        if submitted == Submitted::Held {
+            self.transport.wait_active()?;
+            let now = Instant::now();
+            self.activation_wait = Some(now - self.requested);
+            self.base = now.checked_sub(at).unwrap_or(now);
+        }
+        let requested = self.requested;
+        self.dispatched.get_or_insert_with(|| requested.elapsed());
+        Ok(())
+    }
+
+    fn finish(self, events: usize) -> Result<Dispatch> {
+        self.transport.flush()?;
+        Ok(Dispatch {
+            transport: self.transport.kind(),
+            activation_wait: self.activation_wait,
+            dispatched: self.dispatched.unwrap_or_default(),
+            completed: self.requested.elapsed(),
+            events,
+        })
     }
 }

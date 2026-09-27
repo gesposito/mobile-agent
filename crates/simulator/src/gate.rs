@@ -55,43 +55,86 @@ struct Inner<M> {
 impl<M> Gate<M> {
     /// A gate that holds from now, when the probe goes out.
     pub fn new() -> Gate<M> {
-        let _ = Instant::now();
-        unimplemented!("task 6.4: activation gate")
+        Gate {
+            inner: Mutex::new(Inner {
+                state: State::Pending,
+                held: Vec::new(),
+                reason: String::new(),
+                opened: Instant::now(),
+                activation: None,
+            }),
+        }
     }
 
     pub fn state(&self) -> State {
-        unimplemented!("task 6.4: activation gate")
+        self.lock().state
     }
 
     /// How long activation took, once it has.
     pub fn activation(&self) -> Option<Duration> {
-        unimplemented!("task 6.4: activation gate")
+        self.lock().activation
     }
 
     /// How many events are held.
+    #[cfg(test)]
     pub fn held(&self) -> usize {
-        unimplemented!("task 6.4: activation gate")
+        self.lock().held.len()
+    }
+
+    /// Why the gate closed, once it has.
+    pub fn closed(&self) -> Option<String> {
+        let inner = self.lock();
+        (inner.state == State::Closed).then(|| inner.reason.clone())
     }
 
     /// Offers `message`: sent through `send` under the lock once active,
     /// held while the probe is out, refused once closed.
     pub fn submit(&self, message: M, send: impl FnOnce(M)) -> Result<Submitted, Closed> {
-        let _ = (message, send);
-        unimplemented!("task 6.4: activation gate")
+        let mut inner = self.lock();
+        match inner.state {
+            State::Active => {
+                send(message);
+                Ok(Submitted::Sent)
+            }
+            State::Pending => {
+                inner.held.push(message);
+                Ok(Submitted::Held)
+            }
+            State::Closed => Err(Closed(inner.reason.clone())),
+        }
     }
 
     /// The reply arrived: every held event goes through `send`, in order,
     /// under the lock. Activating twice sends nothing more.
-    pub fn activate(&self, send: impl FnMut(M)) -> Result<usize, Closed> {
-        let _ = send;
-        unimplemented!("task 6.4: activation gate")
+    pub fn activate(&self, mut send: impl FnMut(M)) -> Result<usize, Closed> {
+        let mut inner = self.lock();
+        match inner.state {
+            State::Closed => Err(Closed(inner.reason.clone())),
+            State::Active => Ok(0),
+            State::Pending => {
+                inner.state = State::Active;
+                inner.activation = Some(inner.opened.elapsed());
+                let held = std::mem::take(&mut inner.held);
+                let count = held.len();
+                for message in held {
+                    send(message);
+                }
+                Ok(count)
+            }
+        }
     }
 
     /// No reply before the deadline, or the peer went away: drops what is
     /// held. Returns whether this call closed it; the first reason stands.
     pub fn close(&self, reason: impl Into<String>) -> bool {
-        let _ = reason;
-        unimplemented!("task 6.4: activation gate")
+        let mut inner = self.lock();
+        if inner.state == State::Closed {
+            return false;
+        }
+        inner.state = State::Closed;
+        inner.reason = reason.into();
+        inner.held.clear();
+        true
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner<M>> {
@@ -164,8 +207,10 @@ mod tests {
     fn closing_drops_what_is_held_and_refuses_the_rest() {
         let gate = Gate::<&str>::new();
         gate.submit("down", |_| {}).expect("held");
+        assert_eq!(gate.closed(), None);
         assert!(gate.close("no reply within 4s"));
         assert!(!gate.close("the peer went away"), "the first reason stands");
+        assert_eq!(gate.closed().as_deref(), Some("no reply within 4s"));
         assert_eq!(gate.state(), State::Closed);
         assert_eq!(gate.held(), 0);
         let reason = Closed("no reply within 4s".into());

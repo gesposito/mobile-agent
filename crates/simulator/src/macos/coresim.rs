@@ -306,6 +306,28 @@ impl Device {
         })
     }
 
+    /// `-[SimDevice lookup:error:]`: the Mach port of `service` in the
+    /// guest's bootstrap namespace. It returns a `mach_port_t` (S3).
+    pub fn lookup(&self, service: &str) -> Result<u32> {
+        const CALL: &str = "-[SimDevice lookup:error:]";
+        let name = NSString::from_str(service);
+        let (port, error) = guarded(CALL, || {
+            let mut error: Option<Retained<NSError>> = None;
+            // SAFETY: takes an NSString and an NSError out pointer and
+            // returns a mach_port_t.
+            let port: u32 = unsafe { msg_send![&*self.0, lookup: &*name, error: &mut error] };
+            (port, error)
+        })?;
+        match (port, error) {
+            (0, Some(error)) => Err(objc::ns_error(CALL, &error)),
+            (0, None) => Err(Error::Framework {
+                call: format!("{CALL} for {service}"),
+                failure: Failure::Nil,
+            }),
+            (port, _) => Ok(port),
+        }
+    }
+
     /// The device's data directory on the host, which holds its home,
     /// preferences and installed applications.
     pub fn data_path(&self) -> Result<PathBuf> {

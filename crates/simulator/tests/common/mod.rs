@@ -559,3 +559,23 @@ pub fn fresh_device(driver: &SimulatorDriver) -> String {
         .expect("the SwiftUI fixture installs");
     device.udid
 }
+
+/// Whether dtuhidd has started on the device's current boot: its launchd
+/// job's run count, read in the guest as spike S3 did.
+pub fn dtuhidd_started(udid: &str) -> bool {
+    let output = Command::new("xcrun")
+        .args([
+            "simctl",
+            "spawn",
+            udid,
+            "launchctl",
+            "print",
+            "system/com.apple.coredevice.dtuhidd",
+        ])
+        .output()
+        .expect("xcrun simctl spawn runs");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("runs = "))
+        .any(|runs| runs.trim() != "0")
+}

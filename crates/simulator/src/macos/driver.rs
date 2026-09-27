@@ -12,13 +12,15 @@ use crate::frames::FrameStream;
 use crate::gesture;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
+use crate::macos::dtuhid::Dtuhid;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
 use crate::macos::{frames, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
-    FrameOptions, Gesture, Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo,
-    Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportChoice, TransportKind,
+    FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Point, PreferencesOutcome,
+    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportChoice,
+    TransportKind,
 };
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
@@ -170,12 +172,10 @@ impl SimulatorDriver {
 
     fn open_transport(&self, device: &Device) -> Result<Arc<dyn Transport>> {
         match self.options.transport {
-            TransportChoice::Auto | TransportChoice::Only(TransportKind::Indigo) => {
-                Ok(Arc::new(Indigo::open(device)?))
+            TransportChoice::Auto | TransportChoice::Only(TransportKind::Dtuhid) => {
+                Ok(Arc::new(Dtuhid::open(device)?))
             }
-            TransportChoice::Only(TransportKind::Dtuhid) => Err(Error::Unsupported {
-                what: "the dtuhidd transport".into(),
-            }),
+            TransportChoice::Only(TransportKind::Indigo) => Ok(Arc::new(Indigo::open(device)?)),
         }
     }
 }
@@ -314,8 +314,19 @@ impl Lifecycle for SimulatorDriver {
     }
 
     fn status(&self, target: &str) -> Result<TargetStatus> {
-        let _ = target;
-        unimplemented!("task 6.4: target status")
+        let device = self.device(target)?;
+        let info = device.info()?;
+        let transport = lock(&self.targets)
+            .get(&info.udid)
+            .and_then(|target| target.current_transport());
+        Ok(TargetStatus {
+            device: info,
+            input: transport.map(|transport| InputStatus {
+                transport: transport.kind(),
+                activation: transport.activation(),
+                connections: transport.connections(),
+            }),
+        })
     }
 }
 

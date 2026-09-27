@@ -132,6 +132,13 @@ fn the_first_session_of_a_boot_waits_for_dtuhidd_to_start() {
     let _serial = common::exclusive();
     let driver = dtuhid();
     let udid = common::fresh_device(&driver);
+    if common::dtuhidd_started(&udid) {
+        eprintln!(
+            "the_first_session_of_a_boot_waits_for_dtuhidd_to_start: skipped; dtuhidd already \
+             ran on {udid}'s current boot, so it is not fresh"
+        );
+        return;
+    }
     let dispatch = tap_before_activation(&driver, &udid);
     let wait = dispatch.activation_wait.unwrap_or_default();
     eprintln!(
@@ -215,14 +222,14 @@ fn one_connection_carries_touch_keys_and_buttons() {
     let field = common::difference(&focused, &typed, (95.0, 130.0));
     assert!(field > 0.5, "the typed text changed the field ({field:.2})");
 
-    // A button: Home sends the fixture to the background.
-    let (stream, settled) = common::settle(&driver, &udid);
+    // A button: Home sends the fixture to the background. The focused
+    // field's cursor keeps blinking, so the screens are compared whole.
     let home = driver.button(&udid, Button::Home).expect("the Home button");
     assert_eq!(home.transport, TransportKind::Dtuhid);
-    assert!(
-        common::wait_for_change(&stream, &settled, Duration::from_secs(3)).is_some(),
-        "Home changed nothing"
-    );
+    std::thread::sleep(Duration::from_millis(1500));
+    let home_screen = common::raw_screenshot(&driver, &udid);
+    let changed = common::difference(&typed, &home_screen, (80.0, 800.0));
+    assert!(changed > 10.0, "Home changed the screen by {changed:.2}");
 
     let input = driver.status(&udid).expect("status").input.expect("input");
     assert_eq!(input.transport, TransportKind::Dtuhid);

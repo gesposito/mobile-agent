@@ -3,14 +3,67 @@
 
 /// The usage and whether Shift is held for `character`.
 pub fn usage_for(character: char) -> Option<(u32, bool)> {
-    let _ = character;
-    unimplemented!("task 6.4: key map")
+    let offset = |base: char| character as u32 - base as u32;
+    Some(match character {
+        'a'..='z' => (0x04 + offset('a'), false),
+        'A'..='Z' => (0x04 + offset('A'), true),
+        '1'..='9' => (0x1E + offset('1'), false),
+        '0' => (0x27, false),
+        // The shifted number row shares the digits' usages.
+        '!' => (0x1E, true),
+        '@' => (0x1F, true),
+        '#' => (0x20, true),
+        '$' => (0x21, true),
+        '%' => (0x22, true),
+        '^' => (0x23, true),
+        '&' => (0x24, true),
+        '*' => (0x25, true),
+        '(' => (0x26, true),
+        ')' => (0x27, true),
+        '\n' => (0x28, false),
+        '\t' => (0x2B, false),
+        ' ' => (0x2C, false),
+        '-' => (0x2D, false),
+        '_' => (0x2D, true),
+        '=' => (0x2E, false),
+        '+' => (0x2E, true),
+        '[' => (0x2F, false),
+        '{' => (0x2F, true),
+        ']' => (0x30, false),
+        '}' => (0x30, true),
+        '\\' => (0x31, false),
+        '|' => (0x31, true),
+        ';' => (0x33, false),
+        ':' => (0x33, true),
+        '\'' => (0x34, false),
+        '"' => (0x34, true),
+        '`' => (0x35, false),
+        '~' => (0x35, true),
+        ',' => (0x36, false),
+        '<' => (0x36, true),
+        '.' => (0x37, false),
+        '>' => (0x37, true),
+        '/' => (0x38, false),
+        '?' => (0x38, true),
+        _ => return None,
+    })
 }
 
 /// A named key: return, escape, delete, tab, space, the arrows and home.
 pub fn usage_for_name(name: &str) -> Option<u32> {
-    let _ = name;
-    unimplemented!("task 6.4: key map")
+    Some(match name {
+        "return" | "enter" => 0x28,
+        "escape" => 0x29,
+        "delete" | "backspace" => 0x2A,
+        "tab" => 0x2B,
+        "space" => 0x2C,
+        "home" => 0x4A,
+        "right" => 0x4F,
+        "left" => 0x50,
+        "down" => 0x51,
+        "up" => 0x52,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

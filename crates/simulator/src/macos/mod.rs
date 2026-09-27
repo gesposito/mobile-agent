@@ -4,6 +4,7 @@
 mod coresim;
 mod display;
 mod driver;
+mod dtuhid;
 mod encode;
 mod forward;
 mod frames;
@@ -11,5 +12,6 @@ mod indigo;
 mod input;
 mod objc;
 mod prefs;
+mod xpc;
 
 pub use driver::SimulatorDriver;
