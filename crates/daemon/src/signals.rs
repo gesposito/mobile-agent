@@ -10,7 +10,9 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use mirror::backend::{EventStream, StreamItem, Timed};
+use mirror::backend::{
+    BackendError, EventStream, ReadRequest, StreamItem, Timed, TreeRead, TreeSource,
+};
 use protocol::event::EventPayload;
 
 /// Frame changes remembered: about 17 s of a 60 fps animation.
@@ -34,6 +36,8 @@ struct Log {
     frame_changes: VecDeque<Instant>,
     /// When the last tree or window event arrived.
     tree_event: Option<Instant>,
+    /// When the latest tree read that succeeded began.
+    read_started: Option<Instant>,
 }
 
 /// Records the change signals a target reports; clones share the record.
@@ -49,6 +53,19 @@ impl Observer {
             inner,
             observer: self.clone(),
         })
+    }
+
+    /// `inner`, recording when each read that succeeds began.
+    pub fn tee_reads(&self, inner: Box<dyn TreeSource>) -> Box<dyn TreeSource> {
+        Box::new(ReadTee {
+            inner,
+            observer: self.clone(),
+        })
+    }
+
+    /// When the latest tree read that succeeded began.
+    pub fn last_read_started(&self) -> Option<Instant> {
+        lock(&self.log).read_started
     }
 
     /// Records one item as the mirror receives it. A frame counts as a
@@ -109,6 +126,22 @@ impl EventStream for Tee {
         let item = self.inner.next(deadline)?;
         self.observer.record(&item);
         Some(item)
+    }
+}
+
+/// A tree source that tells an observer when its reads began.
+struct ReadTee {
+    inner: Box<dyn TreeSource>,
+    observer: Observer,
+}
+
+impl TreeSource for ReadTee {
+    fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
+        let started = Instant::now();
+        let read = self.inner.read(request)?;
+        let mut log = lock(&self.observer.log);
+        log.read_started = log.read_started.max(Some(started));
+        Ok(read)
     }
 }
 

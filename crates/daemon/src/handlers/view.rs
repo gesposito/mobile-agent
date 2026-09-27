@@ -44,6 +44,7 @@ pub(super) fn element_json(element: &Element) -> Value {
 
 pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let options = snapshot_options(request)?;
+    target.catch_up()?;
     let snapshot = target.mirror.snapshot(&options)?;
     let mut data = Map::new();
     if request.flag("delta") {
@@ -99,6 +100,7 @@ pub(super) fn diff_snapshot(target: &mut Attached, session: &str, request: &Requ
         Some(baseline) => baseline.options,
         None => snapshot_options(request)?,
     };
+    target.catch_up()?;
     let current = target.mirror.snapshot(&options)?;
     // Without a snapshot to compare with, every element is new.
     let baseline = baseline.unwrap_or_else(|| Snapshot {

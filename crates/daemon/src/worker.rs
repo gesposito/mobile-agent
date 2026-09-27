@@ -19,6 +19,10 @@ use crate::wire::{Failure, Success};
 /// The longest the thread waits between pumps when nothing falls due.
 const IDLE_PUMP: Duration = Duration::from_secs(1);
 
+/// How much longer than the mirror's minimum re-read interval a tree read
+/// waits for the re-read that changed frames call for.
+const CATCH_UP_MARGIN: Duration = Duration::from_millis(100);
+
 /// What a command returns.
 pub(crate) type Outcome = Result<Success, Failure>;
 
@@ -71,6 +75,7 @@ impl Attached {
         let mut backend = attachment.backend;
         let frames = backend.frames.is_some();
         backend.events = observer.tee(backend.events);
+        backend.tree = observer.tee_reads(backend.tree);
         Attached {
             info: info.clone(),
             mirror: Mirror::new(backend, attachment.config),
@@ -92,9 +97,33 @@ impl Attached {
     /// no sooner than its minimum re-read interval after that read; this
     /// waits for it, so a snapshot right after a tap shows what the tap
     /// did rather than what the tap's own re-read caught.
-    #[allow(dead_code)]
     pub fn catch_up(&mut self) -> Result<(), MirrorError> {
-        todo!("task 8.8")
+        if !self.frames {
+            return Ok(());
+        }
+        self.mirror.pump()?;
+        let Some(changed) = self.observer.last_frame_change() else {
+            return Ok(());
+        };
+        // The re-read falls due within the minimum interval of the last
+        // read's end, which has passed.
+        let deadline = Instant::now() + self.mirror.config().min_reread_interval + CATCH_UP_MARGIN;
+        while self
+            .observer
+            .last_read_started()
+            .is_none_or(|started| started <= changed)
+        {
+            // No window waits for frames: they send change events.
+            let Some(due) = self.mirror.next_wakeup() else {
+                return Ok(());
+            };
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(());
+            }
+            self.mirror.run_until(due.clamp(now, deadline))?;
+        }
+        Ok(())
     }
 
     /// Injects `action` through the mirror and notes when.

@@ -5,7 +5,8 @@
 //!
 //! A session acts only on refs its own snapshots listed on the target,
 //! which keeps refs isolated between sessions. A selector waits for a match
-//! up to the command's timeout.
+//! up to the command's timeout. Either first brings the replica up to the
+//! display (`Attached::catch_up`), so an element is aimed at where it is.
 
 use std::time::Duration;
 
@@ -140,6 +141,7 @@ pub(crate) fn element(
     aim: &Aim,
     timeout: Duration,
 ) -> Result<Element, Failure> {
+    target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
@@ -158,6 +160,7 @@ pub(crate) fn action_target(
     aim: &Aim,
     timeout: Duration,
 ) -> Result<(Target, Option<Ref>), Failure> {
+    target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
@@ -181,6 +184,7 @@ pub(crate) fn text_ref(
     aim: &Aim,
     timeout: Duration,
 ) -> Result<Ref, Failure> {
+    target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
