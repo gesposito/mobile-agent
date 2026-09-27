@@ -207,3 +207,9 @@ Appium-style JSON is reported for context and is never the baseline. The *model*
 - Maven Central: [kotlinx-serialization-cbor-jvm 1.11.0](https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-cbor-jvm/1.11.0/), [kotlinx-serialization-core-jvm 1.11.0](https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.11.0/), [msgpack-core 0.9.12](https://repo1.maven.org/maven2/org/msgpack/msgpack-core/0.9.12/), [protobuf-javalite 4.36.2](https://repo1.maven.org/maven2/com/google/protobuf/protobuf-javalite/4.36.2/), [protobuf-kotlin-lite 4.36.2](https://repo1.maven.org/maven2/com/google/protobuf/protobuf-kotlin-lite/4.36.2/), [flatbuffers-java 25.2.10](https://repo1.maven.org/maven2/com/google/flatbuffers/flatbuffers-java/25.2.10/), [kotlin-stdlib 2.4.20](https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.4.20/)
 - Kotlin/JVM docs: [kotlinx.serialization CBOR](https://github.com/Kotlin/kotlinx.serialization/blob/master/docs/formats.md#cbor-experimental), [msgpack-java MessageBuffer.java](https://github.com/msgpack/msgpack-java/blob/main/msgpack-core/src/main/java/org/msgpack/core/buffer/MessageBuffer.java)
 - [Socket Firewall Free README](https://github.com/SocketDev/sfw-free) (supported package managers)
+
+
+## Corrections after the spikes
+
+- The predicted size ratios held: CBOR is 2.49x smaller than compact JSON on the 500-node tree, 3.43x on events; no format reaches 3x on the tree. CBOR was chosen on time, dex delta and evolvability (S5, `docs/spikes/s5-wire-format.md`).
+- The agent-speaks-first rule is confirmed by S1 and S6: a forward connect succeeds with nothing listening, and a service stream to a missing socket fails with `FAIL closed`.

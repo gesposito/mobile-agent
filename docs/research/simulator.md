@@ -243,3 +243,14 @@ Pinned commits: idb `1c5c81f6cb`, baguette `bb74901c11`, iosef `f0a0c3f2b5`, sti
 - [objc2] https://docs.rs/objc2/0.6.4/objc2/exception/fn.catch.html, https://docs.rs/objc2/0.6.4/objc2/runtime/struct.AnyClass.html and https://docs.rs/objc2/0.6.4/objc2/macro.define_class.html
 - [objc2-io-surface] https://docs.rs/objc2-io-surface/0.3.2/objc2_io_surface/struct.IOSurfaceRef.html
 - [xpc-crates] https://github.com/dfrankland/xpc-connection-rs/blob/master/xpc-connection-sys/build.rs and https://github.com/mach-kernel/launchk/blob/master/xpc-sys/build.rs
+
+
+## Corrections after the spikes
+
+Measured on this host by S2, S3 and S4; details and numbers are in the spike reports.
+
+- ROCKit proxies: everything reached from `-[SimDevice ioPorts]` onward is a forwarding proxy that objc2's debug-build checks reject, so those calls go through a direct `objc_msgSend` helper, and blocks handed to ROCKit need a signature (S2).
+- `framebufferSurface` is cheap (0.3 ms median) and never changes within a session; cache it for that reason, not for cost. BGRA rows are padded to 4864 bytes; late reads tear, so throttle by skipping frames (S2). `SimScreenAdapter` is not needed; `displayClass == 0` is the main display. `zune-jpeg` is decode-only (S2).
+- Indigo touch kept working after dtuhidd was active on this host, and neither transport locked the other out; input sent before dtuhidd's activation reply was never dropped; the 200 ms wait after the reply copied from idb and iosef only delays the first action; one dtuhidd connection carries touches, keys and buttons; dtuhidd stays running after its first launch (S3). `-lookup:error:` returns a `mach_port_t` through a plain message send (S3). The 9-argument versus 6-argument question is moot for dtuhidd.
+- The fast tree reader must run inside the guest; a Rust binary for `aarch64-apple-ios-sim` spawned through the SimDevice API is ready in 292 ms, while `xcrun simctl spawn` costs 570 ms or more (S4). `+[AXElement springBoardElement]` does not exist on iOS 26.5; SpringBoard comes from `systemWideElement` then `springBoardApplication` (S4). The translator path works without iosef's bridge restart once the three `com.apple.Accessibility` preferences are written before first boot, but it flattens the tree and drops UIKit tab bar children and React Native text identifiers (S4).
+- New risk: a Simulator display can stop presenting while input is still accepted; a reboot cleared it (S3).

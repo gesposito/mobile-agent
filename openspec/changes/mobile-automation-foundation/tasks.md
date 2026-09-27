@@ -24,7 +24,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 2.8 Spike S5: benchmark CBOR, MessagePack, protobuf-lite, FlatBuffers and JSON on the 500-node tree and 10,000 small events in Rust and Kotlin, measuring bytes, encode and decode time and dex size delta; deliver `docs/spikes/s5-wire-format.md` and rewrite design.md D4 with the numbers and the chosen format
 - [x] 2.9 Spike S6: benchmark shell round trip, push throughput, forward and reverse setup and the connect-through round trip for the adb-server client crates, the `adb` binary and, when a device is attached, direct USB; deliver `docs/spikes/s6-adb-transport.md` and rewrite design.md D3 with the numbers
 - [x] 2.10 Spike S7: verify the emulator control endpoint with token discovery, measure `StreamScreenshot` fps and `SendTouch` latency; deliver `docs/spikes/s7-emulator-grpc.md` with a go or no-go
-- [ ] 2.11 Spike review: consolidate verdicts, update design.md decisions D3, D4, D6 and D7 with measurements, adjust groups 3 to 9 for any no-go; verify `openspec validate` passes and every measured decision cites its spike
+- [x] 2.11 Spike review: consolidate verdicts, update design.md decisions D3, D4, D6 and D7 with measurements, adjust groups 3 to 9 for any no-go; verify `openspec validate` passes and every measured decision cites its spike
 
 ## 3. Protocol crate and agent message set
 
@@ -69,10 +69,10 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 7. Mirror (`crates/mirror`)
 
-- [ ] 7.1 Add failing tests replaying recorded event fixtures to expected trees, then implement the replica with full acquisition and delta application; verify red-then-green
+- [ ] 7.1 Add failing tests replaying recorded event fixtures to expected trees, then implement the replica with full acquisition, delta application and the event-less window path (full re-read after each injected action and on a poll, deltas by diff, read cost in metadata); verify red-then-green
 - [ ] 7.2 Add failing tests for a surviving element, a stale ref and a sibling collision marked degraded, then implement ref identity and stability; verify red-then-green
 - [ ] 7.3 Add a failing test on the scrolling-list fixture expecting visible buttons and a hint of three below the fold, then implement interactive filtering and off-screen hints; verify red-then-green
-- [ ] 7.4 Add failing tests for a settling transition and for a continuous animation returning the frame-change reason, then implement the settle predicate over tree deltas and frame hashes; verify red-then-green
+- [ ] 7.4 Add failing tests for a settling transition and for a continuous animation returning the frame-change reason, then implement the settle predicate over tree deltas and frame hashes with the 200 ms default quiet window from S1; verify red-then-green
 - [ ] 7.5 Add failing tests that appear, disappear and enabled waits resolve within one processing cycle and time out with the last snapshot summary, then implement them from the event stream; verify red-then-green
 - [ ] 7.6 Add a failing diff test on the form-submit fixture, then implement the structural diff; verify red-then-green
 - [ ] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green

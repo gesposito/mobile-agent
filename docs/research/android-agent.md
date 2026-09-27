@@ -273,3 +273,16 @@ AOSP comparison points and further files:
 - [84] `UiAutomation.java` and `InputManagerService.java` at `android-16.0.0_r1`: https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-16.0.0_r1/core/java/android/app/UiAutomation.java and https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-16.0.0_r1/services/core/java/com/android/server/input/InputManagerService.java#992
 - [85] sepolicy `private/adbd.te` at `android-17.0.0_r1`: https://android.googlesource.com/platform/system/sepolicy/+/refs/tags/android-17.0.0_r1/private/adbd.te#129
 - [86] `AccessibilityCache.java` at `android-17.0.0_r1`: https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-17.0.0_r1/core/java/android/view/accessibility/AccessibilityCache.java#211
+
+
+## Corrections after the spikes
+
+Measured on the API 36 emulator by S1, S6 and S7; details and numbers are in the spike reports.
+
+- Prefetch returns at most 50 nodes and only below the requested node or from the parent's first child, so a cold read costs about one round trip per child beyond the 49th of any parent: 465 round trips for the 500-cell Compose screen, not "at least ten" (S1).
+- Jetpack Compose sends no accessibility events to a UiAutomation client, because it emits them only while `getEnabledAccessibilityServiceList` is non-empty; View and React Native windows do (S1).
+- Only `InputManagerGlobal.injectInputEvent` with `WAIT_FOR_RESULT` acknowledges a tap under 50 ms (1.9 ms p50); both `UiAutomation` overloads with `sync = true` wait for the app (35 to 45 ms p50), and with `sync = false` they are asynchronous (S1).
+- The conflict error names only a binder proxy; the likely holder comes from `ps`, where `app_process` programs show their `setArgV0` names (S1).
+- `adb forward` to a shell-owned abstract socket works under API 36 with no denials; a bare forward connect succeeds even with nothing listening, so the agent speaks first; a device service stream to `localabstract:` fails loudly instead (S1, S6). Removing a reverse rule while the agent still dials can crash the adb server; close the agent's connections first (S6).
+- The emulator's own `emulator_controller.proto` is newer than the AOSP copy; `sendKey` drops keys on AVDs without a keyboard device; the console can enable the controller at run time; scaled RGB888 streaming at 540 px runs at about 45 fps (S7).
+- `UiAutomation.takeScreenshot(int)` is absent on API 36 (S1).

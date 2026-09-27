@@ -120,6 +120,22 @@ These rules bind every task in tasks.md and every subagent that implements one.
 - **Installs through Socket.** Every dependency install is prefixed with Socket Firewall: `sfw cargo add`, `sfw cargo fetch`, `sfw npm install`, `sfw pnpm add`. Bun is not documented as supported; the fixture task verifies `sfw bun` and falls back to `sfw npm` if it is not wrapped. No bare installs.
 - **Recap before dispatch.** Whoever dispatches a task to an implementer restates its goal, the spec and design sections it implements, the files it owns, the acceptance checks and the constraints above.
 
+## Spike verdicts (task 2.11)
+
+All seven spikes ran on this host (macOS 26.6.2, Xcode 27.0, CoreSimulator 1171.7, iOS 26.5; Android API 36 emulator, arm64). Every measured decision above cites its report; this table is the summary.
+
+| Spike | Decision | Verdict | Key measurement | Report |
+|---|---|---|---|---|
+| S1 Android ownership | D2, D3, D5, D8 | D2 go, D3 go, D5 rewritten (Compose emits no events; cold reads cost one round trip per wide child), D8 quiet window 200 ms | tap acknowledged in 1.9 ms p50; cold 500-cell read 349 ms over 465 round trips, warm 3 ms | `docs/spikes/s1-android-ownership.md` |
+| S2 Simulator lifecycle and frames | D6 lifecycle, D7 | go, go; turbojpeg | 60 fps at 21% of one core at 460x1000; every private call from Rust | `docs/spikes/s2-simulator-frames.md` |
+| S3 Simulator input | D6 input | go: dtuhidd default, Indigo fallback | dispatch 0.03 ms p50, 0.16 ms p95; first changed frame 36 ms | `docs/spikes/s3-simulator-hid.md` |
+| S4 Simulator tree | D6 reader | go for the spawned Rust reader; translator fallback only | ready 292 ms after spawn; 546 nodes in 126 ms against 0.7 s through XCTest | `docs/spikes/s4-simulator-ax.md` |
+| S5 wire format | D4 | CBOR, chosen on time, dex and evolvability; no format reaches 3x smaller on the tree | 2.49x smaller than JSON on the tree, device-to-host path 9.5x faster | `docs/spikes/s5-wire-format.md` |
+| S6 ADB transport | D3 | in-house server-protocol client, agent over a service stream | shell round trip 5.7 ms p50 against 24 ms for the binary | `docs/spikes/s6-adb-transport.md` |
+| S7 emulator controller | D7, emulator fast path | go with amendments; 50 ms tap-to-frame gate deferred to a `-gpu host` run | SendTouch 0.96 ms per tap; 540 px stream 45 fps at 15 ms lag | `docs/spikes/s7-emulator-grpc.md` |
+
+Not measured anywhere yet: physical devices of either platform, OEM Android builds, Xcode versions other than 27.0, and iOS runtimes other than 26.5.
+
 ## Risks / Trade-offs
 
 - [Simulator private APIs change again in an Xcode beta] → transport probing at attach, a CI matrix over installed Xcode versions, and the Objective-C escape hatch so a fix is one file.
