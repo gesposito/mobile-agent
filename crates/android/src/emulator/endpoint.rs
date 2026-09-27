@@ -57,13 +57,23 @@ impl Unavailable {
     /// The gRPC port to suggest: the console port plus 3000, the convention of
     /// Google's emulator scripts (8554 for emulator-5554), else 8554.
     pub fn suggested_port(&self) -> u16 {
-        todo!()
+        self.console_port
+            .and_then(|console| console.checked_add(3000))
+            .unwrap_or(8554)
     }
 
     /// What falls back and how to enable the fast path: the launch flag, or the
     /// console command that enables it without a restart.
     pub fn warning(&self) -> String {
-        todo!()
+        let port = self.suggested_port();
+        let serial = &self.serial;
+        format!(
+            "emulator control endpoint unavailable for {serial} ({reason}): taps and frames \
+             fall back to the agent. Start the emulator with `-grpc {port} -grpc-use-token` \
+             to use the fast path, or enable it without a restart through the emulator \
+             console command `grpc {port}`, for example `adb -s {serial} emu grpc {port}`.",
+            reason = self.reason
+        )
     }
 }
 
@@ -84,8 +94,44 @@ pub fn resolve(serial: &str) -> Result<Endpoint, Unavailable> {
 /// Resolves `serial` through the discovery files in `dirs`; when several files
 /// name the serial, the newest wins.
 pub fn resolve_in(serial: &str, dirs: &[PathBuf]) -> Result<Endpoint, Unavailable> {
-    let _ = (serial, dirs);
-    todo!()
+    let Some(console_port) = discovery::console_port_from_serial(serial) else {
+        return Err(Unavailable::new(
+            serial,
+            None,
+            format!("{serial} is not an emulator serial"),
+        ));
+    };
+    let unavailable = |reason: String| Unavailable::new(serial, Some(console_port), reason);
+    let mut found: Vec<_> = dirs
+        .iter()
+        .filter_map(|dir| discovery::scan_dir(dir).ok())
+        .flatten()
+        .filter_map(|f| match f.parsed {
+            Ok(d) if d.console_port == Some(console_port) => Some((f.modified, f.path, d)),
+            _ => None,
+        })
+        .collect();
+    found.sort_by_key(|(modified, _, _)| *modified);
+    let Some((_, path, discovery)) = found.pop() else {
+        let searched: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
+        return Err(unavailable(format!(
+            "no discovery file names {serial} in {}",
+            searched.join(", ")
+        )));
+    };
+    let Some(uri) = discovery.grpc_endpoint() else {
+        return Err(unavailable(format!(
+            "its discovery file {} has no grpc.port, so it was started without -grpc",
+            path.display()
+        )));
+    };
+    Ok(Endpoint {
+        serial: serial.to_owned(),
+        uri,
+        token: discovery.grpc_token,
+        console_port: Some(console_port),
+        discovery_file: Some(path),
+    })
 }
 
 #[cfg(test)]

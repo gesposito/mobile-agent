@@ -52,47 +52,84 @@ impl fmt::Display for DiscoveryError {
 
 impl std::error::Error for DiscoveryError {}
 
+fn port(entries: &BTreeMap<String, String>, key: &str) -> Result<Option<u16>, DiscoveryError> {
+    entries
+        .get(key)
+        .map(|value| {
+            value.parse().map_err(|_| DiscoveryError::BadPort {
+                key: key.to_owned(),
+                value: value.clone(),
+            })
+        })
+        .transpose()
+}
+
 impl Discovery {
     /// Parses the text of a discovery file; `pid` comes from the file name.
     pub fn parse(contents: &str, pid: Option<u32>) -> Result<Self, DiscoveryError> {
-        let _ = (contents, pid);
-        todo!()
+        let mut entries = BTreeMap::new();
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                continue;
+            }
+            // Split at the first `=` only: base64 tokens end in `=` padding.
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            entries.insert(key.trim().to_owned(), value.trim().to_owned());
+        }
+        let text = |key: &str| entries.get(key).filter(|v| !v.is_empty()).cloned();
+        Ok(Discovery {
+            pid,
+            console_port: port(&entries, "port.serial")?,
+            adb_port: port(&entries, "port.adb")?,
+            avd_name: text("avd.name"),
+            emulator_version: text("emulator.version"),
+            grpc_port: port(&entries, "grpc.port")?,
+            grpc_token: text("grpc.token"),
+            entries,
+        })
     }
 
     /// The adb serial of this emulator, `emulator-<console port>`.
     pub fn serial(&self) -> Option<String> {
-        todo!()
+        self.console_port.map(|p| format!("emulator-{p}"))
     }
 
     /// The controller endpoint on loopback, when the file names a gRPC port.
     pub fn grpc_endpoint(&self) -> Option<String> {
-        todo!()
+        self.grpc_port.map(|p| format!("http://127.0.0.1:{p}"))
     }
 
     /// The AVD's directory (`avd.dir`), which holds its `config.ini`.
     pub fn avd_dir(&self) -> Option<PathBuf> {
-        todo!()
+        self.entries
+            .get("avd.dir")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
     }
 }
 
 /// The pid in a discovery file name: `pid_59226.ini` gives 59226.
 pub fn pid_from_file_name(name: &str) -> Option<u32> {
-    let _ = name;
-    todo!()
+    name.strip_prefix("pid_")?
+        .strip_suffix(".ini")?
+        .parse()
+        .ok()
 }
 
 /// The console port in an emulator serial: `emulator-5554` gives 5554.
 pub fn console_port_from_serial(serial: &str) -> Option<u16> {
-    let _ = serial;
-    todo!()
+    serial.strip_prefix("emulator-")?.parse().ok()
 }
 
 /// The discovery whose console port matches `serial`. When several match, as
 /// when a crashed emulator left a stale file next to the live one, the last one
 /// in `found` wins; [`scan_dir`] orders files oldest first.
 pub fn find_for_serial<'a>(found: &'a [Discovery], serial: &str) -> Option<&'a Discovery> {
-    let _ = (found, serial);
-    todo!()
+    let port = console_port_from_serial(serial)?;
+    found.iter().rev().find(|d| d.console_port == Some(port))
 }
 
 /// Directories the emulator writes discovery files to, in search order:
@@ -102,7 +139,40 @@ pub fn find_for_serial<'a>(found: &'a [Discovery], serial: &str) -> Option<&'a D
 /// Windows), then `avd/running` under the temporary directory. For one
 /// emulator the authoritative answer is its console command `avd discoverypath`.
 pub fn candidate_dirs() -> Vec<PathBuf> {
-    todo!()
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    let mut dirs = Vec::new();
+    if let Some(runtime) = var("XDG_RUNTIME_DIR") {
+        dirs.push(runtime.join("avd/running"));
+    }
+    if cfg!(target_os = "macos") {
+        dirs.extend(var("HOME").map(|home| home.join("Library/Caches/TemporaryItems/avd/running")));
+    } else if cfg!(windows) {
+        dirs.extend(
+            var("LOCALAPPDATA").map(|local| local.join("Temp").join("avd").join("running")),
+        );
+    }
+    dirs.extend(run_user_dir());
+    dirs.push(std::env::temp_dir().join("avd/running"));
+    dirs.dedup();
+    dirs
+}
+
+/// `/run/user/<uid>/avd/running`, the Linux default without `XDG_RUNTIME_DIR`.
+/// The process's uid is the owner of `/proc/self`.
+#[cfg(target_os = "linux")]
+fn run_user_dir() -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let uid = std::fs::metadata("/proc/self").ok()?.uid();
+    Some(PathBuf::from(format!("/run/user/{uid}/avd/running")))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn run_user_dir() -> Option<PathBuf> {
+    None
 }
 
 /// One discovery file found on disk.
@@ -113,10 +183,28 @@ pub struct Found {
     pub parsed: Result<Discovery, DiscoveryError>,
 }
 
-/// Reads every `pid_*.ini` in `dir`, oldest modification first.
+/// Reads every `pid_*.ini` in `dir`, oldest modification first. A file that
+/// cannot be read, such as one an exiting emulator just removed, is skipped.
 pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<Found>> {
-    let _ = dir;
-    todo!()
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let Some(pid) = entry.file_name().to_str().and_then(pid_from_file_name) else {
+            continue;
+        };
+        let path = entry.path();
+        let modified = entry.metadata().and_then(|m| m.modified()).ok();
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        found.push(Found {
+            parsed: Discovery::parse(&contents, Some(pid)),
+            path,
+            modified,
+        });
+    }
+    found.sort_by_key(|f| f.modified);
+    Ok(found)
 }
 
 #[cfg(test)]

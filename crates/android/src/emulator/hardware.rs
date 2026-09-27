@@ -1,6 +1,8 @@
 //! What the running emulator reports about its virtual hardware, and the frame
 //! size to request from it.
 
+use std::collections::BTreeMap;
+
 use super::proto;
 
 /// Size of the emulator's display in pixels, in its natural orientation.
@@ -26,17 +28,45 @@ impl Hardware {
     pub fn from_entries<'a>(
         entries: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Result<Self, String> {
-        let _ = entries.into_iter();
-        todo!()
+        let entries: BTreeMap<&str, &str> = entries.into_iter().collect();
+        let pixels = |key: &str| -> Result<u32, String> {
+            let value = entries
+                .get(key)
+                .ok_or_else(|| format!("the emulator reports no {key}"))?;
+            match value.trim().parse() {
+                Ok(n) if n > 0 => Ok(n),
+                _ => Err(format!("{key} is {value:?}, not a positive pixel count")),
+            }
+        };
+        Ok(Self {
+            display: DisplaySize {
+                width: pixels("hw.lcd.width")?,
+                height: pixels("hw.lcd.height")?,
+            },
+            keyboard: entries
+                .get("hw.keyboard")
+                .is_some_and(|v| v.trim().eq_ignore_ascii_case("yes")),
+        })
     }
 
     /// Reads the hardware from `getStatus`. Emulator 37.1.11 leaves
     /// `platformConfig` empty and reports the display size only in the
     /// deprecated `hardwareConfig` (S7), so a key missing from the former is
     /// taken from the latter.
+    #[allow(deprecated)]
     pub fn from_status(status: &proto::EmulatorStatus) -> Result<Self, String> {
-        let _ = status;
-        todo!()
+        let hardware = status
+            .hardware_config
+            .iter()
+            .flat_map(|list| &list.entry)
+            .map(|e| (e.key.as_str(), e.value.as_str()));
+        let platform = status
+            .platform_config
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| (k.as_str(), v.as_str()));
+        // Later entries win when collected, so platformConfig goes last.
+        Self::from_entries(hardware.chain(platform))
     }
 }
 
@@ -47,8 +77,12 @@ impl Hardware {
 /// display's aspect ratio and rounded up. A working width of 0, or one at least
 /// as wide as the display, requests the display size as `(0, 0)`.
 pub fn scaled_size(display: DisplaySize, working_width: u32) -> (u32, u32) {
-    let _ = (display, working_width);
-    todo!()
+    if working_width == 0 || working_width >= display.width {
+        return (0, 0);
+    }
+    let height =
+        (u64::from(working_width) * u64::from(display.height)).div_ceil(u64::from(display.width));
+    (working_width, u32::try_from(height).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]

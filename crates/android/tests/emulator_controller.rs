@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use android::adb::{AdbServer, Device, ShellPacket};
+use android::adb::{AdbServer, Device, ShellPacket, Stdio};
 use android::emulator::{
     ChangeDetector, Controller, Discovery, FrameHasher, Observation, Options, resolve, scaled_size,
 };
@@ -176,21 +176,30 @@ fn touchscreen(device: &Device) -> String {
     panic!("no multi-touch device in {listing}");
 }
 
-/// Whether `getevent -l` output shows a contact lifted: a tracking id of -1.
-fn lifted(lines: &str) -> bool {
-    lines
-        .lines()
-        .any(|l| l.contains("ABS_MT_TRACKING_ID") && l.trim_end().ends_with("ffffffff"))
+/// The event lines of `input` in `getevent -l` output, which prefixes each
+/// event with its device when it watches several.
+fn events_of<'a>(output: &'a str, input: &str) -> Vec<&'a str> {
+    let prefix = format!("{input}:");
+    output.lines().filter(|l| l.starts_with(&prefix)).collect()
 }
 
-/// The value of the last `axis` line in `getevent -l` output.
-fn axis_value(lines: &str, axis: &str) -> Option<String> {
-    lines
-        .lines()
-        .filter(|l| l.contains(axis))
-        .filter_map(|l| l.split_whitespace().last())
-        .last()
-        .map(str::to_owned)
+/// How many contacts the events show lifted: tracking ids of -1.
+fn lifts(events: &[&str]) -> usize {
+    events
+        .iter()
+        .filter(|l| l.contains("ABS_MT_TRACKING_ID") && l.trim_end().ends_with("ffffffff"))
+        .count()
+}
+
+/// The value of the last `axis` event.
+fn axis_value(events: &[&str], axis: &str) -> Option<i64> {
+    let hex = events
+        .iter()
+        .rev()
+        .find(|l| l.contains(axis))?
+        .split_whitespace()
+        .next_back()?;
+    i64::from_str_radix(hex, 16).ok()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -203,14 +212,17 @@ async fn a_touch_lands_on_the_touchscreen() {
     let device = adb(&serial);
     let input = touchscreen(&device);
 
-    // `exec` makes getevent the shell's own process, so closing the stream
-    // sends it SIGHUP.
+    // getevent block-buffers on a pipe, so it runs on a pseudo-terminal, and
+    // `exec` makes it the session's own process, which the terminal's hangup
+    // ends when the stream closes. Watching every device, it announces each
+    // one it opens; once the touchscreen is announced, its events are queued.
     let mut events = device
-        .shell_stream(&format!("echo $$; exec getevent -l {input}"))
+        .shell_stream_with("echo $$; exec getevent -l", Stdio::Pty)
         .unwrap();
     events.set_read_timeout(Some(WAIT)).unwrap();
+    let announced = format!(": {input}\r\n  name:");
     let mut startup = String::new();
-    while !startup.contains("name:") {
+    while !startup.contains(&announced) {
         match events.read_packet().unwrap() {
             Some(ShellPacket::Stdout(data)) => startup.push_str(&String::from_utf8_lossy(&data)),
             other => panic!("getevent did not start: {other:?}, output {startup:?}"),
@@ -218,11 +230,12 @@ async fn a_touch_lands_on_the_touchscreen() {
     }
     let pid = startup.lines().next().unwrap().trim().to_owned();
 
-    // Reads until the contact is lifted, then closes the stream.
+    // Reads until both contacts are lifted, then closes the stream.
     let (sender, received) = mpsc::channel();
+    let watched = input.clone();
     let reader = thread::spawn(move || {
         let mut seen = String::new();
-        while !lifted(&seen) {
+        while lifts(&events_of(&seen, &watched)) < 2 {
             match events.read_packet() {
                 Ok(Some(ShellPacket::Stdout(data))) => {
                     seen.push_str(&String::from_utf8_lossy(&data))
@@ -234,8 +247,12 @@ async fn a_touch_lands_on_the_touchscreen() {
         let _ = sender.send(seen);
     });
 
-    // On the status bar, where a tap changes nothing: (300, 60) at 1080x2400.
-    let (x, y) = (display.width as i32 * 5 / 18, 60);
+    // Two taps on the status bar, where a tap changes nothing: (250, 50), then
+    // (300, 70) at 1080x2400. evdev drops a position equal to the slot's last
+    // one, so only a tap away from the previous contact reports its position.
+    let width = display.width as i32;
+    controller.tap(width * 25 / 108, 50).await.unwrap();
+    let (x, y) = (width * 5 / 18, 70);
     let down = controller
         .touch(&[android::emulator::TouchPoint::down(x, y)])
         .await
@@ -257,27 +274,27 @@ async fn a_touch_lands_on_the_touchscreen() {
         thread::sleep(Duration::from_millis(20));
     }
 
+    let touches = events_of(&seen, &input);
     let value = |axis| {
-        let hex = axis_value(&seen, axis).unwrap_or_else(|| panic!("no {axis} in {seen:?}"));
-        i64::from_str_radix(&hex, 16).unwrap()
+        axis_value(&touches, axis).unwrap_or_else(|| panic!("no {axis} from {input}: {seen:?}"))
     };
     // The touchscreen reports 0 to 32767 across the display.
     let tolerance = 2 * 32767 / i64::from(display.width) + 1;
     let expected_x = i64::from(x) * 32767 / i64::from(display.width);
     let expected_y = i64::from(y) * 32767 / i64::from(display.height);
+    let (seen_x, seen_y) = (value("ABS_MT_POSITION_X"), value("ABS_MT_POSITION_Y"));
     assert!(
-        (value("ABS_MT_POSITION_X") - expected_x).abs() <= tolerance,
-        "x {} against {expected_x}: {seen}",
-        value("ABS_MT_POSITION_X")
+        (seen_x - expected_x).abs() <= tolerance,
+        "x {seen_x} against {expected_x}: {touches:?}"
     );
     assert!(
-        (value("ABS_MT_POSITION_Y") - expected_y).abs() <= tolerance,
-        "y {} against {expected_y}: {seen}",
-        value("ABS_MT_POSITION_Y")
+        (seen_y - expected_y).abs() <= tolerance,
+        "y {seen_y} against {expected_y}: {touches:?}"
     );
-    assert!(lifted(&seen), "not lifted: {seen}");
+    assert_eq!(lifts(&touches), 2, "{touches:?}");
     eprintln!(
-        "tap at ({x}, {y}) reached {input}; sendTouch down {:.2} ms, up {:.2} ms",
+        "tap at ({x}, {y}) reached {input} as ({seen_x}, {seen_y}) of 32767, expected \
+         ({expected_x}, {expected_y}); sendTouch down {:.2} ms, up {:.2} ms",
         down.as_secs_f64() * 1e3,
         up.as_secs_f64() * 1e3
     );
@@ -298,9 +315,14 @@ async fn raw_screenshots_are_full_resolution_and_top_down() {
     };
     let controller = connect(&serial).await;
     let display = controller.hardware().display;
-    let started = Instant::now();
-    let shot = controller.screenshot().await.unwrap();
-    let took = started.elapsed();
+    let mut took = Vec::new();
+    let mut shot = None;
+    for _ in 0..10 {
+        let started = Instant::now();
+        shot = Some(controller.screenshot().await.unwrap());
+        took.push(started.elapsed().as_secs_f64() * 1e3);
+    }
+    let shot = shot.unwrap();
     assert_eq!(
         (shot.width(), shot.height()),
         (display.width, display.height)
@@ -329,11 +351,13 @@ async fn raw_screenshots_are_full_resolution_and_top_down() {
     }
     let (upright, flipped) = (upright as f64 / bytes as f64, flipped as f64 / bytes as f64);
     eprintln!(
-        "getScreenshot {}x{} RGB888 in {:.1} ms; mean byte difference from screencap: \
-         {upright:.3} read top-down, {flipped:.3} read bottom-up",
+        "getScreenshot {}x{} RGB888 over {} calls: p50 {:.1} ms, p95 {:.1} ms; mean byte \
+         difference from screencap: {upright:.3} read top-down, {flipped:.3} read bottom-up",
         shot.width(),
         shot.height(),
-        took.as_secs_f64() * 1e3
+        took.len(),
+        percentile(&mut took, 50.0),
+        percentile(&mut took, 95.0)
     );
     assert!(
         upright < 1.0 || upright * 2.0 < flipped,

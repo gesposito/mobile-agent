@@ -8,6 +8,7 @@
 use std::fmt;
 
 use prost::bytes::Bytes;
+use xxhash_rust::xxh3::xxh3_64;
 
 /// Bytes per pixel of the RGB888 frames the client requests.
 pub const BYTES_PER_PIXEL: usize = 3;
@@ -52,8 +53,23 @@ impl std::error::Error for FrameError {}
 impl Frame {
     /// A frame of `pixels` in RGB888, rows top-down.
     pub fn new(width: u32, height: u32, pixels: Bytes) -> Result<Self, FrameError> {
-        let _ = (width, height, pixels);
-        todo!()
+        if width == 0 || height == 0 {
+            return Err(FrameError::Empty);
+        }
+        let expected = width as usize * height as usize * BYTES_PER_PIXEL;
+        if pixels.len() != expected {
+            return Err(FrameError::SizeMismatch {
+                expected,
+                actual: pixels.len(),
+            });
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+            seq: 0,
+            timestamp_us: 0,
+        })
     }
 
     /// Sets the stream sequence number and the emulator's production time.
@@ -84,8 +100,13 @@ impl Frame {
     ///
     /// When `y` is not below the height.
     pub fn row(&self, y: u32) -> &[u8] {
-        let _ = y;
-        todo!()
+        assert!(
+            y < self.height,
+            "row {y} of a frame {} rows high",
+            self.height
+        );
+        let stride = self.width as usize * BYTES_PER_PIXEL;
+        &self.pixels[y as usize * stride..(y as usize + 1) * stride]
     }
 
     /// The emulator's sequence number in its stream; gaps are frames it skipped.
@@ -133,22 +154,32 @@ impl FrameHasher {
     pub const DEFAULT_STATUS_BAR_FRACTION: f32 = 0.06;
 
     /// A hasher that leaves out the top `status_bar_fraction` of every frame,
-    /// clamped to 0 through 1.
+    /// clamped to 0 through 1; NaN leaves nothing out.
     pub fn new(status_bar_fraction: f32) -> Self {
-        let _ = status_bar_fraction;
-        todo!()
+        let fraction = if status_bar_fraction.is_nan() {
+            0.0
+        } else {
+            status_bar_fraction.clamp(0.0, 1.0)
+        };
+        Self {
+            status_bar_fraction: fraction,
+        }
     }
 
     /// Rows at the top of a frame `height` rows high that the hash leaves out.
     pub fn status_bar_rows(&self, height: u32) -> u32 {
-        let _ = height;
-        todo!()
+        ((height as f32 * self.status_bar_fraction).round() as u32).min(height)
     }
 
     /// The key of `frame`.
     pub fn key(&self, frame: &Frame) -> FrameKey {
-        let _ = frame;
-        todo!()
+        let stride = frame.width as usize * BYTES_PER_PIXEL;
+        let skipped = self.status_bar_rows(frame.height) as usize * stride;
+        FrameKey {
+            width: frame.width,
+            height: frame.height,
+            hash: xxh3_64(&frame.pixels[skipped..]),
+        }
     }
 }
 
@@ -184,8 +215,12 @@ impl ChangeDetector {
 
     /// Classifies `frame` against the previous frame and remembers it.
     pub fn observe(&mut self, frame: &Frame) -> Observation {
-        let _ = frame;
-        todo!()
+        let key = self.hasher.key(frame);
+        match self.last.replace(key) {
+            None => Observation::First,
+            Some(last) if last == key => Observation::Unchanged,
+            Some(_) => Observation::Changed,
+        }
     }
 
     /// Forgets the previous frame, so the next one is [`Observation::First`].
@@ -264,6 +299,7 @@ mod tests {
         assert_eq!(FrameHasher::new(0.0).status_bar_rows(1200), 0);
         assert_eq!(FrameHasher::new(2.0).status_bar_rows(1200), 1200);
         assert_eq!(FrameHasher::new(-1.0).status_bar_rows(1200), 0);
+        assert_eq!(FrameHasher::new(f32::NAN).status_bar_rows(1200), 0);
     }
 
     #[test]

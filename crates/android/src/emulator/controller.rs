@@ -2,7 +2,8 @@
 //! every call, touches, raw screenshots and the scaled frame stream.
 
 use std::fmt;
-use std::time::Duration;
+use std::future::Future;
+use std::time::{Duration, Instant};
 
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::service::Interceptor;
@@ -11,9 +12,10 @@ use tonic::transport::Channel;
 
 use super::endpoint::{Endpoint, Unavailable};
 use super::frame::{Frame, FrameError};
-use super::hardware::Hardware;
+use super::hardware::{Hardware, scaled_size};
 use super::proto;
 use super::proto::emulator_controller_client::EmulatorControllerClient;
+use super::proto::image_format::ImgFormat;
 
 /// Largest message the client accepts: a native RGBA8888 frame of a 1080x2400
 /// display is 10.4 MB, beyond tonic's default of 4 MB.
@@ -127,6 +129,104 @@ impl Interceptor for Bearer {
 
 type Client = EmulatorControllerClient<InterceptedService<Channel, Bearer>>;
 
+/// Whether `status` reports a deadline: tonic's own `grpc-timeout` enforcement
+/// answers `Cancelled` with "Timeout expired", the server `DeadlineExceeded`.
+fn is_deadline(status: &tonic::Status) -> bool {
+    status.code() == tonic::Code::DeadlineExceeded
+        || (status.code() == tonic::Code::Cancelled
+            && status.message() == tonic::TimeoutExpired(()).to_string())
+}
+
+/// Awaits `response` for at most `deadline`.
+async fn within<T>(
+    call: &'static str,
+    deadline: Duration,
+    response: impl Future<Output = Result<tonic::Response<T>, tonic::Status>>,
+) -> Result<T, Error> {
+    match tokio::time::timeout(deadline, response).await {
+        Err(_) => Err(Error::Deadline {
+            call,
+            after: deadline,
+        }),
+        Ok(Err(status)) if is_deadline(&status) => Err(Error::Deadline {
+            call,
+            after: deadline,
+        }),
+        Ok(Err(status)) => Err(Error::Status { call, status }),
+        Ok(Ok(response)) => Ok(response.into_inner()),
+    }
+}
+
+/// A unary request that also tells the emulator its deadline (`grpc-timeout`).
+fn unary<T>(message: T, deadline: Duration) -> tonic::Request<T> {
+    let mut request = tonic::Request::new(message);
+    request.set_timeout(deadline);
+    request
+}
+
+/// An error and its sources on one line, since tonic's transport errors say
+/// little on their own; a cause that repeats the one before is left out.
+fn chain(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut last = text.clone();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let message = cause.to_string();
+        if message != last {
+            text.push_str(": ");
+            text.push_str(&message);
+        }
+        last = message;
+        source = cause.source();
+    }
+    text
+}
+
+/// One HTTP/2 connection to `uri`, established within the connect deadline.
+async fn channel(uri: &str, options: &Options) -> Result<Channel, String> {
+    let endpoint = tonic::transport::Endpoint::from_shared(uri.to_owned())
+        .map_err(|e| format!("bad endpoint {uri}: {}", chain(&e)))?
+        .connect_timeout(options.connect_deadline)
+        .tcp_nodelay(true);
+    match tokio::time::timeout(options.connect_deadline, endpoint.connect()).await {
+        Err(_) => Err(format!(
+            "no connection to {uri} within {:?}",
+            options.connect_deadline
+        )),
+        Ok(Err(e)) => Err(format!("connecting to {uri}: {}", chain(&e))),
+        Ok(Ok(channel)) => Ok(channel),
+    }
+}
+
+/// A client on `channel` that accepts messages up to [`MAX_MESSAGE`].
+fn client(channel: Channel, bearer: Bearer) -> Client {
+    EmulatorControllerClient::with_interceptor(channel, bearer)
+        .max_decoding_message_size(MAX_MESSAGE)
+        .max_encoding_message_size(MAX_MESSAGE)
+}
+
+/// A frame from an `Image` message.
+fn frame_from(image: proto::Image, call: &'static str) -> Result<Frame, Error> {
+    let (width, height) = image
+        .format
+        .as_ref()
+        .map_or((0, 0), |format| (format.width, format.height));
+    Frame::new(width, height, image.image)
+        .map(|frame| frame.with_timing(image.seq, image.timestamp_us))
+        .map_err(|error| Error::Frame { call, error })
+}
+
+/// The request for RGB888 frames of `width` by `height`, 0 by 0 for the
+/// display size.
+fn rgb888(width: u32, height: u32) -> proto::ImageFormat {
+    proto::ImageFormat {
+        format: ImgFormat::Rgb888 as i32,
+        width,
+        height,
+        ..Default::default()
+    }
+}
+
 /// A connected emulator controller.
 ///
 /// Status, screenshots and frames use one HTTP/2 connection and touches a
@@ -158,8 +258,43 @@ impl Controller {
     /// failure, including a port that accepts connections and never answers,
     /// makes the endpoint [`Unavailable`].
     pub async fn connect(endpoint: &Endpoint, options: Options) -> Result<Self, Unavailable> {
-        let _ = (endpoint, options);
-        todo!()
+        let unavailable =
+            |reason: String| Unavailable::new(&endpoint.serial, endpoint.console_port, reason);
+        let bearer = match &endpoint.token {
+            None => Bearer(None),
+            Some(token) => Bearer(Some(
+                format!("Bearer {token}")
+                    .parse::<MetadataValue<Ascii>>()
+                    .map_err(|_| unavailable("the token is not a valid header value".into()))?,
+            )),
+        };
+        let frames = client(
+            channel(&endpoint.uri, &options)
+                .await
+                .map_err(unavailable)?,
+            bearer.clone(),
+        );
+        let input = client(
+            channel(&endpoint.uri, &options)
+                .await
+                .map_err(unavailable)?,
+            bearer,
+        );
+        let status = within(
+            "getStatus",
+            options.deadline,
+            frames.clone().get_status(unary((), options.deadline)),
+        )
+        .await
+        .map_err(|e| unavailable(e.to_string()))?;
+        let hardware = Hardware::from_status(&status).map_err(unavailable)?;
+        Ok(Self {
+            serial: endpoint.serial.clone(),
+            frames,
+            input,
+            hardware,
+            deadline: options.deadline,
+        })
     }
 
     pub fn serial(&self) -> &str {
@@ -181,27 +316,64 @@ impl Controller {
     /// the round trip. The emulator acknowledges once it has scheduled the
     /// event, not when the app received it.
     pub async fn touch(&self, points: &[TouchPoint]) -> Result<Duration, Error> {
-        let _ = points;
-        todo!()
+        let event = proto::TouchEvent {
+            touches: points
+                .iter()
+                .map(|p| proto::Touch {
+                    x: p.x,
+                    y: p.y,
+                    identifier: p.id,
+                    pressure: p.pressure,
+                    ..Default::default()
+                })
+                .collect(),
+            display: 0,
+        };
+        let started = Instant::now();
+        within(
+            "sendTouch",
+            self.deadline,
+            self.input.clone().send_touch(unary(event, self.deadline)),
+        )
+        .await?;
+        Ok(started.elapsed())
     }
 
     /// Presses and lifts contact 0 at (x, y), in display pixels.
     pub async fn tap(&self, x: i32, y: i32) -> Result<(), Error> {
-        let _ = (x, y);
-        todo!()
+        self.touch(&[TouchPoint::down(x, y)]).await?;
+        self.touch(&[TouchPoint::up(x, y)]).await?;
+        Ok(())
     }
 
     /// A raw RGB888 capture at the display's full resolution.
     pub async fn screenshot(&self) -> Result<Frame, Error> {
-        todo!()
+        let call = "getScreenshot";
+        let image = within(
+            call,
+            self.deadline,
+            self.frames
+                .clone()
+                .get_screenshot(unary(rgb888(0, 0), self.deadline)),
+        )
+        .await?;
+        frame_from(image, call)
     }
 
     /// Subscribes to RGB888 frames scaled by the emulator to `working_width`
     /// pixels (0 for the display size). The emulator sends a frame whenever the
     /// guest posts one, changed or not, and nothing while the screen is still.
     pub async fn frames(&self, working_width: u32) -> Result<FrameStream, Error> {
-        let _ = working_width;
-        todo!()
+        let size = scaled_size(self.hardware.display, working_width);
+        // No grpc-timeout here: it would end the stream.
+        let request = tonic::Request::new(rgb888(size.0, size.1));
+        let inner = within(
+            "streamScreenshot",
+            self.deadline,
+            self.frames.clone().stream_screenshot(request),
+        )
+        .await?;
+        Ok(FrameStream { inner, size })
     }
 }
 
@@ -220,8 +392,13 @@ impl FrameStream {
     /// The next frame, or `None` if none arrives within `wait`, which happens
     /// whenever the screen is still.
     pub async fn next(&mut self, wait: Duration) -> Result<Option<Frame>, Error> {
-        let _ = (wait, &mut self.inner);
-        todo!()
+        let call = "streamScreenshot";
+        match tokio::time::timeout(wait, self.inner.message()).await {
+            Err(_) => Ok(None),
+            Ok(Err(status)) => Err(Error::Status { call, status }),
+            Ok(Ok(None)) => Err(Error::StreamEnded),
+            Ok(Ok(Some(image))) => frame_from(image, call).map(Some),
+        }
     }
 }
 
