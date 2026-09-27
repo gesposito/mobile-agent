@@ -134,11 +134,11 @@ fn shutdown_stops_the_daemon_and_removes_its_files() {
     );
 }
 
-/// Task 8.14: the accept loop does not need the socket's path to stop. A
-/// daemon whose socket file was removed, as a test's directory is when the
-/// test ends, used to block in accept forever once shut down, since it woke
-/// its accept loop by connecting to that path. It stops, and leaves no
-/// directory holding its lock behind.
+/// Task 8.14: stopping does not need the socket's path. A daemon whose
+/// socket file was removed, as a test's directory is when the test ends,
+/// stops on shutdown, since its accept loop wakes on a pipe rather than on
+/// a connection to that path, and leaves no directory holding its lock
+/// behind.
 #[test]
 fn shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory() {
     let dir = TempDir::new();
