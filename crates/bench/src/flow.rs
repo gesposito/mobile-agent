@@ -2,8 +2,9 @@
 //! adapter, so tools are compared on the same work. Selectors address the
 //! identifiers and labels `fixtures/CONTRACT.md` fixes for every fixture.
 //!
-//! As JSON a flow reads
-//! `{"name": "login", "fixture": "expo", "steps": ["launch", {"tap": {"id": "login-submit"}}]}`.
+//! As JSON a flow reads `{"name": "login", "fixture": "expo", "steps":
+//! ["launch", {"tap": {"id": "login-submit"}}], "golden": {"texts":
+//! {"login-status": "Welcome, agent"}}}`.
 
 use serde::{Deserialize, Serialize};
 
@@ -17,38 +18,85 @@ pub const LIST_SCROLL: &str = "list-scroll";
 /// The name of [`big_screen`].
 pub const BIG_SCREEN: &str = "big-screen";
 
-/// The benchmark-harness spec's three flows on `fixture`, in report order.
+/// The benchmark-harness spec's three flows on `fixture`, in report order:
+/// [`login`], [`list_scroll`] and [`big_screen`]. Every fixture implements the
+/// same contract, so the flows differ only in the app they drive.
 pub fn reference(fixture: Fixture) -> Vec<Flow> {
     vec![login(fixture), list_scroll(fixture), big_screen(fixture)]
 }
 
-/// Signs in on the Login screen.
+/// Signs in: fills `login-username` with `agent` and `login-password` with
+/// `hunter2`, taps `login-submit` and waits until `login-status` shows
+/// `Welcome, agent`, the text its golden requires.
 pub fn login(fixture: Fixture) -> Flow {
-    unwritten(LOGIN, fixture)
-}
-
-/// Scrolls the 200-row list to its last row and opens the row's detail.
-pub fn list_scroll(fixture: Fixture) -> Flow {
-    unwritten(LIST_SCROLL, fixture)
-}
-
-/// Opens the 500-cell screen and records its node count.
-pub fn big_screen(fixture: Fixture) -> Flow {
-    unwritten(BIG_SCREEN, fixture)
-}
-
-fn unwritten(name: &str, fixture: Fixture) -> Flow {
     Flow {
-        name: name.to_owned(),
+        name: LOGIN.to_owned(),
         fixture,
-        steps: Vec::new(),
+        steps: vec![
+            Step::Launch,
+            Step::Fill {
+                target: Selector::id("login-username"),
+                text: "agent".into(),
+            },
+            Step::Fill {
+                target: Selector::id("login-password"),
+                text: "hunter2".into(),
+            },
+            Step::Tap(Selector::id("login-submit")),
+            Step::AssertText {
+                id: "login-status".into(),
+                text: "Welcome, agent".into(),
+            },
+        ],
         count_nodes: false,
-        golden: EndState::default(),
+        golden: EndState::default().with_text("login-status", "Welcome, agent"),
     }
 }
 
-/// A flow: one app, a fixed sequence of steps, and whether the node count of
-/// the screen it ends on is recorded.
+/// Scrolls the 200-row list to its last row and opens it: taps `tab-list`,
+/// scrolls down until `row-200` is visible, taps it and waits until
+/// `detail-200` shows `Detail 200`. Its golden requires `detail-200`.
+pub fn list_scroll(fixture: Fixture) -> Flow {
+    Flow {
+        name: LIST_SCROLL.to_owned(),
+        fixture,
+        steps: vec![
+            Step::Launch,
+            Step::Tap(Selector::id("tab-list")),
+            Step::ScrollTo {
+                target: Selector::id("row-200"),
+                direction: Direction::Down,
+            },
+            Step::Tap(Selector::id("row-200")),
+            Step::AssertText {
+                id: "detail-200".into(),
+                text: "Detail 200".into(),
+            },
+        ],
+        count_nodes: false,
+        golden: EndState::default().with_present("detail-200"),
+    }
+}
+
+/// Opens the 500-cell screen: taps `tab-big` and waits until `cell-500` is
+/// visible. The screen's node count is recorded outside the flow's timing,
+/// and its golden requires all 500 cells.
+pub fn big_screen(fixture: Fixture) -> Flow {
+    Flow {
+        name: BIG_SCREEN.to_owned(),
+        fixture,
+        steps: vec![
+            Step::Launch,
+            Step::Tap(Selector::id("tab-big")),
+            Step::AssertVisible(Selector::id("cell-500")),
+        ],
+        count_nodes: true,
+        golden: EndState::default().with_count("cell", 500),
+    }
+}
+
+/// A flow: one app, a fixed sequence of steps, whether the node count of the
+/// screen it ends on is recorded, and what that screen must show.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Flow {
     /// Stable name used in reports, such as `login`.
@@ -61,8 +109,9 @@ pub struct Flow {
     /// as the 500-node flow does.
     #[serde(default)]
     pub count_nodes: bool,
-    /// What the final screen shows when the flow did its work. Empty for a
-    /// flow without a golden.
+    /// What the final screen shows when the flow did its work. A tool's run of
+    /// the flow is timed only once its reading of that screen matches. Empty
+    /// for a flow without a golden, which is timed unchecked.
     #[serde(default, skip_serializing_if = "EndState::is_empty")]
     pub golden: EndState,
 }

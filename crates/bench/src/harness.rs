@@ -127,11 +127,19 @@ impl Harness {
     }
 
     /// Detects every tool, runs every series through each available tool that
-    /// supports it, and returns the report. Fails, before anything runs, on a
-    /// series naming a target the run lacks or a fixture its target's platform
-    /// lacks, and on a flow series naming a flow the run lacks, another fixture
-    /// than its flow's, or a screen.
+    /// supports it, and returns the report. Fails, before anything runs, on two
+    /// flows with one name on one fixture, on a series naming a target the run
+    /// lacks or a fixture its target's platform lacks, and on a flow series
+    /// naming a flow the run lacks on the series' fixture, or a screen.
     pub fn run(&mut self) -> Result<Report, String> {
+        for (i, flow) in self.flows.iter().enumerate() {
+            if find_flow(&self.flows[..i], &flow.name, Some(flow.fixture)).is_some() {
+                return Err(format!(
+                    "the run has two flows named {} on the {} fixture",
+                    flow.name, flow.fixture
+                ));
+            }
+        }
         self.series.iter().try_for_each(|s| self.check(s))?;
         let started = SystemTime::now();
         let probe = self.probe.as_ref();
@@ -208,20 +216,34 @@ impl Harness {
             ));
         }
         if let Subject::Flow(name) = &series.subject {
-            let Some(flow) = self.flows.iter().find(|f| f.name == *name) else {
+            let fixtures: Vec<String> = self
+                .flows
+                .iter()
+                .filter(|f| f.name == *name)
+                .map(|f| f.fixture.to_string())
+                .collect();
+            if fixtures.is_empty() {
                 return Err(format!(
                     "a series names flow {name}, which the run does not have"
                 ));
-            };
-            if series.fixture != Some(flow.fixture) || series.screen.is_some() {
+            }
+            if find_flow(&self.flows, name, series.fixture).is_none() || series.screen.is_some() {
                 return Err(format!(
-                    "the series of flow {name} must name its fixture, {}, and no screen",
-                    flow.fixture
+                    "the series of flow {name} must name a fixture the run has the flow for, {}, \
+                     and no screen",
+                    fixtures.join(" or ")
                 ));
             }
         }
         Ok(())
     }
+}
+
+/// The flow `name` for `fixture` among `flows`.
+fn find_flow<'a>(flows: &'a [Flow], name: &str, fixture: Option<Fixture>) -> Option<&'a Flow> {
+    flows
+        .iter()
+        .find(|f| f.name == name && Some(f.fixture) == fixture)
 }
 
 fn detect(tool: &mut dyn Adapter) -> ToolReport {
@@ -315,7 +337,7 @@ fn attempt(
 ) -> Result<Sample, AdapterError> {
     match subject {
         Subject::Primitive(primitive) => tool.measure(target, scenario, *primitive),
-        Subject::Flow(name) => match flows.iter().find(|f| f.name == *name) {
+        Subject::Flow(name) => match find_flow(flows, name, scenario.fixture) {
             Some(flow) => tool.run_flow(target, flow),
             None => Err(AdapterError::new(format!("the run has no flow {name}"))),
         },

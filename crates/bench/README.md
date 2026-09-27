@@ -127,7 +127,7 @@ The CLI adapter will drive `mobile-agent` in `--json` mode, whose envelope mirro
 
 ## Flow description
 
-`flow::Flow` is the description task 9.4 writes its flows in, once for every tool. A flow names a fixture, a list of steps and whether to record the final screen's node count outside its timing:
+`flow::Flow` describes a flow once for every tool: a name, a fixture, a list of steps, whether to record the final screen's node count outside its timing, and the golden end state that screen must show:
 
 | Step | JSON | Meaning |
 |---|---|---|
@@ -138,13 +138,19 @@ The CLI adapter will drive `mobile-agent` in `--json` mode, whose envelope mirro
 | `AssertVisible(selector)` | `{"assert-visible": {"id": "detail-200"}}` | wait until the element is visible |
 | `AssertText { id, text }` | `{"assert-text": {"id": "login-status", "text": "Welcome, agent"}}` | wait until the element shows the text |
 
-A selector is `{"id": …}`, the contract identifier, or `{"text": …}`, the exact visible text. Flows reach screens by tapping their tabs rather than through `FIXTURE_INITIAL_TAB`, because Maestro passes launch arguments to iOS apps as process arguments, not environment variables. A flow series names the flow's fixture and no screen.
+A selector is `{"id": …}`, the contract identifier, or `{"text": …}`, the exact visible text. Flows reach screens by tapping their tabs rather than through `FIXTURE_INITIAL_TAB`, because Maestro passes launch arguments to iOS apps as process arguments, not environment variables.
 
-The flows 9.4 is to write, and their golden end states:
+A golden (`end_state::EndState`) states what the final screen shows when the flow did its work, in three kinds of terms: the text an identified element shows (`texts`, `null` for no such element), whether an element has an identifier (`present`), and how many distinct identifiers `<prefix>-<n>` elements have (`counts`). As JSON it sits under the flow's `golden` key; a flow without one leaves the key out.
 
-- `login`: launch; fill `login-username` with `agent`; fill `login-password` with `hunter2`; tap `login-submit`; `login-status` shows `Welcome, agent`.
-- `list-scroll`: launch; tap `tab-list`; scroll down to `row-200`; tap it; `detail-200` shows `Detail 200`.
-- `big-screen`: launch; tap `tab-big`; `cell-500` is visible; the node count of the 500-cell screen is recorded.
+The spec's three flows, `flow::reference(fixture)` in report order, are the same on every fixture:
+
+| Flow | Steps | Golden |
+|---|---|---|
+| `login` (`flow::login`) | launch; fill `login-username` with `agent`; fill `login-password` with `hunter2`; tap `login-submit`; wait until `login-status` shows `Welcome, agent` | `{"texts": {"login-status": "Welcome, agent"}}` |
+| `list-scroll` (`flow::list_scroll`) | launch; tap `tab-list`; scroll down until `row-200` is visible; tap it; wait until `detail-200` shows `Detail 200` | `{"present": {"detail-200": true}}` |
+| `big-screen` (`flow::big_screen`) | launch; tap `tab-big`; wait until `cell-500` is visible; record the node count | `{"counts": {"cell": 500}}` |
+
+A run may hold the same flow for several fixtures. A flow series names the flow and a fixture the run has it for, and no screen; two flows with one name on one fixture are refused before anything runs.
 
 ## Baselines
 
@@ -191,7 +197,7 @@ Its targets and series make up the run; the baselines run its flow series for re
 | Baseline tools, "One baseline missing" | `baselines::an_absent_tool_is_noted_as_skipped_and_the_tools_that_ran_are_still_compared`; `baselines::every_baseline_is_skipped_when_none_is_installed`; `baselines::a_run_through_the_binary_includes_the_installed_baselines`; `baselines::the_baselines_command_lists_each_tool_and_notes_absent_ones` |
 | Baseline tools: the same flows through each tool's CLI | the `baseline::maestro::tests` and `baseline::agent_device::tests`; `baselines::a_flow_the_tool_fails_is_a_failed_iteration_with_its_output`; `baselines::agent_device_failures_are_read_from_its_json_reply`; `baselines::a_series_the_run_cannot_carry_out_is_refused_before_anything_runs`; the `baseline::tests` |
 | Reference fixtures, "Large screen fixture" | `measurement::the_large_screen_records_the_node_count_the_tool_returned` for the tool under test; the baselines' counts and the flows' golden end states are task 9.4 |
-| Reference fixtures: flows described once | `flow::tests::a_flow_reads_from_its_documented_json_shape`; the flows themselves are task 9.4 |
+| Reference fixtures: flows described once | `flow::tests::a_flow_reads_from_its_documented_json_shape`; `flows::the_login_flow_signs_in_and_ends_on_the_welcome_text`; `flows::the_list_scroll_flow_scrolls_to_row_200_and_opens_its_detail`; `flows::the_500_node_flow_opens_the_big_tab_and_records_its_node_count`; `flows::the_reference_flows_come_in_report_order_and_differ_only_in_their_fixture`; `flows::a_flow_and_its_golden_read_and_write_their_documented_json`; `flows::maestro_runs_each_reference_flow_as_one_flow_file`; `flows::agent_device_runs_each_reference_flow_as_one_batch`; `flows::a_run_measures_the_same_flow_on_several_fixtures`; `flows::a_run_refuses_two_flows_with_one_name_on_one_fixture`; `flows::a_flow_series_must_name_a_fixture_the_flow_has` |
 | Reproducible runs, "Report provenance" | `measurement::provenance_is_recorded_in_both_outputs`; `measurement::provenance_tells_whether_two_environments_matched`; `measurement::warm_up_iterations_are_excluded_from_statistics`; the `provenance::tests` |
 | Reliability metrics, "Intermittent failure" | `reliability::two_failed_iterations_of_fifty_taps_are_a_four_percent_failure_rate`; `reliability::a_failure_that_passes_on_retry_is_a_flake_not_a_failure`; `reliability::an_iteration_that_fails_every_retry_is_a_failure`; `reliability::warm_up_failures_are_not_counted`; `reliability::a_series_that_could_not_be_prepared_failed_every_iteration`; `reliability::the_rates_reach_both_outputs_through_the_binary` |
 | Output formats, "Two outputs" | `measurement::the_json_report_and_the_markdown_summary_agree_on_every_number`; `measurement::the_comparison_table_spans_tools_and_targets`; `measurement::the_report_round_trips_through_json` |
