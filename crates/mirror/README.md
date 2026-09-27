@@ -32,7 +32,7 @@ src/
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
-                timestamps
+                timestamps, editables
 tests/support/  the fixture loader
 ```
 
@@ -198,8 +198,16 @@ also counts).
   descendants, which are then not listed again. A tapped container takes the
   control role a child carries (Material in Compose), and a node repeating its
   parent's role, name and identifier is folded into it (XCTest's nested alert
-  buttons).
-- Refs go to actionable elements and named headings, cells and list items.
+  buttons). A field with no label of its own takes the label of the nearest
+  labelled container it sits in, when that container is neither actionable
+  nor a window's root and holds no other field, as React Native lays out a
+  field whose wrapper carries the label; the container is then not listed
+  again.
+- Refs go to actionable elements; to named headings, cells and list items;
+  and to labelled generic nodes with nothing below them in the read, other
+  than a window's root. On iOS a React Native view marked accessible with a
+  label hides the field inside it, so the view is all the read has of the
+  field, and a tap by its ref lands on its center, over the field.
   An interactive listing (`SnapshotOptions::interactive()`) keeps only
   elements with refs, as agent-browser's `-i`. A full listing leaves out
   window roots and unnamed, unidentified generic containers, texts and images,
@@ -300,6 +308,9 @@ apps, in device points with the scale beside them:
 | `system-alert` | a location prompt in SpringBoard's tree |
 | `login-translator` | the SwiftUI login as the host translator flattens it (fallback backend) |
 | `sparse` | an application root alone |
+| `signin-android` | Ignite's sign-in screen on Android: each field an unlabelled `EditText` inside a focusable view that carries its label |
+| `signin-ios` | the same screen in XCTest's classes: each field an unlabelled text field inside a labelled `Other` |
+| `signin-ios-hidden` | the same screen as the React Native smoke test read it on iOS: labelled `Other`s with their fields hidden |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -336,6 +347,14 @@ cargo test -p mirror
   agent-browser's do; `Element::bounds` carries them in points. The lines add
   `id=` and `focused`, which agent-browser has no counterpart for, and hint
   lines in parentheses, as agent-browser writes its empty-page lines.
+- *Snapshot content* keeps actionable elements in an interactive listing.
+  The mirror counts among them a labelled generic node with nothing below it
+  in the read, which the platform exposes as an element without traits: the
+  React Native smoke test's iOS read of Ignite's sign-in screen shows each
+  field as such a node, labelled Email or Password, with the text field
+  hidden, and agent-device lists them as cells (`reports/10.4-rn-smoke.md`,
+  finding 1). Where the read keeps the field, the field is the element, named
+  after its container; a container of two fields names neither.
 - *Stable refs*: siblings that share class, identifier and subtree content
   cannot be told apart; their refs follow order, and the verdict reports a
   `sibling_collision` rather than merging them (design D5, Risks).
@@ -365,6 +384,7 @@ cargo test -p mirror
 | Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path`, `replica::without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path` |
 | | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
 | Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
+| | (task 7.11: fields in labelled containers) | `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_android`, `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_ios`, `editables::a_container_names_only_its_single_unlabelled_field`, `editables::a_labelled_container_whose_field_the_platform_hides_gets_a_ref`, `editables::only_labelled_containers_with_nothing_below_them_get_such_refs`, `editables::fields_below_the_fold_are_hinted_once_each`, `editables::a_named_field_under_an_alert_is_covered_and_its_ref_says_which_field`, `editables::fields_in_identically_labelled_containers_collide` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
