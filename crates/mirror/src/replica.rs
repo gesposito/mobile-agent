@@ -29,10 +29,13 @@ use crate::geometry::Rect;
 use crate::mirror::MirrorConfig;
 use crate::snapshot::{ElementId, TreeDelta};
 
-/// The view class that hosts Jetpack Compose content, which sends no change
-/// events to a UiAutomation client (spike S1). Only a read without window
-/// metadata falls back to looking for it.
-pub(crate) const COMPOSE_HOST: &str = "androidx.compose.ui.platform.AndroidComposeView";
+/// The package of Jetpack Compose's classes. Compose content sends no change
+/// events to a UiAutomation client (spike S1), and a window hosting it holds
+/// a node of one of these classes:
+/// `androidx.compose.ui.platform.AndroidComposeView` in spike S1,
+/// `androidx.compose.ui.platform.ComposeView` on the API 36 emulator. Only a
+/// read without window metadata falls back to looking for them.
+pub(crate) const COMPOSE_PACKAGE: &str = "androidx.compose.";
 
 /// How many deltas the replica keeps.
 const DELTA_LOG: usize = 256;
@@ -572,8 +575,8 @@ impl Replica {
     }
 
     /// A window of a read with its metadata: without `emits_events` a
-    /// window hosting Compose's view is taken to send no change events, and
-    /// without `owner` the target owns it.
+    /// window holding a node of a class under `COMPOSE_PACKAGE` is taken
+    /// to send no change events, and without `owner` the target owns it.
     fn convert(
         &mut self,
         wire: &Window,
@@ -586,7 +589,7 @@ impl Replica {
         };
         let emits_events = wire
             .emits_events
-            .unwrap_or_else(|| !nodes.iter().any(|n| &*n.class == COMPOSE_HOST));
+            .unwrap_or_else(|| !nodes.iter().any(|n| n.class.starts_with(COMPOSE_PACKAGE)));
         let owner = wire.owner.map_or(Owner::Target, |i| {
             Owner::System(strings.get(i as usize).cloned().unwrap_or_default())
         });

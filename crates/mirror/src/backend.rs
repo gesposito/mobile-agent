@@ -48,10 +48,12 @@
 //! What the mirror reads from a payload's windows (task 3.6):
 //!
 //! - `emits_events`: `Some(false)` puts the window on the re-read path
-//!   (after each injected action, when frames change and on a poll);
-//!   without it, a window hosting
-//!   `androidx.compose.ui.platform.AndroidComposeView` is taken to send no
-//!   events (spike S1). Simulator drivers set `Some(false)` for every window.
+//!   (after each injected action, when frames change and on a poll) and
+//!   `Some(true)` keeps it off, whatever its classes; without it, a window
+//!   holding a node of any class under `androidx.compose.` is taken to send
+//!   no events (spike S1): `androidx.compose.ui.platform.AndroidComposeView`
+//!   in spike S1, `androidx.compose.ui.platform.ComposeView` on the API 36
+//!   emulator. Simulator drivers set `Some(false)` for every window.
 //! - `owner`: [`Owner::System`] with the name it indexes; absent,
 //!   [`Owner::Target`].
 //! - `modal`: the window cuts the application windows below it.

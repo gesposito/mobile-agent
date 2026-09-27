@@ -95,11 +95,14 @@ Conventions a driver follows:
   tree-stream event sent before the read, so the mirror skips events the
   read already reflects.
 - **Window metadata** (the protocol's window keys 8 to 10, task 3.6).
-  `emits_events: Some(false)` puts a window on the re-read path, whatever
-  its classes; the Android agent sets it for windows hosting Compose,
-  dialogs included, and Simulator drivers set it for every window. Without
-  it the mirror infers it: a window hosting
-  `androidx.compose.ui.platform.AndroidComposeView` sends none (spike S1).
+  `emits_events: Some(false)` puts a window on the re-read path and
+  `Some(true)` keeps it off, whatever its classes; the Android agent sets
+  `Some(false)` for windows hosting Compose, dialogs included, and
+  Simulator drivers set it for every window. Without it the mirror infers
+  it: a window holding a node of any class under `androidx.compose.` sends
+  none (spike S1), which covers the
+  `androidx.compose.ui.platform.AndroidComposeView` spike S1 saw and the
+  `androidx.compose.ui.platform.ComposeView` the API 36 emulator shows.
   `owner` names the system process that owns a window, `modal` marks a
   window that cuts the application windows below it.
 - **Classes and labels.** Android passes widget classes. The Simulator driver
@@ -315,11 +318,13 @@ cargo test -p mirror
 - Scroll semantics and window metadata come from the protocol's snapshot
   (task 3.6); the mirror keeps only `Owner`, the resolved form of a
   window's `owner`. A read without `emits_events` falls back to inferring
-  event-less windows from `androidx.compose.ui.platform.AndroidComposeView`,
-  the class the fixtures name. On the API 36 emulator a Compose window shows
-  `androidx.compose.ui.platform.ComposeView` instead and a Compose dialog no
-  Compose class at all, so the Android agent reports `emits_events` for
-  every window it reads rather than leaving it to this inference.
+  event-less windows from any node whose class is under `androidx.compose.`:
+  `androidx.compose.ui.platform.AndroidComposeView`, the class the fixtures
+  name, and `androidx.compose.ui.platform.ComposeView`, which a Compose
+  window shows on the API 36 emulator. A Compose dialog shows no Compose
+  class at all there, which no inference from classes catches, so the
+  Android agent reports `emits_events` whenever its walk can tell rather
+  than leaving it to this inference, and the field, when present, decides.
 
 ## Spec requirements and their tests
 
@@ -327,7 +332,7 @@ cargo test -p mirror
 |---|---|---|
 | Replica maintained from device events | Warm snapshot is served locally | `replica::a_warm_snapshot_is_served_without_reading_the_device` |
 | | First snapshot after attach | `replica::the_first_snapshot_after_attach_acquires_the_whole_tree_then_applies_events`, `replica::recorded_event_sequences_replay_to_the_trees_a_cold_read_returns`, `replica::a_window_change_reads_every_window` |
-| Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path` |
+| Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path`, `replica::without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path` |
 | | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
 | Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
