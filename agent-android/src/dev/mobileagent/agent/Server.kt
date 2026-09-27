@@ -81,8 +81,13 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     /** Input runs one action at a time, beside tree reads. */
     private val inputWorker = Executors.newSingleThreadExecutor(daemonThreads("input"))
     private lateinit var textSetter: TextSetter
-    /** Tree reads run one at a time, in arrival order. */
+    /**
+     * Tree reads run one at a time, in arrival order, except that a Compose
+     * re-read yields to a request waiting behind it.
+     */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
+    /** Snapshot and resync requests handed to the tree worker that have not started. */
+    private val treeRequests = java.util.concurrent.atomic.AtomicInteger()
     private lateinit var reader: TreeReader
     private lateinit var events: EventHub
     private lateinit var compose: ComposeTracker
@@ -162,8 +167,8 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
 
     override fun handle(work: Work) {
         when (val call = work.call) {
-            is SnapshotCall -> treeWorker.execute { snapshot(work, call) }
-            is ResyncCall -> treeWorker.execute { resync(work, call) }
+            is SnapshotCall -> onTreeWorker { snapshot(work, call) }
+            is ResyncCall -> onTreeWorker { resync(work, call) }
             is TapCall -> inputWorker.execute {
                 act(work) { input!!.tap(call.x, call.y, call.durationMs?.let { unsigned(it) } ?: 0L) { work.cancelled } }
             }
@@ -175,6 +180,15 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             is ScreenshotCall -> captureWorker.execute { screenshot(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
+        }
+    }
+
+    /** Runs a request's `task` on the tree worker; until it starts, a Compose re-read there yields to it. */
+    private fun onTreeWorker(task: () -> Unit) {
+        treeRequests.incrementAndGet()
+        treeWorker.execute {
+            treeRequests.decrementAndGet()
+            task()
         }
     }
 
@@ -243,6 +257,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
 
     private fun snapshot(work: Work, call: SnapshotCall) {
         if (work.cancelled) return
+        val queued = android.os.SystemClock.uptimeMillis() - work.arrived
         val maxDepth = call.maxDepth?.let { unsigned(it) } ?: Long.MAX_VALUE
         val maxNodes = call.maxNodes?.let { unsigned(it) } ?: TreeReader.DEFAULT_MAX_NODES.toLong()
         val bound = call.idleMs?.let { unsigned(it) } ?: EventHub.DEFAULT_IDLE_MS
@@ -269,7 +284,8 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 Out.line(
                     "trace snapshot id=${unsigned(work.id)} windows=${s.windows.size} nodes=${s.nodeCount} " +
                         "visible=${result.visible} serialized=${result.nodes.size} truncated=0x${Integer.toHexString(s.truncated)} " +
-                        "idle_ms=$idle read_ms=${result.readMs} round_trips=${result.roundTrips} restarts=${result.restarts}",
+                        "queued_ms=$queued idle_ms=$idle read_ms=${result.readMs} round_trips=${result.roundTrips} " +
+                        "restarts=${result.restarts}",
                 )
             }
         } catch (e: Cancelled) {
@@ -373,18 +389,23 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     /**
      * Queues a re-read of the windows hosting Compose while a host is
      * connected, every --compose-poll-ms and never more often than four times
-     * the last re-read took, so a wide screen does not keep its UI thread busy.
+     * the last re-read took, so a wide screen does not keep its UI thread
+     * busy. The re-read yields to snapshot and resync requests waiting for
+     * the tree worker; one that yields before evicting anything is queued
+     * again at the next tick.
      */
     private fun pollCompose() {
         val now = android.os.SystemClock.uptimeMillis()
         if (now < nextPoll || current?.isReady != true || !pollQueued.compareAndSet(false, true)) return
         treeWorker.execute {
+            var began = true
             try {
-                compose.reread()
+                began = compose.reread { treeRequests.get() > 0 }
             } catch (t: Throwable) {
                 if (options.trace) Out.line("trace compose error=${t.javaClass.simpleName}:${t.message}")
             } finally {
-                nextPoll = android.os.SystemClock.uptimeMillis() + maxOf(options.composePollMs, 4 * compose.lastRereadMs)
+                val end = android.os.SystemClock.uptimeMillis()
+                nextPoll = if (began) end + maxOf(options.composePollMs, 4 * compose.lastRereadMs) else end
                 pollQueued.set(false)
             }
         }

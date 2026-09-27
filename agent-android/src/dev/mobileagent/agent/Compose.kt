@@ -117,8 +117,14 @@ class ComposeTracker(
      * content differs from what the host last saw. Windows the host has not
      * read are left alone: it holds nothing of them that could be stale, and
      * the window events announce them. Runs on the tree worker.
+     *
+     * Yields as soon as `yieldTo` turns true, as it does while a request
+     * waits for the tree worker: before the eviction it returns false, having
+     * done nothing; during the read it abandons the read, since the request
+     * reads the evicted windows afresh and the host sees their change in its
+     * answer. Returns true otherwise.
      */
-    fun reread() {
+    fun reread(yieldTo: () -> Boolean): Boolean {
         val ids = automation.windows().map { it.id }.toSet()
         val targets: List<Int>
         synchronized(this) {
@@ -126,11 +132,22 @@ class ComposeTracker(
             seen.keys.retainAll(ids)
             targets = ids.filter { it in compose }
         }
-        if (targets.isEmpty()) return
+        if (targets.isEmpty()) return true
+        if (yieldTo()) {
+            if (trace) Out.line("trace compose yielded windows=${targets.joinToString(",")} read_ms=0")
+            return false
+        }
         val t0 = SystemClock.uptimeMillis()
         dirty = false
         for (id in targets) automation.evictWindow(id)
-        val result = reader.read(Int.MAX_VALUE, TreeReader.DEFAULT_MAX_NODES, 0, targets.toSet()) { false }
+        val result = try {
+            reader.read(Int.MAX_VALUE, TreeReader.DEFAULT_MAX_NODES, 0, targets.toSet(), yieldTo)
+        } catch (e: Cancelled) {
+            if (trace) {
+                Out.line("trace compose yielded windows=${targets.joinToString(",")} read_ms=${SystemClock.uptimeMillis() - t0}")
+            }
+            return true
+        }
         lastRereadMs = SystemClock.uptimeMillis() - t0
         val s = result.snapshot
         val changed = ArrayList<String>()
@@ -154,5 +171,6 @@ class ComposeTracker(
                     "round_trips=${result.roundTrips} restarts=${result.restarts} changed=${changed.joinToString(",").ifEmpty { "-" }}",
             )
         }
+        return true
     }
 }

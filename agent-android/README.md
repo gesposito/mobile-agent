@@ -245,12 +245,13 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   depth, bit 1 nodes, bit 2 a window without a root or with a child that
   could not be read, below). The visible count is the nodes whose `visible`
   flag is set. `seq` is the last tree event sent before the walk began. A
-  read whose deadline passes stops at the next node.
+  read whose deadline passes stops at the next node or child it would fetch.
   With `--trace` the agent prints `trace snapshot id=<id> windows=<n>
-  nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
-  round_trips=<n> restarts=<n>`, the round trips read from the accessibility
-  client's interaction counter, the restarts counting walks the tree changed
-  under (below).
+  nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> queued_ms=<ms>
+  idle_ms=<ms> read_ms=<ms> round_trips=<n> restarts=<n>`, `queued_ms` the
+  time from the request's arrival to the start of its read, the round trips
+  read from the accessibility client's interaction counter, the restarts
+  counting walks the tree changed under (below).
 - **Children that cannot be read** (task 4.11). On a debuggable build, such
   as the emulator's `userdebug` image (`ro.debuggable=1`), `getChild` can
   throw instead of returning a child. The walk fetches children with
@@ -347,9 +348,18 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   evicting their cached nodes (hidden `AccessibilityCache.clearSubTree` on a
   fresh root), diffs the result against the last read the host received, and
   sends a tree event naming the deepest subtree holding every difference.
-  Only windows a snapshot has shown the host are re-read. With `--trace` each
-  re-read prints `trace compose windows=<ids> nodes=<n> read_ms=<ms>
-  round_trips=<n> restarts=<n> changed=<window:path or ->`.
+  Only windows a snapshot has shown the host are re-read. Every tree read
+  runs on one thread, and a re-read yields to a snapshot or resync request
+  that waits for it (task 10.9): the walk checks before each node and each
+  child it fetches, so the request starts within one round trip. A re-read
+  that yields during its walk has evicted the windows, so the request reads
+  them afresh and its answer carries their change; one that yields before
+  evicting anything runs again at the next 100 ms tick. Running re-reads on
+  a thread of their own instead would put two requests for one node in the
+  app at once, the case that makes `getChild` throw (task 4.11). With
+  `--trace` each re-read prints `trace compose windows=<ids> nodes=<n>
+  read_ms=<ms> round_trips=<n> restarts=<n> changed=<window:path or ->`, or
+  `trace compose yielded windows=<ids> read_ms=<ms>` when it yields.
 - **Input.** `tap`, `swipe` and `key` go through the hidden
   `InputManagerGlobal.injectInputEvent(event, WAIT_FOR_RESULT)` (design D2),
   never the `UiAutomation` overloads, and each is answered with

@@ -222,7 +222,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
      * Reads every interactive window, or those whose id is in `only`.
      * `maxDepth` levels below each root and `maxNodes` nodes are serialized;
      * `seq` is the last tree event sent. Throws [Cancelled] as soon as
-     * `cancelled` turns true. A walk the tree changed under is abandoned and
+     * `cancelled` turns true, which the walk checks before each node and each
+     * child it fetches. A walk the tree changed under is abandoned and
      * the read starts again from the window roots, at most [MAX_RESTARTS]
      * times.
      */
@@ -336,6 +337,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                 var looked = false
                 var parentChange: String? = null
                 for (i in 0 until count) {
+                    // Per child too: one parent can have hundreds.
+                    if (cancelled()) throw Cancelled()
                     var thrown: RuntimeException? = null
                     var c = try {
                         fetch(n, i, cancelled)
