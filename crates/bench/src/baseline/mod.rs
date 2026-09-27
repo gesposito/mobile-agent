@@ -89,7 +89,7 @@ pub fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// Whether `path` is a file anyone may execute.
-fn is_executable(path: &Path) -> bool {
+pub(crate) fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
@@ -237,7 +237,7 @@ impl Adapter for Baseline {
 
 /// The exit status and the last three lines the tool printed, at most 500
 /// characters of them.
-fn exit_failure(finished: &Finished) -> String {
+pub(crate) fn exit_failure(finished: &Finished) -> String {
     let status = finished.status.code().map_or_else(
         || "killed by a signal".to_owned(),
         |code| format!("exit status {code}"),

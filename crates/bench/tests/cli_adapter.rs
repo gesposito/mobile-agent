@@ -225,11 +225,17 @@ fn a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured(
 }
 
 /// A stand-in for `mobile-agent` that logs its arguments and answers from
-/// canned replies: `click` with `click`, exiting with `click_status`, a settle
-/// with a settled screen, `--version` with 0.2.0 and anything else with an
-/// empty success.
-fn stand_in(dir: &Path, click: &str, click_status: i32) -> PathBuf {
-    fs::write(dir.join("click.json"), click).unwrap();
+/// canned replies: `--version` with 0.2.0, the first of `replies` whose
+/// pattern the command line contains with its exit status, a settle with a
+/// settled screen, and anything else with an empty success.
+fn stand_in(dir: &Path, replies: &[(&str, &str, i32)]) -> PathBuf {
+    let mut cases = String::new();
+    for (n, (pattern, reply, status)) in replies.iter().enumerate() {
+        fs::write(dir.join(format!("reply-{n}.json")), reply).unwrap();
+        cases.push_str(&format!(
+            "*\" {pattern} \"*) cat \"$dir/reply-{n}.json\"; exit {status} ;;\n"
+        ));
+    }
     fs::write(
         dir.join("settle.json"),
         r#"{"success":true,"data":{"elapsedMs":212.5,"frameChanges":1,"settled":true,"stillChanging":[],"treeChanges":1,"waited":"settle"},"error":null}"#,
@@ -249,7 +255,7 @@ fn stand_in(dir: &Path, click: &str, click_status: i32) -> PathBuf {
              echo \"$@\" >> \"$dir/mobile-agent.log\"\n\
              case \" $* \" in\n\
              *\" --version \"*) echo 'mobile-agent 0.2.0' ;;\n\
-             *\" click \"*) cat \"$dir/click.json\"; exit {click_status} ;;\n\
+             {cases}\
              *\" --settle \"*) cat \"$dir/settle.json\" ;;\n\
              *) cat \"$dir/empty.json\" ;;\n\
              esac\n"
@@ -267,7 +273,7 @@ const CLICK_WITH_SPANS: &str = r#"{"success":true,"data":{"accepted":true,"click
 fn click_replies_that_carry_frame_and_tree_spans_fill_them_in() {
     let dir = common::scratch("cli-stand-in");
     let mut settings = CliConfig::new(dir.join("work"));
-    settings.program = stand_in(&dir, CLICK_WITH_SPANS, 0);
+    settings.program = stand_in(&dir, &[("click", CLICK_WITH_SPANS, 0)]);
     let primitives = [
         Primitive::TapDispatch,
         Primitive::TapToFrameChange,
@@ -323,7 +329,7 @@ fn click_replies_that_carry_frame_and_tree_spans_fill_them_in() {
 fn stand_in_run(name: &str, click: &str, primitives: &[Primitive]) -> Report {
     let dir = common::scratch(name);
     let mut settings = CliConfig::new(dir.join("work"));
-    settings.program = stand_in(&dir, click, 0);
+    settings.program = stand_in(&dir, &[("click", click, 0)]);
     run(
         CliAdapter::new(settings),
         emulator(),
@@ -397,8 +403,11 @@ fn a_failed_command_is_an_error_naming_the_command_its_code_and_its_message() {
     let mut settings = CliConfig::new(dir.join("work"));
     settings.program = stand_in(
         &dir,
-        r#"{"success":false,"data":null,"error":"no element matches id row-1 after 10000 ms; the screen shows revision 3:\n- button \"Home\" [id=home, ref=e1]","code":"element_not_found"}"#,
-        1,
+        &[(
+            "click",
+            r#"{"success":false,"data":null,"error":"no element matches id row-1 after 10000 ms; the screen shows revision 3:\n- button \"Home\" [id=home, ref=e1]","code":"element_not_found"}"#,
+            1,
+        )],
     );
     let mut adapter = CliAdapter::new(settings);
     assert!(matches!(adapter.detect(), Detection::Available { .. }));
@@ -519,8 +528,53 @@ fn text_entry_fills_the_fixed_string_into_the_username_field() {
         .unwrap();
     assert_eq!(sample.clock, Clock::Wall);
     assert_eq!(sample.detail.as_deref(), Some("method direct"));
+    // The field is empty again for the next fill.
     let value = devices.cli(&in_session(&target, &["get", "value", "id=login-username"]));
-    assert_eq!(value["value"], TEXT_ENTRY);
+    assert!(value["value"].is_null() || value["value"] == "", "{value}");
+}
+
+#[test]
+fn a_text_entry_that_did_not_land_fails() {
+    let dir = common::scratch("cli-stand-in-text");
+    let mut settings = CliConfig::new(dir.join("work"));
+    settings.program = stand_in(
+        &dir,
+        &[
+            (
+                "fill",
+                r#"{"success":true,"data":{"filled":"id=login-username","method":"keys","ref":"@e2"},"error":null}"#,
+                0,
+            ),
+            (
+                "value",
+                r#"{"success":true,"data":{"value":"abcdefghijklm"},"error":null}"#,
+                0,
+            ),
+        ],
+    );
+    let mut adapter = CliAdapter::new(settings);
+    adapter.detect();
+    let error = adapter
+        .measure(
+            &simulator(),
+            &plan::scenario(Primitive::TextEntry, Fixture::Expo),
+            Primitive::TextEntry,
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        "login-username holds \"abcdefghijklm\" after the fill, not the fixed string"
+    );
+    let log = fs::read_to_string(dir.join("mobile-agent.log")).unwrap();
+    let session = "--json --session mobile-agent-bench --device FAKE-IOS-1";
+    for command in [
+        format!("fill --timeout 10000 -- id=login-username {TEXT_ENTRY}"),
+        format!("wait --timeout 10000 --text={TEXT_ENTRY}"),
+        "get value --timeout 10000 -- id=login-username".to_owned(),
+    ] {
+        let line = format!("{session} {command}");
+        assert!(log.lines().any(|l| l == line), "no {line:?} in:\n{log}");
+    }
 }
 
 #[test]

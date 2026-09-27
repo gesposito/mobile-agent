@@ -197,7 +197,11 @@ impl GateSet {
             let judged: Vec<&Measurement> = report
                 .measurements
                 .iter()
-                .filter(|m| under_test.contains(&m.tool.as_str()) && gate.applies_to(m))
+                .filter(|m| {
+                    under_test.contains(&m.tool.as_str())
+                        && gate.applies_to(m)
+                        && m.not_measured.is_none()
+                })
                 .collect();
             if judged.is_empty() {
                 rows.push(row(None, None, None, GateStatus::NotMeasured));
@@ -231,7 +235,8 @@ pub enum GateStatus {
     /// Over the limit, or no iteration succeeded.
     Fail,
     /// The run has a target of the gate's class but did not measure what the
-    /// gate judges. Reported, but not a failure.
+    /// gate judges, or the tool could not measure it. Reported, but not a
+    /// failure.
     NotMeasured,
 }
 

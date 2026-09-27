@@ -261,7 +261,9 @@ fn detect(tool: &mut dyn Adapter) -> ToolReport {
 }
 
 /// Runs one series through one tool: the preparation, then the warm-up and
-/// measured iterations in order.
+/// measured iterations in order. A tool that reports it cannot measure the
+/// subject, while preparing or in any attempt, ends the series there: it is
+/// not measured, with no samples and no failures.
 fn measure(
     tool: &mut dyn Adapter,
     target: &Target,
@@ -272,10 +274,15 @@ fn measure(
     let scenario = series.scenario();
     let mut samples = Vec::new();
     let mut clock = None;
+    let mut not_measured = None;
     let error = match tool.prepare(target, &scenario, &series.subject) {
+        Err(e) if e.not_measured => {
+            not_measured = Some(e.message);
+            None
+        }
         Err(e) => Some(format!("preparation failed: {e}")),
         Ok(()) => {
-            for iteration in 0..config.warmup + config.iterations {
+            'iterations: for iteration in 0..config.warmup + config.iterations {
                 let warmup = iteration < config.warmup;
                 let mut errors = Vec::new();
                 let mut success = None;
@@ -284,6 +291,10 @@ fn measure(
                         Ok(sample) => {
                             success = Some(sample);
                             break;
+                        }
+                        Err(e) if e.not_measured => {
+                            not_measured = Some(e.message);
+                            break 'iterations;
                         }
                         Err(e) => errors.push(e.message),
                     }
@@ -296,6 +307,10 @@ fn measure(
             None
         }
     };
+    if not_measured.is_some() {
+        samples.clear();
+        clock = None;
+    }
     let measured: Vec<&SampleRecord> = samples.iter().filter(|s| !s.warmup).collect();
     let latencies: Vec<u64> = measured.iter().filter_map(|s| s.us).collect();
     let nodes = measured
@@ -321,10 +336,13 @@ fn measure(
         iterations: config.iterations,
         warmup: config.warmup,
         stats: summarize(&latencies),
-        reliability: Reliability::of(&samples, config.iterations),
+        reliability: match not_measured {
+            Some(_) => Reliability::default(),
+            None => Reliability::of(&samples, config.iterations),
+        },
         nodes,
         error,
-        not_measured: None,
+        not_measured,
         samples,
     }
 }

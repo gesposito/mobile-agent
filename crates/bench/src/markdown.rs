@@ -186,6 +186,11 @@ fn measurements(out: &mut String, measurements: &[Measurement]) {
     ]);
     for m in measurements {
         let stat = |pick: fn(&Summary) -> u64| or_dash(m.stats.as_ref().map(|s| ms(pick(s))));
+        // A series the tool could not measure has no rates to show.
+        let rate = |pct: f64| match m.not_measured {
+            Some(_) => "—".to_owned(),
+            None => format!("{pct:.1}"),
+        };
         table.row(vec![
             m.tool.clone(),
             m.target.clone(),
@@ -197,26 +202,34 @@ fn measurements(out: &mut String, measurements: &[Measurement]) {
             stat(|s| s.p50_us),
             stat(|s| s.p95_us),
             stat(|s| s.max_us),
-            format!("{:.1}", m.reliability.failure_rate_pct),
-            format!("{:.1}", m.reliability.flake_rate_pct),
+            rate(m.reliability.failure_rate_pct),
+            rate(m.reliability.flake_rate_pct),
             nodes_cell(m.nodes),
         ]);
     }
     table.render(out);
-    let errors: Vec<&Measurement> = measurements.iter().filter(|m| m.error.is_some()).collect();
-    if !errors.is_empty() {
-        out.push_str("Series that could not run:\n\n");
-        for m in errors {
+    let listed = |title: &str, reason: fn(&Measurement) -> Option<&str>, out: &mut String| {
+        let series: Vec<(&Measurement, &str)> = measurements
+            .iter()
+            .filter_map(|m| reason(m).map(|r| (m, r)))
+            .collect();
+        if series.is_empty() {
+            return;
+        }
+        out.push_str(&format!("{title}:\n\n"));
+        for (m, reason) in series {
             out.push_str(&format!(
                 "- {} on {}, {}: {}\n",
                 m.tool,
                 m.target,
                 subject_cell(&m.subject),
-                escape(m.error.as_deref().unwrap_or_default())
+                escape(reason)
             ));
         }
         out.push('\n');
-    }
+    };
+    listed("Series that could not run", |m| m.error.as_deref(), out);
+    listed("Series not measured", |m| m.not_measured.as_deref(), out);
 }
 
 /// The key of a comparison row.
@@ -262,6 +275,10 @@ fn comparison(out: &mut String, report: &Report) {
             });
             row.push(match found {
                 None => "—".to_owned(),
+                Some(Measurement {
+                    not_measured: Some(_),
+                    ..
+                }) => "not measured".to_owned(),
                 Some(Measurement { stats: None, .. }) => "no samples".to_owned(),
                 Some(Measurement { stats: Some(s), .. }) => {
                     format!("{} / {}", ms(s.p50_us), ms(s.p95_us))

@@ -1,38 +1,81 @@
 //! The run plan for the tool under test: the scenario each primitive is
-//! measured in, and the flows each fixture runs.
+//! measured in and the flows each fixture runs. Fixtures and screens are those
+//! of `fixtures/CONTRACT.md`.
 
 use crate::adapter::Scenario;
-use crate::fixture::Fixture;
-use crate::flow::Flow;
-use crate::harness::Series;
+use crate::fixture::{Fixture, Screen};
+use crate::flow::{self, Flow};
+use crate::harness::{Series, Subject};
 use crate::primitive::Primitive;
 use crate::target::{Platform, Target};
 
 /// Every fixture, in report order.
 pub const FIXTURES: [Fixture; 3] = [Fixture::SwiftUi, Fixture::Expo, Fixture::Compose];
 
-/// The fixtures `platform` has.
+/// The fixtures `platform` has, in report order: SwiftUI and Expo on iOS,
+/// Expo and Compose on Android.
 pub fn fixtures(platform: Platform) -> Vec<Fixture> {
-    let _ = platform;
-    Vec::new()
+    FIXTURES
+        .into_iter()
+        .filter(|fixture| fixture.app_id(platform).is_some())
+        .collect()
 }
 
-/// Where `primitive` is measured with `fixture`.
+/// Where `primitive` is measured with `fixture`. CLI process start involves no
+/// app; cold attach opens the fixture on whatever screen it shows; snapshots
+/// and the screenshot use the 500-cell screen, the spec's reference screen;
+/// taps and settle detection the List screen, whose rows open a detail; text
+/// entry the Login screen's username field.
 pub fn scenario(primitive: Primitive, fixture: Fixture) -> Scenario {
-    let _ = (primitive, fixture);
-    Scenario::default()
+    let on = |screen| Scenario {
+        fixture: Some(fixture),
+        screen: Some(screen),
+    };
+    match primitive {
+        Primitive::CliStart => Scenario::default(),
+        Primitive::ColdAttach => Scenario {
+            fixture: Some(fixture),
+            screen: None,
+        },
+        Primitive::FirstSnapshot | Primitive::WarmSnapshot | Primitive::Screenshot => {
+            on(Screen::Big)
+        }
+        Primitive::TapDispatch
+        | Primitive::TapToFrameChange
+        | Primitive::TapToTreeDelta
+        | Primitive::Settle => on(Screen::List),
+        Primitive::TextEntry => on(Screen::Login),
+    }
 }
 
-/// The series on `target` with `fixtures`.
+/// The series on `target` with `fixtures`: CLI process start once, then for
+/// each fixture every other primitive in its scenario, in [`Primitive::ALL`]
+/// order, and the reference flows.
 pub fn series(target: &Target, fixtures: &[Fixture]) -> Vec<Series> {
-    let _ = (target, fixtures);
-    Vec::new()
+    let series = |fixture, screen, subject| Series {
+        target: target.id.clone(),
+        fixture,
+        screen,
+        subject,
+    };
+    let mut planned = vec![series(None, None, Subject::Primitive(Primitive::CliStart))];
+    for &fixture in fixtures {
+        for primitive in Primitive::ALL {
+            if primitive != Primitive::CliStart {
+                let at = scenario(primitive, fixture);
+                planned.push(series(at.fixture, at.screen, Subject::Primitive(primitive)));
+            }
+        }
+        for flow in flow::reference(fixture) {
+            planned.push(series(Some(fixture), None, Subject::Flow(flow.name)));
+        }
+    }
+    planned
 }
 
-/// The reference flows of `fixtures`.
+/// The reference flows of `fixtures`, which the plan's flow series name.
 pub fn flows(fixtures: &[Fixture]) -> Vec<Flow> {
-    let _ = fixtures;
-    Vec::new()
+    fixtures.iter().copied().flat_map(flow::reference).collect()
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Running a tool's process with a deadline and its output captured.
 
 use std::io::Read;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -17,6 +17,8 @@ pub struct Finished {
     pub status: ExitStatus,
     pub stdout: String,
     pub stderr: String,
+    /// Just before the spawn call.
+    pub started: Instant,
     /// From the spawn call to the exit being observed. The exit is polled at an
     /// interval of 1 % of the time elapsed so far, bounded to 50 µs..=5 ms.
     pub elapsed: Duration,
@@ -38,9 +40,46 @@ pub fn run(command: &mut Command, timeout: Duration) -> Result<Finished, String>
     // on a full pipe while it is being waited for.
     let stdout = child.stdout.take().map(drain);
     let stderr = child.stderr.take().map(drain);
-    let status = loop {
+    let status = wait(&mut child, start, timeout, &program)?;
+    let elapsed = start.elapsed();
+    let deadline = Instant::now() + OUTPUT_GRACE;
+    Ok(Finished {
+        status,
+        stdout: collect(stdout, deadline),
+        stderr: collect(stderr, deadline),
+        started: start,
+        elapsed,
+    })
+}
+
+/// Runs `command` with its streams closed, as hyperfine runs a command whose
+/// output it discards, and returns its exit status and the time from the
+/// spawn call to the exit being observed, polled as [`run`] polls it. Errors
+/// name the program and say whether it could not start or timed out.
+pub fn time(command: &mut Command, timeout: Duration) -> Result<(ExitStatus, Duration), String> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    let start = Instant::now();
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("cannot start {program}: {e}"))?;
+    let status = wait(&mut child, start, timeout, &program)?;
+    Ok((status, start.elapsed()))
+}
+
+/// Polls `child`, spawned at `start`, until it exits, killing it once
+/// `timeout` has passed.
+fn wait(
+    child: &mut Child,
+    start: Instant,
+    timeout: Duration,
+    program: &str,
+) -> Result<ExitStatus, String> {
+    loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
+            Ok(Some(status)) => return Ok(status),
             Ok(None) => {}
             Err(e) => return Err(format!("cannot wait for {program}: {e}")),
         }
@@ -54,23 +93,7 @@ pub fn run(command: &mut Command, timeout: Duration) -> Result<Finished, String>
             ));
         }
         thread::sleep((elapsed / 100).clamp(Duration::from_micros(50), Duration::from_millis(5)));
-    };
-    let elapsed = start.elapsed();
-    let deadline = Instant::now() + OUTPUT_GRACE;
-    Ok(Finished {
-        status,
-        stdout: collect(stdout, deadline),
-        stderr: collect(stderr, deadline),
-        elapsed,
-    })
-}
-
-/// Runs `command` with its streams closed, as hyperfine runs a command whose
-/// output it discards, and returns its exit status and the time from the
-/// spawn call to the exit being observed.
-pub fn time(command: &mut Command, timeout: Duration) -> Result<(ExitStatus, Duration), String> {
-    let _ = (command, timeout);
-    Err("not written yet".to_owned())
+    }
 }
 
 /// A pipe being read to its end on its own thread.

@@ -2,7 +2,7 @@
 
 The benchmark harness of design decision D10 and the `benchmark-harness` spec. It measures the spec's primitives through adapters, one per tool, writes a JSON report and a markdown summary from the same data, judges the latency gates, and runs the same flows through Maestro, maestro-runner and agent-device for comparison.
 
-The binary is `mobile-agent-bench`; `just bench <arguments>` runs it in release mode. Until the CLI adapter exists (task 9.4), the tool under test is the scripted fake adapter described below.
+The binary is `mobile-agent-bench`; `just bench <arguments>` runs it in release mode. Its `run` drives the scripted fake adapter described below; the CLI adapter, which drives `mobile-agent` itself, is the library's `cli::CliAdapter`.
 
 ```sh
 just bench run --fake run.json --out reports/my-run   # measure, write both reports, judge the gates
@@ -18,22 +18,22 @@ just bench baselines                                  # which baseline tools are
 
 A run is a list of series. A series is one subject, a primitive or a flow, on one target, in a scenario (a fixture app and one of its screens), and every tool that supports it measures it: first the warm-up iterations, then the measured ones. A failed attempt is retried within its iteration up to `--retries` times.
 
-| Primitive | Spec wording | Planned scenario |
+| Primitive | Spec wording | Scenario (`plan::scenario`) |
 |---|---|---|
 | `cli-start` | CLI process start | none |
-| `cold-attach` | cold attach | none |
+| `cold-attach` | cold attach | a fixture, no screen |
 | `first-snapshot` | first snapshot after application launch | a fixture's `big` screen |
 | `warm-snapshot` | warm snapshot | a fixture's `big` screen, the spec's reference screen |
-| `tap-dispatch` | tap dispatch, the Simulator gate's span | a fixture screen |
-| `tap-to-frame-change` | tap-to-frame-change | a fixture screen |
-| `tap-to-tree-delta` | tap-to-tree-delta | a fixture screen |
-| `text-entry` | text entry of a fixed string | `login`; the string is `TEXT_ENTRY`, `abcdefghijklmnopqrstuvwxyz0123456789` |
-| `screenshot` | screenshot | a fixture screen |
-| `settle` | settle detection | a fixture screen |
+| `tap-dispatch` | tap dispatch, the Simulator gate's span | a fixture's `list` screen |
+| `tap-to-frame-change` | tap-to-frame-change | a fixture's `list` screen |
+| `tap-to-tree-delta` | tap-to-tree-delta | a fixture's `list` screen |
+| `text-entry` | text entry of a fixed string | a fixture's `login` screen; the string is `TEXT_ENTRY`, `abcdefghijklmnopqrstuvwxyz0123456789` |
+| `screenshot` | screenshot | a fixture's `big` screen |
+| `settle` | settle detection | a fixture's `list` screen |
 
-The spec lists nine primitives; `tap-dispatch` is the tenth because the Simulator gate is on dispatch, as spike S3 recommended. The scenario column is where task 9.4's run plan is to measure each primitive; the harness itself takes any scenario a series names, and the default gates look for warm snapshots on the `big` screen. Fixtures and screens are those of `fixtures/CONTRACT.md`: `swiftui` (iOS), `expo` (both platforms) and `compose` (Android); `login`, `list`, `big`, `anim` and `system`.
+The spec lists nine primitives; `tap-dispatch` is the tenth because the Simulator gate is on dispatch, as spike S3 recommended. The scenario column is the run plan's: `plan::series(target, fixtures)` lists a target's series, CLI process start once, then for each fixture every other primitive in its scenario and the three reference flows, and `plan::fixtures(platform)` the fixtures a platform has. The harness itself takes any scenario a series names, and the default gates look for warm snapshots on the `big` screen. Fixtures and screens are those of `fixtures/CONTRACT.md`: `swiftui` (iOS), `expo` (both platforms) and `compose` (Android); `login`, `list`, `big`, `anim` and `system`.
 
-Statistics follow the spikes: nearest-rank percentiles, so every reported value is a measured sample, over whole microseconds, with warm-up iterations excluded. Each series reports `n`, p50, p95 and max, the node counts the tool returned, a failure rate and a flake rate. An iteration whose first attempt succeeds passes; one that succeeds only on a retry is a flake, and its latency is the successful attempt's; one in which no attempt succeeds is a failure. Rates are percentages of the measured iterations, rounded half up to a tenth. A series whose preparation failed counts every measured iteration as failed.
+Statistics follow the spikes: nearest-rank percentiles, so every reported value is a measured sample, over whole microseconds, with warm-up iterations excluded. Each series reports `n`, p50, p95 and max, the node counts the tool returned, a failure rate and a flake rate. An iteration whose first attempt succeeds passes; one that succeeds only on a retry is a flake, and its latency is the successful attempt's; one in which no attempt succeeds is a failure. Rates are percentages of the measured iterations, rounded half up to a tenth. A series whose preparation failed counts every measured iteration as failed. A series the tool cannot measure at all, which its adapter says with `AdapterError::not_measured` while preparing or in any attempt, ends there: it has no samples, no failures and no statistics, and the report lists it as not measured with the reason.
 
 ## Reports
 
@@ -66,11 +66,12 @@ Each measurement:
 | `reliability` | `iterations`, `failures`, `flakes`, `failure_rate_pct`, `flake_rate_pct` |
 | `nodes` | `min` and `max` node count returned, or null |
 | `error` | why the series could not run at all, or null |
+| `not_measured` | why the tool could not measure the subject, or null; such a series has no samples |
 | `samples[]` | per iteration: `iteration`, `warmup`, `outcome` (`pass`, `flake`, `fail`), `attempts`, `us`, `nodes`, `detail`, `errors` |
 
 Provenance covers what the spec asks for: host hardware and OS from `sysctl` and `sw_vers` on macOS (`/proc` and `uname` on Linux), Xcode from `xcodebuild -version`, the commit from `git`, tool versions from each adapter's detection, and each target's model, OS and API level. An adapter may fill the target fields; the harness fills the rest from `adb -s <serial> shell getprop` or `xcrun simctl list devices --json`. `Provenance::environment_differences` lists the fields in which two runs' environments differ, ignoring times and load.
 
-The markdown has a provenance table with targets and tools, a measurements table (tool, target, fixture, screen, subject, clock, n, p50, p95, max, Fail %, Flake %, nodes), a comparison table with one column per tool that measured something and one row per target, fixture, screen and subject, holding p50 / p95, a line naming skipped tools and why, and the gate table.
+The markdown has a provenance table with targets and tools, a measurements table (tool, target, fixture, screen, subject, clock, n, p50, p95, max, Fail %, Flake %, nodes) followed by the series that could not run and the series not measured, each with its reason, a comparison table with one column per tool that measured something and one row per target, fixture, screen and subject, holding p50 / p95 (`no samples` or `not measured` where there is none), a line naming skipped tools and why, and the gate table.
 
 ## Gates
 
@@ -94,7 +95,7 @@ Every default reads p95. The spec states p95 for the snapshot, dispatch and tap-
 
 - Gates judge only the tool under test, never a baseline.
 - Only gates whose target class has a target in the run are listed.
-- A gate with no matching measurement is listed as not measured and does not fail the run; a matching series in which no iteration succeeded fails.
+- A gate with no matching measurement, or whose measurement the tool could not make, is listed as not measured and does not fail the run; a matching series in which no iteration succeeded fails.
 - A gate file replaces the defaults: `{"gates": [{"class": "android-emulator", "primitive": "tap-to-frame-change", "limit_ms": 160}]}`, with optional `fixture`, `screen` and `statistic` (default `p95`). Limits must be positive. This is how a gate is restated per GPU mode, as design.md foresees for the emulator's tap-to-frame gate.
 
 ## Adapter interface
@@ -118,12 +119,47 @@ pub trait Adapter {
 
 - The harness never times a call. `measure` returns a `Sample` holding the latency of exactly the primitive's span, the clock it read (`Wall` or `Tool`), the node count for snapshots and an optional detail such as a text entry method. Work outside the span, such as stopping the daemon before a cold attach or relaunching the app before a first snapshot, happens inside the call but outside the span.
 - `detect` runs once per run, before any series; an `Absent` tool is skipped with its note. `supports` makes the harness skip combinations a tool cannot measure instead of recording failures. `prepare` runs once per series, before its warm-up; `Scenario` names the fixture and screen.
-- An `AdapterError` is a failed attempt; the harness retries it within the iteration.
+- An `AdapterError` is a failed attempt; the harness retries it within the iteration. `AdapterError::not_measured(reason)` is no failure: the tool cannot measure the subject at all, and the series is reported as not measured.
 
-The CLI adapter will drive `mobile-agent` in `--json` mode, whose envelope mirrors agent-browser's (`docs/research/protocol.md`): `{success, data, error, code?, warning?}` on stdout for one command, and for `batch` an array of `{command, success, result, error, code?, warning?}`, with stop-on-error. `success: false` becomes an `AdapterError` carrying `code` and `error`. The spans it will time:
+## The CLI adapter
 
-- wall clock around the process: `cli-start` (`status` against a running daemon, the overhead task 8.3 gates with hyperfine), `cold-attach` (after stopping the daemon and the device-side helper), `first-snapshot` (after relaunching the fixture on its `big` screen, until a snapshot holds `cell-500`), `warm-snapshot`, `text-entry` (`fill` of `TEXT_ENTRY`) and `screenshot`;
-- the tool's own clock, from fields of the command's JSON `data`: `tap-dispatch`, `tap-to-frame-change`, `tap-to-tree-delta` and `settle`, spans only the daemon observes.
+`cli::CliAdapter` drives `mobile-agent`, the tool under test, as an agent drives it: one process per command in `--json` mode, each reply in agent-browser's envelope (`{success, data, error, code?, warning?}`, `docs/research/protocol.md`), and a reply with `success: false` a failed attempt carrying its code and the first line of its message. Every command names the bench's session and the target, then the command, its flags, `--` and its operands, so an operand that starts with a hyphen stays an operand:
+
+```sh
+mobile-agent --json --session mobile-agent-bench --device emulator-5554 click --timeout 10000 -- id=row-1
+```
+
+`cli::CliConfig` names the executable (a path, or a name looked up on `PATH`), changes to the environment of every command (the tests point it at a private socket directory with the daemon's fake targets), a working directory, a work directory for screenshots and a deadline per command, 120 s by default. Detection runs `mobile-agent --version`; an executable that is not there is skipped with a note.
+
+Each primitive, in its `plan::scenario`:
+
+| Primitive | Before the span | Span | Clock | Nodes |
+|---|---|---|---|---|
+| `cli-start` | | one `mobile-agent --version` process, its output discarded, as hyperfine times a command | wall | |
+| `cold-attach` | `shutdown`, repeated until it finds no daemon | `open <app>`, which starts a daemon, attaches the target and brings the app up; the sample notes how long the open's settle took | wall | |
+| `first-snapshot` | `open --relaunch --env FIXTURE_INITIAL_TAB=big <app>` | `snapshot -i`, repeated until one lists `cell-500`, from the first one's start | wall | refs |
+| `warm-snapshot` | once per series: the app relaunched on `big`, `cell-500` visible, a settle, one snapshot | one `snapshot -i`, which must list `cell-500` | wall | refs |
+| `tap-dispatch` | once per series: the app relaunched on `list`, `row-1` visible, a settle | a `click` on `row-1`, which opens its detail: the reply's `dispatchMs`; then a `click` on `detail-back` and a settle bring the quiet list back | tool | |
+| `tap-to-frame-change` | as for `tap-dispatch` | the same click's `frameChangeMs` | tool | |
+| `tap-to-tree-delta` | as for `tap-dispatch` | the same click's `treeDeltaMs` | tool | |
+| `text-entry` | once per series: the app relaunched on `login`, a settle | `fill` of `TEXT_ENTRY` into the empty `login-username`, noting the fill's method; then a wait until the string shows, a check that the field holds exactly it, the field emptied and a settle | wall | |
+| `screenshot` | once per series: the app relaunched on `big` | one `screenshot` into the work directory, noting its size | wall | |
+| `settle` | a `click` on `row-1` | `wait --settle`: its reply's `elapsedMs`, noting `endedBy`; then the list brought back | tool | |
+
+Spans read from replies are milliseconds to the microsecond, on the daemon's clock (`crates/cli/README.md`, "Timing spans"). A click that watched the tap (its reply has `watchedMs`) without a `frameChangeMs` or `treeDeltaMs` is a failed attempt: the tap changed nothing that way. A span the target cannot produce is not measured, with the reason: tap to frame change on an `android-device` target, which has no frame stream (design D7), and both tap spans from a `mobile-agent` whose click does not watch the tap (before task 8.9).
+
+A flow runs its steps as commands, timed by wall clock from the first command's start to the last one's end:
+
+| Step | Commands |
+|---|---|
+| `launch` | `open --relaunch <app>` |
+| `tap` | `click --timeout 10000 <selector>` |
+| `fill` | `fill --timeout 10000 <selector> <text>` |
+| `scroll-to` | until the element is visible: `wait --settle`, then `wait --timeout 0 <selector>`, a check that does not wait, and on `wait_timeout` `scroll <direction> 600`; at most 50 scrolls, whose number the sample notes |
+| `assert-visible` | `wait --timeout 10000 <selector>` |
+| `assert-text` | `wait --timeout 10000 --text=<text>`, then `get text id=<id>`, which must be exactly the text |
+
+A selector is `id=<identifier>` or `text=<text>`; the CLI matches a text as part of an element's name or value, so a text selector is exact only while no other element's text contains it. The settle before each scroll check keeps a check from racing a list still moving from the last scroll, and a step of 600 points, less than a phone screen's content, keeps an element from passing through the view between two checks. A flow that records its node count takes one `snapshot -i` after its timing and counts the refs.
 
 ## Flow description
 
@@ -190,14 +226,15 @@ Its targets and series make up the run; the baselines run its flow series for re
 
 | Spec requirement, scenario | Tests |
 |---|---|
-| Measured primitives, "Primitive report" | `measurement::every_listed_primitive_appears_with_its_percentiles_and_sample_count`; `primitive::tests::every_listed_primitive_is_in_all_and_only_tap_dispatch_is_added`; the `stats::tests` |
+| Measured primitives, "Primitive report" | `measurement::every_listed_primitive_appears_with_its_percentiles_and_sample_count`; `cli_adapter::every_listed_primitive_appears_through_the_cli_adapter_on_a_fake_emulator` for `mobile-agent` itself; `primitive::tests::every_listed_primitive_is_in_all_and_only_tap_dispatch_is_added`; the `stats::tests` |
+| Measured primitives: through `mobile-agent`'s CLI | `cli_adapter::a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured`; `cli_adapter::click_replies_that_carry_frame_and_tree_spans_fill_them_in`; `cli_adapter::a_cli_whose_click_does_not_watch_the_tap_leaves_both_spans_not_measured`; `cli_adapter::a_tap_whose_effects_never_came_fails_its_spans`; `cli_adapter::a_failed_command_is_an_error_naming_the_command_its_code_and_its_message`; `cli_adapter::cold_attach_stops_the_daemon_then_times_the_open_that_starts_another`; `cli_adapter::a_first_snapshot_follows_a_relaunch_on_the_big_screen_and_counts_its_refs`; `cli_adapter::text_entry_fills_the_fixed_string_into_the_username_field`; `cli_adapter::a_text_entry_that_did_not_land_fails`; `cli_adapter::an_absent_mobile_agent_is_skipped_with_a_note`; `cli_adapter::the_cli_adapter_measures_each_primitive_in_the_scenarios_it_knows`; the `cli::tests`, `cli::listing::tests` and `plan::tests`; `process::tests::a_timed_run_gives_the_exit_status_and_covers_the_run` |
 | Latency gates, "Gate missed" | `gates::a_missed_gate_fails_the_run_and_the_table_names_the_gate_limit_and_value`; `gates::a_run_that_misses_a_gate_exits_non_zero_and_prints_the_table` |
 | Latency gates, "All gates met" | `gates::when_every_gate_is_met_the_run_exits_zero_and_the_table_shows_each_passed`; `gates::a_run_that_meets_every_gate_exits_zero_through_the_binary` |
-| Latency gates: the defaults, configurable per target class | `gates::the_defaults_are_the_spec_gates`; `gates::gates_are_configurable_per_target_class`; `gates::the_gates_command_judges_an_existing_report`; `gates::only_the_tool_under_test_is_gated`; `gates::a_gate_without_a_measurement_is_reported_but_does_not_fail`; `gates::a_primitive_that_never_succeeded_fails_its_gate`; `gates::a_value_equal_to_the_limit_misses_the_gate`; the `gates::tests` |
+| Latency gates: the defaults, configurable per target class | `gates::the_defaults_are_the_spec_gates`; `gates::gates_are_configurable_per_target_class`; `gates::the_gates_command_judges_an_existing_report`; `gates::only_the_tool_under_test_is_gated`; `gates::a_gate_without_a_measurement_is_reported_but_does_not_fail`; `cli_adapter::a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured` for a span the tool cannot measure; `gates::a_primitive_that_never_succeeded_fails_its_gate`; `gates::a_value_equal_to_the_limit_misses_the_gate`; the `gates::tests` |
 | Baseline tools, "One baseline missing" | `baselines::an_absent_tool_is_noted_as_skipped_and_the_tools_that_ran_are_still_compared`; `baselines::every_baseline_is_skipped_when_none_is_installed`; `baselines::a_run_through_the_binary_includes_the_installed_baselines`; `baselines::the_baselines_command_lists_each_tool_and_notes_absent_ones` |
 | Baseline tools: the same flows through each tool's CLI | the `baseline::maestro::tests` and `baseline::agent_device::tests`; `baselines::a_flow_the_tool_fails_is_a_failed_iteration_with_its_output`; `baselines::agent_device_failures_are_read_from_its_json_reply`; `baselines::a_series_the_run_cannot_carry_out_is_refused_before_anything_runs`; the `baseline::tests` |
 | Reference fixtures, "Large screen fixture" | `measurement::the_large_screen_records_the_node_count_the_tool_returned` for the tool under test; the baselines' counts and the flows' golden end states are task 9.4 |
-| Reference fixtures: flows described once | `flow::tests::a_flow_reads_from_its_documented_json_shape`; `flows::the_login_flow_signs_in_and_ends_on_the_welcome_text`; `flows::the_list_scroll_flow_scrolls_to_row_200_and_opens_its_detail`; `flows::the_500_node_flow_opens_the_big_tab_and_records_its_node_count`; `flows::the_reference_flows_come_in_report_order_and_differ_only_in_their_fixture`; `flows::a_flow_and_its_golden_read_and_write_their_documented_json`; `flows::maestro_runs_each_reference_flow_as_one_flow_file`; `flows::agent_device_runs_each_reference_flow_as_one_batch`; `flows::a_run_measures_the_same_flow_on_several_fixtures`; `flows::a_run_refuses_two_flows_with_one_name_on_one_fixture`; `flows::a_flow_series_must_name_a_fixture_the_flow_has` |
+| Reference fixtures: flows described once | `cli_adapter::the_reference_flows_run_through_the_cli_adapter_on_a_fake_emulator`; `cli_adapter::the_reference_flows_run_through_the_cli_adapter_on_a_fake_simulator`; `flow::tests::a_flow_reads_from_its_documented_json_shape`; `flows::the_login_flow_signs_in_and_ends_on_the_welcome_text`; `flows::the_list_scroll_flow_scrolls_to_row_200_and_opens_its_detail`; `flows::the_500_node_flow_opens_the_big_tab_and_records_its_node_count`; `flows::the_reference_flows_come_in_report_order_and_differ_only_in_their_fixture`; `flows::a_flow_and_its_golden_read_and_write_their_documented_json`; `flows::maestro_runs_each_reference_flow_as_one_flow_file`; `flows::agent_device_runs_each_reference_flow_as_one_batch`; `flows::a_run_measures_the_same_flow_on_several_fixtures`; `flows::a_run_refuses_two_flows_with_one_name_on_one_fixture`; `flows::a_flow_series_must_name_a_fixture_the_flow_has` |
 | Reproducible runs, "Report provenance" | `measurement::provenance_is_recorded_in_both_outputs`; `measurement::provenance_tells_whether_two_environments_matched`; `measurement::warm_up_iterations_are_excluded_from_statistics`; the `provenance::tests` |
 | Reliability metrics, "Intermittent failure" | `reliability::two_failed_iterations_of_fifty_taps_are_a_four_percent_failure_rate`; `reliability::a_failure_that_passes_on_retry_is_a_flake_not_a_failure`; `reliability::an_iteration_that_fails_every_retry_is_a_failure`; `reliability::warm_up_failures_are_not_counted`; `reliability::a_series_that_could_not_be_prepared_failed_every_iteration`; `reliability::the_rates_reach_both_outputs_through_the_binary` |
 | Output formats, "Two outputs" | `measurement::the_json_report_and_the_markdown_summary_agree_on_every_number`; `measurement::the_comparison_table_spans_tools_and_targets`; `measurement::the_report_round_trips_through_json` |
