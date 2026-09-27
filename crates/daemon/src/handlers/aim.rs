@@ -21,6 +21,9 @@ use crate::worker::Attached;
 pub(crate) enum Aim {
     Ref(Ref),
     Select(Selector),
+    /// `text==<text>`: an element whose name or value is exactly the text.
+    #[allow(dead_code)]
+    Exact(String),
 }
 
 const ROLES: [Role; 28] = [
@@ -148,6 +151,7 @@ pub(crate) fn element(
             Ok(target.mirror.resolve(*reference)?)
         }
         Aim::Select(selector) => find(target, selector, timeout),
+        Aim::Exact(_) => todo!("task 8.10"),
     }
 }
 
@@ -173,6 +177,7 @@ pub(crate) fn action_target(
                 None => (Target::Point(element.bounds.center()), None),
             })
         }
+        Aim::Exact(_) => todo!("task 8.10"),
     }
 }
 
@@ -208,12 +213,34 @@ pub(crate) fn text_ref(
                     )
                 })
         }
+        Aim::Exact(_) => todo!("task 8.10"),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_double_equals_is_an_exact_text_selector() {
+        assert_eq!(
+            Aim::parse("text==Row 1").unwrap(),
+            Aim::Exact("Row 1".into())
+        );
+        assert_eq!(
+            Aim::parse(" text==Sign in ").unwrap(),
+            Aim::Exact("Sign in".into())
+        );
+        assert_eq!(
+            Aim::parse("text==a=b").unwrap(),
+            Aim::Exact("a=b".into()),
+            "only the first == separates"
+        );
+        assert_eq!(
+            Aim::parse("text=Row 1").unwrap(),
+            Aim::Select(Selector::text("Row 1"))
+        );
+    }
 
     #[test]
     fn arguments_are_refs_identifiers_texts_or_roles() {
@@ -243,7 +270,7 @@ mod tests {
                 ..Selector::default()
             })
         );
-        for bad in ["@x1", "ref=", "#", "role=nothing", "  "] {
+        for bad in ["@x1", "ref=", "#", "role=nothing", "  ", "text=="] {
             assert_eq!(
                 Aim::parse(bad).unwrap_err().code,
                 code::INVALID_ARGUMENT,

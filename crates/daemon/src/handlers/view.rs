@@ -203,6 +203,7 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
                     Selector::reference(reference)
                 }
                 Aim::Select(selector) => selector,
+                Aim::Exact(_) => todo!("task 8.10"),
             };
             (selector, "selector", given.to_owned())
         }

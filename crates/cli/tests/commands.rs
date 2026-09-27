@@ -335,6 +335,184 @@ fn selectors_address_elements_by_identifier_and_text() {
     assert_eq!(missing["code"], "element_not_found", "{missing}");
 }
 
+/// An exact-text selector (`text==`) matches an element whose whole name
+/// or value is the text, where `text=` matches any that contains it.
+#[test]
+fn an_exact_text_selector_matches_the_whole_name_or_value_only() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["click", "#tab-list"]).ok();
+    // Rows 11 to 26 on screen: "Row 1" is part of several names, the name
+    // of none.
+    env.cli(&["scroll", "down", "480"]).ok();
+    let contains = env
+        .cli(&["--json", "wait", "text=Row 1", "--timeout", "300"])
+        .ok()
+        .json();
+    assert_eq!(contains["data"]["element"]["id"], "row-11", "{contains}");
+    let exact = env
+        .cli(&["--json", "wait", "text==Row 1", "--timeout", "300"])
+        .failed()
+        .json();
+    assert_eq!(exact["code"], "wait_timeout", "{exact}");
+    let row = env.cli(&["--json", "wait", "text==Row 12"]).ok().json();
+    assert_eq!(row["data"]["element"]["id"], "row-12", "{row}");
+    assert!(
+        row["data"]["element"]["ref"].as_str().is_some(),
+        "the element carries its ref: {row}"
+    );
+    let gone = env
+        .cli(&["--json", "click", "text==Row", "--timeout", "300"])
+        .failed()
+        .json();
+    assert_eq!(gone["code"], "element_not_found", "{gone}");
+
+    env.cli(&["click", "text==Row 12"]).ok();
+    assert_eq!(
+        env.cli(&["get", "text", "#detail-back"]).ok().stdout,
+        "Back\n"
+    );
+    env.cli(&["wait", "text==Detail 12"]).ok();
+    env.cli(&["click", "text==Back"]).ok();
+    env.cli(&["wait", "#row-12"]).ok();
+
+    env.cli(&["click", "#tab-login"]).ok();
+    env.cli(&["fill", "#login-username", "agent"]).ok();
+    let value = env
+        .cli(&["--json", "get", "box", "text==agent"])
+        .ok()
+        .json();
+    assert!(
+        value["data"]["width"].as_f64().is_some(),
+        "a value matches: {value}"
+    );
+    env.cli(&["wait", "text==ag", "--state", "hidden", "--timeout", "300"])
+        .ok();
+}
+
+/// `scroll --until` scrolls until the element is on screen, and gives up
+/// once the content stops moving.
+#[test]
+fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["click", "#tab-list"]).ok();
+    let reply = env
+        .cli(&["--json", "scroll", "down", "600", "--until", "#row-150"])
+        .ok()
+        .json();
+    let data = &reply["data"];
+    assert_eq!(data["until"], "#row-150", "{reply}");
+    assert_eq!(data["element"]["id"], "row-150", "{reply}");
+    assert!(
+        data["strokes"].as_u64().is_some_and(|n| n > 1),
+        "several strokes: {reply}"
+    );
+    env.cli(&["wait", "#row-150", "--timeout", "0"]).ok();
+    let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+    assert!(listing.contains("id=row-150,"), "{listing}");
+
+    // Already on screen: no stroke.
+    let still = env
+        .cli(&["--json", "scroll", "down", "--until", "#row-150"])
+        .ok()
+        .json();
+    assert_eq!(still["data"]["strokes"], 0, "{still}");
+
+    let started = std::time::Instant::now();
+    let end = env
+        .cli(&[
+            "--json",
+            "scroll",
+            "down",
+            "600",
+            "--until",
+            "#row-999",
+            "--timeout",
+            "20000",
+        ])
+        .failed()
+        .json();
+    assert_eq!(end["code"], "element_not_found", "{end}");
+    let message = end["error"].as_str().unwrap_or_default();
+    assert!(message.contains("stopped moving"), "{message}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(15),
+        "it gives up at the end of the list, not at the timeout"
+    );
+    let human = env.cli(&["scroll", "up", "--until", "#row-3"]).ok();
+    assert!(human.stdout.starts_with("✓ "), "{}", human.stdout);
+}
+
+/// `open --relaunch` reports the screen settled only once the relaunched
+/// app has shown its first tree, so a snapshot right after it sees the app.
+#[test]
+fn open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen() {
+    for fake in ["android", "ios"] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_LATENCY_MS", "400")]);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["wait", "#login-submit"]).ok();
+        let reply = env
+            .cli(&[
+                "--json",
+                "open",
+                "--relaunch",
+                "--env",
+                "FIXTURE_INITIAL_TAB=list",
+                APP,
+            ])
+            .ok()
+            .json();
+        let data = &reply["data"];
+        assert_eq!(data["settled"], true, "{fake}: {reply}");
+        assert!(
+            data["elapsedMs"].as_f64().is_some_and(|ms| ms >= 400.0),
+            "{fake}: the relaunched app shows its screen 400 ms late: {reply}"
+        );
+        assert!(
+            data["firstTreeMs"].as_f64().is_some_and(|ms| ms >= 400.0),
+            "{fake}: {reply}"
+        );
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        assert!(
+            listing.contains("id=row-1,") && !listing.contains("id=login-submit"),
+            "{fake}: the snapshot right after the open shows the relaunched app:\n{listing}"
+        );
+    }
+}
+
+/// `status` names, for each attached target, whether it has a frame source:
+/// emulators and Simulators do, Android devices do not (design D7).
+#[test]
+fn status_names_whether_each_attached_target_has_a_frame_source() {
+    let env = TestEnv::start("android,android:R58M123,ios,ios");
+    for device in ["emulator-5554", "R58M123", "FAKE-IOS-1"] {
+        env.cli(&["--device", device, "snapshot"]).ok();
+    }
+    let reply = env.cli(&["--json", "status"]).ok().json();
+    let frames = |id: &str| {
+        reply["data"]["targets"]
+            .as_array()
+            .and_then(|targets| targets.iter().find(|t| t["id"] == id))
+            .map(|t| t["frameSource"].clone())
+            .unwrap_or_else(|| panic!("no {id} in {reply}"))
+    };
+    assert_eq!(frames("emulator-5554"), true, "{reply}");
+    assert_eq!(frames("R58M123"), false, "{reply}");
+    assert_eq!(frames("FAKE-IOS-1"), true, "{reply}");
+    assert_eq!(frames("FAKE-IOS-2"), Value::Null, "not attached: {reply}");
+    let human = env.cli(&["status"]).ok().stdout;
+    let row = |id: &str| {
+        human
+            .lines()
+            .find(|line| line.trim_start().starts_with(id))
+            .unwrap_or_else(|| panic!("no {id} in {human}"))
+            .to_owned()
+    };
+    assert!(row("emulator-5554").contains("attached, frames"), "{human}");
+    assert!(row("R58M123").contains("attached, no frames"), "{human}");
+}
+
 #[test]
 fn shutdown_stops_the_daemon() {
     let env = TestEnv::start("android");

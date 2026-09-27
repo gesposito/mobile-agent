@@ -153,3 +153,35 @@ fn an_ios_target_lists_the_same_launcher() {
         "- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]\n"
     );
 }
+
+/// A snapshot's data says how long the daemon took to answer it and
+/// whether the replica served it without reading the device.
+#[test]
+fn a_snapshot_says_how_long_the_daemon_took_and_whether_the_replica_served_it() {
+    let env = TestEnv::start("android");
+    let first = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    let data = &first["data"];
+    assert_eq!(
+        data["servedFromReplica"], false,
+        "the first snapshot reads the device: {first}"
+    );
+    assert!(
+        data["readMs"].as_f64().is_some_and(|ms| ms >= 0.0),
+        "{first}"
+    );
+    let warm = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    assert_eq!(warm["data"]["servedFromReplica"], true, "{warm}");
+    assert!(
+        warm["data"]["readMs"]
+            .as_f64()
+            .is_some_and(|ms| (0.0..50.0).contains(&ms)),
+        "{warm}"
+    );
+    let delta = env.cli(&["--json", "snapshot", "--delta"]).ok().json();
+    assert_eq!(delta["data"]["servedFromReplica"], true, "{delta}");
+    assert!(delta["data"]["readMs"].as_f64().is_some(), "{delta}");
+
+    env.cli(&["open", APP]).ok();
+    let after = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    assert!(after["data"]["servedFromReplica"].is_boolean(), "{after}");
+}
