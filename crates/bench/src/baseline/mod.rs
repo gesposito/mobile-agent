@@ -7,12 +7,16 @@
 pub mod agent_device;
 pub mod maestro;
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use serde_json::Value;
+
 use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
+use crate::end_state::{EndState, Reading};
 use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::process::{self, Finished};
@@ -107,6 +111,40 @@ pub fn version_from(output: &str) -> Option<String> {
     Some(version.unwrap_or(line).to_owned())
 }
 
+/// The JSON object a tool printed: all of `stdout`, or else the first object
+/// that starts a line, read to its end with whatever follows ignored, so
+/// progress lines before a reply and pretty-printed replies both read.
+pub(crate) fn json_document(stdout: &str) -> Option<Value> {
+    if let Some(value) = serde_json::from_str::<Value>(stdout.trim())
+        .ok()
+        .filter(Value::is_object)
+    {
+        return Some(value);
+    }
+    let mut offset = 0;
+    for line in stdout.split_inclusive('\n') {
+        if line.trim_start().starts_with('{')
+            && let Some(Ok(value)) = serde_json::Deserializer::from_str(&stdout[offset..])
+                .into_iter::<Value>()
+                .next()
+            && value.is_object()
+        {
+            return Some(value);
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// The last line `output` holds, for errors about output that was not what
+/// the tool should have printed.
+pub(crate) fn last_line(output: &str) -> Option<&str> {
+    output.lines().map(str::trim).rfind(|line| !line.is_empty())
+}
+
+/// A reader of what a tool prints for its screen.
+type ReadScreen = fn(&str) -> Result<Reading, String>;
+
 /// One adapter per baseline tool, in report order.
 pub fn baselines(config: &BaselineConfig) -> Vec<Box<dyn Adapter>> {
     BaselineTool::ALL
@@ -178,6 +216,25 @@ impl Adapter for Baseline {
     }
 
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
+        self.run_tool(target, flow)
+    }
+
+    /// Reads the screen through the tool and summarizes it in the terms of
+    /// the flow's golden.
+    fn end_state(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        Ok(flow.golden.observe(&self.read_screen(target)?.elements))
+    }
+
+    /// One run of the flow through the tool, then one read of the screen.
+    fn check_flow(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        self.run_tool(target, flow)?;
+        self.end_state(target, flow)
+    }
+}
+
+impl Baseline {
+    /// Runs `flow` through the tool's process, which the sample times.
+    fn run_tool(&self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
         let name = self.tool.name();
         let path = self
             .path
@@ -231,6 +288,40 @@ impl Adapter for Baseline {
             clock: Clock::Wall,
             nodes: None,
             detail,
+        })
+    }
+
+    /// Reads the screen through the tool: `maestro hierarchy`,
+    /// `maestro-runner hierarchy` or `agent-device snapshot --json`, in the
+    /// session the flows run in.
+    fn read_screen(&self, target: &Target) -> Result<Reading, AdapterError> {
+        let name = self.tool.name();
+        let path = self
+            .path
+            .clone()
+            .ok_or_else(|| AdapterError::new(format!("{name} was not detected")))?;
+        let (args, read): (Vec<OsString>, ReadScreen) = match self.tool {
+            BaselineTool::Maestro => (
+                maestro::maestro_hierarchy_args(target),
+                maestro::read_hierarchy,
+            ),
+            BaselineTool::MaestroRunner => (
+                maestro::runner_hierarchy_args(target),
+                maestro::read_runner_hierarchy,
+            ),
+            BaselineTool::AgentDevice => (
+                agent_device::snapshot_args(target, SESSION),
+                agent_device::read_snapshot,
+            ),
+        };
+        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
+            .map_err(AdapterError::new)?;
+        read(&finished.stdout).map_err(|e| {
+            AdapterError::new(if finished.status.success() {
+                format!("{name} read no screen: {e}")
+            } else {
+                format!("{name} read no screen: {e}; {}", exit_failure(&finished))
+            })
         })
     }
 }

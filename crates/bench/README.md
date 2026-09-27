@@ -67,6 +67,7 @@ Each measurement:
 | `nodes` | `min` and `max` node count returned, or null |
 | `error` | why the series could not run at all, or null |
 | `not_measured` | why the tool could not measure the subject, or null; such a series has no samples |
+| `end_state` | for a flow with a golden, the end state the tool's check read (the golden, when the flow was timed), or null |
 | `samples[]` | per iteration: `iteration`, `warmup`, `outcome` (`pass`, `flake`, `fail`), `attempts`, `us`, `nodes`, `detail`, `errors` |
 
 Provenance covers what the spec asks for: host hardware and OS from `sysctl` and `sw_vers` on macOS (`/proc` and `uname` on Linux), Xcode from `xcodebuild -version`, the commit from `git`, tool versions from each adapter's detection, and each target's model, OS and API level. An adapter may fill the target fields; the harness fills the rest from `adb -s <serial> shell getprop` or `xcrun simctl list devices --json`. `Provenance::environment_differences` lists the fields in which two runs' environments differ, ignoring times and load.
@@ -114,10 +115,18 @@ pub trait Adapter {
         -> Result<Sample, AdapterError>;       // default: unsupported
     fn run_flow(&mut self, target: &Target, flow: &Flow)
         -> Result<Sample, AdapterError>;       // default: unsupported
+    fn end_state(&mut self, target: &Target, flow: &Flow)
+        -> Result<EndState, AdapterError>;     // default: unsupported
+    fn check_flow(&mut self, target: &Target, flow: &Flow)
+        -> Result<EndState, AdapterError> {    // default: run_flow, then end_state
+        self.run_flow(target, flow)?;
+        self.end_state(target, flow)
+    }
 }
 ```
 
 - The harness never times a call. `measure` returns a `Sample` holding the latency of exactly the primitive's span, the clock it read (`Wall` or `Tool`), the node count for snapshots and an optional detail such as a text entry method. Work outside the span, such as stopping the daemon before a cold attach or relaunching the app before a first snapshot, happens inside the call but outside the span.
+- `end_state` reads the screen a flow left through the tool and summarizes it in the terms of the flow's golden; `check_flow` is one untimed run of the flow and that reading, which the harness compares with the golden before it times the flow (see "Golden end states").
 - `detect` runs once per run, before any series; an `Absent` tool is skipped with its note. `supports` makes the harness skip combinations a tool cannot measure instead of recording failures. `prepare` runs once per series, before its warm-up; `Scenario` names the fixture and screen.
 - An `AdapterError` is a failed attempt; the harness retries it within the iteration. `AdapterError::not_measured(reason)` is no failure: the tool cannot measure the subject at all, and the series is reported as not measured.
 
@@ -188,6 +197,22 @@ The spec's three flows, `flow::reference(fixture)` in report order, are the same
 
 A run may hold the same flow for several fixtures. A flow series names the flow and a fixture the run has it for, and no screen; two flows with one name on one fixture are refused before anything runs.
 
+## Golden end states
+
+Timing starts only once the tools agree on what a flow does. Before any series is timed, every flow with a golden runs once, untimed, through each tool that will time it (`Adapter::check_flow`), and the tool reads the screen the flow left (`Adapter::end_state`). The reading is summarized in the golden's terms (`EndState::observe`): the text of the first element with each named identifier (value before name or label, as each tool reports it; the empty text when it shows none; null when no element has the identifier), whether an element has each identifier the golden requires, and how many distinct identifiers `<prefix>-<n>` the screen has. A tool whose summary differs from the golden, after `--retries` further tries, does not time the flow: its series has the error `the end state differs from the golden:` followed by each difference (such as `login-status shows "Invalid credentials", not "Welcome, agent"`), counts every measured iteration as failed, and is listed among the series that could not run. The summary read is kept as the measurement's `end_state`. A flow without a golden is timed unchecked.
+
+Each tool reads its screen its own way:
+
+| Tool | Reading | Identifier | Text |
+|---|---|---|---|
+| the fake | its flow series' scripted `end_state`, else the flow's golden; a check uses none of the scripted attempts | | |
+| `mobile-agent` | a full `snapshot`, its listing parsed line by line (`cli::listing`) | `id=` | the value after `: `, else the name, as `get text` reads it |
+| Maestro | `maestro --device <id> hierarchy`: a tree of nodes with `attributes` and `children` | `resource-id`, without the `<package>:id/` prefix of native Android views | `text`, else `accessibilityText`, where Maestro puts an iOS label |
+| maestro-runner | `maestro-runner --platform <ios\|android> --device <id> hierarchy`: its tree normalized across drivers, nodes with `id`, `text` and `children` | `id` | `text` |
+| agent-device | `agent-device snapshot --json --platform <p> --udid\|--serial <id> --session mobile-agent-bench`: `data.nodes`, a flat list linked by `parentIndex` | `identifier` | `value`, else `label`; a node marked `inheritsLabel` or `inheritsIdentifier`, whose value agent-device left out as equal to its nearest ancestor's, takes the ancestor's |
+
+A baseline's check is one run of the flow's file or batch and one read of the screen. The shapes come from the tools' sources: Maestro's `PrintHierarchyCommand`, `TreeNode` and its drivers' attribute mapping (github.com/mobile-dev-inc/maestro), maestro-runner's `hierarchy` command (`pkg/cli/hierarchy.go` in github.com/devicelab-dev/maestro-runner), and the installed agent-device 0.21.14's `CaptureSnapshotResult` type, its JSON printer and its snapshot serialization. agent-device prints its JSON pretty-printed, so replies are read as the first JSON object that starts a line, with any progress lines before it and anything after it ignored; the batch reply is read the same way.
+
 ## Baselines
 
 Each baseline adapter finds its executable on `PATH`, following symbolic links, and reads its version from `--version`; a tool that is not found is skipped with the note `<tool> not found on PATH`, and the tools that ran are still measured and compared. Baselines run flows only, timed by wall clock around the tool's process, since none of them exposes the primitives' spans; the flow file is written to `<out>/flows/` and rewritten before every run.
@@ -232,8 +257,9 @@ Its targets and series make up the run; the baselines run its flow series for re
 | Latency gates, "All gates met" | `gates::when_every_gate_is_met_the_run_exits_zero_and_the_table_shows_each_passed`; `gates::a_run_that_meets_every_gate_exits_zero_through_the_binary` |
 | Latency gates: the defaults, configurable per target class | `gates::the_defaults_are_the_spec_gates`; `gates::gates_are_configurable_per_target_class`; `gates::the_gates_command_judges_an_existing_report`; `gates::only_the_tool_under_test_is_gated`; `gates::a_gate_without_a_measurement_is_reported_but_does_not_fail`; `cli_adapter::a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured` for a span the tool cannot measure; `gates::a_primitive_that_never_succeeded_fails_its_gate`; `gates::a_value_equal_to_the_limit_misses_the_gate`; the `gates::tests` |
 | Baseline tools, "One baseline missing" | `baselines::an_absent_tool_is_noted_as_skipped_and_the_tools_that_ran_are_still_compared`; `baselines::every_baseline_is_skipped_when_none_is_installed`; `baselines::a_run_through_the_binary_includes_the_installed_baselines`; `baselines::the_baselines_command_lists_each_tool_and_notes_absent_ones` |
-| Baseline tools: the same flows through each tool's CLI | the `baseline::maestro::tests` and `baseline::agent_device::tests`; `baselines::a_flow_the_tool_fails_is_a_failed_iteration_with_its_output`; `baselines::agent_device_failures_are_read_from_its_json_reply`; `baselines::a_series_the_run_cannot_carry_out_is_refused_before_anything_runs`; the `baseline::tests` |
+| Baseline tools: the same flows through each tool's CLI | `golden::every_adapter_reports_the_golden_end_state_of_each_flow_on_android`; `golden::every_adapter_reports_the_golden_end_state_of_each_flow_on_ios`; the `baseline::maestro::tests` and `baseline::agent_device::tests`; `baselines::a_flow_the_tool_fails_is_a_failed_iteration_with_its_output`; `baselines::agent_device_failures_are_read_from_its_json_reply`; `baselines::a_series_the_run_cannot_carry_out_is_refused_before_anything_runs`; the `baseline::tests` |
 | Reference fixtures, "Large screen fixture" | `measurement::the_large_screen_records_the_node_count_the_tool_returned` for the tool under test; the baselines' counts and the flows' golden end states are task 9.4 |
+| Reference fixtures: golden end states, checked before timing | `golden::every_adapter_reports_the_golden_end_state_of_each_flow_on_android`; `golden::every_adapter_reports_the_golden_end_state_of_each_flow_on_ios`; `golden::a_run_times_each_flow_only_after_every_tool_read_its_golden`; `golden::a_tool_whose_end_state_differs_from_the_golden_is_not_timed`; `golden::the_tool_under_test_is_held_to_the_golden_too`; `golden::a_flow_without_a_golden_is_timed_unchecked`; the `end_state::tests` |
 | Reference fixtures: flows described once | `cli_adapter::the_reference_flows_run_through_the_cli_adapter_on_a_fake_emulator`; `cli_adapter::the_reference_flows_run_through_the_cli_adapter_on_a_fake_simulator`; `flow::tests::a_flow_reads_from_its_documented_json_shape`; `flows::the_login_flow_signs_in_and_ends_on_the_welcome_text`; `flows::the_list_scroll_flow_scrolls_to_row_200_and_opens_its_detail`; `flows::the_500_node_flow_opens_the_big_tab_and_records_its_node_count`; `flows::the_reference_flows_come_in_report_order_and_differ_only_in_their_fixture`; `flows::a_flow_and_its_golden_read_and_write_their_documented_json`; `flows::maestro_runs_each_reference_flow_as_one_flow_file`; `flows::agent_device_runs_each_reference_flow_as_one_batch`; `flows::a_run_measures_the_same_flow_on_several_fixtures`; `flows::a_run_refuses_two_flows_with_one_name_on_one_fixture`; `flows::a_flow_series_must_name_a_fixture_the_flow_has` |
 | Reproducible runs, "Report provenance" | `measurement::provenance_is_recorded_in_both_outputs`; `measurement::provenance_tells_whether_two_environments_matched`; `measurement::warm_up_iterations_are_excluded_from_statistics`; the `provenance::tests` |
 | Reliability metrics, "Intermittent failure" | `reliability::two_failed_iterations_of_fifty_taps_are_a_four_percent_failure_rate`; `reliability::a_failure_that_passes_on_retry_is_a_flake_not_a_failure`; `reliability::an_iteration_that_fails_every_retry_is_a_failure`; `reliability::warm_up_failures_are_not_counted`; `reliability::a_series_that_could_not_be_prepared_failed_every_iteration`; `reliability::the_rates_reach_both_outputs_through_the_binary` |

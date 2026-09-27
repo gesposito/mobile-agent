@@ -1,11 +1,13 @@
 //! Runs series of iterations through adapters and assembles the report.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, AdapterError, Detection, Sample, Scenario};
+use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
 use crate::primitive::Primitive;
@@ -156,13 +158,39 @@ impl Harness {
             .map(|tool| detect(tool.as_mut()))
             .collect();
 
+        // Every flow with a golden runs once through each tool that times it,
+        // and its end state is read, before anything is timed.
+        let mut checks: HashMap<(usize, usize), Check> = HashMap::new();
+        for (s, series) in self.series.iter().enumerate() {
+            let Subject::Flow(name) = &series.subject else {
+                continue;
+            };
+            let (Some(target), Some(flow)) = (
+                targets.iter().find(|t| t.id == series.target),
+                find_flow(&self.flows, name, series.fixture),
+            ) else {
+                continue;
+            };
+            if flow.golden.is_empty() {
+                continue;
+            }
+            for (t, (tool, found)) in self.tools.iter_mut().zip(&tools).enumerate() {
+                if found.status == ToolStatus::Available
+                    && tool.supports(target, &series.scenario(), &series.subject)
+                {
+                    let result = check(tool.as_mut(), target, flow, self.config.retries);
+                    checks.insert((s, t), result);
+                }
+            }
+        }
+
         let mut measurements = Vec::new();
-        for series in &self.series {
+        for (s, series) in self.series.iter().enumerate() {
             let Some(target) = targets.iter().find(|t| t.id == series.target) else {
                 continue;
             };
             let scenario = series.scenario();
-            for (tool, found) in self.tools.iter_mut().zip(&tools) {
+            for (t, (tool, found)) in self.tools.iter_mut().zip(&tools).enumerate() {
                 if found.status == ToolStatus::Available
                     && tool.supports(target, &scenario, &series.subject)
                 {
@@ -172,6 +200,7 @@ impl Harness {
                         series,
                         &self.flows,
                         self.config,
+                        checks.remove(&(s, t)),
                     ));
                 }
             }
@@ -260,27 +289,79 @@ fn detect(tool: &mut dyn Adapter) -> ToolReport {
     }
 }
 
+/// A flow's golden check through one tool: the end state it read last, and
+/// why it did not match the golden, when it did not.
+struct Check {
+    end_state: Option<EndState>,
+    error: Option<String>,
+}
+
+/// Runs `flow` untimed through `tool` and compares the end state with the
+/// flow's golden, up to `1 + retries` times until one matches.
+fn check(tool: &mut dyn Adapter, target: &Target, flow: &Flow, retries: u32) -> Check {
+    let mut errors = Vec::new();
+    let mut end_state = None;
+    for _ in 0..=retries {
+        match tool.check_flow(target, flow) {
+            Ok(state) if state == flow.golden => {
+                return Check {
+                    end_state: Some(state),
+                    error: None,
+                };
+            }
+            Ok(state) => {
+                errors.push(format!(
+                    "the end state differs from the golden: {}",
+                    flow.golden.differences(&state).join("; ")
+                ));
+                end_state = Some(state);
+            }
+            Err(e) => errors.push(format!("the check run failed: {e}")),
+        }
+    }
+    errors.dedup();
+    Check {
+        end_state,
+        error: Some(errors.join(" / ")),
+    }
+}
+
 /// Runs one series through one tool: the preparation, then the warm-up and
-/// measured iterations in order. A tool that reports it cannot measure the
-/// subject, while preparing or in any attempt, ends the series there: it is
-/// not measured, with no samples and no failures.
+/// measured iterations in order. A flow whose golden check failed is not run
+/// again, and every measured iteration counts as failed. A tool that reports
+/// it cannot measure the subject, while preparing or in any attempt, ends the
+/// series there: it is not measured, with no samples and no failures.
 fn measure(
     tool: &mut dyn Adapter,
     target: &Target,
     series: &Series,
     flows: &[Flow],
     config: RunConfig,
+    check: Option<Check>,
 ) -> Measurement {
     let scenario = series.scenario();
     let mut samples = Vec::new();
     let mut clock = None;
     let mut not_measured = None;
-    let error = match tool.prepare(target, &scenario, &series.subject) {
+    let (end_state, check_error) = check.map_or((None, None), |c| (c.end_state, c.error));
+    let prepared = match check_error {
+        Some(error) => Err(AdapterError::new(error)),
+        None => tool
+            .prepare(target, &scenario, &series.subject)
+            .map_err(|e| {
+                if e.not_measured {
+                    e
+                } else {
+                    AdapterError::new(format!("preparation failed: {e}"))
+                }
+            }),
+    };
+    let error = match prepared {
         Err(e) if e.not_measured => {
             not_measured = Some(e.message);
             None
         }
-        Err(e) => Some(format!("preparation failed: {e}")),
+        Err(e) => Some(e.message),
         Ok(()) => {
             'iterations: for iteration in 0..config.warmup + config.iterations {
                 let warmup = iteration < config.warmup;
@@ -343,7 +424,7 @@ fn measure(
         nodes,
         error,
         not_measured,
-        end_state: None,
+        end_state,
         samples,
     }
 }

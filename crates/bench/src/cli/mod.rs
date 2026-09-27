@@ -28,6 +28,7 @@ use serde_json::Value;
 
 use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
 use crate::baseline::{exit_failure, find_executable, is_executable, search_path, version_from};
+use crate::end_state::{Element, EndState};
 use crate::fixture::Screen;
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::harness::Subject;
@@ -625,6 +626,28 @@ impl Adapter for CliAdapter {
             Primitive::Screenshot => self.screenshot(target),
             Primitive::Settle => self.settle(target),
         }
+    }
+
+    /// Reads the screen with a full `snapshot` and summarizes its listing in
+    /// the terms of the flow's golden: each element line's identifier, and
+    /// its value, else its name, as `get text` reads it.
+    fn end_state(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        let reply = self.call(target, &["snapshot"])?;
+        let listing = reply.data["snapshot"]
+            .as_str()
+            .ok_or_else(|| AdapterError::new("the snapshot reply has no listing"))?;
+        let elements: Vec<Element> = listing::parse(listing)
+            .iter()
+            .map(|line| Element::new(line.id.as_deref(), Some(line.text())))
+            .collect();
+        Ok(flow.golden.observe(&elements))
+    }
+
+    /// One run of the flow's steps, without the node count, then its end
+    /// state.
+    fn check_flow(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        self.run_steps(target, flow)?;
+        self.end_state(target, flow)
     }
 
     /// Runs the flow's steps, timed by wall clock, then counts the refs of the

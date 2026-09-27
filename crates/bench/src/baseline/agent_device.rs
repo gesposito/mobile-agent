@@ -10,12 +10,14 @@
 //! becomes a `wait` on its selector, and a text becomes a `wait` for the text
 //! followed by an `is text` on the element.
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::end_state::Reading;
+use super::{json_document, last_line};
+use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::{Platform, Target};
 
@@ -93,10 +95,6 @@ pub fn selector(selector: &Selector) -> String {
 /// Arguments for `agent-device` running the steps in `file`.
 pub fn args(target: &Target, session: &str, file: &Path) -> Vec<OsString> {
     let platform = target.class.platform();
-    let device_flag = match platform {
-        Platform::Ios => "--udid",
-        Platform::Android => "--serial",
-    };
     vec![
         "batch".into(),
         "--steps-file".into(),
@@ -106,7 +104,7 @@ pub fn args(target: &Target, session: &str, file: &Path) -> Vec<OsString> {
         "--json".into(),
         "--platform".into(),
         platform.id().into(),
-        device_flag.into(),
+        device_flag(platform).into(),
         target.id.clone().into(),
         "--session".into(),
         session.into(),
@@ -116,26 +114,13 @@ pub fn args(target: &Target, session: &str, file: &Path) -> Vec<OsString> {
 /// Reads the batch's JSON reply. Success gives a note of the duration
 /// agent-device reported; failure gives the failing step and its error.
 pub fn outcome(stdout: &str) -> Result<Option<String>, String> {
-    let Some(reply) = reply(stdout) else {
-        let last = stdout.lines().map(str::trim).rfind(|l| !l.is_empty());
-        return Err(format!(
-            "agent-device printed no JSON reply{}",
-            last.map(|l| format!(": {l}")).unwrap_or_default()
-        ));
-    };
+    let reply = json_document(stdout).ok_or_else(|| no_reply(stdout))?;
     if reply["success"] == true {
         return Ok(reply["data"]["totalDurationMs"]
             .as_u64()
             .map(|ms| format!("agent-device reported {ms} ms")));
     }
-    let error = &reply["error"];
-    let message = error.as_str().map(str::to_owned).or_else(|| {
-        let message = error["message"].as_str()?;
-        Some(match error["code"].as_str() {
-            Some(code) => format!("{code}: {message}"),
-            None => message.to_owned(),
-        })
-    });
+    let message = error_message(&reply);
     let step = reply["data"]["results"]
         .as_array()
         .and_then(|results| results.iter().find(|r| r["ok"] == false))
@@ -156,26 +141,115 @@ pub fn outcome(stdout: &str) -> Result<Option<String>, String> {
     })
 }
 
-/// Arguments for `agent-device snapshot` of the session's screen, as JSON.
+/// Arguments for `agent-device snapshot` of the session's screen, as JSON:
+/// the whole tree, not only interactive elements.
 pub fn snapshot_args(target: &Target, session: &str) -> Vec<OsString> {
-    let _ = (target, session);
-    Vec::new()
+    let platform = target.class.platform();
+    vec![
+        "snapshot".into(),
+        "--json".into(),
+        "--platform".into(),
+        platform.id().into(),
+        device_flag(platform).into(),
+        target.id.clone().into(),
+        "--session".into(),
+        session.into(),
+    ]
 }
 
-/// Reads the reply `agent-device snapshot --json` prints.
+/// Reads the reply `agent-device snapshot --json` prints: `data.nodes`, a
+/// flat list whose nodes name their parent by `parentIndex`. An element's
+/// identifier is its `identifier`, and its text is the `value` a field holds,
+/// else its `label`. A node marked `inheritsLabel` or `inheritsIdentifier`
+/// had that value left out because it equals its nearest ancestor's, which
+/// it takes. Every node counts.
 pub fn read_snapshot(stdout: &str) -> Result<Reading, String> {
-    let _ = stdout;
-    Err("not written yet".to_owned())
+    let reply = json_document(stdout).ok_or_else(|| no_reply(stdout))?;
+    if reply["success"] != true {
+        return Err(error_message(&reply)
+            .unwrap_or_else(|| "agent-device reported a failure without an error".to_owned()));
+    }
+    let nodes = reply["data"]["nodes"]
+        .as_array()
+        .ok_or("agent-device's snapshot reply has no nodes")?;
+    let by_index: HashMap<u64, &Value> = nodes
+        .iter()
+        .filter_map(|node| Some((node["index"].as_u64()?, node)))
+        .collect();
+    let parent = |node: &Value| {
+        node["parentIndex"]
+            .as_u64()
+            .and_then(|i| by_index.get(&i).copied())
+    };
+    // The node's own value for `key`, or when `inherits` marks it, the nearest
+    // ancestor's; at most as many steps up as there are nodes.
+    let own_or_inherited = |node: &Value, key: &str, inherits: &str| -> Option<String> {
+        let value = |node: &Value| {
+            node[key]
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        if let Some(own) = value(node) {
+            return Some(own);
+        }
+        if node[inherits] != true {
+            return None;
+        }
+        let mut ancestor = parent(node);
+        for _ in 0..nodes.len() {
+            let current = ancestor?;
+            if let Some(found) = value(current) {
+                return Some(found);
+            }
+            ancestor = parent(current);
+        }
+        None
+    };
+    let elements: Vec<Element> = nodes
+        .iter()
+        .map(|node| {
+            let label = own_or_inherited(node, "label", "inheritsLabel");
+            let value = node["value"].as_str().filter(|v| !v.is_empty());
+            Element {
+                id: own_or_inherited(node, "identifier", "inheritsIdentifier"),
+                text: value.map(str::to_owned).or(label),
+            }
+        })
+        .collect();
+    Ok(Reading {
+        nodes: u32::try_from(elements.len()).unwrap_or(u32::MAX),
+        elements,
+    })
 }
 
-/// The JSON object on stdout: all of it, or else its last line that is one.
-fn reply(stdout: &str) -> Option<Value> {
-    let object = |text: &str| {
-        serde_json::from_str::<Value>(text.trim())
-            .ok()
-            .filter(Value::is_object)
-    };
-    object(stdout).or_else(|| stdout.lines().rev().find_map(object))
+/// `--udid` for a Simulator, `--serial` for an Android target.
+fn device_flag(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Ios => "--udid",
+        Platform::Android => "--serial",
+    }
+}
+
+/// The error a failed reply carries: a string, or `code: message`.
+fn error_message(reply: &Value) -> Option<String> {
+    let error = &reply["error"];
+    error.as_str().map(str::to_owned).or_else(|| {
+        let message = error["message"].as_str()?;
+        Some(match error["code"].as_str() {
+            Some(code) => format!("{code}: {message}"),
+            None => message.to_owned(),
+        })
+    })
+}
+
+fn no_reply(stdout: &str) -> String {
+    format!(
+        "agent-device printed no JSON reply{}",
+        last_line(stdout)
+            .map(|line| format!(": {line}"))
+            .unwrap_or_default()
+    )
 }
 
 #[cfg(test)]

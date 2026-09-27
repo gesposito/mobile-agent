@@ -12,7 +12,10 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::end_state::Reading;
+use serde_json::Value;
+
+use super::{json_document, last_line};
+use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::Target;
 
@@ -116,32 +119,86 @@ pub fn runner_args(target: &Target, file: &Path) -> Vec<OsString> {
 /// Arguments for `maestro hierarchy`, which prints the screen's view
 /// hierarchy.
 pub fn maestro_hierarchy_args(target: &Target) -> Vec<OsString> {
-    let _ = target;
-    Vec::new()
+    vec![
+        "--device".into(),
+        target.id.clone().into(),
+        "hierarchy".into(),
+    ]
 }
 
-/// Arguments for `maestro-runner hierarchy`.
+/// Arguments for `maestro-runner hierarchy`, which prints the hierarchy as a
+/// tree normalized across its drivers.
 pub fn runner_hierarchy_args(target: &Target) -> Vec<OsString> {
-    let _ = target;
-    Vec::new()
+    vec![
+        "--platform".into(),
+        target.class.platform().id().into(),
+        "--device".into(),
+        target.id.clone().into(),
+        "hierarchy".into(),
+    ]
 }
 
-/// Reads what `maestro hierarchy` prints.
+/// Reads what `maestro hierarchy` prints: a tree of nodes, each with its
+/// `attributes` and `children`. An element's identifier is its `resource-id`;
+/// its text is `text`, else `accessibilityText`, which is where Maestro puts
+/// the label on iOS when an element has no title or value. Every node counts.
 pub fn read_hierarchy(stdout: &str) -> Result<Reading, String> {
-    let _ = stdout;
-    Err("not written yet".to_owned())
+    let tree = json_document(stdout).ok_or_else(|| no_tree("maestro", stdout))?;
+    Ok(read_tree(&tree, |node| {
+        let attributes = &node["attributes"];
+        let text = ["text", "accessibilityText"]
+            .into_iter()
+            .filter_map(|key| attributes[key].as_str())
+            .find(|text| !text.is_empty());
+        (attributes["resource-id"].as_str(), text)
+    }))
 }
 
-/// Reads what `maestro-runner hierarchy` prints.
+/// Reads what `maestro-runner hierarchy` prints: a tree of nodes with `id`,
+/// `text` and `children`. Every node counts.
 pub fn read_runner_hierarchy(stdout: &str) -> Result<Reading, String> {
-    let _ = stdout;
-    Err("not written yet".to_owned())
+    let tree = json_document(stdout).ok_or_else(|| no_tree("maestro-runner", stdout))?;
+    Ok(read_tree(&tree, |node| {
+        (
+            node["id"].as_str(),
+            node["text"].as_str().filter(|text| !text.is_empty()),
+        )
+    }))
+}
+
+/// Every node of `tree` in document order, with the identifier and text
+/// `fields` gives it. An identifier loses the `<package>:id/` prefix Android
+/// gives a native view's resource id.
+fn read_tree<'a>(
+    tree: &'a Value,
+    fields: impl Fn(&'a Value) -> (Option<&'a str>, Option<&'a str>),
+) -> Reading {
+    let mut reading = Reading::default();
+    let mut stack = vec![tree];
+    while let Some(node) = stack.pop() {
+        let (id, text) = fields(node);
+        let id = id
+            .filter(|id| !id.is_empty())
+            .map(|id| id.split_once(":id/").map_or(id, |(_, name)| name));
+        reading.elements.push(Element::new(id, text));
+        if let Some(children) = node["children"].as_array() {
+            stack.extend(children.iter().rev());
+        }
+    }
+    reading.nodes = u32::try_from(reading.elements.len()).unwrap_or(u32::MAX);
+    reading
+}
+
+fn no_tree(tool: &str, stdout: &str) -> String {
+    match last_line(stdout) {
+        Some(line) => format!("{tool} printed no hierarchy: {line}"),
+        None => format!("{tool} printed no hierarchy"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::end_state::Element;
     use crate::fixture::Fixture;
     use crate::flow::{Direction, Selector, Step};
     use crate::target::TargetClass;

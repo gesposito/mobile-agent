@@ -4,7 +4,7 @@
 //! elements to count; a tool's reading of its final screen is summarized in
 //! the same terms, so every tool compares with the same golden.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -79,23 +79,140 @@ impl EndState {
     }
 
     /// `elements`, a tool's reading of a screen, summarized in this state's
-    /// terms.
+    /// terms: for each identifier in `texts`, the text of the first element
+    /// with it that shows one (the empty text when none does, `None` when no
+    /// element has it); for each in `present`, whether an element has it; for
+    /// each prefix in `counts`, how many distinct identifiers `<prefix>-<n>`
+    /// elements have.
     pub fn observe(&self, elements: &[Element]) -> EndState {
-        let _ = elements;
-        EndState::default()
+        EndState {
+            texts: self
+                .texts
+                .keys()
+                .map(|id| {
+                    let text = having(elements, id).next().map(|_| {
+                        having(elements, id)
+                            .find_map(|e| e.text.clone().filter(|t| !t.is_empty()))
+                            .unwrap_or_default()
+                    });
+                    (id.clone(), text)
+                })
+                .collect(),
+            present: self
+                .present
+                .keys()
+                .map(|id| (id.clone(), having(elements, id).next().is_some()))
+                .collect(),
+            counts: self
+                .counts
+                .keys()
+                .map(|prefix| {
+                    let ids: BTreeSet<&str> = elements
+                        .iter()
+                        .filter_map(|e| e.id.as_deref())
+                        .filter(|id| numbered(id, prefix))
+                        .collect();
+                    (prefix.clone(), u32::try_from(ids.len()).unwrap_or(u32::MAX))
+                })
+                .collect(),
+        }
     }
 
     /// How `observed` differs from this state, one phrase per difference;
     /// empty when they match.
     pub fn differences(&self, observed: &EndState) -> Vec<String> {
-        let _ = observed;
-        Vec::new()
+        let mut found = Vec::new();
+        for (id, want) in &self.texts {
+            match (observed.texts.get(id), want) {
+                (None, _) => found.push(format!("{id} was not read")),
+                (Some(got), _) if got == want => {}
+                (Some(Some(got)), Some(want)) => {
+                    found.push(format!("{id} shows {got:?}, not {want:?}"));
+                }
+                (Some(None), Some(want)) => {
+                    found.push(format!("no element is {id}, which should show {want:?}"));
+                }
+                (Some(Some(got)), None) => {
+                    found.push(format!(
+                        "{id} shows {got:?}, though no element should be {id}"
+                    ));
+                }
+                (Some(None), None) => {}
+            }
+        }
+        for (id, want) in &self.present {
+            match observed.present.get(id) {
+                None => found.push(format!("{id} was not read")),
+                Some(got) if got == want => {}
+                Some(true) => found.push(format!("{id} is present")),
+                Some(false) => found.push(format!("{id} is absent")),
+            }
+        }
+        for (prefix, want) in &self.counts {
+            match observed.counts.get(prefix) {
+                None => found.push(format!("{prefix}-N identifiers were not counted")),
+                Some(got) if got == want => {}
+                Some(got) => found.push(format!("{got} {prefix}-N identifiers, not {want}")),
+            }
+        }
+        let unnamed = observed
+            .texts
+            .keys()
+            .filter(|id| !self.texts.contains_key(*id))
+            .chain(
+                observed
+                    .present
+                    .keys()
+                    .filter(|id| !self.present.contains_key(*id)),
+            )
+            .chain(
+                observed
+                    .counts
+                    .keys()
+                    .filter(|prefix| !self.counts.contains_key(*prefix)),
+            );
+        for key in unnamed {
+            found.push(format!("{key} was read though the golden does not name it"));
+        }
+        found
     }
 }
 
+/// The elements with identifier `id`.
+fn having<'a>(elements: &'a [Element], id: &'a str) -> impl Iterator<Item = &'a Element> {
+    elements.iter().filter(move |e| e.id.as_deref() == Some(id))
+}
+
+/// Whether `id` is `<prefix>-<n>` for a number `n`.
+fn numbered(id: &str, prefix: &str) -> bool {
+    id.strip_prefix(prefix)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 impl fmt::Display for EndState {
+    /// The terms joined by `; `, such as `login-status shows "Welcome,
+    /// agent"`, `detail-200 present` and `500 cell-N`; `nothing` for none.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("")
+        let mut terms = Vec::new();
+        for (id, text) in &self.texts {
+            terms.push(match text {
+                Some(text) => format!("{id} shows {text:?}"),
+                None => format!("no {id}"),
+            });
+        }
+        for (id, present) in &self.present {
+            let state = if *present { "present" } else { "absent" };
+            terms.push(format!("{id} {state}"));
+        }
+        for (prefix, count) in &self.counts {
+            terms.push(format!("{count} {prefix}-N"));
+        }
+        if terms.is_empty() {
+            f.write_str("nothing")
+        } else {
+            f.write_str(&terms.join("; "))
+        }
     }
 }
 

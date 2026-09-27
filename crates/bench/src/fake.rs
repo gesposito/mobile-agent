@@ -190,15 +190,37 @@ impl Adapter for FakeAdapter {
     }
 
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
+        let index = self.flow_series(target, flow)?;
+        self.attempt(index)
+    }
+
+    /// The series' scripted end state, else the flow's golden.
+    fn end_state(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        let index = self.flow_series(target, flow)?;
+        Ok(self.script.series[index]
+            .end_state
+            .clone()
+            .unwrap_or_else(|| flow.golden.clone()))
+    }
+
+    /// The end state alone: a check consumes none of the scripted attempts,
+    /// so injected failures keep numbering the timed runs.
+    fn check_flow(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        self.end_state(target, flow)
+    }
+}
+
+impl FakeAdapter {
+    /// The index of the scripted series of `flow` on `target`.
+    fn flow_series(&self, target: &Target, flow: &Flow) -> Result<usize, AdapterError> {
         let scenario = Scenario {
             fixture: Some(flow.fixture),
             screen: None,
         };
         let subject = Subject::Flow(flow.name.clone());
-        let index = self.find(target, &scenario, &subject).ok_or_else(|| {
+        self.find(target, &scenario, &subject).ok_or_else(|| {
             AdapterError::new(format!("no scripted series for {subject} on {}", target.id))
-        })?;
-        self.attempt(index)
+        })
     }
 }
 
