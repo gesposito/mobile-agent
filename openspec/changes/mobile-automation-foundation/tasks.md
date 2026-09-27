@@ -88,6 +88,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [ ] 8.5 Add a failing test with two fake targets expecting the ambiguity error listing both, then implement target selection flags; verify red-then-green
 - [ ] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
 - [ ] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
+- [ ] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
 
 ## 9. Benchmark harness (`crates/bench`)
 
