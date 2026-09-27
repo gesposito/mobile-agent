@@ -236,6 +236,20 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   Only windows a snapshot has shown the host are re-read. With `--trace` each
   re-read prints `trace compose windows=<ids> nodes=<n> read_ms=<ms>
   round_trips=<n> changed=<window:path or ->`.
+- **Input.** `tap`, `swipe` and `key` go through the hidden
+  `InputManagerGlobal.injectInputEvent(event, WAIT_FOR_RESULT)` (design D2),
+  never the `UiAutomation` overloads, and each is answered with
+  `{accepted}`, true only when the platform accepted every event. A tap is
+  DOWN and UP with a finger at one point; with `duration_ms` it is a long
+  press held that long. A swipe is a multi-step gesture: DOWN at the start,
+  a MOVE every 8 ms along the line on the real clock, so the app sees the
+  velocity the duration implies, and UP at the end. A key is DOWN and UP
+  from the virtual keyboard with the given meta state. A gesture whose
+  deadline passes is cancelled with ACTION_CANCEL, never left down. Input
+  runs on its own thread, so a tap never waits behind a tree read. After an
+  action the idle wait counts from it, the next snapshot evicts the Compose
+  windows' cache before reading them (they report nothing the action
+  changed), and the Compose poll comes forward to 200 ms after the action.
 - **Resync.** `resync` answers the last sequence number sent on the stream,
   read and written under the lock events take; for the tree stream the node
   cache is emptied first, so the host's next snapshot is a full read.
@@ -338,6 +352,9 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | | Window changes, sequence numbers | `events::a_keyboard_appearing_is_reported_on_the_window_stream` (and the numbering check in every events test) |
 | | Compose windows re-read on a poll (design D5) | `events::a_compose_window_is_reread_on_a_poll_and_its_change_reported` |
 | device-protocol: Event channel with sequence numbers | Agent side of a resync | `events::a_tree_resync_answers_the_last_sequence_and_the_next_read_is_full` |
+| android-driver: Input injection | Tap acknowledged | `input::a_tap_is_acknowledged_as_accepted_within_50_ms`, `input::a_tap_the_platform_refuses_is_acknowledged_as_not_accepted` |
+| | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
+| | Compose windows read fresh after an injected action (design D5) | `input::a_tap_on_a_compose_tab_is_in_the_next_snapshot_without_a_poll` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |

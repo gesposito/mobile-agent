@@ -252,8 +252,11 @@ fn key_presses_are_acknowledged_and_typed_into_the_focused_field() {
     assert!(inject(&mut client, tap(x, y)).0);
     client.idle(Duration::from_millis(800));
     let mut acks = Vec::new();
-    // KEYCODE_H, I, SPACE, 1, 2
+    // KEYCODE_H, I, SPACE, 1, 2, typed at a person's pace: the dispatcher
+    // holds a key until the app has handled the previous one, so keys sent
+    // back to back would time React Native's re-render, not the injection.
     for code in [36u32, 37, 62, 8, 9] {
+        client.idle(Duration::from_millis(150));
         let (accepted, took) = inject(&mut client, Call::Key(KeyParams { code, meta: None }));
         assert!(accepted);
         acks.push(ms(took));
@@ -273,4 +276,20 @@ fn key_presses_are_acknowledged_and_typed_into_the_focused_field() {
     let (typed, _) = find(&after, "login-username").expect("login-username");
     fixture::force_stop(&dev, fixture::EXPO);
     assert_eq!(typed.node.text.as_deref(), Some("hi 12A"));
+}
+
+#[test]
+fn a_tap_the_platform_refuses_is_acknowledged_as_not_accepted() {
+    let Some(dev) = device("a_tap_the_platform_refuses_is_acknowledged_as_not_accepted") else {
+        return;
+    };
+    fixture::launch(&dev, fixture::COMPOSE, "login");
+    let agent = Agent::launch(&dev, Launch::default());
+    let mut client = agent.connect();
+    // Far outside the display no window takes the touch, and dispatch fails it.
+    let (accepted, took) = inject(&mut client, tap(99_999, 99_999));
+    assert!(!accepted, "a tap outside the display was accepted");
+    assert!(took < Duration::from_millis(50), "{took:?}");
+    let (accepted, _) = inject(&mut client, tap(540, 1500));
+    assert!(accepted);
 }

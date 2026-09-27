@@ -4,6 +4,10 @@ import android.net.LocalServerSocket
 import android.net.LocalSocket
 import dev.mobileagent.agent.codec.Capability
 import dev.mobileagent.agent.codec.EmptyReply
+import dev.mobileagent.agent.codec.InputAck
+import dev.mobileagent.agent.codec.KeyCall
+import dev.mobileagent.agent.codec.SwipeCall
+import dev.mobileagent.agent.codec.TapCall
 import dev.mobileagent.agent.codec.ErrorCode
 import dev.mobileagent.agent.codec.Lifecycle
 import dev.mobileagent.agent.codec.LifecycleKind
@@ -55,7 +59,10 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = Capability.TREE or Capability.EVENTS
+    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT
+    /** Input runs one action at a time, beside tree reads. */
+    private val inputWorker = Executors.newSingleThreadExecutor(daemonThreads("input"))
+    private val input = Input()
     /** Tree reads run one at a time, in arrival order. */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
     private lateinit var reader: TreeReader
@@ -132,6 +139,13 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         when (val call = work.call) {
             is SnapshotCall -> treeWorker.execute { snapshot(work, call) }
             is ResyncCall -> treeWorker.execute { resync(work, call) }
+            is TapCall -> inputWorker.execute {
+                act(work) { input.tap(call.x, call.y, call.durationMs?.let { unsigned(it) } ?: 0L) { work.cancelled } }
+            }
+            is SwipeCall -> inputWorker.execute {
+                act(work) { input.swipe(call.x1, call.y1, call.x2, call.y2, unsigned(call.durationMs)) { work.cancelled } }
+            }
+            is KeyCall -> inputWorker.execute { act(work) { input.key(call.code, call.meta ?: 0) } }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -201,6 +215,8 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         val bound = call.idleMs?.let { unsigned(it) } ?: EventHub.DEFAULT_IDLE_MS
         try {
             val idle = events.waitIdle(bound) { work.cancelled }
+            // After an injected action the Compose windows' cache is stale.
+            if (compose.takeDirty()) for (id in compose.composeWindowsOnScreen()) automation?.evictWindow(id)
             val seq = work.session.lastSeq(Stream.TREE)
             val result = reader.read(
                 minOf(maxDepth, Int.MAX_VALUE.toLong()).toInt(),
@@ -226,6 +242,32 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
+
+    /**
+     * Runs an injection and answers with the platform's verdict. Afterwards
+     * the idle wait counts from the action, the next read evicts the Compose
+     * windows' cache, and the Compose poll comes forward to one quiet window
+     * from now, since those windows will not report what the action changed.
+     */
+    private fun act(work: Work, action: () -> Boolean) {
+        if (work.cancelled) return
+        val t0 = android.os.SystemClock.uptimeMillis()
+        try {
+            val accepted = action()
+            events.noteAction()
+            compose.markDirty()
+            nextPoll = minOf(nextPoll, android.os.SystemClock.uptimeMillis() + EventHub.QUIET_MS)
+            work.session.respond(work, InputAck(accepted), null)
+            if (options.trace) {
+                Out.line("trace input method=${Errors.methodName(work.method)} accepted=$accepted inject_ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            }
+        } catch (e: Cancelled) {
+            events.noteAction()
+            compose.markDirty()
+        } catch (t: Throwable) {
+            work.session.respond(work, null, Errors.internal(work.method, t))
+        }
+    }
 
     /**
      * Resynchronizes a stream: for the tree stream the node cache is emptied

@@ -48,6 +48,15 @@ class EventHub(private val automation: Automation) {
     }
 
     /**
+     * An injected action is a change too: the idle wait counts from it, so a
+     * read right after a tap waits for the app, even one whose windows send
+     * no events.
+     */
+    fun noteAction() {
+        lastEvent = SystemClock.uptimeMillis()
+    }
+
+    /**
      * Waits until no event has arrived for [QUIET_MS], or until `boundMs`
      * passed, whichever comes first, and returns the ms waited. An endless
      * animation keeps sending events, so the wait then lasts the bound and

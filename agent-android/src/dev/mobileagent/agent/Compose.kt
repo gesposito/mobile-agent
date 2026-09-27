@@ -82,6 +82,20 @@ class ComposeTracker(
     /** Per Compose window, the content of the last read the host could have seen. */
     private val seen = HashMap<Int, HashMap<String, Long>>()
 
+    /** An injected action happened since the Compose windows were last read fresh. */
+    @Volatile private var dirty = false
+
+    fun markDirty() {
+        dirty = true
+    }
+
+    /** Whether an action happened since the last fresh read; clears the mark. */
+    fun takeDirty(): Boolean {
+        val was = dirty
+        dirty = false
+        return was
+    }
+
     /** Duration of the last re-read, which paces the poll. */
     @Volatile var lastRereadMs = 0L
         private set
@@ -126,6 +140,7 @@ class ComposeTracker(
         }
         if (targets.isEmpty()) return
         val t0 = SystemClock.uptimeMillis()
+        dirty = false
         for (id in targets) automation.evictWindow(id)
         val result = reader.read(Int.MAX_VALUE, TreeReader.DEFAULT_MAX_NODES, 0, targets.toSet()) { false }
         lastRereadMs = SystemClock.uptimeMillis() - t0
