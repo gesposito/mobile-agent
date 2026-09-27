@@ -29,6 +29,25 @@ fn the_daemon_exits_after_its_idle_timeout_and_removes_its_files() {
     }
 }
 
+/// Task 8.14: an idle daemon whose socket file was removed still exits,
+/// and removes its directory with its lock.
+#[test]
+fn a_daemon_whose_socket_file_was_removed_still_exits_when_idle() {
+    let dir = support::TempDir::new();
+    let run = dir.path().join("run");
+    let mut daemon = Daemon::builder()
+        .fake("android")
+        .socket_dir(&run)
+        .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "400")
+        .start();
+    std::fs::remove_file(daemon.socket()).expect("the socket file can be removed");
+    let status = daemon
+        .wait_exit(Duration::from_secs(5))
+        .expect("the daemon exits once idle, without its socket file");
+    assert!(status.success(), "{status}");
+    assert!(!run.exists(), "the daemon's directory is left behind");
+}
+
 #[test]
 fn requests_postpone_the_idle_exit() {
     let mut daemon = Daemon::builder()

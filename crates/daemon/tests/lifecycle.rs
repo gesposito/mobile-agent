@@ -3,6 +3,8 @@
 
 mod support;
 
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -121,6 +123,48 @@ fn shutdown_stops_the_daemon_and_removes_its_files() {
     for file in [SOCKET, PID, VERSION] {
         assert!(!daemon.dir.join(file).exists(), "{file} is left behind");
     }
+    // Task 8.14: nothing else was in the directory, so the lock file and
+    // the directory go too.
+    assert!(
+        !daemon.dir.exists(),
+        "the directory is left behind with {:?}",
+        std::fs::read_dir(&daemon.dir)
+            .map(|entries| entries.flatten().map(|e| e.file_name()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    );
+}
+
+/// Task 8.14: the accept loop does not need the socket's path to stop. A
+/// daemon whose socket file was removed, as a test's directory is when the
+/// test ends, used to block in accept forever once shut down, since it woke
+/// its accept loop by connecting to that path. It stops, and leaves no
+/// directory holding its lock behind.
+#[test]
+fn shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory() {
+    let dir = TempDir::new();
+    let run = dir.path().join("run");
+    let mut daemon = Daemon::builder().fake("android").socket_dir(&run).start();
+    let mut stream = UnixStream::connect(daemon.socket()).expect("the daemon serves");
+    std::fs::remove_file(daemon.socket()).expect("the socket file can be removed");
+    stream
+        .write_all(b"{\"action\":\"shutdown\"}\n")
+        .expect("the connection still carries requests");
+    let mut reply = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut reply)
+        .expect("a reply arrives");
+    assert!(reply.contains("\"stopped\":true"), "{reply}");
+    let status = daemon
+        .wait_exit(Duration::from_secs(5))
+        .expect("the daemon stops without its socket file");
+    assert!(status.success(), "{status}");
+    let left: Vec<_> = std::fs::read_dir(&run)
+        .map(|entries| entries.flatten().map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert!(
+        !run.exists(),
+        "the daemon's directory is left behind with {left:?}"
+    );
 }
 
 /// Starts the daemon without `--socket-dir`, with `env` set and
