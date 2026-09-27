@@ -407,7 +407,13 @@ first event was held waits for that flush, reports the wait as
 `activation_wait`, and times the rest of its gesture from it. A daemon that
 does not answer is retried every 4 s, five times, and a peer that goes away
 ends the session; the next request opens a new one, and `status` counts the
-connections.
+connections. `open_input` opens the session without any input, as the
+daemon's `open` does while an app launches: the probe goes out, and the
+call waits up to the time it is given for the reply, reporting the session
+as `status` does; with no wait it returns once the probe is out (2.7 ms on
+the spike Simulator) and the reply lands on its own. On the spike Simulator
+it activated in 15.8 ms, and the first tap after it waited for no
+activation and dispatched in 0.24 ms.
 
 On the spike Simulator, a tap requested as the session opened waited 14.7
 ms for a warm daemon and 320 ms on a device's first session of its boot,
@@ -545,6 +551,7 @@ about a minute.
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |
 | Input transport selection | Two runtimes on one host | `transport::two_simulators_get_the_hosts_transport` (both on iOS 26.5, the host's only runtime), `select::tests::the_host_core_simulator_selects_dtuhidd_from_1155_4`, `select::tests::an_unreadable_version_is_taken_as_current`, `select::tests::a_forced_transport_is_the_only_one_tried`, `select::tests::the_fallback_is_opened_only_when_the_first_fails`, `select::tests::a_transport_that_failed_on_the_target_is_skipped` |
 | Input transport selection | Unsupported combination | `select::tests::the_unsupported_combination_names_every_version_and_transport_tried` |
+| Input transport selection | The input session opened ahead of input (task 6.13) | `dtuhid::the_input_session_opens_and_activates_without_input`, `dtuhid::an_input_session_opened_without_waiting_activates_on_its_own` |
 | Input actions | Warm tap latency | `dtuhid::warm_tap_latency` |
 | Input actions | Taps, keys and buttons over one dtuhidd connection (task 6.4) | `dtuhid::a_tap_lands_on_the_fixture_button`, `dtuhid::one_connection_carries_touch_keys_and_buttons` |
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |

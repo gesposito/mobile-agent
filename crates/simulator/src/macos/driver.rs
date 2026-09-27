@@ -820,8 +820,27 @@ impl Frames for SimulatorDriver {
 
 impl Input for SimulatorDriver {
     fn open_input(&self, target: &str, wait: Duration) -> Result<InputStatus> {
-        let _ = (target, wait);
-        unimplemented!("task 6.13: open the input session without input")
+        self.contain(target, || {
+            let target = self.target(target)?;
+            let transport = target.transport(|device| self.open_transport(&target, device))?;
+            // dtuhidd answers its activation probe on its own queue; a
+            // transport without an activation, Indigo, is ready as it opens.
+            if transport.kind() == TransportKind::Dtuhid {
+                let deadline = Instant::now() + wait;
+                while transport.activation().is_none()
+                    && transport.usable()
+                    && Instant::now() < deadline
+                {
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+            Ok(InputStatus {
+                transport: transport.kind(),
+                activation: transport.activation(),
+                connections: transport.connections(),
+                reason: target.reason(),
+            })
+        })
     }
 
     fn tap(&self, target: &str, point: Point) -> Result<Dispatch> {
