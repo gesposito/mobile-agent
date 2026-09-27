@@ -18,7 +18,9 @@ mod tree;
 
 use std::time::Duration;
 
-use crate::driver::{Attachment, Driver, DriverError, Platform, TargetClass, TargetInfo};
+use crate::driver::{
+    AttachOptions, Attachment, Driver, DriverError, Platform, TargetClass, TargetInfo,
+};
 
 /// Fake targets.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,7 +108,11 @@ impl Driver for FakeDriver {
         Ok(self.targets.clone())
     }
 
-    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
+    fn attach(
+        &self,
+        target: &TargetInfo,
+        _options: &AttachOptions,
+    ) -> Result<Attachment, DriverError> {
         let frames = target.class != TargetClass::AndroidDevice;
         Ok(realtime::attach(target.platform, frames, self.latency))
     }

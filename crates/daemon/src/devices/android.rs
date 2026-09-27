@@ -30,8 +30,8 @@ use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{
-    AppControl, Attachment, Capture, CaptureRequest, Driver, DriverError, Image, Launch, Platform,
-    Report, Size, TargetClass, TargetInfo, TargetReport,
+    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError, Image,
+    Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
 };
 use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
@@ -182,7 +182,11 @@ impl Driver for AndroidDevices {
         }
     }
 
-    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
+    fn attach(
+        &self,
+        target: &TargetInfo,
+        _options: &AttachOptions,
+    ) -> Result<Attachment, DriverError> {
         ready(target)?;
         let device = self.server.device(&target.id);
         let source = jar_source(std::env::var_os(JAR_VAR).as_deref());
@@ -752,6 +756,10 @@ mod tests {
         assert!(
             conflict.message.contains("uiautomator events"),
             "{conflict:?}"
+        );
+        assert!(
+            conflict.message.contains("--force"),
+            "the conflict says how to take UI automation over: {conflict:?}"
         );
         let silent = deploy_error(DeployError::NoReadyLine {
             waited: std::time::Duration::from_secs(20),

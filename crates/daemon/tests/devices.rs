@@ -722,6 +722,57 @@ fn the_compose_fixture_is_driven_through_the_cli_on_an_emulator() {
     measured.print(&format!("Android {serial}, input {}", driver["input"]));
 }
 
+/// Task 8.11: `--force` reaches the deploy conflict. A second daemon finds
+/// the first one's agent holding UI automation and is refused with
+/// `automation_conflict`, naming `--force`; the same command with `--force`
+/// takes UI automation over, and no agent is left once both shut down.
+#[test]
+fn force_takes_ui_automation_over_from_another_daemons_agent() {
+    let test = "force_takes_ui_automation_over_from_another_daemons_agent";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    let _fixture = ComposeStopped::new(&device);
+    let mut first = Env::start();
+    let open = ["open", COMPOSE, "--env", "initial_tab=login"];
+    first.on(&serial, &open).data();
+    let holder = status_of(&first.cli(&["--json", "status"]).data(), &serial)["driver"]["pid"]
+        .as_u64()
+        .expect("the first daemon's agent");
+
+    let mut second = Env::start();
+    let refused = second.on(&serial, &["snapshot", "-i"]);
+    let reply: Value = serde_json::from_str(refused.stdout.trim_end()).expect("a JSON reply");
+    assert_eq!(reply["code"], "automation_conflict", "{reply}");
+    let message = reply["error"].as_str().unwrap_or_default();
+    assert!(message.contains("--force"), "{message}");
+
+    let forced = second
+        .cli(&["--json", "--force", "--device", &serial, "snapshot", "-i"])
+        .data();
+    assert!(
+        listing(&forced).contains("id=login-username"),
+        "the forced daemon reads the screen: {forced}"
+    );
+    let taker = status_of(&second.cli(&["--json", "status"]).data(), &serial)["driver"]["pid"]
+        .as_u64()
+        .expect("the second daemon's agent");
+    assert_ne!(taker, holder, "a new agent took UI automation over");
+    let agents = android_agents(&device);
+    assert!(
+        agents.iter().all(|a| u64::from(a.pid) != holder),
+        "the first daemon's agent was stopped: {agents:?}"
+    );
+
+    second.shutdown();
+    first.shutdown();
+    let agents = android_agents(&device);
+    assert!(agents.is_empty(), "no agent is left: {agents:?}");
+}
+
 /// Doctor (task 8.7) with the device drivers: the Xcode compatibility table
 /// holds the rows the Simulator driver supplies.
 #[test]

@@ -31,8 +31,13 @@ pub trait Driver: Send + Sync {
     fn discover(&self) -> Result<Vec<TargetInfo>, DriverError>;
 
     /// Attaches to `target`. The daemon calls it on the target's worker
-    /// thread, once, when a command first needs the target.
-    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError>;
+    /// thread, once, when a command first needs the target, with that
+    /// command's `options`.
+    fn attach(
+        &self,
+        target: &TargetInfo,
+        options: &AttachOptions,
+    ) -> Result<Attachment, DriverError>;
 
     /// Rows this driver contributes to `doctor`'s compatibility table.
     fn compatibility(&self) -> Vec<CompatibilityRow> {
@@ -103,6 +108,14 @@ pub struct TargetInfo {
     pub advice: Option<String>,
     /// The driver that found it.
     pub driver: String,
+}
+
+/// How to attach.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AttachOptions {
+    /// Take over what keeps the target from automation, such as another
+    /// holder of Android's UI automation: the command's `--force`.
+    pub force: bool,
 }
 
 /// A target's screen size in device points.

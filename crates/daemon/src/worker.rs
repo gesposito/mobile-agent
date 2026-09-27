@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
-use crate::driver::{AppControl, Attachment, Capture, Driver, Report, Size, TargetInfo};
+use crate::driver::{
+    AppControl, AttachOptions, Attachment, Capture, Driver, Report, Size, TargetInfo,
+};
 use crate::signals::Observer;
 use crate::wire::{Failure, Success};
 
@@ -29,7 +31,8 @@ pub(crate) type Outcome = Result<Success, Failure>;
 type Task = Box<dyn FnOnce(&mut Attached) -> Outcome + Send>;
 
 enum Job {
-    Run(Task, Sender<Outcome>),
+    /// A command, and how to attach when the target is not attached.
+    Run(Task, AttachOptions, Sender<Outcome>),
     Stop,
 }
 
@@ -239,14 +242,15 @@ impl Worker {
 }
 
 impl Handle {
-    /// Runs `task` on the worker and waits for its outcome.
-    pub fn run<F>(&self, task: F) -> Outcome
+    /// Runs `task` on the worker and waits for its outcome, attaching with
+    /// `options` when the target is not attached.
+    pub fn run<F>(&self, options: AttachOptions, task: F) -> Outcome
     where
         F: FnOnce(&mut Attached) -> Outcome + Send + 'static,
     {
         let (reply, outcome) = mpsc::channel();
         self.jobs
-            .send(Job::Run(Box::new(task), reply))
+            .send(Job::Run(Box::new(task), options, reply))
             .map_err(|_| Failure::internal("the target's worker has stopped"))?;
         outcome
             .recv()
@@ -271,9 +275,9 @@ fn serve(
                     .clamp(Duration::from_millis(1), IDLE_PUMP)
             });
         match queue.recv_timeout(wait) {
-            Ok(Job::Run(task, reply)) => {
+            Ok(Job::Run(task, _options, reply)) => {
                 if attached.is_none() {
-                    match driver.attach(info) {
+                    match driver.attach(info, &AttachOptions::default()) {
                         Ok(attachment) => {
                             let mut current = lock(status);
                             current.attached = true;
@@ -332,7 +336,7 @@ mod tests {
     fn attached(spec: &str, latency: Duration) -> Attached {
         let driver = FakeDriver::parse(spec).unwrap().with_latency(latency);
         let info = driver.discover().unwrap().remove(0);
-        let attachment = driver.attach(&info).unwrap();
+        let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
         Attached::new(&info, attachment, &Arc::default())
     }
 
@@ -387,6 +391,75 @@ mod tests {
             "waited {:?}",
             started.elapsed()
         );
+    }
+
+    /// A driver that records the options each attach got.
+    struct Recording {
+        fake: FakeDriver,
+        seen: Arc<Mutex<Vec<AttachOptions>>>,
+    }
+
+    impl Driver for Recording {
+        fn name(&self) -> &str {
+            "fake"
+        }
+
+        fn discover(&self) -> Result<Vec<TargetInfo>, crate::driver::DriverError> {
+            self.fake.discover()
+        }
+
+        fn attach(
+            &self,
+            target: &TargetInfo,
+            options: &AttachOptions,
+        ) -> Result<Attachment, crate::driver::DriverError> {
+            self.seen.lock().unwrap().push(*options);
+            if options.force {
+                self.fake.attach(target, options)
+            } else {
+                Err(crate::driver::DriverError::new(
+                    "automation_conflict",
+                    "another process holds UI automation; run the command again with --force",
+                ))
+            }
+        }
+    }
+
+    /// Task 8.11: `--force` reaches the attach, which a conflict refused
+    /// without it.
+    #[test]
+    fn a_forced_command_attaches_with_force_after_an_attach_refused_without() {
+        let fake = FakeDriver::parse("android").unwrap();
+        let info = fake.discover().unwrap().remove(0);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let driver = Arc::new(Recording {
+            fake,
+            seen: Arc::clone(&seen),
+        });
+        let worker = Worker::spawn(info, driver);
+        let handle = worker.handle();
+        let refused = handle
+            .run(AttachOptions::default(), |_| {
+                Ok(Success::new(serde_json::json!({})))
+            })
+            .unwrap_err();
+        assert_eq!(refused.code, "automation_conflict");
+        assert!(!worker.status().attached);
+        handle
+            .run(AttachOptions { force: true }, |_| {
+                Ok(Success::new(serde_json::json!({})))
+            })
+            .expect("the forced attach succeeds");
+        assert!(worker.status().attached);
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [
+                AttachOptions { force: false },
+                AttachOptions { force: true }
+            ]
+        );
+        worker.signal_stop();
+        worker.join(Instant::now() + Duration::from_secs(2));
     }
 
     #[test]

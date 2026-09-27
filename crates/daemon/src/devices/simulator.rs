@@ -50,8 +50,8 @@ use simulator::{
 };
 
 use crate::driver::{
-    AppControl, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver, DriverError, Image,
-    Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
+    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
+    DriverError, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, UNKNOWN_KEY};
@@ -119,7 +119,11 @@ impl Driver for SimulatorDevices {
             .collect())
     }
 
-    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
+    fn attach(
+        &self,
+        target: &TargetInfo,
+        _options: &AttachOptions,
+    ) -> Result<Attachment, DriverError> {
         attach(self.driver()?, &target.id)
     }
 

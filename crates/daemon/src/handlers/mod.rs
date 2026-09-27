@@ -11,7 +11,7 @@ use mirror::backend::Owner;
 use mirror::{Degradation, Snapshot, SnapshotOptions, Verdict};
 use serde_json::{Map, Value, json};
 
-use crate::driver::{Launch, Platform, TargetInfo, TargetReport};
+use crate::driver::{AttachOptions, Launch, Platform, TargetInfo, TargetReport};
 use crate::registry::Selection;
 use crate::server::Daemon;
 use crate::wire::{Failure, Request, Success, code};
@@ -177,7 +177,12 @@ fn on_target(
         let handle = registry.handle(&target)?;
         (target, handle)
     };
-    let success = handle.run(move |attached| command(attached, &request.session, &request))?;
+    let options = AttachOptions {
+        force: request.flag("force"),
+    };
+    let success = handle.run(options, move |attached| {
+        command(attached, &request.session, &request)
+    })?;
     Ok((success, target))
 }
 
