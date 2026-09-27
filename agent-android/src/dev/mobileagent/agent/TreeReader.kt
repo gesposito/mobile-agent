@@ -39,9 +39,11 @@ class Cancelled : RuntimeException() {
  *
  * A child whose fetch throws, as the platform's integrity check does on a
  * debuggable build (see the README), is fetched once more after
- * [RETRY_MS]. When that throws too the child is skipped: counted, so the
- * omitted count includes it, but neither it nor its subtree serialized, and
- * the snapshot is marked [Truncation.WINDOWS]. The read goes on either way.
+ * [RETRY_MS], while the read's [RETRY_BUDGET_MS] of such waits lasts. When
+ * that throws too, or the budget is spent, the child is skipped: counted,
+ * so the omitted count includes it, but neither it nor its subtree
+ * serialized, and the snapshot is marked [Truncation.WINDOWS]. The read
+ * goes on either way.
  */
 class TreeReader(private val automation: Automation, private val hooks: TestHooks?) {
     companion object {
@@ -53,6 +55,13 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
 
         /** How long a child whose fetch threw waits for its one retry. */
         const val RETRY_MS = 50L
+
+        /**
+         * How long one read waits for retries in all: two of them. A read
+         * whose children keep throwing skips the rest at once, rather than
+         * waiting [RETRY_MS] for each.
+         */
+        const val RETRY_BUDGET_MS = 2 * RETRY_MS
 
         /** The logcat tag of the agent's debug lines. */
         const val LOG_TAG = "mobile-agent"
@@ -129,8 +138,17 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         @JvmField val serialize: Boolean,
     )
 
-    /** A child whose fetch threw twice. */
+    /** A child whose fetch threw twice, or once when the read's retry budget was spent. */
     private class Unreadable(cause: RuntimeException) : Exception(cause)
+
+    /** What one read may still spend on children whose fetch threw. */
+    private class Budget {
+        /** Ms left to wait for retries. */
+        @JvmField var retryMs = RETRY_BUDGET_MS
+
+        /** Whether the read logged that its retries are spent. */
+        @JvmField var spentLogged = false
+    }
 
     /** A serialized node before the tree is assembled. */
     private class Built(
@@ -192,6 +210,7 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         }
         val packageIndices = Array(windows.size) { i -> packages[i]?.let { intern(it) } }
 
+        val budget = Budget()
         val built = ArrayList<Built>()
         val infos = ArrayList<AccessibilityNodeInfo>()
         val nodeWindows = ArrayList<Int>()
@@ -238,7 +257,7 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                 if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
                 for (i in 0 until count) {
                     val c = try {
-                        childOrRetry(n, i, windows[item.window].id, cancelled)
+                        childOrRetry(n, i, windows[item.window].id, cancelled, budget)
                     } catch (e: Unreadable) {
                         total++
                         truncated = truncated or Truncation.WINDOWS
@@ -300,18 +319,38 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
 
     /**
      * Child `i` of `n`, a node of window `window`, fetched once more after
-     * [RETRY_MS] when the fetch throws. Throws [Unreadable] when the retry
-     * throws too, and [Cancelled] when the read is abandoned before it.
+     * [RETRY_MS] when the fetch throws, if the read's `budget` still holds
+     * that wait. Throws [Unreadable] when the retry throws too or the budget
+     * is spent, and [Cancelled] when the read is abandoned before the wait.
      */
-    private fun childOrRetry(n: AccessibilityNodeInfo, i: Int, window: Int, cancelled: () -> Boolean): AccessibilityNodeInfo? {
-        try {
+    private fun childOrRetry(
+        n: AccessibilityNodeInfo,
+        i: Int,
+        window: Int,
+        cancelled: () -> Boolean,
+        budget: Budget,
+    ): AccessibilityNodeInfo? {
+        val first = try {
             return fetch(n, i, cancelled)
         } catch (e: Cancelled) {
             throw e
         } catch (e: RuntimeException) {
-            Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw; fetching it again in $RETRY_MS ms", e)
+            e
         }
+        if (budget.retryMs < RETRY_MS) {
+            if (!budget.spentLogged) {
+                budget.spentLogged = true
+                Log.d(
+                    LOG_TAG,
+                    "child $i of ${describe(n, window)} threw; the read's $RETRY_BUDGET_MS ms for retries are spent, " +
+                        "so it and every later child that throws are skipped without one: $first",
+                )
+            }
+            throw Unreadable(first)
+        }
+        Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw; fetching it again in $RETRY_MS ms", first)
         if (cancelled()) throw Cancelled()
+        budget.retryMs -= RETRY_MS
         Thread.sleep(RETRY_MS)
         val c = try {
             fetch(n, i, cancelled)

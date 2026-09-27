@@ -266,13 +266,18 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   `AccessibilityInteractionClient.checkFindAccessibilityNodeInfoResultIntegrity`.
   A release build returns no child there instead, which the walk takes for a
   child that went away. The agent fetches a child whose fetch throws once
-  more after 50 ms. When that throws too, the child is skipped: it counts in
-  `node_count`, so the omitted count includes it, but neither it nor its
-  subtree is serialized; `truncated` gets bit 2; its window's `emits_events`
-  is absent unless the walk met Compose; and a collection that lost it
-  reports no items in view. The read itself does not fail. The first
-  failure, with its stack trace, and the retry's outcome are logged at
-  debug level under the logcat tag `mobile-agent`.
+  more after 50 ms, while the read has waited less than 100 ms for such
+  retries in all (task 10.9): a read whose children keep throwing spends two
+  retries and skips the rest without waiting, rather than waiting 50 ms for
+  each. When the retry throws too, or the read's retries are spent, the
+  child is skipped: it counts in `node_count`, so the omitted count includes
+  it, but neither it nor its subtree is serialized; `truncated` gets bit 2;
+  its window's `emits_events` is absent unless the walk met Compose; and a
+  collection that lost it reports no items in view. The read itself does
+  not fail. The first failure, with its stack trace, and the retry's
+  outcome are logged at debug level under the logcat tag `mobile-agent`,
+  and so, once per read, is the first child skipped because the retries
+  are spent.
 - **Window metadata** (task 3.6, `Semantics.kt`). Each window says whether
   its content sends change events: `false` when the walk met Compose content
   (a class under `androidx.compose.`, or a node advertising Compose's
