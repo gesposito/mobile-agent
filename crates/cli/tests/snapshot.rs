@@ -185,3 +185,38 @@ fn a_snapshot_says_how_long_the_daemon_took_and_whether_the_replica_served_it() 
     let after = env.cli(&["--json", "snapshot", "-i"]).ok().json();
     assert!(after["data"]["servedFromReplica"].is_boolean(), "{after}");
 }
+
+/// A fake Simulator shows what the Simulator's reader reports: system UI
+/// named by its process name, SpringBoard, on the home screen and over a
+/// permission prompt, and an in-app alert in a modal window of its own
+/// above the app's, which the mirror names `dialog "In-app alert"`.
+#[test]
+fn a_fake_simulator_names_springboard_and_puts_an_in_app_alert_in_a_modal_window() {
+    let env = TestEnv::start("ios");
+    let home = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    assert_eq!(home["data"]["origin"], "SpringBoard", "{home}");
+
+    env.cli(&["open", "--env", "FIXTURE_INITIAL_TAB=system", APP])
+        .ok();
+    let system = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    let listing = system["data"]["snapshot"].as_str().unwrap_or_default();
+    let permission = support::ref_of(listing, "system-permission");
+    env.cli(&["click", "#system-alert"]).ok();
+    let alert = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    assert_eq!(alert["data"]["origin"], APP, "{alert}");
+    let shown = alert["data"]["snapshot"].as_str().unwrap_or_default();
+    assert!(shown.contains("id=inapp-alert-ok"), "{shown}");
+    assert!(!shown.contains("id=system-permission"), "{shown}");
+    let covered = env.cli(&["--json", "click", &permission]).failed().json();
+    assert_eq!(covered["code"], "element_covered", "{covered}");
+    let message = covered["error"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("dialog \"In-app alert\""),
+        "the alert's own window covers the app: {message}"
+    );
+    env.cli(&["click", "#inapp-alert-ok"]).ok();
+
+    env.cli(&["click", "#system-permission"]).ok();
+    let prompt = env.cli(&["--json", "snapshot", "-i"]).ok().json();
+    assert_eq!(prompt["data"]["origin"], "SpringBoard", "{prompt}");
+}

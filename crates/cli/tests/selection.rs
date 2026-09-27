@@ -50,7 +50,10 @@ fn the_device_flag_selects_a_target_by_id_or_name() {
         .ok()
         .json();
     assert_eq!(by_id["data"]["target"], "FAKE-IOS-1");
-    assert_eq!(by_id["data"]["origin"], "com.apple.springboard");
+    assert_eq!(
+        by_id["data"]["origin"], "SpringBoard",
+        "system UI names itself by its process name, as the Simulator's reader does"
+    );
     let by_name = env
         .cli(&[
             "--json",
