@@ -14,6 +14,10 @@ pub mod code {
     pub const STALE_REF: &str = "stale_ref";
     /// The input is not a ref this mirror issued.
     pub const UNKNOWN_REF: &str = "unknown_ref";
+    /// The ref's element exists but a modal, such as an alert, covers it.
+    pub const ELEMENT_COVERED: &str = "element_covered";
+    /// The ref's element exists but lies outside the visible area.
+    pub const ELEMENT_OFFSCREEN: &str = "element_offscreen";
     /// The target's connection is gone. The same code as the protocol's.
     pub const DISCONNECTED: &str = protocol::code::DISCONNECTED;
 }
@@ -37,6 +41,10 @@ pub enum MirrorError {
     },
     /// Not a ref this mirror issued.
     UnknownRef(String),
+    /// The ref's element is covered by a modal, named by `by`.
+    Covered { reference: Ref, by: String },
+    /// The ref's element is scrolled out of view.
+    Offscreen { reference: Ref },
     /// The driver failed; its error is passed through.
     Backend(BackendError),
     /// The target is gone.
@@ -49,6 +57,8 @@ impl MirrorError {
         match self {
             MirrorError::StaleRef { .. } => code::STALE_REF,
             MirrorError::UnknownRef(_) => code::UNKNOWN_REF,
+            MirrorError::Covered { .. } => code::ELEMENT_COVERED,
+            MirrorError::Offscreen { .. } => code::ELEMENT_OFFSCREEN,
             MirrorError::Backend(e) => &e.code,
             MirrorError::Disconnected(_) => code::DISCONNECTED,
         }
@@ -60,6 +70,8 @@ impl MirrorError {
             MirrorError::Backend(e) => e.retryable,
             MirrorError::StaleRef { .. }
             | MirrorError::UnknownRef(_)
+            | MirrorError::Covered { .. }
+            | MirrorError::Offscreen { .. }
             | MirrorError::Disconnected(_) => false,
         }
     }
@@ -91,6 +103,14 @@ impl fmt::Display for MirrorError {
             MirrorError::UnknownRef(input) => write!(
                 f,
                 "{input} is not a ref from this target's snapshots; take a snapshot and use the refs it prints, such as @e1"
+            ),
+            MirrorError::Covered { reference, by } => write!(
+                f,
+                "{reference} is covered by the {by}; act on the {by} first, then take a new snapshot"
+            ),
+            MirrorError::Offscreen { reference } => write!(
+                f,
+                "{reference} is scrolled out of view; scroll it into view and take a new snapshot"
             ),
             MirrorError::Backend(e) => write!(f, "{}", e.message),
             MirrorError::Disconnected(why) => write!(

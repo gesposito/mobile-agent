@@ -217,6 +217,9 @@ impl Mirror {
             },
             windows: self.summaries(now),
             elements,
+            hints: Vec::new(),
+            removed_refs: Vec::new(),
+            text: String::new(),
         })
     }
 

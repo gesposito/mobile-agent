@@ -57,6 +57,15 @@ pub struct Snapshot {
     pub windows: Vec<WindowSummary>,
     /// The listed elements in document order.
     pub elements: Vec<Element>,
+    /// Actionable content scrolled out of view, per scroll container.
+    pub hints: Vec<ScrollHint>,
+    /// Refs the previous snapshot listed that this one does not, as
+    /// agent-browser's `removedRefs`.
+    pub removed_refs: Vec<Ref>,
+    /// The listing as agent-browser prints it, one element per line:
+    /// `- role "name" [attrs, ref=eN]: value`, nested by indentation, with a
+    /// parenthesized line for each scroll hint.
+    pub text: String,
 }
 
 impl Snapshot {
@@ -282,4 +291,45 @@ pub struct TreeDelta {
     pub removed: Vec<ElementId>,
     /// Elements whose text, description, bounds or states changed.
     pub changed: Vec<ElementId>,
+}
+
+/// Content scrolled out of a container's view (spec: Snapshot content).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScrollHint {
+    /// The scroll container.
+    pub container: ElementId,
+    pub window: u32,
+    pub direction: Direction,
+    /// How many items lie that way; `None` when the platform only says that
+    /// the container can scroll further.
+    pub count: Option<u32>,
+    pub source: HintSource,
+}
+
+impl ScrollHint {
+    /// The hint as snapshots print it, such as
+    /// `(3 more actionable items below, scroll down to reveal)`.
+    pub fn text(&self) -> String {
+        todo!("task 7.3")
+    }
+}
+
+/// Where hidden content lies relative to a scroll container's viewport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Direction {
+    Above,
+    Below,
+    Left,
+    Right,
+}
+
+/// What a scroll hint was computed from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HintSource {
+    /// Actionable nodes the read returned outside the viewport, as View
+    /// lists and React Native keep them.
+    OffscreenNodes,
+    /// The container's scroll semantics, for toolkits such as Compose that
+    /// report only the nodes inside the viewport.
+    ScrollSemantics,
 }

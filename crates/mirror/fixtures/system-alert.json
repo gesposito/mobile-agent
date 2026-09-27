@@ -1,0 +1,23 @@
+{
+  "description": "A location permission prompt in front of the SwiftUI fixture: SpringBoard owns the foreground, so the reader reads SpringBoard's tree (spike S4), whose alert covers SpringBoard's own status bar items. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 900, "kind": "system", "layer": 10, "package": "com.apple.springboard", "title": "SpringBoard",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false, "owner": "com.apple.springboard",
+      "root": {"class": "XCUIElementTypeApplication", "desc": "SpringBoard", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 54], "children": [
+          {"class": "XCUIElementTypeStaticText", "desc": "12:30", "bounds": [40, 16, 90, 40]}
+        ]},
+        {"class": "_UIAlertControllerPhoneTVMacView", "desc": "Allow “FixtureSwiftUI” to use your location?", "bounds": [61, 300, 341, 620], "children": [
+          {"class": "XCUIElementTypeStaticText", "desc": "Allow “FixtureSwiftUI” to use your location?", "bounds": [77, 320, 325, 364]},
+          {"class": "XCUIElementTypeStaticText", "desc": "The fixture asks for location to test permission prompts.", "bounds": [77, 368, 325, 420]},
+          {"class": "XCUIElementTypeButton", "desc": "Allow Once", "bounds": [61, 444, 341, 502]},
+          {"class": "XCUIElementTypeButton", "desc": "Allow While Using App", "bounds": [61, 503, 341, 561]},
+          {"class": "XCUIElementTypeButton", "desc": "Don’t Allow", "bounds": [61, 562, 341, 620]}
+        ]}
+      ]}
+    }
+  ]
+}

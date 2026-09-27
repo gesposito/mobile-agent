@@ -1,0 +1,36 @@
+{
+  "description": "Login tab of the SwiftUI fixture under its in-app alert, read by the Simulator's in-guest reader: the read still returns the screen and tab bar the alert covers (spike S4), and the alert's OK button twice, nested, as XCTest reports it. The alert controller is typed Other, so the driver passes its UIKit class. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui", "title": "FixtureSwiftUI",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 791], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Login", "bounds": [16, 70, 386, 104]},
+            {"class": "XCUIElementTypeTextField", "id": "login-username", "desc": "Username", "bounds": [16, 120, 386, 164]},
+            {"class": "XCUIElementTypeSecureTextField", "id": "login-password", "desc": "Password", "bounds": [16, 176, 386, 220], "flags": ["password"]},
+            {"class": "XCUIElementTypeButton", "id": "login-submit", "desc": "Sign in", "bounds": [16, 236, 386, 280]},
+            {"class": "XCUIElementTypeStaticText", "id": "login-status", "desc": "Signed out", "bounds": [16, 296, 386, 320]}
+          ]},
+          {"class": "XCUIElementTypeTabBar", "bounds": [0, 791, 402, 874], "children": [
+            {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [0, 791, 80, 874], "flags": ["selected"]},
+            {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [80, 791, 160, 874]},
+            {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [160, 791, 240, 874]},
+            {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [240, 791, 320, 874]},
+            {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [320, 791, 402, 874]}
+          ]},
+          {"class": "_UIAlertControllerPhoneTVMacView", "desc": "In-app alert", "bounds": [61, 360, 341, 514], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "In-app alert", "bounds": [77, 380, 325, 402]},
+            {"class": "XCUIElementTypeStaticText", "desc": "This alert is presented by the app.", "bounds": [77, 406, 325, 446]},
+            {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [61, 470, 341, 514], "children": [
+              {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [61, 470, 341, 514]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

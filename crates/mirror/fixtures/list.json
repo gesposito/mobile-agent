@@ -1,0 +1,38 @@
+{
+  "description": "List tab of the Expo fixture on Android: 200 rows, the virtualized list keeps rows 1 to 19 mounted, rows 1 to 16 inside the viewport and 17 to 19 laid out below the fold. React Native views send change events. Device points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 2, "kind": "system", "layer": 3, "package": "com.android.systemui", "title": "Status bar",
+      "bounds": [0, 0, 408, 24], "owner": "com.android.systemui",
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 24], "children": [
+        {"class": "android.widget.TextView", "text": "12:30", "bounds": [16, 0, 56, 24]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.expo", "title": "FixtureExpo",
+      "bounds": [0, 0, 408, 912], "flags": ["active", "focused"],
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
+        {"class": "android.view.ViewGroup", "bounds": [0, 24, 408, 840], "children": [
+          {"class": "android.widget.TextView", "text": "List", "bounds": [16, 32, 392, 64]},
+          {"class": "android.widget.ScrollView", "id": "list-scroll", "bounds": [0, 72, 408, 840], "flags": ["scrollable", "focusable"], "children": [
+            {"class": "android.view.ViewGroup", "bounds": [0, 72, 408, 984], "children": [
+              {"repeat": [1, 19], "layout": {"rows": {"left": 0, "top": 72, "right": 408, "height": 48}}, "viewport": [0, 72, 408, 840],
+               "node": {"class": "android.view.ViewGroup", "id": "row-{n}", "flags": ["clickable", "focusable"], "children": [
+                 {"class": "android.widget.TextView", "text": "Row {n}", "bounds": "fill"}
+               ]}}
+            ]}
+          ]}
+        ]},
+        {"class": "android.view.ViewGroup", "bounds": [0, 848, 408, 912], "children": [
+          {"class": "android.view.ViewGroup", "id": "tab-login", "desc": "Login", "bounds": [0, 848, 80, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-list", "desc": "List", "bounds": [80, 848, 160, 912], "flags": ["clickable", "focusable", "selected"]},
+          {"class": "android.view.ViewGroup", "id": "tab-big", "desc": "Big", "bounds": [160, 848, 240, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-anim", "desc": "Anim", "bounds": [240, 848, 320, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-system", "desc": "System", "bounds": [320, 848, 408, 912], "flags": ["clickable", "focusable"]}
+        ]}
+      ]}
+    }
+  ]
+}

@@ -1,0 +1,449 @@
+//! Task 7.3: what snapshots list. An interactive snapshot keeps only the
+//! elements with refs, as agent-browser's `-i`; an actionable element with no
+//! label of its own is named by its non-actionable descendants; content
+//! scrolled out of view is summarized from off-screen nodes when the read has
+//! them and from scroll semantics when it does not; a modal cuts what it
+//! covers. Lines follow agent-browser: `- role "name" [attrs, ref=eN]`.
+
+mod support;
+
+use mirror::backend::Owner;
+use mirror::testing::{FakeTarget, Step};
+use mirror::{
+    Action, Direction, HintSource, Mirror, MirrorConfig, MirrorError, SnapshotOptions, Target, code,
+};
+use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
+use serde_json::json;
+use support::{Screen, mirror_on, ms, timeline};
+
+fn full() -> SnapshotOptions {
+    SnapshotOptions::full()
+}
+
+fn interactive() -> SnapshotOptions {
+    SnapshotOptions::interactive()
+}
+
+fn lines(text: &[&str]) -> String {
+    text.join("\n")
+}
+
+fn rows_text(first: u32, last: u32, indent: &str) -> Vec<String> {
+    (first..=last)
+        .map(|n| format!("{indent}- button \"Row {n}\" [id=row-{n}, ref=e{n}]"))
+        .collect()
+}
+
+#[test]
+fn an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below() {
+    let (_, mut mirror) = mirror_on("list");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected = rows_text(1, 16, "");
+    expected.push("(3 more actionable items below, scroll down to reveal)".to_owned());
+    expected.extend(
+        [
+            "- button \"Login\" [id=tab-login, ref=e17]",
+            "- button \"List\" [selected, id=tab-list, ref=e18]",
+            "- button \"Big\" [id=tab-big, ref=e19]",
+            "- button \"Anim\" [id=tab-anim, ref=e20]",
+            "- button \"System\" [id=tab-system, ref=e21]",
+        ]
+        .map(str::to_owned),
+    );
+    assert_eq!(snapshot.text, expected.join("\n"));
+    assert_eq!(snapshot.hints.len(), 1);
+    let hint = &snapshot.hints[0];
+    assert_eq!(hint.direction, Direction::Below);
+    assert_eq!(hint.count, Some(3));
+    assert_eq!(hint.source, HintSource::OffscreenNodes);
+    assert!(
+        snapshot.by_identifier("row-17").is_none(),
+        "rows below the fold are summarized, not listed"
+    );
+    assert!(snapshot.elements.iter().all(|e| e.reference.is_some()));
+
+    let listing = mirror.snapshot(&full()).unwrap();
+    let mut expected = vec![
+        "- text \"List\"".to_owned(),
+        "- generic [id=list-scroll]".to_owned(),
+    ];
+    expected.extend(rows_text(1, 16, "  "));
+    expected.push("  (3 more actionable items below, scroll down to reveal)".to_owned());
+    expected.extend(
+        [
+            "- button \"Login\" [id=tab-login, ref=e17]",
+            "- button \"List\" [selected, id=tab-list, ref=e18]",
+            "- button \"Big\" [id=tab-big, ref=e19]",
+            "- button \"Anim\" [id=tab-anim, ref=e20]",
+            "- button \"System\" [id=tab-system, ref=e21]",
+            "- text \"12:30\"",
+        ]
+        .map(str::to_owned),
+    );
+    assert_eq!(listing.text, expected.join("\n"));
+}
+
+#[test]
+fn scroll_semantics_give_the_hint_when_offscreen_rows_are_absent() {
+    let screen = Screen::load("list-compose");
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected = rows_text(1, 16, "");
+    expected.push("(184 more items below, scroll down to reveal)".to_owned());
+    assert_eq!(snapshot.text, expected.join("\n"));
+    assert_eq!(snapshot.hints[0].source, HintSource::ScrollSemantics);
+    assert_eq!(snapshot.hints[0].count, Some(184));
+
+    let near_end = screen.patched(json!([{"scroll": "row-list", "items": [200, 181, 196]}]));
+    let target = FakeTarget::new(near_end.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected = vec!["(181 more items above, scroll up to reveal)".to_owned()];
+    expected.extend(rows_text(1, 16, ""));
+    expected.push("(3 more items below, scroll down to reveal)".to_owned());
+    assert_eq!(snapshot.text, expected.join("\n"));
+    let directions: Vec<_> = snapshot
+        .hints
+        .iter()
+        .map(|h| (h.direction, h.count))
+        .collect();
+    assert_eq!(
+        directions,
+        [(Direction::Above, Some(181)), (Direction::Below, Some(3))]
+    );
+}
+
+#[test]
+fn an_actionable_container_takes_its_name_from_non_actionable_descendants() {
+    let (_, mut mirror) = mirror_on("login");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- textbox \"Username\" [id=login-username, ref=e1]",
+            "- textbox \"Password\" [id=login-password, ref=e2]",
+            "- button \"Sign in\" [id=login-submit, ref=e3]",
+            "- button \"Login\" [selected, id=tab-login, ref=e4]",
+            "- button \"List\" [id=tab-list, ref=e5]",
+            "- button \"Big\" [id=tab-big, ref=e6]",
+            "- button \"Anim\" [id=tab-anim, ref=e7]",
+            "- button \"System\" [id=tab-system, ref=e8]",
+        ])
+    );
+    let full_listing = mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        full_listing
+            .elements
+            .iter()
+            .filter(|e| e.name == "Sign in")
+            .count(),
+        1,
+        "the label that names the button is not listed again"
+    );
+
+    let (_, mut compose) = mirror_on("compose-anim");
+    let snapshot = compose.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- switch \"Animate\" [checked=true, id=anim-toggle, ref=e1]",
+            "- button \"Login\" [id=tab-login, ref=e2]",
+            "- button \"List\" [id=tab-list, ref=e3]",
+            "- button \"Big\" [id=tab-big, ref=e4]",
+            "- button \"Anim\" [selected, id=tab-anim, ref=e5]",
+            "- button \"System\" [id=tab-system, ref=e6]",
+        ]),
+        "the role and label that Material keeps on child nodes name the tagged container"
+    );
+}
+
+#[test]
+fn a_stale_ref_names_the_element_it_was_issued_for() {
+    let screen = Screen::load("login");
+    let gone = screen.patched(json!([{"remove": "login-submit"}]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(gone.read()));
+    target.at(
+        ms(100),
+        Step::Event(EventPayload::Tree(TreeChange {
+            change: TreeChangeKind::CONTENT,
+            window: 1,
+            path: vec![0],
+        })),
+    );
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let submit = before
+        .by_identifier("login-submit")
+        .unwrap()
+        .reference
+        .unwrap();
+    target.advance(ms(150));
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(submit),
+            hold: None,
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("button \"Sign in\""), "{error}");
+    let after = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(after.removed_refs, [submit]);
+    assert!(
+        mirror
+            .snapshot(&interactive())
+            .unwrap()
+            .removed_refs
+            .is_empty()
+    );
+}
+
+#[test]
+fn an_alert_cuts_the_content_it_covers() {
+    let (_, mut mirror) = mirror_on("alert");
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- alert \"In-app alert\"",
+            "  - text \"In-app alert\"",
+            "  - text \"This alert is presented by the app.\"",
+            "  - button \"OK\" [id=inapp-alert-ok, ref=e1]",
+        ]),
+        "the covered screen and tab bar are cut; the nested OK button is folded into its parent"
+    );
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "- button \"OK\" [id=inapp-alert-ok, ref=e1]"
+    );
+    assert_eq!(snapshot.foreground, Owner::Target);
+}
+
+#[test]
+fn acting_on_an_element_an_alert_covers_fails_with_its_code() {
+    let screen = Screen::load("login-ios");
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(Screen::load("alert").read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let submit = before
+        .by_identifier("login-submit")
+        .unwrap()
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(submit),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED);
+    assert!(
+        error.to_string().contains("alert \"In-app alert\""),
+        "{error}"
+    );
+    assert_eq!(
+        mirror.resolve(submit).unwrap().identifier.as_deref(),
+        Some("login-submit"),
+        "the covered element keeps its ref"
+    );
+    assert!(target.inputs().is_empty());
+}
+
+#[test]
+fn a_system_alert_reports_system_ui_as_the_foreground() {
+    let (_, mut mirror) = mirror_on("system-alert");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.foreground,
+        Owner::System("com.apple.springboard".to_owned())
+    );
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- button \"Allow Once\" [ref=e1]",
+            "- button \"Allow While Using App\" [ref=e2]",
+            "- button \"Don’t Allow\" [ref=e3]",
+        ])
+    );
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert!(
+        !listing.text.contains("12:30"),
+        "the alert covers SpringBoard's own content"
+    );
+}
+
+#[test]
+fn the_full_listing_follows_agent_browser_lines() {
+    let tl = timeline("events-typing");
+    let target = tl.target();
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- text \"Login\"",
+            "- textbox \"Username\" [id=login-username, ref=e1]",
+            "- textbox \"Password\" [id=login-password, ref=e2]",
+            "- button \"Sign in\" [id=login-submit, ref=e3]",
+            "- text \"Signed out\" [id=login-status]",
+            "- button \"Login\" [selected, id=tab-login, ref=e4]",
+            "- button \"List\" [id=tab-list, ref=e5]",
+            "- button \"Big\" [id=tab-big, ref=e6]",
+            "- button \"Anim\" [id=tab-anim, ref=e7]",
+            "- button \"System\" [id=tab-system, ref=e8]",
+            "- text \"12:30\"",
+        ])
+    );
+    mirror.run_until(target.instant(ms(530))).unwrap();
+    let typing = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        typing.text.lines().take(2).collect::<Vec<_>>(),
+        [
+            "- textbox \"Username\" [id=login-username, ref=e1]: alice",
+            "- textbox \"Password\" [focused, id=login-password, ref=e2]: •••••••",
+        ]
+    );
+
+    let (_, mut odd) = mirror_on_json(json!([
+        {"class": "android.widget.Button", "text": "Say \"hi\"\nnow", "bounds": [16, 16, 392, 64], "flags": ["clickable"]},
+        {"class": "android.widget.CheckBox", "text": "Agree\u{00a0}to\u{200b} terms", "bounds": [16, 80, 392, 128], "flags": ["clickable", "checkable"]},
+        {"class": "android.widget.Button", "text": "Pay", "bounds": [16, 144, 392, 192], "flags": ["clickable"], "off": ["enabled"]},
+        {"class": "android.widget.EditText", "id": "a b", "desc": "Note", "text": "x", "bounds": [16, 208, 392, 256], "flags": ["clickable", "editable"]}
+    ]));
+    assert_eq!(
+        odd.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- button \"Say \\\"hi\\\"\\nnow\" [ref=e1]",
+            "- checkbox \"Agree to terms\" [checked=false, ref=e2]",
+            "- button \"Pay\" [disabled, ref=e3]",
+            "- textbox \"Note\" [id=\"a b\", ref=e4]: x",
+        ])
+    );
+}
+
+/// A mirror over one application window holding `children` under its root.
+fn mirror_on_json(children: serde_json::Value) -> (FakeTarget, Mirror) {
+    let screen = Screen::from_json(json!({
+        "backend": {"name": "android-agent"},
+        "scale": 2.625,
+        "windows": [{
+            "id": 1, "kind": "application", "layer": 1, "bounds": [0, 0, 408, 912], "flags": ["active"],
+            "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": children}
+        }]
+    }));
+    let target = FakeTarget::new(screen.read());
+    let mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    (target, mirror)
+}
+
+#[test]
+fn an_empty_listing_says_so_as_agent_browser_does() {
+    let (_, mut mirror) = mirror_on_json(json!([
+        {"class": "android.widget.TextView", "text": "Nothing to do", "bounds": [16, 16, 392, 64]}
+    ]));
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "(no interactive elements)"
+    );
+    let (_, mut empty) = mirror_on_json(json!([]));
+    assert_eq!(empty.snapshot(&full()).unwrap().text, "(empty screen)");
+}
+
+#[test]
+fn the_keyboard_window_is_listed_as_one_line() {
+    let screen = Screen::load("login").patched(json!([{"add_window": {
+        "id": 9, "kind": "input_method", "layer": 2, "package": "com.google.android.inputmethod.latin",
+        "title": "Keyboard", "bounds": [0, 600, 408, 912],
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 600, 408, 912], "children": [
+            {"class": "android.widget.Button", "desc": "q", "bounds": [0, 640, 40, 690], "flags": ["clickable"]},
+            {"class": "android.widget.Button", "desc": "w", "bounds": [40, 640, 80, 690], "flags": ["clickable"]}
+        ]}
+    }}]));
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        listing.text.lines().filter(|l| *l == "- keyboard").count(),
+        1
+    );
+    assert!(!listing.text.contains("\"q\""), "{}", listing.text);
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(snapshot.refs().len(), 8, "keys get no refs");
+}
+
+#[test]
+fn every_interactive_line_carries_a_ref() {
+    let (_, mut mirror) = mirror_on("grid");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(snapshot.elements.len(), 505, "500 cells and 5 tabs");
+    for line in snapshot.text.lines() {
+        assert!(line.contains("ref=e"), "{line}");
+    }
+    assert!(
+        snapshot
+            .text
+            .starts_with("- button \"Cell 1\" [id=cell-1, ref=e1]\n"),
+        "{}",
+        &snapshot.text[..80]
+    );
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert!(
+        listing
+            .text
+            .starts_with("- text \"500 elements\" [id=big-count]\n")
+    );
+}
+
+#[test]
+fn acting_on_a_row_scrolled_out_of_view_fails_with_its_code() {
+    let list = |scrolled: i64| {
+        Screen::from_json(json!({
+            "backend": {"name": "android-agent"},
+            "scale": 2.625,
+            "windows": [{
+                "id": 1, "kind": "application", "layer": 1, "bounds": [0, 0, 408, 912], "flags": ["active"],
+                "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
+                    {"class": "android.widget.ScrollView", "bounds": [0, 72, 408, 840], "flags": ["scrollable"], "children": [
+                        {"repeat": [1, 19], "viewport": [0, 72, 408, 840],
+                         "layout": {"rows": {"left": 0, "top": 72, "right": 408, "height": 48}, "offset": [0, -scrolled]},
+                         "node": {"class": "android.view.ViewGroup", "id": "row-{n}", "desc": "Row {n}", "flags": ["clickable"]}}
+                    ]}
+                ]}
+            }]
+        }))
+    };
+    let target = FakeTarget::new(list(0).read());
+    target.at(ms(100), Step::Show(list(48).read()));
+    target.at(
+        ms(100),
+        Step::Event(EventPayload::Tree(TreeChange {
+            change: TreeChangeKind::SCROLL,
+            window: 1,
+            path: vec![0],
+        })),
+    );
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let first = before.by_identifier("row-1").unwrap().reference.unwrap();
+    mirror.run_until(target.instant(ms(200))).unwrap();
+    let after = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        after
+            .text
+            .starts_with("(1 more actionable item above, scroll up to reveal)\n")
+    );
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(first),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_OFFSCREEN);
+    assert!(matches!(error, MirrorError::Offscreen { .. }));
+    assert!(target.inputs().is_empty());
+}

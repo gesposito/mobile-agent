@@ -32,7 +32,7 @@ pub use mirror::{
 };
 pub use refs::Ref;
 pub use snapshot::{
-    Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
-    WindowSummary,
+    Direction, Element, ElementId, HintSource, RefreshMode, Role, ScrollHint, Snapshot,
+    SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
 };
 pub use verdict::{Degradation, Verdict};
