@@ -15,12 +15,12 @@ use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::dtuhid::Dtuhid;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
-use crate::macos::{frames, host, prefs};
+use crate::macos::{frames, host, pasteboard, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
-    FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Point, PreferencesOutcome,
-    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
-    TransportKind,
+    FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Modifiers, Point,
+    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry,
+    TextMethod, TransportKind,
 };
 use crate::select::{self, HostVersions};
 
@@ -29,6 +29,19 @@ use crate::select::{self, HostVersions};
 const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
 /// A shutdown took about 3.4 s in S2.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(120);
+/// The longest string `TextMethod::Auto` types key by key; longer ones are
+/// pasted, since typing takes a few tens of milliseconds a character.
+const KEYBOARD_LIMIT: usize = 32;
+/// The pause between typed characters. S3 typed exactly with 60 ms; this
+/// shorter one kept every character and its order in the fixture's fields.
+const KEY_GAP: Duration = Duration::from_millis(15);
+/// The TCC service behind "Paste from Other Apps". Without it the first
+/// paste of text that `devicectl` put on the pasteboard asks the user to
+/// allow pasting from dtpasteboardd, and the text never arrives.
+const PASTEBOARD_SERVICE: &str = "kTCCServicePasteboard";
+/// The `v` usage, pasted with Command held.
+const USAGE_V: u32 = 0x19;
+
 /// installd answers IXErrorDomain 2 ("Failed to locate promise") right after
 /// a boot; S2 saw a retry 3 s later succeed.
 const INSTALL_ATTEMPTS: u32 = 5;
@@ -189,6 +202,20 @@ impl SimulatorDriver {
                 result => return result,
             }
         }
+    }
+
+    /// Lets every user application on the target paste from other
+    /// applications, once each, so a paste raises no permission prompt.
+    /// Granting leaves running applications running.
+    fn allow_paste(&self, target: &Target) -> Result<()> {
+        for (bundle_id, user) in target.device.installed_apps()? {
+            if user && target.allow_paste(&bundle_id) {
+                target
+                    .device
+                    .set_privacy(PASTEBOARD_SERVICE, &bundle_id, true)?;
+            }
+        }
+        Ok(())
     }
 
     /// Opens the first transport of the host's plan that works on `target`.
@@ -421,8 +448,53 @@ impl Input for SimulatorDriver {
     }
 
     fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry> {
-        let _ = (target, text, method);
-        unimplemented!("task 6.7: text entry")
+        let start = Instant::now();
+        let characters = text.chars().count();
+        let keys: Option<Vec<Key>> = text.chars().map(Key::character).collect();
+        let method = match method {
+            TextMethod::Auto if keys.is_some() && characters <= KEYBOARD_LIMIT => {
+                TextMethod::Keyboard
+            }
+            TextMethod::Auto => TextMethod::Paste,
+            chosen => chosen,
+        };
+        if method == TextMethod::Keyboard {
+            let keys = keys.ok_or_else(|| {
+                let missing = text
+                    .chars()
+                    .find(|&c| Key::character(c).is_none())
+                    .unwrap_or_default();
+                Error::InvalidArgument(format!(
+                    "{missing:?} has no key on a US keyboard; paste the text instead"
+                ))
+            })?;
+            self.with_input(target, |target, transport| {
+                for (index, &key) in keys.iter().enumerate() {
+                    if index > 0 {
+                        thread::sleep(KEY_GAP);
+                    }
+                    target.key(transport, key)?;
+                }
+                Ok(())
+            })?;
+        } else {
+            let device = self.target(target)?;
+            self.allow_paste(&device)?;
+            pasteboard::copy(&device.device.udid()?, text)?;
+            let paste = Key {
+                usage: USAGE_V,
+                modifiers: Modifiers {
+                    command: true,
+                    ..Modifiers::default()
+                },
+            };
+            self.with_input(target, |target, transport| target.key(transport, paste))?;
+        }
+        Ok(TextEntry {
+            method,
+            characters,
+            elapsed: start.elapsed(),
+        })
     }
 }
 

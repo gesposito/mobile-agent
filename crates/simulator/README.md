@@ -42,6 +42,7 @@ src/
     dtuhid.rs      the dtuhidd XPC transport
     indigo.rs      the legacy Indigo transport
     host.rs        the host's CoreSimulator and Xcode versions
+    pasteboard.rs  writing the device pasteboard through devicectl
     driver.rs      SimulatorDriver
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
@@ -50,6 +51,7 @@ tests/
   indigo.rs        task 6.3
   dtuhid.rs        task 6.4
   transport.rs     task 6.5
+  text.rs          task 6.7
 ```
 
 ## Building
@@ -199,6 +201,26 @@ after that device's first dtuhidd session, as in S3, so what stopped them on
 the shared Simulator is not known. The Indigo tests therefore run on a device
 they create.
 
+## Text
+
+`type_text` types through key events or pastes, and reports which it did.
+`Auto` types a string of at most 32 characters that a US keyboard can type,
+one key press every 15 ms with Shift where needed; anything longer, or with
+a character no key types, is pasted. A paste writes the text to the device
+pasteboard with `devicectl device pasteboard copy`, since `simctl pbcopy`
+writes nothing under Xcode 27, and sends Command-V. iOS then asks whether the
+application may paste from `dtpasteboardd`, and the text never arrives unless
+someone taps Allow Paste, so before the first paste on a target the driver
+grants TCC's `kTCCServicePasteboard`, the "Paste from Other Apps" setting, to
+every user application on the device through `-[SimDevice
+setPrivacyAccessForService:bundleID:granted:error:]`, the call behind `simctl
+privacy`. That changes the device's privacy settings; it does not restart
+running applications. System applications are left alone and still ask.
+
+The tests read a field back by putting a sentinel on the pasteboard and
+sending Command-A and Command-C: 500 characters pasted in 0.2 s and 25 typed
+in 0.47 s came back exactly.
+
 ## Tests
 
 `cargo test -p simulator` runs the unit tests. They need macOS with Xcode,
@@ -233,4 +255,5 @@ about a minute.
 | Input actions | Warm tap latency | `dtuhid::warm_tap_latency` |
 | Input actions | Taps, keys and buttons over one dtuhidd connection (task 6.4) | `dtuhid::a_tap_lands_on_the_fixture_button`, `dtuhid::one_connection_carries_touch_keys_and_buttons` |
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
+| Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
 | Parallel Simulators | Two sessions | `transport::two_sessions` |

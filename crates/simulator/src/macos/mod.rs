@@ -12,6 +12,7 @@ mod host;
 mod indigo;
 mod input;
 mod objc;
+mod pasteboard;
 mod prefs;
 mod xpc;
 

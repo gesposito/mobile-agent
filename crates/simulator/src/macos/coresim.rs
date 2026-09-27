@@ -306,6 +306,59 @@ impl Device {
         })
     }
 
+    /// The installed applications' bundle identifiers, each with whether
+    /// it is a user application rather than part of the runtime.
+    pub fn installed_apps(&self) -> Result<Vec<(String, bool)>> {
+        const CALL: &str = "-[SimDevice installedAppsWithError:]";
+        let apps: Retained<NSDictionary<NSString, AnyObject>> = guarded_ns(CALL, || {
+            // SAFETY: takes an NSError out pointer and returns a dictionary
+            // of bundle identifiers to information dictionaries.
+            unsafe { msg_send![&*self.0, installedAppsWithError: _] }
+        })?;
+        guarded(CALL, || {
+            let (keys, values) = apps.to_vecs();
+            keys.iter()
+                .zip(values)
+                .map(|(bundle, info)| {
+                    let user = objc::is_kind_of(&info, c"NSDictionary") && {
+                        // SAFETY: just checked that it is a dictionary.
+                        let info: &NSDictionary<NSString, AnyObject> =
+                            unsafe { &*(Retained::as_ptr(&info).cast()) };
+                        info.objectForKey(&NSString::from_str("ApplicationType"))
+                            .is_some_and(|kind| {
+                                objc::is_kind_of(&kind, c"NSString") && {
+                                    // SAFETY: just checked that it is a string.
+                                    unsafe { &*(Retained::as_ptr(&kind).cast::<NSString>()) }
+                                        .to_string()
+                                        == "User"
+                                }
+                            })
+                    };
+                    (bundle.to_string(), user)
+                })
+                .collect()
+        })
+    }
+
+    /// Grants or revokes a TCC service for an application, as `simctl
+    /// privacy` does; it takes TCC's own service names too.
+    pub fn set_privacy(&self, service: &str, bundle_id: &str, granted: bool) -> Result<()> {
+        let (service, bundle_id) = (NSString::from_str(service), NSString::from_str(bundle_id));
+        guarded_ns(
+            "-[SimDevice setPrivacyAccessForService:bundleID:granted:error:]",
+            // SAFETY: two NSStrings, a BOOL and an NSError out pointer.
+            || unsafe {
+                msg_send![
+                    &*self.0,
+                    setPrivacyAccessForService: &*service,
+                    bundleID: &*bundle_id,
+                    granted: granted,
+                    error: _
+                ]
+            },
+        )
+    }
+
     /// `-[SimDevice lookup:error:]`: the Mach port of `service` in the
     /// guest's bootstrap namespace. It returns a `mach_port_t` (S3).
     pub fn lookup(&self, service: &str) -> Result<u32> {

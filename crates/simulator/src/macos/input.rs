@@ -66,6 +66,8 @@ pub struct Target {
     /// Transports that failed on this target, with why; the next session
     /// skips them.
     failures: Mutex<Vec<(TransportKind, String)>>,
+    /// Applications already allowed to paste from other applications.
+    paste_granted: Mutex<Vec<String>>,
     /// Held for the length of each input request, so that one target's
     /// gestures never interleave.
     serial: Mutex<()>,
@@ -79,8 +81,19 @@ impl Target {
             transport: Mutex::new(None),
             reason: Mutex::new(String::new()),
             failures: Mutex::new(Vec::new()),
+            paste_granted: Mutex::new(Vec::new()),
             serial: Mutex::new(()),
         }
+    }
+
+    /// Records that `bundle_id` may paste; false when it already could.
+    pub fn allow_paste(&self, bundle_id: &str) -> bool {
+        let mut granted = lock(&self.paste_granted);
+        if granted.iter().any(|known| known == bundle_id) {
+            return false;
+        }
+        granted.push(bundle_id.to_string());
+        true
     }
 
     pub fn reason(&self) -> String {
