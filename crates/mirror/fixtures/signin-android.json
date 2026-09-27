@@ -1,0 +1,27 @@
+{
+  "description": "Ignite's sign-in screen as React Native lays it out on Android: each field is an accessible view labelled Email or Password whose EditText child has no label of its own, the password field with a pressable to show the password. Views send change events. Device points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 1, "package": "com.rnsmoke", "title": "RnSmoke",
+      "bounds": [0, 0, 408, 912], "flags": ["active", "focused"],
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
+        {"class": "android.view.ViewGroup", "bounds": [0, 24, 408, 912], "children": [
+          {"class": "android.widget.TextView", "text": "Log In", "bounds": [24, 64, 384, 104]},
+          {"class": "android.widget.TextView", "text": "Enter your details below to unlock top secret info.", "bounds": [24, 112, 384, 160]},
+          {"class": "android.view.ViewGroup", "desc": "Email", "bounds": [24, 192, 384, 264], "flags": ["focusable"], "children": [
+            {"class": "android.widget.EditText", "bounds": [24, 216, 384, 264], "flags": ["clickable", "focusable", "editable"]}
+          ]},
+          {"class": "android.view.ViewGroup", "desc": "Password", "bounds": [24, 280, 384, 352], "flags": ["focusable"], "children": [
+            {"class": "android.widget.EditText", "bounds": [24, 304, 336, 352], "flags": ["clickable", "focusable", "editable", "password"]},
+            {"class": "android.view.ViewGroup", "desc": "Show password", "bounds": [336, 304, 384, 352], "flags": ["clickable", "focusable"]}
+          ]},
+          {"class": "android.view.ViewGroup", "bounds": [24, 384, 384, 432], "flags": ["clickable", "focusable"], "children": [
+            {"class": "android.widget.TextView", "text": "Tap to log in!", "bounds": "fill"}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

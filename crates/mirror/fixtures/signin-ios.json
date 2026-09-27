@@ -1,0 +1,27 @@
+{
+  "description": "Ignite's sign-in screen with each field's text field inside a labelled container, as XCTest types it: an Other labelled Email or Password over a TextField or SecureTextField without a label of its own, the password field with a button to show the password. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "com.rnsmoke", "title": "RnSmoke",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "RnSmoke", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Log In", "bounds": [24, 80, 378, 116]},
+            {"class": "XCUIElementTypeStaticText", "desc": "Enter your details below to unlock top secret info.", "bounds": [24, 124, 378, 168]},
+            {"class": "XCUIElementTypeOther", "desc": "Email", "bounds": [24, 200, 378, 272], "children": [
+              {"class": "XCUIElementTypeTextField", "bounds": [24, 224, 378, 272]}
+            ]},
+            {"class": "XCUIElementTypeOther", "desc": "Password", "bounds": [24, 288, 378, 360], "children": [
+              {"class": "XCUIElementTypeSecureTextField", "bounds": [24, 312, 330, 360], "flags": ["password"]},
+              {"class": "XCUIElementTypeButton", "desc": "Show password", "bounds": [330, 312, 378, 360]}
+            ]},
+            {"class": "XCUIElementTypeButton", "desc": "Tap to log in!", "bounds": [24, 392, 378, 440]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
