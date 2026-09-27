@@ -46,6 +46,16 @@ pub enum Platform {
     Android,
 }
 
+impl Platform {
+    /// `ios` or `android`, as the baseline tools' `--platform` flags take it.
+    pub fn id(self) -> &'static str {
+        match self {
+            Platform::Ios => "ios",
+            Platform::Android => "android",
+        }
+    }
+}
+
 /// One device, emulator or Simulator in a run. The fields other than `id` and
 /// `class` are provenance; the harness fills the ones an adapter leaves empty.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

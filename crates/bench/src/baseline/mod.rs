@@ -7,12 +7,15 @@
 pub mod agent_device;
 pub mod maestro;
 
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
-use crate::adapter::{Adapter, AdapterError, Detection, Role, Sample, Scenario};
+use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
 use crate::flow::Flow;
 use crate::harness::Subject;
+use crate::process::{self, Finished};
 use crate::target::Target;
 
 /// The agent-device session every flow runs in.
@@ -80,14 +83,28 @@ pub fn search_path() -> Vec<PathBuf> {
 
 /// The first executable file named `name` in `dirs`, following symbolic links.
 pub fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
-    todo!("find {name} in {} directories", dirs.len())
+    dirs.iter()
+        .map(|dir| dir.join(name))
+        .find(|path| is_executable(path))
+}
+
+/// Whether `path` is a file anyone may execute.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// The version in a tool's `--version` output: the first word of its first
 /// non-empty line that starts with a digit, or with `v` and a digit, else the
 /// whole line.
 pub fn version_from(output: &str) -> Option<String> {
-    todo!("read a version from {} bytes", output.len())
+    let line = output.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let version = line.split_whitespace().find_map(|word| {
+        let bare = word.strip_prefix('v').unwrap_or(word);
+        bare.starts_with(|c: char| c.is_ascii_digit())
+            .then_some(bare)
+    });
+    Some(version.unwrap_or(line).to_owned())
 }
 
 /// One adapter per baseline tool, in report order.
@@ -137,7 +154,23 @@ impl Adapter for Baseline {
     }
 
     fn detect(&mut self) -> Detection {
-        todo!("detect {}", self.tool.name())
+        let name = self.tool.name();
+        let Some(path) = find_executable(name, &self.config.search_path) else {
+            return Detection::Absent {
+                note: format!("{name} not found on PATH"),
+            };
+        };
+        let version = process::run(
+            Command::new(&path).arg("--version"),
+            self.config.version_timeout,
+        )
+        .ok()
+        .filter(|finished| finished.status.success())
+        .and_then(|finished| {
+            version_from(&finished.stdout).or_else(|| version_from(&finished.stderr))
+        });
+        self.path = Some(path);
+        Detection::Available { version }
     }
 
     fn supports(&self, _target: &Target, _scenario: &Scenario, subject: &Subject) -> bool {
@@ -145,13 +178,86 @@ impl Adapter for Baseline {
     }
 
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
-        todo!(
-            "run {} on {} with {:?} into {}",
-            flow.name,
-            target.id,
-            self.path,
-            self.flow_file(flow, target, "tmp").display()
-        )
+        let name = self.tool.name();
+        let path = self
+            .path
+            .clone()
+            .ok_or_else(|| AdapterError::new(format!("{name} was not detected")))?;
+        let platform = target.class.platform();
+        let app = flow.fixture.app_id(platform).ok_or_else(|| {
+            AdapterError::new(format!(
+                "the {} fixture does not run on {}",
+                flow.fixture, target.class
+            ))
+        })?;
+        let (file, contents, args) = match self.tool {
+            BaselineTool::Maestro | BaselineTool::MaestroRunner => {
+                let file = self.flow_file(flow, target, "yaml");
+                let args = if self.tool == BaselineTool::Maestro {
+                    maestro::maestro_args(target, &file)
+                } else {
+                    maestro::runner_args(target, &file)
+                };
+                (file, maestro::flow_yaml(flow, app), args)
+            }
+            BaselineTool::AgentDevice => {
+                let file = self.flow_file(flow, target, "json");
+                let args = agent_device::args(target, SESSION, &file);
+                (file, agent_device::steps(flow, app, platform), args)
+            }
+        };
+        fs::create_dir_all(&self.config.work_dir)
+            .and_then(|()| fs::write(&file, contents))
+            .map_err(|e| AdapterError::new(format!("cannot write {}: {e}", file.display())))?;
+        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
+            .map_err(AdapterError::new)?;
+        let detail = match self.tool {
+            BaselineTool::AgentDevice => {
+                let detail = agent_device::outcome(&finished.stdout).map_err(AdapterError::new)?;
+                if !finished.status.success() {
+                    return Err(AdapterError::new(exit_failure(&finished)));
+                }
+                detail
+            }
+            BaselineTool::Maestro | BaselineTool::MaestroRunner => {
+                if !finished.status.success() {
+                    return Err(AdapterError::new(exit_failure(&finished)));
+                }
+                None
+            }
+        };
+        Ok(Sample {
+            elapsed: finished.elapsed,
+            clock: Clock::Wall,
+            nodes: None,
+            detail,
+        })
+    }
+}
+
+/// The exit status and the last three lines the tool printed, at most 500
+/// characters of them.
+fn exit_failure(finished: &Finished) -> String {
+    let status = finished.status.code().map_or_else(
+        || "killed by a signal".to_owned(),
+        |code| format!("exit status {code}"),
+    );
+    let lines: Vec<&str> = finished
+        .stdout
+        .lines()
+        .chain(finished.stderr.lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let tail: String = lines[lines.len().saturating_sub(3)..]
+        .join(" / ")
+        .chars()
+        .take(500)
+        .collect();
+    if tail.is_empty() {
+        status
+    } else {
+        format!("{status}: {tail}")
     }
 }
 

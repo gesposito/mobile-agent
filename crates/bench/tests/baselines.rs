@@ -382,3 +382,55 @@ fn the_baselines_command_lists_each_tool_and_notes_absent_ones() {
         ]
     );
 }
+
+/// A run of `series` on the script's emulator, with the tab-list flow.
+fn check(series: Vec<bench::harness::Series>) -> Result<Report, String> {
+    let fake = FakeAdapter::new(script());
+    Harness::new(RunConfig::default(), fake.targets(), series)
+        .flows(fake.flows())
+        .tool(Box::new(fake))
+        .probe(Box::new(common::probe()), "macos")
+        .run()
+}
+
+#[test]
+fn a_series_the_run_cannot_carry_out_is_refused_before_anything_runs() {
+    use bench::fixture::Screen;
+    use bench::harness::Series;
+    let series = |fixture, screen, subject| Series {
+        target: "emulator-5554".into(),
+        fixture,
+        screen,
+        subject,
+    };
+    let unknown_flow = check(vec![series(
+        Some(Fixture::Expo),
+        None,
+        Subject::Flow("checkout".into()),
+    )])
+    .unwrap_err();
+    assert!(unknown_flow.contains("flow checkout"), "{unknown_flow}");
+    let wrong_fixture = check(vec![series(
+        Some(Fixture::Compose),
+        None,
+        Subject::Flow("tab-list".into()),
+    )])
+    .unwrap_err();
+    assert!(wrong_fixture.contains("expo"), "{wrong_fixture}");
+    let with_screen = check(vec![series(
+        Some(Fixture::Expo),
+        Some(Screen::List),
+        Subject::Flow("tab-list".into()),
+    )]);
+    assert!(with_screen.is_err());
+    let swiftui_on_android = check(vec![series(
+        Some(Fixture::SwiftUi),
+        Some(Screen::Big),
+        Subject::Primitive(bench::primitive::Primitive::WarmSnapshot),
+    )])
+    .unwrap_err();
+    assert!(
+        swiftui_on_android.contains("swiftui fixture on emulator-5554"),
+        "{swiftui_on_android}"
+    );
+}

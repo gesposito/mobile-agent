@@ -12,36 +12,104 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::flow::Flow;
+use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::Target;
 
 /// The Maestro flow file for `flow` against the app `app_id`.
 pub fn flow_yaml(flow: &Flow, app_id: &str) -> String {
-    todo!("render {} for {app_id}", flow.name)
+    let mut yaml = format!("appId: {app_id}\n---\n");
+    for step in &flow.steps {
+        match step {
+            Step::Launch => yaml.push_str("- launchApp\n"),
+            Step::Tap(target) => {
+                yaml.push_str("- tapOn:\n");
+                yaml.push_str(&selector(target, 4));
+            }
+            Step::Fill { target, text } => {
+                yaml.push_str("- tapOn:\n");
+                yaml.push_str(&selector(target, 4));
+                yaml.push_str(&format!("- inputText: {}\n", quoted(text)));
+            }
+            Step::ScrollTo { target, direction } => {
+                yaml.push_str("- scrollUntilVisible:\n    element:\n");
+                yaml.push_str(&selector(target, 6));
+                let direction = match direction {
+                    Direction::Down => "DOWN",
+                    Direction::Up => "UP",
+                };
+                yaml.push_str(&format!("    direction: {direction}\n"));
+            }
+            Step::AssertVisible(target) => {
+                yaml.push_str("- assertVisible:\n");
+                yaml.push_str(&selector(target, 4));
+            }
+            Step::AssertText { id, text } => {
+                yaml.push_str("- assertVisible:\n");
+                yaml.push_str(&selector(&Selector::Id(id.clone()), 4));
+                yaml.push_str(&selector(&Selector::Text(text.clone()), 4));
+            }
+        }
+    }
+    yaml
+}
+
+/// One selector line at `indent` spaces.
+fn selector(selector: &Selector, indent: usize) -> String {
+    let (key, value) = match selector {
+        Selector::Id(id) => ("id", id),
+        Selector::Text(text) => ("text", text),
+    };
+    format!("{:indent$}{key}: {}\n", "", quoted(&regex_literal(value)))
 }
 
 /// `value` as a regular expression that matches exactly it.
 pub fn regex_literal(value: &str) -> String {
-    todo!("escape {value}")
+    let mut literal = String::with_capacity(value.len());
+    for c in value.chars() {
+        if "\\^$.|?*+()[]{}".contains(c) {
+            literal.push('\\');
+        }
+        literal.push(c);
+    }
+    literal
 }
 
 /// `value` as a YAML double-quoted scalar.
 pub fn quoted(value: &str) -> String {
-    todo!("quote {value}")
+    let mut scalar = String::with_capacity(value.len() + 2);
+    scalar.push('"');
+    for c in value.chars() {
+        match c {
+            '\\' => scalar.push_str("\\\\"),
+            '"' => scalar.push_str("\\\""),
+            '\n' => scalar.push_str("\\n"),
+            _ => scalar.push(c),
+        }
+    }
+    scalar.push('"');
+    scalar
 }
 
 /// Arguments for `maestro`.
 pub fn maestro_args(target: &Target, file: &Path) -> Vec<OsString> {
-    todo!("maestro arguments for {} and {}", target.id, file.display())
+    vec![
+        "--device".into(),
+        target.id.clone().into(),
+        "test".into(),
+        file.as_os_str().to_owned(),
+    ]
 }
 
 /// Arguments for `maestro-runner`.
 pub fn runner_args(target: &Target, file: &Path) -> Vec<OsString> {
-    todo!(
-        "maestro-runner arguments for {} and {}",
-        target.id,
-        file.display()
-    )
+    vec![
+        "--platform".into(),
+        target.class.platform().id().into(),
+        "--device".into(),
+        target.id.clone().into(),
+        "test".into(),
+        file.as_os_str().to_owned(),
+    ]
 }
 
 #[cfg(test)]

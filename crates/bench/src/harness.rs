@@ -121,19 +121,10 @@ impl Harness {
     }
 
     /// Detects every tool, runs every series through each available tool that
-    /// supports it, and returns the report. Fails only on a series that names a
-    /// target the run does not have.
+    /// supports it, and returns the report. Fails only on a series the run
+    /// cannot carry out, before anything runs: see [`Harness::check`].
     pub fn run(&mut self) -> Result<Report, String> {
-        if let Some(series) = self
-            .series
-            .iter()
-            .find(|s| !self.targets.iter().any(|t| t.id == s.target))
-        {
-            return Err(format!(
-                "a {} series names target {}, which the run does not have",
-                series.subject, series.target
-            ));
-        }
+        self.series.iter().try_for_each(|s| self.check(s))?;
         let started = SystemTime::now();
         let probe = self.probe.as_ref();
         let host = capture_host(probe, &self.os);
@@ -189,6 +180,42 @@ impl Harness {
             measurements,
             gates: None,
         })
+    }
+}
+
+impl Harness {
+    /// A series must name a target of the run and a fixture that exists on
+    /// that target's platform; a flow series must name one of the run's flows,
+    /// that flow's fixture and no screen.
+    fn check(&self, series: &Series) -> Result<(), String> {
+        let Some(target) = self.targets.iter().find(|t| t.id == series.target) else {
+            return Err(format!(
+                "a {} series names target {}, which the run does not have",
+                series.subject, series.target
+            ));
+        };
+        if let Some(fixture) = series.fixture
+            && fixture.app_id(target.class.platform()).is_none()
+        {
+            return Err(format!(
+                "a {} series runs the {fixture} fixture on {}, a {} where it does not exist",
+                series.subject, target.id, target.class
+            ));
+        }
+        if let Subject::Flow(name) = &series.subject {
+            let Some(flow) = self.flows.iter().find(|f| f.name == *name) else {
+                return Err(format!(
+                    "a series names flow {name}, which the run does not have"
+                ));
+            };
+            if series.fixture != Some(flow.fixture) || series.screen.is_some() {
+                return Err(format!(
+                    "the series of flow {name} must name its fixture, {}, and no screen",
+                    flow.fixture
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -272,7 +299,10 @@ fn attempt(
 ) -> Result<Sample, AdapterError> {
     match subject {
         Subject::Primitive(primitive) => tool.measure(target, scenario, *primitive),
-        Subject::Flow(name) => todo!("run flow {name}, one of {} flows", flows.len()),
+        Subject::Flow(name) => match flows.iter().find(|f| f.name == *name) {
+            Some(flow) => tool.run_flow(target, flow),
+            None => Err(AdapterError::new(format!("the run has no flow {name}"))),
+        },
     }
 }
 

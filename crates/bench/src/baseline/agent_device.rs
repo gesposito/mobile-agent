@@ -13,7 +13,9 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::flow::{Flow, Selector};
+use serde_json::{Value, json};
+
+use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::{Platform, Target};
 
 /// How long a `wait` step waits.
@@ -21,28 +23,146 @@ pub const ASSERT_TIMEOUT_MS: u64 = 10_000;
 
 /// The batch steps for `flow` against `app_id` on `platform`, as JSON.
 pub fn steps(flow: &Flow, app_id: &str, platform: Platform) -> String {
-    todo!("steps for {} on {app_id}, {platform:?}", flow.name)
+    let mut steps = Vec::new();
+    for step in &flow.steps {
+        match step {
+            Step::Launch => steps.push(json!({
+                "command": "open",
+                "input": {"app": app_id, "platform": platform.id(), "relaunch": true}
+            })),
+            Step::Tap(target) => steps.push(json!({
+                "command": "press",
+                "input": {"target": element(target)}
+            })),
+            Step::Fill { target, text } => steps.push(json!({
+                "command": "fill",
+                "input": {"target": element(target), "text": text}
+            })),
+            Step::ScrollTo { target, direction } => steps.push(json!({
+                "command": "scroll",
+                "input": {
+                    "direction": match direction {
+                        Direction::Down => "down",
+                        Direction::Up => "up",
+                    },
+                    "until": selector(target)
+                }
+            })),
+            Step::AssertVisible(target) => steps.push(json!({
+                "command": "wait",
+                "input": {"kind": "selector", "selector": selector(target), "timeoutMs": ASSERT_TIMEOUT_MS}
+            })),
+            Step::AssertText { id, text } => {
+                steps.push(json!({
+                    "command": "wait",
+                    "input": {"kind": "text", "text": text, "timeoutMs": ASSERT_TIMEOUT_MS}
+                }));
+                steps.push(json!({
+                    "command": "is",
+                    "input": {
+                        "predicate": "text",
+                        "selector": selector(&Selector::Id(id.clone())),
+                        "value": text
+                    }
+                }));
+            }
+        }
+    }
+    serde_json::to_string_pretty(&Value::Array(steps)).expect("batch steps always serialize")
+}
+
+/// A step's target: the element a selector finds.
+fn element(target: &Selector) -> Value {
+    json!({"kind": "selector", "selector": selector(target)})
 }
 
 /// The agent-device selector for `selector`: `id="…"` or `text="…"`, with
 /// backslashes and quotes escaped.
 pub fn selector(selector: &Selector) -> String {
-    todo!("selector for {selector:?}")
+    let (key, value) = match selector {
+        Selector::Id(id) => ("id", id),
+        Selector::Text(text) => ("text", text),
+    };
+    format!(
+        "{key}=\"{}\"",
+        value.replace('\\', "\\\\").replace('"', "\\\"")
+    )
 }
 
 /// Arguments for `agent-device` running the steps in `file`.
 pub fn args(target: &Target, session: &str, file: &Path) -> Vec<OsString> {
-    todo!(
-        "agent-device arguments for {} in {session} with {}",
-        target.id,
-        file.display()
-    )
+    let platform = target.class.platform();
+    let device_flag = match platform {
+        Platform::Ios => "--udid",
+        Platform::Android => "--serial",
+    };
+    vec![
+        "batch".into(),
+        "--steps-file".into(),
+        file.as_os_str().to_owned(),
+        "--on-error".into(),
+        "stop".into(),
+        "--json".into(),
+        "--platform".into(),
+        platform.id().into(),
+        device_flag.into(),
+        target.id.clone().into(),
+        "--session".into(),
+        session.into(),
+    ]
 }
 
 /// Reads the batch's JSON reply. Success gives a note of the duration
 /// agent-device reported; failure gives the failing step and its error.
 pub fn outcome(stdout: &str) -> Result<Option<String>, String> {
-    todo!("read {} bytes of reply", stdout.len())
+    let Some(reply) = reply(stdout) else {
+        let last = stdout.lines().map(str::trim).rfind(|l| !l.is_empty());
+        return Err(format!(
+            "agent-device printed no JSON reply{}",
+            last.map(|l| format!(": {l}")).unwrap_or_default()
+        ));
+    };
+    if reply["success"] == true {
+        return Ok(reply["data"]["totalDurationMs"]
+            .as_u64()
+            .map(|ms| format!("agent-device reported {ms} ms")));
+    }
+    let error = &reply["error"];
+    let message = error.as_str().map(str::to_owned).or_else(|| {
+        let message = error["message"].as_str()?;
+        Some(match error["code"].as_str() {
+            Some(code) => format!("{code}: {message}"),
+            None => message.to_owned(),
+        })
+    });
+    let step = reply["data"]["results"]
+        .as_array()
+        .and_then(|results| results.iter().find(|r| r["ok"] == false))
+        .map(|r| {
+            format!(
+                "step {} ({})",
+                r["step"]
+                    .as_u64()
+                    .map_or_else(|| "?".to_owned(), |n| n.to_string()),
+                r["command"].as_str().unwrap_or("?")
+            )
+        });
+    Err(match (step, message) {
+        (Some(step), Some(message)) => format!("{step} failed: {message}"),
+        (Some(step), None) => format!("{step} failed"),
+        (None, Some(message)) => message,
+        (None, None) => "agent-device reported a failure without an error".to_owned(),
+    })
+}
+
+/// The JSON object on stdout: all of it, or else its last line that is one.
+fn reply(stdout: &str) -> Option<Value> {
+    let object = |text: &str| {
+        serde_json::from_str::<Value>(text.trim())
+            .ok()
+            .filter(Value::is_object)
+    };
+    object(stdout).or_else(|| stdout.lines().rev().find_map(object))
 }
 
 #[cfg(test)]
