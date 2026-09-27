@@ -4,11 +4,17 @@
 //! node's semantics in the snapshot itself, so the payload passes through as
 //! the agent sent it and the mirror reads them there.
 
-use mirror::backend::ReadReason;
-use protocol::message::SnapshotParams;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, PoisonError};
+use std::time::Instant;
+
+use mirror::backend::{BackendError, BackendInfo, ReadReason, ReadRequest, TreeRead, TreeSource};
+use protocol::code;
+use protocol::event::Stream;
+use protocol::message::{Call, Reply, ResyncParams, SnapshotParams};
 use protocol::snapshot::{Node, Snapshot};
 
-use super::ReadOptions;
+use super::{INPUT_QUIET, Inner, ReadOptions, ReadStats};
 
 /// The backend name the mirror reports for reads from the agent.
 pub const BACKEND: &str = "android-agent";
@@ -16,24 +22,41 @@ pub const BACKEND: &str = "android-agent";
 /// Physical pixels per device point from `wm density` output: the override
 /// density when one is set, else the physical one, over 160.
 pub fn scale_from_density(wm_density: &str) -> Option<f64> {
-    let _ = wm_density;
-    todo!("task 5.3")
+    let density = |label: &str| {
+        wm_density
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(label))
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|dpi| *dpi > 0.0)
+    };
+    density("Override density:")
+        .or_else(|| density("Physical density:"))
+        .map(|dpi| dpi / 160.0)
 }
 
 /// Whether a window of `snapshot` sends no change events by the agent's
 /// account, as a window of Jetpack Compose content does: its changes are
 /// seen only by reading it again.
 pub fn has_event_less_window(snapshot: &Snapshot) -> bool {
-    let _ = snapshot;
-    todo!("task 5.3")
+    snapshot
+        .windows
+        .iter()
+        .any(|window| window.emits_events == Some(false))
 }
 
 /// The parameters of a read for `reason`: reads the target's own changes
 /// trigger do not wait for idle, reads after an attach, an action or a
 /// resync take the settle bound.
 pub fn snapshot_params(reason: ReadReason, options: &ReadOptions) -> SnapshotParams {
-    let _ = (reason, options);
-    todo!("task 5.3")
+    let idle_ms = match reason {
+        ReadReason::Attach | ReadReason::Action | ReadReason::Resync => options.settle_idle_ms,
+        ReadReason::Events | ReadReason::Poll | ReadReason::Frames => Some(options.idle_ms),
+    };
+    SnapshotParams {
+        max_depth: options.max_depth,
+        max_nodes: options.max_nodes,
+        idle_ms,
+    }
 }
 
 /// Nodes a snapshot carries.
@@ -47,6 +70,81 @@ pub(crate) fn serialized_nodes(snapshot: &Snapshot) -> u32 {
         .filter_map(|w| w.root.as_ref())
         .map(count)
         .sum()
+}
+
+/// The session's tree source.
+pub(crate) struct AgentTree {
+    pub(crate) inner: Arc<Inner>,
+}
+
+impl TreeSource for AgentTree {
+    fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
+        let inner = &*self.inner;
+        let started = Instant::now();
+        let deadline = inner.options.read.deadline;
+        // A resync the host session could not complete leaves the stream's
+        // events dropped until another one succeeds.
+        let failed: Vec<Stream> = inner
+            .failed_resyncs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect();
+        for stream in failed {
+            let _ = inner.connection.resync(stream);
+        }
+        let mut cleared_cache = false;
+        let foreign = inner
+            .foreign_input
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(input) = foreign {
+            // The agent's idle wait knows nothing of this input, and its cache
+            // of windows without events is stale after it.
+            let quiet = input + INPUT_QUIET;
+            if let Some(wait) = quiet.checked_duration_since(Instant::now()) {
+                std::thread::sleep(wait);
+            }
+            if inner.event_less.load(Ordering::SeqCst) {
+                inner.connection.call(
+                    Call::Resync(ResyncParams {
+                        stream: Stream::TREE,
+                    }),
+                    deadline,
+                )?;
+                cleared_cache = true;
+            }
+        }
+        let params = snapshot_params(request.reason, &inner.options.read);
+        let Reply::Snapshot(snapshot) = inner.connection.call(Call::Snapshot(params), deadline)?
+        else {
+            return Err(BackendError::new(
+                code::PROTOCOL_ERROR,
+                "the agent answered a snapshot request with another result",
+            ));
+        };
+        inner
+            .event_less
+            .store(has_event_less_window(&snapshot), Ordering::SeqCst);
+        inner.reads.fetch_add(1, Ordering::SeqCst);
+        *inner
+            .last_read
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(ReadStats {
+            node_count: snapshot.node_count,
+            serialized: serialized_nodes(&snapshot),
+            windows: u32::try_from(snapshot.windows.len()).unwrap_or(u32::MAX),
+            took: started.elapsed(),
+            reason: request.reason,
+            cleared_cache,
+        });
+        Ok(TreeRead {
+            snapshot,
+            backend: BackendInfo::new(BACKEND, false),
+            scale: inner.scale,
+        })
+    }
 }
 
 #[cfg(test)]

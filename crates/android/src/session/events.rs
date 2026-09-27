@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Instant;
 
 use mirror::backend::{EventStream, StreamItem, Timed};
+use protocol::Error;
 use protocol::session::HostEvent;
 
 /// The stream item for a host session event, or `None` for events the
@@ -12,8 +13,26 @@ use protocol::session::HostEvent;
 /// a failed resync, which the session retries on its next read (the gap
 /// that caused it has already reached the mirror).
 pub fn stream_item(event: HostEvent) -> Option<StreamItem> {
-    let _ = event;
-    todo!("task 5.3")
+    match event {
+        HostEvent::Event(event) => Some(StreamItem::Event(event)),
+        HostEvent::OutOfSync {
+            stream,
+            expected,
+            received,
+        } => Some(StreamItem::OutOfSync {
+            stream,
+            expected,
+            received,
+        }),
+        HostEvent::Resynced { stream, seq } => Some(StreamItem::Resynced { stream, seq }),
+        HostEvent::Closed(reason) => Some(StreamItem::Disconnected(
+            Error::disconnected(&reason).message,
+        )),
+        HostEvent::Ready(_)
+        | HostEvent::Response { .. }
+        | HostEvent::ResyncFailed { .. }
+        | HostEvent::FrameTooLarge(_) => None,
+    }
 }
 
 /// The mirror's end of the channel.
@@ -23,8 +42,21 @@ pub(crate) struct AgentEvents {
 
 impl EventStream for AgentEvents {
     fn next(&mut self, deadline: Instant) -> Option<Timed<StreamItem>> {
-        let _ = (deadline, RecvTimeoutError::Timeout);
-        todo!("task 5.3")
+        let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
+            return self.items.try_recv().ok();
+        };
+        match self.items.recv_timeout(wait) {
+            Ok(item) => Some(item),
+            Err(RecvTimeoutError::Timeout) => None,
+            Err(RecvTimeoutError::Disconnected) => {
+                // Nothing will arrive; waiting out the deadline keeps the
+                // mirror's loops from spinning.
+                if let Some(rest) = deadline.checked_duration_since(Instant::now()) {
+                    std::thread::sleep(rest);
+                }
+                None
+            }
+        }
     }
 }
 

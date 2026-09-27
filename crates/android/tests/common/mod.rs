@@ -199,3 +199,66 @@ pub fn wait_until_quiet(device: &android::adb::Device) {
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
 }
+
+/// Another user of the shared device changed what a test relies on: its
+/// agent or `uiautomator` took UI automation, or it moved the app. The test
+/// runs again once the device is quiet.
+#[derive(Debug)]
+pub struct Disturbed(pub String);
+
+/// What another user of the device is doing: an agent that is not one of
+/// `ours` runs, or something holds UI automation while none of ours runs.
+pub fn others_on(device: &android::adb::Device, ours: &[u32]) -> Option<String> {
+    let agents = device
+        .shell(android::agent::PS_COMMAND)
+        .map(|out| android::agent::parse_agents(&out.stdout_text()))
+        .unwrap_or_default();
+    let (mine, theirs): (Vec<_>, Vec<_>) = agents.into_iter().partition(|a| ours.contains(&a.pid));
+    if !theirs.is_empty() {
+        return Some(format!("another agent runs: {theirs:?}"));
+    }
+    let held = device
+        .shell("dumpsys accessibility")
+        .map(|out| out.stdout_text().contains("Ui Automation"))
+        .unwrap_or(false);
+    (held && mine.is_empty()).then(|| "another process holds UI automation".to_owned())
+}
+
+/// A deployment failure as a disturbance: a conflict with another holder,
+/// or any failure while another user of the device runs an agent or holds
+/// UI automation (another agent's `--force` kills ours). Anything else
+/// fails the test.
+pub fn disturbed_by(
+    device: &android::adb::Device,
+    error: android::agent::DeployError,
+) -> Disturbed {
+    match error {
+        android::agent::DeployError::Conflict(conflict) => Disturbed(conflict.message()),
+        other => match others_on(device, &[]) {
+            Some(who) => Disturbed(format!("{other}, while {who}")),
+            None => panic!("{other}"),
+        },
+    }
+}
+
+/// Runs `body` once the device is quiet, again after a disturbance, three
+/// times at most.
+pub fn retry_when_disturbed(
+    test: &str,
+    device: &android::adb::Device,
+    mut body: impl FnMut() -> Result<(), Disturbed>,
+) {
+    const ATTEMPTS: u32 = 3;
+    for attempt in 1..=ATTEMPTS {
+        wait_until_quiet(device);
+        match body() {
+            Ok(()) => return,
+            Err(Disturbed(why)) if attempt < ATTEMPTS => {
+                eprintln!(
+                    "{test}: attempt {attempt} disturbed by another user of the device ({why}); again"
+                );
+            }
+            Err(Disturbed(why)) => panic!("{test}: disturbed {ATTEMPTS} times, last: {why}"),
+        }
+    }
+}

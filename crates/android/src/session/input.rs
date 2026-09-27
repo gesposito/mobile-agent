@@ -1,23 +1,76 @@
 //! The input sink: points in device points to the agent's input and text
 //! requests in physical pixels, or to the controller's touches.
 
-use std::time::Duration;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, PoisonError};
+use std::time::{Duration, Instant};
 
-use mirror::backend::{Input, InputAck};
-use protocol::message::{Call, Reply};
+use mirror::Point;
+use mirror::backend::{BackendError, Input, InputAck, InputSink};
+use protocol::code;
+use protocol::message::{Call, KeyParams, Reply, SwipeParams, TapParams, TextMethod, TextParams};
 
-use crate::emulator::TouchPoint;
+use super::Inner;
+use crate::emulator::{self, TouchPoint};
+
+/// How often a swipe on the controller moves its contact, as the agent's
+/// swipe does.
+const SWIPE_STEP: Duration = Duration::from_millis(8);
+
+fn millis(d: Duration) -> u32 {
+    u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
+}
 
 /// The agent request for `input`, at `scale` physical pixels per point.
 pub fn agent_call(input: &Input, scale: f64) -> Call {
-    let _ = (input, scale);
-    todo!("task 5.3")
+    match input {
+        Input::Tap { at, hold } => {
+            let (x, y) = at.to_pixels(scale);
+            Call::Tap(TapParams {
+                x,
+                y,
+                duration_ms: hold.map(millis),
+            })
+        }
+        Input::Swipe { from, to, duration } => {
+            let (x1, y1) = from.to_pixels(scale);
+            let (x2, y2) = to.to_pixels(scale);
+            Call::Swipe(SwipeParams {
+                x1,
+                y1,
+                x2,
+                y2,
+                duration_ms: millis(*duration),
+            })
+        }
+        Input::Key { code, meta } => Call::Key(KeyParams {
+            code: *code,
+            meta: *meta,
+        }),
+        Input::Text { text, node, method } => Call::TextSet(TextParams {
+            text: text.clone(),
+            node: node.map(|handle| handle.node),
+            mode: (*method != TextMethod::AUTO).then_some(*method),
+        }),
+    }
 }
 
 /// The acknowledgement an agent reply carries.
 pub fn input_ack(reply: Reply) -> Result<InputAck, protocol::Error> {
-    let _ = reply;
-    todo!("task 5.3")
+    match reply {
+        Reply::Input(ack) => Ok(InputAck {
+            accepted: ack.accepted,
+            method: None,
+        }),
+        Reply::Text(ack) => Ok(InputAck {
+            accepted: true,
+            method: Some(ack.method),
+        }),
+        _ => Err(protocol::Error::new(
+            code::PROTOCOL_ERROR,
+            "the agent answered an input request with another result",
+        )),
+    }
 }
 
 /// The controller touches of a swipe from `from` to `to` over `duration`,
@@ -30,8 +83,133 @@ pub fn swipe_touches(
     duration: Duration,
     step: Duration,
 ) -> Vec<(Duration, TouchPoint)> {
-    let _ = (from, to, duration, step);
-    todo!("task 5.3")
+    let steps = if step.is_zero() {
+        1
+    } else {
+        duration.as_nanos().div_ceil(step.as_nanos()).max(1)
+    };
+    let steps = u32::try_from(steps).unwrap_or(u32::MAX);
+    let along = |from: i32, to: i32, i: u32| {
+        from + ((f64::from(to - from) * f64::from(i)) / f64::from(steps)).round() as i32
+    };
+    let mut touches = Vec::with_capacity(steps as usize + 2);
+    touches.push((Duration::ZERO, TouchPoint::down(from.0, from.1)));
+    for i in 1..=steps {
+        touches.push((
+            duration * i / steps,
+            TouchPoint::down(along(from.0, to.0, i), along(from.1, to.1, i)),
+        ));
+    }
+    touches.push((duration, TouchPoint::up(to.0, to.1)));
+    touches
+}
+
+/// The session's input sink.
+pub(crate) struct SessionInput {
+    pub(crate) inner: Arc<Inner>,
+}
+
+/// Whether a controller failure happened before anything reached the
+/// device, so that the agent can take the same input.
+enum ControllerFailure {
+    BeforeContact(emulator::Error),
+    AfterContact(emulator::Error),
+}
+
+impl SessionInput {
+    /// Taps and swipes through the controller; `None` for input it does not
+    /// take.
+    fn through_controller(&self, input: &Input) -> Option<Result<InputAck, ControllerFailure>> {
+        let inner = &*self.inner;
+        let link = inner.controller.as_ref()?;
+        if inner
+            .controller_failed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+        {
+            return None;
+        }
+        let pixels = |p: &Point| p.to_pixels(inner.scale);
+        let touches = match input {
+            Input::Tap { at, hold } => {
+                let (x, y) = pixels(at);
+                let hold = hold.unwrap_or(Duration::ZERO);
+                vec![
+                    (Duration::ZERO, TouchPoint::down(x, y)),
+                    (hold, TouchPoint::up(x, y)),
+                ]
+            }
+            Input::Swipe { from, to, duration } => {
+                swipe_touches(pixels(from), pixels(to), *duration, SWIPE_STEP)
+            }
+            Input::Key { .. } | Input::Text { .. } => return None,
+        };
+        let controller = link.controller().clone();
+        let result = link.block_on(async move {
+            let start = tokio::time::Instant::now();
+            for (i, (at, point)) in touches.iter().enumerate() {
+                tokio::time::sleep_until(start + *at).await;
+                if let Err(error) = controller.touch(std::slice::from_ref(point)).await {
+                    return Err(if i == 0 {
+                        ControllerFailure::BeforeContact(error)
+                    } else {
+                        ControllerFailure::AfterContact(error)
+                    });
+                }
+            }
+            Ok(())
+        });
+        if !matches!(result, Err(ControllerFailure::BeforeContact(_))) {
+            inner.note_foreign_input(Instant::now());
+            inner.controller_inputs.fetch_add(1, Ordering::SeqCst);
+        }
+        Some(result.map(|()| InputAck {
+            accepted: true,
+            method: None,
+        }))
+    }
+}
+
+impl InputSink for SessionInput {
+    fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError> {
+        match self.through_controller(input) {
+            Some(Ok(ack)) => return Ok(ack),
+            Some(Err(failure)) => {
+                let (error, retry) = match failure {
+                    ControllerFailure::BeforeContact(error) => (error, true),
+                    ControllerFailure::AfterContact(error) => (error, false),
+                };
+                *self
+                    .inner
+                    .controller_failed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = Some(error.to_string());
+                if !retry {
+                    return Err(BackendError::new(
+                        code::INTERNAL,
+                        format!(
+                            "the emulator controller failed during the gesture ({error}); \
+                             later input goes through the agent"
+                        ),
+                    ));
+                }
+            }
+            None => {}
+        }
+        let inner = &*self.inner;
+        let gesture = match input {
+            Input::Tap { hold, .. } => hold.unwrap_or(Duration::ZERO),
+            Input::Swipe { duration, .. } => *duration,
+            Input::Key { .. } | Input::Text { .. } => Duration::ZERO,
+        };
+        let reply = inner.connection.call(
+            agent_call(input, inner.scale),
+            inner.options.input_deadline + gesture,
+        )?;
+        inner.agent_inputs.fetch_add(1, Ordering::SeqCst);
+        input_ack(reply)
+    }
 }
 
 #[cfg(test)]

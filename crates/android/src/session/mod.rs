@@ -20,13 +20,21 @@ mod events;
 mod input;
 mod tree;
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
-use mirror::backend::{Backend, ReadReason};
-use protocol::message::{Screenshot, ScreenshotParams};
-use protocol::session::DisconnectReason;
+use mirror::backend::{Backend, FrameSource, ReadReason, StreamItem, SystemClock, Timed};
+use protocol::code;
+use protocol::event::Stream;
+use protocol::message::{Call, Reply, Screenshot, ScreenshotParams};
+use protocol::session::{DisconnectReason, HostEvent};
 
+use self::controller::{ControllerFrames, FramePump, FrameStore};
+use self::events::AgentEvents;
+use self::input::SessionInput;
+use self::tree::AgentTree;
 use crate::adb;
 use crate::agent::{AgentInfo, Attached, Connection, DeployError, Deployer, Outcome, Stopped};
 
@@ -141,18 +149,65 @@ pub struct Session {
     inner: Arc<Inner>,
 }
 
+/// What the session's backend parts share.
 struct Inner {
+    connection: Connection,
     agent: AgentInfo,
     outcome: Outcome,
+    deployer: Option<Deployer>,
+    scale: f64,
+    options: SessionOptions,
+    controller: Option<ControllerLink>,
+    frames: Arc<Mutex<FrameStore>>,
+    frames_received: Arc<AtomicU64>,
+    frame_error: Arc<Mutex<Option<String>>>,
+    pump_stop: Arc<AtomicBool>,
+    /// The event stream's receiving end, until the backend takes it.
+    items: Mutex<Option<Receiver<Timed<StreamItem>>>>,
+    /// Whether the last read showed a window that sends no change events.
+    event_less: AtomicBool,
+    /// Input the agent did not inject since the last read.
+    foreign_input: Mutex<Option<Instant>>,
+    /// Streams whose resync failed, to retry on the next read.
+    failed_resyncs: Arc<Mutex<Vec<Stream>>>,
+    last_read: Mutex<Option<ReadStats>>,
+    reads: AtomicU64,
+    controller_inputs: AtomicU64,
+    agent_inputs: AtomicU64,
+    /// Why the controller stopped taking input, once it failed.
+    controller_failed: Mutex<Option<String>>,
+}
+
+impl Inner {
+    fn note_foreign_input(&self, at: Instant) {
+        *self
+            .foreign_input
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(at);
+    }
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        self.pump_stop.store(true, Ordering::SeqCst);
+    }
 }
 
 impl std::fmt::Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Session")
             .field("agent", &self.inner.agent)
+            .field("scale", &self.inner.scale)
+            .field("controller", &self.inner.controller.is_some())
             .finish_non_exhaustive()
     }
 }
+
+/// How long `shutdown` may take to be answered.
+const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(2);
+
+/// Deadline of a screenshot through the agent.
+const SCREENSHOT_DEADLINE: Duration = Duration::from_secs(10);
 
 impl Session {
     /// A session over `attached`: reads the display density for the scale,
@@ -162,8 +217,20 @@ impl Session {
         options: SessionOptions,
         controller: Option<ControllerLink>,
     ) -> Result<Session, SessionError> {
-        let _ = (attached, options, controller);
-        todo!("task 5.3")
+        let density = attached.deployer().device().shell("wm density")?;
+        let text = density.stdout_text();
+        let scale = scale_from_density(&text)
+            .ok_or_else(|| SessionError::Density(format!("{text}{}", density.stderr_text())))?;
+        let (connection, agent, outcome, deployer) = attached.into_parts();
+        Ok(Session::over(
+            connection,
+            agent,
+            outcome,
+            Some(deployer),
+            scale,
+            options,
+            controller,
+        ))
     }
 
     /// A session over `connection`, whose handshake completed, at `scale`.
@@ -177,18 +244,63 @@ impl Session {
         options: SessionOptions,
         controller: Option<ControllerLink>,
     ) -> Session {
-        let _ = (connection, deployer, scale, options, controller);
+        let (sender, items) = mpsc::channel();
+        let failed_resyncs = Arc::new(Mutex::new(Vec::new()));
+        let events = sender.clone();
+        let failed = Arc::clone(&failed_resyncs);
+        connection.set_sink(Box::new(move |at, event| {
+            if let HostEvent::ResyncFailed { stream, .. } = &event {
+                failed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(*stream);
+            }
+            if let Some(item) = stream_item(event) {
+                let _ = events.send(Timed { at, item });
+            }
+        }));
+        let pump = FramePump {
+            store: Arc::new(Mutex::new(FrameStore::default())),
+            items: sender,
+            received: Arc::new(AtomicU64::new(0)),
+            stop: Arc::new(AtomicBool::new(false)),
+            error: Arc::new(Mutex::new(None)),
+        };
+        if let Some(link) = &controller {
+            link.start_frames(options.frame_width, pump.clone());
+        }
         Session {
-            inner: Arc::new(Inner { agent, outcome }),
+            inner: Arc::new(Inner {
+                connection,
+                agent,
+                outcome,
+                deployer,
+                scale,
+                options,
+                controller,
+                frames: pump.store,
+                frames_received: pump.received,
+                frame_error: pump.error,
+                pump_stop: pump.stop,
+                items: Mutex::new(Some(items)),
+                event_less: AtomicBool::new(false),
+                foreign_input: Mutex::new(None),
+                failed_resyncs,
+                last_read: Mutex::new(None),
+                reads: AtomicU64::new(0),
+                controller_inputs: AtomicU64::new(0),
+                agent_inputs: AtomicU64::new(0),
+                controller_failed: Mutex::new(None),
+            }),
         }
     }
 
     /// Notes input the agent did not inject at `at`, such as a controller
     /// touch: the next read waits until it is [`INPUT_QUIET`] old and first
-    /// empties the agent's node cache when a window hosts Compose.
-    pub(crate) fn note_foreign_input(&self, at: std::time::Instant) {
-        let _ = at;
-        todo!("task 5.3")
+    /// empties the agent's node cache when a window sends no change events.
+    #[cfg(test)]
+    pub(crate) fn note_foreign_input(&self, at: Instant) {
+        self.inner.note_foreign_input(at);
     }
 
     /// The backend a `mirror::Mirror` runs on. Taken once: the event stream
@@ -198,7 +310,29 @@ impl Session {
     ///
     /// When called a second time.
     pub fn backend(&self) -> Backend {
-        todo!("task 5.3")
+        let items = self
+            .inner
+            .items
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .expect("the backend of a session is taken once");
+        let frames = self.inner.controller.as_ref().map(|_| {
+            Box::new(ControllerFrames {
+                store: Arc::clone(&self.inner.frames),
+            }) as Box<dyn FrameSource>
+        });
+        Backend {
+            tree: Box::new(AgentTree {
+                inner: Arc::clone(&self.inner),
+            }),
+            events: Box::new(AgentEvents { items }),
+            frames,
+            input: Box::new(SessionInput {
+                inner: Arc::clone(&self.inner),
+            }),
+            clock: Box::new(SystemClock),
+        }
     }
 
     pub fn agent(&self) -> &AgentInfo {
@@ -212,44 +346,98 @@ impl Session {
 
     /// Physical pixels per device point.
     pub fn scale(&self) -> f64 {
-        todo!("task 5.3")
+        self.inner.scale
     }
 
     /// Whether touches and frames go through the emulator's controller.
     pub fn uses_controller(&self) -> bool {
-        todo!("task 5.3")
+        self.inner.controller.is_some()
     }
 
     /// What the last tree read returned.
     pub fn last_read(&self) -> Option<ReadStats> {
-        todo!("task 5.3")
+        *self
+            .inner
+            .last_read
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Tree reads made so far.
     pub fn reads(&self) -> u64 {
-        todo!("task 5.3")
+        self.inner.reads.load(Ordering::SeqCst)
     }
 
     /// Frames received from the controller so far.
     pub fn frames_received(&self) -> u64 {
-        todo!("task 5.3")
+        self.inner.frames_received.load(Ordering::SeqCst)
+    }
+
+    /// Inputs sent so far: through the controller, and through the agent.
+    pub fn inputs(&self) -> (u64, u64) {
+        (
+            self.inner.controller_inputs.load(Ordering::SeqCst),
+            self.inner.agent_inputs.load(Ordering::SeqCst),
+        )
+    }
+
+    /// Why the controller stopped taking input, once it failed; input then
+    /// goes through the agent.
+    pub fn controller_error(&self) -> Option<String> {
+        self.inner
+            .controller_failed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The last failure of the controller's frame stream, which the session
+    /// subscribes to again.
+    pub fn frame_error(&self) -> Option<String> {
+        self.inner
+            .frame_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// A screenshot through the agent.
     pub fn screenshot(&self, params: ScreenshotParams) -> Result<Screenshot, protocol::Error> {
-        let _ = params;
-        todo!("task 5.3")
+        match self
+            .inner
+            .connection
+            .call(Call::Screenshot(params), SCREENSHOT_DEADLINE)?
+        {
+            Reply::Screenshot(shot) => Ok(shot),
+            _ => Err(protocol::Error::new(
+                code::PROTOCOL_ERROR,
+                "the agent answered a screenshot request with another result",
+            )),
+        }
     }
 
     /// Why the connection to the agent closed, once it has.
     pub fn close_reason(&self) -> Option<DisconnectReason> {
-        todo!("task 5.3")
+        self.inner.connection.close_reason()
     }
 
     /// Stops the agent: `shutdown`, then a kill by pid past `timeout`.
     pub fn stop(&self, timeout: Duration) -> Result<Stopped, DeployError> {
-        let _ = timeout;
-        todo!("task 5.3")
+        let inner = &*self.inner;
+        inner.pump_stop.store(true, Ordering::SeqCst);
+        match &inner.deployer {
+            Some(deployer) => deployer.stop_agent(
+                &inner.connection,
+                inner.agent.pid,
+                &inner.agent.socket,
+                timeout,
+            ),
+            None => {
+                let _ = inner.connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+                inner.connection.close();
+                Ok(Stopped::Exited)
+            }
+        }
     }
 }
 

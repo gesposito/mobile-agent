@@ -237,6 +237,19 @@ impl Connection {
         }
     }
 
+    /// Asks the agent to resynchronize `stream`; the outcome reaches the
+    /// sink as `Resynced` or `ResyncFailed`.
+    pub fn resync(&self, stream: protocol::event::Stream) -> Result<u32, Error> {
+        let now = Instant::now();
+        let mut state = self.shared.state();
+        if let Some(reason) = &state.closed {
+            return Err(Error::disconnected(reason));
+        }
+        let id = state.session.resync(stream, now)?;
+        self.shared.settle(state, now);
+        Ok(id)
+    }
+
     /// Sets where events go from now on, after replaying those that arrived
     /// while no sink was set.
     pub fn set_sink(&self, mut sink: EventSink) {

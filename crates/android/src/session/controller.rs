@@ -3,12 +3,19 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use mirror::backend::{BackendError, EncodeRequest, FrameMeta};
+use jpeg_encoder::{ColorType, Encoder};
+use mirror::backend::{BackendError, EncodeRequest, FrameMeta, FrameSource, StreamItem, Timed};
+use protocol::code;
 use protocol::message::Rotation;
 
-use crate::emulator::{Controller, Endpoint, Frame, FrameHasher, Options, Unavailable};
+use crate::emulator::{
+    self, BYTES_PER_PIXEL, Controller, Endpoint, Frame, FrameHasher, Options, Unavailable,
+};
 
 /// How long after input the agent did not inject a read waits, as the
 /// agent's idle wait counts a quiet window from its own input (design D8's
@@ -17,6 +24,18 @@ pub const INPUT_QUIET: Duration = Duration::from_millis(200);
 
 /// How many recent frames are kept for encoding.
 pub(crate) const KEPT_FRAMES: usize = 4;
+
+/// The longest lag between the emulator's timestamp and a frame's arrival
+/// that is believed; anything longer is a clock difference.
+const MAX_LAG: Duration = Duration::from_secs(1);
+
+/// How long the frame pump waits for a frame before checking whether it
+/// should stop.
+const FRAME_WAIT: Duration = Duration::from_millis(250);
+
+/// How long the frame pump waits before subscribing again after the stream
+/// failed.
+const RESUBSCRIBE_AFTER: Duration = Duration::from_millis(500);
 
 /// A connected controller and the runtime its calls run on.
 pub struct ControllerLink {
@@ -35,8 +54,23 @@ impl std::fmt::Debug for ControllerLink {
 impl ControllerLink {
     /// Connects to the controller at `endpoint` on a runtime of its own.
     pub fn connect(endpoint: &Endpoint, options: Options) -> Result<ControllerLink, Unavailable> {
-        let _ = (endpoint, options);
-        todo!("task 5.3")
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("android-controller")
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                Unavailable::new(
+                    &endpoint.serial,
+                    endpoint.console_port,
+                    format!("cannot start the controller's runtime: {e}"),
+                )
+            })?;
+        let controller = runtime.block_on(Controller::connect(endpoint, options))?;
+        Ok(ControllerLink {
+            runtime,
+            controller,
+        })
     }
 
     pub fn controller(&self) -> &Controller {
@@ -52,6 +86,13 @@ impl ControllerLink {
     pub(crate) fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }
+
+    /// Streams frames of `width` into the pump's store and onto its channel
+    /// until it is stopped or nothing reads the channel any more.
+    pub(crate) fn start_frames(&self, width: u32, pump: FramePump) {
+        let controller = self.controller.clone();
+        self.runtime.spawn(pump.run(controller, width));
+    }
 }
 
 /// The metadata of `frame`, the `seq`-th of the stream: its hash leaves the
@@ -64,8 +105,25 @@ pub fn frame_meta(
     arrived: Instant,
     now_epoch_us: u64,
 ) -> FrameMeta {
-    let _ = (frame, seq, hasher, arrived, now_epoch_us);
-    todo!("task 5.3")
+    let lag = match frame.timestamp_us() {
+        0 => Duration::ZERO,
+        produced => Duration::from_micros(now_epoch_us.saturating_sub(produced)).min(MAX_LAG),
+    };
+    FrameMeta {
+        seq,
+        at: arrived.checked_sub(lag).unwrap_or(arrived),
+        hash: hasher.key(frame).hash,
+        width: frame.width(),
+        height: frame.height(),
+        rotation: Rotation::R0,
+    }
+}
+
+/// Microseconds since the Unix epoch, the emulator's timestamp clock.
+fn epoch_us() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_micros()).unwrap_or(u64::MAX))
 }
 
 /// RGB888 `pixels` of `width` by `height` turned clockwise by `rotation`;
@@ -76,8 +134,38 @@ pub fn rotate_rgb(
     height: u32,
     rotation: Rotation,
 ) -> (Vec<u8>, u32, u32) {
-    let _ = (pixels, width, height, rotation);
-    todo!("task 5.3")
+    if !matches!(rotation, Rotation::R90 | Rotation::R180 | Rotation::R270) {
+        return (pixels.to_vec(), width, height);
+    }
+    let (w, h) = (width as usize, height as usize);
+    let (out_w, out_h) = if rotation == Rotation::R180 {
+        (w, h)
+    } else {
+        (h, w)
+    };
+    let mut out = vec![0u8; out_w * out_h * BYTES_PER_PIXEL];
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let (sx, sy) = match rotation {
+                Rotation::R90 => (y, h - 1 - x),
+                Rotation::R180 => (w - 1 - x, h - 1 - y),
+                _ => (w - 1 - y, x),
+            };
+            let from = (sy * w + sx) * BYTES_PER_PIXEL;
+            let to = (y * out_w + x) * BYTES_PER_PIXEL;
+            out[to..to + BYTES_PER_PIXEL].copy_from_slice(&pixels[from..from + BYTES_PER_PIXEL]);
+        }
+    }
+    (out, out_w as u32, out_h as u32)
+}
+
+/// The input pixels that output pixel `o` of `to` covers along an axis of
+/// `from`: at least one.
+fn span(o: u32, from: u32, to: u32) -> (usize, usize) {
+    let (o, from, to) = (u64::from(o), u64::from(from), u64::from(to));
+    let start = o * from / to;
+    let end = ((o + 1) * from).div_ceil(to).max(start + 1).min(from);
+    (start as usize, end as usize)
 }
 
 /// RGB888 `pixels` of `width` by `height` scaled to `to_width` by
@@ -90,15 +178,60 @@ pub fn resize_rgb(
     to_width: u32,
     to_height: u32,
 ) -> Vec<u8> {
-    let _ = (pixels, width, height, to_width, to_height);
-    todo!("task 5.3")
+    let (w, to_w) = (width as usize, to_width as usize);
+    let mut out = vec![0u8; to_w * to_height as usize * BYTES_PER_PIXEL];
+    let columns: Vec<(usize, usize)> = (0..to_width).map(|x| span(x, width, to_width)).collect();
+    for oy in 0..to_height {
+        let (y0, y1) = span(oy, height, to_height);
+        for (ox, &(x0, x1)) in columns.iter().enumerate() {
+            let mut sum = [0u64; BYTES_PER_PIXEL];
+            for y in y0..y1 {
+                let row = &pixels[(y * w + x0) * BYTES_PER_PIXEL..(y * w + x1) * BYTES_PER_PIXEL];
+                for px in row.chunks_exact(BYTES_PER_PIXEL) {
+                    for (total, &channel) in sum.iter_mut().zip(px) {
+                        *total += u64::from(channel);
+                    }
+                }
+            }
+            let count = ((y1 - y0) * (x1 - x0)) as u64;
+            let at = (oy as usize * to_w + ox) * BYTES_PER_PIXEL;
+            for (c, total) in sum.iter().enumerate() {
+                out[at + c] = ((total + count / 2) / count) as u8;
+            }
+        }
+    }
+    out
 }
 
 /// `frame` as a JPEG: turned by `request.rotation`, then scaled to exactly
 /// `request.width` by `request.height`, at `request.quality`.
 pub fn encode_jpeg(frame: &Frame, request: &EncodeRequest) -> Result<Vec<u8>, BackendError> {
-    let _ = (frame, request);
-    todo!("task 5.3")
+    let edge = |pixels: u32| u16::try_from(pixels).ok().filter(|&e| e > 0);
+    let (Some(width), Some(height)) = (edge(request.width), edge(request.height)) else {
+        return Err(BackendError::new(
+            code::INVALID_PARAMS,
+            format!(
+                "a JPEG of {}x{} pixels cannot be encoded",
+                request.width, request.height
+            ),
+        ));
+    };
+    let (turned, w, h) = rotate_rgb(
+        frame.pixels(),
+        frame.width(),
+        frame.height(),
+        request.rotation,
+    );
+    let pixels = if (w, h) == (request.width, request.height) {
+        turned
+    } else {
+        resize_rgb(&turned, w, h, request.width, request.height)
+    };
+    let mut out = Vec::new();
+    Encoder::new(&mut out, request.quality.clamp(1, 100))
+        .encode(&pixels, width, height, ColorType::Rgb)
+        .map_err(|e| BackendError::new(code::INTERNAL, format!("JPEG encoding failed: {e}")))?;
+    Ok(out)
 }
 
 /// The most recent frames with their metadata, newest last.
@@ -109,17 +242,114 @@ pub(crate) struct FrameStore {
 
 impl FrameStore {
     pub(crate) fn push(&mut self, meta: FrameMeta, frame: Frame) {
-        let _ = (meta, frame, KEPT_FRAMES);
-        todo!("task 5.3")
+        self.frames.push_back((meta, frame));
+        while self.frames.len() > KEPT_FRAMES {
+            self.frames.pop_front();
+        }
     }
 
     pub(crate) fn latest(&self) -> Option<FrameMeta> {
-        todo!("task 5.3")
+        self.frames.back().map(|(meta, _)| *meta)
     }
 
     pub(crate) fn get(&self, seq: u64) -> Option<&Frame> {
-        let _ = seq;
-        todo!("task 5.3")
+        self.frames
+            .iter()
+            .find(|(meta, _)| meta.seq == seq)
+            .map(|(_, frame)| frame)
+    }
+}
+
+/// What the frame pump shares with the session.
+#[derive(Clone)]
+pub(crate) struct FramePump {
+    pub(crate) store: Arc<Mutex<FrameStore>>,
+    pub(crate) items: Sender<Timed<StreamItem>>,
+    pub(crate) received: Arc<AtomicU64>,
+    pub(crate) stop: Arc<AtomicBool>,
+    /// The last failure of the frame stream, for the session's status.
+    pub(crate) error: Arc<Mutex<Option<String>>>,
+}
+
+impl FramePump {
+    async fn run(self, controller: Controller, width: u32) {
+        let hasher = FrameHasher::default();
+        let mut seq = 0u64;
+        while !self.stop.load(Ordering::SeqCst) {
+            let mut stream = match controller.frames(width).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    self.fail(&error);
+                    tokio::time::sleep(RESUBSCRIBE_AFTER).await;
+                    continue;
+                }
+            };
+            while !self.stop.load(Ordering::SeqCst) {
+                match stream.next(FRAME_WAIT).await {
+                    Ok(Some(frame)) => {
+                        seq += 1;
+                        let arrived = Instant::now();
+                        let meta = frame_meta(&frame, seq, &hasher, arrived, epoch_us());
+                        self.store
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .push(meta, frame);
+                        self.received.fetch_add(1, Ordering::SeqCst);
+                        let item = Timed {
+                            at: arrived,
+                            item: StreamItem::Frame(meta),
+                        };
+                        if self.items.send(item).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(None) => {}
+                    // A frame whose bytes do not fit its size; the stream goes on.
+                    Err(emulator::Error::Frame { .. }) => {}
+                    Err(error) => {
+                        self.fail(&error);
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(RESUBSCRIBE_AFTER).await;
+        }
+    }
+
+    fn fail(&self, error: &emulator::Error) {
+        *self.error.lock().unwrap_or_else(PoisonError::into_inner) = Some(error.to_string());
+    }
+}
+
+/// The session's frame source: the latest controller frames.
+pub(crate) struct ControllerFrames {
+    pub(crate) store: Arc<Mutex<FrameStore>>,
+}
+
+impl FrameSource for ControllerFrames {
+    fn latest(&self) -> Option<FrameMeta> {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .latest()
+    }
+
+    fn encode(&mut self, request: &EncodeRequest) -> Result<Vec<u8>, BackendError> {
+        let frame = self
+            .store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(request.seq)
+            .cloned()
+            .ok_or_else(|| BackendError {
+                code: "no_frame".into(),
+                message: format!(
+                    "frame {} is no longer held; ask for the latest frame again",
+                    request.seq
+                ),
+                retryable: true,
+            })?;
+        encode_jpeg(&frame, request)
     }
 }
 

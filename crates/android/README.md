@@ -7,8 +7,10 @@ Host-side Android driver (design D11). So far it holds:
   and the connection to it (design D2 and D3, task 5.2).
 - `emulator`: the client for the emulator's gRPC controller, the emulator fast
   path (design D7, task 5.4).
+- `session`: an attached agent, and the controller when there is one, behind
+  the mirror's backend traits (design D5 and D7, task 5.3).
 
-The agent session and path selection (tasks 5.3 and 5.5) come later.
+Path selection and the status report (task 5.5) come later.
 
 ## adb client
 
@@ -116,6 +118,66 @@ other work: a first attach took 215.8 ms (process listing 14.3 ms, push
 3.5 ms, launch stream to ready line 185.6 ms, connection and handshake
 3.0 ms), a reuse 17.0 ms (listing 13.9 ms, handshake 2.0 ms), and replacing
 an older build 265.3 ms, of which stopping it took 28.2 ms.
+
+## Agent session
+
+`session::Session::start` takes an `Attached` agent and, optionally, a
+`ControllerLink` (a connected controller on a two-thread Tokio runtime of its
+own). It reads the display density with `wm density` (420 dpi on the API 36
+emulator, a scale of 2.625 pixels per point, the override density first when
+one is set). `Session::backend` hands a `mirror::Backend` over, once:
+
+- **Tree.** Every read is one `snapshot` request with a 10 s deadline; the
+  agent reads every interactive window, so a read may return more windows
+  than the mirror asked for. Reads after an attach, an action or a resync take
+  the agent's idle bound (500 ms, ending 200 ms after the last event or
+  action), and reads the target's own changes trigger (events, polls, frames)
+  do not wait, since the mirror's settle replaces the platform's idle wait
+  (design D8). The snapshot passes through as the agent sent it: its window
+  metadata (whether each window's toolkit sends change events, `false` for
+  Compose content; the system process that owns it; whether it is modal)
+  and its scroll semantics are what the mirror reads.
+- **Events.** The connection's events reach the stream as they arrive, with
+  the host time: protocol events, `OutOfSync` and `Resynced` as themselves,
+  and the close as `Disconnected` with the protocol crate's reconnect hint. A
+  killed agent closes its socket, so the stream ends at once; a silent one is
+  declared dead after 3 s by the protocol crate's liveness. A resync the host
+  session could not complete is retried on the next read.
+- **Input.** Taps (a long press with a hold), swipes, keys and text go to the
+  agent in physical pixels with a 5 s deadline plus the gesture's duration;
+  text names the node of the latest read, and `auto` leaves the method to
+  the agent. With a controller, taps and swipes go through it instead (a
+  swipe moves every 8 ms along its line, as the agent's does); keys and text
+  stay with the agent. Input the agent did not inject leaves its cache of
+  Compose windows stale and does not start its idle wait, so the next read
+  waits until the input is 200 ms old and, when the last read showed a window
+  that sends no change events, first sends a tree `resync`, which empties
+  the agent's node cache. A controller
+  that fails before a touch lands hands that input to the agent; after that,
+  all input goes through the agent.
+- **Frames**, with a controller only. A task on the link's runtime subscribes
+  to 540-pixel-wide RGB888 frames and puts each on the event stream as a
+  `Frame` whose hash leaves the top 6 % of rows out (the status bar, spike
+  S7), and whose capture time is its arrival minus the lag the emulator's
+  timestamp shows, at most a second. The last four frames are kept; the frame
+  source turns and scales one and encodes it with jpeg-encoder. The stream is
+  subscribed to again when it fails.
+
+`Session::stop` sends `shutdown` and kills the agent past the timeout;
+`Session::screenshot` asks the agent. `Session::reads`, `last_read`,
+`inputs` and `frames_received` count what went where.
+
+Measured through `tests/agent_session.rs` on the API 36 emulator, a debug
+build, shared with other work: the Compose Big screen (573 nodes, every one
+in the replica, all 500 cells with refs) took 494.6 ms for the first
+snapshot, of which the agent's cold read with its idle wait 490.5 ms; warm
+snapshots from the replica took 3.15 ms at p50 and 3.33 ms at p95 with no
+device read; a tap through the mirror on the Login tab was acknowledged in
+11.3 ms and the snapshot after it showed the Login screen 425.8 ms after the
+tap (the agent's idle wait, which ends no sooner than 200 ms after its input,
+then a cold read of the Compose window); a killed agent was reported disconnected after 29.2 ms.
+With a controller, a tab switch brought 37 frames in 3 s, 34 of them with
+distinct hashes.
 
 ## Emulator controller client
 
@@ -228,6 +290,21 @@ What the agent deployment tests (`tests/agent_deploy.rs`) do on the device:
   part.
 - The tests hold UI automation for a few seconds each and run one at a time.
 
+What the agent session tests (`tests/agent_session.rs`) do on the device:
+
+- They start the Compose fixture (`am start -S`) on a tab, wait until it is
+  in front, and force-stop it at the end.
+- The full-stack test taps the Login tab through the mirror and kills its
+  agent with SIGKILL; the others stop their agents.
+- The controller test subscribes to frames and taps the List tab.
+
+The device may be shared. Before a test the agent and session tests wait,
+up to a minute, until no agent runs and nothing holds UI automation. A
+session test that another user disturbs, by starting an agent or taking UI
+automation (another agent's `--force` kills ours) or by moving the fixture,
+runs again once the device is quiet, three times at most; a failure while
+nobody else is on the device fails the test.
+
 What the emulator integration tests do:
 
 - They subscribe to frames and take raw screenshots, and they run `screencap`
@@ -280,7 +357,54 @@ Requirement **Agent lifecycle**:
 | Scenario or clause | Tests |
 |---|---|
 | Scenario "Daemon shutdown" | integration `a_first_attach_starts_the_agent_and_installs_nothing` (`Attached::stop`: no agent process, no record) |
-| Scenario "App restarted" | task 5.3 |
+| Scenario "App restarted" | integration `the_same_agent_serves_the_mirror_after_the_app_is_force_stopped_and_relaunched` (session tests); agent side `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` (agent-android host tests) |
+| A killed agent reported disconnected (device-protocol "Liveness detection") | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent`; `session::tests::the_agent_going_away_is_reported_disconnected_with_a_reconnect_hint`, `session::events::tests::the_close_is_a_disconnection_with_a_reconnect_hint` |
+
+The scenarios below are served by the agent, whose checks are the
+agent-android host tests (`agent-android/README.md`); the driver passes them
+through, and these tests check that it does.
+
+Requirement **Tree acquisition across windows**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Keyboard is included" | agent side `tree::the_keyboard_window_appears_with_its_keys_when_a_field_is_focused`; driver `session::tests::a_read_passes_the_agents_snapshot_through_with_the_scale_and_the_backend` (every window of the read, the keyboard's included, reaches the mirror as the agent sent it) |
+| Scenario "Node limit reached" | agent side `tree::a_lower_node_cap_truncates_and_still_reports_the_full_count`; driver `session::tree::tests::reads_after_an_attach_action_or_resync_wait_for_idle_and_others_do_not` (the node and depth caps reach the request), `session::tests::a_read_passes_the_agents_snapshot_through_with_the_scale_and_the_backend` (node count and serialized nodes kept apart) |
+| Every interactive window, with the attributes of each node and the window metadata | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent` (573 nodes in the replica, every cell with a ref); agent side `metadata::a_permission_prompt_is_a_modal_window_owned_by_the_permission_controller`, `metadata::an_in_app_alert_is_a_modal_window_of_the_app_that_sends_no_change_events`; driver `session::tests::a_read_passes_the_agents_snapshot_through_with_the_scale_and_the_backend`, `session::tree::tests::event_less_windows_come_from_the_agents_metadata`, `session::tree::tests::the_scale_is_the_density_over_160_with_the_override_first` |
+
+Requirement **Bounded idle waiting**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Continuous animation" | agent side `idle::a_snapshot_during_an_endless_animation_returns_within_the_default_bound_plus_read_time`; driver `session::tree::tests::reads_after_an_attach_action_or_resync_wait_for_idle_and_others_do_not` (the agent's bound after an attach or action, none for reads the target's own changes trigger) |
+
+Requirement **Change events**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Single field changes" | agent side `events::editing_one_react_native_field_emits_events_naming_that_field_only`; driver `session::tests::events_reach_the_backends_stream_in_order`, `session::events::tests::protocol_events_and_sequence_notices_pass_through` (the event reaches the mirror, which reads only that window) |
+| Sequence gaps and resynchronization | `session::tests::a_sequence_gap_reaches_the_mirror_and_the_stream_is_resynchronized` |
+| Compose windows, which send none, read again after an action | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent`; `session::tests::a_mirror_on_the_session_reads_a_compose_window_again_after_a_tap`, `session::tests::after_input_the_agent_did_not_inject_a_compose_read_empties_its_cache_first`, `session::tests::without_compose_foreign_input_only_delays_the_read` |
+
+Requirement **Input injection**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Tap acknowledged" | agent side `input::a_tap_is_acknowledged_as_accepted_within_50_ms`; integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent` (accepted through the mirror, 11.3 ms); `session::tests::input_goes_to_the_agent_in_pixels_and_returns_its_verdict`, `session::input::tests::acknowledgements_carry_the_platforms_verdict_and_the_text_method` |
+| Taps, long presses, swipes with duration, keys, in pixels | `session::input::tests::taps_and_long_presses_go_out_in_pixels`, `session::input::tests::swipes_keep_their_duration_and_keys_their_code`, and on the controller `session::input::tests::a_swipe_on_the_controller_is_down_moves_and_up_along_the_line`, `session::input::tests::a_swipe_without_duration_still_moves_once` |
+
+Requirement **Direct text setting with fallback**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "React Native text input" | agent side `text::a_focused_react_native_input_is_filled_directly_in_one_operation`; driver `session::input::tests::text_names_the_node_of_the_latest_read_and_its_method`, `session::tests::input_goes_to_the_agent_in_pixels_and_returns_its_verdict` (the direct method comes back) |
+| Scenario "Element rejects direct setting" | agent side `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named`; driver `session::input::tests::acknowledgements_carry_the_platforms_verdict_and_the_text_method` (the key method comes back) |
+
+Requirement **Screenshot capture**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Landscape screenshot" | agent side `screenshot::a_landscape_screenshot_has_landscape_dimensions_and_the_display_orientation`; driver `session::tests::screenshots_go_through_the_agent` |
 
 Requirement **Emulator fast path** (android-driver spec):
 
@@ -304,6 +428,14 @@ Task 5.4's own checks:
 | Top-down rows | `emulator::frame::tests::rows_are_top_down`, `emulator::frame::tests::the_status_bar_is_at_the_start_of_the_buffer`, integration `raw_screenshots_are_full_resolution_and_top_down` |
 | The display size from `hardwareConfig` | `emulator::hardware::tests::the_display_size_comes_from_the_lcd_keys`, `emulator::hardware::tests::the_status_falls_back_to_the_deprecated_hardware_config`, integration `the_display_size_and_keyboard_match_the_avd` |
 | The frame-hash detector without the status bar | `emulator::frame::tests::a_change_in_the_status_bar_is_unchanged`, `emulator::frame::tests::one_changed_pixel_is_a_change_and_becomes_the_new_reference`, `emulator::frame::tests::a_dimension_change_is_a_change` |
+
+Task 5.3's own checks: the frames in `session::controller::tests::*`
+(status-bar-free hashes, capture time, clockwise rotation, area-average
+scaling, JPEG size, the kept frames), integration
+`controller_frames_arrive_on_the_event_stream_with_status_bar_free_hashes`,
+and `session::tests::a_failed_read_keeps_the_agents_code`,
+`session::tests::stop_asks_the_agent_to_shut_down`,
+`session::tests::the_backend_is_taken_once`.
 
 Task 5.2's own checks: the connection's reader thread in
 `agent::connection::tests::*` (replies, concurrent callers, events before the

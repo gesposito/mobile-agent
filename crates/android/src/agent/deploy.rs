@@ -107,6 +107,7 @@ impl fmt::Debug for AgentInfo {
 
 impl AgentInfo {
     /// The agent reached on `socket`, with what its handshake settled.
+    #[cfg(test)]
     pub(crate) fn new(
         serial: &str,
         socket: &str,
@@ -499,12 +500,12 @@ impl Attached {
             deployer,
             ..
         } = self;
-        // Answered before the agent exits; its exit is what counts.
-        let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
-        drop(connection);
-        let stopped = deployer.finish(agent.pid, &agent.socket, timeout)?;
-        deployer.forget(agent.pid)?;
-        Ok(stopped)
+        deployer.stop_agent(&connection, agent.pid, &agent.socket, timeout)
+    }
+
+    /// The connection, the agent, the outcome and the deployer.
+    pub(crate) fn into_parts(self) -> (Connection, AgentInfo, Outcome, Deployer) {
+        (self.connection, self.agent, self.outcome, self.deployer)
     }
 }
 
@@ -626,6 +627,23 @@ impl Deployer {
             (Compatibility::Incompatible(reason), _) => Err((reason, Some(connection))),
             (Compatibility::Compatible, Err(reason)) => Err(unreachable(reason.to_string())),
         }
+    }
+
+    /// Stops the agent `pid` on `socket` that `connection` reaches:
+    /// `shutdown`, answered before it exits, then a kill past `timeout`; and
+    /// forgets its record.
+    pub(crate) fn stop_agent(
+        &self,
+        connection: &Connection,
+        pid: u32,
+        socket: &str,
+        timeout: Duration,
+    ) -> Result<Stopped, DeployError> {
+        let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+        connection.close();
+        let stopped = self.finish(pid, socket, timeout)?;
+        self.forget(pid)?;
+        Ok(stopped)
     }
 
     /// Stops an agent that cannot be reused: one whose protocol was refused
