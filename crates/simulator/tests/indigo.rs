@@ -32,6 +32,9 @@ fn a_tap_lands_on_the_fixture_button() {
     let _serial = common::exclusive();
     let driver = indigo();
     let udid = common::fresh_device(&driver);
+    // On a host loaded past 100 a late redraw of the fresh device's first
+    // screen counted as the blank tap's doing.
+    common::wait_for_quiet_host(8.0, Duration::from_secs(90));
     common::show_expo(&driver, &udid, "login");
     let (stream, settled) = common::settle(&driver, &udid);
     let before = common::raw_screenshot(&driver, &udid);
@@ -78,6 +81,11 @@ fn a_swipe_scrolls_the_list() {
     let driver = indigo();
     let udid = common::fresh_device(&driver);
     common::show_expo(&driver, &udid, "list");
+    // The drag's 23 events keep 17 ms apart through SimulatorKit's builder;
+    // on a host loaded past 100 their timing broke up and the list either
+    // barely moved or flung, so it waits for a quieter host, as the frame
+    // CPU test does.
+    let load = common::wait_for_quiet_host(8.0, Duration::from_secs(90));
     let (stream, _) = common::settle(&driver, &udid);
     let before = common::raw_screenshot(&driver, &udid);
 
@@ -102,7 +110,7 @@ fn a_swipe_scrolls_the_list() {
     let (shift, best, unshifted) = common::vertical_shift(&before, &after, expo::LIST_ROWS);
     let points = shift as f64 * 874.0 / after.height as f64;
     eprintln!(
-        "Indigo swipe: the list moved {shift} px ({points:.0} points); difference {best:.2} there, {unshifted:.2} unshifted"
+        "Indigo swipe at load {load:.1}: the list moved {shift} px ({points:.0} points); difference {best:.2} there, {unshifted:.2} unshifted"
     );
     assert!(points > 100.0, "the list moved only {points:.0} points");
     assert!(

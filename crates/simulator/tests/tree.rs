@@ -42,8 +42,10 @@ fn swiftui_read_returns_identifiers_and_frames() {
     };
 
     let pid = common::show_swiftui(&driver, &udid, "login");
+    // Until the process a relaunch replaced is gone, it can still own the
+    // foreground, so the read waits for the launched one.
     let login = common::snapshot_until(&driver, &udid, Duration::from_secs(10), |tree| {
-        has(tree, "login-status")
+        tree.foreground.pid == pid && has(tree, "login-status")
     });
     assert_eq!(login.backend, TreeBackend::Reader);
     assert!(!login.is_degraded(), "{:?}", login.degraded);

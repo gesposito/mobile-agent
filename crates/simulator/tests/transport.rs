@@ -87,7 +87,9 @@ fn two_sessions() {
 
     // A tap on one Simulator changes that Simulator only.
     driver.tap(&shared, expo::TAB_LIST).expect("a tap");
-    let changed = common::wait_for_change(&shared_frames, &shared_settled, Duration::from_secs(2))
+    // The changes are waited for longer than the absence of one: at a load
+    // above 200 a tab switch took more than 2 s to draw.
+    let changed = common::wait_for_change(&shared_frames, &shared_settled, Duration::from_secs(5))
         .expect("the tapped Simulator changed");
     assert!(
         common::wait_for_change(&fresh_frames, &fresh_settled, Duration::from_secs(1)).is_none(),
@@ -114,11 +116,11 @@ fn two_sessions() {
             .expect("a tap on the fresh Simulator");
     });
     assert!(
-        common::wait_for_change(&shared_frames, &shared_settled, Duration::from_secs(2)).is_some(),
+        common::wait_for_change(&shared_frames, &shared_settled, Duration::from_secs(5)).is_some(),
         "the shared Simulator changed"
     );
     assert!(
-        common::wait_for_change(&fresh_frames, &fresh_settled, Duration::from_secs(2)).is_some(),
+        common::wait_for_change(&fresh_frames, &fresh_settled, Duration::from_secs(5)).is_some(),
         "the fresh Simulator changed"
     );
 
