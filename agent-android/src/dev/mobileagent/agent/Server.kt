@@ -2,12 +2,15 @@ package dev.mobileagent.agent
 
 import android.net.LocalServerSocket
 import android.net.LocalSocket
+import dev.mobileagent.agent.codec.Capability
 import dev.mobileagent.agent.codec.EmptyReply
 import dev.mobileagent.agent.codec.ErrorCode
 import dev.mobileagent.agent.codec.Lifecycle
 import dev.mobileagent.agent.codec.LifecycleKind
 import dev.mobileagent.agent.codec.Protocol
 import dev.mobileagent.agent.codec.ShutdownCall
+import dev.mobileagent.agent.codec.SnapshotCall
+import dev.mobileagent.agent.codec.Stream
 import dev.mobileagent.agent.codec.WireError
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -51,7 +54,12 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = 0
+    private val capabilities = Capability.TREE
+    /** Tree reads run one at a time, in arrival order. */
+    private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
+    private lateinit var reader: TreeReader
+    /** The last tree read, whose node ids requests may name. */
+    @Volatile private var lastRead: TreeReader.Result? = null
     @Volatile private var current: Session? = null
     private var automation: Automation? = null
     /** The holder --force stopped, as `name:pid`. */
@@ -61,6 +69,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         setProcessName("$PROCESS_NAME ${options.socket}")
         val a = takeOwnership() ?: return EXIT_CONFLICT
         automation = a
+        reader = TreeReader(a)
         a.enableInteractiveWindows()
         val windowWait = a.awaitActiveWindow(options.windowWaitMs)
         val windows = a.uia.windows
@@ -107,7 +116,8 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     override fun handle(work: Work) {
-        when (work.call) {
+        when (val call = work.call) {
+            is SnapshotCall -> treeWorker.execute { snapshot(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -169,6 +179,36 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             exit(0)
         }
     }
+
+    private fun snapshot(work: Work, call: SnapshotCall) {
+        if (work.cancelled) return
+        val maxDepth = call.maxDepth?.let { unsigned(it) } ?: Long.MAX_VALUE
+        val maxNodes = call.maxNodes?.let { unsigned(it) } ?: TreeReader.DEFAULT_MAX_NODES.toLong()
+        try {
+            val seq = work.session.lastSeq(Stream.TREE)
+            val result = reader.read(
+                minOf(maxDepth, Int.MAX_VALUE.toLong()).toInt(),
+                minOf(maxNodes, Int.MAX_VALUE.toLong()).toInt(),
+                seq,
+            ) { work.cancelled }
+            lastRead = result
+            work.session.respond(work, result.snapshot, null)
+            if (options.trace) {
+                val s = result.snapshot
+                Out.line(
+                    "trace snapshot id=${unsigned(work.id)} windows=${s.windows.size} nodes=${s.nodeCount} " +
+                        "visible=${result.visible} serialized=${result.nodes.size} truncated=0x${Integer.toHexString(s.truncated)} " +
+                        "read_ms=${result.readMs} round_trips=${result.roundTrips}",
+                )
+            }
+        } catch (e: Cancelled) {
+            // The deadline was answered already.
+        } catch (t: Throwable) {
+            work.session.respond(work, null, Errors.internal(work.method, t))
+        }
+    }
+
+    private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
 
     private fun shutdown(work: Work) {
         val session = work.session

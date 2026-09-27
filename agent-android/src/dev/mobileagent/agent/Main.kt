@@ -95,16 +95,19 @@ class Options(
     @JvmField val force: Boolean,
     /** Longest wait for an active window after taking the role. */
     @JvmField val windowWaitMs: Long,
+    /** Print a line with the timings of every tree read and injection. */
+    @JvmField val trace: Boolean,
 ) {
     companion object {
         const val TOKEN_VARIABLE = "MOBILE_AGENT_TOKEN"
-        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N]"
+        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N] [--trace]"
         private val SOCKET_NAME = Regex("[A-Za-z0-9._-]{1,100}")
 
         fun parse(args: Array<String>, token: String?): Options {
             var socket: String? = null
             var force = false
             var windowWaitMs = 2_000L
+            var trace = false
             var i = 0
             fun value(name: String): String {
                 if (i + 1 >= args.size) throw UsageException("$name needs a value")
@@ -118,13 +121,14 @@ class Options(
                     "--socket" -> socket = value(arg)
                     "--force" -> force = true
                     "--window-wait-ms" -> windowWaitMs = millis(arg)
+                    "--trace" -> trace = true
                     else -> throw UsageException("unknown argument: $arg")
                 }
                 i++
             }
             val name = socket ?: throw UsageException("--socket is required")
             if (!SOCKET_NAME.matches(name)) throw UsageException("--socket takes 1 to 100 of A-Z a-z 0-9 . _ -")
-            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs)
+            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace)
         }
     }
 }
