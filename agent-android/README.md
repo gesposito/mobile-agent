@@ -143,6 +143,35 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   (design D3), so no forward rule exists. Once listening the agent prints
   `ready socket=<name> pid=<pid> uid=<uid> protocol=1 capabilities=0x<bits>`
   on stdout, and `ps` lists it as `mobile-agent <name>`.
+- **UI automation.** Before listening the agent takes the UI automation role
+  as `uiautomator` does (design D2): a reflective `UiAutomationConnection`
+  handed to the hidden `UiAutomation(Looper, IUiAutomationConnection)`
+  constructor and `connectWithTimeout` with
+  `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES`, so a screen reader keeps
+  running. It then sets `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` and waits up to
+  `--window-wait-ms` (default 2000) for an active window, since the window
+  list is empty or partial for up to 55 ms after the flag is set. The ready
+  line reports `ownership=held connect_ms=<ms> window_wait_ms=<ms> windows=<n>
+  active=<package> forced=<name:pid or ->`. The role is released by `shutdown`
+  and by any exit.
+- **Conflict.** When the platform refuses the role (`already registered!`,
+  which names only a binder proxy), the agent retries for 2 s, so a
+  short-lived holder such as `uiautomator dump` passes. Then it infers the
+  likely holder from `ps -A` (where `app_process` programs show the names they
+  gave themselves: `uiautomator`, `mobile-agent <socket>`, `am instrument`,
+  and the servers of Appium, openatx, Maestro and agent-device) and from the
+  running instrumentations in `dumpsys activity processes`, prints
+  `conflict pid=<pid> holder=<name> holder_pid=<pid> message=<text>` naming
+  it, and exits with status 3 without listening. For example:
+  `conflict pid=4711 holder=uiautomator holder_pid=4702 message=UI automation
+  is held by another process, likely uiautomator (pid 4702: uiautomator); stop
+  it, or run the agent with --force to take the role over`.
+- **Force.** With `--force` the agent stops the known holders in that order,
+  SIGKILL for a process the shell user may signal and `am force-stop` for an
+  app or instrumentation, retrying the role after each, and reports which one
+  it stopped (`forced=uiautomator:4702` and the `ready` lifecycle event). It
+  never stops a process it cannot identify as an automation client; if only
+  such processes remain, it reports the conflict.
 - **Peer check.** Every connection's `SO_PEERCRED` uid must be 2000, the uid
   adbd and `adb shell` run as, or the agent's own uid; any other peer is
   closed before a byte is sent and logged as `refused peer uid=<uid> pid=<pid>`.
@@ -251,5 +280,8 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | design D3: token and peer check | | `handshake::a_host_expecting_another_token_refuses_the_hello_and_the_agent_keeps_serving`, `handshake::a_peer_that_is_not_the_shell_user_gets_no_hello` |
 | android-driver: Agent deployment without installation | Compatible agent reused | `handshake::a_later_connection_reuses_the_running_agent` |
 | | Incompatible agent replaced | `handshake::a_host_speaking_only_a_newer_version_is_refused_and_the_agent_exits_for_replacement` |
+| android-driver: Single ownership of UI automation | Another tool holds automation | `ownership::an_attach_while_uiautomator_events_holds_the_role_fails_naming_it`, `ownership::a_second_agent_names_the_first_as_the_holder` |
+| | Force option | `ownership::force_takes_the_role_over_from_uiautomator_events` |
+| | Role held with interactive windows | `ownership::the_agent_holds_ui_automation_with_interactive_windows_once_ready`, `ownership::shutdown_releases_the_role_for_the_next_owner` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |
 | Banner and arguments | | `test.sh` |

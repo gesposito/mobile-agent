@@ -54,6 +54,7 @@ fn an_attach_while_uiautomator_events_holds_the_role_fails_naming_it() {
         .wait_line(Duration::from_secs(20), |l| l.starts_with("conflict "))
         .unwrap_or_else(|| panic!("no conflict report:\n{}", agent.transcript()));
     agent.adopt_pid(&line);
+    println!("{line}");
     let report = fields(&line);
     assert_eq!(report["holder"], "uiautomator", "{line}");
     assert_eq!(report["holder_pid"], holder.pid.to_string(), "{line}");

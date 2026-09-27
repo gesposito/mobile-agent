@@ -29,6 +29,15 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         /** The name `ps` lists the agent under, with its socket name after it. */
         const val PROCESS_NAME = "mobile-agent"
 
+        /** Exit status when another process holds UI automation. */
+        const val EXIT_CONFLICT = 3
+
+        /** How long a refused attach retries, so a short-lived holder such as `uiautomator dump` passes. */
+        private const val CONFLICT_WAIT_MS = 2_000L
+
+        /** How long the role may take to come free after --force stopped its holder. */
+        private const val RELEASE_WAIT_MS = 3_000L
+
         fun daemonThreads(name: String) = ThreadFactory { r -> Thread(r, name).apply { isDaemon = true } }
 
         /** Renames the process as `ps` shows it; a hidden call, skipped where absent. */
@@ -44,18 +53,30 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
     private val capabilities = 0
     @Volatile private var current: Session? = null
+    private var automation: Automation? = null
+    /** The holder --force stopped, as `name:pid`. */
+    private var forced: Holders.Holder? = null
 
     fun run(): Int {
         setProcessName("$PROCESS_NAME ${options.socket}")
+        val a = takeOwnership() ?: return EXIT_CONFLICT
+        automation = a
+        a.enableInteractiveWindows()
+        val windowWait = a.awaitActiveWindow(options.windowWaitMs)
+        val windows = a.uia.windows
+        val active = windows.firstOrNull { it.isActive }?.root?.packageName ?: "-"
         val server = try {
             LocalServerSocket(options.socket)
         } catch (e: IOException) {
             System.err.println("cannot listen on @${options.socket}: ${e.message}")
+            a.disconnect()
             return 1
         }
         Out.line(
             "ready socket=${options.socket} pid=${android.os.Process.myPid()} uid=${android.os.Process.myUid()} " +
-                "protocol=${Protocol.VERSION} capabilities=0x${Integer.toHexString(capabilities)}",
+                "protocol=${Protocol.VERSION} capabilities=0x${Integer.toHexString(capabilities)} ownership=held " +
+                "connect_ms=${a.connectMs} window_wait_ms=$windowWait windows=${windows.size} active=$active " +
+                "forced=${forced?.let { "${it.name}:${it.pid}" } ?: "-"}",
         )
         while (true) {
             val socket = try {
@@ -92,8 +113,50 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         }
     }
 
+    /**
+     * Takes UI automation, retrying a refusal for [CONFLICT_WAIT_MS]; with
+     * --force, stops each known holder in turn until the role comes free.
+     * Reports a conflict and returns null when it cannot.
+     */
+    private fun takeOwnership(): Automation? {
+        val until = android.os.SystemClock.uptimeMillis() + CONFLICT_WAIT_MS
+        while (true) {
+            try {
+                return Automation.connect()
+            } catch (e: OwnershipConflict) {
+                if (!options.force && android.os.SystemClock.uptimeMillis() < until) {
+                    Thread.sleep(100)
+                    continue
+                }
+            }
+            val candidates = Holders.find(android.os.Process.myPid(), options.socket)
+            if (options.force) {
+                for (holder in candidates.filter { it.known }) {
+                    if (!Holders.terminate(holder)) continue
+                    val released = android.os.SystemClock.uptimeMillis() + RELEASE_WAIT_MS
+                    while (android.os.SystemClock.uptimeMillis() < released) {
+                        try {
+                            val a = Automation.connect()
+                            forced = holder
+                            return a
+                        } catch (e: OwnershipConflict) {
+                            Thread.sleep(50)
+                        }
+                    }
+                }
+            }
+            val likely = candidates.firstOrNull()
+            Out.line(
+                "conflict pid=${android.os.Process.myPid()} holder=${likely?.name ?: "-"} " +
+                    "holder_pid=${likely?.pid?.takeIf { it > 0 } ?: "-"} message=${Holders.message(candidates, options.force)}",
+            )
+            return null
+        }
+    }
+
     override fun onReady(session: Session) {
-        session.emit(Lifecycle(LifecycleKind.READY, "${Main.AGENT} serving @${options.socket}"))
+        val role = forced?.let { "took UI automation over from ${it.describe()}" } ?: "UI automation held"
+        session.emit(Lifecycle(LifecycleKind.READY, "${Main.AGENT} serving @${options.socket}; $role"))
     }
 
     override fun onClosed(session: Session, reason: String, refusal: WireError?) {
@@ -116,6 +179,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun exit(code: Int) {
+        automation?.disconnect()
         Out.line("exiting code=$code")
         System.err.flush()
         exitProcess(code)

@@ -91,30 +91,40 @@ class Options(
     @JvmField val socket: String,
     /** The per-launch token the hello carries. */
     @JvmField val token: String?,
+    /** Stop a known automation client that holds UI automation instead of reporting the conflict. */
+    @JvmField val force: Boolean,
+    /** Longest wait for an active window after taking the role. */
+    @JvmField val windowWaitMs: Long,
 ) {
     companion object {
         const val TOKEN_VARIABLE = "MOBILE_AGENT_TOKEN"
-        const val USAGE = "serve --socket NAME"
+        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N]"
         private val SOCKET_NAME = Regex("[A-Za-z0-9._-]{1,100}")
 
         fun parse(args: Array<String>, token: String?): Options {
             var socket: String? = null
+            var force = false
+            var windowWaitMs = 2_000L
             var i = 0
             fun value(name: String): String {
                 if (i + 1 >= args.size) throw UsageException("$name needs a value")
                 i++
                 return args[i]
             }
+            fun millis(name: String): Long =
+                value(name).toLongOrNull()?.takeIf { it >= 0 } ?: throw UsageException("$name takes a number of milliseconds")
             while (i < args.size) {
                 when (val arg = args[i]) {
                     "--socket" -> socket = value(arg)
+                    "--force" -> force = true
+                    "--window-wait-ms" -> windowWaitMs = millis(arg)
                     else -> throw UsageException("unknown argument: $arg")
                 }
                 i++
             }
             val name = socket ?: throw UsageException("--socket is required")
             if (!SOCKET_NAME.matches(name)) throw UsageException("--socket takes 1 to 100 of A-Z a-z 0-9 . _ -")
-            return Options(name, token?.takeIf { it.isNotEmpty() })
+            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs)
         }
     }
 }
