@@ -131,22 +131,40 @@ impl Run {
 pub struct TestEnv {
     pub dir: TempDir,
     pub fake: String,
+    /// More environment for the daemon, such as the fake latency.
+    extra: Vec<(String, String)>,
     daemon: Option<Child>,
 }
 
 impl TestEnv {
     /// A directory without a daemon; the CLI's first command starts one.
     pub fn new(fake: &str) -> TestEnv {
+        TestEnv::new_with(fake, &[])
+    }
+
+    /// A directory without a daemon, whose daemon gets `extra` in its
+    /// environment.
+    pub fn new_with(fake: &str, extra: &[(&str, &str)]) -> TestEnv {
         TestEnv {
             dir: TempDir::new(),
             fake: fake.to_owned(),
+            extra: extra
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect(),
             daemon: None,
         }
     }
 
     /// A directory with a daemon already serving `fake`.
     pub fn start(fake: &str) -> TestEnv {
-        let mut env = TestEnv::new(fake);
+        TestEnv::start_with(fake, &[])
+    }
+
+    /// A directory with a daemon already serving `fake`, with `extra` in
+    /// its environment.
+    pub fn start_with(fake: &str, extra: &[(&str, &str)]) -> TestEnv {
+        let mut env = TestEnv::new_with(fake, extra);
         env.start_daemon();
         env
     }
@@ -172,6 +190,9 @@ impl TestEnv {
     pub fn start_daemon(&mut self) {
         let mut command = Command::new(daemon_bin());
         clean_env(&mut command);
+        for (key, value) in &self.extra {
+            command.env(key, value);
+        }
         let mut child = command
             .arg("--socket-dir")
             .arg(self.path())

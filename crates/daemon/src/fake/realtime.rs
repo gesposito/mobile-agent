@@ -4,8 +4,10 @@
 //! every call first advances it to the system clock, so the mirror's waits,
 //! polls and settle windows take real time, as they do on a device. Input
 //! goes to the fake target, which records it, and to a [`Device`], whose new
-//! screen the target then shows along with a frame and, on Android, a
-//! window event, the way an agent reports a change.
+//! screen the target then shows, after the target's latency, with a window
+//! event on Android and, on targets with frames, a frame. A move to another
+//! screen animates: its frames change every 16 ms for 96 ms before the
+//! final one, as a transition does, while the tree changes at its start.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -28,8 +30,15 @@ use crate::driver::{AppControl, Attachment, DriverError, Launch, Platform, Size}
 /// How often the event stream looks for items while it waits.
 const POLL: Duration = Duration::from_millis(2);
 
-/// How often the spinning Anim tab produces a frame: 60 fps.
+/// How often the spinning Anim tab and a transition produce a frame: about
+/// 60 fps.
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+
+/// How long a move to another screen animates.
+const TRANSITION: Duration = Duration::from_millis(96);
+
+/// The base of the spinner's frame hashes.
+const SPINNER: u64 = 0xa11a_0000_0000_0000;
 
 /// The fake device's app window, which window events name.
 const APP_WINDOW: u32 = 1;
@@ -37,13 +46,44 @@ const APP_WINDOW: u32 = 1;
 struct Shared {
     target: FakeTarget,
     device: Mutex<Device>,
-    animation: Mutex<Animation>,
+    visual: Mutex<Visual>,
+    /// Whether the target produces frames; Android devices do not (D7).
+    frames: bool,
+    /// How long a change takes to show, as a slow app or device takes.
+    latency: Duration,
 }
 
+/// What the frames show.
 #[derive(Default)]
-struct Animation {
+struct Visual {
+    /// The hash of the screen shown last, as its final frame has it.
+    screen: u64,
+    /// The transition running, if any.
+    transition: Option<Transition>,
+    /// When the last frame was produced.
     last: Option<Instant>,
-    frames: u64,
+    /// Frames produced so far, to give each its own hash.
+    count: u64,
+}
+
+#[derive(Clone, Copy)]
+struct Transition {
+    from: Instant,
+    until: Instant,
+}
+
+/// How a screen changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Change {
+    /// Within the screen: text, a toggle, a scroll position.
+    Content,
+    /// To another screen, which animates.
+    Screen,
+}
+
+/// A hash for the `n`th frame derived from `base`, never `base` itself.
+fn mix(base: u64, n: u64) -> u64 {
+    base ^ n.wrapping_mul(0x9e37_79b9_7f4a_7c15)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -63,40 +103,76 @@ impl Shared {
         now
     }
 
-    /// A new frame every frame interval while the spinner turns.
+    /// The next frame, once a frame interval has passed: a transition's,
+    /// ending with the screen's final frame, or the turning spinner's.
     fn animate(&self, now: Instant) {
-        if !lock(&self.device).animating() {
+        if !self.frames {
             return;
         }
-        let mut animation = lock(&self.animation);
-        if animation
-            .last
-            .is_some_and(|last| now < last + FRAME_INTERVAL)
-        {
+        let spinning = lock(&self.device).animating();
+        let mut visual = lock(&self.visual);
+        if visual.last.is_some_and(|last| now < last + FRAME_INTERVAL) {
             return;
         }
-        animation.last = Some(now);
-        animation.frames += 1;
-        let hash = 0xa11a_0000_0000_0000 ^ animation.frames;
+        let hash = match visual.transition {
+            Some(transition) if now < transition.from => return,
+            Some(transition) if now >= transition.until => {
+                visual.transition = None;
+                visual.screen
+            }
+            Some(_) => {
+                visual.count += 1;
+                mix(visual.screen, visual.count)
+            }
+            None if spinning => {
+                visual.count += 1;
+                mix(SPINNER, visual.count)
+            }
+            None => return,
+        };
+        visual.last = Some(now);
         self.target.after(Duration::ZERO, Step::Frame(hash));
     }
 
-    /// Shows the device's screen from now on: the tree, a frame with its
-    /// hash, and on Android a window event.
-    fn show(&self, device: &Device) {
+    /// Shows the device's screen after the latency: the tree, on Android a
+    /// window event, and a frame, the first of a transition when `change`
+    /// moved to another screen.
+    fn show(&self, device: &Device, change: Change) {
         let read = read(&device.windows(), device);
         let hash = hash(&read);
-        self.target.after(Duration::ZERO, Step::Show(read));
+        let delay = self.latency;
+        self.target.after(delay, Step::Show(read));
         if device.kit.platform == Platform::Android {
             self.target.after(
-                Duration::ZERO,
+                delay,
                 Step::Event(EventPayload::Window(WindowChange {
                     change: WindowChangeKind::STATE,
                     window: APP_WINDOW,
                 })),
             );
         }
-        self.target.after(Duration::ZERO, Step::Frame(hash));
+        if !self.frames {
+            return;
+        }
+        let mut visual = lock(&self.visual);
+        visual.screen = hash;
+        let first = match change {
+            Change::Content => {
+                visual.transition = None;
+                hash
+            }
+            Change::Screen => {
+                let from = self.target.clock().now() + delay;
+                visual.transition = Some(Transition {
+                    from,
+                    until: from + TRANSITION,
+                });
+                visual.last = Some(from);
+                visual.count += 1;
+                mix(hash, visual.count)
+            }
+        };
+        self.target.after(delay, Step::Frame(first));
     }
 }
 
@@ -110,8 +186,10 @@ fn hash(read: &TreeRead) -> u64 {
     hasher.finish()
 }
 
-/// A fake device of `platform`, attached: it shows its launcher.
-pub(crate) fn attach(platform: Platform) -> Attachment {
+/// A fake device of `platform`, attached: it shows its launcher. It has a
+/// frame source when `frames` is set, and shows each change `latency`
+/// after the input or launch that caused it.
+pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Attachment {
     let device = Device::new(platform);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
@@ -124,9 +202,11 @@ pub(crate) fn attach(platform: Platform) -> Attachment {
     let shared = Arc::new(Shared {
         target: target.clone(),
         device: Mutex::new(device),
-        animation: Mutex::new(Animation::default()),
+        visual: Mutex::new(Visual::default()),
+        frames,
+        latency,
     });
-    shared.show(&lock(&shared.device));
+    shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
         shared: Arc::clone(&shared),
         target: target.clone(),
@@ -135,7 +215,7 @@ pub(crate) fn attach(platform: Platform) -> Attachment {
         backend: Backend {
             tree: Box::new(part()),
             events: Box::new(part()),
-            frames: Some(Box::new(part())),
+            frames: frames.then(|| Box::new(part()) as Box<dyn FrameSource>),
             input: Box::new(part()),
             clock: Box::new(part()),
         },
@@ -192,6 +272,7 @@ impl InputSink for Part {
         self.shared.sync();
         let mut ack = self.target.perform(input)?;
         let mut device = lock(&self.shared.device);
+        let before = device.screen();
         let changed = match input {
             Input::Tap { at, .. } => {
                 let hit = tree::hit(&device.windows(), at.x, at.y);
@@ -211,7 +292,12 @@ impl InputSink for Part {
             }
         };
         if changed {
-            self.shared.show(&device);
+            let change = if device.screen() == before {
+                Change::Content
+            } else {
+                Change::Screen
+            };
+            self.shared.show(&device, change);
         }
         Ok(ack)
     }
@@ -225,16 +311,24 @@ impl Clock for Part {
 
 impl AppControl for Part {
     fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+        self.shared.sync();
         let mut device = lock(&self.shared.device);
         device.launch(app, launch)?;
-        self.shared.show(&device);
+        self.shared.show(&device, Change::Screen);
         Ok(())
     }
 
     fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
+        self.shared.sync();
         let mut device = lock(&self.shared.device);
+        let before = device.screen();
         device.terminate(app)?;
-        self.shared.show(&device);
+        let change = if device.screen() == before {
+            Change::Content
+        } else {
+            Change::Screen
+        };
+        self.shared.show(&device, change);
         Ok(())
     }
 }

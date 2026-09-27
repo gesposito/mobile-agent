@@ -7,11 +7,16 @@
 //! Settings), the fixture app of `fixtures/CONTRACT.md` under the ids
 //! `dev.mobileagent.fixture.expo` and the platform's native fixture, and a
 //! settings app. Taps, text, keys and swipes change it as the real apps
-//! change; screenshots return placeholder bytes, not an image.
+//! change; screenshots return placeholder bytes, not an image. Emulators and
+//! Simulators have a frame source and Android devices none, as design D7
+//! has it; a latency (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
+//! so that the time from a tap to its effects can be measured.
 
 mod app;
 mod realtime;
 mod tree;
+
+use std::time::Duration;
 
 use crate::driver::{Attachment, Driver, DriverError, Platform, TargetClass, TargetInfo};
 
@@ -19,6 +24,7 @@ use crate::driver::{Attachment, Driver, DriverError, Platform, TargetClass, Targ
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FakeDriver {
     targets: Vec<TargetInfo>,
+    latency: Duration,
 }
 
 impl FakeDriver {
@@ -75,7 +81,15 @@ impl FakeDriver {
                 driver: "fake".to_owned(),
             });
         }
-        Ok(FakeDriver { targets })
+        Ok(FakeDriver {
+            targets,
+            latency: Duration::ZERO,
+        })
+    }
+
+    /// These targets, showing each change `latency` after its cause.
+    pub fn with_latency(self, latency: Duration) -> FakeDriver {
+        FakeDriver { latency, ..self }
     }
 }
 
@@ -89,7 +103,8 @@ impl Driver for FakeDriver {
     }
 
     fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
-        Ok(realtime::attach(target.platform))
+        let frames = target.class != TargetClass::AndroidDevice;
+        Ok(realtime::attach(target.platform, frames, self.latency))
     }
 }
 

@@ -57,18 +57,21 @@ pub struct Options {
     pub idle_timeout: Option<Duration>,
     /// Fake targets, as `MOBILE_AGENT_FAKE_TARGETS` lists them.
     pub fake: Option<String>,
+    /// How long fake targets take to show a change.
+    pub fake_latency: Duration,
 }
 
 impl Options {
-    /// Reads `--socket-dir <dir>`, `--idle-timeout <time>` and
-    /// `--fake <targets>`, each falling back to its environment variable:
-    /// `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
-    /// [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS` and
-    /// `MOBILE_AGENT_FAKE_TARGETS`.
+    /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
+    /// `--fake <targets>` and `--fake-latency <time>`, each falling back to
+    /// its environment variable: `MOBILE_AGENT_SOCKET_DIR` (then the runtime
+    /// directory, see [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
+    /// `MOBILE_AGENT_FAKE_TARGETS` and `MOBILE_AGENT_FAKE_LATENCY_MS`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
         let mut idle = None;
         let mut fake = None;
+        let mut latency = None;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let arg = arg.to_string_lossy().into_owned();
@@ -88,6 +91,7 @@ impl Options {
                 "--socket-dir" => socket_dir = Some(PathBuf::from(value()?)),
                 "--idle-timeout" => idle = Some(value()?.to_string_lossy().into_owned()),
                 "--fake" => fake = Some(value()?.to_string_lossy().into_owned()),
+                "--fake-latency" => latency = Some(value()?.to_string_lossy().into_owned()),
                 other => return Err(format!("unknown argument {other}; see --help")),
             }
         }
@@ -98,10 +102,17 @@ impl Options {
             }
             None => DEFAULT_IDLE_TIMEOUT,
         };
+        let fake_latency = match latency.or_else(|| env("MOBILE_AGENT_FAKE_LATENCY_MS")) {
+            Some(text) => {
+                parse_duration(&text).map_err(|e| format!("fake latency {text:?}: {e}"))?
+            }
+            None => Duration::ZERO,
+        };
         Ok(Options {
             socket_dir: socket_dir.unwrap_or_else(paths::default_dir),
             idle_timeout: (!idle.is_zero()).then_some(idle),
             fake: fake.or_else(|| env("MOBILE_AGENT_FAKE_TARGETS")),
+            fake_latency,
         })
     }
 }
@@ -196,7 +207,7 @@ impl Daemon {
 
 /// Runs a daemon until it is shut down or stays idle for its timeout.
 pub fn run(options: Options) -> Result<Exit, String> {
-    let drivers = driver::registered(options.fake.as_deref())?;
+    let drivers = driver::registered(options.fake.as_deref(), options.fake_latency)?;
     let paths = Paths::new(options.socket_dir);
     paths.check_socket_len()?;
     fs::DirBuilder::new()

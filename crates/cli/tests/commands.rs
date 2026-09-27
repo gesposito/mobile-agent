@@ -85,7 +85,7 @@ fn a_click_reports_where_it_landed_and_its_dispatch_time() {
         .cli(&["click", &ref_of(&listing, "launcher-settings")])
         .ok()
         .stdout;
-    assert_eq!(human, "✓ Done\n");
+    assert!(human.starts_with("✓ Done (dispatch "), "{human}");
     env.cli(&["press", "Back"]).ok();
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     let settings = ref_of(&listing, "launcher-settings");
@@ -222,10 +222,7 @@ fn an_endless_animation_does_not_settle_and_says_what_keeps_changing() {
     env.cli(&["click", "#tab-anim"]).ok();
     let reply = env.cli(&["--json", "wait", "--settle"]).ok().json();
     assert_eq!(reply["data"]["settled"], false, "{reply}");
-    assert_eq!(
-        reply["data"]["stillChanging"],
-        serde_json::json!(["frames"])
-    );
+    assert_eq!(reply["data"]["stillChanging"], serde_json::json!(["frame"]));
     assert!(
         reply["warning"]
             .as_str()

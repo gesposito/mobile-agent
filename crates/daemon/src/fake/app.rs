@@ -159,6 +159,22 @@ enum Foreground {
     Settings,
 }
 
+/// Which screen is in front: the app, and in the fixture its tab, open
+/// detail, alert and prompt. Moving from one screen to another animates;
+/// changes within a screen do not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Screen {
+    Launcher,
+    Settings,
+    Fixture {
+        app: String,
+        tab: Tab,
+        detail: Option<u32>,
+        alert: bool,
+        prompt: bool,
+    },
+}
+
 /// The fake device: which app is in front and every running app's state.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Device {
@@ -246,6 +262,24 @@ impl Device {
         match &self.foreground {
             Foreground::Fixture(app) => self.fixtures.get_mut(app),
             _ => None,
+        }
+    }
+
+    /// The screen in front.
+    pub fn screen(&self) -> Screen {
+        match &self.foreground {
+            Foreground::Launcher => Screen::Launcher,
+            Foreground::Settings => Screen::Settings,
+            Foreground::Fixture(app) => {
+                let fixture = &self.fixtures[app];
+                Screen::Fixture {
+                    app: app.clone(),
+                    tab: fixture.tab,
+                    detail: fixture.detail,
+                    alert: fixture.alert,
+                    prompt: fixture.prompt,
+                }
+            }
         }
     }
 

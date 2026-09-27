@@ -8,6 +8,7 @@
 //! for the daemon's lifetime.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use mirror::MirrorConfig;
 use mirror::backend::Backend;
@@ -151,11 +152,17 @@ pub struct CompatibilityRow {
 /// mirror backend per attached target, and fills `doctor`'s compatibility
 /// table through [`Driver::compatibility`]. Until then the list holds only
 /// the fake driver, and only when `fake` names fake targets
-/// (`MOBILE_AGENT_FAKE_TARGETS` or the daemon's `--fake` flag).
-pub fn registered(fake: Option<&str>) -> Result<Vec<Arc<dyn Driver>>, String> {
+/// (`MOBILE_AGENT_FAKE_TARGETS` or the daemon's `--fake` flag), which show
+/// every change `fake_latency` after its cause.
+pub fn registered(
+    fake: Option<&str>,
+    fake_latency: Duration,
+) -> Result<Vec<Arc<dyn Driver>>, String> {
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
     if let Some(spec) = fake.filter(|spec| !spec.trim().is_empty()) {
-        drivers.push(Arc::new(FakeDriver::parse(spec)?));
+        drivers.push(Arc::new(
+            FakeDriver::parse(spec)?.with_latency(fake_latency),
+        ));
     }
     Ok(drivers)
 }
