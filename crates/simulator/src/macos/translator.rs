@@ -70,10 +70,11 @@ define_class!(
                             .flatten()
                     },
                 );
-                match response {
-                    Some(response) => Retained::autorelease_return(response),
-                    None => empty_response(),
-                }
+                // Autoreleased here, into the pool of the call that asked,
+                // so the response lives until the translator retains it.
+                response
+                    .or_else(empty_response)
+                    .map_or(std::ptr::null_mut(), Retained::autorelease_return)
             });
             // SAFETY: a heap block is an Objective-C object; into_raw hands
             // over the +1 reference that from_raw takes.
@@ -99,18 +100,19 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// `+[AXPTranslatorResponse emptyResponse]`, autoreleased, for a request the
-/// device did not answer.
-fn empty_response() -> *mut AnyObject {
-    let Ok(class) = objc::class(c"AXPTranslatorResponse") else {
-        return std::ptr::null_mut();
-    };
+/// `+[AXPTranslatorResponse emptyResponse]`, for a request the device did
+/// not answer. It comes back retained: autoreleased inside the guard, it
+/// would go with the guard's own pool, before the translator could retain
+/// it.
+fn empty_response() -> Option<Retained<AnyObject>> {
+    let class = objc::class(c"AXPTranslatorResponse").ok()?;
     guarded("+[AXPTranslatorResponse emptyResponse]", || {
         // SAFETY: a class method returning a response object.
         let response: Option<Retained<AnyObject>> = unsafe { msg_send![class, emptyResponse] };
-        response.map_or(std::ptr::null_mut(), Retained::autorelease_return)
+        response
     })
-    .unwrap_or(std::ptr::null_mut())
+    .ok()
+    .flatten()
 }
 
 /// The translator and the delegate installed in it.
@@ -456,6 +458,18 @@ mod tests {
             ..Element::default()
         };
         assert_eq!(elements::class_name(2, &heading), "XCUIElementTypeHeading");
+    }
+
+    #[test]
+    fn the_empty_response_outlives_the_guard_that_fetched_it() {
+        load().expect("AccessibilityPlatformTranslation loads");
+        let response = empty_response().expect("an empty response");
+        // The guard's autorelease pool has drained, and the response is
+        // still held here, as the translator's retain needs it to be.
+        assert_eq!(
+            response.class().name().to_str(),
+            Ok("AXPTranslatorResponse")
+        );
     }
 
     #[test]
