@@ -273,16 +273,19 @@ impl Device {
     /// output that must be read as it arrives. Closing the stream makes adbd
     /// send SIGHUP to the command.
     pub fn shell_stream(&self, command: &str) -> Result<ShellStream> {
-        let request = format!("shell,v2,raw:{command}");
-        let stream = self.service(&request)?;
-        Ok(ShellStream { stream, request })
+        self.shell_stream_with(command, Stdio::Raw)
     }
 
     /// [`Self::shell_stream`] with the command's streams connected as `stdio`
     /// says.
     pub fn shell_stream_with(&self, command: &str, stdio: Stdio) -> Result<ShellStream> {
-        let _ = (command, stdio);
-        todo!()
+        let streams = match stdio {
+            Stdio::Raw => "raw",
+            Stdio::Pty => "pty",
+        };
+        let request = format!("shell,v2,{streams}:{command}");
+        let stream = self.service(&request)?;
+        Ok(ShellStream { stream, request })
     }
 
     /// Copies the local file at `local` to `remote` with permission bits `mode`.
