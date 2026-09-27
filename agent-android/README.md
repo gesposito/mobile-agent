@@ -352,6 +352,30 @@ cargo test                       # without a device: every test prints why it sk
 cargo clippy --all-targets -- -D warnings && cargo fmt --check
 ```
 
+`tests/measure.rs` holds measurements rather than checks, ignored by default:
+
+```sh
+MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --test measure -- --ignored --nocapture --test-threads 1
+```
+
+It times ten attaches (spawn to ready line, handshake, first snapshot), ten
+cold and twenty warm reads of the Compose and Expo 500-cell screens (a tree
+resync empties the cache before each cold one), 200 taps and twenty direct and
+five typed 40-character texts. On the API 36 emulator, shared with other
+work (host load 5 to 8):
+
+| Measure | p50 | p95 |
+|---|---|---|
+| Spawn to ready line (ownership, active window, listening) | 208 ms | 229 ms |
+| Connect and handshake over an adb service stream | 3.3 ms | 3.7 ms |
+| Compose Big, cold read in the agent (464 round trips) | 353 ms | 459 ms |
+| Compose Big, warm read in the agent (2 round trips) / host round trip | 3 ms / 8.4 ms | 3 ms / 9.0 ms |
+| Expo Big, cold read in the agent (505 round trips) | 442 ms | 889 ms |
+| Expo Big, warm read in the agent (2 round trips) / host round trip | 4 ms / 11.3 ms | 5 ms / 12.7 ms |
+| Tap acknowledgement, host round trip (0 of 200 over 50 ms) | 3.6 ms | 4.5 ms |
+| 40 characters set directly, host round trip | 11.4 ms | 27.7 ms |
+| 40 characters typed as keys, host round trip | 813 ms | 971 ms |
+
 The tests run one at a time, since they share the device and its single UI
 automation role. Each one starts its own agent from a jar pushed under a
 unique name, and kills it by pid (after checking that `/proc/<pid>/cmdline`
@@ -372,7 +396,8 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | device-protocol: Structured errors | Transient versus permanent failure (unknown method) | `handshake::an_unknown_method_gets_a_permanent_error_and_the_connection_stays_usable` |
 | device-protocol: Liveness detection | Agent side of the pings | `handshake::the_agent_pings_a_silent_host_every_second`, `handshake::every_ping_answer_keeps_a_quiet_session_open_past_the_peer_timeout`, `handshake::the_agent_closes_a_connection_whose_host_stops_answering` |
 | design D3: token and peer check | | `handshake::a_host_expecting_another_token_refuses_the_hello_and_the_agent_keeps_serving`, `handshake::a_peer_that_is_not_the_shell_user_gets_no_hello` |
-| android-driver: Agent deployment without installation | Compatible agent reused | `handshake::a_later_connection_reuses_the_running_agent` |
+| android-driver: Agent deployment without installation | First attach | `lifecycle::a_first_attach_serves_a_snapshot_without_installing_a_package` |
+| | Compatible agent reused | `handshake::a_later_connection_reuses_the_running_agent` |
 | | Incompatible agent replaced | `handshake::a_host_speaking_only_a_newer_version_is_refused_and_the_agent_exits_for_replacement` |
 | android-driver: Single ownership of UI automation | Another tool holds automation | `ownership::an_attach_while_uiautomator_events_holds_the_role_fails_naming_it`, `ownership::a_second_agent_names_the_first_as_the_holder` |
 | | Force option | `ownership::force_takes_the_role_over_from_uiautomator_events` |

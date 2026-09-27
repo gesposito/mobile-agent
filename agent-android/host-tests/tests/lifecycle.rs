@@ -167,3 +167,30 @@ fn the_same_agent_serves_snapshots_across_a_rotation() {
     drop(agent);
     drop(rotation);
 }
+
+#[test]
+fn a_first_attach_serves_a_snapshot_without_installing_a_package() {
+    let Some(dev) = device("a_first_attach_serves_a_snapshot_without_installing_a_package") else {
+        return;
+    };
+    let packages = || {
+        let mut list: Vec<String> = dev
+            .shell("pm list packages")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        list.sort();
+        list
+    };
+    let instrumentations = || dev.shell("pm list instrumentation");
+    let before = (packages(), instrumentations());
+    let agent = Agent::launch(&dev, Launch::default());
+    let mut client = agent.connect();
+    let s = snapshot(&mut client);
+    assert!(!s.windows.is_empty());
+    assert_eq!(
+        (packages(), instrumentations()),
+        before,
+        "the attach installed something"
+    );
+}
