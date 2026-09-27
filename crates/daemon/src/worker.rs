@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
-use crate::driver::{AppControl, Capture, Driver, Report, Size, TargetInfo};
+use crate::driver::{AppControl, Attachment, Capture, Driver, Report, Size, TargetInfo};
 use crate::signals::Observer;
 use crate::wire::{Failure, Success};
 
@@ -64,6 +64,39 @@ pub(crate) struct Attached {
 }
 
 impl Attached {
+    /// The target `info` as `attachment` attached it, its status shared
+    /// with its worker.
+    fn new(info: &TargetInfo, attachment: Attachment, status: &Arc<Mutex<Status>>) -> Attached {
+        let observer = Observer::default();
+        let mut backend = attachment.backend;
+        let frames = backend.frames.is_some();
+        backend.events = observer.tee(backend.events);
+        Attached {
+            info: info.clone(),
+            mirror: Mirror::new(backend, attachment.config),
+            apps: attachment.apps,
+            capture: attachment.capture,
+            display: attachment.display,
+            observer,
+            frames,
+            last_action: None,
+            sessions: HashMap::new(),
+            delta_session: None,
+            status: Arc::clone(status),
+        }
+    }
+
+    /// Brings the replica up to the display before the tree is read. On a
+    /// window that sends no change events, frames that changed after its
+    /// latest read began call for another read, which the mirror schedules
+    /// no sooner than its minimum re-read interval after that read; this
+    /// waits for it, so a snapshot right after a tap shows what the tap
+    /// did rather than what the tap's own re-read caught.
+    #[allow(dead_code)]
+    pub fn catch_up(&mut self) -> Result<(), MirrorError> {
+        todo!("task 8.8")
+    }
+
     /// Injects `action` through the mirror and notes when.
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
         let outcome = self.mirror.act(action)?;
@@ -214,24 +247,8 @@ fn serve(
                             current.attached = true;
                             current.error = None;
                             drop(current);
-                            *lock(report) = attachment.report;
-                            let observer = Observer::default();
-                            let mut backend = attachment.backend;
-                            let frames = backend.frames.is_some();
-                            backend.events = observer.tee(backend.events);
-                            attached = Some(Attached {
-                                info: info.clone(),
-                                mirror: Mirror::new(backend, attachment.config),
-                                apps: attachment.apps,
-                                capture: attachment.capture,
-                                display: attachment.display,
-                                observer,
-                                frames,
-                                last_action: None,
-                                sessions: HashMap::new(),
-                                delta_session: None,
-                                status: Arc::clone(status),
-                            });
+                            *lock(report) = attachment.report.clone();
+                            attached = Some(Attached::new(info, attachment, status));
                         }
                         Err(error) => {
                             lock(status).error = Some(error.message.clone());
@@ -268,5 +285,86 @@ fn serve(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fake::FakeDriver;
+    use mirror::{SnapshotOptions, Target};
+
+    /// The first fake target `spec` names, attached, showing each change
+    /// `latency` after its cause.
+    fn attached(spec: &str, latency: Duration) -> Attached {
+        let driver = FakeDriver::parse(spec).unwrap().with_latency(latency);
+        let info = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&info).unwrap();
+        Attached::new(&info, attachment, &Arc::default())
+    }
+
+    fn ref_of(snapshot: &Snapshot, id: &str) -> Ref {
+        snapshot
+            .elements
+            .iter()
+            .find(|element| element.identifier.as_deref() == Some(id))
+            .and_then(|element| element.reference)
+            .unwrap_or_else(|| panic!("no ref for {id} in:\n{}", snapshot.text))
+    }
+
+    /// On a Simulator the re-read a tap calls for runs before the app has
+    /// changed; the frames that change next call for another read, no
+    /// sooner than the mirror's minimum interval after the first.
+    #[test]
+    fn a_tree_read_waits_for_the_re_read_that_changed_frames_call_for() {
+        let mut target = attached("ios", Duration::from_millis(60));
+        let launcher = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let fixture = ref_of(&launcher, "launcher-fixture");
+        target
+            .act(&Action::Tap {
+                target: Target::Ref(fixture),
+                hold: None,
+            })
+            .unwrap();
+        // The tap's re-read, before the app shows the change.
+        target.mirror.pump().unwrap();
+        std::thread::sleep(Duration::from_millis(120));
+        target.catch_up().unwrap();
+        let after = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(after.text.contains("id=tab-login"), "{}", after.text);
+    }
+
+    #[test]
+    fn a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read() {
+        let mut target = attached("ios", Duration::ZERO);
+        target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let started = Instant::now();
+        target.catch_up().unwrap();
+        assert!(
+            started.elapsed() < Duration::from_millis(50),
+            "waited {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_target_without_frames_never_waits() {
+        let mut target = attached("android:R58M123", Duration::from_millis(60));
+        target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let started = Instant::now();
+        target.catch_up().unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
     }
 }
