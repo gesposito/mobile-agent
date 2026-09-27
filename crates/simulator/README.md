@@ -69,6 +69,7 @@ tests/
   tree.rs          task 6.6
   text.rs          task 6.7
   containment.rs   tasks 6.8 and 6.6
+  metadata.rs      task 6.10
 ```
 
 ## Building
@@ -182,10 +183,29 @@ checks the owner again afterwards: a change fails the read with
 read is SpringBoard's tree, whose alert lists its buttons. The payload
 follows the mirror's conventions (`reader/src/elements.rs`):
 
-- one window per read, its id the owner's pid, its kind `system` for system
-  UI (SpringBoard and the other processes of the runtime's CoreServices) and
-  `application` otherwise, with the owner's bundle identifier and name; the
-  keyboard's `UIRemoteKeyboardWindow` becomes an input-method window above it;
+- the process's own window, its id the owner's pid, its kind `system` for
+  system UI (SpringBoard and the other processes of the runtime's
+  CoreServices) and `application` otherwise, with the owner's bundle
+  identifier and name; the keyboard's `UIRemoteKeyboardWindow` becomes an
+  input-method window above it, its id the pid with bit 31 set;
+- an application's alert on screen moves, with the view that presents it,
+  to a window of its own between the two, its id the pid with bit 30 set,
+  titled by the alert, marked `modal`, and `active` and `focused` in the
+  application window's stead. The view is the child of the alert's window
+  that holds it, a transition view with two dimming views and the alert,
+  whether the alert is drawn in the application's window (SwiftUI) or in a
+  window of its own (React Native). The application's window keeps what the
+  alert covers and is not modal, so the mirror covers all of it. System UI
+  keeps its alerts in its own window, which is not modal: the read holds no
+  application window for them to cover, and the mirror cuts the rest of
+  SpringBoard's window by the alert's class;
+- every window says it sends no change events (`emits_events` false), since
+  the Simulator sends none (spikes S3 and S4) and the mirror reads it again
+  after each action and on a poll; system UI names itself as the `owner` of
+  each of its windows by its process name, `SpringBoard`, in the string
+  table, and an application's windows name no owner;
+- windows are listed, and their nodes numbered, top-most first, so a node
+  limit cuts the windows behind first;
 - `class` is the `XCUIElementType` name, or the UIKit class for elements the
   runtime types as `Other` or `Group`, so the alert controller's
   `_UIAlertControllerPhoneTVMacView` names itself; a static text with the
@@ -199,15 +219,18 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   and `scrollable` from the type, and `focused` from the private editing
   trait, which only the field with keyboard focus carries.
 
-An alert is the last visible alert container in the owner's tree; its title
-is the container's label, its message the other static texts, and its
-buttons the outermost ones, since UIKit nests each action's button in
-another with the same label. The payload keeps what an alert covers, as the
-reader returns it, because the mirror cuts that itself and still reports a
-ref to a covered element as covered; `uncovered()` returns the payload with
-only the alert and the containers it sits in. UIKit ignores touches while an
-alert presents, although the alert is in the tree from the start, so a
-client waits for the display to settle before tapping its buttons.
+An alert is the last visible alert container in the first window that holds
+one: the alert's own window for an application's alert, SpringBoard's for a
+system alert. Its title is the container's label, its message the other
+static texts, and its buttons the outermost ones, since UIKit nests each
+action's button in another with the same label. The payload keeps what an
+alert covers, as the reader returns it, because the mirror cuts that itself
+and still reports a ref to a covered element as covered; `uncovered()`
+returns the payload with only the alert and the containers it sits in. The
+foreground is the process's own window, never the alert's. UIKit ignores
+touches while an alert presents, although the alert is in the tree from the
+start, so a client waits for the display to settle before tapping its
+buttons.
 
 A read is degraded when the translator read it, when a bound cut it, or when
 an application window holds only its root, as a read right after a launch
@@ -418,8 +441,11 @@ MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
 ```
 
 The tree tests use the SwiftUI fixture on the same Simulator and put the
-Expo fixture back on Login when they end. The permission alert test resets
-the fixture's location permission before and after, with `simctl privacy`.
+Expo fixture back on Login when they end; the metadata tests use both
+fixtures. The permission alert tests reset the fixture's location
+permission before and after, with `simctl privacy`. SpringBoard keeps a
+permission alert up after its application is gone, over whatever runs
+next, so the metadata test dismisses it whether its checks passed or not.
 
 Tests that create devices name them `mobile-agent-simtest-*` and delete them
 when they end, pass or fail; a binary that needs a freshly booted device
@@ -439,6 +465,7 @@ about a minute.
 | Foreground tree read | System alert in front | `tree::a_permission_alert_is_reported_as_system_owned`, `tree::tests::a_system_alert_belongs_to_system_ui` |
 | Foreground tree read | Sparse tree flagged | `tree::sparse_tree_flagged`, `tree::tests::an_application_root_alone_is_sparse`, `tree::tests::the_translator_and_truncation_degrade_the_read_with_reasons` |
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
+| Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
 | Foreground tree read | Covered content cut under alerts, the translator fallback (task 6.6) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
 | Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |

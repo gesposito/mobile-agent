@@ -8,23 +8,18 @@
 //! class of untyped elements, labels as descriptions and values as text; see
 //! `simulator_reader::elements`. It keeps what an alert covers, because the
 //! mirror cuts that itself and still reports refs to covered elements as
-//! covered; [`ForegroundTree::uncovered`] cuts it for everyone else.
+//! covered; [`ForegroundTree::uncovered`] cuts it for everyone else. An
+//! application's alert comes in a modal window of its own, above the
+//! application's window.
 
 use std::fmt;
 use std::time::Duration;
 
 use protocol::snapshot::{Node, NodeFlags, Snapshot, Truncation, Window, WindowType};
 
-use crate::model::Point;
+pub use simulator_reader::elements::ALERT_CLASSES;
 
-/// The classes of the containers UIKit draws an alert controller in. The
-/// reader reports them as untyped groups (spike S4), so the class names them.
-pub const ALERT_CLASSES: [&str; 4] = [
-    "_UIAlertControllerPhoneTVMacView",
-    "_UIAlertControllerView",
-    "UIAlertControllerView",
-    "XCUIElementTypeAlert",
-];
+use crate::model::Point;
 
 /// Which path reads a target's tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -195,10 +190,17 @@ impl ForegroundTree {
         fallback: Option<String>,
         elapsed: Duration,
     ) -> Option<ForegroundTree> {
+        // The process's own window: neither the keyboard's nor an alert's.
         let owner = snapshot
             .windows
             .iter()
-            .find(|window| window.kind != WindowType::INPUT_METHOD)?;
+            .find(|window| window.kind != WindowType::INPUT_METHOD && !window.modal)
+            .or_else(|| {
+                snapshot
+                    .windows
+                    .iter()
+                    .find(|window| window.kind != WindowType::INPUT_METHOD)
+            })?;
         let foreground = Foreground {
             pid: owner.id as i32,
             bundle_id: owner

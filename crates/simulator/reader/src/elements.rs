@@ -22,7 +22,25 @@
 //! One read is one process, the one that owns the foreground: its
 //! application element becomes a window whose id is the process id, and the
 //! keyboard window inside it (`UIRemoteKeyboardWindow`) a separate input
-//! method window, which the mirror collapses to one line.
+//! method window, which the mirror collapses to one line. The window
+//! metadata of protocol task 3.6:
+//!
+//! - `emits_events` is `Some(false)` on every window: the Simulator sends no
+//!   change events (spikes S3 and S4), so the mirror reads its windows again
+//!   after each action and on a poll.
+//! - `owner` names the process on every window of system UI, such as
+//!   `SpringBoard` under a permission alert, and is absent on an
+//!   application's.
+//! - An application's alert on screen moves, with the view that presents it
+//!   (the child of the alert's window that holds it), to a window of its
+//!   own above the application's, marked `modal`: the mirror then covers the
+//!   application's window, which keeps what the alert covers. System UI
+//!   keeps its alerts in its window, which is not modal: the read holds no
+//!   application window for them to cover, and the mirror cuts the rest of
+//!   the window by the alert's class.
+//! - Windows are listed and their nodes numbered top-most first: the
+//!   keyboard, the alert, then the process's own window, so a node limit
+//!   cuts the windows behind first.
 
 use protocol::message::SnapshotParams;
 use protocol::snapshot::{
@@ -74,6 +92,15 @@ pub const KEYBOARD_WINDOW: u32 = 1 << 31;
 /// its process id.
 pub const ALERT_WINDOW: u32 = 1 << 30;
 
+/// The classes of the containers UIKit draws an alert controller in, which
+/// the runtime types as groups (spike S4), and XCTest's name for an alert.
+pub const ALERT_CLASSES: [&str; 4] = [
+    "_UIAlertControllerPhoneTVMacView",
+    "_UIAlertControllerView",
+    "UIAlertControllerView",
+    "XCUIElementTypeAlert",
+];
+
 /// The bundle identifier of SpringBoard, which owns the home screen and
 /// system alerts.
 pub const SPRINGBOARD: &str = "com.apple.springboard";
@@ -107,8 +134,9 @@ pub struct Element {
 pub struct Owner {
     pub pid: i32,
     pub bundle_id: Option<String>,
-    /// The process's name, for the window title when the application element
-    /// has no label.
+    /// The process's name: its bundle's display name or name, else its
+    /// executable's. It titles the window when the application element has
+    /// no label, and system UI names itself by it as its windows' owner.
     pub name: String,
     /// System UI, such as SpringBoard, rather than an application.
     pub system: bool,
@@ -180,6 +208,8 @@ pub fn snapshot(read: &Read) -> Snapshot {
         .bundle_id
         .as_deref()
         .map(|bundle| builder.string(bundle));
+    let owner = system_name(&read.owner).map(|name| builder.string(name));
+    let pid = read.owner.pid as u32;
 
     // The keyboard window leaves the application's tree for its own window.
     let mut app = read.root.clone();
@@ -190,32 +220,53 @@ pub fn snapshot(read: &Read) -> Snapshot {
         app.children = rest;
         keyboards
     };
+    // So does an application's alert, for a modal window.
+    let alert = if read.owner.system {
+        None
+    } else {
+        take_alert(&mut app, builder.screen)
+    };
 
     let title = present(&app.label)
         .map(str::to_owned)
         .or_else(|| (!read.owner.name.is_empty()).then(|| read.owner.name.clone()));
-    let app_root = builder.node(&app, 0);
     let mut windows = Vec::new();
+    let keyboard_layer = if alert.is_some() { 2 } else { 1 };
     for keyboard in &keyboards {
         let root = builder.node(keyboard, 1);
         windows.push(Window {
-            id: read.owner.pid as u32 | KEYBOARD_WINDOW,
+            id: pid | KEYBOARD_WINDOW,
             kind: WindowType::INPUT_METHOD,
-            layer: 1,
+            layer: keyboard_layer,
             package,
             title: None,
             bounds: builder.bounds(keyboard.frame),
             flags: WindowFlags::EMPTY,
             root,
-            // The Simulator sends no change events for any window (spikes S3 and S4); owner
-            // and modal are filled properly by task 6.10.
             emits_events: Some(false),
-            owner: None,
+            owner,
             modal: false,
         });
     }
+    if let Some(alert) = &alert {
+        let root = builder.node(&alert.view, alert.level);
+        windows.push(Window {
+            id: pid | ALERT_WINDOW,
+            kind: WindowType::APPLICATION,
+            layer: 1,
+            package,
+            title: alert.title.clone(),
+            bounds: builder.bounds(alert.view.frame),
+            flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+            root,
+            emits_events: Some(false),
+            owner,
+            modal: true,
+        });
+    }
+    let app_root = builder.node(&app, 0);
     windows.push(Window {
-        id: read.owner.pid as u32,
+        id: pid,
         kind: if read.owner.system {
             WindowType::SYSTEM
         } else {
@@ -225,10 +276,14 @@ pub fn snapshot(read: &Read) -> Snapshot {
         package,
         title,
         bounds: builder.bounds(app.frame),
-        flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+        flags: if alert.is_some() {
+            WindowFlags::EMPTY
+        } else {
+            WindowFlags::ACTIVE | WindowFlags::FOCUSED
+        },
         root: app_root,
         emits_events: Some(false),
-        owner: None,
+        owner,
         modal: false,
     });
     Snapshot {
@@ -242,6 +297,83 @@ pub fn snapshot(read: &Read) -> Snapshot {
 
 fn is_keyboard_window(element: &Element) -> bool {
     element.class.as_deref() == Some(KEYBOARD_WINDOW_CLASS)
+}
+
+/// The name system UI goes by as the owner of its windows: the process's
+/// name, else its bundle identifier. `None` for an application.
+fn system_name(owner: &Owner) -> Option<&str> {
+    if !owner.system {
+        return None;
+    }
+    Some(owner.name.as_str())
+        .filter(|name| !name.is_empty())
+        .or(owner.bundle_id.as_deref())
+}
+
+/// An application's alert, taken out of its tree for a window of its own.
+struct Presentation {
+    /// The view that presents the alert: the child of the alert's window
+    /// that holds it, or the alert itself when it sits right in a window.
+    view: Element,
+    /// How many levels below the application element `view` sat.
+    level: u32,
+    /// The alert's title, its container's label.
+    title: Option<String>,
+}
+
+/// Takes the last alert on screen, in pre-order (the one in front), out of
+/// the application's tree `app`, with the view that presents it.
+fn take_alert(app: &mut Element, screen: Option<[f64; 4]>) -> Option<Presentation> {
+    fn find(
+        element: &Element,
+        level: u32,
+        screen: Option<[f64; 4]>,
+        path: &mut Vec<usize>,
+        found: &mut Option<(Vec<usize>, Option<String>)>,
+    ) {
+        if level > 0
+            && on_screen(element.frame, screen)
+            && ALERT_CLASSES.contains(&class_name(level, element).as_str())
+        {
+            *found = Some((path.clone(), present(&element.label).map(str::to_owned)));
+        }
+        for (index, child) in element.children.iter().enumerate() {
+            path.push(index);
+            find(child, level + 1, screen, path, found);
+            path.pop();
+        }
+    }
+    let mut found = None;
+    find(app, 0, screen, &mut Vec::new(), &mut found);
+    let (path, title) = found?;
+    // The path leads from the application through the alert's window to
+    // the alert; the view two levels down presents it.
+    let depth = path.len().min(2);
+    let mut parent = app;
+    for &index in &path[..depth - 1] {
+        parent = &mut parent.children[index];
+    }
+    let view = parent.children.remove(path[depth - 1]);
+    Some(Presentation {
+        view,
+        level: depth as u32,
+        title,
+    })
+}
+
+/// Whether a frame, in points, has an area and overlaps the screen, the
+/// application element's frame when it has one.
+fn on_screen(frame: Option<[f64; 4]>, screen: Option<[f64; 4]>) -> bool {
+    let Some([x, y, width, height]) = frame else {
+        return false;
+    };
+    if width <= 0.0 || height <= 0.0 {
+        return false;
+    }
+    match screen {
+        None => true,
+        Some([sx, sy, sw, sh]) => x < sx + sw && x + width > sx && y < sy + sh && y + height > sy,
+    }
 }
 
 /// The string, unless absent or only whitespace.
@@ -280,18 +412,7 @@ impl Builder {
     }
 
     fn visible(&self, frame: Option<[f64; 4]>) -> bool {
-        let Some([x, y, width, height]) = frame else {
-            return false;
-        };
-        if width <= 0.0 || height <= 0.0 {
-            return false;
-        }
-        match self.screen {
-            None => true,
-            Some([sx, sy, sw, sh]) => {
-                x < sx + sw && x + width > sx && y < sy + sh && y + height > sy
-            }
-        }
+        on_screen(frame, self.screen)
     }
 
     /// Converts `element`, `level` levels below the application element,
