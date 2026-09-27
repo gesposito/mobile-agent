@@ -21,6 +21,9 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The image's Android SDK, named here too so that the cache paths below can use it.
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/cache@v6
@@ -38,13 +41,52 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
-      - name: Install just
-        # TODO: run through Socket Firewall (sfw cargo install) like local installs.
-        run: cargo install just --locked
-      - run: just build
-      - run: just lint
-      - run: just fmt-check
-      - run: just test
+      - name: Install just and the OpenSpec CLI
+        # TODO: run both through Socket Firewall (sfw cargo install, sfw npm install) like local installs.
+        run: |
+          cargo install just --locked
+          npm install -g @fission-ai/openspec@1.13.1
+      - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent
+        # kotlin installs the kotlin-compiler zip of JetBrains' release, whose SHA-256 mise checks;
+        # the action caches both installs. TODO: Socket Firewall does not wrap mise.
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.7
+          mise_toml: |
+            [tools]
+            java = "temurin-21"
+            kotlin = { version = "2.4.20", asset_pattern = "kotlin-compiler-*.zip", bin_path = "kotlinc/bin" }
+      - name: Check that the pinned JDK and Kotlin come first on PATH
+        # build.sh takes the Kotlin behind kotlinc on PATH, and `just codec-test` skips without one.
+        run: |
+          java -version 2>&1 | grep '"21\.'
+          kotlinc -version 2>&1 | grep 'kotlinc-jvm 2\.4\.20 '
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms/android-36
+            ${{ env.ANDROID_HOME }}/build-tools/36.0.0
+            ${{ env.ANDROID_HOME }}/build-tools/37.0.0
+          key: ${{ runner.os }}-android-sdk-android-36-build-tools-36.0.0-37.0.0
+      - name: Install the Android SDK packages
+        # The agent takes d8 and R8 from the newest build-tools, 37.0.0; 36.0.0 is AGP 9.4.1's
+        # default, for the Compose fixture. TODO: Socket Firewall does not wrap sdkmanager.
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-36" "build-tools;36.0.0" "build-tools;37.0.0"
+      - uses: actions/cache@v6
+        with:
+          # Gradle's dependencies and wrapper distribution, for the Compose fixture.
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('fixtures/compose/**/*.gradle*', 'fixtures/compose/gradle/**') }}
+          restore-keys: ${{ runner.os }}-gradle-
+      - name: just validate
+        env:
+          # The Android agent, its codec cross-check and the Compose fixture; Expo and SwiftUI build on macOS.
+          FIXTURES: compose
+        run: just validate
 
   macos:
     name: macOS (Xcode ${{ matrix.xcode }})
@@ -120,7 +162,7 @@ jobs:
       - name: just validate
         if: steps.xcode.outputs.available == 'true'
         env:
-          # macOS builds the Apple-side fixtures. The Android agent and the Compose fixture need the Android SDK and a Kotlin compiler; see task 10.6 for the Linux job.
+          # macOS builds the Apple-side fixtures; the Linux job builds the Android agent and the Compose fixture.
           FIXTURES: expo,swiftui
           SKIP_AGENT_BUILD: "1"
         run: just validate
