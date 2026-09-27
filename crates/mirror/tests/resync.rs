@@ -395,3 +395,21 @@ fn agent_warnings_and_disconnection_reach_the_verdict() {
     assert_eq!(error.code(), code::DISCONNECTED);
     assert!(target.inputs().is_empty());
 }
+
+#[test]
+fn events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps() {
+    let target = FakeTarget::new(fixture("login"));
+    target.at(ms(100), Step::EventSeq(5, EventPayload::Unknown(Stream(9))));
+    target.at(ms(200), Step::EventSeq(9, EventPayload::Unknown(Stream(9))));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&full()).unwrap();
+    mirror.run_until(target.instant(ms(300))).unwrap();
+    let reasons: Vec<ReadReason> = target.reads().iter().map(|r| r.request.reason).collect();
+    assert_eq!(reasons, [ReadReason::Attach], "nothing to re-read");
+    let submit = before
+        .by_identifier("login-submit")
+        .unwrap()
+        .reference
+        .unwrap();
+    assert!(mirror.resolve(submit).is_ok(), "refs stay valid");
+}
