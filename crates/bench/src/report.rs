@@ -11,6 +11,7 @@ use crate::adapter::Clock;
 use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::gates::GateReport;
+use crate::handoff::HandOff;
 use crate::harness::Subject;
 use crate::provenance::Provenance;
 use crate::stats::{Summary, percent};
@@ -25,6 +26,10 @@ pub struct Report {
     pub schema_version: u32,
     pub provenance: Provenance,
     pub measurements: Vec<Measurement>,
+    /// Every hand-off of a target from one tool to the next, and once the run
+    /// was over, in order; none happens inside a series.
+    #[serde(default)]
+    pub handoffs: Vec<HandOff>,
     /// The gate verdicts, once [`crate::gates::GateSet::evaluate`] has judged
     /// the run.
     #[serde(default)]

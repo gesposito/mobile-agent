@@ -9,6 +9,13 @@
 //! Assertions wait rather than check once, as Maestro's do: a visible element
 //! becomes a `wait` on its selector, and a text becomes a `wait` for the text
 //! followed by an `is text` on the element.
+//!
+//! Between commands agent-device keeps its session, and on Android with it a
+//! snapshot helper, an instrumentation that holds the device's one UI
+//! automation role, and the test input method it selects for text entry.
+//! `agent-device close` ends the session: it stops the helper and selects the
+//! input method it found again. `close --shutdown` would also shut the target
+//! down, which the harness never asks for.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -139,6 +146,36 @@ pub fn outcome(stdout: &str) -> Result<Option<String>, String> {
         (None, Some(message)) => message,
         (None, None) => "agent-device reported a failure without an error".to_owned(),
     })
+}
+
+/// Arguments for `agent-device close` of the session on `target`, as JSON.
+pub fn close_args(target: &Target, session: &str) -> Vec<OsString> {
+    let platform = target.class.platform();
+    vec![
+        "close".into(),
+        "--json".into(),
+        "--platform".into(),
+        platform.id().into(),
+        device_flag(platform).into(),
+        target.id.clone().into(),
+        "--session".into(),
+        session.into(),
+    ]
+}
+
+/// Reads the reply of `agent-device close`: `Ok(true)` when it closed the
+/// session, `Ok(false)` when there was no session to close
+/// (`SESSION_NOT_FOUND`), else the failure.
+pub fn closed(stdout: &str) -> Result<bool, String> {
+    let reply = json_document(stdout).ok_or_else(|| no_reply(stdout))?;
+    if reply["success"] == true {
+        return Ok(true);
+    }
+    if reply["error"]["code"] == "SESSION_NOT_FOUND" {
+        return Ok(false);
+    }
+    Err(error_message(&reply)
+        .unwrap_or_else(|| "agent-device reported a failure without an error".to_owned()))
 }
 
 /// Arguments for `agent-device snapshot` of the session's screen, as JSON:
@@ -351,6 +388,56 @@ mod tests {
             &android[6..10],
             ["--platform", "android", "--serial", "R5CT"]
         );
+    }
+
+    #[test]
+    fn a_close_ends_the_session_on_the_target_it_ran_on_and_never_shuts_it_down() {
+        let strings = |args: Vec<OsString>| -> Vec<String> {
+            args.into_iter().map(|a| a.into_string().unwrap()).collect()
+        };
+        assert_eq!(
+            strings(close_args(
+                &Target::new("emulator-5554", TargetClass::AndroidEmulator),
+                "mobile-agent-bench"
+            )),
+            [
+                "close",
+                "--json",
+                "--platform",
+                "android",
+                "--serial",
+                "emulator-5554",
+                "--session",
+                "mobile-agent-bench"
+            ]
+        );
+        let ios = strings(close_args(
+            &Target::new("SIM-1", TargetClass::Simulator),
+            "s",
+        ));
+        assert_eq!(&ios[2..6], ["--platform", "ios", "--udid", "SIM-1"]);
+        assert!(!ios.iter().any(|arg| arg == "--shutdown"));
+    }
+
+    #[test]
+    fn a_close_reads_whether_it_ended_a_session() {
+        assert_eq!(
+            closed("{\"success\": true, \"data\": {\"session\": \"mobile-agent-bench\"}}\n"),
+            Ok(true)
+        );
+        assert_eq!(
+            closed(
+                r#"{"success": false, "error": {"code": "SESSION_NOT_FOUND", "message": "no session mobile-agent-bench"}}"#
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            closed(
+                r#"{"success": false, "error": {"code": "COMMAND_FAILED", "message": "Android test IME could not be restored on emulator-5554."}}"#
+            ),
+            Err("COMMAND_FAILED: Android test IME could not be restored on emulator-5554.".into())
+        );
+        assert!(closed("daemon unavailable\n").is_err());
     }
 
     #[test]

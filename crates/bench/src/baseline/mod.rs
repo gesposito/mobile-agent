@@ -244,6 +244,31 @@ impl Adapter for Baseline {
         self.run_tool(target, flow)?;
         self.end_state(target, flow)
     }
+
+    /// Closes agent-device's session on the target, which stops the snapshot
+    /// helper it keeps holding UI automation between commands and selects
+    /// the input method it found again. Maestro and maestro-runner hold
+    /// nothing: their driver ends with the process that runs a flow.
+    fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+        if self.tool != BaselineTool::AgentDevice {
+            return Ok(None);
+        }
+        let path = self
+            .path
+            .clone()
+            .ok_or_else(|| AdapterError::new("agent-device was not detected"))?;
+        let args = agent_device::close_args(target, SESSION);
+        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
+            .map_err(AdapterError::new)?;
+        match agent_device::closed(&finished.stdout) {
+            Ok(true) => Ok(Some(format!("closed agent-device session {SESSION}"))),
+            Ok(false) => Ok(None),
+            Err(e) => Err(AdapterError::new(format!(
+                "agent-device close failed: {e}; {}",
+                exit_failure(&finished)
+            ))),
+        }
+    }
 }
 
 impl Baseline {

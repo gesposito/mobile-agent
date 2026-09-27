@@ -125,7 +125,9 @@ pub fn agent_device_snapshot(screen: &[Shown]) -> String {
 /// Fake Maestro, maestro-runner and agent-device in one directory. A flow
 /// run keeps the end screen of the flow its file names; a hierarchy read
 /// (`hierarchy`, or agent-device's `snapshot`) prints the screen kept, in the
-/// tool's shape. Each tool logs its arguments to `<tool>.log`.
+/// tool's shape. Each tool logs its arguments to `<tool>.log`, then, when the
+/// directory holds a `device.sh`, sources it with `$tool` naming the tool, so
+/// a test can model the device the tools share.
 pub struct Tools {
     pub dir: PathBuf,
     pub bin: PathBuf,
@@ -185,6 +187,7 @@ impl Tools {
                  dir=\"${{0%/*}}\"\n\
                  if [ \"$1\" = \"--version\" ]; then echo '{version}'; exit 0; fi\n\
                  echo \"$@\" >> \"$dir/{name}.log\"\n\
+                 if [ -f \"$dir/device.sh\" ]; then tool={name}; . \"$dir/device.sh\"; fi\n\
                  case \" $* \" in\n\
                  *\" {read} \"*) cat \"$dir/{name}-screen.out\" ;;\n\
                  {runs}\
@@ -205,11 +208,14 @@ impl Tools {
         }
     }
 
-    /// Each line `tool` logged, reduced to what it did: `run <flow>` for a
-    /// flow run, `read` for a hierarchy read.
+    /// Each flow run and hierarchy read `tool` logged, reduced to what it
+    /// did: `run <flow>` for a flow run, `read` for a hierarchy read. The
+    /// session closes of agent-device's releases are left out;
+    /// [`Tools::closes`] lists them.
     pub fn log(&self, tool: &str) -> Vec<String> {
         let log = fs::read_to_string(self.bin.join(format!("{tool}.log"))).unwrap_or_default();
         log.lines()
+            .filter(|line| !line.starts_with("close "))
             .map(|line| {
                 if line.contains(" hierarchy") || line.starts_with("snapshot ") {
                     "read".to_owned()
@@ -221,6 +227,15 @@ impl Tools {
                     format!("run {flow}")
                 }
             })
+            .collect()
+    }
+
+    /// The session closes `tool` logged: `close` commands, one per release.
+    pub fn closes(&self, tool: &str) -> Vec<String> {
+        let log = fs::read_to_string(self.bin.join(format!("{tool}.log"))).unwrap_or_default();
+        log.lines()
+            .filter(|line| line.starts_with("close "))
+            .map(str::to_owned)
             .collect()
     }
 }

@@ -14,6 +14,7 @@ pub mod fake;
 pub mod fixture;
 pub mod flow;
 pub mod gates;
+pub mod handoff;
 pub mod harness;
 pub mod markdown;
 pub mod plan;

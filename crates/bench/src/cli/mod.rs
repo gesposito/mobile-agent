@@ -13,7 +13,10 @@
 //! frame change, tap to tree delta and settle detection are read from the
 //! click's and the settle's replies, spans only the daemon observes. A span
 //! the target cannot produce is reported as not measured, with the reason.
-//! Snapshots count the refs in their reply as their nodes.
+//! Snapshots count the refs in their reply as their nodes. The daemon keeps
+//! its agent, and on Android the device's one UI automation role with it,
+//! until it exits, so the adapter's release stops the daemon and waits until
+//! it has let go of its targets.
 
 pub mod listing;
 
@@ -72,6 +75,11 @@ const SHUTDOWNS: u32 = 100;
 /// Why a tap on an Android device has no frame change to time.
 const NO_FRAME_STREAM: &str = "Android devices have no frame stream, only screenshots on demand \
     (design D7), so a tap on one has no frame change to time";
+
+/// How long a release waits for the daemon to let go of its targets after
+/// `shutdown`: the daemon waits up to 5 s for its targets to detach, which
+/// stops an Android target's agent.
+const RELEASE_WAIT: Duration = Duration::from_secs(10);
 
 /// Where the CLI adapter finds `mobile-agent`, what environment its commands
 /// get, and where it writes files.
@@ -258,21 +266,32 @@ impl CliAdapter {
     }
 
     /// Sends `shutdown` until it finds no daemon to stop, so the next command
-    /// starts a new one.
-    fn stop_daemon(&self) -> Result<(), AdapterError> {
-        for _ in 0..SHUTDOWNS {
+    /// starts a new one. Returns whether it stopped one.
+    fn stop_daemon(&self) -> Result<bool, AdapterError> {
+        for sent in 0..SHUTDOWNS {
             let reply = self.send(None, &["shutdown"])?;
             if !reply.success {
                 return Err(failure(&["shutdown"], &reply));
             }
             if reply.data["stopped"] != true {
-                return Ok(());
+                return Ok(sent > 0);
             }
             std::thread::sleep(Duration::from_millis(10));
         }
         Err(AdapterError::new(format!(
             "a daemon still answered after {SHUTDOWNS} shutdowns"
         )))
+    }
+
+    /// The socket of the daemon that serves, as `status` names it; `None`
+    /// when `status` fails or names none.
+    fn daemon_socket(&self) -> Option<PathBuf> {
+        let reply = self.send(None, &["status"]).ok().filter(|r| r.success)?;
+        let socket = PathBuf::from(reply.data["daemon"]["socket"].as_str()?);
+        Some(match &self.config.cwd {
+            Some(cwd) if socket.is_relative() => cwd.join(socket),
+            _ => socket,
+        })
     }
 
     /// Relaunches `app` on `screen`, then waits until the screen's marker is
@@ -688,6 +707,35 @@ impl Adapter for CliAdapter {
         };
         let detail = (scrolls > 0).then(|| format!("{scrolls} scroll steps"));
         Ok(wall(elapsed, nodes, detail))
+    }
+
+    /// Stops the daemon, whose agent holds an Android target's UI automation
+    /// until the daemon exits, and waits until the daemon has let go of its
+    /// targets. The daemon answers `shutdown` and stops taking connections
+    /// before it detaches its targets, and removes its socket once it has,
+    /// so the wait is for the socket `status` named to go. The `status`,
+    /// read first, starts a daemon when none serves, which the shutdown then
+    /// stops.
+    fn release(&mut self, _target: &Target) -> Result<Option<String>, AdapterError> {
+        let socket = self.daemon_socket();
+        if !self.stop_daemon()? {
+            return Ok(Some("no daemon ran".to_owned()));
+        }
+        if let Some(socket) = socket {
+            let stopped = Instant::now();
+            while socket.exists() {
+                if stopped.elapsed() >= RELEASE_WAIT {
+                    return Err(AdapterError::new(format!(
+                        "{} was still there {} ms after the daemon's shutdown: the daemon had \
+                         not let go of its targets",
+                        socket.display(),
+                        RELEASE_WAIT.as_millis()
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        Ok(Some("stopped the daemon".to_owned()))
     }
 }
 

@@ -10,6 +10,7 @@ use crate::adapter::{Adapter, AdapterError, Detection, Sample, Scenario};
 use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
+use crate::handoff::HandOffs;
 use crate::primitive::Primitive;
 use crate::provenance::{
     HarnessInfo, Probe, Provenance, SystemProbe, ToolReport, ToolStatus, capture_commit,
@@ -129,10 +130,13 @@ impl Harness {
     }
 
     /// Detects every tool, runs every series through each available tool that
-    /// supports it, and returns the report. Fails, before anything runs, on two
-    /// flows with one name on one fixture, on a series naming a target the run
-    /// lacks or a fixture its target's platform lacks, and on a flow series
-    /// naming a flow the run lacks on the series' fixture, or a screen.
+    /// supports it, and returns the report. Before a tool drives a target
+    /// another tool drove last, and once every series has run, the other tool
+    /// lets go of the target (see [`crate::handoff`]). Fails, before anything
+    /// runs, on two flows with one name on one fixture, on a series naming a
+    /// target the run lacks or a fixture its target's platform lacks, and on a
+    /// flow series naming a flow the run lacks on the series' fixture, or a
+    /// screen.
     pub fn run(&mut self) -> Result<Report, String> {
         for (i, flow) in self.flows.iter().enumerate() {
             if find_flow(&self.flows[..i], &flow.name, Some(flow.fixture)).is_some() {
@@ -157,6 +161,7 @@ impl Harness {
             .iter_mut()
             .map(|tool| detect(tool.as_mut()))
             .collect();
+        let mut handoffs = HandOffs::new(probe, &targets);
 
         // Every flow with a golden runs once through each tool that times it,
         // and its end state is read, before anything is timed.
@@ -174,11 +179,12 @@ impl Harness {
             if flow.golden.is_empty() {
                 continue;
             }
-            for (t, (tool, found)) in self.tools.iter_mut().zip(&tools).enumerate() {
+            for (t, found) in tools.iter().enumerate() {
                 if found.status == ToolStatus::Available
-                    && tool.supports(target, &series.scenario(), &series.subject)
+                    && self.tools[t].supports(target, &series.scenario(), &series.subject)
                 {
-                    let result = check(tool.as_mut(), target, flow, self.config.retries);
+                    handoffs.take(&mut self.tools, probe, target, t);
+                    let result = check(self.tools[t].as_mut(), target, flow, self.config.retries);
                     checks.insert((s, t), result);
                 }
             }
@@ -190,12 +196,13 @@ impl Harness {
                 continue;
             };
             let scenario = series.scenario();
-            for (t, (tool, found)) in self.tools.iter_mut().zip(&tools).enumerate() {
+            for (t, found) in tools.iter().enumerate() {
                 if found.status == ToolStatus::Available
-                    && tool.supports(target, &scenario, &series.subject)
+                    && self.tools[t].supports(target, &scenario, &series.subject)
                 {
+                    handoffs.take(&mut self.tools, probe, target, t);
                     measurements.push(measure(
-                        tool.as_mut(),
+                        self.tools[t].as_mut(),
                         target,
                         series,
                         &self.flows,
@@ -205,6 +212,7 @@ impl Harness {
                 }
             }
         }
+        handoffs.finish(&mut self.tools, probe, &targets);
 
         Ok(Report {
             schema_version: SCHEMA_VERSION,
@@ -224,6 +232,7 @@ impl Harness {
                 tools,
             },
             measurements,
+            handoffs: handoffs.done,
             gates: None,
         })
     }

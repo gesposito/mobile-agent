@@ -1,12 +1,13 @@
-//! The markdown summary of a [`Report`]: provenance, per-series statistics and
-//! a comparison table across tools and targets. Durations are milliseconds
-//! with three decimals, exact renderings of the JSON's whole microseconds, so
-//! the two outputs agree on every number.
+//! The markdown summary of a [`Report`]: provenance, per-series statistics, a
+//! comparison table across tools and targets, and the hand-offs between
+//! tools. Durations are milliseconds with three decimals, exact renderings of
+//! the JSON's whole microseconds, so the two outputs agree on every number.
 
 use std::fmt::Display;
 
 use crate::adapter::{Clock, Role};
 use crate::fixture::{Fixture, Screen};
+use crate::handoff::HandOff;
 use crate::harness::Subject;
 use crate::provenance::{Provenance, ToolStatus};
 use crate::report::{Measurement, NodeRange, Report};
@@ -27,6 +28,7 @@ pub fn render(report: &Report) -> String {
     provenance(&mut out, p);
     measurements(&mut out, &report.measurements);
     comparison(&mut out, report);
+    handoffs(&mut out, &report.handoffs);
     if let Some(gates) = &report.gates {
         out.push_str("## Gates\n\n");
         out.push_str(&gates.table());
@@ -298,4 +300,43 @@ fn comparison(out: &mut String, report: &Report) {
     if !skipped.is_empty() {
         out.push_str(&format!("Skipped: {}.\n\n", skipped.join("; ")));
     }
+}
+
+/// The hand-offs of targets between tools, when the run had any.
+fn handoffs(out: &mut String, handoffs: &[HandOff]) {
+    if handoffs.is_empty() {
+        return;
+    }
+    out.push_str("## Hand-offs\n\n");
+    out.push_str(
+        "Between series, before another tool drives a target and once the run is \
+         over, the tool that drove it lets go of it, and an Android target gets back the \
+         input method the run found.\n\n",
+    );
+    let mut table = Table::new(&["Target", "From", "To", "ms", "What happened"]);
+    for handoff in handoffs {
+        let mut happened: Vec<String> = [&handoff.released, &handoff.input_method]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        if let Some(error) = &handoff.error {
+            happened.push(format!("failed: {error}"));
+        }
+        table.row(vec![
+            handoff.target.clone(),
+            handoff.from.clone(),
+            handoff
+                .to
+                .clone()
+                .unwrap_or_else(|| "end of the run".to_owned()),
+            ms(handoff.elapsed_us),
+            if happened.is_empty() {
+                "nothing held".to_owned()
+            } else {
+                happened.join("; ")
+            },
+        ]);
+    }
+    table.render(out);
 }

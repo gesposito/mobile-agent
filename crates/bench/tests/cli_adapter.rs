@@ -447,6 +447,30 @@ fn cold_attach_stops_the_daemon_then_times_the_open_that_starts_another() {
     assert!(pids[0] != pids[1] && pids[1] != pids[2], "{pids:?}");
 }
 
+/// Task 10.10: the daemon keeps its agent, which holds an Android target's UI
+/// automation, until it exits, and answers `shutdown` before it has let go of
+/// its targets. A release returns once the daemon has.
+#[test]
+fn a_release_stops_the_daemon_and_returns_once_it_has_let_go_of_its_targets() {
+    let devices = FakeDevices::new("android");
+    let target = emulator();
+    let mut adapter = CliAdapter::new(devices.config(&common::scratch("cli-release")));
+    adapter.detect();
+    let subject = Subject::Primitive(Primitive::TapDispatch);
+    let scenario = plan::scenario(Primitive::TapDispatch, Fixture::Expo);
+    adapter.prepare(&target, &scenario, &subject).unwrap();
+    let socket = devices.dir.join("daemon.sock");
+    assert!(socket.exists());
+    assert_eq!(
+        adapter.release(&target),
+        Ok(Some("stopped the daemon".to_owned()))
+    );
+    assert!(
+        !socket.exists(),
+        "the release returned before the daemon let go of its targets"
+    );
+}
+
 #[test]
 fn a_first_snapshot_follows_a_relaunch_on_the_big_screen_and_counts_its_refs() {
     let devices = FakeDevices::new("android");

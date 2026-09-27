@@ -7,6 +7,7 @@
 mod common;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -21,7 +22,7 @@ use bench::report::Report;
 use bench::target::{Platform, Target, TargetClass};
 use common::FakeDevices;
 use common::tools::{Tools, end_screen};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// `PATH` holding `bin` and the system directories the harness's probes need,
 /// and none of the places a real tool is installed.
@@ -279,6 +280,260 @@ fn a_run_on_a_fake_simulator_runs_swiftui_and_expo_through_the_cli_beside_the_be
         assert_eq!(tool.status, ToolStatus::Skipped, "{name}");
     }
     assert!(report.measurements.iter().all(|m| m.tool == "mobile-agent"));
+}
+
+/// The input method the run finds on the emulator: the image's stock keyboard.
+const STOCK_IME: &str = "com.android.inputmethod.latin/.LatinIME";
+
+/// The test input method agent-device selects for text entry.
+const AGENT_DEVICE_IME: &str = "com.callstack.agentdevice.imehelper/.TestInputMethodService";
+
+fn executable(path: &Path, script: &str) {
+    fs::write(path, script).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Models the one Android device the tools share, in `tools`' directory: its
+/// UI automation role, which `mobile-agent`'s daemon, serving from `socket`,
+/// holds while it runs and agent-device's snapshot helper holds until its
+/// session is closed, and its input method, which agent-device switches to
+/// its own and a fake `adb` reads and sets. A baseline that finds the role
+/// held fails as Maestro's driver did on the emulator; `mobile-agent`, run
+/// through the returned wrapper around `cli`, fails as its agent's attach
+/// does, and also when the input method is not the one the run found.
+fn shared_device(tools: &Tools, socket: &Path, cli: &Path) -> PathBuf {
+    let bin = &tools.bin;
+    fs::write(bin.join("ime"), format!("{STOCK_IME}\n")).unwrap();
+    fs::write(
+        bin.join("device.sh"),
+        format!(
+            r#"conflict() {{
+  if [ "$tool" = agent-device ]; then
+    echo "{{\"success\":false,\"error\":{{\"code\":\"COMMAND_FAILED\",\"message\":\"UiAutomationService already registered: $1\"}}}}"
+  else
+    echo "UiAutomationService already registered: $1" >&2
+  fi
+  exit 1
+}}
+if [ "$tool $1" = "agent-device close" ]; then
+  rm -f "$dir/agent-device.helper"
+  echo '{{"success":true,"data":{{"session":"mobile-agent-bench"}}}}'
+  exit 0
+fi
+if [ -S '{socket}' ]; then conflict "the mobile-agent daemon's agent holds it"; fi
+if [ "$tool" = agent-device ]; then
+  touch "$dir/agent-device.helper"
+  echo '{AGENT_DEVICE_IME}' > "$dir/ime"
+elif [ -e "$dir/agent-device.helper" ]; then
+  conflict "agent-device's snapshot helper holds it"
+fi
+"#,
+            socket = socket.display()
+        ),
+    )
+    .unwrap();
+    executable(
+        &bin.join("adb"),
+        r#"#!/bin/sh
+dir="${0%/*}"
+echo "$@" >> "$dir/adb.log"
+args="$*"
+case "$args" in
+*" shell settings get secure default_input_method") cat "$dir/ime" ;;
+*" shell ime set "*) ime="${args##* ime set }"; echo "$ime" > "$dir/ime"; echo "Input method $ime selected for user #0" ;;
+*) exit 1 ;;
+esac
+"#,
+    );
+    let wrapper = tools.dir.join("mobile-agent");
+    executable(
+        &wrapper,
+        &format!(
+            r#"#!/bin/sh
+dir='{bin}'
+case " $* " in
+*" --device "*)
+  if [ -e "$dir/agent-device.helper" ]; then
+    echo '{{"success":false,"data":null,"error":"another process holds UI automation, likely com.callstack.agentdevice.snapshothelper","code":"automation_conflict"}}'
+    exit 1
+  fi
+  ime=$(cat "$dir/ime")
+  if [ "$ime" != '{STOCK_IME}' ]; then
+    echo "{{\"success\":false,\"data\":null,\"error\":\"the input method is $ime, not the one the run found\",\"code\":\"invalid_state\"}}"
+    exit 1
+  fi ;;
+esac
+exec '{cli}' "$@"
+"#,
+            bin = bin.display(),
+            cli = cli.display()
+        ),
+    );
+    wrapper
+}
+
+/// The tools in the order the run has them drive `target`: each flow's golden
+/// check through every tool, then every series through every tool that
+/// measures it, `mobile-agent` first.
+fn drivers(target: &Target, fixtures: &[Fixture], baselines: &[&str]) -> Vec<String> {
+    let series = plan::series(target, fixtures);
+    let mut order = Vec::new();
+    let flows = series
+        .iter()
+        .filter(|s| matches!(s.subject, Subject::Flow(_)));
+    for _ in flows {
+        order.push("mobile-agent");
+        order.extend(baselines);
+    }
+    for s in &series {
+        order.push("mobile-agent");
+        if let Subject::Flow(_) = s.subject {
+            order.extend(baselines);
+        }
+    }
+    order.into_iter().map(str::to_owned).collect()
+}
+
+/// Task 10.10: Android has one UI automation owner. `mobile-agent`'s daemon
+/// keeps its agent, and agent-device its snapshot helper, until told to let
+/// go, and agent-device leaves its input method selected; on the emulator
+/// Maestro's driver died because the agent held the role. The run hands the
+/// emulator from each tool to the next between series, and once it is over:
+/// the daemon is stopped and gone before a baseline starts, agent-device's
+/// session is closed, and the input method the run found is selected again.
+#[test]
+fn a_run_hands_the_emulator_from_one_tool_to_the_next_between_series() {
+    let devices = FakeDevices::new("android:emulator-5590");
+    let tools = Tools::new("run-hand-off", Platform::Android, end_screen);
+    let wrapper = shared_device(
+        &tools,
+        &devices.dir.join("daemon.sock"),
+        &common::mobile_agent(),
+    );
+    let out = tools.dir.join("report");
+    let gates = relaxed_gates(&tools.dir);
+    let output = bench_run(
+        &devices,
+        &hermetic_path(&tools.bin),
+        &[
+            "--target",
+            "emulator-5590",
+            "--fixture",
+            "expo",
+            "--cli",
+            wrapper.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--iterations",
+            "1",
+            "--warmup",
+            "0",
+            "--retries",
+            "0",
+            "--gates",
+            gates.to_str().unwrap(),
+        ],
+    );
+    let (stdout, stderr) = (text(&output.stdout), text(&output.stderr));
+    let json: Value = serde_json::from_str(
+        &fs::read_to_string(out.join("report.json"))
+            .unwrap_or_else(|e| panic!("no report ({e}): {stdout}\n{stderr}")),
+    )
+    .unwrap();
+    let failed: Vec<String> = json["measurements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| !m["error"].is_null() || m["stats"]["n"] != 1)
+        .map(|m| {
+            let errors = m["samples"]
+                .as_array()
+                .and_then(|samples| samples.iter().find_map(|s| s["errors"].get(0)))
+                .cloned()
+                .unwrap_or(Value::Null);
+            format!(
+                "{} {}: {} {}",
+                m["tool"],
+                common::subject_cell(m),
+                m["error"],
+                errors
+            )
+        })
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "every series of every tool ran, but:\n{}",
+        failed.join("\n")
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    let report = written(&out);
+
+    // A hand-off wherever the next tool differs, and one once the run is over.
+    let target = Target::new("emulator-5590", TargetClass::AndroidEmulator);
+    let order = drivers(
+        &target,
+        &[Fixture::Expo],
+        &["maestro", "maestro-runner", "agent-device"],
+    );
+    let mut expected: Vec<(String, Value)> = order
+        .windows(2)
+        .filter(|pair| pair[0] != pair[1])
+        .map(|pair| (pair[0].clone(), json!(pair[1])))
+        .collect();
+    expected.push((order.last().unwrap().clone(), Value::Null));
+    let handoffs = json["handoffs"].as_array().cloned().unwrap_or_default();
+    let happened: Vec<(String, Value)> = handoffs
+        .iter()
+        .map(|h| {
+            (
+                h["from"].as_str().unwrap_or("?").to_owned(),
+                h["to"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(happened, expected);
+    for handoff in &handoffs {
+        assert_eq!(handoff["error"], Value::Null, "{handoff}");
+        assert_eq!(handoff["target"], "emulator-5590", "{handoff}");
+        let (released, input_method) = match handoff["from"].as_str() {
+            Some("mobile-agent") => (json!("stopped the daemon"), Value::Null),
+            Some("agent-device") => (
+                json!("closed agent-device session mobile-agent-bench"),
+                json!(format!(
+                    "{AGENT_DEVICE_IME} left selected, {STOCK_IME} set back"
+                )),
+            ),
+            _ => (Value::Null, Value::Null),
+        };
+        assert_eq!(handoff["released"], released, "{handoff}");
+        assert_eq!(handoff["input_method"], input_method, "{handoff}");
+    }
+    let closes = tools.closes("agent-device");
+    let from_agent_device = happened
+        .iter()
+        .filter(|(from, _)| from == "agent-device")
+        .count();
+    assert_eq!(closes.len(), from_agent_device, "{closes:?}");
+    assert_eq!(
+        closes[0],
+        "close --json --platform android --serial emulator-5590 --session mobile-agent-bench"
+    );
+
+    // The emulator is left as the run found it.
+    assert!(!devices.dir.join("daemon.sock").exists());
+    assert!(!tools.bin.join("agent-device.helper").exists());
+    assert_eq!(
+        fs::read_to_string(tools.bin.join("ime")).unwrap().trim(),
+        STOCK_IME
+    );
+    let md = fs::read_to_string(out.join("report.md")).unwrap();
+    let table = common::table(&md, "Hand-offs");
+    assert_eq!(table.rows.len(), handoffs.len());
+    assert_eq!(report.measurements.len(), 10 + 3 * 4);
 }
 
 /// A failed run: its exit status and standard error.
