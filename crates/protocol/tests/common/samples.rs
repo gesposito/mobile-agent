@@ -1,9 +1,10 @@
 //! The golden sample set: one message per kind, parameter and result type,
 //! with integers at every CBOR head-length boundary, u32 and u64 values past
 //! 2^31 and 2^63, multi-byte UTF-8, a byte string and an array longer than 23
-//! elements, window metadata in every state and scroll semantics in every
-//! shape. `agent-android/codec-test/Samples.kt` builds the same values in
-//! Kotlin; the two lists must stay in step, name for name.
+//! elements, window metadata in every state, scroll semantics in every
+//! shape, and a bounds probe with its result. `agent-android/codec-test/Samples.kt`
+//! builds the same values in Kotlin; the two lists must stay in step, name
+//! for name.
 
 use protocol::Error;
 use protocol::event::{
@@ -11,9 +12,10 @@ use protocol::event::{
     TreeChangeKind, WindowChange, WindowChangeKind,
 };
 use protocol::message::{
-    Call, FramesParams, Hello, ImageFormat, InputAck, KeyParams, Message, Method, Ping, Pong,
-    Reply, Request, Response, ResyncAck, ResyncParams, Rotation, Screenshot, ScreenshotParams,
-    SnapshotParams, SwipeParams, TapParams, TextAck, TextMethod, TextParams, Welcome,
+    BoundsParams, Call, FramesParams, Hello, ImageFormat, InputAck, KeyParams, Message, Method,
+    NodeBounds, Ping, Pong, Probed, Reply, Request, Response, ResyncAck, ResyncParams, Rotation,
+    Screenshot, ScreenshotParams, SnapshotParams, SwipeParams, TapParams, TextAck, TextMethod,
+    TextParams, Welcome,
 };
 use protocol::snapshot::{
     Bounds, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange,
@@ -226,6 +228,38 @@ pub fn window_meta_snapshot() -> Snapshot {
     }
 }
 
+/// A window the platform draws scaled while it animates the window in: its
+/// bounds and its nodes' are those of a frame of that animation.
+pub fn transformed_window_snapshot() -> Snapshot {
+    Snapshot {
+        strings: vec![
+            "android.widget.FrameLayout".to_owned(),
+            "dev.placeholder.fixture".to_owned(),
+        ],
+        windows: vec![Window {
+            id: 40,
+            kind: WindowType::APPLICATION,
+            layer: 0,
+            package: Some(1),
+            title: Some("Fixture".to_owned()),
+            bounds: Bounds::new(28, 62, 1052, 2338),
+            flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED | WindowFlags::TRANSFORMED,
+            root: Some(plain(
+                0,
+                0,
+                Bounds::new(28, 62, 1052, 2338),
+                NodeFlags::ENABLED | NodeFlags::VISIBLE,
+            )),
+            emits_events: Some(true),
+            owner: None,
+            modal: false,
+        }],
+        node_count: 1,
+        truncated: Truncation::EMPTY,
+        seq: 9,
+    }
+}
+
 /// Scroll semantics in every shape: an item range with the items in view,
 /// a range without a position, scroll actions alone, a percent range, and
 /// values this version does not define with integers at head boundaries.
@@ -424,6 +458,28 @@ pub fn samples() -> Vec<(&'static str, Message)> {
             ),
         ),
         (
+            "request_snapshot_evict_windows",
+            request(
+                4,
+                Some(10_000),
+                Call::Snapshot(SnapshotParams {
+                    idle_ms: Some(0),
+                    evict: Some(vec![12, 65536, u32::MAX]),
+                    ..SnapshotParams::default()
+                }),
+            ),
+        ),
+        (
+            "request_bounds",
+            request(
+                24,
+                Some(500),
+                Call::Bounds(BoundsParams {
+                    nodes: vec![0, 23, 24, 255, 256, 65535, 65536, u32::MAX],
+                }),
+            ),
+        ),
+        (
             "request_screenshot",
             request(
                 2,
@@ -543,6 +599,14 @@ pub fn samples() -> Vec<(&'static str, Message)> {
             ok(11, Method::SNAPSHOT, Reply::Snapshot(window_meta_snapshot())),
         ),
         (
+            "response_snapshot_transformed_window",
+            ok(
+                13,
+                Method::SNAPSHOT,
+                Reply::Snapshot(transformed_window_snapshot()),
+            ),
+        ),
+        (
             "response_snapshot_scroll",
             ok(12, Method::SNAPSHOT, Reply::Snapshot(scroll_snapshot())),
         ),
@@ -586,6 +650,29 @@ pub fn samples() -> Vec<(&'static str, Message)> {
                 Reply::Resync(ResyncAck {
                     stream: Stream::TREE,
                     seq: 1 << 32,
+                }),
+            ),
+        ),
+        (
+            "response_bounds",
+            ok(
+                24,
+                Method::BOUNDS,
+                Reply::Bounds(Probed {
+                    nodes: vec![
+                        NodeBounds {
+                            node: 0,
+                            bounds: Bounds::new(0, 0, 1080, 2400),
+                        },
+                        NodeBounds {
+                            node: 24,
+                            bounds: Bounds::new(-24, -25, 23, 24),
+                        },
+                        NodeBounds {
+                            node: 65536,
+                            bounds: Bounds::new(i32::MIN, -257, 256, i32::MAX),
+                        },
+                    ],
                 }),
             ),
         ),

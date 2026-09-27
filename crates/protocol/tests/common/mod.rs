@@ -44,6 +44,7 @@ pub fn every_capability() -> Capabilities {
         | Capabilities::FRAMES
         | Capabilities::EVENTS
         | Capabilities::TEXT_SET
+        | Capabilities::BOUNDS
 }
 
 pub struct Link {

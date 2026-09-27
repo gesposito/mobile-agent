@@ -187,6 +187,22 @@ private fun decoderRules() {
         )
         if (w.emitsEvents == null && w.ownerIndex == null && w.root?.scroll == null) null else "decoded metadata"
     }
+    check("reads a probed node and skips the elements after its bounds") {
+        // A bounds response whose one node, 7, carries an element after its bounds.
+        val payload = bytes("a4 00 03 01 01 02 0b 03 a1 00 81 83 07 84 00 20 18 18 19 09 60 61 78")
+        val probed = (Codec.decode(payload, 0, payload.size) as Response).result as Probed
+        val node = probed.nodes.single()
+        val b = node.bounds
+        when {
+            node.node != 7 -> "node ${node.node}"
+            b.left != 0 || b.top != -1 || b.right != 24 || b.bottom != 2400 ->
+                "bounds ${b.left} ${b.top} ${b.right} ${b.bottom}"
+            else -> null
+        }
+    }
+    check("rejects a probed node without its bounds") {
+        rejects(bytes("a4 00 03 01 01 02 0b 03 a1 00 81 81 07"))
+    }
     check("rejects an array longer than its input without allocating it") {
         rejects(bytes("87 04 00 01 01 00 01 9a ff ff ff ff"))
     }

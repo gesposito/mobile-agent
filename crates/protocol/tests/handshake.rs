@@ -9,8 +9,8 @@ use std::time::Duration;
 use common::{Link, agent_config, every_capability, host_config, one};
 use protocol::frame::{DEFAULT_MAX_FRAME, HEADER_LEN, MIN_MAX_FRAME, write_frame};
 use protocol::message::{
-    Call, FramesParams, ImageFormat, InputAck, Message, Method, Ping, Reply, Response, Rotation,
-    Screenshot, ScreenshotParams, SnapshotParams, TapParams, TextParams, kind,
+    BoundsParams, Call, FramesParams, ImageFormat, InputAck, Message, Method, Ping, Reply,
+    Response, Rotation, Screenshot, ScreenshotParams, SnapshotParams, TapParams, TextParams, kind,
 };
 use protocol::session::{
     AgentEvent, AgentSession, DisconnectReason, HandshakeError, HostConfig, HostEvent, HostSession,
@@ -274,6 +274,15 @@ fn an_unadvertised_capability_is_refused_naming_it() {
         .send_request(Call::Screenshot(ScreenshotParams::default()), None, link.t0)
         .unwrap();
     assert!(link.host.poll_transmit().is_some());
+    // Task 10.11: a bounds probe needs its own capability, which an agent
+    // from before it does not advertise.
+    let err = link
+        .host
+        .send_request(Call::Bounds(BoundsParams { nodes: vec![3] }), None, link.t0)
+        .unwrap_err();
+    assert_eq!(err.code, code::CAPABILITY_MISSING);
+    assert!(err.message.contains("bounds probes"), "{}", err.message);
+    assert!(link.host.poll_transmit().is_none());
 }
 
 /// Spec, Request multiplexing: overlapping requests are matched by id

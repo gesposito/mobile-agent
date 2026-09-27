@@ -351,6 +351,12 @@ wire_flags! {
     FOCUSED = 1, "focused";
     ACCESSIBILITY_FOCUSED = 2, "accessibility_focused";
     PICTURE_IN_PICTURE = 3, "picture_in_picture";
+    /// Drawn away from where its layout puts it, as the platform draws a
+    /// window while it animates the window in or out: partly off the
+    /// display, or at another size than its layout's, which agents tell on
+    /// Android 14 and later. Its bounds and its nodes' are then those of a
+    /// frame of that animation.
+    TRANSFORMED = 4, "transformed";
 }
 
 wire_enum! {

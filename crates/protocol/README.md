@@ -107,7 +107,7 @@ decoder reports an unknown kind as such, and the sessions skip it.
 
 | Method | Value | Needs | Parameters | Result |
 |---|---:|---|---|---|
-| snapshot | 1 | tree | `{?0: max_depth u32, ?1: max_nodes u32, ?2: idle_ms u32, ?3: evict_event_less bool}` | snapshot |
+| snapshot | 1 | tree | `{?0: max_depth u32, ?1: max_nodes u32, ?2: idle_ms u32, ?3: evict_event_less bool, ?4: evict [u32]}` | snapshot |
 | screenshot | 2 | screenshot | `{?0: format u8, ?1: quality u8, ?2: max_dimension u32}` | `{0: format u8, 1: width u32, 2: height u32, 3: rotation u8, 4: data bytes}` |
 | tap | 3 | input | `{0: x i32, 1: y i32, ?2: duration_ms u32}` (a long press with a duration) | `{0: accepted bool}` |
 | swipe | 4 | input | `{0: x1 i32, 1: y1 i32, 2: x2 i32, 3: y2 i32, 4: duration_ms u32}` | `{0: accepted bool}` |
@@ -117,6 +117,7 @@ decoder reports an unknown kind as such, and the sessions skip it.
 | frames_stop | 8 | frames | `{}` | `{}` |
 | resync | 9 | events | `{0: stream u8}` | `{0: stream u8, 1: seq u64}` |
 | shutdown | 10 | nothing | `{}` | `{}` |
+| bounds | 11 | bounds | `{0: nodes [u32]}` | `{0: nodes [[node u32, bounds]]}` |
 
 An agent answers a method it does not know with `unknown_method`; the request
 still decodes, its parameters skipped, so it can be answered.
@@ -129,6 +130,20 @@ other window's events keep its cache current; the eviction refreshes them
 without the `resync` of the whole tree stream, which also needs the events
 capability. An agent that does not know the key skips it and reads with its
 cache.
+
+A snapshot's `evict` (task 10.11) names windows, by id, whose platform
+cache the agent evicts before reading them. Views an app moves without a
+change event keep the bounds the cache read before the move; the host names
+the windows whose nodes a `bounds` probe found moved.
+
+`bounds` (task 10.11) reads the bounds of nodes of the agent's last
+snapshot again, by the ids that snapshot gave them, past the platform's
+node cache, one round trip to the app per node (`AccessibilityNodeInfo.refresh()`
+on Android). The result lists each node still on screen as `[node, bounds]`,
+in the request's order; a node that is gone, or that the last snapshot did
+not hold, is left out. A host without frames to watch probes a few anchor
+nodes while it waits for the screen to settle (design D8). The method needs
+the `bounds` capability, so an agent from before it is never asked.
 
 ### Snapshot
 
@@ -149,7 +164,10 @@ the tree. Window kinds are `AccessibilityWindowInfo.TYPE_*` values. Node flag
 bits: clickable, long_clickable, focusable, focused, enabled, checkable,
 checked, scrollable, selected, editable, password, visible,
 accessibility_focused (bits 0 to 12). Window flag bits: active, focused,
-accessibility_focused, picture_in_picture.
+accessibility_focused, picture_in_picture, transformed (bits 0 to 4);
+transformed marks a window drawn away from where its layout puts it, partly
+off the display or at another size than its layout's (the latter from
+Android 14), as the platform draws a window it animates in or out.
 
 Keys 8 to 10 of a window are what the agent knows about the window beyond
 the platform's own window states (task 3.6):
@@ -208,7 +226,7 @@ tracked as lossless.
 ### Capabilities
 
 A `u32` bitmask: tree (bit 0), input (1), screenshot (2), frames (3), events
-(4), text_set (5). Unknown bits survive a round trip. The host refuses a
+(4), text_set (5), bounds (6). Unknown bits survive a round trip. The host refuses a
 request whose method needs a capability the agent did not advertise, naming
 it, and sends nothing; the agent refuses such a request too.
 
@@ -274,13 +292,15 @@ tests drive time themselves.
 
 ## Golden frames and the Kotlin codec
 
-`tests/common/samples.rs` defines 38 samples: one per message kind, parameter
+`tests/common/samples.rs` defines 41 samples: one per message kind, parameter
 and result type, with integers at every head-length boundary, u32 and u64
 values past 2^31 and 2^63, multi-byte UTF-8, a byte string and a 25-element
 array, plus window metadata in every state
 (`response_snapshot_window_meta`), scroll semantics in every shape
-(`response_snapshot_scroll`) and a snapshot request evicting event-less
-windows (`request_snapshot_evict`). `golden/<name>.bin` is the frame this crate writes for each.
+(`response_snapshot_scroll`), a snapshot request evicting event-less
+windows (`request_snapshot_evict`), one evicting windows by id
+(`request_snapshot_evict_windows`) and a bounds probe with its result
+(`request_bounds`, `response_bounds`). `golden/<name>.bin` is the frame this crate writes for each.
 `agent-android/codec-test/Samples.kt` builds the same values in Kotlin.
 
 ```sh

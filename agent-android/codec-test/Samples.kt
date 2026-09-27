@@ -163,6 +163,28 @@ object Samples {
      * position, scroll actions alone, a percent range, and values this version does not define
      * with integers at head boundaries.
      */
+    private val transformedWindowSnapshot = Snapshot(
+        strings = arrayOf("android.widget.FrameLayout", "dev.placeholder.fixture"),
+        windows = arrayOf(
+            Window(
+                id = 40,
+                type = WindowType.APPLICATION,
+                layer = 0,
+                packageIndex = 1,
+                title = "Fixture",
+                bounds = Bounds(28, 62, 1052, 2338),
+                flags = WindowFlag.ACTIVE or WindowFlag.FOCUSED or WindowFlag.TRANSFORMED,
+                root = plain(0, 0, Bounds(28, 62, 1052, 2338), VISIBLE),
+                emitsEvents = true,
+                ownerIndex = null,
+                modal = false,
+            ),
+        ),
+        nodeCount = 1,
+        truncated = 0,
+        seq = 9L,
+    )
+
     private val scrollSnapshot = Snapshot(
         strings = arrayOf(
             "android.view.View",
@@ -253,6 +275,8 @@ object Samples {
         "request_snapshot" to Request(1, 200, SnapshotCall(maxDepth = 64, maxNodes = 5000, idleMs = 0)),
         "request_snapshot_defaults" to Request(-1, null, SnapshotCall()),
         "request_snapshot_evict" to Request(3, 10000, SnapshotCall(idleMs = 0, evictEventLess = true)),
+        "request_snapshot_evict_windows" to Request(4, 10000, SnapshotCall(idleMs = 0, evict = intArrayOf(12, 65536, -1))),
+        "request_bounds" to Request(24, 500, BoundsCall(intArrayOf(0, 23, 24, 255, 256, 65535, 65536, -1))),
         "request_screenshot" to Request(
             2,
             65536,
@@ -289,6 +313,7 @@ object Samples {
             ),
         ),
         "response_snapshot_window_meta" to ok(11, Method.SNAPSHOT, windowMetaSnapshot),
+        "response_snapshot_transformed_window" to ok(13, Method.SNAPSHOT, transformedWindowSnapshot),
         "response_snapshot_scroll" to ok(12, Method.SNAPSHOT, scrollSnapshot),
         "response_screenshot" to ok(
             2,
@@ -299,6 +324,17 @@ object Samples {
         "response_key_rejected" to ok(255, Method.KEY, InputAck(false)),
         "response_text_set" to ok(256, Method.TEXT_SET, TextAck(TextMethod.KEYS)),
         "response_resync" to ok(7, Method.RESYNC, ResyncAck(Stream.TREE, 1L shl 32)),
+        "response_bounds" to ok(
+            24,
+            Method.BOUNDS,
+            Probed(
+                arrayOf(
+                    NodeBounds(0, Bounds(0, 0, 1080, 2400)),
+                    NodeBounds(24, Bounds(-24, -25, 23, 24)),
+                    NodeBounds(65536, Bounds(Int.MIN_VALUE, -257, 256, Int.MAX_VALUE)),
+                ),
+            ),
+        ),
         "response_frames_start" to ok(65535, Method.FRAMES_START, EmptyReply),
         "response_error_window_changed" to err(
             1,

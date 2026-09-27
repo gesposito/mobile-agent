@@ -16,7 +16,7 @@ use crate::capability::Capabilities;
 use crate::cbor::{self, Elements};
 use crate::error::Error;
 use crate::event::{Event, Stream};
-use crate::snapshot::Snapshot;
+use crate::snapshot::{Bounds, Snapshot};
 
 /// Message kinds: key 0 of a map-shaped message, element 0 of an event.
 pub mod kind {
@@ -317,6 +317,9 @@ wire_enum! {
     RESYNC = 9, "resync";
     /// Exit cleanly (no parameters, empty result); needs nothing.
     SHUTDOWN = 10, "shutdown";
+    /// Read nodes' bounds again past the platform's node cache
+    /// ([`BoundsParams`] to [`Probed`]); needs `bounds`.
+    BOUNDS = 11, "bounds";
 }
 
 impl Method {
@@ -330,6 +333,7 @@ impl Method {
             Method::TEXT_SET => Capabilities::TEXT_SET,
             Method::FRAMES_START | Method::FRAMES_STOP => Capabilities::FRAMES,
             Method::RESYNC => Capabilities::EVENTS,
+            Method::BOUNDS => Capabilities::BOUNDS,
             _ => Capabilities::NONE,
         }
     }
@@ -348,6 +352,7 @@ pub enum Call {
     FramesStop,
     Resync(ResyncParams),
     Shutdown,
+    Bounds(BoundsParams),
     /// A method this version does not know; its parameters were skipped and
     /// are sent as an empty map.
     Unknown(Method),
@@ -366,6 +371,7 @@ impl Call {
             Call::FramesStop => Method::FRAMES_STOP,
             Call::Resync(_) => Method::RESYNC,
             Call::Shutdown => Method::SHUTDOWN,
+            Call::Bounds(_) => Method::BOUNDS,
             Call::Unknown(method) => *method,
         }
     }
@@ -384,6 +390,8 @@ pub enum Reply {
     Text(TextAck),
     /// For `resync`.
     Resync(ResyncAck),
+    /// For `bounds`.
+    Bounds(Probed),
     /// For `frames_start`, `frames_stop` and `shutdown`: an empty map.
     Empty,
 }
@@ -408,6 +416,13 @@ pub struct SnapshotParams {
     /// does not know the key skips it and reads with its cache.
     #[n(3)]
     pub evict_event_less: Option<bool>,
+    /// Windows whose nodes the agent evicts from the platform's node cache
+    /// before reading, by window id: bounds probes found their nodes moved
+    /// without a change event, which leaves the cache holding the old
+    /// bounds. An agent that does not know the key skips it and reads with
+    /// its cache.
+    #[n(4)]
+    pub evict: Option<Vec<u32>>,
 }
 
 /// Parameters of `screenshot`.
@@ -494,6 +509,37 @@ pub struct FramesParams {
 pub struct ResyncParams {
     #[n(0)]
     pub stream: Stream,
+}
+
+/// Parameters of `bounds`: nodes of the last snapshot, by id, whose bounds
+/// the agent reads again past the platform's node cache.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Encode, Decode)]
+#[cbor(map)]
+pub struct BoundsParams {
+    #[cbor(n(0), decode_with = "crate::cbor::decode_vec")]
+    pub nodes: Vec<u32>,
+}
+
+/// The result of `bounds`: each node still on screen with its bounds as the
+/// app reports them now, in the request's order; a node that is gone, or
+/// that the last snapshot did not hold, is left out.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Encode, Decode)]
+#[cbor(map)]
+pub struct Probed {
+    #[cbor(n(0), decode_with = "crate::cbor::decode_vec")]
+    pub nodes: Vec<NodeBounds>,
+}
+
+/// One node of a [`Probed`], on the wire `[node, bounds]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(array)]
+pub struct NodeBounds {
+    /// The node's id in the last snapshot.
+    #[n(0)]
+    pub node: u32,
+    /// Its bounds in screen pixels.
+    #[n(1)]
+    pub bounds: Bounds,
 }
 
 /// The result of `screenshot`.
@@ -691,6 +737,7 @@ impl<C> Encode<C> for Request {
             Call::TextSet(p) => p.encode(e, ctx)?,
             Call::FramesStart(p) => p.encode(e, ctx)?,
             Call::Resync(p) => p.encode(e, ctx)?,
+            Call::Bounds(p) => p.encode(e, ctx)?,
             Call::FramesStop | Call::Shutdown | Call::Unknown(_) => {
                 e.map(0)?;
             }
@@ -760,6 +807,7 @@ impl Call {
                 cbor::skip_map(d)?;
                 Call::Shutdown
             }
+            Method::BOUNDS => Call::Bounds(Decode::decode(d, ctx)?),
             other => {
                 d.skip()?;
                 Call::Unknown(other)
@@ -778,6 +826,7 @@ impl Reply {
                 | (Reply::Input(_), Method::TAP | Method::SWIPE | Method::KEY)
                 | (Reply::Text(_), Method::TEXT_SET)
                 | (Reply::Resync(_), Method::RESYNC)
+                | (Reply::Bounds(_), Method::BOUNDS)
                 | (
                     Reply::Empty,
                     Method::FRAMES_START | Method::FRAMES_STOP | Method::SHUTDOWN
@@ -796,6 +845,7 @@ impl Reply {
             Method::TAP | Method::SWIPE | Method::KEY => Reply::Input(Decode::decode(d, ctx)?),
             Method::TEXT_SET => Reply::Text(Decode::decode(d, ctx)?),
             Method::RESYNC => Reply::Resync(Decode::decode(d, ctx)?),
+            Method::BOUNDS => Reply::Bounds(Decode::decode(d, ctx)?),
             Method::FRAMES_START | Method::FRAMES_STOP | Method::SHUTDOWN => {
                 cbor::skip_map(d)?;
                 Reply::Empty
@@ -822,6 +872,7 @@ impl<C> Encode<C> for Reply {
             Reply::Input(r) => r.encode(e, ctx),
             Reply::Text(r) => r.encode(e, ctx),
             Reply::Resync(r) => r.encode(e, ctx),
+            Reply::Bounds(r) => r.encode(e, ctx),
             Reply::Empty => {
                 e.map(0)?;
                 Ok(())

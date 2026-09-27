@@ -17,6 +17,8 @@ wire_flags! {
     EVENTS = 4, "events";
     /// Direct text setting: `text_set`.
     TEXT_SET = 5, "text_set";
+    /// Nodes' bounds read again past the platform's node cache: `bounds`.
+    BOUNDS = 6, "bounds";
 }
 
 impl Capabilities {
@@ -26,13 +28,14 @@ impl Capabilities {
     /// A human description of the capabilities in `self`, such as
     /// `frame streaming`, for error messages.
     pub fn label(self) -> String {
-        const LABELS: [(Capabilities, &str); 6] = [
+        const LABELS: [(Capabilities, &str); 7] = [
             (Capabilities::TREE, "tree reads"),
             (Capabilities::INPUT, "input injection"),
             (Capabilities::SCREENSHOT, "screenshots"),
             (Capabilities::FRAMES, "frame streaming"),
             (Capabilities::EVENTS, "change events"),
             (Capabilities::TEXT_SET, "direct text setting"),
+            (Capabilities::BOUNDS, "bounds probes"),
         ];
         let labels: Vec<&str> = LABELS
             .iter()

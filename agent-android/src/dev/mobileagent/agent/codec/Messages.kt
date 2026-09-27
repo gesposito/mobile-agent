@@ -70,6 +70,8 @@ class SnapshotCall(
     @JvmField val idleMs: Int? = null,
     /** Evict the cache of the windows that send no change events first: input the agent did not inject left them stale. */
     @JvmField val evictEventLess: Boolean? = null,
+    /** Windows, by id, whose cached nodes to evict first: bounds probes found their nodes moved without a change event. */
+    @JvmField val evict: IntArray? = null,
 ) : Call(Method.SNAPSHOT)
 
 class ScreenshotCall(
@@ -112,6 +114,9 @@ object FramesStopCall : Call(Method.FRAMES_STOP)
 class ResyncCall(@JvmField val stream: Int) : Call(Method.RESYNC)
 
 object ShutdownCall : Call(Method.SHUTDOWN)
+
+/** Nodes of the last snapshot, by id, whose bounds to read again past the platform's node cache. */
+class BoundsCall(@JvmField val nodes: IntArray) : Call(Method.BOUNDS)
 
 /** A method this version does not know; its parameters were skipped. */
 class UnknownCall(method: Int) : Call(method)
@@ -202,6 +207,12 @@ class InputAck(@JvmField val accepted: Boolean) : Reply()
 class TextAck(@JvmField val method: Int) : Reply()
 
 class ResyncAck(@JvmField val stream: Int, @JvmField val seq: Long) : Reply()
+
+/** The result of bounds: the nodes still on screen with their bounds now, in the request's order. */
+class Probed(@JvmField val nodes: Array<NodeBounds>) : Reply()
+
+/** One node of a [Probed]: its id in the last snapshot and its bounds. */
+class NodeBounds(@JvmField val node: Int, @JvmField val bounds: Bounds)
 
 /** The empty result of frames_start, frames_stop and shutdown. */
 object EmptyReply : Reply()

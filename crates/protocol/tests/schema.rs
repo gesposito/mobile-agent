@@ -8,10 +8,10 @@ use protocol::event::{
     TreeChangeKind, WindowChange, WindowChangeKind,
 };
 use protocol::message::{
-    Call, DecodeError, FramesParams, Hello, ImageFormat, InputAck, KeyParams, Message, Method,
-    Ping, Pong, Reply, Request, Response, ResyncAck, ResyncParams, Rotation, Screenshot,
-    ScreenshotParams, SnapshotParams, SwipeParams, TapParams, TextAck, TextMethod, TextParams,
-    Welcome,
+    BoundsParams, Call, DecodeError, FramesParams, Hello, ImageFormat, InputAck, KeyParams,
+    Message, Method, NodeBounds, Ping, Pong, Probed, Reply, Request, Response, ResyncAck,
+    ResyncParams, Rotation, Screenshot, ScreenshotParams, SnapshotParams, SwipeParams, TapParams,
+    TextAck, TextMethod, TextParams, Welcome,
 };
 use protocol::snapshot::{
     Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition,
@@ -167,7 +167,8 @@ fn capability_set_covers_every_required_capability() {
         | Capabilities::SCREENSHOT
         | Capabilities::FRAMES
         | Capabilities::EVENTS
-        | Capabilities::TEXT_SET;
+        | Capabilities::TEXT_SET
+        | Capabilities::BOUNDS;
     assert_eq!(
         all.names().collect::<Vec<_>>(),
         [
@@ -176,10 +177,17 @@ fn capability_set_covers_every_required_capability() {
             "screenshot",
             "frames",
             "events",
-            "text_set"
+            "text_set",
+            "bounds"
         ]
     );
     assert_eq!(Capabilities::FRAMES.label(), "frame streaming");
+    // Task 10.11: bounds probes are bit 6, and `bounds` needs them.
+    assert_eq!(Capabilities::BOUNDS.0, 1 << 6);
+    assert_eq!(Capabilities::BOUNDS.label(), "bounds probes");
+    assert_eq!(Method::BOUNDS.0, 11);
+    assert_eq!(Method::BOUNDS.name(), Some("bounds"));
+    assert_eq!(Method::BOUNDS.required_capability(), Capabilities::BOUNDS);
     assert!(all.contains(Capabilities::FRAMES));
     assert!(!Capabilities::SCREENSHOT.contains(Capabilities::FRAMES));
     // Bits a newer agent defines survive a round trip.
@@ -211,6 +219,18 @@ fn request_round_trips_for_every_method() {
             evict_event_less: Some(true),
             ..SnapshotParams::default()
         }),
+        Call::Snapshot(SnapshotParams {
+            evict: Some(vec![12, 65536, u32::MAX]),
+            ..SnapshotParams::default()
+        }),
+        Call::Snapshot(SnapshotParams {
+            evict: Some(Vec::new()),
+            ..SnapshotParams::default()
+        }),
+        Call::Bounds(BoundsParams {
+            nodes: vec![0, 23, 24, 255, 65536, u32::MAX],
+        }),
+        Call::Bounds(BoundsParams::default()),
         Call::Screenshot(ScreenshotParams {
             format: Some(ImageFormat::JPEG),
             quality: Some(80),
@@ -292,6 +312,22 @@ fn response_with_a_result_round_trips_for_every_reply() {
                 seq: 1 << 32,
             }),
         ),
+        (
+            Method::BOUNDS,
+            Reply::Bounds(Probed {
+                nodes: vec![
+                    NodeBounds {
+                        node: 7,
+                        bounds: Bounds::new(-411, 0, 1080, 2400),
+                    },
+                    NodeBounds {
+                        node: u32::MAX,
+                        bounds: Bounds::new(i32::MIN, -1, i32::MAX, 24),
+                    },
+                ],
+            }),
+        ),
+        (Method::BOUNDS, Reply::Bounds(Probed::default())),
         (Method::FRAMES_START, Reply::Empty),
         (Method::FRAMES_STOP, Reply::Empty),
         (Method::SHUTDOWN, Reply::Empty),
@@ -459,6 +495,46 @@ fn maps_write_keys_in_ascending_order_and_omit_absent_fields() {
     assert_eq!(
         evicting.to_vec(),
         hex("a4 00 02 01 01 02 01 04 a2 02 00 03 f5")
+    );
+    // Task 10.11: the windows to evict are key 4, an array of window ids,
+    // omitted when absent.
+    let moved = Message::Request(Request {
+        id: 1,
+        deadline_ms: None,
+        call: Call::Snapshot(SnapshotParams {
+            idle_ms: Some(0),
+            evict: Some(vec![12]),
+            ..SnapshotParams::default()
+        }),
+    });
+    assert_eq!(
+        moved.to_vec(),
+        hex("a4 00 02 01 01 02 01 04 a2 02 00 04 81 0c")
+    );
+    // A bounds probe is method 11 with the node ids at key 0, and its
+    // result lists each node as [node, bounds].
+    let probe = Message::Request(Request {
+        id: 1,
+        deadline_ms: None,
+        call: Call::Bounds(BoundsParams { nodes: vec![3, 7] }),
+    });
+    assert_eq!(
+        probe.to_vec(),
+        hex("a4 00 02 01 01 02 0b 04 a1 00 82 03 07")
+    );
+    let probed = Message::Response(Response {
+        id: 1,
+        method: Method::BOUNDS,
+        result: Ok(Reply::Bounds(Probed {
+            nodes: vec![NodeBounds {
+                node: 7,
+                bounds: Bounds::new(0, -1, 24, 2400),
+            }],
+        })),
+    });
+    assert_eq!(
+        probed.to_vec(),
+        hex("a4 00 03 01 01 02 0b 03 a1 00 81 82 07 84 00 20 18 18 19 09 60")
     );
     let error = Message::Response(Response {
         id: 24,
@@ -831,6 +907,24 @@ fn decoders_skip_trailing_array_elements() {
                 change: WindowChangeKind::ADDED,
                 window: 13,
             }),
+        })
+    );
+    // Task 10.11: a probed node with an element after its bounds.
+    let msg = Message::decode(&hex(
+        "a4 00 03 01 01 02 0b 03 a1 00 81 83 07 84 00 20 18 18 19 09 60 61 78",
+    ))
+    .unwrap();
+    assert_eq!(
+        msg,
+        Message::Response(Response {
+            id: 1,
+            method: Method::BOUNDS,
+            result: Ok(Reply::Bounds(Probed {
+                nodes: vec![NodeBounds {
+                    node: 7,
+                    bounds: Bounds::new(0, -1, 24, 2400),
+                }],
+            })),
         })
     );
 }

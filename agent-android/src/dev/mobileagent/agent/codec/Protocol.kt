@@ -44,6 +44,7 @@ object Method {
     const val FRAMES_STOP = 8
     const val RESYNC = 9
     const val SHUTDOWN = 10
+    const val BOUNDS = 11
 }
 
 /** Capability bits of a hello. */
@@ -54,6 +55,7 @@ object Capability {
     const val FRAMES = 1 shl 3
     const val EVENTS = 1 shl 4
     const val TEXT_SET = 1 shl 5
+    const val BOUNDS = 1 shl 6
 }
 
 /** Event streams. Frame availability is lossy; the others are lossless. */
@@ -109,6 +111,9 @@ object WindowFlag {
     const val FOCUSED = 1 shl 1
     const val ACCESSIBILITY_FOCUSED = 1 shl 2
     const val PICTURE_IN_PICTURE = 1 shl 3
+
+    /** Drawn away from where its layout puts it, as while the platform animates the window in or out. */
+    const val TRANSFORMED = 1 shl 4
 }
 
 /** The direction a node scrolls in. */

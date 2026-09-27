@@ -101,11 +101,15 @@ object Codec {
     private fun encodeCall(c: Call, out: CborWriter) {
         when (c) {
             is SnapshotCall -> {
-                out.map(present(c.maxDepth) + present(c.maxNodes) + present(c.idleMs) + present(c.evictEventLess))
+                out.map(
+                    present(c.maxDepth) + present(c.maxNodes) + present(c.idleMs) + present(c.evictEventLess) +
+                        present(c.evict),
+                )
                 optUint(out, 0, c.maxDepth)
                 optUint(out, 1, c.maxNodes)
                 optUint(out, 2, c.idleMs)
                 c.evictEventLess?.let { out.key(3); out.bool(it) }
+                c.evict?.let { out.key(4); uints(out, it) }
             }
             is ScreenshotCall -> {
                 out.map(present(c.format) + present(c.quality) + present(c.maxDimension))
@@ -146,6 +150,10 @@ object Codec {
             is ResyncCall -> {
                 out.map(1)
                 out.key(0); out.uint(c.stream)
+            }
+            is BoundsCall -> {
+                out.map(1)
+                out.key(0); uints(out, c.nodes)
             }
             FramesStopCall, ShutdownCall, is UnknownCall -> out.map(0)
         }
@@ -188,6 +196,15 @@ object Codec {
                 out.map(2)
                 out.key(0); out.uint(r.stream)
                 out.key(1); out.ulong(r.seq)
+            }
+            is Probed -> {
+                out.map(1)
+                out.key(0); out.array(r.nodes.size)
+                for (n in r.nodes) {
+                    out.array(2)
+                    out.uint(n.node)
+                    encodeBounds(n.bounds, out)
+                }
             }
             EmptyReply -> out.map(0)
         }
@@ -347,6 +364,8 @@ object Codec {
 
     private fun uints16(r: CborReader): IntArray = IntArray(r.array()) { r.uint16() }
 
+    private fun uints32(r: CborReader): IntArray = IntArray(r.array()) { r.uint32() }
+
     private fun optError(r: CborReader): WireError? = if (r.nextIsNull()) { r.pos++; null } else decodeError(r)
 
     private fun decodeHello(r: CborReader): Hello {
@@ -430,16 +449,18 @@ object Codec {
             var maxNodes: Int? = null
             var idleMs: Int? = null
             var evictEventLess: Boolean? = null
+            var evict: IntArray? = null
             repeat(r.map()) {
                 when (r.key()) {
                     0L -> maxDepth = r.optUint32()
                     1L -> maxNodes = r.optUint32()
                     2L -> idleMs = r.optUint32()
                     3L -> evictEventLess = r.optBool()
+                    4L -> evict = if (r.nextIsNull()) { r.pos++; null } else uints32(r)
                     else -> r.skip()
                 }
             }
-            SnapshotCall(maxDepth, maxNodes, idleMs, evictEventLess)
+            SnapshotCall(maxDepth, maxNodes, idleMs, evictEventLess, evict)
         }
         Method.SCREENSHOT -> {
             var format: Int? = null
@@ -549,6 +570,16 @@ object Codec {
             r.skipMap()
             ShutdownCall
         }
+        Method.BOUNDS -> {
+            var nodes: IntArray? = null
+            repeat(r.map()) {
+                when (r.key()) {
+                    0L -> nodes = uints32(r)
+                    else -> r.skip()
+                }
+            }
+            BoundsCall(nodes ?: missing("nodes"))
+        }
         else -> {
             r.skip()
             UnknownCall(method)
@@ -645,6 +676,16 @@ object Codec {
                 }
             }
             ResyncAck(stream ?: missing("stream"), seq ?: missing("seq"))
+        }
+        Method.BOUNDS -> {
+            var nodes: Array<NodeBounds>? = null
+            repeat(r.map()) {
+                when (r.key()) {
+                    0L -> nodes = Array(r.array()) { decodeNodeBounds(r) }
+                    else -> r.skip()
+                }
+            }
+            Probed(nodes ?: missing("nodes"))
         }
         Method.FRAMES_START, Method.FRAMES_STOP, Method.SHUTDOWN -> {
             r.skipMap()
@@ -799,6 +840,15 @@ object Codec {
         val position = ScrollPosition(r.int32(), r.int32())
         repeat(n - 2) { r.skip() }
         return position
+    }
+
+    /** A probed node, `[node, bounds]`, skipping elements past those this version knows. */
+    private fun decodeNodeBounds(r: CborReader): NodeBounds {
+        val n = r.array()
+        if (n < 2) throw CodecException("a probed node of $n elements, expected 2")
+        val probed = NodeBounds(r.uint32(), decodeBounds(r))
+        repeat(n - 2) { r.skip() }
+        return probed
     }
 
     private fun decodeBounds(r: CborReader): Bounds {
