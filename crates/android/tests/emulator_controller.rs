@@ -302,8 +302,10 @@ async fn a_touch_lands_on_the_touchscreen() {
 
 /// Sum of absolute byte differences between an RGB row and an RGBA row.
 fn row_difference(rgb: &[u8], rgba: &[u8]) -> u64 {
-    rgb.chunks_exact(3)
-        .zip(rgba.chunks_exact(4))
+    let (rgb, _) = rgb.as_chunks::<3>();
+    let (rgba, _) = rgba.as_chunks::<4>();
+    rgb.iter()
+        .zip(rgba)
         .map(|(a, b)| (0..3).map(|i| u64::from(a[i].abs_diff(b[i]))).sum::<u64>())
         .sum()
 }

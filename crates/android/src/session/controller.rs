@@ -194,7 +194,7 @@ pub fn resize_rgb(
             let mut sum = [0u64; BYTES_PER_PIXEL];
             for y in y0..y1 {
                 let row = &pixels[(y * w + x0) * BYTES_PER_PIXEL..(y * w + x1) * BYTES_PER_PIXEL];
-                for px in row.chunks_exact(BYTES_PER_PIXEL) {
+                for px in row.as_chunks::<BYTES_PER_PIXEL>().0 {
                     for (total, &channel) in sum.iter_mut().zip(px) {
                         *total += u64::from(channel);
                     }
@@ -432,10 +432,7 @@ mod tests {
 
     /// A 3 by 2 image: A B C over D E F.
     fn letters() -> Vec<u8> {
-        [b'A', b'B', b'C', b'D', b'E', b'F']
-            .iter()
-            .flat_map(|&c| [c, c, c])
-            .collect()
+        b"ABCDEF".iter().flat_map(|&c| [c, c, c]).collect()
     }
 
     fn rows(pixels: &[u8], width: u32, height: u32) -> Vec<String> {
@@ -522,5 +519,48 @@ mod tests {
         assert!(store.get(3).is_some());
         assert!(store.get(2).is_none(), "only {KEPT_FRAMES} frames are kept");
         assert_eq!(store.get(5).unwrap().pixels()[0], 5);
+    }
+
+    /// Times `resize_rgb` from a textured frame the size of the emulator's
+    /// 1080x2400 display to the 1000-pixel long edge the mirror asks for by
+    /// default. The checksum shows whether two builds computed the same
+    /// pixels.
+    #[test]
+    #[ignore = "a measurement; run with --release --ignored --nocapture on a quiet machine"]
+    fn measure_the_rgb_resize() {
+        use std::hint::black_box;
+        const WARMUP: usize = 10;
+        const RUNS: usize = 200;
+        let (width, height, to_width, to_height) = (1080, 2400, 450, 1000);
+        let source = frame(width, height, |x, y| {
+            let v = (x * 31 + y * 17 + (x * y) % 97) as u8;
+            [v, v.wrapping_mul(3), v ^ 0x5A]
+        });
+        let mut samples = Vec::with_capacity(RUNS);
+        let mut small = Vec::new();
+        for run in 0..WARMUP + RUNS {
+            let started = Instant::now();
+            small = resize_rgb(
+                black_box(source.pixels()),
+                width,
+                height,
+                to_width,
+                to_height,
+            );
+            let elapsed = started.elapsed();
+            if run >= WARMUP {
+                samples.push(elapsed.as_secs_f64() * 1e3);
+            }
+        }
+        samples.sort_by(f64::total_cmp);
+        let percentile = |percent: usize| samples[(samples.len() * percent).div_ceil(100) - 1];
+        let checksum = small.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+        eprintln!(
+            "resize_rgb {width}x{height} to {to_width}x{to_height}, {RUNS} runs: p50 {:.3} ms, p95 {:.3} ms, checksum {checksum:016x}",
+            percentile(50),
+            percentile(95)
+        );
     }
 }

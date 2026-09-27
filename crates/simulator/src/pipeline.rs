@@ -225,14 +225,14 @@ fn fast_rows<const W: usize>(
             .find(|(length, _)| *length == span)
             .expect("the row's divisors were just made")
             .1;
+        // Both hold whole pixels, so neither leaves a remainder.
+        let (sums_by_column, _) = column_sums.as_chunks::<4>();
+        let (pixels, _) = out.as_chunks_mut::<4>();
         for ((pixel, &(left, width)), &(half, multiplier)) in
-            out.chunks_exact_mut(4).zip(&columns).zip(row_divisors)
+            pixels.iter_mut().zip(&columns).zip(row_divisors)
         {
             let mut total = [0u32; 4];
-            for (index, sums) in column_sums[left * 4..(left + W) * 4]
-                .chunks_exact(4)
-                .enumerate()
-            {
+            for (index, sums) in sums_by_column[left..left + W].iter().enumerate() {
                 let weight = u32::from((index as u32) < width);
                 for (total, &sum) in total.iter_mut().zip(sums) {
                     *total = total.wrapping_add(u32::from(sum).wrapping_mul(weight));
@@ -261,15 +261,18 @@ fn general_rows(src: &FrameView<'_>, x_bounds: &[usize], y_bounds: &[usize], dst
             }
         }
         let span = bottom - top;
-        for (pixel, columns) in out.chunks_exact_mut(4).zip(x_bounds.windows(2)) {
+        // Both hold whole pixels, so neither leaves a remainder.
+        let (sums_by_column, _) = column_sums.as_chunks::<4>();
+        let (pixels, _) = out.as_chunks_mut::<4>();
+        for (pixel, columns) in pixels.iter_mut().zip(x_bounds.windows(2)) {
             let mut total = [0u32; 4];
-            for sums in column_sums[columns[0] * 4..columns[1] * 4].chunks_exact(4) {
+            for sums in &sums_by_column[columns[0]..columns[1]] {
                 for (total, &sum) in total.iter_mut().zip(sums) {
                     *total = total.wrapping_add(sum);
                 }
             }
             let divisor = Divisor::new((columns[1] - columns[0]) * span);
-            pixel.copy_from_slice(&divisor.rounded(total));
+            *pixel = divisor.rounded(total);
         }
     }
 }
@@ -332,10 +335,11 @@ pub fn thumbnail_hash(frame: &FrameView<'_>) -> u64 {
     let (width, height) = fit_within(frame.width, frame.height, HASH_DIM);
     let mut thumbnail = Vec::with_capacity(width * height * 4);
     scale_bgra(frame, width, height, &mut thumbnail);
-    thumbnail
-        .chunks_exact(4)
-        .flat_map(|pixel| &pixel[..3])
-        .fold(FNV_OFFSET, |hash, &byte| {
+    let (pixels, _) = thumbnail.as_chunks::<4>();
+    pixels
+        .iter()
+        .flat_map(|&[blue, green, red, _alpha]| [blue, green, red])
+        .fold(FNV_OFFSET, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
         })
 }
@@ -349,17 +353,19 @@ pub fn pixels_hash(pixels: &[u8]) -> u64 {
     // 460x1000 frame.
     const MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
     let mix = |state: u64, word: u64| (state ^ word).wrapping_mul(MULTIPLIER).rotate_left(29);
-    let word = |bytes: &[u8]| u64::from_le_bytes(bytes.try_into().expect("eight bytes"));
     let seed = (pixels.len() as u64).wrapping_mul(MULTIPLIER);
     let mut lanes = [seed, seed ^ 1, seed ^ 2, seed ^ 3];
-    let mut blocks = pixels.chunks_exact(32);
-    for block in &mut blocks {
-        for (lane, bytes) in lanes.iter_mut().zip(block.chunks_exact(8)) {
-            *lane = mix(*lane, word(bytes));
+    // Whole 32-byte blocks go through the lanes a word each; the bytes after
+    // the last whole block are mixed in one at a time.
+    let (blocks, tail) = pixels.as_chunks::<32>();
+    for block in blocks {
+        let (words, _) = block.as_chunks::<8>();
+        for (lane, word) in lanes.iter_mut().zip(words) {
+            *lane = mix(*lane, u64::from_le_bytes(*word));
         }
     }
     let mut hash = lanes.iter().fold(seed, |hash, &lane| mix(hash, lane));
-    for &byte in blocks.remainder() {
+    for &byte in tail {
         hash = mix(hash, u64::from(byte));
     }
     hash ^ (hash >> 32)
@@ -530,12 +536,12 @@ mod tests {
         let (data, stride) = frame(6, 4, 12, |_, _| [1, 2, 3, 255]);
         let out = scaled(&data, 6, 4, stride, 3, 2);
         assert_eq!(out.len(), 3 * 2 * 4);
-        assert!(out.chunks_exact(4).all(|p| p == [1, 2, 3, 255]));
+        assert!(out.as_chunks::<4>().0.iter().all(|&p| p == [1, 2, 3, 255]));
 
         let (data, stride) = frame(1206, 2622, 40, |_, _| [9, 8, 7, 255]);
         let out = scaled(&data, 1206, 2622, stride, 460, 1000);
         assert_eq!(out.len(), 460 * 1000 * 4);
-        assert!(out.chunks_exact(4).all(|p| p == [9, 8, 7, 255]));
+        assert!(out.as_chunks::<4>().0.iter().all(|&p| p == [9, 8, 7, 255]));
     }
 
     #[test]
@@ -611,7 +617,7 @@ mod tests {
         );
         let mut copy = Vec::new();
         scale_bgra(&lower, 3, 3, &mut copy);
-        let first_column: Vec<u8> = copy.chunks_exact(12).map(|row| row[0]).collect();
+        let first_column: Vec<u8> = copy.as_chunks::<12>().0.iter().map(|row| row[0]).collect();
         assert_eq!(first_column, vec![1, 2, 3]);
     }
 
@@ -676,6 +682,21 @@ mod tests {
     }
 
     #[test]
+    fn the_pixels_hash_sees_a_changed_byte_after_the_last_whole_block() {
+        // Tails alone and after one or two whole blocks. 60 bytes are a 3x5
+        // frame: a pixel count that is not a multiple of 8 leaves a tail.
+        for len in [1, 31, 33, 60, 95] {
+            let base: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            let reference = pixels_hash(&base);
+            for at in len - len % 32..len {
+                let mut changed = base.clone();
+                changed[at] ^= 1;
+                assert_ne!(pixels_hash(&changed), reference, "byte {at} of {len}");
+            }
+        }
+    }
+
+    #[test]
     fn the_content_hash_leaves_the_status_bar_out() {
         assert_eq!(status_bar_rows(1000), 75);
         assert_eq!(status_bar_rows(2622), 197);
@@ -723,5 +744,67 @@ mod tests {
         );
         assert!(throttle.fresh_wait() > interval / 4);
         assert!(throttle.fresh_wait() < interval / 2);
+    }
+
+    /// The value `percent` percent of `sorted` do not exceed, by nearest rank.
+    fn percentile(sorted: &[f64], percent: usize) -> f64 {
+        sorted[(sorted.len() * percent).div_ceil(100) - 1]
+    }
+
+    /// Times the frame reader's pixel work on a textured frame the size of an
+    /// iPhone screen, its rows padded as the IOSurface pads them: the
+    /// downscale to the delivered 1000-pixel frame, its pixels hash and its
+    /// content hash. The checksums show whether two builds computed the same
+    /// frames.
+    #[test]
+    #[ignore = "a measurement; run with --release --ignored --nocapture on a quiet machine"]
+    fn measure_the_frame_pipeline() {
+        use std::hint::black_box;
+        const WARMUP: usize = 10;
+        const RUNS: usize = 200;
+        let texture = |x: usize, y: usize| {
+            let v = (x * 31 + y * 17 + (x * y) % 97) as u8;
+            [v, v.wrapping_mul(3), v ^ 0x5A, 255]
+        };
+        let ms = |from: Instant, to: Instant| (to - from).as_secs_f64() * 1e3;
+        // The iPhone 17 of the spikes, whose rows are padded to 4864 bytes
+        // (S2), and the 1179x2556 panel of the 6.1-inch iPhone 15 and 16.
+        for (width, height, pad) in [(1206, 2622, 40), (1179, 2556, 20)] {
+            let (data, stride) = frame(width, height, pad, texture);
+            let src = view(&data, width, height, stride);
+            let (dw, dh) = fit_within(width, height, 1000);
+            let mut scaled = Vec::new();
+            let mut samples: [Vec<f64>; 4] = Default::default();
+            let (mut pixels, mut content) = (0, 0);
+            for run in 0..WARMUP + RUNS {
+                let started = Instant::now();
+                scale_bgra(black_box(&src), dw, dh, &mut scaled);
+                let scaled_at = Instant::now();
+                pixels = pixels_hash(black_box(&scaled));
+                let hashed_at = Instant::now();
+                content = content_hash(&view(black_box(&scaled), dw, dh, dw * 4));
+                let done = Instant::now();
+                if run >= WARMUP {
+                    samples[0].push(ms(started, scaled_at));
+                    samples[1].push(ms(scaled_at, hashed_at));
+                    samples[2].push(ms(hashed_at, done));
+                    samples[3].push(ms(started, done));
+                }
+            }
+            eprintln!("{width}x{height} to {dw}x{dh}, {RUNS} runs:");
+            let stages = ["scale", "pixels hash", "content hash", "total"];
+            for (stage, samples) in stages.iter().zip(&mut samples) {
+                samples.sort_by(f64::total_cmp);
+                eprintln!(
+                    "  {stage}: p50 {:.3} ms, p95 {:.3} ms",
+                    percentile(samples, 50),
+                    percentile(samples, 95)
+                );
+            }
+            eprintln!(
+                "  checksums: pixels {pixels:016x}, content {content:016x}, source less 3 bytes {:016x}",
+                pixels_hash(&data[..data.len() - 3])
+            );
+        }
     }
 }
