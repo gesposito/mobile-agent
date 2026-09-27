@@ -268,7 +268,7 @@ fn a_labelled_container_whose_field_the_platform_hides_gets_a_ref() {
 }
 
 #[test]
-fn only_labelled_containers_with_nothing_below_them_get_such_refs() {
+fn only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs() {
     let (_, mut mirror) = android(json!([
         {"class": "android.view.View", "desc": "Promo", "bounds": [16, 16, 392, 64]},
         {"class": "android.view.View", "bounds": [16, 80, 392, 128]},
@@ -276,12 +276,19 @@ fn only_labelled_containers_with_nothing_below_them_get_such_refs() {
         {"class": "android.widget.ImageView", "desc": "Logo", "bounds": [16, 208, 392, 256]},
         {"class": "android.view.ViewGroup", "desc": "Section", "bounds": [16, 272, 392, 400], "children": [
             {"class": "android.widget.TextView", "text": "Inside", "bounds": [16, 288, 392, 336]}
+        ]},
+        {"class": "android.view.ViewGroup", "desc": "Banner", "bounds": [16, 416, 392, 528], "children": [
+            {"class": "android.widget.TextView", "text": "Sale", "bounds": [16, 416, 392, 464]},
+            {"class": "android.widget.ImageView", "desc": "Sale banner", "bounds": [16, 464, 392, 528]}
         ]}
     ]));
     assert_eq!(
         mirror.snapshot(&interactive()).unwrap().text,
-        "- generic \"Promo\" [ref=e1]",
-        "not an unlabelled leaf, a text, an image or a labelled container with content"
+        lines(&[
+            "- generic \"Promo\" [ref=e1]",
+            "- generic \"Section\" [ref=e2]",
+        ]),
+        "not an unlabelled leaf, a text, an image or a labelled container with more than static text"
     );
 
     let (_, mut root) = mirror_on("sparse");

@@ -1,0 +1,25 @@
+{
+  "description": "Bluesky's language selector as XCTest reads it on the Simulator, without the covered screen (finding 4): 16 language rows, each a view without traits labelled like the static text inside it, in a scroll view that shows the first 10. The row names are placeholders. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "App language", "bounds": [24, 80, 378, 108]},
+            {"class": "XCUIElementTypeScrollView", "bounds": [0, 124, 402, 604], "flags": ["scrollable"], "children": [
+              {"repeat": [1, 16], "viewport": [0, 124, 402, 604],
+               "layout": {"rows": {"left": 0, "top": 124, "right": 402, "height": 48}},
+               "node": {"class": "XCUIElementTypeOther", "desc": "Language {n}", "children": [
+                 {"class": "XCUIElementTypeStaticText", "desc": "Language {n}", "bounds": "fill"}
+               ]}}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

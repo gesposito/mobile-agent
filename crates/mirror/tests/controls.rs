@@ -1,20 +1,25 @@
-//! Task 7.12: which control a ref names, from the Bluesky run of the React
-//! Native smoke test (`reports/10.4-rn-smoke.md`, second run). A ref's
-//! identity includes the accessible name of an element without an
-//! identifier, so a control that a screen transition renames gets a fresh
-//! ref, and its old ref is refused as stale rather than pressing the control
-//! that took its place (finding 6).
+//! Task 7.12: which control a ref names, and which controls get refs, from
+//! the Bluesky run of the React Native smoke test
+//! (`reports/10.4-rn-smoke.md`, second run). A ref's identity includes the
+//! accessible name of an element without an identifier, so a control that a
+//! screen transition renames gets a fresh ref, and its old ref is refused as
+//! stale rather than pressing the control that took its place (finding 6).
+//! A labelled node without traits whose children, if any, are static text is
+//! a control and gets a ref, unless a clickable ancestor holds it, whose name
+//! it then forms when the ancestor has none of its own (finding 4); the
+//! covered-content, off-screen and collision rules hold for such controls as
+//! for any other element.
 
 mod support;
 
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, Condition, Mirror, MirrorConfig, MirrorError, Ref, Selector, SnapshotOptions,
-    StaleCause, Target, code,
+    Action, Condition, Degradation, Direction, HintSource, Mirror, MirrorConfig, MirrorError, Ref,
+    Selector, SnapshotOptions, StaleCause, Target, code,
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
-use serde_json::json;
-use support::{Screen, ms};
+use serde_json::{Value, json};
+use support::{Screen, mirror_on, ms};
 
 fn lines(text: &[&str]) -> String {
     text.join("\n")
@@ -22,6 +27,10 @@ fn lines(text: &[&str]) -> String {
 
 fn interactive() -> SnapshotOptions {
     SnapshotOptions::interactive()
+}
+
+fn full() -> SnapshotOptions {
+    SnapshotOptions::full()
 }
 
 fn tap(reference: Ref) -> Action {
@@ -219,4 +228,184 @@ fn typing_into_a_field_without_an_identifier_keeps_its_ref() {
     assert_eq!(field.value.as_deref(), Some("alice@example.com"));
     assert_eq!(field.reference, email, "a value is not a name");
     assert_eq!(before.refs(), after.refs());
+}
+
+const HOSTING: [&str; 4] = [
+    "- generic \"Automatic\" [ref=e1]",
+    "- generic \"Manual\" [id=manualSelectBtn, ref=e2]",
+    "- button \"Done\" [ref=e3]",
+    "- generic \"Dismiss\" [ref=e4]",
+];
+
+#[test]
+fn labelled_controls_without_traits_on_the_hosting_provider_sheet_get_refs() {
+    let (target, mut mirror) = mirror_on("bluesky-hosting");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(snapshot.text, lines(&HOSTING));
+    assert_eq!(
+        mirror.snapshot(&full()).unwrap().text,
+        lines(&[
+            "- text \"Hosting provider\"",
+            "- generic \"Automatic\" [ref=e1]",
+            "  - text \"Automatic\"",
+            "- generic \"Manual\" [id=manualSelectBtn, ref=e2]",
+            "  - text \"Manual\"",
+            "- button \"Done\" [ref=e3]",
+            "- generic \"Dismiss\" [ref=e4]",
+        ])
+    );
+    let manual = snapshot.by_identifier("manualSelectBtn").unwrap();
+    let outcome = mirror.act(&tap(manual.reference.unwrap())).unwrap();
+    assert_eq!(outcome.at, Some(manual.bounds.center()));
+    assert_eq!(target.inputs()[0].hit.as_deref(), Some("manualSelectBtn"));
+}
+
+#[test]
+fn language_rows_get_refs_and_those_below_the_fold_are_hinted() {
+    let (_, mut mirror) = mirror_on("bluesky-language");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected: Vec<String> = (1..=10)
+        .map(|n| format!("- generic \"Language {n}\" [ref=e{n}]"))
+        .collect();
+    expected.push("(6 more actionable items below, scroll down to reveal)".to_owned());
+    assert_eq!(snapshot.text, expected.join("\n"));
+    assert_eq!(snapshot.hints.len(), 1);
+    assert_eq!(snapshot.hints[0].direction, Direction::Below);
+    assert_eq!(snapshot.hints[0].source, HintSource::OffscreenNodes);
+}
+
+#[test]
+fn a_labelled_control_under_an_alert_is_covered() {
+    let screen = Screen::load("bluesky-hosting");
+    let mut alerted = screen.clone();
+    alerted.0["windows"][0]["root"]["children"][0]["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(
+            {"class": "_UIAlertControllerPhoneTVMacView", "desc": "Change provider?", "bounds": [61, 360, 341, 514],
+             "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Change provider?", "bounds": [77, 380, 325, 402]},
+                {"class": "XCUIElementTypeButton", "desc": "OK", "bounds": [61, 470, 341, 514]}
+             ]}
+        ));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(alerted.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&HOSTING)
+    );
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "- button \"OK\" [ref=e5]"
+    );
+    let error = mirror.act(&tap(Ref(1))).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED);
+    assert!(target.inputs().is_empty());
+}
+
+/// A mirror over one Simulator application window holding `children`.
+fn ios(children: Value) -> (FakeTarget, Mirror) {
+    let screen = Screen::from_json(json!({
+        "backend": {"name": "simulator-reader"},
+        "scale": 3,
+        "windows": [{
+            "id": 1, "kind": "application", "layer": 0, "bounds": [0, 0, 402, 874], "flags": ["active"],
+            "events": false,
+            "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": children}
+            ]}
+        }]
+    }));
+    let target = FakeTarget::new(screen.read());
+    let mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    (target, mirror)
+}
+
+#[test]
+fn inside_a_clickable_ancestor_such_controls_name_it_and_get_no_ref() {
+    let (_, mut mirror) = ios(json!([
+        {"class": "XCUIElementTypeButton", "bounds": [24, 100, 378, 148], "children": [
+            {"class": "XCUIElementTypeOther", "desc": "Automatic", "bounds": "fill", "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Automatic", "bounds": "fill"}
+            ]}
+        ]},
+        {"class": "XCUIElementTypeButton", "desc": "Provider", "bounds": [24, 164, 378, 212], "children": [
+            {"class": "XCUIElementTypeOther", "desc": "Manual", "bounds": [24, 164, 330, 212], "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Manual", "bounds": "fill"}
+            ]},
+            {"class": "XCUIElementTypeOther", "desc": "Selected", "bounds": [330, 164, 378, 212]}
+        ]}
+    ]));
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- button \"Automatic\" [ref=e1]",
+            "- button \"Provider\" [ref=e2]",
+        ])
+    );
+    assert_eq!(
+        mirror.snapshot(&full()).unwrap().text,
+        lines(&[
+            "- button \"Automatic\" [ref=e1]",
+            "- button \"Provider\" [ref=e2]",
+            "  - generic \"Manual\"",
+            "    - text \"Manual\"",
+            "  - generic \"Selected\"",
+        ]),
+        "an unnamed button takes its name from them; a named one keeps them as content"
+    );
+}
+
+#[test]
+fn identical_labelled_controls_collide() {
+    let (_, mut mirror) = ios(json!([
+        {"class": "XCUIElementTypeOther", "desc": "Remove", "bounds": [24, 100, 378, 148], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Remove", "bounds": "fill"}
+        ]},
+        {"class": "XCUIElementTypeOther", "desc": "Remove", "bounds": [24, 164, 378, 212], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Remove", "bounds": "fill"}
+        ]}
+    ]));
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- generic \"Remove\" [ref=e1]",
+            "- generic \"Remove\" [ref=e2]"
+        ])
+    );
+    assert_eq!(
+        snapshot.verdict.reasons,
+        [Degradation::SiblingCollision {
+            refs: snapshot.refs()
+        }]
+    );
+}
+
+#[test]
+fn nodes_with_more_than_static_text_below_them_or_no_label_are_no_such_controls() {
+    let (_, mut mirror) = ios(json!([
+        {"class": "XCUIElementTypeOther", "desc": "Card", "bounds": [24, 100, 378, 196], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Title", "bounds": [24, 100, 378, 148]},
+            {"class": "XCUIElementTypeImage", "desc": "Avatar", "bounds": [24, 148, 72, 196]}
+        ]},
+        {"class": "XCUIElementTypeOther", "desc": "Section", "bounds": [24, 212, 378, 260], "children": [
+            {"class": "XCUIElementTypeOther", "bounds": "fill", "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Nested", "bounds": "fill"}
+            ]}
+        ]},
+        {"class": "XCUIElementTypeOther", "bounds": [24, 276, 378, 324], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Caption", "bounds": "fill"}
+        ]},
+        {"class": "XCUIElementTypeStaticText", "desc": "Plain text", "bounds": [24, 340, 378, 388]}
+    ]));
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "(no interactive elements)"
+    );
 }

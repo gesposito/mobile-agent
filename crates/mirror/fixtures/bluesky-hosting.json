@@ -1,0 +1,28 @@
+{
+  "description": "Bluesky's hosting provider sheet as XCTest reads it on the Simulator, without the covered screen (reports/10.4-rn-smoke.md, second run, finding 4): the Automatic and Manual options are views without traits, each labelled like the static text inside it, Manual with the identifier manualSelectBtn; Dismiss is a labelled view with nothing below it; Done is a button. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 420, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Hosting provider", "bounds": [24, 444, 378, 472]},
+            {"class": "XCUIElementTypeOther", "bounds": [24, 488, 378, 532], "children": [
+              {"class": "XCUIElementTypeOther", "desc": "Automatic", "bounds": [24, 488, 201, 532], "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Automatic", "bounds": [70, 498, 155, 522]}
+              ]},
+              {"class": "XCUIElementTypeOther", "id": "manualSelectBtn", "desc": "Manual", "bounds": [201, 488, 378, 532], "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Manual", "bounds": [255, 498, 324, 522]}
+              ]}
+            ]},
+            {"class": "XCUIElementTypeButton", "desc": "Done", "bounds": [24, 560, 378, 608]},
+            {"class": "XCUIElementTypeOther", "desc": "Dismiss", "bounds": [0, 826, 402, 874]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
