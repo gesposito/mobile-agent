@@ -108,7 +108,7 @@ pub fn run(args: Vec<OsString>) -> i32 {
     let session = global
         .session
         .clone()
-        .or(config.session)
+        .or(config.session.clone())
         .unwrap_or_else(|| "default".to_owned());
     let cwd = std::env::current_dir().unwrap_or_default();
     let mut request = match request::build(&cli.command, &cwd) {
@@ -125,7 +125,11 @@ pub fn run(args: Vec<OsString>) -> i32 {
     if global.force {
         request.insert("force".into(), Value::Bool(true));
     }
-    let socket = client::socket_dir(global.socket_dir.as_deref()).join(client::SOCKET_FILE);
-    let reply = client::send(&socket, &request).unwrap_or_else(Reply::failed);
+    let endpoint = client::Endpoint {
+        dir: client::socket_dir(global.socket_dir.as_deref()),
+        daemon: global.daemon_bin.clone(),
+        idle_timeout: global.idle_timeout.clone().or(config.idle_timeout),
+    };
+    let reply = client::call(&endpoint, &request).unwrap_or_else(Reply::failed);
     finish(json, &action, &reply)
 }

@@ -3,16 +3,35 @@
 //! up to five attempts on transient errors with 200 ms times the attempt
 //! between them, and a read timeout of 30 s or the command's own timeout
 //! plus 10 s, whichever is longer, so waits report their own timeout.
+//!
+//! The first command starts the daemon. Before each request the CLI reads
+//! the daemon's version file: when it names another build than the daemon
+//! executable this CLI would start, the CLI starts that executable, which
+//! replaces the running daemon (see the daemon's README). A request that
+//! finds no daemon listening starts one and is sent once more.
 
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::fs::{DirBuilder, OpenOptions};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
 /// The socket's file name in the socket directory.
 pub const SOCKET_FILE: &str = "daemon.sock";
+/// The file where the daemon records its version.
+pub const VERSION_FILE: &str = "daemon.version";
+/// Where a daemon the CLI starts writes its error output.
+pub const LOG_FILE: &str = "daemon.log";
+/// The daemon executable's name.
+pub const DAEMON: &str = "mobile-agent-daemon";
+
+/// How long a starting daemon gets to serve.
+const STARTUP: Duration = Duration::from_secs(10);
 
 const ATTEMPTS: u32 = 5;
 const BACKOFF: Duration = Duration::from_millis(200);
@@ -181,9 +200,23 @@ pub fn check_socket(socket: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
+/// Why a request got no reply.
+enum Unsent {
+    /// No daemon listens on the socket.
+    Unreachable(Failure),
+    Failed(Failure),
+}
+
+impl From<Unsent> for Failure {
+    fn from(unsent: Unsent) -> Failure {
+        match unsent {
+            Unsent::Unreachable(failure) | Unsent::Failed(failure) => failure,
+        }
+    }
+}
+
 /// Sends `request` to the daemon on `socket` and returns its reply.
-pub fn send(socket: &Path, request: &Map<String, Value>) -> Result<Reply, Failure> {
-    check_socket(socket)?;
+fn send(socket: &Path, request: &Map<String, Value>) -> Result<Reply, Unsent> {
     let mut line = Value::Object(request.clone()).to_string();
     line.push('\n');
     let timeout = read_timeout(request);
@@ -194,20 +227,203 @@ pub fn send(socket: &Path, request: &Map<String, Value>) -> Result<Reply, Failur
         }
         match attempt(socket, &line, timeout) {
             Attempt::Reply(reply) => return Ok(reply),
-            Attempt::Failed(failure) => return Err(failure),
+            Attempt::Failed(failure) => return Err(Unsent::Failed(failure)),
             Attempt::Unreachable(reason) => {
-                return Err(Failure::new(
+                return Err(Unsent::Unreachable(Failure::new(
                     DAEMON_UNAVAILABLE,
                     format!("no daemon answers on {} ({reason})", socket.display()),
-                ));
+                )));
             }
             Attempt::Transient(reason) => last = reason,
         }
     }
-    Err(Failure::new(
+    Err(Unsent::Failed(Failure::new(
         DAEMON_UNAVAILABLE,
         format!("{last} (after {ATTEMPTS} attempts; the daemon may be busy or unresponsive)"),
+    )))
+}
+
+/// Where the daemon lives and how to start it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Endpoint {
+    /// The socket directory.
+    pub dir: PathBuf,
+    /// The daemon executable, when given by flag or environment.
+    pub daemon: Option<PathBuf>,
+    /// The idle timeout a daemon this CLI starts gets.
+    pub idle_timeout: Option<String>,
+}
+
+impl Endpoint {
+    pub fn socket(&self) -> PathBuf {
+        self.dir.join(SOCKET_FILE)
+    }
+
+    fn version(&self) -> Option<String> {
+        std::fs::read_to_string(self.dir.join(VERSION_FILE))
+            .ok()
+            .map(|version| version.trim().to_owned())
+    }
+}
+
+/// The daemon executable: the one given, else `mobile-agent-daemon`
+/// beside this executable, else on `PATH`.
+pub fn daemon_executable(given: Option<&Path>) -> Result<PathBuf, Failure> {
+    if let Some(path) = given {
+        return Ok(path.to_path_buf());
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let exe = exe.canonicalize().unwrap_or(exe);
+        let beside = exe.with_file_name(DAEMON);
+        if beside.is_file() {
+            return Ok(beside);
+        }
+    }
+    if let Some(path) = std::env::var_os("PATH")
+        && let Some(found) = std::env::split_paths(&path)
+            .map(|dir| dir.join(DAEMON))
+            .find(|candidate| candidate.is_file())
+    {
+        return Ok(found);
+    }
+    Err(Failure::new(
+        DAEMON_UNAVAILABLE,
+        format!(
+            "cannot find {DAEMON} beside mobile-agent or on PATH; build it with cargo build -p daemon, or set MOBILE_AGENT_DAEMON_BIN"
+        ),
     ))
+}
+
+/// The version a daemon started from `exe` records: the release, `+`, then
+/// the executable's size and modification time in nanoseconds in hex, the
+/// form the daemon writes, so a rebuilt daemon reads as another version.
+pub fn daemon_version(exe: &Path) -> String {
+    let build = std::fs::metadata(exe).map_or_else(
+        |_| "unknown".to_owned(),
+        |meta| {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_nanos());
+            format!("{:x}.{:x}", meta.len(), mtime)
+        },
+    );
+    format!("{}+{build}", env!("CARGO_PKG_VERSION"))
+}
+
+/// The end of the daemon log from byte `from`, for startup errors.
+fn log_tail(path: &Path, from: u64) -> String {
+    let mut text = String::new();
+    if let Ok(mut file) = std::fs::File::open(path) {
+        let _ = file.seek(SeekFrom::Start(from));
+        let _ = file.read_to_string(&mut text);
+    }
+    let text = text.trim();
+    let start = text
+        .char_indices()
+        .rev()
+        .nth(499)
+        .map_or(0, |(index, _)| index);
+    text[start..].to_owned()
+}
+
+/// Starts the daemon executable `exe` on the endpoint and waits until a
+/// daemon of `version` serves the socket: the one started, or another that
+/// a concurrent command started first.
+fn start(endpoint: &Endpoint, exe: &Path, version: &str) -> Result<(), Failure> {
+    let unavailable = |message: String| Failure::new(DAEMON_UNAVAILABLE, message);
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&endpoint.dir)
+        .map_err(|e| unavailable(format!("cannot create {}: {e}", endpoint.dir.display())))?;
+    let log_path = endpoint.dir.join(LOG_FILE);
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok();
+    let log_start = log
+        .as_ref()
+        .and_then(|file| file.metadata().ok())
+        .map_or(0, |meta| meta.len());
+    let mut command = Command::new(exe);
+    // The daemon outlives this process, so it keeps no working directory of
+    // the caller's; paths it writes arrive absolute.
+    command
+        .arg("--socket-dir")
+        .arg(&endpoint.dir)
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(log.map_or_else(Stdio::null, Stdio::from))
+        .process_group(0);
+    if let Some(idle) = &endpoint.idle_timeout {
+        command.arg("--idle-timeout").arg(idle);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| unavailable(format!("cannot start the daemon {}: {e}", exe.display())))?;
+    let socket = endpoint.socket();
+    let deadline = Instant::now() + STARTUP;
+    let mut exited = false;
+    loop {
+        if endpoint.version().as_deref() == Some(version) && UnixStream::connect(&socket).is_ok() {
+            return Ok(());
+        }
+        if !exited && let Ok(Some(status)) = child.try_wait() {
+            if !status.success() {
+                return Err(unavailable(format!(
+                    "the daemon exited during startup ({status}): {}",
+                    log_tail(&log_path, log_start)
+                )));
+            }
+            // A daemon of this version already serves; wait for it.
+            exited = true;
+        }
+        if Instant::now() >= deadline {
+            return Err(unavailable(format!(
+                "the daemon did not serve {} within {} s; see {}",
+                socket.display(),
+                STARTUP.as_secs(),
+                log_path.display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Sends `request` to the endpoint's daemon, starting one first when none
+/// of this build serves, and returns the reply. `shutdown` never starts a
+/// daemon.
+pub fn call(endpoint: &Endpoint, request: &Map<String, Value>) -> Result<Reply, Failure> {
+    let socket = endpoint.socket();
+    check_socket(&socket)?;
+    if request.get("action").and_then(Value::as_str) == Some("shutdown") {
+        return match send(&socket, request) {
+            Err(Unsent::Unreachable(_)) => Ok(Reply {
+                success: true,
+                data: serde_json::json!({"stopped": false}),
+                error: None,
+                code: None,
+                warning: Some("no daemon was running".to_owned()),
+            }),
+            other => other.map_err(Failure::from),
+        };
+    }
+    let exe = daemon_executable(endpoint.daemon.as_deref())?;
+    let version = daemon_version(&exe);
+    if endpoint.version().as_deref() != Some(version.as_str()) {
+        start(endpoint, &exe, &version)?;
+    }
+    match send(&socket, request) {
+        Err(Unsent::Unreachable(_)) => {
+            start(endpoint, &exe, &version)?;
+            send(&socket, request).map_err(Failure::from)
+        }
+        other => other.map_err(Failure::from),
+    }
 }
 
 #[cfg(test)]

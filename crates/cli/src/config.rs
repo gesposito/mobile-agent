@@ -13,6 +13,9 @@ use serde_json::Value;
 pub struct Config {
     pub json: Option<bool>,
     pub session: Option<String>,
+    /// The idle timeout of a daemon the CLI starts, as `--idle-timeout`
+    /// takes it; a number is milliseconds.
+    pub idle_timeout: Option<String>,
 }
 
 impl Config {
@@ -23,6 +26,11 @@ impl Config {
                 .get("session")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            idle_timeout: match value.get("idleTimeout") {
+                Some(Value::String(text)) => Some(text.clone()),
+                Some(Value::Number(ms)) => Some(ms.to_string()),
+                _ => None,
+            },
         }
     }
 
@@ -31,6 +39,7 @@ impl Config {
         Config {
             json: top.json.or(self.json),
             session: top.session.or(self.session),
+            idle_timeout: top.idle_timeout.or(self.idle_timeout),
         }
     }
 }
@@ -81,13 +90,15 @@ mod tests {
 
     #[test]
     fn a_project_file_overrides_the_user_file_key_by_key() {
-        let user = Config::from_json(&json!({"json": true, "session": "user", "extra": 1}));
-        let project = Config::from_json(&json!({"session": "project"}));
+        let user =
+            Config::from_json(&json!({"json": true, "session": "user", "idleTimeout": 5000}));
+        let project = Config::from_json(&json!({"session": "project", "extra": 1}));
         assert_eq!(
             user.overlay(project),
             Config {
                 json: Some(true),
-                session: Some("project".into())
+                session: Some("project".into()),
+                idle_timeout: Some("5000".into()),
             }
         );
     }

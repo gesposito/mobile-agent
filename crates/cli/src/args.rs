@@ -39,6 +39,15 @@ pub struct Global {
     #[arg(long, global = true, env = "MOBILE_AGENT_CONFIG", value_name = "PATH")]
     pub config: Option<PathBuf>,
 
+    /// Stop a daemon this command starts after this long without requests: ms, or a number with s, m or h; 0 never [default: 1h]
+    #[arg(
+        long,
+        global = true,
+        env = "MOBILE_AGENT_IDLE_TIMEOUT_MS",
+        value_name = "TIME"
+    )]
+    pub idle_timeout: Option<String>,
+
     /// Directory of the daemon's socket [default: $XDG_RUNTIME_DIR/mobile-agent, else ~/.mobile-agent]
     #[arg(
         long,
