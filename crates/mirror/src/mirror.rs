@@ -20,6 +20,7 @@ use crate::snapshot::{
     Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
     WindowSummary,
 };
+use crate::timestamps::Timestamps;
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
 use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
@@ -132,16 +133,40 @@ impl Mirror {
     /// Applies what the target reported so far and performs the reads that
     /// are due, without waiting.
     pub fn pump(&mut self) -> Result<(), MirrorError> {
-        self.drain();
+        self.take_pending();
         self.refresh()
     }
 
+    /// Applies what the target reported so far without reading the tree,
+    /// even when a read is due, and says how many items it applied.
+    pub fn drain(&mut self) -> usize {
+        todo!("task 7.10")
+    }
+
     /// Applies every item already queued.
-    fn drain(&mut self) {
+    fn take_pending(&mut self) {
         let now = self.now();
         while let Some(item) = self.backend.events.next(now) {
             self.replica.apply(item);
         }
+    }
+
+    /// Records that the window in front changed outside the mirror's input,
+    /// as launching or stopping an app does.
+    pub fn note_window_change(&mut self) {
+        todo!("task 7.10")
+    }
+
+    /// When the latest frame, frame change, tree change, read and input
+    /// happened.
+    pub fn timestamps(&self) -> Timestamps {
+        todo!("task 7.10")
+    }
+
+    /// The capture times of the frame changes at or after `since`, oldest
+    /// first.
+    pub fn frame_changes_since(&self, _since: Instant) -> Vec<Instant> {
+        todo!("task 7.10")
     }
 
     /// Performs the reads that are due. A read from another backend than
@@ -435,7 +460,7 @@ impl Mirror {
     /// for a re-read, which happens when the tree is next needed or at the
     /// next poll.
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
-        self.drain();
+        self.take_pending();
         if let Some(reason) = &self.replica.disconnected {
             return Err(MirrorError::Disconnected(reason.clone()));
         }
@@ -506,7 +531,7 @@ impl Mirror {
         let frames_before = self.replica.frame_changes;
         let blind = self.backend.frames.is_none();
         let every = self.config.min_reread_interval;
-        self.drain();
+        self.take_pending();
         loop {
             if blind {
                 self.reread_quietly(every)?;
@@ -725,7 +750,7 @@ impl Mirror {
     /// The mirror picks the size and quality; the frame source encodes. The
     /// capture's age counts from now, its skew from the last tree read.
     pub fn frame(&mut self, request: &FrameRequest) -> Result<FrameImage, MirrorError> {
-        self.drain();
+        self.take_pending();
         let frames = self.backend.frames.as_mut().ok_or(MirrorError::NoFrame)?;
         let latest = frames.latest().ok_or(MirrorError::NoFrame)?;
         let (width, height) = frame::fit(

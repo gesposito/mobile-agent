@@ -15,7 +15,7 @@ use mirror::{
     Action, DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Mirror, MirrorConfig, SettleOptions, Signal,
     Signals, SnapshotOptions, Target,
 };
-use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
+use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChange, WindowChangeKind};
 use serde_json::json;
 use support::{Screen, ms};
 
@@ -260,4 +260,69 @@ fn without_frames_an_event_less_window_is_re_read_while_waiting() {
         ms(410),
         "a quiet window after the read that found the change"
     );
+}
+
+#[test]
+fn a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn() {
+    let target = FakeTarget::new(Screen::load("login-ios").read());
+    target.at(ms(0), Step::Frame(0));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(Duration::from_secs(2));
+
+    // The app is launched outside the mirror's input; its first frames come
+    // after the wait begins.
+    mirror.note_window_change();
+    for k in 1..=10 {
+        target.after(ms(60 + 30 * k), Step::Frame(k));
+    }
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled);
+    assert_eq!(
+        settle.elapsed,
+        ms(560),
+        "the last frame 360 ms after the launch, then one quiet window"
+    );
+    assert_eq!(settle.frame_changes, 10);
+}
+
+#[test]
+fn a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event() {
+    let target = FakeTarget::new(Screen::load("login").read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(Duration::from_secs(1));
+    mirror.note_window_change();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled);
+    assert_eq!(
+        settle.elapsed,
+        ms(200),
+        "a launch that changes nothing else holds one quiet window"
+    );
+    mirror.snapshot(&SnapshotOptions::full()).unwrap();
+    let read = target.reads().last().unwrap().request.clone();
+    assert_eq!(
+        (read.windows, read.reason),
+        (None, ReadReason::Events),
+        "the next read covers every window, as after a window event"
+    );
+
+    // The Simulator driver reports a launch as a window event it queues
+    // before the wait begins.
+    let target = FakeTarget::new(Screen::load("login-ios").read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(Duration::from_secs(1));
+    target.after(
+        ms(0),
+        Step::Event(EventPayload::Window(WindowChange {
+            change: WindowChangeKind::STATE,
+            window: 1,
+        })),
+    );
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled);
+    assert_eq!(settle.elapsed, ms(200));
+    assert_eq!(settle.tree_changes, 1);
 }

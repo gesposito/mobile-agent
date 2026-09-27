@@ -27,6 +27,7 @@ mod roles;
 mod settle;
 mod snapshot;
 pub mod testing;
+mod timestamps;
 mod verdict;
 mod view;
 mod wait;
@@ -48,6 +49,7 @@ pub use snapshot::{
     Direction, Element, ElementId, HintSource, RefreshMode, Role, ScrollHint, Snapshot,
     SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
 };
+pub use timestamps::{ReadSpan, Timestamps};
 pub use verdict::{Degradation, Verdict};
 pub use wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
