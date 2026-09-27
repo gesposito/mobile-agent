@@ -107,14 +107,8 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
         "screenshot" => {
             let _ = writeln!(out, "✓ Screenshot saved to {}", str_of(data, "path"));
         }
-        "wait" if str_of(data, "waited") == "settle" => {
-            let elapsed = number(&data["elapsedMs"]);
-            if data["settled"] == Value::Bool(true) {
-                let _ = writeln!(out, "✓ Settled after {elapsed} ms");
-            } else {
-                let _ = writeln!(out, "✓ Stopped waiting after {elapsed} ms");
-            }
-        }
+        "wait" if str_of(data, "waited") == "settle" => settle(data, out),
+        "click" => click(data, out),
         "shutdown" => {
             let _ = writeln!(out, "✓ Daemon stopped");
         }
@@ -122,6 +116,62 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             let _ = writeln!(out, "✓ Done");
         }
     }
+}
+
+/// A click's spans: `✓ Done (dispatch 0.2 ms, first frame change 121.3 ms,
+/// first tree delta 121.9 ms)`, leaving out the spans that never came.
+fn click(data: &Value, out: &mut String) {
+    let span = |key: &str| data[key].as_f64().map(|ms| format!("{ms:.1} ms"));
+    let mut parts = Vec::new();
+    if let Some(dispatch) = span("dispatchMs") {
+        parts.push(format!("dispatch {dispatch}"));
+    }
+    let frame = span("frameChangeMs");
+    let tree = span("treeDeltaMs");
+    if let Some(frame) = &frame {
+        parts.push(format!("first frame change {frame}"));
+    }
+    if let Some(tree) = &tree {
+        parts.push(format!("first tree delta {tree}"));
+    }
+    if frame.is_none()
+        && tree.is_none()
+        && let Some(watched) = data["watchedMs"].as_f64()
+    {
+        parts.push(format!("no change in {watched:.0} ms"));
+    }
+    if parts.is_empty() {
+        let _ = writeln!(out, "✓ Done");
+    } else {
+        let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+    }
+}
+
+/// A settle wait and the signal it ended on.
+fn settle(data: &Value, out: &mut String) {
+    let elapsed = number(&data["elapsedMs"]);
+    if data["settled"] != Value::Bool(true) {
+        let still: Vec<&str> = data["stillChanging"]
+            .as_array()
+            .map(|s| s.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        let what = match still.as_slice() {
+            ["tree"] => "the tree kept changing",
+            ["frame"] => "frames kept changing",
+            [_, _] => "the tree and frames kept changing",
+            _ => "the screen kept changing",
+        };
+        let _ = writeln!(out, "✓ Stopped waiting after {elapsed} ms: {what}");
+        return;
+    }
+    let ended = match str_of(data, "endedBy") {
+        "tree" => ": the tree changed last",
+        "frame" => ": frames changed last",
+        "both" => ": the tree and frames changed last",
+        "none" => ": nothing changed",
+        _ => "",
+    };
+    let _ = writeln!(out, "✓ Settled after {elapsed} ms{ended}");
 }
 
 fn snapshot(data: &Value, out: &mut String) {

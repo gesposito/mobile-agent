@@ -104,6 +104,11 @@ fn a_tap_that_changes_nothing_reports_neither_span() {
 #[test]
 fn a_click_prints_its_spans() {
     let env = TestEnv::start("android");
+    // On the quiet launcher first: a tap during another tap's transition
+    // would see that transition's frames change.
+    let nothing = env.cli(&["click", EMPTY[0], EMPTY[1]]).ok();
+    assert!(nothing.stdout.contains("no change"), "{}", nothing.stdout);
+
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     let run = env
         .cli(&["click", &ref_of(&listing, "launcher-fixture")])
@@ -113,9 +118,6 @@ fn a_click_prints_its_spans() {
     assert!(line.contains(" ms, first frame change "), "{line}");
     assert!(line.contains(" ms, first tree delta "), "{line}");
     assert!(line.ends_with(" ms)"), "{line}");
-
-    let nothing = env.cli(&["click", EMPTY[0], EMPTY[1]]).ok();
-    assert!(nothing.stdout.contains("no change"), "{}", nothing.stdout);
 }
 
 /// Runs `action`, then `wait --settle` in the same batch, so the wait

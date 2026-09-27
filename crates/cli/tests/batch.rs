@@ -111,10 +111,16 @@ fn quoted_arguments_keep_their_spaces() {
 fn a_human_batch_prints_each_result_with_a_blank_line_between() {
     let env = TestEnv::start("android");
     let run = env.cli(&["batch", "snapshot -i", "click @e2"]).ok();
+    let (listing, click) = run
+        .stdout
+        .split_once("\n\n")
+        .expect("a blank line between the results");
     assert_eq!(
-        run.stdout,
-        "- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]\n\n✓ Done\n"
+        listing,
+        "- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]"
     );
+    assert!(click.starts_with("✓ Done (dispatch "), "{click}");
+    assert_eq!(click.lines().count(), 1, "{click}");
     let failed = env
         .cli(&["batch", "--bail", "click @e2", "snapshot -i"])
         .failed();
