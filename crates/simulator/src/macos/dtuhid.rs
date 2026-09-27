@@ -12,6 +12,7 @@
 //! five attempts 4 s apart. A peer that goes away closes the session, and the
 //! target opens a new one on its next request.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
@@ -165,10 +166,13 @@ impl Inner {
         let events = {
             let session = Arc::downgrade(self);
             RcBlock::new(move |event: xpc::Object| {
-                if let Some(session) = session.upgrade() {
-                    // SAFETY: XPC hands the handler a live object.
-                    session.on_event(attempt, unsafe { Value::retaining(event) });
-                }
+                // A panic must not unwind into libdispatch, which aborts.
+                let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                    if let Some(session) = session.upgrade() {
+                        // SAFETY: XPC hands the handler a live object.
+                        session.on_event(attempt, unsafe { Value::retaining(event) });
+                    }
+                }));
             })
         };
         connection.set_event_handler(&events);
@@ -183,10 +187,12 @@ impl Inner {
         }
         let session = Arc::downgrade(self);
         connection.send_with_reply(&activation_probe(), &self.queue, move |reply| {
-            if let Some(session) = session.upgrade() {
-                // SAFETY: XPC hands the handler a live object.
-                session.on_reply(attempt, unsafe { Value::retaining(reply) });
-            }
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                if let Some(session) = session.upgrade() {
+                    // SAFETY: XPC hands the handler a live object.
+                    session.on_reply(attempt, unsafe { Value::retaining(reply) });
+                }
+            }));
         });
         Ok(())
     }

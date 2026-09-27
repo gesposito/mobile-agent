@@ -2,9 +2,10 @@
 //! classes up by name, containing the exceptions that private calls raise, and
 //! turning `NSError`s into driver errors. Ported from spikes S2 to S4.
 
+use std::any::Any;
 use std::ffi::{CStr, CString, c_void};
 use std::ops::Deref;
-use std::panic::AssertUnwindSafe;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::OnceLock;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -79,15 +80,111 @@ pub fn class(name: &CStr) -> Result<&'static AnyClass> {
 }
 
 /// Runs one private call. An Objective-C exception it raises becomes an
-/// error instead of unwinding through Rust frames, which would abort, and the
-/// objects it autoreleases are released when it returns.
+/// error instead of unwinding through Rust frames, which would abort; so
+/// does a Rust panic inside it, such as objc2's debug-build signature check
+/// failing. The objects the call autoreleases are released when it returns,
+/// and the pool is drained even when it fails.
 pub fn guarded<R>(call: &str, body: impl FnOnce() -> R) -> Result<R> {
-    autoreleasepool(|_| exception::catch(AssertUnwindSafe(body))).map_err(|exception| {
-        Error::Framework {
-            call: call.to_string(),
-            failure: exception_failure(exception.as_deref()),
+    let caught = autoreleasepool(|_| {
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            exception::catch(AssertUnwindSafe(|| {
+                #[cfg(feature = "fault-injection")]
+                fault::raise_if_armed(call);
+                body()
+            }))
+        }))
+    });
+    let fail = |failure| Error::Framework {
+        call: call.to_string(),
+        failure,
+    };
+    match caught {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(exception)) => Err(fail(exception_failure(exception.as_deref()))),
+        Err(panic) => Err(fail(Failure::Panic(panic_message(panic.as_ref())))),
+    }
+}
+
+/// The text a panic was raised with.
+pub fn panic_message(panic: &(dyn Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".into())
+}
+
+/// Injected failures, for this crate's tests: while a thread serves a
+/// request for an armed target, its next private call raises an Objective-C
+/// exception inside the guard, as a failing framework call would.
+#[cfg(feature = "fault-injection")]
+pub mod fault {
+    use std::cell::RefCell;
+    use std::sync::{Mutex, MutexGuard};
+
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSString;
+
+    thread_local! {
+        static SERVING: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    static ARMED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    fn armed() -> MutexGuard<'static, Vec<String>> {
+        ARMED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Arms `udid`: the next private call made for it raises.
+    pub fn arm(udid: &str) {
+        armed().push(udid.to_string());
+    }
+
+    /// Marks the calling thread as serving `udid` until the scope ends.
+    pub struct Scope(Option<String>);
+
+    pub fn serve(udid: &str) -> Scope {
+        Scope(SERVING.with(|serving| serving.replace(Some(udid.to_string()))))
+    }
+
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            SERVING.with(|serving| *serving.borrow_mut() = self.0.take());
         }
-    })
+    }
+
+    /// Raises `MobileAgentInjectedFault` when the target the thread serves
+    /// is armed, disarming it.
+    pub fn raise_if_armed(call: &str) {
+        let Some(udid) = SERVING.with(|serving| serving.borrow().clone()) else {
+            return;
+        };
+        let mut armed = armed();
+        let Some(index) = armed.iter().position(|target| *target == udid) else {
+            return;
+        };
+        armed.remove(index);
+        drop(armed);
+        let name = NSString::from_str("MobileAgentInjectedFault");
+        let reason = NSString::from_str(&format!("injected into {call}"));
+        let class = super::class(c"NSException").expect("Foundation is loaded");
+        // SAFETY: `+exceptionWithName:reason:userInfo:` takes two strings and
+        // an optional dictionary; `-raise` throws the exception, which the
+        // enclosing guard catches.
+        unsafe {
+            let exception: Retained<AnyObject> = msg_send![
+                class,
+                exceptionWithName: &*name,
+                reason: &*reason,
+                userInfo: None::<&AnyObject>
+            ];
+            let _: () = msg_send![&*exception, raise];
+        }
+    }
 }
 
 /// A guarded call that reports failure through an `NSError`.
@@ -123,7 +220,8 @@ pub unsafe fn completion_error(call: &str, error: *mut NSError) -> Result<()> {
 }
 
 /// The name and reason of a caught exception. Objective-C can throw any
-/// object, so only an `NSException` is asked for them.
+/// object, so only an `NSException` is asked for them, and the asking runs
+/// in a catch of its own, falling back to the object's debug text.
 fn exception_failure(exception: Option<&Exception>) -> Failure {
     let Some(exception) = exception else {
         return Failure::Exception {
@@ -132,26 +230,29 @@ fn exception_failure(exception: Option<&Exception>) -> Failure {
         };
     };
     let object: &AnyObject = exception;
-    autoreleasepool(|_| {
-        let is_ns_exception = object.class().responds_to(objc2::sel!(isKindOfClass:))
-            && AnyClass::get(c"NSException").is_some_and(|class| {
-                // SAFETY: `isKindOfClass:` takes a class and returns BOOL.
-                unsafe { msg_send![object, isKindOfClass: class] }
-            });
-        if !is_ns_exception {
-            return Failure::Exception {
-                name: object.class().name().to_string_lossy().into_owned(),
-                reason: format!("{exception:?}"),
-            };
-        }
-        // SAFETY: `name` and `reason` of an NSException return NSString or nil.
-        let (name, reason): (Option<Retained<NSString>>, Option<Retained<NSString>>) =
-            unsafe { (msg_send![object, name], msg_send![object, reason]) };
-        Failure::Exception {
-            name: string(name),
-            reason: string(reason),
-        }
-    })
+    let described = autoreleasepool(|_| {
+        exception::catch(AssertUnwindSafe(|| {
+            let is_ns_exception = object.class().responds_to(objc2::sel!(isKindOfClass:))
+                && AnyClass::get(c"NSException").is_some_and(|class| {
+                    // SAFETY: `isKindOfClass:` takes a class and returns BOOL.
+                    unsafe { msg_send![object, isKindOfClass: class] }
+                });
+            is_ns_exception.then(|| {
+                // SAFETY: `name` and `reason` of an NSException return
+                // NSString or nil.
+                let (name, reason): (Option<Retained<NSString>>, Option<Retained<NSString>>) =
+                    unsafe { (msg_send![object, name], msg_send![object, reason]) };
+                (string(name), string(reason))
+            })
+        }))
+    });
+    match described {
+        Ok(Some((name, reason))) => Failure::Exception { name, reason },
+        _ => Failure::Exception {
+            name: object.class().name().to_string_lossy().into_owned(),
+            reason: format!("{exception:?}"),
+        },
+    }
 }
 
 /// A string property's value, empty for nil.

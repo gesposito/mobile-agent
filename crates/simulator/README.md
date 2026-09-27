@@ -52,6 +52,7 @@ tests/
   dtuhid.rs        task 6.4
   transport.rs     task 6.5
   text.rs          task 6.7
+  containment.rs   task 6.8
 ```
 
 ## Building
@@ -78,11 +79,25 @@ and even `cargo test` has to hold 30 fps.
 
 ## Private calls
 
-Every Objective-C call into CoreSimulator is a dynamic message send inside
-`objc::guarded`, which catches an Objective-C exception as an error naming
-the call and drains the autorelease pool the call filled. Classes are looked
-up by name (`AnyClass::get`), never linked. The exception guard needs
+Every Objective-C call into the private frameworks is a dynamic message
+send inside `objc::guarded`, which catches an Objective-C exception, and a
+Rust panic such as objc2's debug-build signature check failing, as an error
+naming the call, and drains the autorelease pool the call filled. Classes are
+looked up by name (`AnyClass::get`), never linked. The guard needs
 `panic = "unwind"`, which is the default for every profile of this workspace.
+Blocks the frameworks call back, the frame callbacks and the XPC handlers,
+catch their own panics, which would otherwise unwind into libdispatch and
+abort.
+
+Every request for one device runs through `contain`. An exception or panic
+caught during it takes that device out of service: the request fails with
+`target_unavailable` and diagnostics naming the call, the failure, the time
+and the host's CoreSimulator and Xcode, later requests for the device fail at
+once, `status` reports the diagnostics, and `reset_target` drops the device's
+sessions and brings it back. Other devices are untouched. The
+`fault-injection` feature, which only this crate's tests enable, makes a
+device's next private call raise `MobileAgentInjectedFault` inside the
+guard.
 
 Before booting a device that is shut down, the driver writes
 `AccessibilityEnabled`, `ApplicationAccessibilityEnabled` and
@@ -257,3 +272,4 @@ about a minute.
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
 | Parallel Simulators | Two sessions | `transport::two_sessions` |
+| Failure containment | Framework call throws | `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call` |

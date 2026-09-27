@@ -1,10 +1,11 @@
 //! [`SimulatorDriver`]: the driver traits over CoreSimulator.
 
 use std::collections::HashMap;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Failure, Result};
@@ -15,12 +16,13 @@ use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::dtuhid::Dtuhid;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
+use crate::macos::objc;
 use crate::macos::{frames, host, pasteboard, prefs};
 use crate::model::{
-    BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
-    FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Modifiers, Point,
-    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry,
-    TextMethod, TransportKind,
+    BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Diagnostics, Dispatch,
+    DriverOptions, FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Modifiers,
+    Point, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
+    TextEntry, TextMethod, TransportKind,
 };
 use crate::select::{self, HostVersions};
 
@@ -56,6 +58,9 @@ pub struct SimulatorDriver {
     host: HostVersions,
     /// The devices input went to, by UDID, each with its transport.
     targets: Mutex<HashMap<String, Arc<Target>>>,
+    /// Devices a failure in the private framework layer took out of
+    /// service, by UDID, with why.
+    unavailable: Mutex<HashMap<String, Diagnostics>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -81,6 +86,7 @@ impl SimulatorDriver {
             options,
             host: host::detect(),
             targets: Mutex::new(HashMap::new()),
+            unavailable: Mutex::new(HashMap::new()),
         })
     }
 
@@ -123,32 +129,92 @@ impl SimulatorDriver {
 
     /// Deletes a device, which must be shut down.
     pub fn delete_device(&self, target: &str) -> Result<()> {
-        let device = self.device(target)?;
-        needs(target, &device, DeviceState::Shutdown, "shut down")?;
-        self.set.delete(&device)
+        self.contain(target, || {
+            let device = self.device(target)?;
+            needs(target, &device, DeviceState::Shutdown, "shut down")?;
+            self.set.delete(&device)
+        })
     }
 
     /// Returns a device that a failure took out of service to use, dropping
     /// its sessions so the next request opens them anew.
     pub fn reset_target(&self, target: &str) -> Result<()> {
-        let _ = target;
-        unimplemented!("task 6.8: failure containment")
+        let udid = self.udid_of(target)?;
+        lock(&self.unavailable).remove(&udid);
+        let dropped = lock(&self.targets).remove(&udid);
+        drop(dropped);
+        Ok(())
     }
 
     /// Makes the next private framework call made for `target` raise an
     /// Objective-C exception inside the driver's guard.
     #[cfg(feature = "fault-injection")]
     pub fn inject_fault(&self, target: &str) -> Result<()> {
-        let _ = target;
-        unimplemented!("task 6.8: failure containment")
+        objc::fault::arm(&self.udid_of(target)?);
+        Ok(())
+    }
+
+    /// The UDID `target` names, from the targets already seen when it is one
+    /// of their UDIDs.
+    fn udid_of(&self, target: &str) -> Result<String> {
+        let key = target.to_ascii_uppercase();
+        if lock(&self.targets).contains_key(&key) {
+            return Ok(key);
+        }
+        self.device(target)?.udid()
+    }
+
+    /// Runs a request for one device. A device out of service fails it at
+    /// once. An Objective-C exception or a panic inside the request, caught
+    /// by the guard around each private call or here, takes the device out
+    /// of service with diagnostics and fails the request with them; other
+    /// devices are untouched.
+    fn contain<R>(&self, target: &str, request: impl FnOnce() -> Result<R>) -> Result<R> {
+        let udid = self.udid_of(target)?;
+        if let Some(diagnostics) = lock(&self.unavailable).get(&udid).cloned() {
+            return Err(Error::Unavailable {
+                target: udid,
+                diagnostics,
+            });
+        }
+        let result = {
+            #[cfg(feature = "fault-injection")]
+            let _serving = objc::fault::serve(&udid);
+            panic::catch_unwind(AssertUnwindSafe(request)).unwrap_or_else(|panic| {
+                Err(Error::Framework {
+                    call: "a request".into(),
+                    failure: Failure::Panic(objc::panic_message(panic.as_ref())),
+                })
+            })
+        };
+        match result {
+            Err(Error::Framework { call, failure })
+                if matches!(failure, Failure::Exception { .. } | Failure::Panic(_)) =>
+            {
+                let diagnostics = Diagnostics {
+                    call,
+                    failure: failure.to_string(),
+                    at: SystemTime::now(),
+                    host: self.host.to_string(),
+                };
+                lock(&self.unavailable).insert(udid.clone(), diagnostics.clone());
+                Err(Error::Unavailable {
+                    target: udid,
+                    diagnostics,
+                })
+            }
+            other => other,
+        }
     }
 
     /// Writes the accessibility preferences into a device that is shut down;
     /// `boot` does this itself.
     pub fn prepare_accessibility(&self, target: &str) -> Result<PreferencesOutcome> {
-        let device = self.device(target)?;
-        needs(target, &device, DeviceState::Shutdown, "shut down")?;
-        prefs::write(&device.data_path()?)
+        self.contain(target, || {
+            let device = self.device(target)?;
+            needs(target, &device, DeviceState::Shutdown, "shut down")?;
+            prefs::write(&device.data_path()?)
+        })
     }
 
     /// The device `target` names: a UDID, or a name exactly one device has.
@@ -311,100 +377,113 @@ impl Lifecycle for SimulatorDriver {
     }
 
     fn boot(&self, target: &str) -> Result<BootReport> {
-        let device = self.device(target)?;
-        let start = Instant::now();
-        match device.state()? {
-            // Another boot is done or under way: wait for it to be usable.
-            DeviceState::Booted | DeviceState::Booting => {
-                device.wait_until_ready(BOOT_TIMEOUT)?;
-                return Ok(BootReport {
-                    already_booted: true,
-                    elapsed: start.elapsed(),
-                    accessibility: PreferencesOutcome::Skipped,
-                });
+        self.contain(target, || {
+            let device = self.device(target)?;
+            let start = Instant::now();
+            match device.state()? {
+                // Another boot is done or under way: wait for it to be usable.
+                DeviceState::Booted | DeviceState::Booting => {
+                    device.wait_until_ready(BOOT_TIMEOUT)?;
+                    return Ok(BootReport {
+                        already_booted: true,
+                        elapsed: start.elapsed(),
+                        accessibility: PreferencesOutcome::Skipped,
+                    });
+                }
+                DeviceState::ShuttingDown | DeviceState::Creating => {
+                    device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)?;
+                }
+                DeviceState::Shutdown => {}
+                state @ DeviceState::Other(_) => {
+                    return Err(Error::InvalidState {
+                        target: target.to_string(),
+                        state,
+                        needed: "shut down or booted",
+                    });
+                }
             }
-            DeviceState::ShuttingDown | DeviceState::Creating => {
-                device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)?;
-            }
-            DeviceState::Shutdown => {}
-            state @ DeviceState::Other(_) => {
-                return Err(Error::InvalidState {
-                    target: target.to_string(),
-                    state,
-                    needed: "shut down or booted",
-                });
-            }
-        }
-        let accessibility = prefs::write(&device.data_path()?)?;
-        device.boot(true)?;
-        device.wait_until_ready(BOOT_TIMEOUT)?;
-        Ok(BootReport {
-            already_booted: false,
-            elapsed: start.elapsed(),
-            accessibility,
+            let accessibility = prefs::write(&device.data_path()?)?;
+            device.boot(true)?;
+            device.wait_until_ready(BOOT_TIMEOUT)?;
+            Ok(BootReport {
+                already_booted: false,
+                elapsed: start.elapsed(),
+                accessibility,
+            })
         })
     }
 
     fn shutdown(&self, target: &str) -> Result<()> {
-        let device = self.device(target)?;
-        match device.state()? {
-            DeviceState::Shutdown => Ok(()),
-            DeviceState::ShuttingDown => {
-                device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)
+        self.contain(target, || {
+            let device = self.device(target)?;
+            match device.state()? {
+                DeviceState::Shutdown => Ok(()),
+                DeviceState::ShuttingDown => {
+                    device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)
+                }
+                _ => {
+                    device.shutdown()?;
+                    device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)
+                }
             }
-            _ => {
-                device.shutdown()?;
-                device.wait_for_state(DeviceState::Shutdown, SHUTDOWN_TIMEOUT)
-            }
-        }
+        })
     }
 
     fn install(&self, target: &str, app: &Path) -> Result<()> {
-        let device = self.booted(target)?;
-        let app = app.canonicalize().map_err(|error| Error::Io {
-            what: format!("finding {}", app.display()),
-            reason: error.to_string(),
-        })?;
-        let mut attempt = 1;
-        loop {
-            match device.install(&app) {
-                Err(error) if transient_install_failure(&error) && attempt < INSTALL_ATTEMPTS => {
-                    attempt += 1;
-                    thread::sleep(INSTALL_RETRY);
+        self.contain(target, || {
+            let device = self.booted(target)?;
+            let app = app.canonicalize().map_err(|error| Error::Io {
+                what: format!("finding {}", app.display()),
+                reason: error.to_string(),
+            })?;
+            let mut attempt = 1;
+            loop {
+                match device.install(&app) {
+                    Err(error)
+                        if transient_install_failure(&error) && attempt < INSTALL_ATTEMPTS =>
+                    {
+                        attempt += 1;
+                        thread::sleep(INSTALL_RETRY);
+                    }
+                    result => return result,
                 }
-                result => return result,
             }
-        }
+        })
     }
 
     fn launch(&self, target: &str, bundle_id: &str, options: &LaunchOptions) -> Result<Launched> {
-        let device = self.booted(target)?;
-        if options.terminate_running {
-            match device.terminate(bundle_id) {
-                Err(error) if !not_running(&error) => return Err(error),
-                _ => {}
+        self.contain(target, || {
+            let device = self.booted(target)?;
+            if options.terminate_running {
+                match device.terminate(bundle_id) {
+                    Err(error) if !not_running(&error) => return Err(error),
+                    _ => {}
+                }
             }
-        }
-        let start = Instant::now();
-        let pid = device.launch(bundle_id, &options.arguments, &options.environment)?;
-        Ok(Launched {
-            pid,
-            elapsed: start.elapsed(),
+            let start = Instant::now();
+            let pid = device.launch(bundle_id, &options.arguments, &options.environment)?;
+            Ok(Launched {
+                pid,
+                elapsed: start.elapsed(),
+            })
         })
     }
 
     fn terminate(&self, target: &str, bundle_id: &str) -> Result<()> {
-        let device = self.booted(target)?;
-        match device.terminate(bundle_id) {
-            Err(error) if not_running(&error) => Ok(()),
-            result => result,
-        }
+        self.contain(target, || {
+            let device = self.booted(target)?;
+            match device.terminate(bundle_id) {
+                Err(error) if not_running(&error) => Ok(()),
+                result => result,
+            }
+        })
     }
 
     fn status(&self, target: &str) -> Result<TargetStatus> {
         let device = self.device(target)?;
         let info = device.info()?;
         let known = lock(&self.targets).get(&info.udid).cloned();
+        let unavailable = lock(&self.unavailable).get(&info.udid).cloned();
         let transport = known.as_ref().and_then(|target| target.current_transport());
         Ok(TargetStatus {
             device: info,
@@ -414,21 +493,25 @@ impl Lifecycle for SimulatorDriver {
                 connections: transport.connections(),
                 reason: known.as_ref().map(|t| t.reason()).unwrap_or_default(),
             }),
-            unavailable: None,
+            unavailable,
         })
     }
 }
 
 impl Frames for SimulatorDriver {
     fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
-        let device = self.booted(target)?;
-        let subscription = frames::Subscription::start(&device, options)?;
-        Ok(FrameStream::new(Box::new(subscription)))
+        self.contain(target, || {
+            let device = self.booted(target)?;
+            let subscription = frames::Subscription::start(&device, options)?;
+            Ok(FrameStream::new(Box::new(subscription)))
+        })
     }
 
     fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot> {
-        let device = self.booted(target)?;
-        frames::screenshot(&device, options)
+        self.contain(target, || {
+            let device = self.booted(target)?;
+            frames::screenshot(&device, options)
+        })
     }
 }
 
@@ -438,78 +521,90 @@ impl Input for SimulatorDriver {
     }
 
     fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch> {
-        self.with_input(target, |target, transport| {
-            target.touch(transport, &gesture::press(&target.screen, point, hold)?)
+        self.contain(target, || {
+            self.with_input(target, |target, transport| {
+                target.touch(transport, &gesture::press(&target.screen, point, hold)?)
+            })
         })
     }
 
     fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch> {
-        self.with_input(target, |target, transport| {
-            target.touch(transport, &gesture::swipe(&target.screen, swipe)?)
+        self.contain(target, || {
+            self.with_input(target, |target, transport| {
+                target.touch(transport, &gesture::swipe(&target.screen, swipe)?)
+            })
         })
     }
 
     fn gesture(&self, target: &str, gesture: &Gesture) -> Result<Dispatch> {
-        self.with_input(target, |target, transport| {
-            target.touch(transport, &gesture::gesture(&target.screen, gesture)?)
+        self.contain(target, || {
+            self.with_input(target, |target, transport| {
+                target.touch(transport, &gesture::gesture(&target.screen, gesture)?)
+            })
         })
     }
 
     fn button(&self, target: &str, button: Button) -> Result<Dispatch> {
-        self.with_input(target, |target, transport| target.button(transport, button))
+        self.contain(target, || {
+            self.with_input(target, |target, transport| target.button(transport, button))
+        })
     }
 
     fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
-        self.with_input(target, |target, transport| target.key(transport, key))
+        self.contain(target, || {
+            self.with_input(target, |target, transport| target.key(transport, key))
+        })
     }
 
     fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry> {
-        let start = Instant::now();
-        let characters = text.chars().count();
-        let keys: Option<Vec<Key>> = text.chars().map(Key::character).collect();
-        let method = match method {
-            TextMethod::Auto if keys.is_some() && characters <= KEYBOARD_LIMIT => {
-                TextMethod::Keyboard
-            }
-            TextMethod::Auto => TextMethod::Paste,
-            chosen => chosen,
-        };
-        if method == TextMethod::Keyboard {
-            let keys = keys.ok_or_else(|| {
-                let missing = text
-                    .chars()
-                    .find(|&c| Key::character(c).is_none())
-                    .unwrap_or_default();
-                Error::InvalidArgument(format!(
-                    "{missing:?} has no key on a US keyboard; paste the text instead"
-                ))
-            })?;
-            self.with_input(target, |target, transport| {
-                for (index, &key) in keys.iter().enumerate() {
-                    if index > 0 {
-                        thread::sleep(KEY_GAP);
-                    }
-                    target.key(transport, key)?;
+        self.contain(target, || {
+            let start = Instant::now();
+            let characters = text.chars().count();
+            let keys: Option<Vec<Key>> = text.chars().map(Key::character).collect();
+            let method = match method {
+                TextMethod::Auto if keys.is_some() && characters <= KEYBOARD_LIMIT => {
+                    TextMethod::Keyboard
                 }
-                Ok(())
-            })?;
-        } else {
-            let device = self.target(target)?;
-            self.allow_paste(&device)?;
-            pasteboard::copy(&device.device.udid()?, text)?;
-            let paste = Key {
-                usage: USAGE_V,
-                modifiers: Modifiers {
-                    command: true,
-                    ..Modifiers::default()
-                },
+                TextMethod::Auto => TextMethod::Paste,
+                chosen => chosen,
             };
-            self.with_input(target, |target, transport| target.key(transport, paste))?;
-        }
-        Ok(TextEntry {
-            method,
-            characters,
-            elapsed: start.elapsed(),
+            if method == TextMethod::Keyboard {
+                let keys = keys.ok_or_else(|| {
+                    let missing = text
+                        .chars()
+                        .find(|&c| Key::character(c).is_none())
+                        .unwrap_or_default();
+                    Error::InvalidArgument(format!(
+                        "{missing:?} has no key on a US keyboard; paste the text instead"
+                    ))
+                })?;
+                self.with_input(target, |target, transport| {
+                    for (index, &key) in keys.iter().enumerate() {
+                        if index > 0 {
+                            thread::sleep(KEY_GAP);
+                        }
+                        target.key(transport, key)?;
+                    }
+                    Ok(())
+                })?;
+            } else {
+                let device = self.target(target)?;
+                self.allow_paste(&device)?;
+                pasteboard::copy(&device.device.udid()?, text)?;
+                let paste = Key {
+                    usage: USAGE_V,
+                    modifiers: Modifiers {
+                        command: true,
+                        ..Modifiers::default()
+                    },
+                };
+                self.with_input(target, |target, transport| target.key(transport, paste))?;
+            }
+            Ok(TextEntry {
+                method,
+                characters,
+                elapsed: start.elapsed(),
+            })
         })
     }
 }
