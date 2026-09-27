@@ -5,12 +5,14 @@
 //! [`Deployer::attach`] lists the agent processes on the device, then:
 //!
 //! 1. reuses the agent this host recorded for the device when it still runs,
-//!    its hello carries the recorded token, and it speaks the protocol
-//!    version and is the agent build this driver deploys;
+//!    its hello carries the recorded token, it speaks the protocol version
+//!    and names the agent version this driver deploys, and the record says
+//!    it was started from the same build (a digest of the jar, since a
+//!    change to the agent's payload need not change its version);
 //! 2. replaces a recorded agent that is not: one whose protocol the host
 //!    refuses exits by itself (the host's welcome says `version_mismatch`),
-//!    another build is asked to `shutdown`, and one that does not answer as
-//!    recorded is killed by pid;
+//!    another version or another build is asked to `shutdown`, and one that
+//!    does not answer as recorded is killed by pid;
 //! 3. reports any other agent as a [`Conflict`], since it serves another
 //!    host, unless the client passes force;
 //! 4. otherwise pushes the jar read-only to a per-launch path, starts the
@@ -200,7 +202,15 @@ impl fmt::Display for Incompatibility {
             Incompatibility::Unreachable(why) => {
                 write!(f, "it does not answer as this host recorded it: {why}")
             }
-            Incompatibility::Build { .. } => todo!("build identity"),
+            Incompatibility::Build { running, deploying } if running.is_empty() => write!(
+                f,
+                "it was recorded before builds were, and this driver deploys build {deploying}"
+            ),
+            Incompatibility::Build { running, deploying } => write!(
+                f,
+                "it is build {running} of the same version, and this driver deploys build \
+                 {deploying}"
+            ),
         }
     }
 }
@@ -241,8 +251,14 @@ pub fn compatibility(
 /// empty recorded build, from a record written before builds were
 /// recorded, is another build.
 pub fn build_compatibility(recorded: &str, deploying: &str) -> Compatibility {
-    let _ = (recorded, deploying);
-    todo!("build identity")
+    if !recorded.is_empty() && recorded == deploying {
+        Compatibility::Compatible
+    } else {
+        Compatibility::Incompatible(Incompatibility::Build {
+            running: recorded.to_owned(),
+            deploying: deploying.to_owned(),
+        })
+    }
 }
 
 /// Where an attach spent its time.
@@ -281,8 +297,17 @@ pub fn agent_state(
     protocol: u16,
     build: &str,
 ) -> AgentState {
-    let _ = (agents, version, protocol, build);
-    todo!("build identity")
+    let current = agents.iter().find(|agent| {
+        agent
+            .name
+            .as_ref()
+            .is_some_and(|n| n.is(version, protocol, build))
+    });
+    match (current, agents.first()) {
+        (Some(agent), _) => AgentState::Running(agent.clone()),
+        (None, Some(agent)) => AgentState::Incompatible(agent.clone()),
+        (None, None) => AgentState::Absent,
+    }
 }
 
 /// Another process holds UI automation.
@@ -635,7 +660,12 @@ impl Deployer {
             .map_err(|e| unreachable(e.to_string()))?;
         let handshake = connection.handshake(options.handshake_timeout);
         match (compatibility(&handshake, &self.jar.agent_name()), handshake) {
-            (Compatibility::Compatible, Ok(negotiated)) => Ok((connection, negotiated)),
+            (Compatibility::Compatible, Ok(negotiated)) => {
+                match build_compatibility(&record.build, &self.jar.build()) {
+                    Compatibility::Compatible => Ok((connection, negotiated)),
+                    Compatibility::Incompatible(reason) => Err((reason, Some(connection))),
+                }
+            }
             (Compatibility::Incompatible(reason), _) => Err((reason, Some(connection))),
             (Compatibility::Compatible, Err(reason)) => Err(unreachable(reason.to_string())),
         }
@@ -668,7 +698,11 @@ impl Deployer {
         connection: Option<Connection>,
         options: &DeployOptions,
     ) -> Result<Stopped, DeployError> {
-        if let (Incompatibility::Version { .. }, Some(connection)) = (reason, &connection) {
+        let answers = matches!(
+            reason,
+            Incompatibility::Version { .. } | Incompatibility::Build { .. }
+        );
+        if let (true, Some(connection)) = (answers, &connection) {
             let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
         }
         drop(connection);

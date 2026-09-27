@@ -50,16 +50,22 @@ the agent processes with `ps -A -o PID,ARGS`, where the agent shows as
 
 1. **Reuse.** When `Records` hold an agent for the serial and it still runs
    with the recorded pid and socket, the deployer connects with the recorded
-   token and completes the handshake. If the host accepts the hello and it
-   names `mobile-agent-android <VERSION>`, the connection is returned as
+   token and completes the handshake. If the host accepts the hello, it
+   names `mobile-agent-android <VERSION>`, and the record says the agent was
+   started from the same build (`AgentJar::build`, the first 12 hex digits of
+   an xxh3 digest of the jar), the connection is returned as
    `Outcome::Reused` and no process starts. The agent's previous connection,
-   if any, is replaced by this one.
+   if any, is replaced by this one. The build matters because the agent's
+   payload can change without a version bump: the window metadata of task
+   3.6 came with `VERSION` still 0.1.0, and no capability in the hello says
+   whether an agent sends it.
 2. **Replacement.** A recorded agent that is not compatible is stopped before
    a new one starts, and the launch reports it in `Launched::replaced` with
    the reason. An agent speaking no protocol version the host speaks is
-   refused in the welcome with `version_mismatch` and exits by itself. Another
-   build is asked to `shutdown`. One that does not answer as recorded is
-   killed. Whatever is still there after `exit_timeout` (3 s) is killed by
+   refused in the welcome with `version_mismatch` and exits by itself.
+   Another version, or another build of the same version (a record written
+   before builds were recorded counts as one), is asked to `shutdown`. One
+   that does not answer as recorded is killed. Whatever is still there after `exit_timeout` (3 s) is killed by
    pid, after checking that `/proc/<pid>/cmdline` still names its socket.
 3. **Conflict.** Any other agent process serves another host, so it is a
    `Conflict` naming it (`mobile-agent`, its pid and socket), reported at once
@@ -72,8 +78,8 @@ the agent processes with `ps -A -o PID,ARGS`, where the agent shows as
      0666), so read-only for everyone is the one mode that arrives unwidened
      and never writable.
    - The socket name is per launch and says which build listens on it:
-     `mobile-agent-<version>-p<protocol>-<12 hex digits>`. The token is 16
-     random bytes as hex.
+     `mobile-agent-<version>-p<protocol>-<build>-<12 random hex digits>`.
+     The token is 16 random bytes as hex.
    - The launch runs `read -r t && (trap '' HUP PIPE; MOBILE_AGENT_TOKEN="$t"
      CLASSPATH=<jar> exec app_process / dev.mobileagent.agent.Main serve
      --socket <socket> --idle-exit-ms <ms> </dev/null &)` on a shell v2
@@ -97,15 +103,15 @@ the agent processes with `ps -A -o PID,ARGS`, where the agent shows as
    - A hello that names another build than the jar should report means a
      stale jar: that agent is stopped and the error says to rebuild.
 
-`Records` keep socket, pid, token and versions per serial, in memory, and in a
+`Records` keep socket, pid, token, versions and build per serial, in memory, and in a
 directory when the daemon names one (`Records::in_dir`, one file per serial,
 mode 0600), so a restarted daemon reuses the agent its predecessor left
 running. `Attached::stop` sends `shutdown`, waits for the exit, kills the
 agent past the timeout and forgets the record; `Deployer::stop_recorded` does
 the same without a connection. `Deployer::state` reads the agent state from
 the process list alone, `Absent`, `Running` or `Incompatible`, from the
-version and protocol in the socket name: connecting would take the agent's
-connection away from its host.
+version, protocol and build in the socket name: connecting would take the
+agent's connection away from its host.
 
 `agent::Connection` drives the protocol crate's `HostSession` over the socket
 on a reader thread. It answers pings, acts on deadlines, hands each response
@@ -337,7 +343,8 @@ What the agent deployment tests (`tests/agent_deploy.rs`) do on the device:
 - The replacement test starts the current dex with every `mobile-agent-android
   0.1.0` rewritten to `0.0.9` and the dex checksum recomputed, pushed as a bare
   dex, which `app_process` loads like a jar. The agent has no option to report
-  another version.
+  another version. The build test pushes the jar's own dex bare: the same
+  version from other bytes.
 - The conflict test runs `uiautomator events`, which holds UI automation for
   as long as it runs, and lets the forced attach stop it.
 - The detach test connects to the agent as root through `su 0`, which the
@@ -395,7 +402,7 @@ Requirement **Target discovery** (android-driver spec):
 | Unauthorized and offline targets are listed with that state | `adb::tests::devices_keep_every_state`, `adb::devices::tests::keeps_unauthorized_offline_and_authorizing_targets`, `adb::devices::tests::keeps_the_no_permissions_explanation` |
 | An actionable message for each unusable state | `adb::devices::tests::unauthorized_advice_says_to_accept_the_prompt_on_the_device`, `adb::devices::tests::every_unusable_state_has_advice_and_an_online_device_has_none` |
 | Serial, model, API level and emulator flag | `adb::devices::tests::an_online_target_takes_its_level_model_and_emulator_flag_from_getprop`, `adb::tests::a_target_whose_properties_cannot_be_read_stays_listed`, integration `targets_report_the_api_level_and_the_emulator_flag` |
-| Agent state (absent, running, incompatible) | `agent::deploy::tests::no_agent_process_is_absent`, `agent::deploy::tests::an_agent_named_for_this_build_is_running`, `agent::deploy::tests::another_version_protocol_or_an_unknown_name_is_incompatible`, `agent::deploy::tests::a_compatible_agent_wins_over_an_incompatible_one`, `agent::launch::tests::agents_are_found_in_the_process_list_by_name_or_main_class`, integration `a_first_attach_starts_the_agent_and_installs_nothing` (absent, running, absent after stop) and `an_incompatible_agent_is_replaced_by_the_current_build` (incompatible) |
+| Agent state (absent, running, incompatible) | `agent::deploy::tests::no_agent_process_is_absent`, `agent::deploy::tests::an_agent_named_for_this_build_is_running`, `agent::deploy::tests::another_version_protocol_build_or_an_unknown_name_is_incompatible`, `agent::deploy::tests::a_compatible_agent_wins_over_an_incompatible_one`, `agent::launch::tests::agents_are_found_in_the_process_list_by_name_or_main_class`, integration `a_first_attach_starts_the_agent_and_installs_nothing` (absent, running, absent after stop), `an_incompatible_agent_is_replaced_by_the_current_build` and `an_agent_of_another_build_of_the_same_version_is_replaced` (incompatible) |
 
 Requirement **Agent deployment without installation**:
 
@@ -403,7 +410,7 @@ Requirement **Agent deployment without installation**:
 |---|---|
 | Scenario "First attach" | integration `a_first_attach_starts_the_agent_and_installs_nothing` |
 | Scenario "Compatible agent reused" | integration `a_compatible_agent_is_reused_without_starting_a_process`; `agent::records::tests::records_in_a_directory_outlive_the_process_that_wrote_them` |
-| Scenario "Incompatible agent replaced" | integration `an_incompatible_agent_is_replaced_by_the_current_build` (another build); `agent::deploy::tests::an_agent_on_an_older_protocol_is_incompatible` and `agent::connection::tests::an_agent_speaking_only_an_older_protocol_is_refused_with_version_mismatch` (an older protocol, refused so that the agent exits) |
+| Scenario "Incompatible agent replaced" | integration `an_incompatible_agent_is_replaced_by_the_current_build` (another version) and `an_agent_of_another_build_of_the_same_version_is_replaced` (another build, as before and after task 3.6); `agent::deploy::tests::an_agent_on_an_older_protocol_is_incompatible` and `agent::connection::tests::an_agent_speaking_only_an_older_protocol_is_refused_with_version_mismatch` (an older protocol, refused so that the agent exits), `agent::deploy::tests::a_recorded_agent_of_another_build_is_incompatible`, `agent::jar::tests::a_jars_build_is_a_digest_of_its_bytes`, `agent::records::tests::a_record_written_before_builds_were_recorded_has_an_unknown_build` |
 | Started as the shell user, no package, no instrumentation, no prompt | integration `a_first_attach_starts_the_agent_and_installs_nothing` (uid 2000, package list unchanged, jar deleted); `agent::launch::tests::the_launch_command_keeps_the_token_off_the_command_line_and_detaches`, integration `the_jar_is_pushed_read_only` and `the_agent_outlives_its_launch_stream_and_a_closed_stdout` |
 | Reuse only of an agent proven by its token | `agent::connection::tests::a_hello_with_another_token_is_refused`, `agent::deploy::tests::an_agent_that_does_not_answer_as_recorded_is_unreachable` |
 

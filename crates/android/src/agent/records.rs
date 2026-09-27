@@ -50,8 +50,8 @@ impl Record {
     /// The record as the lines of its file: `key=value`.
     pub fn to_text(&self) -> String {
         format!(
-            "serial={}\nsocket={}\npid={}\ntoken={}\nagent={}\nprotocol={}\n",
-            self.serial, self.socket, self.pid, self.token, self.agent, self.protocol
+            "serial={}\nsocket={}\npid={}\ntoken={}\nagent={}\nprotocol={}\nbuild={}\n",
+            self.serial, self.socket, self.pid, self.token, self.agent, self.protocol, self.build
         )
     }
 
@@ -69,7 +69,7 @@ impl Record {
             token: get("token")?.to_owned(),
             agent: get("agent")?.to_owned(),
             protocol: get("protocol")?.parse().ok()?,
-            build: String::new(),
+            build: get("build").unwrap_or_default().to_owned(),
         })
     }
 }

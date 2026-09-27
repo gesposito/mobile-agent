@@ -110,22 +110,45 @@ impl SocketName {
 
     /// Parses a name this driver made; `None` for any other name.
     pub fn parse(name: &str) -> Option<SocketName> {
-        let _ = name;
-        todo!("build identity")
+        let rest = name.strip_prefix("mobile-agent-")?;
+        let mut parts = rest.rsplitn(4, '-');
+        let id = parts.next()?;
+        let build = parts.next()?;
+        let protocol = parts.next()?.strip_prefix('p')?;
+        let version = parts.next()?;
+        let word = |text: &str| !text.is_empty() && text.chars().all(|c| c.is_ascii_alphanumeric());
+        let valid = word(id)
+            && word(build)
+            && !protocol.is_empty()
+            && protocol.chars().all(|c| c.is_ascii_digit())
+            && !version.is_empty();
+        if !valid {
+            return None;
+        }
+        Some(SocketName {
+            version: version.to_owned(),
+            protocol: protocol.parse().ok()?,
+            build: build.to_owned(),
+            id: id.to_owned(),
+        })
     }
 
     /// Whether this name says the agent is `version` speaking `protocol`,
     /// started from `build`.
     pub fn is(&self, version: &str, protocol: u16, build: &str) -> bool {
-        let _ = (version, protocol, build);
-        todo!("build identity")
+        self.version == socket_safe(version)
+            && self.protocol == protocol
+            && self.build == socket_safe(build)
     }
 }
 
 impl fmt::Display for SocketName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("build identity")
+        write!(
+            f,
+            "mobile-agent-{}-p{}-{}-{}",
+            self.version, self.protocol, self.build, self.id
+        )
     }
 }
 

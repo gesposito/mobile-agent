@@ -106,7 +106,8 @@ impl AgentJar {
     /// bytes. Two jars that report the same version but differ, such as the
     /// agent before and after a change to its payload, are two builds.
     pub fn build(&self) -> String {
-        todo!("build identity")
+        let digest = xxhash_rust::xxh3::xxh3_64(&self.bytes);
+        format!("{digest:016x}")[..12].to_owned()
     }
 
     /// The agent name and version its hello carries:
