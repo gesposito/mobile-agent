@@ -16,7 +16,10 @@ use android::agent::{
     AGENT_VERSION, AgentJar, AgentState, Attached, DeployError, DeployOptions, Deployer,
     Incompatibility, JAR_MODE, Outcome, Records, Stopped, push_jar,
 };
-use common::{Leftovers, agent_alive, agent_jar, agent_reporting, device_lock, serial_or_skip};
+use common::{
+    Leftovers, agent_alive, agent_jar, agent_reporting, device_lock, serial_or_skip,
+    wait_until_quiet,
+};
 use protocol::message::{Call, Reply, SnapshotParams};
 
 fn device(serial: &str) -> Device {
@@ -76,6 +79,7 @@ fn a_first_attach_starts_the_agent_and_installs_nothing() {
     };
     let _device = device_lock();
     let device = device(&serial);
+    wait_until_quiet(&device);
     let mut leftovers = Leftovers::new(&device);
     let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
     assert_eq!(deployer.state().unwrap(), AgentState::Absent);
@@ -147,6 +151,7 @@ fn a_compatible_agent_is_reused_without_starting_a_process() {
     };
     let _device = device_lock();
     let device = device(&serial);
+    wait_until_quiet(&device);
     let mut leftovers = Leftovers::new(&device);
     let dir = records_dir("reuse");
 
@@ -191,6 +196,7 @@ fn an_incompatible_agent_is_replaced_by_the_current_build() {
     };
     let _device = device_lock();
     let device = device(&serial);
+    wait_until_quiet(&device);
     let mut leftovers = Leftovers::new(&device);
     let records = Records::in_memory();
 
@@ -279,6 +285,7 @@ fn another_tool_holding_automation_is_a_conflict_naming_it_until_forced() {
     };
     let _device = device_lock();
     let device = device(&serial);
+    wait_until_quiet(&device);
     let mut leftovers = Leftovers::new(&device);
     let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
     let (holder, holder_pid) = start_uiautomator_events(&device);
@@ -328,6 +335,7 @@ fn an_agent_another_host_started_is_a_conflict_until_forced() {
     };
     let _device = device_lock();
     let device = device(&serial);
+    wait_until_quiet(&device);
     let mut leftovers = Leftovers::new(&device);
     let theirs = Deployer::new(device.clone(), agent_jar(), Records::in_memory())
         .attach(&options())
@@ -386,4 +394,64 @@ fn the_jar_is_pushed_read_only() {
     let stat = device.shell(&format!("stat -c %a {remote}")).unwrap();
     let _ = device.shell(&format!("rm -f {remote}"));
     assert_eq!(stat.stdout_text().trim(), format!("{JAR_MODE:o}"));
+}
+
+/// The launch detaches the agent: it is reparented to init with SIGHUP and
+/// SIGPIPE ignored, so dropping the launch stream and writing to its closed
+/// stdout leave it serving. A root peer, which the agent refuses and logs on
+/// stdout, makes it write; that part needs `su` (emulator images have it).
+#[test]
+fn the_agent_outlives_its_launch_stream_and_a_closed_stdout() {
+    let Some(serial) = serial_or_skip("the_agent_outlives_its_launch_stream_and_a_closed_stdout")
+    else {
+        return;
+    };
+    let _device = device_lock();
+    let device = device(&serial);
+    wait_until_quiet(&device);
+    let mut leftovers = Leftovers::new(&device);
+    let deployer = Deployer::new(device.clone(), agent_jar(), Records::in_memory());
+    let attached = deployer
+        .attach(&options())
+        .unwrap_or_else(|e| panic!("{e}"));
+    track(&mut leftovers, &attached);
+    let (pid, socket) = (attached.agent.pid, attached.agent.socket.clone());
+
+    let status = device
+        .shell(&format!("cat /proc/{pid}/status"))
+        .unwrap()
+        .stdout_text();
+    let field = |name: &str| {
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .map(str::trim)
+            .unwrap_or_else(|| panic!("no {name} in {status}"))
+            .to_owned()
+    };
+    assert_eq!(field("PPid:"), "1", "the agent is not reparented to init");
+    let ignored = u64::from_str_radix(&field("SigIgn:"), 16).unwrap();
+    let (hup, pipe) = (1u64 << (1 - 1), 1u64 << (13 - 1));
+    assert_eq!(ignored & (hup | pipe), hup | pipe, "SigIgn {ignored:#x}");
+
+    let root = device.shell("su 0 id -u").unwrap();
+    if root.success() && root.stdout_text().trim() == "0" {
+        let jar = format!("/data/local/tmp/{}.jar", common::unique_name("peer"));
+        push_jar(&device, deployer.jar(), &jar).unwrap();
+        let out = device
+            .shell(&format!(
+                "su 0 sh -c 'CLASSPATH={jar} app_process / {} connect-check --socket {socket}'",
+                android::agent::MAIN_CLASS
+            ))
+            .unwrap();
+        let _ = device.shell(&format!("rm -f {jar}"));
+        let text = out.stdout_text();
+        assert!(text.contains("connect-check uid=0 bytes=0"), "{text}");
+        std::thread::sleep(Duration::from_millis(300));
+    } else {
+        eprintln!("no su on {serial}: the agent was not made to write to its closed stdout");
+    }
+    assert!(agent_alive(&device, pid, &socket), "the agent died");
+    assert!(snapshot_nodes(&attached) > 0);
+    attached.stop(Duration::from_secs(3)).unwrap();
 }

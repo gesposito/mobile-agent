@@ -3,11 +3,12 @@
 Host-side Android driver (design D11). So far it holds:
 
 - `adb`: the driver's own client for the adb server protocol (design D3, task 5.1).
+- `agent`: deploying the resident agent, reusing or replacing a running one,
+  and the connection to it (design D2 and D3, task 5.2).
 - `emulator`: the client for the emulator's gRPC controller, the emulator fast
   path (design D7, task 5.4).
 
-Agent deployment, the agent session and path selection (tasks 5.2, 5.3 and
-5.5) come later.
+The agent session and path selection (tasks 5.3 and 5.5) come later.
 
 ## adb client
 
@@ -36,6 +37,85 @@ The integration tests confirmed four behaviours on the API 36 emulator:
   pseudo-terminal (`Stdio::Pty`) they flush every line.
 - A reverse rule makes adbd listen on its device side. The integration tests
   use this to get a live abstract socket with no process on the device.
+
+## Agent deployment
+
+`agent::Deployer` deploys one agent build on one device. `AgentJar` is the jar
+`agent-android/build.sh` writes (`agent-android/dist/mobile-agent-android.jar`,
+or the path in `MOBILE_AGENT_JAR`), expected to report the version in
+`agent-android/VERSION`, which the crate compiles in. `Deployer::attach` lists
+the agent processes with `ps -A -o PID,ARGS`, where the agent shows as
+`mobile-agent <socket>`, then:
+
+1. **Reuse.** When `Records` hold an agent for the serial and it still runs
+   with the recorded pid and socket, the deployer connects with the recorded
+   token and completes the handshake. If the host accepts the hello and it
+   names `mobile-agent-android <VERSION>`, the connection is returned as
+   `Outcome::Reused` and no process starts. The agent's previous connection,
+   if any, is replaced by this one.
+2. **Replacement.** A recorded agent that is not compatible is stopped before
+   a new one starts, and the launch reports it in `Launched::replaced` with
+   the reason. An agent speaking no protocol version the host speaks is
+   refused in the welcome with `version_mismatch` and exits by itself. Another
+   build is asked to `shutdown`. One that does not answer as recorded is
+   killed. Whatever is still there after `exit_timeout` (3 s) is killed by
+   pid, after checking that `/proc/<pid>/cmdline` still names its socket.
+3. **Conflict.** Any other agent process serves another host, so it is a
+   `Conflict` naming it (`mobile-agent`, its pid and socket), reported at once
+   without starting anything. With `DeployOptions::force` the launch passes
+   `--force`, and the new agent stops it along with any other known
+   automation client.
+4. **Launch.** Otherwise the jar is pushed and started:
+   - The jar goes to `/data/local/tmp/<socket>.jar` with mode 0o444. adbd
+     copies the owner's permission bits to group and other (0o644 arrives as
+     0666), so read-only for everyone is the one mode that arrives unwidened
+     and never writable.
+   - The socket name is per launch and says which build listens on it:
+     `mobile-agent-<version>-p<protocol>-<12 hex digits>`. The token is 16
+     random bytes as hex.
+   - The launch runs `read -r t && (trap '' HUP PIPE; MOBILE_AGENT_TOKEN="$t"
+     CLASSPATH=<jar> exec app_process / dev.mobileagent.agent.Main serve
+     --socket <socket> --idle-exit-ms <ms> </dev/null &)` on a shell v2
+     stream and writes the token to its standard input, so the token is on
+     no command line.
+   - The agent runs in a subshell's background, so it is reparented to init.
+     Dropping the stream makes adbd send SIGHUP to the shell it started,
+     which has exited, never to the agent, and the agent's later writes to
+     the closed stdout fail with EPIPE: ART blocks SIGPIPE in every thread
+     (`SigBlk` 0x80001204 on the API 36 emulator), and the command ignores
+     SIGHUP and SIGPIPE as well, in case an adbd signals the whole process
+     group. `the_agent_outlives_its_launch_stream_and_a_closed_stdout`
+     checks the parent (pid 1), the ignored signals (`SigIgn` 0x1001) and
+     that a refused root peer, which makes the agent print, leaves it
+     serving.
+   - The stream is read until the ready line, which gives the pid and the
+     holder `--force` stopped, or the conflict line, which gives the likely
+     holder and the agent's message. The stream is then dropped, the jar is
+     deleted (the running agent keeps the dex it loaded) and the agent's
+     socket is opened as an adb service stream with the token.
+   - A hello that names another build than the jar should report means a
+     stale jar: that agent is stopped and the error says to rebuild.
+
+`Records` keep socket, pid, token and versions per serial, in memory, and in a
+directory when the daemon names one (`Records::in_dir`, one file per serial,
+mode 0600), so a restarted daemon reuses the agent its predecessor left
+running. `Attached::stop` sends `shutdown`, waits for the exit, kills the
+agent past the timeout and forgets the record; `Deployer::stop_recorded` does
+the same without a connection. `Deployer::state` reads the agent state from
+the process list alone, `Absent`, `Running` or `Incompatible`, from the
+version and protocol in the socket name: connecting would take the agent's
+connection away from its host.
+
+`agent::Connection` drives the protocol crate's `HostSession` over the socket
+on a reader thread. It answers pings, acts on deadlines, hands each response
+to the caller waiting for it, and passes every other event to an `EventSink`;
+events that arrive before the sink is set are replayed to it.
+
+Measured on the API 36 emulator through `tests/agent_deploy.rs`, shared with
+other work: a first attach took 215.8 ms (process listing 14.3 ms, push
+3.5 ms, launch stream to ready line 185.6 ms, connection and handshake
+3.0 ms), a reuse 17.0 ms (listing 13.9 ms, handshake 2.0 ms), and replacing
+an older build 265.3 ms, of which stopping it took 28.2 ms.
 
 ## Emulator controller client
 
@@ -93,6 +173,15 @@ SDK but not the emulator package, so the Linux job must install it before
 building, with `sdkmanager emulator`, or point `MOBILE_AGENT_EMULATOR_PROTO` at
 a copy of the SDK's proto.
 
+### Vendored emulator proto
+
+`proto/emulator_controller.proto` is a copy of the SDK's
+`emulator/lib/emulator_controller.proto` from emulator 37.1.11 (SHA-256
+`1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f`). The build
+prefers the installed copy and falls back to this one with a warning, so hosts
+without the emulator package build. Refresh it when the emulator updates: copy
+the SDK file over it and record the new SHA here.
+
 ## Tests
 
 Unit tests need no device:
@@ -123,6 +212,22 @@ What the adb integration tests do on the device:
 - They start `sleep 60` and `tty` in shell streams and check that `sleep` ends
   when its stream closes.
 
+What the agent deployment tests (`tests/agent_deploy.rs`) do on the device:
+
+- They start agents from the jar `agent-android/build.sh` wrote, with a 10 s
+  idle bound, and stop each one at the end; a test that fails first kills its
+  agents by pid, checking `/proc/<pid>/cmdline` against their sockets.
+- The replacement test starts the current dex with every `mobile-agent-android
+  0.1.0` rewritten to `0.0.9` and the dex checksum recomputed, pushed as a bare
+  dex, which `app_process` loads like a jar. The agent has no option to report
+  another version.
+- The conflict test runs `uiautomator events`, which holds UI automation for
+  as long as it runs, and lets the forced attach stop it.
+- The detach test connects to the agent as root through `su 0`, which the
+  agent refuses and logs on its closed stdout; without `su` it skips that
+  part.
+- The tests hold UI automation for a few seconds each and run one at a time.
+
 What the emulator integration tests do:
 
 - They subscribe to frames and take raw screenshots, and they run `screencap`
@@ -150,7 +255,32 @@ Requirement **Target discovery** (android-driver spec):
 | Unauthorized and offline targets are listed with that state | `adb::tests::devices_keep_every_state`, `adb::devices::tests::keeps_unauthorized_offline_and_authorizing_targets`, `adb::devices::tests::keeps_the_no_permissions_explanation` |
 | An actionable message for each unusable state | `adb::devices::tests::unauthorized_advice_says_to_accept_the_prompt_on_the_device`, `adb::devices::tests::every_unusable_state_has_advice_and_an_online_device_has_none` |
 | Serial, model, API level and emulator flag | `adb::devices::tests::an_online_target_takes_its_level_model_and_emulator_flag_from_getprop`, `adb::tests::a_target_whose_properties_cannot_be_read_stays_listed`, integration `targets_report_the_api_level_and_the_emulator_flag` |
-| Agent state (absent, running, incompatible) | task 5.2 |
+| Agent state (absent, running, incompatible) | `agent::deploy::tests::no_agent_process_is_absent`, `agent::deploy::tests::an_agent_named_for_this_build_is_running`, `agent::deploy::tests::another_version_protocol_or_an_unknown_name_is_incompatible`, `agent::deploy::tests::a_compatible_agent_wins_over_an_incompatible_one`, `agent::launch::tests::agents_are_found_in_the_process_list_by_name_or_main_class`, integration `a_first_attach_starts_the_agent_and_installs_nothing` (absent, running, absent after stop) and `an_incompatible_agent_is_replaced_by_the_current_build` (incompatible) |
+
+Requirement **Agent deployment without installation**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "First attach" | integration `a_first_attach_starts_the_agent_and_installs_nothing` |
+| Scenario "Compatible agent reused" | integration `a_compatible_agent_is_reused_without_starting_a_process`; `agent::records::tests::records_in_a_directory_outlive_the_process_that_wrote_them` |
+| Scenario "Incompatible agent replaced" | integration `an_incompatible_agent_is_replaced_by_the_current_build` (another build); `agent::deploy::tests::an_agent_on_an_older_protocol_is_incompatible` and `agent::connection::tests::an_agent_speaking_only_an_older_protocol_is_refused_with_version_mismatch` (an older protocol, refused so that the agent exits) |
+| Started as the shell user, no package, no instrumentation, no prompt | integration `a_first_attach_starts_the_agent_and_installs_nothing` (uid 2000, package list unchanged, jar deleted); `agent::launch::tests::the_launch_command_keeps_the_token_off_the_command_line_and_detaches`, integration `the_jar_is_pushed_read_only` and `the_agent_outlives_its_launch_stream_and_a_closed_stdout` |
+| Reuse only of an agent proven by its token | `agent::connection::tests::a_hello_with_another_token_is_refused`, `agent::deploy::tests::an_agent_that_does_not_answer_as_recorded_is_unreachable` |
+
+Requirement **Single ownership of UI automation**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Another tool holds automation" | integration `another_tool_holding_automation_is_a_conflict_naming_it_until_forced`; `agent::deploy::tests::a_conflict_names_the_holder_and_the_force_option`, `agent::launch::tests::a_conflict_line_names_the_holder_and_keeps_the_whole_message` |
+| An agent another host started is a holder too | integration `an_agent_another_host_started_is_a_conflict_until_forced`; `agent::deploy::tests::an_agent_this_host_did_not_start_is_a_conflict_naming_it` |
+| No takeover without the force option | integration `another_tool_holding_automation_is_a_conflict_naming_it_until_forced` and `an_agent_another_host_started_is_a_conflict_until_forced` (conflict first, takeover only with force, `Launched::took_over` naming the holder); `agent::launch::tests::force_and_extra_arguments_are_passed_quoted` |
+
+Requirement **Agent lifecycle**:
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "Daemon shutdown" | integration `a_first_attach_starts_the_agent_and_installs_nothing` (`Attached::stop`: no agent process, no record) |
+| Scenario "App restarted" | task 5.3 |
 
 Requirement **Emulator fast path** (android-driver spec):
 
@@ -175,6 +305,11 @@ Task 5.4's own checks:
 | The display size from `hardwareConfig` | `emulator::hardware::tests::the_display_size_comes_from_the_lcd_keys`, `emulator::hardware::tests::the_status_falls_back_to_the_deprecated_hardware_config`, integration `the_display_size_and_keyboard_match_the_avd` |
 | The frame-hash detector without the status bar | `emulator::frame::tests::a_change_in_the_status_bar_is_unchanged`, `emulator::frame::tests::one_changed_pixel_is_a_change_and_becomes_the_new_reference`, `emulator::frame::tests::a_dimension_change_is_a_change` |
 
+Task 5.2's own checks: the connection's reader thread in
+`agent::connection::tests::*` (replies, concurrent callers, events before the
+sink, pings while idle, the end of the stream), the launch parsers in
+`agent::launch::tests::*` and the records in `agent::records::tests::*`.
+
 Task 5.1's own checks against the emulator, in `tests/adb_device.rs`:
 `listing_shows_the_device`, `shell_v2_keeps_the_exit_status_and_stderr_apart`,
 `a_command_reading_stdin_sees_end_of_file`,
@@ -186,4 +321,3 @@ Task 5.1's own checks against the emulator, in `tests/adb_device.rs`:
 `a_service_stream_to_a_missing_socket_fails_with_closed`,
 `a_reverse_adbd_refuses_reports_its_error` and
 `a_missing_serial_fails_with_the_servers_message`.
-\n\n## Vendored emulator proto\n\n`proto/emulator_controller.proto` is a copy of the SDK's `emulator/lib/emulator_controller.proto` from emulator 37.1.11 (SHA-256 `1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f`). The build prefers the installed copy and falls back to this one with a warning, so hosts without the emulator package build. Refresh it when the emulator updates: copy the SDK file over it and record the new SHA here.\n

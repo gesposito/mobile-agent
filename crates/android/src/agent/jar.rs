@@ -68,20 +68,33 @@ impl AgentJar {
     /// The jar at `$MOBILE_AGENT_JAR`, else at [`default_jar_path`], expected
     /// to report [`AGENT_VERSION`].
     pub fn locate() -> Result<AgentJar, JarError> {
-        todo!("task 5.2")
+        let path = std::env::var_os(JAR_VAR)
+            .filter(|value| !value.is_empty())
+            .map_or_else(default_jar_path, PathBuf::from);
+        AgentJar::from_path(&path)
     }
 
     /// The jar at `path`, expected to report [`AGENT_VERSION`].
     pub fn from_path(path: &Path) -> Result<AgentJar, JarError> {
-        let _ = path;
-        todo!("task 5.2")
+        let bytes = std::fs::read(path).map_err(|source| JarError {
+            path: path.to_owned(),
+            source,
+        })?;
+        Ok(AgentJar {
+            bytes: bytes.into(),
+            version: AGENT_VERSION.to_owned(),
+            path: Some(path.to_owned()),
+        })
     }
 
     /// A jar (or a bare dex, which `app_process` also loads) held in memory
     /// that reports `version`.
     pub fn from_bytes(bytes: impl Into<Arc<[u8]>>, version: &str) -> AgentJar {
-        let _ = (bytes.into(), version);
-        todo!("task 5.2")
+        AgentJar {
+            bytes: bytes.into(),
+            version: version.to_owned(),
+            path: None,
+        }
     }
 
     /// The version the agent reports, such as `0.1.0`.
@@ -92,7 +105,7 @@ impl AgentJar {
     /// The agent name and version its hello carries:
     /// `mobile-agent-android <version>`.
     pub fn agent_name(&self) -> String {
-        todo!("task 5.2")
+        format!("{AGENT_NAME} {}", self.version)
     }
 
     pub fn bytes(&self) -> &[u8] {

@@ -167,3 +167,35 @@ pub fn agent_alive(device: &android::adb::Device, pid: u32, socket: &str) -> boo
         .map(|out| out.success())
         .unwrap_or(false)
 }
+
+/// Waits, up to a minute, until no agent runs and nothing holds UI
+/// automation, since the device is shared with other work whose agents or
+/// `uiautomator dump` would otherwise turn into conflicts.
+pub fn wait_until_quiet(device: &android::adb::Device) {
+    let started = std::time::Instant::now();
+    let mut reported = false;
+    loop {
+        let agents = device
+            .shell(android::agent::PS_COMMAND)
+            .map(|out| android::agent::parse_agents(&out.stdout_text()))
+            .unwrap_or_default();
+        let held = device
+            .shell("dumpsys accessibility")
+            .map(|out| out.stdout_text().contains("Ui Automation"))
+            .unwrap_or(false);
+        if agents.is_empty() && !held {
+            return;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the device stayed busy for a minute: agents {agents:?}, UI automation held: {held}"
+        );
+        if !reported {
+            eprintln!(
+                "waiting for the shared device: agents {agents:?}, UI automation held: {held}"
+            );
+            reported = true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+}

@@ -22,16 +22,26 @@
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use protocol::Capabilities;
-use protocol::session::{DisconnectReason, Negotiated};
+use protocol::message::Call;
+use protocol::session::{DisconnectReason, HandshakeError, HostConfig, Negotiated};
+use protocol::{Capabilities, PROTOCOL_VERSION};
 
 use super::connection::Connection;
 use super::jar::AgentJar;
-use super::launch::{Holder, ReadyLine, RunningAgent};
-use super::records::Records;
-use crate::adb::{self, Device};
+use super::launch::{
+    ConflictLine, Holder, JAR_MODE, PROCESS_NAME, PS_COMMAND, ReadyLine, RunningAgent, SocketName,
+    launch_command, parse_agents, parse_conflict, parse_ready, random_hex, remote_jar,
+};
+use super::records::{Record, Records};
+use crate::adb::{self, Device, ShellPacket};
+
+/// How long `shutdown` may take to be answered.
+const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(2);
+
+/// How long the stream of a refused launch is read for the agent's exit.
+const CONFLICT_EXIT_WAIT: Duration = Duration::from_secs(3);
 
 /// How to attach.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,7 +116,7 @@ impl AgentInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// A new agent was started.
-    Launched(Launched),
+    Launched(Box<Launched>),
     /// The running agent this host started was reused: no process started.
     Reused,
 }
@@ -156,8 +166,18 @@ pub enum Incompatibility {
 
 impl fmt::Display for Incompatibility {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("task 5.2")
+        match self {
+            Incompatibility::Protocol { agent, host } => write!(
+                f,
+                "it speaks protocol versions {agent:?} and this driver {host:?}"
+            ),
+            Incompatibility::Version { reported, expected } => {
+                write!(f, "it is {reported} and this driver deploys {expected}")
+            }
+            Incompatibility::Unreachable(why) => {
+                write!(f, "it does not answer as this host recorded it: {why}")
+            }
+        }
     }
 }
 
@@ -175,8 +195,22 @@ pub fn compatibility(
     handshake: &Result<Negotiated, DisconnectReason>,
     expected_agent: &str,
 ) -> Compatibility {
-    let _ = (handshake, expected_agent);
-    todo!("task 5.2")
+    match handshake {
+        Ok(negotiated) if negotiated.agent == expected_agent => Compatibility::Compatible,
+        Ok(negotiated) => Compatibility::Incompatible(Incompatibility::Version {
+            reported: negotiated.agent.clone(),
+            expected: expected_agent.to_owned(),
+        }),
+        Err(DisconnectReason::Handshake(HandshakeError::NoCommonVersion { host, agent })) => {
+            Compatibility::Incompatible(Incompatibility::Protocol {
+                agent: agent.clone(),
+                host: host.clone(),
+            })
+        }
+        Err(reason) => {
+            Compatibility::Incompatible(Incompatibility::Unreachable(reason.to_string()))
+        }
+    }
 }
 
 /// Where an attach spent its time.
@@ -210,8 +244,14 @@ pub enum AgentState {
 /// `protocol`: running when one of them is that build, else incompatible
 /// when any runs.
 pub fn agent_state(agents: &[RunningAgent], version: &str, protocol: u16) -> AgentState {
-    let _ = (agents, version, protocol);
-    todo!("task 5.2")
+    let current = agents
+        .iter()
+        .find(|agent| agent.name.as_ref().is_some_and(|n| n.is(version, protocol)));
+    match (current, agents.first()) {
+        (Some(agent), _) => AgentState::Running(agent.clone()),
+        (None, Some(agent)) => AgentState::Incompatible(agent.clone()),
+        (None, None) => AgentState::Absent,
+    }
 }
 
 /// Another process holds UI automation.
@@ -228,13 +268,42 @@ pub struct Conflict {
 impl Conflict {
     /// A conflict with an agent this host did not start.
     pub fn foreign_agent(agent: &RunningAgent) -> Conflict {
-        let _ = agent;
-        todo!("task 5.2")
+        let build = match &agent.name {
+            Some(name) => format!("version {} over protocol {}", name.version, name.protocol),
+            None => "a version its socket name does not say".to_owned(),
+        };
+        Conflict {
+            holder: Some(Holder {
+                name: PROCESS_NAME.to_owned(),
+                pid: Some(agent.pid),
+            }),
+            detail: format!(
+                "an agent this host did not start runs on the device (pid {}, socket {}, {build}); \
+                 another daemon or an earlier run of this one may be using it, and it exits \
+                 by itself once no host has been connected for its idle bound",
+                agent.pid, agent.socket
+            ),
+        }
     }
 
     /// What the user reads: the holder, the detail and how to take over.
     pub fn message(&self) -> String {
-        todo!("task 5.2")
+        let who = match &self.holder {
+            Some(holder) => format!("likely {holder}"),
+            None => "by a process the device does not name".to_owned(),
+        };
+        format!(
+            "another process holds UI automation, {who}: {}. Attach again with force to take \
+             it over, which stops that holder.",
+            self.detail
+        )
+    }
+
+    fn from_line(line: ConflictLine) -> Conflict {
+        Conflict {
+            holder: line.holder,
+            detail: line.message,
+        }
     }
 }
 
@@ -278,8 +347,41 @@ pub enum DeployError {
 
 impl fmt::Display for DeployError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("task 5.2")
+        match self {
+            DeployError::Adb(error) => write!(f, "adb: {error}"),
+            DeployError::Conflict(conflict) => f.write_str(&conflict.message()),
+            DeployError::Exited { output, exit } => {
+                let status = exit.map_or_else(|| "unknown".to_owned(), |code| code.to_string());
+                write!(
+                    f,
+                    "the agent ended before it was ready (exit status {status}); its output: {output}"
+                )
+            }
+            DeployError::NoReadyLine { waited, output } => write!(
+                f,
+                "the agent printed no ready line within {:.1} s and was stopped; its output: {output}",
+                waited.as_secs_f64()
+            ),
+            DeployError::Handshake { socket, reason } => write!(
+                f,
+                "the agent listening on {socket} did not complete its handshake: {reason}"
+            ),
+            DeployError::WrongVersion {
+                reported,
+                expected,
+                jar,
+            } => {
+                let jar = jar
+                    .as_ref()
+                    .map_or_else(|| "in memory".to_owned(), |p| p.display().to_string());
+                write!(
+                    f,
+                    "the agent jar ({jar}) reports {reported}, but this driver deploys {expected}; \
+                     rebuild it with agent-android/build.sh"
+                )
+            }
+            DeployError::Records(error) => write!(f, "cannot record the agent: {error}"),
+        }
     }
 }
 
@@ -293,8 +395,47 @@ impl From<adb::Error> for DeployError {
 
 /// Pushes `jar` to `remote` read-only ([`super::JAR_MODE`]).
 pub fn push_jar(device: &Device, jar: &AgentJar, remote: &str) -> Result<(), adb::Error> {
-    let _ = (device, jar, remote);
-    todo!("task 5.2")
+    device.push_bytes(jar.bytes(), remote, JAR_MODE)
+}
+
+/// What the launch stream showed.
+enum Spawned {
+    Ready(ReadyLine),
+    Conflict(ConflictLine),
+    Exited { output: String, exit: Option<u8> },
+    Timeout { output: String },
+}
+
+/// Stdout lines as they complete, and everything else the stream carried.
+#[derive(Default)]
+struct Transcript {
+    partial: Vec<u8>,
+    lines: Vec<String>,
+    stderr: String,
+}
+
+impl Transcript {
+    /// Adds stdout bytes; returns the lines they completed.
+    fn stdout(&mut self, data: &[u8]) -> Vec<String> {
+        self.partial.extend_from_slice(data);
+        let mut done = Vec::new();
+        while let Some(end) = self.partial.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = self.partial.drain(..=end).collect();
+            let line = String::from_utf8_lossy(&line).trim_end().to_owned();
+            self.lines.push(line.clone());
+            done.push(line);
+        }
+        done
+    }
+
+    fn text(&self) -> String {
+        let mut text: Vec<String> = self.lines.iter().map(|l| format!("out: {l}")).collect();
+        if !self.partial.is_empty() {
+            text.push(format!("out: {}", String::from_utf8_lossy(&self.partial)));
+        }
+        text.extend(self.stderr.lines().map(|l| format!("err: {l}")));
+        text.join("\n")
+    }
 }
 
 /// Deploys one agent build on one device. Clones share the records.
@@ -333,8 +474,18 @@ impl Attached {
     /// Stops the agent: `shutdown`, then a kill by pid if it has not exited
     /// within `timeout`; forgets its record.
     pub fn stop(self, timeout: Duration) -> Result<Stopped, DeployError> {
-        let _ = timeout;
-        todo!("task 5.2")
+        let Attached {
+            connection,
+            agent,
+            deployer,
+            ..
+        } = self;
+        // Answered before the agent exits; its exit is what counts.
+        let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+        drop(connection);
+        let stopped = deployer.finish(agent.pid, &agent.socket, timeout)?;
+        deployer.forget(agent.pid)?;
+        Ok(stopped)
     }
 }
 
@@ -361,28 +512,370 @@ impl Deployer {
 
     /// The agent processes on the device.
     pub fn running(&self) -> Result<Vec<RunningAgent>, adb::Error> {
-        todo!("task 5.2")
+        let listing = self.device.shell(PS_COMMAND)?;
+        Ok(parse_agents(&listing.stdout_text()))
     }
 
     /// The target's agent state, from the process list.
     pub fn state(&self) -> Result<AgentState, adb::Error> {
-        todo!("task 5.2")
+        Ok(agent_state(
+            &self.running()?,
+            self.jar.version(),
+            PROTOCOL_VERSION,
+        ))
     }
 
     /// Connects to an agent: the running one this host started when it is
     /// compatible, else a new one. Any connection the reused agent had is
     /// replaced by this one.
     pub fn attach(&self, options: &DeployOptions) -> Result<Attached, DeployError> {
-        let _ = options;
-        todo!("task 5.2")
+        let started = Instant::now();
+        let agents = self.running()?;
+        let mut timings = Timings {
+            listing: started.elapsed(),
+            ..Timings::default()
+        };
+        let serial = self.device.serial();
+        let mut replaced = None;
+        let mut recorded_pid = None;
+        if let Some(record) = self.records.get(serial) {
+            let running = agents
+                .iter()
+                .any(|a| a.pid == record.pid && a.socket == record.socket);
+            if running {
+                recorded_pid = Some(record.pid);
+                let checking = Instant::now();
+                match self.check(&record, options) {
+                    Ok((connection, negotiated)) => {
+                        timings.handshake = checking.elapsed();
+                        timings.total = started.elapsed();
+                        return Ok(Attached {
+                            agent: AgentInfo {
+                                serial: serial.to_owned(),
+                                socket: record.socket.clone(),
+                                pid: record.pid,
+                                agent: negotiated.agent,
+                                protocol: negotiated.version,
+                                capabilities: negotiated.capabilities,
+                                token: record.token.clone(),
+                            },
+                            connection,
+                            outcome: Outcome::Reused,
+                            timings,
+                            deployer: self.clone(),
+                        });
+                    }
+                    Err((reason, connection)) => {
+                        let stopped = self.replace(&record, &reason, connection, options)?;
+                        timings.replace = Some(checking.elapsed());
+                        replaced = Some(Replaced {
+                            pid: record.pid,
+                            socket: record.socket.clone(),
+                            reason,
+                            stopped,
+                        });
+                    }
+                }
+            }
+            self.records.remove(serial).map_err(DeployError::Records)?;
+        }
+        let foreign = agents.iter().find(|a| Some(a.pid) != recorded_pid);
+        if let Some(other) = foreign
+            && !options.force
+        {
+            return Err(DeployError::Conflict(Conflict::foreign_agent(other)));
+        }
+        self.launch(options, replaced, timings, started)
+    }
+
+    /// Connects to the recorded agent with its token and judges it.
+    fn check(
+        &self,
+        record: &Record,
+        options: &DeployOptions,
+    ) -> Result<(Connection, Negotiated), (Incompatibility, Option<Connection>)> {
+        let unreachable = |why: String| (Incompatibility::Unreachable(why), None);
+        let stream = self
+            .device
+            .open_abstract(&record.socket)
+            .map_err(|e| unreachable(e.to_string()))?;
+        let connection = Connection::open(stream, self.host_config(&record.token))
+            .map_err(|e| unreachable(e.to_string()))?;
+        let handshake = connection.handshake(options.handshake_timeout);
+        match (compatibility(&handshake, &self.jar.agent_name()), handshake) {
+            (Compatibility::Compatible, Ok(negotiated)) => Ok((connection, negotiated)),
+            (Compatibility::Incompatible(reason), _) => Err((reason, Some(connection))),
+            (Compatibility::Compatible, Err(reason)) => Err(unreachable(reason.to_string())),
+        }
+    }
+
+    /// Stops an agent that cannot be reused: one whose protocol was refused
+    /// exits by itself, another build is asked to `shutdown`, and anything
+    /// still there after the exit timeout is killed.
+    fn replace(
+        &self,
+        record: &Record,
+        reason: &Incompatibility,
+        connection: Option<Connection>,
+        options: &DeployOptions,
+    ) -> Result<Stopped, DeployError> {
+        if let (Incompatibility::Version { .. }, Some(connection)) = (reason, &connection) {
+            let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+        }
+        drop(connection);
+        self.finish(record.pid, &record.socket, options.exit_timeout)
+    }
+
+    /// Waits up to `timeout` for the agent `pid` on `socket` to exit, then
+    /// kills it.
+    fn finish(&self, pid: u32, socket: &str, timeout: Duration) -> Result<Stopped, DeployError> {
+        if self.wait_gone(pid, socket, timeout)? {
+            return Ok(Stopped::Exited);
+        }
+        self.kill(pid, socket)?;
+        if self.wait_gone(pid, socket, Duration::from_secs(2))? {
+            Ok(Stopped::Killed)
+        } else {
+            Err(DeployError::Exited {
+                output: format!("agent {pid} on {socket} survived SIGKILL"),
+                exit: None,
+            })
+        }
+    }
+
+    /// Whether the agent `pid` on `socket` is gone within `timeout`, polled
+    /// on the device every 20 ms.
+    fn wait_gone(&self, pid: u32, socket: &str, timeout: Duration) -> Result<bool, adb::Error> {
+        let polls = (timeout.as_millis() / 20).max(1);
+        let script = format!(
+            "i=0; while grep -qF {socket} /proc/{pid}/cmdline 2>/dev/null; do \
+             i=$((i+1)); [ $i -gt {polls} ] && exit 1; sleep 0.02; done; exit 0"
+        );
+        Ok(self.device.shell(&script)?.success())
+    }
+
+    /// Kills `pid` if its command line still names `socket`.
+    fn kill(&self, pid: u32, socket: &str) -> Result<(), adb::Error> {
+        self.device.shell(&format!(
+            "grep -qF {socket} /proc/{pid}/cmdline 2>/dev/null && kill -9 {pid}"
+        ))?;
+        Ok(())
+    }
+
+    /// Kills every agent process listening on `socket`.
+    fn kill_socket(&self, socket: &str) -> Result<(), adb::Error> {
+        for agent in self.running()? {
+            if agent.socket == socket {
+                self.kill(agent.pid, socket)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Forgets the record of the agent `pid`, and only that one.
+    fn forget(&self, pid: u32) -> Result<(), DeployError> {
+        let serial = self.device.serial();
+        if self.records.get(serial).is_some_and(|r| r.pid == pid) {
+            self.records.remove(serial).map_err(DeployError::Records)?;
+        }
+        Ok(())
+    }
+
+    fn host_config(&self, token: &str) -> HostConfig {
+        HostConfig {
+            token: Some(token.to_owned()),
+            ..HostConfig::default()
+        }
+    }
+
+    /// Pushes the jar, starts the agent detached, waits for its ready line,
+    /// deletes the jar, connects and checks the build its hello names.
+    fn launch(
+        &self,
+        options: &DeployOptions,
+        replaced: Option<Replaced>,
+        mut timings: Timings,
+        started: Instant,
+    ) -> Result<Attached, DeployError> {
+        let socket = SocketName::generate(self.jar.version(), PROTOCOL_VERSION).to_string();
+        let token = random_hex(16);
+        let remote = remote_jar(&socket);
+        let pushing = Instant::now();
+        push_jar(&self.device, &self.jar, &remote)?;
+        timings.push = Some(pushing.elapsed());
+        let command = launch_command(
+            &remote,
+            &socket,
+            options.idle_exit,
+            options.force,
+            &options.agent_args,
+        );
+        let spawning = Instant::now();
+        let spawned = self.spawn(&command, &token, options.ready_timeout);
+        timings.spawn_to_ready = Some(spawning.elapsed());
+        // The running agent keeps the dex it loaded; nothing needs the file.
+        let _ = self.device.shell(&format!("rm -f {remote}"));
+        let ready = match spawned? {
+            Spawned::Ready(ready) => ready,
+            Spawned::Conflict(line) => {
+                return Err(DeployError::Conflict(Conflict::from_line(line)));
+            }
+            Spawned::Exited { output, exit } => {
+                return Err(DeployError::Exited { output, exit });
+            }
+            Spawned::Timeout { output } => {
+                let _ = self.kill_socket(&socket);
+                return Err(DeployError::NoReadyLine {
+                    waited: options.ready_timeout,
+                    output,
+                });
+            }
+        };
+        let connecting = Instant::now();
+        let connection = self.device.open_abstract(&socket).and_then(|stream| {
+            Connection::open(stream, self.host_config(&token)).map_err(|source| adb::Error::Io {
+                request: format!("connect to the agent on {socket}"),
+                source,
+            })
+        });
+        let connection = match connection {
+            Ok(connection) => connection,
+            Err(error) => {
+                let _ = self.kill(ready.pid, &socket);
+                return Err(error.into());
+            }
+        };
+        let negotiated = match connection.handshake(options.handshake_timeout) {
+            Ok(negotiated) => negotiated,
+            Err(reason) => {
+                drop(connection);
+                let _ = self.kill(ready.pid, &socket);
+                return Err(DeployError::Handshake { socket, reason });
+            }
+        };
+        timings.handshake = connecting.elapsed();
+        let expected = self.jar.agent_name();
+        if negotiated.agent != expected {
+            let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+            drop(connection);
+            let _ = self.finish(ready.pid, &socket, options.exit_timeout);
+            return Err(DeployError::WrongVersion {
+                reported: negotiated.agent,
+                expected,
+                jar: self.jar.path().map(PathBuf::from),
+            });
+        }
+        let agent = AgentInfo {
+            serial: self.device.serial().to_owned(),
+            socket: socket.clone(),
+            pid: ready.pid,
+            agent: negotiated.agent,
+            protocol: negotiated.version,
+            capabilities: negotiated.capabilities,
+            token,
+        };
+        self.records
+            .put(Record {
+                serial: agent.serial.clone(),
+                socket,
+                pid: agent.pid,
+                token: agent.token.clone(),
+                agent: agent.agent.clone(),
+                protocol: agent.protocol,
+            })
+            .map_err(DeployError::Records)?;
+        timings.total = started.elapsed();
+        let took_over = ready.forced.clone();
+        Ok(Attached {
+            connection,
+            agent,
+            outcome: Outcome::Launched(Box::new(Launched {
+                ready,
+                replaced,
+                took_over,
+            })),
+            timings,
+            deployer: self.clone(),
+        })
+    }
+
+    /// Runs the launch command, hands it the token, and reads the stream
+    /// until the ready or conflict line. The stream is dropped on return,
+    /// which leaves a ready agent running (see [`launch_command`]).
+    fn spawn(&self, command: &str, token: &str, timeout: Duration) -> Result<Spawned, DeployError> {
+        let mut stream = self.device.shell_stream(command)?;
+        stream.write_stdin(format!("{token}\n").as_bytes())?;
+        stream.close_stdin()?;
+        let deadline = Instant::now() + timeout;
+        let mut transcript = Transcript::default();
+        let mut exit = None;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Ok(Spawned::Timeout {
+                    output: transcript.text(),
+                });
+            }
+            stream.set_read_timeout(Some(left))?;
+            let packet = match stream.read_packet() {
+                Ok(packet) => packet,
+                Err(error) if error.is_timeout() => continue,
+                Err(error) => return Err(error.into()),
+            };
+            match packet {
+                Some(ShellPacket::Stdout(data)) => {
+                    for line in transcript.stdout(&data) {
+                        if let Some(ready) = parse_ready(&line) {
+                            return Ok(Spawned::Ready(ready));
+                        }
+                        if let Some(conflict) = parse_conflict(&line) {
+                            // The agent exits after its report; its end
+                            // closes the stream.
+                            let _ = stream.set_read_timeout(Some(CONFLICT_EXIT_WAIT));
+                            while let Ok(Some(_)) = stream.read_packet() {}
+                            return Ok(Spawned::Conflict(conflict));
+                        }
+                    }
+                }
+                Some(ShellPacket::Stderr(data)) => {
+                    transcript.stderr.push_str(&String::from_utf8_lossy(&data));
+                }
+                Some(ShellPacket::Exit(code)) => exit = Some(code),
+                None => {
+                    return Ok(Spawned::Exited {
+                        output: transcript.text(),
+                        exit,
+                    });
+                }
+            }
+        }
     }
 
     /// Stops the agent this host recorded for the device, when it still
     /// runs, without a connection to it: `shutdown` over a new connection,
     /// else a kill by pid. `None` when there was nothing to stop.
     pub fn stop_recorded(&self, timeout: Duration) -> Result<Option<Stopped>, DeployError> {
-        let _ = timeout;
-        todo!("task 5.2")
+        let serial = self.device.serial();
+        let Some(record) = self.records.get(serial) else {
+            return Ok(None);
+        };
+        let running = self
+            .running()?
+            .into_iter()
+            .any(|a| a.pid == record.pid && a.socket == record.socket);
+        let stopped = if running {
+            if let Ok(stream) = self.device.open_abstract(&record.socket)
+                && let Ok(connection) = Connection::open(stream, self.host_config(&record.token))
+                && connection.handshake(timeout).is_ok()
+            {
+                let _ = connection.call(Call::Shutdown, SHUTDOWN_DEADLINE);
+            }
+            self.finish(record.pid, &record.socket, timeout)?
+        } else {
+            Stopped::Gone
+        };
+        self.records.remove(serial).map_err(DeployError::Records)?;
+        Ok(Some(stopped))
     }
 }
 
@@ -497,7 +990,7 @@ mod tests {
     fn an_agent_named_for_this_build_is_running() {
         let agent = running(812, "mobile-agent-0.1.0-p1-00ff");
         assert_eq!(
-            agent_state(&[agent.clone()], "0.1.0", 1),
+            agent_state(std::slice::from_ref(&agent), "0.1.0", 1),
             AgentState::Running(agent)
         );
     }
@@ -511,7 +1004,7 @@ mod tests {
         ] {
             let agent = running(812, socket);
             assert_eq!(
-                agent_state(&[agent.clone()], "0.1.0", 1),
+                agent_state(std::slice::from_ref(&agent), "0.1.0", 1),
                 AgentState::Incompatible(agent),
                 "{socket}"
             );

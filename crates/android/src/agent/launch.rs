@@ -4,6 +4,7 @@
 //! the process list.
 
 use std::fmt;
+use std::io::Read;
 use std::time::Duration;
 
 /// The class `app_process` starts.
@@ -28,14 +29,48 @@ pub const PS_COMMAND: &str = "ps -A -o PID,ARGS";
 
 /// Where the jar of the launch whose socket is `socket` is pushed.
 pub fn remote_jar(socket: &str) -> String {
-    let _ = socket;
-    todo!("task 5.2")
+    format!("/data/local/tmp/{socket}.jar")
 }
 
 /// `bytes` random bytes from the operating system as lowercase hex.
 pub fn random_hex(bytes: usize) -> String {
-    let _ = bytes;
-    todo!("task 5.2")
+    let mut buf = vec![0u8; bytes];
+    let from_os = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .is_ok();
+    if !from_os {
+        // Hosts without /dev/urandom: std seeds its hash keys from the
+        // operating system's random source.
+        use std::hash::{BuildHasher, Hasher};
+        for chunk in buf.chunks_mut(8) {
+            let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+            hasher.write_u128(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos()),
+            );
+            chunk.copy_from_slice(&hasher.finish().to_le_bytes()[..chunk.len()]);
+        }
+    }
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `text` with every character a socket name cannot hold replaced by `_`.
+fn socket_safe(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "._-".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// `text` as one shell word, in single quotes.
+fn quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 /// A per-launch socket name that also says which agent listens on it:
@@ -55,8 +90,11 @@ pub struct SocketName {
 impl SocketName {
     /// A name for a launch of `version` speaking `protocol`, with `id`.
     pub fn new(version: &str, protocol: u16, id: &str) -> SocketName {
-        let _ = (version, protocol, id);
-        todo!("task 5.2")
+        SocketName {
+            version: socket_safe(version),
+            protocol,
+            id: socket_safe(id),
+        }
     }
 
     /// A name for a new launch of `version` speaking `protocol`, with a
@@ -67,21 +105,39 @@ impl SocketName {
 
     /// Parses a name this driver made; `None` for any other name.
     pub fn parse(name: &str) -> Option<SocketName> {
-        let _ = name;
-        todo!("task 5.2")
+        let rest = name.strip_prefix("mobile-agent-")?;
+        let mut parts = rest.rsplitn(3, '-');
+        let id = parts.next()?;
+        let protocol = parts.next()?.strip_prefix('p')?;
+        let version = parts.next()?;
+        let valid = !id.is_empty()
+            && id.chars().all(|c| c.is_ascii_alphanumeric())
+            && !protocol.is_empty()
+            && protocol.chars().all(|c| c.is_ascii_digit())
+            && !version.is_empty();
+        if !valid {
+            return None;
+        }
+        Some(SocketName {
+            version: version.to_owned(),
+            protocol: protocol.parse().ok()?,
+            id: id.to_owned(),
+        })
     }
 
     /// Whether this name says the agent is `version` speaking `protocol`.
     pub fn is(&self, version: &str, protocol: u16) -> bool {
-        let _ = (version, protocol);
-        todo!("task 5.2")
+        self.version == socket_safe(version) && self.protocol == protocol
     }
 }
 
 impl fmt::Display for SocketName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("task 5.2")
+        write!(
+            f,
+            "mobile-agent-{}-p{}-{}",
+            self.version, self.protocol, self.id
+        )
     }
 }
 
@@ -90,10 +146,12 @@ impl fmt::Display for SocketName {
 ///
 /// - The token is read from the command's standard input, so it appears in
 ///   no command line; the caller writes it followed by a newline.
-/// - The agent ignores SIGHUP and SIGPIPE and is started in the background
-///   of a subshell, so it is reparented to init. Dropping the stream that
-///   launched it (adbd sends SIGHUP) and the end of that stream's pipes
-///   (later writes fail with EPIPE) leave it running.
+/// - The agent is started in the background of a subshell, so it is
+///   reparented to init, and dropping the stream that launched it leaves it
+///   running: adbd sends SIGHUP to the shell it started, not to the agent,
+///   and the agent's later writes to the closed stdout fail with EPIPE,
+///   since ART blocks SIGPIPE. The command ignores both signals as well, in
+///   case an adbd signals the whole process group.
 /// - Its standard input is `/dev/null`; standard output and error stay on
 ///   the stream, which carries the ready or conflict line.
 /// - `--idle-exit-ms` bounds how long it outlives a host that went away,
@@ -106,8 +164,45 @@ pub fn launch_command(
     force: bool,
     extra: &[String],
 ) -> String {
-    let _ = (jar, socket, idle_exit, force, extra);
-    todo!("task 5.2")
+    let mut command = format!(
+        "read -r t && (trap '' HUP PIPE; {TOKEN_VARIABLE}=\"$t\" CLASSPATH={} exec app_process / \
+         {MAIN_CLASS} serve --socket {} --idle-exit-ms {}",
+        quote(jar),
+        quote(socket),
+        idle_exit.as_millis()
+    );
+    if force {
+        command.push_str(" --force");
+    }
+    for arg in extra {
+        command.push(' ');
+        command.push_str(&quote(arg));
+    }
+    command.push_str(" </dev/null &)");
+    command
+}
+
+/// The `key=value` words of a line, up to `stop` if it is given, which
+/// starts a value that runs to the end of the line.
+fn fields<'a>(line: &'a str, stop: Option<&str>) -> (Vec<(&'a str, &'a str)>, Option<&'a str>) {
+    let (head, tail) = match stop.and_then(|key| line.split_once(&format!(" {key}="))) {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (line, None),
+    };
+    let words = head
+        .split(' ')
+        .filter_map(|word| word.split_once('='))
+        .collect();
+    (words, tail)
+}
+
+fn field<'a>(words: &[(&'a str, &'a str)], key: &str) -> Option<&'a str> {
+    words.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
+}
+
+/// A value the agent writes as `-` when it has none.
+fn present(value: Option<&str>) -> Option<&str> {
+    value.filter(|v| !v.is_empty() && *v != "-")
 }
 
 /// A process named in an agent's report: `uiautomator` and its pid.
@@ -151,8 +246,32 @@ pub struct ReadyLine {
 
 /// Parses a ready line; `None` for any other line.
 pub fn parse_ready(line: &str) -> Option<ReadyLine> {
-    let _ = line;
-    todo!("task 5.2")
+    let rest = line.trim_end().strip_prefix("ready ")?;
+    let (words, _) = fields(rest, None);
+    let get = |key| field(&words, key);
+    let number = |key| get(key).and_then(|v: &str| v.parse().ok());
+    Some(ReadyLine {
+        socket: get("socket")?.to_owned(),
+        pid: get("pid")?.parse().ok()?,
+        uid: number("uid"),
+        protocol: get("protocol").and_then(|v| v.parse().ok()),
+        capabilities: get("capabilities")
+            .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok()),
+        connect_ms: number("connect_ms").map(u64::from),
+        window_wait_ms: number("window_wait_ms").map(u64::from),
+        windows: number("windows"),
+        active: present(get("active")).map(str::to_owned),
+        forced: present(get("forced")).map(|holder| match holder.rsplit_once(':') {
+            Some((name, pid)) => Holder {
+                name: name.to_owned(),
+                pid: pid.parse().ok(),
+            },
+            None => Holder {
+                name: holder.to_owned(),
+                pid: None,
+            },
+        }),
+    })
 }
 
 /// The line the agent prints before exiting with status 3 when another
@@ -171,8 +290,17 @@ pub struct ConflictLine {
 
 /// Parses a conflict line; `None` for any other line.
 pub fn parse_conflict(line: &str) -> Option<ConflictLine> {
-    let _ = line;
-    todo!("task 5.2")
+    let rest = line.trim_end().strip_prefix("conflict ")?;
+    let (words, message) = fields(rest, Some("message"));
+    let holder = present(field(&words, "holder")).map(|name| Holder {
+        name: name.to_owned(),
+        pid: present(field(&words, "holder_pid")).and_then(|p| p.parse().ok()),
+    });
+    Some(ConflictLine {
+        agent_pid: field(&words, "pid").and_then(|p| p.parse().ok()),
+        holder,
+        message: message.unwrap_or_default().to_owned(),
+    })
 }
 
 /// An agent process found in the process list.
@@ -191,8 +319,33 @@ pub struct RunningAgent {
 /// process could not rename itself. Wrappers such as `timeout` and the shell
 /// that started them are left out.
 pub fn parse_agents(ps: &str) -> Vec<RunningAgent> {
-    let _ = ps;
-    todo!("task 5.2")
+    ps.lines()
+        .filter_map(|line| {
+            let (pid, args) = line.trim().split_once(char::is_whitespace)?;
+            let pid: u32 = pid.parse().ok()?;
+            let mut words = args.split_whitespace();
+            let first = words.next()?;
+            let socket = if first == PROCESS_NAME {
+                words.next()?
+            } else if first
+                .rsplit('/')
+                .next()
+                .is_some_and(|program| program.starts_with("app_process"))
+                && args.contains(MAIN_CLASS)
+            {
+                let mut rest = args.split_whitespace().skip_while(|w| *w != "--socket");
+                rest.next()?;
+                rest.next()?
+            } else {
+                return None;
+            };
+            Some(RunningAgent {
+                pid,
+                socket: socket.to_owned(),
+                name: SocketName::parse(socket),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

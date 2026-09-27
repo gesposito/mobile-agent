@@ -8,19 +8,31 @@
 //! sends right after its hello is not lost. Requests may come from any
 //! thread; each waits for its own response.
 
-use std::net::TcpStream;
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{ErrorKind, Read, Write};
+use std::net::{Shutdown, TcpStream};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use protocol::Error;
 use protocol::message::{Call, Reply};
-use protocol::session::{DisconnectReason, HostConfig, HostEvent, HostSession, Negotiated};
+use protocol::session::{
+    DEADLINE_GRACE, DisconnectReason, HostConfig, HostEvent, HostSession, Negotiated,
+};
 
 /// Receives the session's events other than responses, with the host time
 /// each arrived: protocol events, sequence gaps and resyncs, and finally
 /// `Closed`.
 pub type EventSink = Box<dyn FnMut(Instant, HostEvent) + Send>;
+
+/// The longest the reader blocks in one read, so that deadlines of requests
+/// sent meanwhile are acted on within this bound.
+const MAX_READ_WAIT: Duration = Duration::from_millis(100);
+
+/// How long a caller waits past a request's deadline and the session's
+/// grace period before giving up on its own.
+const WAIT_MARGIN: Duration = Duration::from_secs(1);
 
 /// A live connection to one agent. Dropping it closes the connection; the
 /// agent keeps running.
@@ -32,51 +44,212 @@ pub struct Connection {
 struct Shared {
     state: Mutex<State>,
     changed: Condvar,
-    stream: TcpStream,
+    /// Taken after `state` when both are held, so events reach the sink in
+    /// the order the session produced them.
+    sink: Mutex<Sink>,
+    /// The socket, for closing it from any thread.
+    socket: TcpStream,
 }
 
 struct State {
     session: HostSession,
+    writer: TcpStream,
+    responses: HashMap<u32, Result<Reply, Error>>,
+    /// Requests whose callers stopped waiting; their answers are dropped.
+    abandoned: HashSet<u32>,
+    negotiated: Option<Negotiated>,
+    closed: Option<DisconnectReason>,
+}
+
+#[derive(Default)]
+struct Sink {
+    sink: Option<EventSink>,
+    buffered: VecDeque<(Instant, HostEvent)>,
+}
+
+impl State {
+    /// Writes what the session has queued; a failed write ends the session.
+    fn flush(&mut self, now: Instant) {
+        while let Some(bytes) = self.session.poll_transmit() {
+            if self.writer.write_all(&bytes).is_err() {
+                self.session.receive_eof(now);
+            }
+        }
+    }
+
+    /// Takes the session's events: responses to their callers, the handshake
+    /// and the close into the state, and the rest for the sink. Returns
+    /// whether a waiting caller may have something new.
+    fn collect(&mut self, now: Instant, events: &mut Vec<(Instant, HostEvent)>) -> bool {
+        let mut changed = false;
+        while let Some(event) = self.session.poll_event() {
+            changed = true;
+            match event {
+                HostEvent::Ready(negotiated) => self.negotiated = Some(negotiated),
+                HostEvent::Response { id, result, .. } => {
+                    if !self.abandoned.remove(&id) {
+                        self.responses.insert(id, result);
+                    }
+                }
+                HostEvent::Closed(reason) => {
+                    self.closed = Some(reason.clone());
+                    events.push((now, HostEvent::Closed(reason)));
+                }
+                other => events.push((now, other)),
+            }
+        }
+        changed
+    }
+}
+
+impl Shared {
+    fn state(&self) -> MutexGuard<'_, State> {
+        // The session is only ever changed through complete calls, so a
+        // panic elsewhere leaves it consistent.
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn sink(&self) -> MutexGuard<'_, Sink> {
+        self.sink.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Hands what the session produced to waiting callers and the sink,
+    /// keeping the session's order: the sink is locked before `state` is
+    /// released.
+    fn settle(&self, mut state: MutexGuard<'_, State>, now: Instant) {
+        state.flush(now);
+        let mut events = Vec::new();
+        if state.collect(now, &mut events) {
+            self.changed.notify_all();
+        }
+        if events.is_empty() {
+            return;
+        }
+        let mut sink = self.sink();
+        drop(state);
+        match &mut sink.sink {
+            Some(deliver) => {
+                for (at, event) in events {
+                    deliver(at, event);
+                }
+            }
+            None => sink.buffered.extend(events),
+        }
+    }
 }
 
 impl Connection {
     /// Starts a host session over `stream`, which the agent speaks first on.
     pub fn open(stream: TcpStream, config: HostConfig) -> std::io::Result<Connection> {
-        let _ = (stream, config);
-        todo!("task 5.2")
+        let _ = stream.set_nodelay(true);
+        let writer = stream.try_clone()?;
+        let reading = stream.try_clone()?;
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State {
+                session: HostSession::new(config, Instant::now()),
+                writer,
+                responses: HashMap::new(),
+                abandoned: HashSet::new(),
+                negotiated: None,
+                closed: None,
+            }),
+            changed: Condvar::new(),
+            sink: Mutex::new(Sink::default()),
+            socket: stream,
+        });
+        let for_reader = Arc::clone(&shared);
+        let reader = thread::Builder::new()
+            .name("android-agent-connection".into())
+            .spawn(move || read_loop(&for_reader, reading))?;
+        Ok(Connection {
+            shared,
+            reader: Some(reader),
+        })
     }
 
     /// Waits until the handshake completes, or fails with the reason the
     /// session closed: a refused hello (another token, no common protocol
     /// version), silence past the peer timeout, or the end of the stream.
-    /// `timeout` caps the wait.
+    /// `timeout` caps the wait; past it the connection is closed and the
+    /// failure is silence.
     pub fn handshake(&self, timeout: Duration) -> Result<Negotiated, DisconnectReason> {
-        let _ = timeout;
-        todo!("task 5.2")
+        let limit = Instant::now() + timeout;
+        let mut state = self.shared.state();
+        loop {
+            if let Some(negotiated) = &state.negotiated {
+                return Ok(negotiated.clone());
+            }
+            if let Some(reason) = &state.closed {
+                return Err(reason.clone());
+            }
+            let now = Instant::now();
+            if now >= limit {
+                drop(state);
+                self.close();
+                return Err(DisconnectReason::Silent(timeout));
+            }
+            state = self
+                .shared
+                .changed
+                .wait_timeout(state, limit - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
     }
 
     /// What the handshake settled, once it has.
     pub fn negotiated(&self) -> Option<Negotiated> {
-        todo!("task 5.2")
+        self.shared.state().negotiated.clone()
     }
 
     /// Sends `call` with `deadline` and waits for its answer: the agent's, or
     /// the session's own `deadline_exceeded` or `disconnected` error.
     pub fn call(&self, call: Call, deadline: Duration) -> Result<Reply, Error> {
-        let _ = (call, deadline);
-        todo!("task 5.2")
+        let method = call.method();
+        let now = Instant::now();
+        let mut state = self.shared.state();
+        if let Some(reason) = &state.closed {
+            return Err(Error::disconnected(reason));
+        }
+        let id = state.session.send_request(call, Some(deadline), now)?;
+        self.shared.settle(state, now);
+        let limit = now + deadline + DEADLINE_GRACE + WAIT_MARGIN;
+        let mut state = self.shared.state();
+        loop {
+            if let Some(result) = state.responses.remove(&id) {
+                return result;
+            }
+            if let Some(reason) = &state.closed {
+                return Err(Error::disconnected(reason));
+            }
+            let now = Instant::now();
+            if now >= limit {
+                state.abandoned.insert(id);
+                let ms = u32::try_from(deadline.as_millis()).unwrap_or(u32::MAX);
+                return Err(Error::deadline_exceeded(method, id, ms));
+            }
+            state = self
+                .shared
+                .changed
+                .wait_timeout(state, limit - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
     }
 
     /// Sets where events go from now on, after replaying those that arrived
     /// while no sink was set.
-    pub fn set_sink(&self, sink: EventSink) {
-        let _ = sink;
-        todo!("task 5.2")
+    pub fn set_sink(&self, mut sink: EventSink) {
+        let mut slot = self.shared.sink();
+        for (at, event) in slot.buffered.drain(..) {
+            sink(at, event);
+        }
+        slot.sink = Some(sink);
     }
 
     /// Why the connection closed, once it has.
     pub fn close_reason(&self) -> Option<DisconnectReason> {
-        todo!("task 5.2")
+        self.shared.state().closed.clone()
     }
 
     pub fn is_closed(&self) -> bool {
@@ -85,13 +258,61 @@ impl Connection {
 
     /// Closes the connection from this side, failing pending calls.
     pub fn close(&self) {
-        todo!("task 5.2")
+        let mut state = self.shared.state();
+        if state.closed.is_none() {
+            state.session.close();
+        }
+        self.shared.settle(state, Instant::now());
+        let _ = self.shared.socket.shutdown(Shutdown::Both);
     }
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        let _ = (&self.shared, &self.reader);
+        self.close();
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+/// Feeds the session what arrives until it closes.
+fn read_loop(shared: &Shared, mut stream: TcpStream) {
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let wait = {
+            let state = shared.state();
+            if state.closed.is_some() {
+                return;
+            }
+            let now = Instant::now();
+            state
+                .session
+                .poll_timeout()
+                .map_or(MAX_READ_WAIT, |due| due.saturating_duration_since(now))
+                .clamp(Duration::from_millis(1), MAX_READ_WAIT)
+        };
+        let read = match stream.set_read_timeout(Some(wait)) {
+            Ok(()) => stream.read(&mut buf),
+            // macOS refuses socket options once the peer has reset it.
+            Err(e) => Err(e),
+        };
+        let now = Instant::now();
+        let mut state = shared.state();
+        match read {
+            Ok(0) => state.session.receive_eof(now),
+            Ok(n) => state.session.receive(&buf[..n], now),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+                ) => {}
+            Err(_) => state.session.receive_eof(now),
+        }
+        if state.session.poll_timeout().is_some_and(|due| due <= now) {
+            state.session.handle_timeout(now);
+        }
+        shared.settle(state, now);
     }
 }
 
