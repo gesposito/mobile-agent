@@ -15,13 +15,13 @@ use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::dtuhid::Dtuhid;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
-use crate::macos::{frames, prefs};
+use crate::macos::{frames, host, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
     FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Point, PreferencesOutcome,
-    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportChoice,
-    TransportKind,
+    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportKind,
 };
+use crate::select::{self, HostVersions};
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
 /// in spike S2, under load; later boots about 11 s.
@@ -38,6 +38,8 @@ pub struct SimulatorDriver {
     context: ServiceContext,
     set: DeviceSet,
     options: DriverOptions,
+    /// The host's CoreSimulator and Xcode, which choose the transport.
+    host: HostVersions,
     /// The devices input went to, by UDID, each with its transport.
     targets: Mutex<HashMap<String, Arc<Target>>>,
 }
@@ -63,6 +65,7 @@ impl SimulatorDriver {
             context,
             set,
             options,
+            host: host::detect(),
             targets: Mutex::new(HashMap::new()),
         })
     }
@@ -163,20 +166,62 @@ impl SimulatorDriver {
         Ok(entry.clone())
     }
 
-    /// The target and its input transport, opened on first use.
-    fn input(&self, target: &str) -> Result<(Arc<Target>, Arc<dyn Transport>)> {
+    /// Runs an input request on the target's transport, opened on first
+    /// use. A dtuhidd session that never activated counts as failed on the
+    /// target, and the request moves to the next transport of the plan;
+    /// when none is left, the error names the versions and what was tried.
+    fn with_input<R>(
+        &self,
+        target: &str,
+        request: impl Fn(&Target, &dyn Transport) -> Result<R>,
+    ) -> Result<R> {
         let target = self.target(target)?;
-        let transport = target.transport(|device| self.open_transport(device))?;
-        Ok((target, transport))
+        loop {
+            let transport = target.transport(|device| self.open_transport(&target, device))?;
+            match request(&target, &*transport) {
+                Err(Error::InputUnavailable {
+                    transport: kind,
+                    reason,
+                }) if transport.activation().is_none() && kind == TransportKind::Dtuhid => {
+                    target.failed(kind, reason);
+                }
+                result => return result,
+            }
+        }
     }
 
-    fn open_transport(&self, device: &Device) -> Result<Arc<dyn Transport>> {
-        match self.options.transport {
-            TransportChoice::Auto | TransportChoice::Only(TransportKind::Dtuhid) => {
-                Ok(Arc::new(Dtuhid::open(device)?))
-            }
-            TransportChoice::Only(TransportKind::Indigo) => Ok(Arc::new(Indigo::open(device)?)),
-        }
+    /// Opens the first transport of the host's plan that works on `target`.
+    fn open_transport(&self, target: &Target, device: &Device) -> Result<Arc<dyn Transport>> {
+        let plan = select::plan(&self.host, self.options.transport);
+        let failures = target.failures();
+        let runtime = device
+            .runtime()?
+            .map(|runtime| runtime.info())
+            .transpose()?
+            .map_or_else(
+                || "unknown".to_string(),
+                |r| format!("{} ({})", r.name, r.build),
+            );
+        let transport = select::open_first(&plan, &failures, &self.host, &runtime, |kind| {
+            let transport: Arc<dyn Transport> = match kind {
+                TransportKind::Dtuhid => Arc::new(Dtuhid::open(device)?),
+                TransportKind::Indigo => Arc::new(Indigo::open(device)?),
+            };
+            Ok(transport)
+        })?;
+        let chosen = transport.kind();
+        target.set_reason(match plan.transports.first() {
+            Some(&first) if first != chosen => format!(
+                "{first} could not be used ({}), so {chosen} stands in; {}",
+                failures
+                    .iter()
+                    .find(|(kind, _)| *kind == first)
+                    .map_or("it failed to open", |(_, reason)| reason.as_str()),
+                plan.reason
+            ),
+            _ => plan.reason,
+        });
+        Ok(transport)
     }
 }
 
@@ -316,16 +361,15 @@ impl Lifecycle for SimulatorDriver {
     fn status(&self, target: &str) -> Result<TargetStatus> {
         let device = self.device(target)?;
         let info = device.info()?;
-        let transport = lock(&self.targets)
-            .get(&info.udid)
-            .and_then(|target| target.current_transport());
+        let known = lock(&self.targets).get(&info.udid).cloned();
+        let transport = known.as_ref().and_then(|target| target.current_transport());
         Ok(TargetStatus {
             device: info,
             input: transport.map(|transport| InputStatus {
                 transport: transport.kind(),
                 activation: transport.activation(),
                 connections: transport.connections(),
-                reason: String::new(),
+                reason: known.as_ref().map(|t| t.reason()).unwrap_or_default(),
             }),
         })
     }
@@ -350,31 +394,29 @@ impl Input for SimulatorDriver {
     }
 
     fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch> {
-        let (target, transport) = self.input(target)?;
-        let plan = gesture::press(&target.screen, point, hold)?;
-        target.touch(&*transport, &plan)
+        self.with_input(target, |target, transport| {
+            target.touch(transport, &gesture::press(&target.screen, point, hold)?)
+        })
     }
 
     fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch> {
-        let (target, transport) = self.input(target)?;
-        let plan = gesture::swipe(&target.screen, swipe)?;
-        target.touch(&*transport, &plan)
+        self.with_input(target, |target, transport| {
+            target.touch(transport, &gesture::swipe(&target.screen, swipe)?)
+        })
     }
 
     fn gesture(&self, target: &str, gesture: &Gesture) -> Result<Dispatch> {
-        let (target, transport) = self.input(target)?;
-        let plan = gesture::gesture(&target.screen, gesture)?;
-        target.touch(&*transport, &plan)
+        self.with_input(target, |target, transport| {
+            target.touch(transport, &gesture::gesture(&target.screen, gesture)?)
+        })
     }
 
     fn button(&self, target: &str, button: Button) -> Result<Dispatch> {
-        let (target, transport) = self.input(target)?;
-        target.button(&*transport, button)
+        self.with_input(target, |target, transport| target.button(transport, button))
     }
 
     fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
-        let (target, transport) = self.input(target)?;
-        target.key(&*transport, key)
+        self.with_input(target, |target, transport| target.key(transport, key))
     }
 }
 

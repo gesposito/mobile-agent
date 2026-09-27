@@ -8,6 +8,7 @@ mod dtuhid;
 mod encode;
 mod forward;
 mod frames;
+mod host;
 mod indigo;
 mod input;
 mod objc;

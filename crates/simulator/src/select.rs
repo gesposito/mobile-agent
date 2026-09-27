@@ -47,8 +47,37 @@ pub struct Plan {
 /// behind it only for a dtuhidd that cannot be reached; Indigo alone before.
 /// An unreadable version is taken as current.
 pub fn plan(host: &HostVersions, choice: TransportChoice) -> Plan {
-    let _ = (host, choice);
-    unimplemented!("task 6.5: transport selection")
+    if let TransportChoice::Only(kind) = choice {
+        return Plan {
+            transports: vec![kind],
+            reason: format!("{kind} is forced by the driver options"),
+        };
+    }
+    let since = Version::parse(DTUHIDD_SINCE).expect("a dotted version");
+    let current = vec![TransportKind::Dtuhid, TransportKind::Indigo];
+    match host
+        .core_simulator
+        .as_deref()
+        .map(|v| (v, Version::parse(v)))
+    {
+        Some((text, Some(version))) if version >= since => Plan {
+            transports: current,
+            reason: format!(
+                "CoreSimulator {text} injects dtuhidd, as every CoreSimulator from \
+                 {DTUHIDD_SINCE} does; Indigo stands in only if dtuhidd cannot be reached"
+            ),
+        },
+        Some((text, Some(_))) => Plan {
+            transports: vec![TransportKind::Indigo],
+            reason: format!("CoreSimulator {text} predates dtuhidd ({DTUHIDD_SINCE})"),
+        },
+        _ => Plan {
+            transports: current,
+            reason: "the CoreSimulator version could not be read, so the host is taken as \
+                     current: dtuhidd, with Indigo behind it"
+                .into(),
+        },
+    }
 }
 
 /// Opens the first transport of `plan` that `open` can open, skipping the
@@ -59,12 +88,23 @@ pub fn open_first<T>(
     failed: &[(TransportKind, String)],
     host: &HostVersions,
     runtime: &str,
-    open: impl FnMut(TransportKind) -> Result<T>,
+    mut open: impl FnMut(TransportKind) -> Result<T>,
 ) -> Result<T> {
-    let _ = (plan, failed, host, runtime, open);
-    let _ = Version::parse(DTUHIDD_SINCE);
-    let _ = Error::PlatformUnsupported;
-    unimplemented!("task 6.5: transport selection")
+    let mut tried = failed.to_vec();
+    for &kind in &plan.transports {
+        if failed.iter().any(|(failed, _)| *failed == kind) {
+            continue;
+        }
+        match open(kind) {
+            Ok(transport) => return Ok(transport),
+            Err(error) => tried.push((kind, error.to_string())),
+        }
+    }
+    Err(Error::NoInputTransport {
+        host: host.to_string(),
+        runtime: runtime.to_string(),
+        tried,
+    })
 }
 
 #[cfg(test)]

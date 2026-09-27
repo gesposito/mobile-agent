@@ -61,6 +61,11 @@ pub struct Target {
     pub device: Device,
     pub screen: Screen,
     transport: Mutex<Option<Arc<dyn Transport>>>,
+    /// Why the open transport was chosen.
+    reason: Mutex<String>,
+    /// Transports that failed on this target, with why; the next session
+    /// skips them.
+    failures: Mutex<Vec<(TransportKind, String)>>,
     /// Held for the length of each input request, so that one target's
     /// gestures never interleave.
     serial: Mutex<()>,
@@ -72,7 +77,29 @@ impl Target {
             device,
             screen,
             transport: Mutex::new(None),
+            reason: Mutex::new(String::new()),
+            failures: Mutex::new(Vec::new()),
             serial: Mutex::new(()),
+        }
+    }
+
+    pub fn reason(&self) -> String {
+        lock(&self.reason).clone()
+    }
+
+    pub fn set_reason(&self, reason: String) {
+        *lock(&self.reason) = reason;
+    }
+
+    pub fn failures(&self) -> Vec<(TransportKind, String)> {
+        lock(&self.failures).clone()
+    }
+
+    /// Records that `transport` cannot serve this target.
+    pub fn failed(&self, transport: TransportKind, reason: String) {
+        let mut failures = lock(&self.failures);
+        if !failures.iter().any(|(kind, _)| *kind == transport) {
+            failures.push((transport, reason));
         }
     }
 

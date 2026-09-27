@@ -25,6 +25,7 @@ src/
   gesture.rs       gestures as timed touch steps in framebuffer ratios
   gate.rs          the activation gate that holds input until dtuhidd answers
   keymap.rs        characters and key names to USB HID usages
+  select.rs        choosing the input transport from the host's versions
   lookup.rs        finding a device, runtime or device type from user input
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
@@ -40,6 +41,7 @@ src/
     xpc.rs         libxpc and the private _4sim functions
     dtuhid.rs      the dtuhidd XPC transport
     indigo.rs      the legacy Indigo transport
+    host.rs        the host's CoreSimulator and Xcode versions
     driver.rs      SimulatorDriver
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
@@ -47,6 +49,7 @@ tests/
   frames.rs        task 6.2
   indigo.rs        task 6.3
   dtuhid.rs        task 6.4
+  transport.rs     task 6.5
 ```
 
 ## Building
@@ -137,6 +140,21 @@ through the target's transport, one request at a time per target, and
 reports a `Dispatch`: the transport, the wait for its activation, and the
 times from the request to the first event and to the last.
 
+The transport comes from the host, never from a probe (`select.rs`): the
+CoreSimulator that vends `SimDevice` injects the same input service into
+every Simulator it boots, whatever the runtime, and opening one transport to
+see whether it works can disable the other for the rest of the boot. From
+CoreSimulator 1155.4 the plan is dtuhidd, with Indigo behind it only when
+dtuhidd cannot be reached; before 1155.4, Indigo alone; an unreadable version
+counts as current. The first transport of the plan that opens is used and the
+rest are never touched. A dtuhidd session whose activation fails outright
+counts as failed on that target, and the request moves to the next transport;
+when every one has failed, input fails with `no_input_transport`, naming the
+CoreSimulator, Xcode and runtime versions and each transport tried with its
+reason. `status` names the transport and the rule that chose it.
+`DriverOptions` can force one transport, which the Indigo and dtuhidd tests
+do.
+
 The dtuhidd transport (`dtuhid.rs`, from S3) is the default from
 CoreSimulator 1155.4. It looks up `com.apple.coredevice.feature.remote.hid.digitizer`
 with `-[SimDevice lookup:error:]`, wraps the port with the private
@@ -210,6 +228,9 @@ about a minute.
 | Simulator discovery and lifecycle | Launch with environment | `lifecycle::launch_with_environment`, `lifecycle::every_simulator_is_listed_with_identifier_name_runtime_and_state`, `lifecycle::a_booted_device_is_left_alone`, `lifecycle::an_unknown_device_is_not_found` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |
+| Input transport selection | Two runtimes on one host | `transport::two_simulators_get_the_hosts_transport` (both on iOS 26.5, the host's only runtime), `select::tests::the_host_core_simulator_selects_dtuhidd_from_1155_4`, `select::tests::an_unreadable_version_is_taken_as_current`, `select::tests::a_forced_transport_is_the_only_one_tried`, `select::tests::the_fallback_is_opened_only_when_the_first_fails`, `select::tests::a_transport_that_failed_on_the_target_is_skipped` |
+| Input transport selection | Unsupported combination | `select::tests::the_unsupported_combination_names_every_version_and_transport_tried` |
 | Input actions | Warm tap latency | `dtuhid::warm_tap_latency` |
 | Input actions | Taps, keys and buttons over one dtuhidd connection (task 6.4) | `dtuhid::a_tap_lands_on_the_fixture_button`, `dtuhid::one_connection_carries_touch_keys_and_buttons` |
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
+| Parallel Simulators | Two sessions | `transport::two_sessions` |
