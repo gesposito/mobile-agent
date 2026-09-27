@@ -1,12 +1,19 @@
 //! Helpers shared by the integration tests: a scripted host, scratch
-//! directories and a reader for the markdown summary's tables.
+//! directories, a reader for the markdown summary's tables, and `mobile-agent`
+//! with a daemon serving fake targets.
 
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
+use bench::cli::CliConfig;
 use bench::provenance::ScriptedProbe;
 use serde_json::Value;
 
@@ -193,4 +200,156 @@ pub fn subject_cell(measurement: &Value) -> String {
 /// `—` for a JSON null, else the string.
 pub fn or_dash(value: &Value) -> String {
     value.as_str().unwrap_or("—").to_owned()
+}
+
+/// The `mobile-agent` CLI, built with its daemon beside this crate's binary on
+/// first use: `cargo test --workspace` has built both already.
+pub fn mobile_agent() -> PathBuf {
+    static BIN: OnceLock<PathBuf> = OnceLock::new();
+    BIN.get_or_init(|| {
+        let dir = Path::new(env!("CARGO_BIN_EXE_mobile-agent-bench"))
+            .parent()
+            .expect("the harness binary lives in a directory");
+        let mut cargo = Command::new(env!("CARGO"));
+        cargo
+            .args(["build", "--quiet", "-p", "cli", "-p", "daemon", "--bins"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"));
+        if dir.file_name().is_some_and(|name| name == "release") {
+            cargo.arg("--release");
+        }
+        let status = cargo.status().expect("cargo runs");
+        assert!(status.success(), "cargo build -p cli -p daemon failed");
+        dir.join("mobile-agent")
+    })
+    .clone()
+}
+
+/// The daemon beside [`mobile_agent`].
+pub fn mobile_agent_daemon() -> PathBuf {
+    mobile_agent().with_file_name("mobile-agent-daemon")
+}
+
+static NEXT: AtomicU32 = AtomicU32::new(0);
+
+/// A private socket directory whose daemon serves the fake targets `fake`
+/// (`MOBILE_AGENT_FAKE_TARGETS`), with a home and working directory inside it
+/// so no user or project settings apply. Dropping it stops the daemon and
+/// removes the directory.
+pub struct FakeDevices {
+    pub dir: PathBuf,
+    pub fake: String,
+    /// How long the fake targets take to show a change
+    /// (`MOBILE_AGENT_FAKE_LATENCY_MS`), so tap spans are not near zero.
+    pub latency_ms: u32,
+}
+
+impl FakeDevices {
+    /// Fake targets that show a change at once.
+    pub fn new(fake: &str) -> Self {
+        FakeDevices::slow(fake, 0)
+    }
+
+    /// Fake targets that show every change `latency_ms` late.
+    pub fn slow(fake: &str, latency_ms: u32) -> Self {
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        // The socket path must fit in 103 bytes.
+        let base = std::env::temp_dir();
+        let base = if base.as_os_str().len() > 60 {
+            PathBuf::from("/tmp")
+        } else {
+            base
+        };
+        let dir = base.join(format!("mab-{}-{n}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("home")).unwrap();
+        FakeDevices {
+            dir,
+            fake: fake.to_owned(),
+            latency_ms,
+        }
+    }
+
+    /// The environment every command gets: the developer's `MOBILE_AGENT_*`
+    /// variables and runtime directory removed, then this directory's own.
+    pub fn env(&self) -> Vec<(OsString, Option<OsString>)> {
+        let mut env: Vec<(OsString, Option<OsString>)> = std::env::vars_os()
+            .map(|(key, _)| key)
+            .filter(|key| {
+                let key = key.to_string_lossy();
+                key.starts_with("MOBILE_AGENT_") || key == "XDG_RUNTIME_DIR"
+            })
+            .map(|key| (key, None))
+            .collect();
+        let mut set = |key: &str, value: OsString| env.push((key.into(), Some(value)));
+        set("HOME", self.dir.join("home").into());
+        set("MOBILE_AGENT_SOCKET_DIR", self.dir.clone().into());
+        set("MOBILE_AGENT_DAEMON_BIN", mobile_agent_daemon().into());
+        set("MOBILE_AGENT_FAKE_TARGETS", self.fake.clone().into());
+        set("MOBILE_AGENT_IDLE_TIMEOUT_MS", "60000".into());
+        set(
+            "MOBILE_AGENT_FAKE_LATENCY_MS",
+            self.latency_ms.to_string().into(),
+        );
+        env
+    }
+
+    /// The CLI adapter's configuration for this directory, writing its files
+    /// under `work_dir`.
+    pub fn config(&self, work_dir: &Path) -> CliConfig {
+        let mut config = CliConfig::new(work_dir);
+        config.program = mobile_agent();
+        config.env = self.env();
+        config.cwd = Some(self.dir.clone());
+        config.command_timeout = Duration::from_secs(60);
+        config
+    }
+
+    /// `mobile-agent --json <args>` in this directory's environment: its
+    /// reply's `data`, asserting the command succeeded.
+    pub fn cli(&self, args: &[&str]) -> Value {
+        let mut command = Command::new(mobile_agent());
+        for (key, value) in self.env() {
+            match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
+        }
+        let output = command
+            .arg("--json")
+            .args(args)
+            .current_dir(&self.dir)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let reply: Value = serde_json::from_str(stdout.trim())
+            .unwrap_or_else(|e| panic!("mobile-agent {args:?} printed no JSON ({e}): {stdout}"));
+        assert_eq!(reply["success"], true, "mobile-agent {args:?}: {reply}");
+        reply["data"].clone()
+    }
+
+    /// The pid of the daemon serving the directory, starting one if needed.
+    pub fn daemon_pid(&self) -> u64 {
+        self.cli(&["status"])["daemon"]["pid"].as_u64().unwrap()
+    }
+}
+
+impl Drop for FakeDevices {
+    fn drop(&mut self) {
+        let mut command = Command::new(mobile_agent());
+        for (key, value) in self.env() {
+            match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
+        }
+        let _ = command
+            .arg("shutdown")
+            .current_dir(&self.dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }

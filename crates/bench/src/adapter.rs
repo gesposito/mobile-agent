@@ -58,16 +58,29 @@ pub struct Sample {
 }
 
 /// A failed attempt: the tool ran and did not do what the primitive or flow
-/// asked, or could not be run.
+/// asked, or could not be run. Or, when `not_measured` is set, no failure:
+/// the tool cannot measure the span at all, and `message` says why.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdapterError {
     pub message: String,
+    pub not_measured: bool,
 }
 
 impl AdapterError {
     pub fn new(message: impl Into<String>) -> Self {
         AdapterError {
             message: message.into(),
+            not_measured: false,
+        }
+    }
+
+    /// The tool cannot measure the span, such as one its replies do not carry
+    /// yet: the harness reports the series as not measured, with `reason`,
+    /// instead of failing it.
+    pub fn not_measured(reason: impl Into<String>) -> Self {
+        AdapterError {
+            message: reason.into(),
+            not_measured: true,
         }
     }
 }

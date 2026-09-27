@@ -54,6 +54,10 @@ pub struct Measurement {
     pub nodes: Option<NodeRange>,
     /// Why the series could not run at all, such as a failed preparation.
     pub error: Option<String>,
+    /// Why the tool cannot measure the subject, when it cannot: the series
+    /// then has no samples and is neither failed nor gated.
+    #[serde(default)]
+    pub not_measured: Option<String>,
     /// Every iteration in order, warm-up included and flagged.
     pub samples: Vec<SampleRecord>,
 }

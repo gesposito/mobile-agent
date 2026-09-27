@@ -1,0 +1,577 @@
+//! Task 9.4: the adapter for `mobile-agent`, the tool under test. It drives the
+//! daemon in `--json` mode through the documented commands and maps each spec
+//! primitive onto the CLI's timings, the tap spans onto the fields a click's
+//! reply carries; a span the target cannot produce is not measured, with the
+//! reason. The tests run it against the daemon's fake targets, and against a
+//! scripted stand-in for replies the fakes do not give.
+
+mod common;
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+
+use bench::adapter::{Adapter, Clock, Detection, Role, Scenario};
+use bench::cli::{CliAdapter, CliConfig, SESSION};
+use bench::fixture::{Fixture, Screen};
+use bench::flow;
+use bench::gates::{Gate, GateSet, GateStatus};
+use bench::harness::{Harness, RunConfig, Series, Subject};
+use bench::plan;
+use bench::primitive::{Primitive, TEXT_ENTRY};
+use bench::report::{Measurement, Report};
+use bench::target::{Platform, Target, TargetClass};
+use common::FakeDevices;
+
+const ITERATIONS: u32 = 3;
+const WARMUP: u32 = 1;
+
+fn emulator() -> Target {
+    Target::new("emulator-5554", TargetClass::AndroidEmulator)
+}
+
+fn simulator() -> Target {
+    Target::new("FAKE-IOS-1", TargetClass::Simulator)
+}
+
+/// The plan's series of `primitives` for Expo on `target`.
+fn planned(target: &Target, primitives: &[Primitive]) -> Vec<Series> {
+    plan::series(target, &[Fixture::Expo])
+        .into_iter()
+        .filter(|s| matches!(s.subject, Subject::Primitive(p) if primitives.contains(&p)))
+        .collect()
+}
+
+fn run(adapter: CliAdapter, target: Target, series: Vec<Series>, config: RunConfig) -> Report {
+    Harness::new(config, vec![target], series)
+        .flows(plan::flows(&[Fixture::Expo]))
+        .tool(Box::new(adapter))
+        .probe(Box::new(common::probe()), "macos")
+        .run()
+        .unwrap()
+}
+
+fn config() -> RunConfig {
+    RunConfig {
+        iterations: ITERATIONS,
+        warmup: WARMUP,
+        retries: 0,
+    }
+}
+
+fn find(report: &Report, primitive: Primitive) -> &Measurement {
+    report
+        .measurements
+        .iter()
+        .find(|m| m.subject == Subject::Primitive(primitive))
+        .unwrap_or_else(|| panic!("no {primitive} measurement in {:?}", report.measurements))
+}
+
+/// `args` for the adapter's session on `target`.
+fn in_session<'a>(target: &'a Target, args: &[&'a str]) -> Vec<&'a str> {
+    let mut all = vec!["--session", SESSION, "--device", target.id.as_str()];
+    all.extend_from_slice(args);
+    all
+}
+
+/// How late the fake targets show a change in the tests that time tap spans.
+const LATENCY_US: u64 = 20_000;
+
+#[test]
+fn every_listed_primitive_appears_through_the_cli_adapter_on_a_fake_emulator() {
+    let devices = FakeDevices::slow("android", (LATENCY_US / 1000) as u32);
+    let work = common::scratch("cli-every-primitive");
+    let adapter = CliAdapter::new(devices.config(&work));
+    let report = run(
+        adapter,
+        emulator(),
+        planned(&emulator(), &Primitive::ALL),
+        config(),
+    );
+    let tool = &report.provenance.tools[0];
+    assert_eq!(
+        (tool.name.as_str(), tool.role, tool.version.as_deref()),
+        (
+            "mobile-agent",
+            Role::UnderTest,
+            Some(env!("CARGO_PKG_VERSION"))
+        )
+    );
+    let measured = [
+        (Primitive::CliStart, Clock::Wall, None),
+        (Primitive::ColdAttach, Clock::Wall, None),
+        (Primitive::FirstSnapshot, Clock::Wall, Some(505)),
+        (Primitive::WarmSnapshot, Clock::Wall, Some(505)),
+        (Primitive::TapDispatch, Clock::Tool, None),
+        (Primitive::TapToFrameChange, Clock::Tool, None),
+        (Primitive::TapToTreeDelta, Clock::Tool, None),
+        (Primitive::TextEntry, Clock::Wall, None),
+        (Primitive::Screenshot, Clock::Wall, None),
+        (Primitive::Settle, Clock::Tool, None),
+    ];
+    for primitive in Primitive::LISTED {
+        assert!(measured.iter().any(|(p, _, _)| *p == primitive));
+    }
+    for (primitive, clock, nodes) in measured {
+        let m = find(&report, primitive);
+        assert_eq!(m.error, None, "{primitive}");
+        assert_eq!(m.not_measured, None, "{primitive}");
+        assert_eq!(
+            m.stats.map(|s| s.n),
+            Some(ITERATIONS),
+            "{primitive}: {:?}",
+            m.samples
+        );
+        assert_eq!(m.reliability.failures, 0, "{primitive}: {:?}", m.samples);
+        assert_eq!(m.clock, Some(clock), "{primitive}");
+        assert_eq!(
+            m.nodes.map(|n| (n.min, n.max)),
+            nodes.map(|n| (n, n)),
+            "{primitive}"
+        );
+        let scenario = plan::scenario(primitive, Fixture::Expo);
+        assert_eq!((m.fixture, m.screen), (scenario.fixture, scenario.screen));
+    }
+    // The fake shows the detail a tap opens 20 ms late: the first changed
+    // frame and the first tree delta come after that, the dispatch before.
+    let p50 = |primitive| find(&report, primitive).stats.unwrap().p50_us;
+    assert!(p50(Primitive::TapDispatch) < LATENCY_US);
+    assert!(p50(Primitive::TapToFrameChange) >= LATENCY_US);
+    assert!(p50(Primitive::TapToTreeDelta) >= LATENCY_US);
+    let details = |primitive| -> Vec<Option<String>> {
+        find(&report, primitive)
+            .samples
+            .iter()
+            .map(|s| s.detail.clone())
+            .collect()
+    };
+    for detail in details(Primitive::Settle) {
+        assert!(
+            detail
+                .as_deref()
+                .is_some_and(|d| d.starts_with("ended by ")),
+            "{detail:?}"
+        );
+    }
+    for detail in details(Primitive::TextEntry) {
+        assert_eq!(detail.as_deref(), Some("method direct"));
+    }
+}
+
+#[test]
+fn a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured() {
+    let devices = FakeDevices::slow("android:R58M123", (LATENCY_US / 1000) as u32);
+    let device = Target::new("R58M123", TargetClass::AndroidDevice);
+    let work = common::scratch("cli-no-frames");
+    let report = run(
+        CliAdapter::new(devices.config(&work)),
+        device.clone(),
+        planned(
+            &device,
+            &[Primitive::TapToFrameChange, Primitive::TapToTreeDelta],
+        ),
+        config(),
+    );
+    let frame = find(&report, Primitive::TapToFrameChange);
+    let reason = frame
+        .not_measured
+        .as_deref()
+        .unwrap_or_else(|| panic!("tap-to-frame-change was measured: {frame:?}"));
+    assert!(
+        reason.contains("D7") && reason.contains("frame"),
+        "{reason}"
+    );
+    assert_eq!((frame.error.as_deref(), frame.stats), (None, None));
+    assert!(frame.samples.is_empty());
+    assert_eq!(frame.reliability.failures, 0);
+    let tree = find(&report, Primitive::TapToTreeDelta);
+    assert_eq!(tree.not_measured, None);
+    assert!(
+        tree.stats
+            .is_some_and(|s| s.n == ITERATIONS && s.p50_us >= LATENCY_US)
+    );
+
+    let md = report.to_markdown();
+    let comparison = common::table(&md, "Comparison");
+    let row = comparison
+        .rows
+        .iter()
+        .find(|r| comparison.cell(r, "Subject") == "tap-to-frame-change")
+        .unwrap_or_else(|| panic!("no tap-to-frame-change row in {md}"));
+    assert_eq!(comparison.cell(row, "mobile-agent"), "not measured");
+    assert!(
+        md.contains("Series not measured:")
+            && md.contains(&format!(
+                "- mobile-agent on R58M123, tap-to-frame-change: {reason}"
+            )),
+        "{md}"
+    );
+    let json: serde_json::Value = serde_json::from_str(&report.to_json()).unwrap();
+    assert_eq!(json["measurements"][0]["not_measured"], reason);
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
+
+    // A gate on the span lists it as not measured and does not fail the run.
+    let gates = GateSet {
+        gates: vec![Gate::new(
+            TargetClass::AndroidDevice,
+            Primitive::TapToFrameChange,
+            50.0,
+        )],
+    };
+    let verdict = gates.evaluate(&report);
+    assert_eq!(verdict.rows.len(), 1);
+    assert_eq!(verdict.rows[0].status, GateStatus::NotMeasured);
+    assert!(verdict.passed, "{}", verdict.table());
+}
+
+/// A stand-in for `mobile-agent` that logs its arguments and answers from
+/// canned replies: `click` with `click`, exiting with `click_status`, a settle
+/// with a settled screen, `--version` with 0.2.0 and anything else with an
+/// empty success.
+fn stand_in(dir: &Path, click: &str, click_status: i32) -> PathBuf {
+    fs::write(dir.join("click.json"), click).unwrap();
+    fs::write(
+        dir.join("settle.json"),
+        r#"{"success":true,"data":{"elapsedMs":212.5,"frameChanges":1,"settled":true,"stillChanging":[],"treeChanges":1,"waited":"settle"},"error":null}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("empty.json"),
+        r#"{"success":true,"data":{},"error":null}"#,
+    )
+    .unwrap();
+    let path = dir.join("mobile-agent");
+    fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\n\
+             dir=\"${{0%/*}}\"\n\
+             echo \"$@\" >> \"$dir/mobile-agent.log\"\n\
+             case \" $* \" in\n\
+             *\" --version \"*) echo 'mobile-agent 0.2.0' ;;\n\
+             *\" click \"*) cat \"$dir/click.json\"; exit {click_status} ;;\n\
+             *\" --settle \"*) cat \"$dir/settle.json\" ;;\n\
+             *) cat \"$dir/empty.json\" ;;\n\
+             esac\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+/// A click reply carrying the frame and tree spans task 8.9 adds.
+const CLICK_WITH_SPANS: &str = r#"{"success":true,"data":{"accepted":true,"clicked":"id=row-1","dispatchMs":0.25,"frameChangeMs":14.5,"ref":null,"treeDeltaMs":21.75,"x":204.0,"y":120.0},"error":null}"#;
+
+#[test]
+fn click_replies_that_carry_frame_and_tree_spans_fill_them_in() {
+    let dir = common::scratch("cli-stand-in");
+    let mut settings = CliConfig::new(dir.join("work"));
+    settings.program = stand_in(&dir, CLICK_WITH_SPANS, 0);
+    let primitives = [
+        Primitive::TapDispatch,
+        Primitive::TapToFrameChange,
+        Primitive::TapToTreeDelta,
+        Primitive::Settle,
+    ];
+    let report = run(
+        CliAdapter::new(settings),
+        emulator(),
+        planned(&emulator(), &primitives),
+        RunConfig {
+            iterations: 2,
+            warmup: 0,
+            retries: 0,
+        },
+    );
+    assert_eq!(report.provenance.tools[0].version.as_deref(), Some("0.2.0"));
+    for (primitive, us) in [
+        (Primitive::TapDispatch, 250),
+        (Primitive::TapToFrameChange, 14_500),
+        (Primitive::TapToTreeDelta, 21_750),
+        (Primitive::Settle, 212_500),
+    ] {
+        let m = find(&report, primitive);
+        assert_eq!(m.not_measured, None, "{primitive}");
+        assert_eq!(m.clock, Some(Clock::Tool), "{primitive}");
+        assert_eq!(
+            m.stats.map(|s| (s.n, s.p50_us, s.max_us)),
+            Some((2, us, us)),
+            "{primitive}: {:?}",
+            m.samples
+        );
+    }
+    // Global flags come first, then the command, its flags, `--` and its
+    // operands, as the CLI's grammar reads them.
+    let log = fs::read_to_string(dir.join("mobile-agent.log")).unwrap();
+    let lines: Vec<&str> = log.lines().collect();
+    assert_eq!(lines[0], "--version");
+    let session = "--json --session mobile-agent-bench --device emulator-5554";
+    for command in [
+        "open --relaunch --env FIXTURE_INITIAL_TAB=list -- dev.mobileagent.fixture.expo",
+        "wait --timeout 10000 -- id=row-1",
+        "click --timeout 10000 -- id=row-1",
+        "click --timeout 10000 -- id=detail-back",
+        "wait --settle",
+    ] {
+        let line = format!("{session} {command}");
+        assert!(lines.contains(&line.as_str()), "no {line:?} in:\n{log}");
+    }
+}
+
+/// The stand-in's measurements of `primitives` on the emulator's List screen.
+fn stand_in_run(name: &str, click: &str, primitives: &[Primitive]) -> Report {
+    let dir = common::scratch(name);
+    let mut settings = CliConfig::new(dir.join("work"));
+    settings.program = stand_in(&dir, click, 0);
+    run(
+        CliAdapter::new(settings),
+        emulator(),
+        planned(&emulator(), primitives),
+        RunConfig {
+            iterations: 2,
+            warmup: 0,
+            retries: 0,
+        },
+    )
+}
+
+#[test]
+fn a_cli_whose_click_does_not_watch_the_tap_leaves_both_spans_not_measured() {
+    let report = stand_in_run(
+        "cli-stand-in-no-watch",
+        r#"{"success":true,"data":{"accepted":true,"clicked":"id=row-1","dispatchMs":0.25,"ref":null,"x":204.0,"y":120.0},"error":null}"#,
+        &[
+            Primitive::TapDispatch,
+            Primitive::TapToFrameChange,
+            Primitive::TapToTreeDelta,
+        ],
+    );
+    let dispatch = find(&report, Primitive::TapDispatch);
+    assert_eq!(dispatch.stats.map(|s| s.p50_us), Some(250));
+    for (primitive, field) in [
+        (Primitive::TapToFrameChange, "frameChangeMs"),
+        (Primitive::TapToTreeDelta, "treeDeltaMs"),
+    ] {
+        let m = find(&report, primitive);
+        let reason = m
+            .not_measured
+            .as_deref()
+            .unwrap_or_else(|| panic!("{primitive} was measured: {m:?}"));
+        assert!(
+            reason.contains("watchedMs") && reason.contains(field) && reason.contains("8.9"),
+            "{reason}"
+        );
+        assert_eq!((m.error.as_deref(), m.stats), (None, None), "{primitive}");
+    }
+}
+
+#[test]
+fn a_tap_whose_effects_never_came_fails_its_spans() {
+    let report = stand_in_run(
+        "cli-stand-in-no-change",
+        r#"{"success":true,"data":{"accepted":true,"clicked":"id=row-1","dispatchMs":0.25,"ref":null,"watchedMs":200.5,"x":204.0,"y":120.0},"error":null}"#,
+        &[Primitive::TapToFrameChange, Primitive::TapToTreeDelta],
+    );
+    for (primitive, error) in [
+        (
+            Primitive::TapToFrameChange,
+            "the click on row-1 reported no frameChangeMs: no frame changed within its 200.5 ms watch",
+        ),
+        (
+            Primitive::TapToTreeDelta,
+            "the click on row-1 reported no treeDeltaMs: the tree did not change within its 200.5 ms watch",
+        ),
+    ] {
+        let m = find(&report, primitive);
+        assert_eq!(m.not_measured, None, "{primitive}");
+        assert_eq!(m.stats, None, "{primitive}");
+        assert_eq!(m.reliability.failures, 2, "{primitive}");
+        assert_eq!(m.samples[0].errors, [error], "{primitive}");
+    }
+}
+
+#[test]
+fn a_failed_command_is_an_error_naming_the_command_its_code_and_its_message() {
+    let dir = common::scratch("cli-failed-command");
+    let mut settings = CliConfig::new(dir.join("work"));
+    settings.program = stand_in(
+        &dir,
+        r#"{"success":false,"data":null,"error":"no element matches id row-1 after 10000 ms; the screen shows revision 3:\n- button \"Home\" [id=home, ref=e1]","code":"element_not_found"}"#,
+        1,
+    );
+    let mut adapter = CliAdapter::new(settings);
+    assert!(matches!(adapter.detect(), Detection::Available { .. }));
+    let error = adapter
+        .measure(
+            &emulator(),
+            &plan::scenario(Primitive::TapDispatch, Fixture::Expo),
+            Primitive::TapDispatch,
+        )
+        .unwrap_err();
+    assert!(!error.not_measured);
+    assert_eq!(
+        error.message,
+        "mobile-agent click --timeout 10000 -- id=row-1: element_not_found: no element matches \
+         id row-1 after 10000 ms; the screen shows revision 3:"
+    );
+}
+
+/// Runs the three reference flows on `target` of a fake `platform` and checks
+/// the screen each leaves behind.
+fn flows_run_on(fake: &str, target: Target, name: &str) {
+    let devices = FakeDevices::new(fake);
+    let mut adapter = CliAdapter::new(devices.config(&common::scratch(name)));
+    assert!(matches!(adapter.detect(), Detection::Available { .. }));
+    let [login, list, big] = <[flow::Flow; 3]>::try_from(flow::reference(Fixture::Expo)).unwrap();
+
+    let sample = adapter.run_flow(&target, &login).unwrap();
+    assert_eq!((sample.clock, sample.nodes), (Clock::Wall, None));
+    let status = devices.cli(&in_session(&target, &["get", "text", "id=login-status"]));
+    assert_eq!(status["text"], "Welcome, agent");
+
+    let sample = adapter.run_flow(&target, &list).unwrap();
+    assert_eq!((sample.clock, sample.nodes), (Clock::Wall, None));
+    assert!(
+        sample
+            .detail
+            .as_deref()
+            .is_some_and(|d| d.ends_with(" scroll steps")),
+        "{sample:?}"
+    );
+    let detail = devices.cli(&in_session(&target, &["get", "text", "id=detail-200"]));
+    assert_eq!(detail["text"], "Detail 200");
+
+    let sample = adapter.run_flow(&target, &big).unwrap();
+    assert_eq!((sample.clock, sample.nodes), (Clock::Wall, Some(505)));
+    let count = devices.cli(&in_session(&target, &["get", "text", "id=big-count"]));
+    assert_eq!(count["text"], "500 elements");
+}
+
+#[test]
+fn the_reference_flows_run_through_the_cli_adapter_on_a_fake_emulator() {
+    flows_run_on("android", emulator(), "cli-flows-android");
+}
+
+#[test]
+fn the_reference_flows_run_through_the_cli_adapter_on_a_fake_simulator() {
+    flows_run_on("ios", simulator(), "cli-flows-ios");
+}
+
+#[test]
+fn cold_attach_stops_the_daemon_then_times_the_open_that_starts_another() {
+    let devices = FakeDevices::new("android");
+    let mut adapter = CliAdapter::new(devices.config(&common::scratch("cli-cold-attach")));
+    adapter.detect();
+    let scenario = plan::scenario(Primitive::ColdAttach, Fixture::Expo);
+    let mut pids = vec![devices.daemon_pid()];
+    for _ in 0..2 {
+        let sample = adapter
+            .measure(&emulator(), &scenario, Primitive::ColdAttach)
+            .unwrap();
+        assert_eq!(sample.clock, Clock::Wall);
+        assert!(
+            sample
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.starts_with("open settled in ")),
+            "{sample:?}"
+        );
+        pids.push(devices.daemon_pid());
+    }
+    assert!(pids[0] != pids[1] && pids[1] != pids[2], "{pids:?}");
+}
+
+#[test]
+fn a_first_snapshot_follows_a_relaunch_on_the_big_screen_and_counts_its_refs() {
+    let devices = FakeDevices::new("android");
+    let target = emulator();
+    let mut adapter = CliAdapter::new(devices.config(&common::scratch("cli-first-snapshot")));
+    adapter.detect();
+    devices.cli(&in_session(
+        &target,
+        &["open", "dev.mobileagent.fixture.expo"],
+    ));
+    devices.cli(&in_session(&target, &["click", "id=tab-list"]));
+    let sample = adapter
+        .measure(
+            &target,
+            &plan::scenario(Primitive::FirstSnapshot, Fixture::Expo),
+            Primitive::FirstSnapshot,
+        )
+        .unwrap();
+    assert_eq!((sample.clock, sample.nodes), (Clock::Wall, Some(505)));
+    let count = devices.cli(&in_session(&target, &["get", "text", "id=big-count"]));
+    assert_eq!(count["text"], "500 elements");
+}
+
+#[test]
+fn text_entry_fills_the_fixed_string_into_the_username_field() {
+    let devices = FakeDevices::new("ios");
+    let target = simulator();
+    let mut adapter = CliAdapter::new(devices.config(&common::scratch("cli-text-entry")));
+    adapter.detect();
+    let scenario = plan::scenario(Primitive::TextEntry, Fixture::Expo);
+    let subject = Subject::Primitive(Primitive::TextEntry);
+    adapter.prepare(&target, &scenario, &subject).unwrap();
+    let sample = adapter
+        .measure(&target, &scenario, Primitive::TextEntry)
+        .unwrap();
+    assert_eq!(sample.clock, Clock::Wall);
+    assert_eq!(sample.detail.as_deref(), Some("method direct"));
+    let value = devices.cli(&in_session(&target, &["get", "value", "id=login-username"]));
+    assert_eq!(value["value"], TEXT_ENTRY);
+}
+
+#[test]
+fn an_absent_mobile_agent_is_skipped_with_a_note() {
+    let work = common::scratch("cli-absent");
+    let mut settings = CliConfig::new(&work);
+    settings.search_path = vec![work.clone()];
+    assert_eq!(
+        CliAdapter::new(settings.clone()).detect(),
+        Detection::Absent {
+            note: "mobile-agent not found on PATH".into()
+        }
+    );
+    settings.program = work.join("nowhere").join("mobile-agent");
+    assert_eq!(
+        CliAdapter::new(settings.clone()).detect(),
+        Detection::Absent {
+            note: format!("{} is not an executable file", settings.program.display())
+        }
+    );
+}
+
+#[test]
+fn the_cli_adapter_measures_each_primitive_in_the_scenarios_it_knows() {
+    let adapter = CliAdapter::new(CliConfig::new("/nonexistent"));
+    let target = emulator();
+    for fixture in plan::fixtures(Platform::Android) {
+        for primitive in Primitive::ALL {
+            let scenario = plan::scenario(primitive, fixture);
+            assert!(
+                adapter.supports(&target, &scenario, &Subject::Primitive(primitive)),
+                "{primitive} on {fixture}"
+            );
+        }
+    }
+    let on = |screen| Scenario {
+        fixture: Some(Fixture::Expo),
+        screen,
+    };
+    let supports = |scenario: Scenario, primitive| {
+        adapter.supports(&target, &scenario, &Subject::Primitive(primitive))
+    };
+    assert!(!supports(on(Some(Screen::Big)), Primitive::TapDispatch));
+    assert!(!supports(on(Some(Screen::Big)), Primitive::Settle));
+    assert!(!supports(on(Some(Screen::List)), Primitive::TextEntry));
+    assert!(!supports(on(None), Primitive::WarmSnapshot));
+    assert!(!supports(Scenario::default(), Primitive::ColdAttach));
+    assert!(supports(on(Some(Screen::List)), Primitive::FirstSnapshot));
+    assert!(adapter.supports(
+        &target,
+        &Scenario::default(),
+        &Subject::Flow("login".into())
+    ));
+}

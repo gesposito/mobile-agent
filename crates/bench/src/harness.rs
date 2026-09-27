@@ -324,6 +324,7 @@ fn measure(
         reliability: Reliability::of(&samples, config.iterations),
         nodes,
         error,
+        not_measured: None,
         samples,
     }
 }

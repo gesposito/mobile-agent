@@ -8,6 +8,7 @@
 
 pub mod adapter;
 pub mod baseline;
+pub mod cli;
 pub mod end_state;
 pub mod fake;
 pub mod fixture;
@@ -15,6 +16,7 @@ pub mod flow;
 pub mod gates;
 pub mod harness;
 pub mod markdown;
+pub mod plan;
 pub mod primitive;
 pub mod process;
 pub mod provenance;

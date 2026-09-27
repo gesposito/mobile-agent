@@ -65,6 +65,14 @@ pub fn run(command: &mut Command, timeout: Duration) -> Result<Finished, String>
     })
 }
 
+/// Runs `command` with its streams closed, as hyperfine runs a command whose
+/// output it discards, and returns its exit status and the time from the
+/// spawn call to the exit being observed.
+pub fn time(command: &mut Command, timeout: Duration) -> Result<(ExitStatus, Duration), String> {
+    let _ = (command, timeout);
+    Err("not written yet".to_owned())
+}
+
 /// A pipe being read to its end on its own thread.
 struct Drain {
     reader: JoinHandle<()>,
@@ -163,6 +171,23 @@ mod tests {
         .unwrap();
         assert_eq!(finished.stdout, "started\n");
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_timed_run_gives_the_exit_status_and_covers_the_run() {
+        let (status, elapsed) =
+            time(Command::new("sleep").arg("0.2"), Duration::from_secs(10)).unwrap();
+        assert!(status.success());
+        assert!(elapsed >= Duration::from_millis(200), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+        let (status, _) = time(
+            Command::new("sh").args(["-c", "echo discarded; exit 4"]),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(status.code(), Some(4));
+        let error = time(Command::new("sleep").arg("5"), Duration::from_millis(100)).unwrap_err();
+        assert!(error.contains("timed out"), "{error}");
     }
 
     #[test]
