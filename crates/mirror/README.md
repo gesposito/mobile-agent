@@ -13,7 +13,9 @@ the tests, and later the daemon's tests, drive with a fake clock.
 ```
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
-  mirror.rs     Mirror: pump, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame
+  mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
+                timestamps, note_window_change
+  timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, modal cutting, scroll hints
   roles.rs      roles from Android widget classes, XCUIElementType names and UIKit classes
@@ -29,7 +31,8 @@ src/
   geometry.rs   device points
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
-tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames
+tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
+                timestamps
 tests/support/  the fixture loader
 ```
 
@@ -130,7 +133,7 @@ Conventions a driver follows:
 |---|---|---|
 | first use | every window | `attach` |
 | tree event naming a known window | that window | `events` |
-| window event, lifecycle `ready`, tree event for an unknown window | every window | `events` |
+| window event, lifecycle `ready`, tree event for an unknown window, `note_window_change` | every window | `events` |
 | input the mirror injected, for windows without events | those windows, when the tree is next needed | `action` |
 | frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
 | 1 s since such a window's last read began | it | `poll` |
@@ -149,6 +152,32 @@ stops reading, serves the last replica and refuses actions.
 The daemon keeps a mirror current between commands with `pump` (apply what
 arrived, perform due reads, never wait) or `run_until(deadline)`, and
 `next_wakeup` says when the next poll or frame-driven re-read falls due.
+`drain` applies what arrived without reading the tree, even when a read is
+due, and returns how many items it applied; the reads those items call for
+happen at the next `pump`, snapshot, wait or ref.
+
+What the daemon needs to know about a target's timing it reads from the
+mirror, not from the backend (task 7.10):
+
+| Call | Gives |
+|---|---|
+| `timestamps().last_frame` | the latest frame the mirror took in: capture time, number, hash |
+| `timestamps().last_frame_change` | the capture time of the latest frame whose hash differed from the one before; the first frame is no change |
+| `frame_changes_since(t)` | the capture times of the frame changes at or after `t`, oldest first, among the latest 1024 |
+| `timestamps().last_tree_change` | the latest tree change: a tree or window event's arrival, a noted window change, or the end of a read that found a delta; the first acquisition is no change |
+| `timestamps().last_read` | the latest read taken into the replica: `started`, `finished` and `reason` |
+| `timestamps().last_action` | when the mirror last injected input, once the platform accepted it |
+
+Items still queued in the event stream count once drained, so a caller
+drains before it reads the timestamps. `note_window_change` records that the
+window in front changed outside the mirror's input, as launching or stopping
+an app does through the daemon: the mirror treats it as a window event
+arriving at that moment, so every window is read again when the tree is next
+needed and settle counts it as a tree change. A settle that starts right
+after a launch then waits for the launched app even when its first frames or
+events arrive later, and a driver need not queue a window event of its own
+for the launch (the Simulator driver's way of reporting one, which settle
+also counts).
 
 ## Snapshots
 
@@ -214,9 +243,10 @@ the reasons in this order, each with advice:
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
 
-- `settle` ends once neither tree changes (events as they arrive, deltas of
-  re-reads) nor frame hash changes have happened for the quiet window,
-  counted from the last change or injected input, and otherwise at the
+- `settle` ends once neither tree changes (events as they arrive, window
+  changes noted to the mirror, deltas of re-reads) nor frame hash changes
+  have happened for the quiet window, counted from the last change or
+  injected input, and otherwise at the
   maximum with `settled: false` and the signals that kept changing. Frame
   callbacks without pixel changes do not count (spike S2). Without a frame
   source, windows without events are re-read every minimum re-read interval
@@ -338,11 +368,12 @@ cargo test -p mirror
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
-| Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting` |
+| Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting`, `settle::a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn`, `settle::a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event` |
 | | Continuous animation | `settle::a_continuous_animation_is_not_settled_after_the_maximum_and_names_frame_changes`, `settle::an_animation_that_also_sends_tree_events_names_both_signals`, `settle::tree_only_settling_ignores_frames` |
 | Wait predicates from the event stream | Element appears | `waits::a_wait_for_text_resolves_within_one_processing_cycle_of_its_appearance`, `waits::a_disappear_wait_resolves_when_the_element_leaves`, `waits::an_enabled_wait_resolves_when_the_element_becomes_enabled`, `waits::a_wait_on_a_window_without_change_events_resolves_from_its_re_reads`, `waits::a_wait_that_already_holds_returns_at_once`, `waits::selectors_match_text_identifier_role_and_ref_on_screen_only` |
 | | Wait times out | `waits::a_wait_that_never_matches_fails_at_the_timeout_with_the_last_snapshot_summary` |
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
+| Replica maintained from device events | (task 7.10: timing and draining for the daemon) | `timestamps::nothing_has_happened_before_the_first_read_and_the_first_read_gives_its_span`, `timestamps::the_last_frame_and_frame_change_come_from_the_frames_the_mirror_took_in`, `timestamps::only_the_latest_1024_frame_changes_are_kept`, `timestamps::the_last_tree_change_is_an_event_arrival_or_the_end_of_a_read_that_found_a_delta`, `timestamps::the_last_action_is_when_the_mirror_injected_input`, `timestamps::drain_takes_in_what_arrived_without_reading_the_tree` |
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
