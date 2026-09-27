@@ -472,7 +472,7 @@ pub fn screenshot(device: &Device, options: &ScreenshotOptions) -> Result<Screen
         let (width, height) = read.value;
         let data = match options.format {
             ImageFormat::Jpeg => encoder.encode(&scaled, width, height)?,
-            ImageFormat::Bgra => unimplemented!("task 6.3: raw screenshots"),
+            ImageFormat::Bgra => std::mem::take(&mut scaled),
         };
         return Ok(Screenshot {
             captured_at,

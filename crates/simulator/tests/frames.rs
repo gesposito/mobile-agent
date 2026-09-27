@@ -36,7 +36,8 @@ fn frame_stream_during_animation() {
         Some(first),
         Duration::from_millis(800),
         Duration::from_secs(10),
-    );
+    )
+    .expect("the first frame at least");
 
     // The transition: the fixture relaunches onto its Anim tab, whose
     // spinner then turns without end.
@@ -93,7 +94,8 @@ fn frames_stop_when_the_display_is_static() {
         None,
         Duration::from_millis(800),
         Duration::from_secs(10),
-    );
+    )
+    .expect("frames arrived while the fixture relaunched");
 
     let late = common::collect(&stream, Duration::from_secs(3));
     // A static screen still changes once a minute, when the status bar clock

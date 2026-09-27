@@ -1,6 +1,8 @@
 //! Task 6.3: the legacy Indigo touch transport. This host's CoreSimulator
-//! (1171.7) would choose dtuhidd, so the tests force Indigo, which spike S3
-//! found delivering touches beside dtuhidd.
+//! (1171.7) would choose dtuhidd, so the tests force Indigo. They run on a
+//! device booted for them: on the long-running shared Simulator, whose
+//! dtuhidd had served many sessions, Indigo touches did not land even with
+//! spike S3's 40 ms hold, while on a fresh boot they did, as in S3.
 
 #![cfg(target_os = "macos")]
 
@@ -12,7 +14,7 @@ use simulator::{
     DriverOptions, Input, Point, SimulatorDriver, Swipe, TransportChoice, TransportKind,
 };
 
-use common::{ExpoOnLogin, expo};
+use common::expo;
 
 fn indigo() -> SimulatorDriver {
     SimulatorDriver::open_with(DriverOptions {
@@ -23,15 +25,12 @@ fn indigo() -> SimulatorDriver {
 
 #[test]
 fn a_tap_lands_on_the_fixture_button() {
-    let Some(udid) = common::gated("a_tap_lands_on_the_fixture_button") else {
+    let Some(_) = common::gated("a_tap_lands_on_the_fixture_button") else {
         return;
     };
     let _serial = common::exclusive();
     let driver = indigo();
-    let _restore = ExpoOnLogin {
-        driver: &driver,
-        udid: udid.clone(),
-    };
+    let udid = common::fresh_device(&driver);
     common::show_expo(&driver, &udid, "login");
     let (stream, settled) = common::settle(&driver, &udid);
     let before = common::raw_screenshot(&driver, &udid);
@@ -71,15 +70,12 @@ fn a_tap_lands_on_the_fixture_button() {
 
 #[test]
 fn a_swipe_scrolls_the_list() {
-    let Some(udid) = common::gated("a_swipe_scrolls_the_list") else {
+    let Some(_) = common::gated("a_swipe_scrolls_the_list") else {
         return;
     };
     let _serial = common::exclusive();
     let driver = indigo();
-    let _restore = ExpoOnLogin {
-        driver: &driver,
-        udid: udid.clone(),
-    };
+    let udid = common::fresh_device(&driver);
     common::show_expo(&driver, &udid, "list");
     let (stream, _) = common::settle(&driver, &udid);
     let before = common::raw_screenshot(&driver, &udid);
@@ -99,7 +95,8 @@ fn a_swipe_scrolls_the_list() {
         None,
         Duration::from_millis(700),
         Duration::from_secs(10),
-    );
+    )
+    .expect("the list moved");
     let after = common::raw_screenshot(&driver, &udid);
     let (shift, best, unshifted) = common::vertical_shift(&before, &after, expo::LIST_ROWS);
     let points = shift as f64 * 874.0 / after.height as f64;

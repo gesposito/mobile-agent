@@ -320,24 +320,21 @@ pub fn collect(stream: &FrameStream, window: Duration) -> Vec<Frame> {
     frames
 }
 
-/// Reads frames until none arrives for `quiet`, and returns the last one.
-/// Fails when the display keeps changing for `timeout`.
+/// Reads frames until none arrives for `quiet`, and returns the last one
+/// seen, `last` when none came. Fails when the display keeps changing for
+/// `timeout`.
 pub fn drain_until_quiet(
     stream: &FrameStream,
     last: Option<Frame>,
     quiet: Duration,
     timeout: Duration,
-) -> Frame {
+) -> Option<Frame> {
     let deadline = Instant::now() + timeout;
     let mut last = last;
     loop {
         match stream.next(quiet) {
             Some(frame) => last = Some(frame),
-            None => {
-                if let Some(frame) = last {
-                    return frame;
-                }
-            }
+            None => return last,
         }
         assert!(
             Instant::now() < deadline,
@@ -482,8 +479,8 @@ pub fn vertical_shift(before: &Raw, after: &Raw, rows: (f64, f64)) -> (usize, f6
     (shift, best, unshifted)
 }
 
-/// Frames until the display has been quiet for `quiet`, from a new
-/// subscription, and the last one.
+/// A new subscription, read until the display has been quiet for 700 ms,
+/// and the last frame it delivered.
 pub fn settle(driver: &SimulatorDriver, udid: &str) -> (FrameStream, Frame) {
     let stream = driver
         .frames(udid, &simulator::FrameOptions::default())
@@ -493,7 +490,8 @@ pub fn settle(driver: &SimulatorDriver, udid: &str) -> (FrameStream, Frame) {
         None,
         Duration::from_millis(700),
         Duration::from_secs(15),
-    );
+    )
+    .expect("a subscription delivers the frame on screen");
     (stream, settled)
 }
 
@@ -508,4 +506,56 @@ pub fn wait_for_change(stream: &FrameStream, from: &Frame, timeout: Duration) ->
         }
     }
     None
+}
+
+/// The fresh device of this test binary, if it made one.
+static FRESH: Mutex<Option<(String, bool)>> = Mutex::new(None);
+
+/// Deletes the fresh device this binary created when the binary exits.
+extern "C" fn delete_fresh_device() {
+    let fresh = FRESH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    if let Some((udid, true)) = fresh {
+        for command in ["shutdown", "delete"] {
+            let _ = Command::new("xcrun")
+                .args(["simctl", command, &udid])
+                .output();
+        }
+    }
+}
+
+/// An iPhone 17 booted for the first time with both fixtures installed,
+/// shared by the tests of one binary and deleted when it exits.
+/// `MOBILE_AGENT_SIM_FRESH_UDID` names an existing one to use instead, which
+/// is then left alone.
+pub fn fresh_device(driver: &SimulatorDriver) -> String {
+    let mut fresh = FRESH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((udid, _)) = fresh.as_ref() {
+        return udid.clone();
+    }
+    if let Ok(udid) = std::env::var("MOBILE_AGENT_SIM_FRESH_UDID")
+        && !udid.trim().is_empty()
+    {
+        *fresh = Some((udid.trim().to_string(), false));
+        return udid.trim().to_string();
+    }
+    let name = unique(&format!("{DEVICE_PREFIX}-fresh"));
+    let device = driver
+        .create_device(&name, "iPhone 17", None)
+        .expect("the fresh device is created");
+    *fresh = Some((device.udid.clone(), true));
+    // SAFETY: registers a plain function with no captured state.
+    unsafe { libc::atexit(delete_fresh_device) };
+    driver.boot(&device.udid).expect("the fresh device boots");
+    driver
+        .install(&device.udid, &expo_app())
+        .expect("the Expo fixture installs");
+    driver
+        .install(&device.udid, &swiftui_app())
+        .expect("the SwiftUI fixture installs");
+    device.udid
 }

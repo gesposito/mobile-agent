@@ -6,8 +6,8 @@ dtuhidd or the legacy Indigo client, frames from the display surface, and the
 accessibility tree through a reader spawned into the guest. Nothing is built
 or installed in the Simulator.
 
-`SimulatorDriver` implements the driver traits (`Lifecycle` and `Frames` so
-far). They carry no Apple types, so the mirror and the daemon can hold any
+`SimulatorDriver` implements the driver traits (`Lifecycle`, `Frames` and
+`Input` so far). They carry no Apple types, so the mirror and the daemon can hold any
 backend behind them; they live in this crate until `crates/mirror` defines
 its own.
 On hosts other than macOS the crate still builds: `SimulatorDriver` exists
@@ -22,6 +22,7 @@ src/
   error.rs         errors, each with a stable code
   frames.rs        FrameStream and its bounded queue
   pipeline.rs      box downscale, hashes and the read throttle, no Simulator needed
+  gesture.rs       gestures as timed touch steps in framebuffer ratios
   lookup.rs        finding a device, runtime or device type from user input
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
@@ -33,11 +34,14 @@ src/
     display.rs     the main display, its SimScreen callbacks and IOSurface
     frames.rs      frame subscriptions and screenshots
     encode.rs      the JPEG encoders
+    input.rs       a target's input: the Transport trait and the gesture runner
+    indigo.rs      the legacy Indigo transport
     driver.rs      SimulatorDriver
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
   lifecycle.rs     task 6.1
   frames.rs        task 6.2
+  indigo.rs        task 6.3
 ```
 
 ## Building
@@ -112,6 +116,36 @@ downscale costs about 2 ms per frame, with a 16-bit vertical pass and an
 exact reciprocal in place of each division; its output is identical to S2's
 filter.
 
+## Input
+
+`gesture.rs` turns a tap, a press, a swipe or a two-finger gesture into
+touch steps at set times, with points converted to ratios of the native
+portrait framebuffer (`point * scale / pixels`, as idb and S3 do). A swipe
+sends its positions at even intervals and repeats the last before lifting,
+which keeps an arm64 guest from adding inertia. `input.rs` sends the steps
+through the target's transport, one request at a time per target, and
+reports a `Dispatch`: the transport, the wait for its activation, and the
+times from the request to the first event and to the last.
+
+The Indigo transport (`indigo.rs`, from S3) is the fallback for hosts whose
+CoreSimulator predates 1155.4. It builds each touch with SimulatorKit's
+`IndigoHIDMessageForMouseNSEvent` (the Xcode 27 six-parameter prototype,
+with a unit size so a ratio passes through), re-envelopes it as idb's
+single-touch message and sends it through `SimDeviceLegacyHIDClient`, waiting
+for each completion. The builder keeps unsynchronized global state and
+returns nil within 16 ms of its previous message, so every build in the
+process holds one lock and keeps 17 ms apart: a tap takes about 21 ms. Moves
+are left-mouse-dragged events, which scroll like a finger. The message
+pointer is passed with the struct encoding SimulatorKit declares, which
+keeps objc2's debug-build signature check on. Indigo carries one finger
+only; keys, buttons, two fingers and screen-edge touches are refused as
+unsupported.
+
+On this host Indigo touches did not land on the long-running shared
+Simulator, whose dtuhidd had served many sessions, even with S3's 40 ms hold;
+on a device booted for the test they landed every time. The Indigo tests
+therefore run on a device they create.
+
 ## Tests
 
 `cargo test -p simulator` runs the unit tests. They need macOS with Xcode,
@@ -127,7 +161,9 @@ MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
 ```
 
 Tests that create devices name them `mobile-agent-simtest-*` and delete them
-when they end, pass or fail. They install the fixtures from `fixtures/*/build`,
+when they end, pass or fail; a binary that needs a freshly booted device
+makes one and deletes it on exit, or uses the one `MOBILE_AGENT_SIM_FRESH_UDID`
+names. They install the fixtures from `fixtures/*/build`,
 which `just fixtures-build` produces, or from the bundles named by
 `MOBILE_AGENT_SWIFTUI_APP` and `MOBILE_AGENT_EXPO_APP`. A first boot takes
 about a minute.
@@ -138,3 +174,4 @@ about a minute.
 |---|---|---|
 | Simulator discovery and lifecycle | Launch with environment | `lifecycle::launch_with_environment`, `lifecycle::every_simulator_is_listed_with_identifier_name_runtime_and_state`, `lifecycle::a_booted_device_is_left_alone`, `lifecycle::an_unknown_device_is_not_found` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
+| Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |

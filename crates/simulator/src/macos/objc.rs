@@ -2,7 +2,7 @@
 //! classes up by name, containing the exceptions that private calls raise, and
 //! turning `NSError`s into driver errors. Ported from spikes S2 to S4.
 
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::ops::Deref;
 use std::panic::AssertUnwindSafe;
 use std::sync::OnceLock;
@@ -60,6 +60,14 @@ pub fn load(path: &str) -> std::result::Result<(), String> {
         });
     }
     Ok(())
+}
+
+/// The address of a C symbol in the images loaded so far.
+pub fn symbol(name: &str) -> Option<*mut c_void> {
+    let name = CString::new(name).ok()?;
+    // SAFETY: RTLD_DEFAULT searches every loaded image; `name` is valid.
+    let address = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) };
+    (!address.is_null()).then_some(address)
 }
 
 /// A registered class, looked up by name so nothing links against it.

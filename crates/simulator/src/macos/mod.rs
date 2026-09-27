@@ -7,6 +7,8 @@ mod driver;
 mod encode;
 mod forward;
 mod frames;
+mod indigo;
+mod input;
 mod objc;
 mod prefs;
 

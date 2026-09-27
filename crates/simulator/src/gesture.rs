@@ -4,8 +4,11 @@
 
 use std::time::Duration;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::model::{Edge, Gesture, Point, Swipe};
+
+/// The fingers dtuhidd's digitizer event carries.
+const MAX_FINGERS: usize = 2;
 
 /// A contact as a ratio of the native portrait framebuffer, from the top
 /// left.
@@ -43,20 +46,39 @@ pub struct Screen {
 impl Screen {
     /// The size in points.
     pub fn points(&self) -> (f64, f64) {
-        unimplemented!("task 6.3: gesture planning")
+        (self.pixels.0 / self.scale, self.pixels.1 / self.scale)
     }
 
     /// The ratio `point` lands on; points off the screen are refused.
     pub fn ratio(&self, point: Point) -> Result<Ratio> {
-        let _ = point;
-        unimplemented!("task 6.3: gesture planning")
+        let (width, height) = self.points();
+        let inside = |value: f64, limit: f64| (0.0..=limit).contains(&value);
+        if !inside(point.x, width) || !inside(point.y, height) {
+            return Err(Error::InvalidArgument(format!(
+                "({}, {}) is off the {width}x{height} point screen",
+                point.x, point.y
+            )));
+        }
+        Ok(Ratio {
+            x: point.x * self.scale / self.pixels.0,
+            y: point.y * self.scale / self.pixels.1,
+        })
     }
 }
 
 /// Touch down at `point`, then up after `hold`.
 pub fn press(screen: &Screen, point: Point, hold: Duration) -> Result<Vec<TouchStep>> {
-    let _ = (screen, point, hold);
-    unimplemented!("task 6.3: gesture planning")
+    let contact = screen.ratio(point)?;
+    let step = |at, phase| TouchStep {
+        at,
+        phase,
+        contacts: vec![contact],
+        edge: Edge::None,
+    };
+    Ok(vec![
+        step(Duration::ZERO, Phase::Down),
+        step(hold, Phase::Up),
+    ])
 }
 
 /// Touch down at the start, `steps` positions spread evenly until
@@ -64,15 +86,95 @@ pub fn press(screen: &Screen, point: Point, hold: Duration) -> Result<Vec<TouchS
 /// the last position keeps an arm64 guest from adding inertia to the drag's
 /// end, as idb does.
 pub fn swipe(screen: &Screen, swipe: &Swipe) -> Result<Vec<TouchStep>> {
-    let _ = (screen, swipe);
-    unimplemented!("task 6.3: gesture planning")
+    walk(
+        screen,
+        &[vec![swipe.from, swipe.to]],
+        swipe.duration,
+        swipe.steps,
+        swipe.edge,
+    )
 }
 
 /// Every finger's path walked at an even pace, by length, over the same
 /// steps; both contacts ride in each event.
 pub fn gesture(screen: &Screen, gesture: &Gesture) -> Result<Vec<TouchStep>> {
-    let _ = (screen, gesture);
-    unimplemented!("task 6.3: gesture planning")
+    walk(
+        screen,
+        &gesture.fingers,
+        gesture.duration,
+        gesture.steps,
+        Edge::None,
+    )
+}
+
+/// Down at every path's start, `steps` positions at even intervals until
+/// `duration`, the last once more, and up at `duration`.
+fn walk(
+    screen: &Screen,
+    fingers: &[Vec<Point>],
+    duration: Duration,
+    steps: u32,
+    edge: Edge,
+) -> Result<Vec<TouchStep>> {
+    if fingers.is_empty() || fingers.len() > MAX_FINGERS {
+        return Err(Error::InvalidArgument(format!(
+            "a gesture has one or two fingers, not {}",
+            fingers.len()
+        )));
+    }
+    if fingers.iter().any(Vec::is_empty) {
+        return Err(Error::InvalidArgument(
+            "every finger needs a path of at least one point".into(),
+        ));
+    }
+    let steps = steps.max(1);
+    let contacts = |fraction: f64| -> Result<Vec<Ratio>> {
+        fingers
+            .iter()
+            .map(|path| screen.ratio(along(path, fraction)))
+            .collect()
+    };
+    let interval = duration / (steps + 1);
+    let mut plan = Vec::with_capacity(steps as usize + 3);
+    let event = |at, phase, contacts| TouchStep {
+        at,
+        phase,
+        contacts,
+        edge,
+    };
+    plan.push(event(Duration::ZERO, Phase::Down, contacts(0.0)?));
+    for index in 1..=steps {
+        let fraction = f64::from(index) / f64::from(steps);
+        plan.push(event(interval * index, Phase::Move, contacts(fraction)?));
+    }
+    let end = contacts(1.0)?;
+    plan.push(event(interval * steps, Phase::Move, end.clone()));
+    plan.push(event(duration, Phase::Up, end));
+    Ok(plan)
+}
+
+/// The point `fraction` of the way along a path, by length.
+fn along(path: &[Point], fraction: f64) -> Point {
+    let lengths: Vec<f64> = path
+        .windows(2)
+        .map(|leg| (leg[1].x - leg[0].x).hypot(leg[1].y - leg[0].y))
+        .collect();
+    let total: f64 = lengths.iter().sum();
+    if total == 0.0 {
+        return path[0];
+    }
+    let mut remaining = fraction.clamp(0.0, 1.0) * total;
+    for (leg, length) in path.windows(2).zip(&lengths) {
+        if remaining <= *length && *length > 0.0 {
+            let t = remaining / length;
+            return Point::new(
+                leg[0].x + (leg[1].x - leg[0].x) * t,
+                leg[0].y + (leg[1].y - leg[0].y) * t,
+            );
+        }
+        remaining -= length;
+    }
+    *path.last().expect("a non-empty path")
 }
 
 #[cfg(test)]

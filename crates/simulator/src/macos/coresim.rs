@@ -11,9 +11,10 @@ use block2::RcBlock;
 use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2_foundation::{NSArray, NSDictionary, NSError, NSNumber, NSString, NSURL, NSUUID};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSNumber, NSSize, NSString, NSURL, NSUUID};
 
 use crate::error::{Error, Failure, Result};
+use crate::gesture::Screen;
 use crate::macos::objc::{self, SendBox, Shared, guarded, guarded_ns};
 use crate::model::{DeviceInfo, DeviceState, DeviceTypeInfo, RuntimeInfo};
 
@@ -206,6 +207,22 @@ impl DeviceType {
             }
         })
     }
+
+    /// The main screen: its native portrait size in pixels and its scale.
+    pub fn main_screen(&self) -> Result<Screen> {
+        guarded("-[SimDeviceType mainScreenSize/mainScreenScale]", || {
+            // SAFETY: `mainScreenSize` returns an NSSize in pixels and
+            // `mainScreenScale` a float.
+            unsafe {
+                let size: NSSize = msg_send![&*self.0, mainScreenSize];
+                let scale: f32 = msg_send![&*self.0, mainScreenScale];
+                Screen {
+                    pixels: (size.width, size.height),
+                    scale: f64::from(scale),
+                }
+            }
+        })
+    }
 }
 
 /// `-[SimDevice bootStatus]`, which turns terminal once the device is usable,
@@ -221,6 +238,11 @@ pub struct BootStatus {
 pub struct Device(Shared);
 
 impl Device {
+    /// The `SimDevice` itself, for the calls that take one.
+    pub fn object(&self) -> &AnyObject {
+        &self.0
+    }
+
     pub fn udid(&self) -> Result<String> {
         guarded("-[SimDevice UDID]", || {
             // SAFETY: `UDID` returns an NSUUID.

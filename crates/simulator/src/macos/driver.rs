@@ -1,19 +1,24 @@
 //! [`SimulatorDriver`]: the driver traits over CoreSimulator.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
+use crate::gesture;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
+use crate::macos::indigo::Indigo;
+use crate::macos::input::{Target, Transport};
 use crate::macos::{frames, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
     FrameOptions, Gesture, Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo,
-    Screenshot, ScreenshotOptions, Swipe,
+    Screenshot, ScreenshotOptions, Swipe, TransportChoice, TransportKind,
 };
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
@@ -30,21 +35,34 @@ const INSTALL_RETRY: Duration = Duration::from_secs(2);
 pub struct SimulatorDriver {
     context: ServiceContext,
     set: DeviceSet,
+    options: DriverOptions,
+    /// The devices input went to, by UDID, each with its transport.
+    targets: Mutex<HashMap<String, Arc<Target>>>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl SimulatorDriver {
     /// Loads CoreSimulator and connects to its service for the selected Xcode
     /// (`DEVELOPER_DIR`, else `xcode-select`).
     pub fn open() -> Result<SimulatorDriver> {
-        let context = ServiceContext::connect()?;
-        let set = context.default_set()?;
-        Ok(SimulatorDriver { context, set })
+        SimulatorDriver::open_with(DriverOptions::default())
     }
 
     /// `open` with the input transport chosen by `options`.
     pub fn open_with(options: DriverOptions) -> Result<SimulatorDriver> {
-        let _ = options;
-        unimplemented!("task 6.3: driver options")
+        let context = ServiceContext::connect()?;
+        let set = context.default_set()?;
+        Ok(SimulatorDriver {
+            context,
+            set,
+            options,
+            targets: Mutex::new(HashMap::new()),
+        })
     }
 
     /// The installed runtimes.
@@ -115,6 +133,50 @@ impl SimulatorDriver {
         let device = self.device(target)?;
         needs(target, &device, DeviceState::Booted, "booted")?;
         Ok(device)
+    }
+
+    /// The booted target `target` names. A UDID seen before skips the device
+    /// lookup and costs one state check.
+    fn target(&self, target: &str) -> Result<Arc<Target>> {
+        let known = lock(&self.targets)
+            .get(&target.to_ascii_uppercase())
+            .cloned();
+        if let Some(known) = known {
+            needs(target, &known.device, DeviceState::Booted, "booted")?;
+            return Ok(known);
+        }
+        let device = self.booted(target)?;
+        let udid = device.udid()?;
+        let screen = device
+            .device_type()?
+            .ok_or_else(|| Error::Framework {
+                call: "-[SimDevice deviceType]".into(),
+                failure: Failure::Nil,
+            })?
+            .main_screen()?;
+        let mut targets = lock(&self.targets);
+        let entry = targets
+            .entry(udid)
+            .or_insert_with(|| Arc::new(Target::new(device, screen)));
+        Ok(entry.clone())
+    }
+
+    /// The target and its input transport, opened on first use.
+    fn input(&self, target: &str) -> Result<(Arc<Target>, Arc<dyn Transport>)> {
+        let target = self.target(target)?;
+        let transport = target.transport(|device| self.open_transport(device))?;
+        Ok((target, transport))
+    }
+
+    fn open_transport(&self, device: &Device) -> Result<Arc<dyn Transport>> {
+        match self.options.transport {
+            TransportChoice::Auto | TransportChoice::Only(TransportKind::Indigo) => {
+                Ok(Arc::new(Indigo::open(device)?))
+            }
+            TransportChoice::Only(TransportKind::Dtuhid) => Err(Error::Unsupported {
+                what: "the dtuhidd transport".into(),
+            }),
+        }
     }
 }
 
@@ -267,33 +329,35 @@ impl Frames for SimulatorDriver {
 
 impl Input for SimulatorDriver {
     fn tap(&self, target: &str, point: Point) -> Result<Dispatch> {
-        let _ = (target, point);
-        unimplemented!("task 6.3: input")
+        self.press(target, point, Duration::ZERO)
     }
 
     fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch> {
-        let _ = (target, point, hold);
-        unimplemented!("task 6.3: input")
+        let (target, transport) = self.input(target)?;
+        let plan = gesture::press(&target.screen, point, hold)?;
+        target.touch(&*transport, &plan)
     }
 
     fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch> {
-        let _ = (target, swipe);
-        unimplemented!("task 6.3: input")
+        let (target, transport) = self.input(target)?;
+        let plan = gesture::swipe(&target.screen, swipe)?;
+        target.touch(&*transport, &plan)
     }
 
     fn gesture(&self, target: &str, gesture: &Gesture) -> Result<Dispatch> {
-        let _ = (target, gesture);
-        unimplemented!("task 6.3: input")
+        let (target, transport) = self.input(target)?;
+        let plan = gesture::gesture(&target.screen, gesture)?;
+        target.touch(&*transport, &plan)
     }
 
     fn button(&self, target: &str, button: Button) -> Result<Dispatch> {
-        let _ = (target, button);
-        unimplemented!("task 6.3: input")
+        let (target, transport) = self.input(target)?;
+        target.button(&*transport, button)
     }
 
     fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
-        let _ = (target, key);
-        unimplemented!("task 6.3: input")
+        let (target, transport) = self.input(target)?;
+        target.key(&*transport, key)
     }
 }
 
