@@ -41,9 +41,11 @@ require_sfw() {
   fi
 }
 
-if [ ! -d node_modules ]; then
+lock_hash="$(shasum -a 256 bun.lock | cut -d ' ' -f 1)"
+if [ ! -d node_modules ] || [ "$(cat node_modules/.bun-lock-hash 2>/dev/null)" != "$lock_hash" ]; then
   require_sfw
   sfw bun install --frozen-lockfile >&2
+  echo "$lock_hash" > node_modules/.bun-lock-hash
 fi
 
 # The generated native project (ios/ or android/) depends on app.json, the dependencies and the
