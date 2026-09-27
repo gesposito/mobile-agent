@@ -81,7 +81,7 @@ dex size:
 
 ```
 /…/agent-android/dist/mobile-agent-android.jar
-classes.dex 115844 bytes
+classes.dex 123568 bytes
 ```
 
 Tool resolution:
@@ -229,6 +229,37 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
   round_trips=<n>`, the round trips read from the accessibility client's
   interaction counter.
+- **Window metadata** (task 3.6, `Semantics.kt`). Each window says whether
+  its content sends change events: `false` when the walk met Compose content
+  (a class under `androidx.compose.`, or a node advertising Compose's
+  `androidx.compose.ui.semantics.id` extra data, which is all a Compose
+  dialog shows), `true` when a complete walk met none, absent for a window
+  without a root. It names a system owner, by package, for every window that
+  is not an application's (status and navigation bars, the keyboard,
+  overlays) and for application windows of the platform's own packages
+  (`android`, SystemUI, the permission controllers and package installers,
+  the intent resolver) or of the launcher, which the hidden
+  `IPackageManager.getHomeActivities` names (7 ms, once). And it is modal
+  when it floats inset from the display's edges on both axes (the display
+  size from the hidden `DisplayManagerGlobal`) with no application window
+  listed below it: the platform leaves out of the interactive windows every
+  window a touch-modal window blocks, so on the API 36 emulator a Compose or
+  React Native alert and a permission prompt are each the only application
+  window, while a letterboxed activity spans the display along one axis.
+- **Scroll semantics** (task 3.6). A node that is scrollable or offers a
+  scroll action carries its axis (from the directional scroll actions, else
+  from a collection one item wide or high), whether it can scroll back and
+  forward (from `ACTION_SCROLL_BACKWARD` and `ACTION_SCROLL_FORWARD`, else
+  from the directional actions), and for a collection its items along the
+  axis with the items in view: from the children's collection item infos
+  when every child in view has one, from the child indices when every item is
+  a child (Settings lays out all 26 of its rows, only 2 with item infos), or
+  at either end, where the children in view are the first or the last items.
+  A Compose lazy list reports its row count but no row indices, so mid-list
+  its position stays unknown; a React Native list reports its scroll actions
+  and no collection. A scrollable node with a range info instead reports its
+  position as a percentage of that range. The children are those the walk
+  fetches anyway, so none of this costs a round trip.
 - **Change events.** Accessibility events become protocol events, numbered
   per stream and per connection from 1. Content changes, text, selection,
   scroll and focus events go on the tree stream with the window id and the
@@ -238,9 +269,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   removed, bounds, focus, state) go on the window stream. The platform cache
   has processed each event before the agent sees it, so the named subtree is
   fresh for the next read while the rest of the window stays cached.
-- **Compose windows.** A window whose tree holds a class under
-  `androidx.compose.` hosts an AndroidComposeView, which sends no events to
-  UI automation (spike S1). While a host is connected the agent re-reads
+- **Compose windows.** A window a snapshot marks as sending no change
+  events hosts Compose, which sends no events to UI automation (spike S1),
+  Compose dialogs included. While a host is connected the agent re-reads
   such windows in full every `--compose-poll-ms` (default 1000, 0 turns it
   off, never more often than four times the last re-read took), after
   evicting their cached nodes (hidden `AccessibilityCache.clearSubTree` on a
@@ -307,9 +338,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
 
 | Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
 | --- | --- | --- |
-| `classes.dex` | 115,844 bytes | 2,416,668 bytes |
-| `mobile-agent-android.jar` (deflated) | 59,168 bytes | 722,658 bytes |
-| Dex contents | 150 classes, 728 method references | 1,216 classes, 13,318 method references |
+| `classes.dex` | 123,568 bytes | 2,428,548 bytes |
+| `mobile-agent-android.jar` (deflated) | 63,238 bytes | 727,726 bytes |
+| Dex contents | 155 classes, 759 method references | 1,224 classes, 13,366 method references |
 | Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
 `test.sh` fails when `classes.dex` is not under 300,000 bytes (task 4.10).
@@ -432,6 +463,9 @@ the agent answers by id and its tests exercise it throughout.
 | | Portrait, default format, scaling | `screenshot::a_portrait_screenshot_is_a_jpeg_of_the_display_and_scales_on_request` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
+| ui-mirror: Windows without change events (agent side, task 3.6) | Compose windows marked, dialogs included | `metadata::a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_change_events`, `metadata::an_in_app_alert_is_a_modal_window_of_the_app_that_sends_no_change_events`, `metadata::an_expo_list_is_a_vertical_scroll_view_in_a_window_that_sends_change_events` |
+| ui-mirror: Snapshot content (agent side, task 3.6) | Scroll semantics for rows out of view | `metadata::a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_change_events`, `metadata::an_expo_list_is_a_vertical_scroll_view_in_a_window_that_sends_change_events` |
+| Window owner and modal flag (task 3.6) | Permission prompt, in-app alert | `metadata::a_permission_prompt_is_a_modal_window_owned_by_the_permission_controller`, `metadata::an_in_app_alert_is_a_modal_window_of_the_app_that_sends_no_change_events` |
 | android-driver: Agent lifecycle | Daemon shutdown | `lifecycle::after_shutdown_no_agent_process_remains_and_the_role_is_free`, `handshake::shutdown_is_answered_before_the_agent_exits` |
 | | No process left after the host disconnects | `lifecycle::after_the_host_disconnects_the_agent_exits_within_its_idle_bound`, `lifecycle::an_agent_no_host_ever_reaches_exits_within_its_idle_bound` |
 | | App restarted | `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` |

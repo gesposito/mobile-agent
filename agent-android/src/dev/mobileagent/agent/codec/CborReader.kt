@@ -138,6 +138,8 @@ class CborReader(@JvmField val buf: ByteArray, @JvmField var pos: Int, @JvmField
     /** Whether the next item is null, which stands for an absent optional field. */
     fun nextIsNull(): Boolean = pos < end && (buf[pos].toInt() and 0xFF) == 0xF6
 
+    fun optBool(): Boolean? = if (nextIsNull()) { pos++; null } else bool()
+
     fun optUint8(): Int? = if (nextIsNull()) { pos++; null } else uint8()
 
     fun optUint16(): Int? = if (nextIsNull()) { pos++; null } else uint16()

@@ -68,6 +68,14 @@ fn visible_rows(s: &Snapshot) -> i32 {
         .count() as i32
 }
 
+/// The scroll semantics of the list of 200 rows, found by its range, since
+/// Compose leaves the rows scrolled out of view out of the tree.
+fn list_scroll(s: &Snapshot) -> Option<Scroll> {
+    nodes(s)
+        .into_iter()
+        .find_map(|(f, _)| f.node.scroll.filter(|sc| sc.range == rows()))
+}
+
 fn rows() -> Option<ScrollRange> {
     Some(ScrollRange {
         unit: ScrollUnit::ITEMS,
@@ -134,8 +142,7 @@ fn a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_ch
     }));
     assert!(matches!(reply, Ok(Reply::Input(_))), "swipe: {reply:?}");
     let mid = poll(Duration::from_secs(5), Duration::from_millis(200), || {
-        let s = snapshot(&mut client);
-        let scroll = scroller_above(&s, "row-10").and_then(|n| n.scroll)?;
+        let scroll = list_scroll(&snapshot(&mut client))?;
         scroll.flags.contains(ScrollFlags::BACK).then_some(scroll)
     })
     .expect("the list never reported that it can scroll back");

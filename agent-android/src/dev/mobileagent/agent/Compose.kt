@@ -9,12 +9,13 @@ import dev.mobileagent.agent.codec.TreeChangeKind
 
 /**
  * Windows hosting Jetpack Compose (an AndroidComposeView, under a
- * `androidx.compose.ui.platform.ComposeView`) send no accessibility events to
- * a UI automation client (spike S1, design D5), so their platform cache goes
- * stale after most changes. The tracker re-reads them in full with their
- * cache evicted, on a poll, diffs each read against the last read the host
- * could have seen, and reports the smallest subtree holding every difference
- * as a tree event.
+ * `androidx.compose.ui.platform.ComposeView` or in a Compose dialog) send no
+ * accessibility events to a UI automation client (spike S1, design D5), so
+ * their platform cache goes stale after most changes. The tracker takes the
+ * windows a snapshot marks as sending no change events ([Semantics]),
+ * re-reads them in full with their cache evicted, on a poll, diffs each read
+ * against the last read the host could have seen, and reports the smallest
+ * subtree holding every difference as a tree event.
  */
 class ComposeTracker(
     private val automation: Automation,
@@ -23,20 +24,6 @@ class ComposeTracker(
     private val trace: Boolean,
 ) {
     companion object {
-        /** Class names of Compose's hosting views start with this. */
-        const val COMPOSE_PREFIX = "androidx.compose."
-
-        fun hasCompose(s: Snapshot, root: Node): Boolean {
-            val stack = ArrayList<Node>()
-            stack.add(root)
-            while (stack.isNotEmpty()) {
-                val n = stack.removeAt(stack.size - 1)
-                if (s.strings[n.cls].startsWith(COMPOSE_PREFIX)) return true
-                stack.addAll(n.children)
-            }
-            return false
-        }
-
         /** Every node of the tree under `root`, keyed by its child-index path, hashed with what the payload carries. */
         fun signatures(s: Snapshot, root: Node): HashMap<String, Long> {
             val out = HashMap<String, Long>()
@@ -52,6 +39,12 @@ class ComposeTracker(
                 h = h * 31 + n.bounds.bottom
                 h = h * 31 + n.flags
                 h = h * 31 + n.children.size
+                n.scroll?.let { sc ->
+                    h = h * 31 + sc.axis
+                    h = h * 31 + sc.flags
+                    sc.range?.let { h = ((h * 31 + it.unit) * 31 + it.min) * 31 + it.max }
+                    sc.position?.let { h = (h * 31 + it.first) * 31 + it.last }
+                }
                 out[path] = h
                 n.children.forEachIndexed { i, c -> visit(c, if (path.isEmpty()) "$i" else "$path.$i") }
             }
@@ -102,7 +95,7 @@ class ComposeTracker(
     fun observe(s: Snapshot) {
         for (w in s.windows) {
             val root = w.root ?: continue
-            if (hasCompose(s, root)) {
+            if (w.emitsEvents == false) {
                 compose.add(w.id)
                 seen[w.id] = signatures(s, root)
             } else {
@@ -144,7 +137,7 @@ class ComposeTracker(
         synchronized(this) {
             for (w in s.windows) {
                 val root = w.root ?: continue
-                if (!hasCompose(s, root)) {
+                if (w.emitsEvents != false) {
                     compose.remove(w.id)
                     continue
                 }

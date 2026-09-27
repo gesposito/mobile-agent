@@ -9,6 +9,7 @@ import dev.mobileagent.agent.codec.Bounds
 import dev.mobileagent.agent.codec.Node
 import dev.mobileagent.agent.codec.NodeFlag
 import dev.mobileagent.agent.codec.Protocol
+import dev.mobileagent.agent.codec.Scroll
 import dev.mobileagent.agent.codec.Snapshot
 import dev.mobileagent.agent.codec.Truncation
 import dev.mobileagent.agent.codec.Window
@@ -30,6 +31,10 @@ class Cancelled : RuntimeException() {
  * or below the depth cap the walk goes on counting, up to [COUNT_LIMIT]
  * nodes, so `node_count` is the whole screen's count and the host learns how
  * many nodes a truncated snapshot omitted.
+ *
+ * Each window also carries its metadata and each scrolling node its scroll
+ * semantics ([Semantics]): a window whose walk meets Compose content sends
+ * no change events, one the walk completed without meeting it does.
  */
 class TreeReader(private val automation: Automation) {
     companion object {
@@ -123,6 +128,7 @@ class TreeReader(private val automation: Automation) {
     ) {
         @JvmField var children: IntArray = EMPTY
         @JvmField var childCount = 0
+        @JvmField var scroll: Scroll? = null
 
         fun add(id: Int) {
             if (childCount == children.size) children = children.copyOf(maxOf(4, childCount * 2))
@@ -147,20 +153,26 @@ class TreeReader(private val automation: Automation) {
         val strings = LinkedHashMap<String, Int>()
         fun intern(s: String): Int = strings.getOrPut(s) { strings.size }
 
-        val windows = automation.windows().filter { only == null || it.id in only }.sortedByDescending { it.layer }
+        val all = automation.windows()
+        val windows = all.filter { only == null || it.id in only }.sortedByDescending { it.layer }
         val queue = ArrayDeque<Item>()
         val roots = IntArray(windows.size) { -1 }
-        val packages = arrayOfNulls<Int>(windows.size)
+        val packages = arrayOfNulls<String>(windows.size)
+        val rooted = BooleanArray(windows.size)
+        /** Whether the walk met Compose content in each window. */
+        val compose = BooleanArray(windows.size)
         var truncated = 0
         windows.forEachIndexed { i, w ->
             val r = root(w)
             if (r == null) {
                 truncated = truncated or Truncation.WINDOWS
             } else {
-                r.packageName?.let { packages[i] = intern(it.toString()) }
+                rooted[i] = true
+                packages[i] = r.packageName?.toString()
                 queue.addLast(Item(r, 0, -1, i, true))
             }
         }
+        val packageIndices = Array(windows.size) { i -> packages[i]?.let { intern(it) } }
 
         val built = ArrayList<Built>()
         val infos = ArrayList<AccessibilityNodeInfo>()
@@ -174,6 +186,7 @@ class TreeReader(private val automation: Automation) {
             val n = item.info
             total++
             if (n.isVisibleToUser) visible++
+            if (!compose[item.window] && Semantics.hostsCompose(n)) compose[item.window] = true
             var id = -1
             if (item.serialize) {
                 if (built.size < maxNodes) {
@@ -198,37 +211,52 @@ class TreeReader(private val automation: Automation) {
                     truncated = truncated or Truncation.NODES
                 }
             }
-            if (item.depth >= Protocol.MAX_NODE_DEPTH) continue
-            val count = n.childCount
-            if (count == 0) continue
-            val childSerialized = id >= 0 && item.depth + 1 <= depthCap
-            if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
-            for (i in 0 until count) {
-                val c = child(n, i) ?: continue
-                queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
+            // Scroll semantics look at the children, which the walk fetches anyway.
+            val scrolling = if (id >= 0 && Semantics.scrolls(n)) ArrayList<AccessibilityNodeInfo>() else null
+            val count = if (item.depth >= Protocol.MAX_NODE_DEPTH) 0 else n.childCount
+            if (count > 0) {
+                val childSerialized = id >= 0 && item.depth + 1 <= depthCap
+                if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
+                for (i in 0 until count) {
+                    val c = child(n, i) ?: continue
+                    scrolling?.add(c)
+                    queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
+                }
             }
+            if (scrolling != null) built[id].scroll = Semantics.scroll(n, scrolling)
         }
-        if (queue.isNotEmpty()) truncated = truncated or Truncation.NODES
+        val complete = queue.isEmpty()
+        if (!complete) truncated = truncated or Truncation.NODES
 
         // Children have larger ids than their parent, so assemble from the end.
         val nodes = arrayOfNulls<Node>(built.size)
         for (id in built.indices.reversed()) {
             val b = built[id]
             val children = if (b.childCount == 0) Node.NO_CHILDREN else Array(b.childCount) { nodes[b.children[it]]!! }
-            nodes[id] = Node(id, b.cls, b.resPkg, b.resId, b.text, b.desc, b.bounds, b.flags, children)
+            nodes[id] = Node(id, b.cls, b.resPkg, b.resId, b.text, b.desc, b.bounds, b.flags, children, b.scroll)
         }
+        val display = Semantics.displaySize()
         val wire = Array(windows.size) { i ->
             val w = windows[i]
+            val type = windowType(w.type)
+            val modal = Semantics.modal(w, all, display, rect)
             w.getBoundsInScreen(rect)
             Window(
                 w.id,
-                windowType(w.type),
+                type,
                 w.layer,
-                packages[i],
+                packageIndices[i],
                 w.title?.toString(),
                 Bounds(rect.left, rect.top, rect.right, rect.bottom),
                 windowFlags(w),
                 roots[i].takeIf { it >= 0 }?.let { nodes[it] },
+                emitsEvents = when {
+                    compose[i] -> false
+                    !rooted[i] || !complete -> null
+                    else -> true
+                },
+                ownerIndex = Semantics.systemOwner(type, packages[i])?.let { intern(it) },
+                modal = modal,
             )
         }
         val snapshot = Snapshot(strings.keys.toTypedArray(), wire, total, truncated, seq)
