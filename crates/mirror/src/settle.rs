@@ -31,6 +31,16 @@ impl Default for SettleOptions {
     }
 }
 
+impl Signals {
+    pub(crate) fn tree(self) -> bool {
+        self != Signals::FramesOnly
+    }
+
+    pub(crate) fn frames(self) -> bool {
+        self != Signals::TreeOnly
+    }
+}
+
 /// Which changes hold a settle wait.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Signals {
@@ -70,6 +80,17 @@ pub struct Settle {
 impl Settle {
     /// Why the screen is still changing, such as `frame changes`.
     pub fn reason(&self) -> Option<String> {
-        todo!("task 7.4")
+        if self.settled || self.still_changing.is_empty() {
+            return None;
+        }
+        let names: Vec<&str> = self
+            .still_changing
+            .iter()
+            .map(|signal| match signal {
+                Signal::Tree => "tree changes",
+                Signal::Frames => "frame changes",
+            })
+            .collect();
+        Some(names.join(" and "))
     }
 }

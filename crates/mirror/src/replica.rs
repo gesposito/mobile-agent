@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use protocol::event::{EventPayload, LifecycleKind, Stream};
 use protocol::snapshot::{Bounds, Node, NodeFlags, Truncation, Window, WindowFlags, WindowType};
@@ -145,7 +145,8 @@ pub(crate) struct Replica {
     pub last_frame_change: Option<Instant>,
     pub frame_changes: u64,
     pub last_action: Option<Instant>,
-    pub tree_events: u64,
+    /// Tree and window events applied, plus deltas found by reads.
+    pub tree_changes: u64,
     interner: HashMap<String, Arc<str>>,
     /// Where each element is: window and node index.
     index: HashMap<ElementId, (usize, usize)>,
@@ -170,7 +171,7 @@ impl Replica {
             last_frame_change: None,
             frame_changes: 0,
             last_action: None,
-            tree_events: 0,
+            tree_changes: 0,
             interner: HashMap::new(),
             index: HashMap::new(),
         }
@@ -231,7 +232,7 @@ impl Replica {
     fn apply_event(&mut self, at: Instant, payload: &EventPayload) {
         match payload {
             EventPayload::Tree(change) => {
-                self.tree_events += 1;
+                self.tree_changes += 1;
                 self.last_tree_change = self.last_tree_change.max(Some(at));
                 match self.windows.iter_mut().find(|w| w.id == change.window) {
                     Some(window) => window.dirty = true,
@@ -239,7 +240,7 @@ impl Replica {
                 }
             }
             EventPayload::Window(_) => {
-                self.tree_events += 1;
+                self.tree_changes += 1;
                 self.last_tree_change = self.last_tree_change.max(Some(at));
                 self.request_full(ReadReason::Events);
             }
@@ -311,6 +312,40 @@ impl Replica {
             windows: Some(windows),
             reason,
         })
+    }
+
+    /// The re-read due at `now` for the windows that send no change events
+    /// when they are polled every `every`: after injected input at once,
+    /// then once per interval. Used while waiting without frames to watch.
+    pub fn due_reread(&self, now: Instant, every: Duration) -> Option<ReadRequest> {
+        let mut windows = Vec::new();
+        let mut strongest = None;
+        for window in self.windows.iter().filter(|w| w.reread()) {
+            let reason = if window.action_pending {
+                Some(ReadReason::Action)
+            } else if now >= window.read_started + every {
+                Some(ReadReason::Poll)
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                windows.push(window.id);
+                strongest = strongest.max(Some(reason));
+            }
+        }
+        strongest.map(|reason| ReadRequest {
+            windows: Some(windows),
+            reason,
+        })
+    }
+
+    /// When [`Replica::due_reread`] next has something to read.
+    pub fn next_reread(&self, every: Duration) -> Option<Instant> {
+        self.windows
+            .iter()
+            .filter(|w| w.reread())
+            .map(|w| w.read_started + every)
+            .min()
     }
 
     /// When the next poll or frame-driven re-read falls due, if ever.
@@ -436,6 +471,7 @@ impl Replica {
         if !changes.is_empty() {
             self.last_tree_change = self.last_tree_change.max(Some(finished));
             for (window, found) in changes {
+                self.tree_changes += 1;
                 self.deltas.push(TreeDelta {
                     at: finished,
                     revision: self.revision,

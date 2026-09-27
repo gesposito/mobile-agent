@@ -12,7 +12,7 @@ use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
 use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
-use crate::settle::{Settle, SettleOptions};
+use crate::settle::{Settle, SettleOptions, Signal};
 use crate::snapshot::{
     Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
     WindowSummary,
@@ -407,9 +407,80 @@ impl Mirror {
     }
 
     /// Waits until neither the tree nor the frames have changed for the
-    /// quiet window, or until the maximum passes.
-    pub fn settle(&mut self, _options: &SettleOptions) -> Result<Settle, MirrorError> {
-        todo!("task 7.4")
+    /// quiet window, or until the maximum passes. The window counts from
+    /// the last change or the last injected input, whichever is later; a
+    /// screen quiet for that long is settled at once. Tree changes are the
+    /// change events as they arrive and the deltas of re-reads; without
+    /// frames to watch, windows that send no change events are re-read every
+    /// minimum re-read interval meanwhile.
+    pub fn settle(&mut self, options: &SettleOptions) -> Result<Settle, MirrorError> {
+        let start = self.now();
+        let deadline = start + options.max;
+        let tree_before = self.replica.tree_changes;
+        let frames_before = self.replica.frame_changes;
+        let blind = self.backend.frames.is_none();
+        let every = self.config.min_reread_interval;
+        self.drain();
+        loop {
+            if blind {
+                self.reread_quietly(every)?;
+            }
+            let now = self.now();
+            let tree = options
+                .signals
+                .tree()
+                .then_some(self.replica.last_tree_change)
+                .flatten();
+            let frames = options
+                .signals
+                .frames()
+                .then_some(self.replica.last_frame_change)
+                .flatten();
+            let last = [tree, frames, self.replica.last_action]
+                .into_iter()
+                .flatten()
+                .max();
+            let quiet_until = last.map(|at| at + options.quiet);
+            let settled = quiet_until.is_none_or(|until| now >= until);
+            if settled || now >= deadline {
+                let since = now.checked_sub(options.quiet).unwrap_or(start);
+                let mut still_changing = Vec::new();
+                if !settled {
+                    if tree.is_some_and(|at| at > since) {
+                        still_changing.push(Signal::Tree);
+                    }
+                    if frames.is_some_and(|at| at > since) {
+                        still_changing.push(Signal::Frames);
+                    }
+                }
+                return Ok(Settle {
+                    settled,
+                    elapsed: now - start,
+                    still_changing,
+                    tree_changes: self.replica.tree_changes - tree_before,
+                    frame_changes: self.replica.frame_changes - frames_before,
+                });
+            }
+            let mut wake = quiet_until.map_or(deadline, |until| until.min(deadline));
+            if blind && let Some(due) = self.replica.next_reread(every) {
+                wake = wake.min(due);
+            }
+            if let Some(item) = self.backend.events.next(wake.max(now)) {
+                self.replica.apply(item);
+            }
+        }
+    }
+
+    /// Re-reads the windows that send no change events when they are due
+    /// every `every`, leaving other windows alone.
+    fn reread_quietly(&mut self, every: Duration) -> Result<(), MirrorError> {
+        let started = self.now();
+        if let Some(request) = self.replica.due_reread(started, every) {
+            let read = self.backend.tree.read(&request)?;
+            let finished = self.now();
+            self.replica.integrate(read, &request, started, finished);
+        }
+        Ok(())
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.
