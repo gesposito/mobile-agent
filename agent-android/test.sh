@@ -4,7 +4,8 @@
 # Pushes dist/mobile-agent-android.jar to /data/local/tmp, starts it with
 # app_process as the shell user and checks the banner contract: `--version` and
 # no arguments print exactly one line `mobile-agent-android <VERSION> protocol=<n>`,
-# where <n> is Protocol.VERSION in the codec, and exit 0; any other argument
+# where <VERSION> is the content of the VERSION file, checked on its own first,
+# and <n> is Protocol.VERSION in the codec, and exit 0; any other argument
 # prints `unknown argument` to stderr and exits 2, and `serve` without a socket
 # name prints a usage line and exits 2. It also checks that no agent process
 # outlives its run.
@@ -51,7 +52,12 @@ dex_bytes="$(unzip -Z -l "$jar" classes.dex | awk '$NF == "classes.dex" { print 
 echo "ok: classes.dex is $dex_bytes bytes, under $dex_limit"
 
 [[ $protocol =~ ^[0-9]+$ ]] || fail "cannot read Protocol.VERSION from the codec"
-expected="mobile-agent-android $(<"$here/VERSION") protocol=$protocol"
+# The agent's version is the content of VERSION, which build.sh compiles into
+# the banner and the hello; the script names no version of its own.
+version="$(<"$here/VERSION")"
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+  fail "VERSION must hold one semantic version, found '$version'"
+expected="mobile-agent-android $version protocol=$protocol"
 
 tmp="$(mktemp -d)"
 pushed=false
@@ -83,14 +89,22 @@ run_agent() {
 }
 
 # expect_banner LABEL ARGS...: the run prints exactly the banner line and exits 0.
+# The version in the banner is checked first and on its own, so that a jar
+# built from another VERSION is reported as such.
 expect_banner() {
-  local label=$1 status=0 out lines
+  local label=$1 status=0 out lines reported
   shift
   run_agent "$@" || status=$?
   [[ $status -ne 124 ]] || fail "$label: agent still running after ${run_timeout_s}s"
   [[ $status -eq 0 ]] || fail "$label: exit status $status, expected 0; stderr: $(<"$tmp/err")"
   out="$(tr -d '\r' <"$tmp/out")"
   lines="$(wc -l <"$tmp/out" | tr -d ' ')"
+  reported="$(sed -n '1s/^mobile-agent-android \([^ ]*\) protocol=[0-9]*$/\1/p' <<<"$out")"
+  if [[ -n $reported ]]; then
+    [[ $reported == "$version" ]] ||
+      fail "$label: the jar reports version $reported but VERSION holds $version; rebuild it with build.sh"
+    echo "ok: $label reports version $reported, the content of VERSION"
+  fi
   [[ $lines -eq 1 && $out == "$expected" ]] ||
     fail "$label: stdout was '$out' ($lines lines), expected exactly '$expected'"
   echo "ok: $label prints '$out' and exits 0"
