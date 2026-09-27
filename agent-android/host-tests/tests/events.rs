@@ -263,3 +263,78 @@ fn a_tree_resync_answers_the_last_sequence_and_the_next_read_is_full() {
     assert!(trips >= 100, "the read after the resync was warm: {line}");
     println!("{line}");
 }
+
+/// Task 3.7: after input the agent did not inject, such as the emulator
+/// controller's or `input tap`, a snapshot that asks for it evicts the
+/// cache of the windows that send no change events and reads them in full,
+/// with no resync of the tree stream. Reads that do not ask for it are
+/// served from the cache: the one before it here, which leaves the Big tab
+/// cached whatever events the tap sent, and the one after it.
+#[test]
+fn a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject() {
+    let Some(dev) =
+        device("a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject")
+    else {
+        return;
+    };
+    fixture::launch(&dev, fixture::COMPOSE, "login");
+    let mut agent = Agent::launch(
+        &dev,
+        Launch::default()
+            .arg("--trace")
+            .arg("--compose-poll-ms")
+            .arg("0"),
+    );
+    let mut client = agent.connect();
+    let before = snapshot(&mut client);
+    let (tab, _) = find(&before, "tab-big").expect("tab-big");
+    let (x, y) = center(tab.node.bounds);
+    // Input the agent did not inject: it knows nothing of it.
+    dev.shell(&format!("input tap {x} {y}"));
+    client.idle(Duration::from_millis(800));
+    let (_, cached) = traced_read(&mut client, &mut agent, None);
+    let (after, evicting) = traced_read(&mut client, &mut agent, Some(true));
+    assert_eq!(
+        tree::find_all(&after, "cell-").len(),
+        500,
+        "the evicting read shows the Big tab the tap opened"
+    );
+    let (_, later) = traced_read(&mut client, &mut agent, None);
+    println!("cached: {cached}\nevicting: {evicting}\nlater: {later}");
+    let trips = |line: &str| -> i64 { fields(line)["round_trips"].parse().expect("round trips") };
+    assert!(
+        trips(&evicting) >= 100,
+        "the evicting read was served from the cache: {evicting}"
+    );
+    assert!(
+        trips(&later) < 100,
+        "a read that asks for no eviction was not served from the cache: {later}"
+    );
+    assert!(
+        client
+            .notices
+            .iter()
+            .all(|n| !matches!(n, HostEvent::Resynced { .. })),
+        "no resync: {:?}",
+        client.notices
+    );
+    assert_in_sync(&client);
+}
+
+/// A snapshot without an idle wait, asking for the eviction of the
+/// event-less windows when `evict` says so, with the agent's trace line.
+fn traced_read(client: &mut Client, agent: &mut Agent, evict: Option<bool>) -> (Snapshot, String) {
+    agent.drain_lines();
+    let snapshot = match client.call(Call::Snapshot(SnapshotParams {
+        idle_ms: Some(0),
+        evict_event_less: evict,
+        ..SnapshotParams::default()
+    })) {
+        Ok(Reply::Snapshot(s)) => s,
+        other => panic!("snapshot failed: {other:?}"),
+    };
+    let line = agent
+        .wait_line(Duration::from_secs(2), |l| l.starts_with("trace snapshot "))
+        .expect("trace");
+    (snapshot, line)
+}

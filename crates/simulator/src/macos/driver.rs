@@ -920,7 +920,7 @@ impl Tree for SimulatorDriver {
             let params = SnapshotParams {
                 max_depth: Some(options.max_depth),
                 max_nodes: Some(options.max_nodes),
-                idle_ms: None,
+                ..SnapshotParams::default()
             };
             let translate = || translator::read(&target.device, target.screen.scale, options);
             let (snapshot, backend, fallback) = match self.options.tree {

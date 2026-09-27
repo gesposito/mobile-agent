@@ -1705,8 +1705,7 @@ mod tests {
     fn limits_come_from_the_request_capped_at_the_protocol_depth() {
         let limits = Limits::from_params(&SnapshotParams {
             max_depth: Some(1000),
-            max_nodes: None,
-            idle_ms: None,
+            ..SnapshotParams::default()
         });
         assert_eq!(limits.max_depth, MAX_NODE_DEPTH as u32);
         assert_eq!(limits.max_nodes, 10_000);

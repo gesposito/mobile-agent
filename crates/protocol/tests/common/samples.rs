@@ -403,12 +403,25 @@ pub fn samples() -> Vec<(&'static str, Message)> {
                     max_depth: Some(64),
                     max_nodes: Some(5000),
                     idle_ms: Some(0),
+                    ..SnapshotParams::default()
                 }),
             ),
         ),
         (
             "request_snapshot_defaults",
             request(u32::MAX, None, Call::Snapshot(SnapshotParams::default())),
+        ),
+        (
+            "request_snapshot_evict",
+            request(
+                3,
+                Some(10_000),
+                Call::Snapshot(SnapshotParams {
+                    idle_ms: Some(0),
+                    evict_event_less: Some(true),
+                    ..SnapshotParams::default()
+                }),
+            ),
         ),
         (
             "request_screenshot",

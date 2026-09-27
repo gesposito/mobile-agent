@@ -205,6 +205,11 @@ fn request_round_trips_for_every_method() {
             max_depth: Some(64),
             max_nodes: Some(5000),
             idle_ms: Some(0),
+            ..SnapshotParams::default()
+        }),
+        Call::Snapshot(SnapshotParams {
+            evict_event_less: Some(true),
+            ..SnapshotParams::default()
         }),
         Call::Screenshot(ScreenshotParams {
             format: Some(ImageFormat::JPEG),
@@ -432,14 +437,28 @@ fn maps_write_keys_in_ascending_order_and_omit_absent_fields() {
         id: 1,
         deadline_ms: Some(200),
         call: Call::Snapshot(SnapshotParams {
-            max_depth: None,
             max_nodes: Some(500),
-            idle_ms: None,
+            ..SnapshotParams::default()
         }),
     });
     assert_eq!(
         with_deadline.to_vec(),
         hex("a5 00 02 01 01 02 01 03 18 c8 04 a1 01 19 01 f4")
+    );
+    // Task 3.7: the eviction of event-less windows is key 3, a boolean, and
+    // omitted when absent.
+    let evicting = Message::Request(Request {
+        id: 1,
+        deadline_ms: None,
+        call: Call::Snapshot(SnapshotParams {
+            idle_ms: Some(0),
+            evict_event_less: Some(true),
+            ..SnapshotParams::default()
+        }),
+    });
+    assert_eq!(
+        evicting.to_vec(),
+        hex("a4 00 02 01 01 02 01 04 a2 02 00 03 f5")
     );
     let error = Message::Response(Response {
         id: 24,

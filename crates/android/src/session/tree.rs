@@ -56,6 +56,7 @@ pub fn snapshot_params(reason: ReadReason, options: &ReadOptions) -> SnapshotPar
         max_depth: options.max_depth,
         max_nodes: options.max_nodes,
         idle_ms,
+        ..SnapshotParams::default()
     }
 }
 

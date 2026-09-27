@@ -303,6 +303,141 @@ fn a_failed_resync_is_reported() {
     assert!(!link.host.streams().is_in_sync(Stream::TREE));
 }
 
+/// Makes the host see a gap on the tree stream and returns the resync
+/// request it sent the agent.
+fn gap(link: &mut Link, now: std::time::Instant) -> protocol::message::Request {
+    link.agent.emit(tree(1), 1);
+    link.agent.skip_event(Stream::TREE);
+    link.agent.emit(tree(1), 2);
+    link.pump(now);
+    let _ = link.host_events();
+    let AgentEvent::Request(request) = one(link.agent_events()) else {
+        panic!("not a request")
+    };
+    assert_eq!(
+        request.call,
+        Call::Resync(ResyncParams {
+            stream: Stream::TREE
+        })
+    );
+    request
+}
+
+/// The resync requests the agent received.
+fn resync_requests(link: &mut Link) -> Vec<protocol::message::Request> {
+    link.agent_events()
+        .into_iter()
+        .filter_map(|e| match e {
+            AgentEvent::Request(r) if matches!(r.call, Call::Resync(_)) => Some(r),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Task 3.7: an automatic resync that fails for a reason a retry can fix,
+/// such as a busy agent, is retried after a backoff until the stream is in
+/// sync again, rather than leaving its events dropped.
+#[test]
+fn a_failed_automatic_resync_is_retried_until_the_stream_is_in_sync() {
+    let mut link = Link::ready(host_config(&[1]), agent_config(&[1], every_capability()));
+    let t0 = link.t0;
+    let first = gap(&mut link, t0);
+    link.agent.respond(
+        first.id,
+        Err(protocol::Error::new(protocol::code::BUSY, "reading")),
+    );
+    link.pump(link.t0);
+    let events = link.host_events();
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, HostEvent::ResyncFailed { .. })),
+        "a busy agent is asked again, not given up on: {events:?}"
+    );
+    let retry_at = link.host.poll_timeout().expect("a timer");
+    assert!(
+        retry_at > link.t0 && retry_at <= link.at(100),
+        "the retry is due after a short backoff: {:?}",
+        retry_at - link.t0
+    );
+    link.host.handle_timeout(link.at(50));
+    link.pump(link.at(50));
+    assert!(
+        resync_requests(&mut link).is_empty(),
+        "not before the backoff"
+    );
+
+    link.host.handle_timeout(link.at(100));
+    link.pump(link.at(100));
+    let [second] = resync_requests(&mut link).try_into().expect("one retry");
+    link.agent.respond(
+        second.id,
+        Err(protocol::Error::new(protocol::code::BUSY, "reading")),
+    );
+    link.pump(link.at(100));
+    let _ = link.host_events();
+    let later = link.host.poll_timeout().expect("a timer");
+    assert!(
+        later >= link.at(300),
+        "the backoff doubles: {:?}",
+        later - link.t0
+    );
+    link.host.handle_timeout(later);
+    link.pump(later);
+    let [third] = resync_requests(&mut link)
+        .try_into()
+        .expect("another retry");
+    let base = link.agent.last_seq(Stream::TREE);
+    link.agent.respond(
+        third.id,
+        Ok(Reply::Resync(ResyncAck {
+            stream: Stream::TREE,
+            seq: base,
+        })),
+    );
+    link.agent.emit(tree(1), 3);
+    link.pump(later);
+    let events = link.host_events();
+    assert_eq!(
+        events.first(),
+        Some(&HostEvent::Resynced {
+            stream: Stream::TREE,
+            seq: base,
+        }),
+        "{events:?}"
+    );
+    assert!(
+        matches!(events.get(1), Some(HostEvent::Event(e)) if e.seq == base + 1),
+        "the stream's events flow again: {events:?}"
+    );
+    assert!(link.host.streams().is_in_sync(Stream::TREE));
+}
+
+/// Task 3.7: a failure no retry can fix is reported once and not retried.
+#[test]
+fn an_automatic_resync_the_agent_cannot_serve_is_reported_and_not_retried() {
+    let mut link = Link::ready(host_config(&[1]), agent_config(&[1], every_capability()));
+    let t0 = link.t0;
+    let request = gap(&mut link, t0);
+    link.agent.respond(
+        request.id,
+        Err(protocol::Error::new(
+            protocol::code::INTERNAL,
+            "cache reset failed",
+        )),
+    );
+    link.pump(link.t0);
+    assert!(matches!(
+        link.host_events().as_slice(),
+        [HostEvent::ResyncFailed { .. }]
+    ));
+    for ms in [100, 1000, 5000] {
+        link.host.handle_timeout(link.at(ms));
+        link.pump(link.at(ms));
+    }
+    assert!(resync_requests(&mut link).is_empty(), "no retry");
+}
+
 #[test]
 fn frame_events_skip_numbers_without_a_resync() {
     let mut link = Link::ready(host_config(&[1]), agent_config(&[1], every_capability()));

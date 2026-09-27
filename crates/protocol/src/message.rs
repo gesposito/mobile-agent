@@ -401,6 +401,12 @@ pub struct SnapshotParams {
     /// Longest wait for the UI to go idle before reading; 0 skips the wait.
     #[n(2)]
     pub idle_ms: Option<u32>,
+    /// Evict the platform's node cache of the windows that send no change
+    /// events before reading: input the agent did not inject, such as the
+    /// emulator controller's, left them stale. The tree stream and every
+    /// other window's cache are left alone, unlike a resync.
+    #[cbor(skip)]
+    pub evict_event_less: Option<bool>,
 }
 
 /// Parameters of `screenshot`.

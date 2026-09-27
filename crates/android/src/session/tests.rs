@@ -399,8 +399,12 @@ fn a_mirror_on_the_session_reads_a_compose_window_again_after_a_tap() {
     assert_eq!(session.last_read().unwrap().reason, ReadReason::Action);
 }
 
+/// Task 3.7: input the agent did not inject, the controller's, leaves only
+/// the cache of the windows that send no change events stale, so the next
+/// read asks the agent to evict those alone, with no resync of the whole
+/// tree, once the input is a quiet window old.
 #[test]
-fn after_input_the_agent_did_not_inject_a_compose_read_empties_its_cache_first() {
+fn after_input_the_agent_did_not_inject_a_read_evicts_only_the_event_less_windows() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&requests);
     let (_agent, session) = session(Box::new(move |request| {
@@ -422,19 +426,29 @@ fn after_input_the_agent_did_not_inject_a_compose_read_empties_its_cache_first()
     session.note_foreign_input(touched);
     backend.tree.read(&read(ReadReason::Action)).unwrap();
     let calls = requests.lock().unwrap().clone();
-    assert_eq!(calls.len(), 3, "{calls:?}");
-    assert_eq!(
-        calls[1].1,
-        Call::Resync(protocol::message::ResyncParams {
-            stream: Stream::TREE
-        })
-    );
-    assert!(matches!(calls[2].1, Call::Snapshot(_)));
+    assert_eq!(calls.len(), 2, "no resync, only the two reads: {calls:?}");
+    let Call::Snapshot(first) = &calls[0].1 else {
+        panic!("{calls:?}")
+    };
+    assert_eq!(first.evict_event_less, None, "nothing to evict yet");
+    let Call::Snapshot(params) = &calls[1].1 else {
+        panic!("{calls:?}")
+    };
+    assert_eq!(params.evict_event_less, Some(true), "{params:?}");
     assert!(
         calls[1].0 >= touched + INPUT_QUIET,
         "the read did not wait for the input to be a quiet window old"
     );
     assert!(session.last_read().unwrap().cleared_cache);
+    backend.tree.read(&read(ReadReason::Action)).unwrap();
+    let calls = requests.lock().unwrap().clone();
+    let Call::Snapshot(next) = &calls[2].1 else {
+        panic!("{calls:?}")
+    };
+    assert_eq!(
+        next.evict_event_less, None,
+        "the agent's own input needs no eviction from the host"
+    );
 }
 
 #[test]
@@ -460,7 +474,9 @@ fn without_compose_foreign_input_only_delays_the_read() {
     backend.tree.read(&read(ReadReason::Action)).unwrap();
     let calls = requests.lock().unwrap().clone();
     assert!(
-        calls.iter().all(|c| matches!(c, Call::Snapshot(_))),
+        calls
+            .iter()
+            .all(|c| matches!(c, Call::Snapshot(p) if p.evict_event_less.is_none())),
         "{calls:?}"
     );
     assert!(!session.last_read().unwrap().cleared_cache);
@@ -513,10 +529,11 @@ fn the_backend_is_taken_once() {
     let _second = session.backend();
 }
 
-/// An agent that lost the events capability cannot resync; the read after
-/// foreign input then reads without emptying the cache rather than failing.
+/// Task 3.7: the eviction rides on the snapshot request, so an agent that
+/// lost the events capability, which a resync needs, still gets its
+/// event-less windows evicted after foreign input.
 #[test]
-fn without_the_events_capability_a_read_after_foreign_input_still_succeeds() {
+fn without_the_events_capability_a_read_after_foreign_input_still_evicts() {
     let mut agent_config = config(Some("tok"));
     agent_config.capabilities = protocol::Capabilities::TREE | protocol::Capabilities::INPUT;
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -537,8 +554,8 @@ fn without_the_events_capability_a_read_after_foreign_input_still_succeeds() {
     backend.tree.read(&read(ReadReason::Action)).unwrap();
     let calls = requests.lock().unwrap().clone();
     assert!(
-        calls.iter().all(|c| matches!(c, Call::Snapshot(_))),
+        matches!(calls.as_slice(), [Call::Snapshot(_), Call::Snapshot(p)] if p.evict_event_less == Some(true)),
         "{calls:?}"
     );
-    assert!(!session.last_read().unwrap().cleared_cache);
+    assert!(session.last_read().unwrap().cleared_cache);
 }

@@ -252,6 +252,7 @@ object Samples {
         ),
         "request_snapshot" to Request(1, 200, SnapshotCall(maxDepth = 64, maxNodes = 5000, idleMs = 0)),
         "request_snapshot_defaults" to Request(-1, null, SnapshotCall()),
+        "request_snapshot_evict" to Request(3, 10000, SnapshotCall(idleMs = 0, evictEventLess = true)),
         "request_screenshot" to Request(
             2,
             65536,
