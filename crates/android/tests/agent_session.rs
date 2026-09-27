@@ -18,15 +18,13 @@ use android::agent::{Attached, DeployOptions, Deployer, Records};
 use android::emulator::{self, Options};
 use android::session::{ControllerLink, Session, SessionOptions};
 use common::{
-    Disturbed, Leftovers, agent_alive, agent_jar, device_lock, disturbed_by, retry_when_disturbed,
-    serial_or_skip,
+    COMPOSE, Disturbed, Fixture, Leftovers, agent_alive, agent_jar, compose_in_front, device_lock,
+    disturbed_by, launch_compose, retry_when_disturbed, serial_or_skip,
 };
 use mirror::backend::{ReadReason, ReadRequest, StreamItem};
 use mirror::{
     Action, Condition, Degradation, Mirror, MirrorConfig, Selector, SnapshotOptions, Target,
 };
-
-const COMPOSE: &str = "dev.mobileagent.fixture.compose";
 
 fn device(serial: &str) -> Device {
     AdbServer::from_env().device(serial)
@@ -34,60 +32,6 @@ fn device(serial: &str) -> Device {
 
 fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1e3
-}
-
-/// The activity in front, as the activity manager names it.
-fn foreground(device: &Device) -> String {
-    device
-        .shell("dumpsys activity activities | grep -m1 topResumedActivity")
-        .map(|out| out.stdout_text().trim().to_owned())
-        .unwrap_or_default()
-}
-
-/// A disturbance unless the Compose fixture is in front.
-fn compose_in_front(device: &Device, what: &str) -> Result<(), Disturbed> {
-    let front = foreground(device);
-    if front.contains(COMPOSE) {
-        Ok(())
-    } else {
-        Err(Disturbed(format!(
-            "{what}: another app is in front ({front})"
-        )))
-    }
-}
-
-/// Starts the Compose fixture afresh on `tab`, waits until it is in front
-/// and for the tree to settle.
-fn launch_compose(device: &Device, tab: &str) -> Result<(), Disturbed> {
-    let out = device
-        .shell(&format!(
-            "am start -W -S -n {COMPOSE}/.MainActivity --es initial_tab {tab}"
-        ))
-        .unwrap();
-    assert!(
-        out.stdout_text().contains("Status: ok"),
-        "the Compose fixture did not start: {}{}",
-        out.stdout_text(),
-        out.stderr_text()
-    );
-    let front = Instant::now();
-    while compose_in_front(device, "launch").is_err() {
-        if front.elapsed() > Duration::from_secs(5) {
-            return compose_in_front(device, "launch");
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    std::thread::sleep(Duration::from_millis(800));
-    Ok(())
-}
-
-/// Stops the Compose fixture when dropped.
-struct Fixture(Device);
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = self.0.shell(&format!("am force-stop {COMPOSE}"));
-    }
 }
 
 fn attach(device: &Device, leftovers: &mut Leftovers) -> Result<Attached, Disturbed> {

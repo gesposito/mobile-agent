@@ -262,3 +262,60 @@ pub fn retry_when_disturbed(
         }
     }
 }
+
+/// The Compose fixture's package (`fixtures/compose`).
+pub const COMPOSE: &str = "dev.mobileagent.fixture.compose";
+
+/// The activity in front, as the activity manager names it.
+pub fn foreground(device: &android::adb::Device) -> String {
+    device
+        .shell("dumpsys activity activities | grep -m1 topResumedActivity")
+        .map(|out| out.stdout_text().trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// A disturbance unless the Compose fixture is in front.
+pub fn compose_in_front(device: &android::adb::Device, what: &str) -> Result<(), Disturbed> {
+    let front = foreground(device);
+    if front.contains(COMPOSE) {
+        Ok(())
+    } else {
+        Err(Disturbed(format!(
+            "{what}: another app is in front ({front})"
+        )))
+    }
+}
+
+/// Starts the Compose fixture afresh on `tab`, waits until it is in front
+/// and for the tree to settle.
+pub fn launch_compose(device: &android::adb::Device, tab: &str) -> Result<(), Disturbed> {
+    let out = device
+        .shell(&format!(
+            "am start -W -S -n {COMPOSE}/.MainActivity --es initial_tab {tab}"
+        ))
+        .unwrap();
+    assert!(
+        out.stdout_text().contains("Status: ok"),
+        "the Compose fixture did not start: {}{}",
+        out.stdout_text(),
+        out.stderr_text()
+    );
+    let front = std::time::Instant::now();
+    while compose_in_front(device, "launch").is_err() {
+        if front.elapsed() > std::time::Duration::from_secs(5) {
+            return compose_in_front(device, "launch");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    Ok(())
+}
+
+/// Stops the Compose fixture when dropped.
+pub struct Fixture(pub android::adb::Device);
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = self.0.shell(&format!("am force-stop {COMPOSE}"));
+    }
+}

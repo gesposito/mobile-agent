@@ -18,6 +18,7 @@
 mod controller;
 mod events;
 mod input;
+mod paths;
 mod tree;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -43,6 +44,7 @@ pub use controller::{
 };
 pub use events::stream_item;
 pub use input::{agent_call, input_ack, swipe_touches};
+pub use paths::{ControllerChoice, Path, Paths, Selection, Status, select_paths};
 pub use tree::{BACKEND, has_event_less_window, scale_from_density, snapshot_params};
 
 /// How the session reads the tree.
@@ -301,6 +303,23 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn note_foreign_input(&self, at: Instant) {
         self.inner.note_foreign_input(at);
+    }
+
+    /// A session over `attached` on the paths `selection` chose (see
+    /// [`select_paths`]).
+    pub fn start_selected(
+        attached: Attached,
+        options: SessionOptions,
+        selection: Selection,
+    ) -> Result<Session, SessionError> {
+        let _ = (attached, options, selection);
+        todo!("task 5.5")
+    }
+
+    /// What the session reports: the agent, the active paths, the keyboard
+    /// capability, the fallback warning and what failed since.
+    pub fn status(&self) -> Status {
+        todo!("task 5.5")
     }
 
     /// The backend a `mirror::Mirror` runs on. Taken once: the event stream
