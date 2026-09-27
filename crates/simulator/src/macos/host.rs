@@ -22,8 +22,10 @@ pub struct Xcode {
     pub build: String,
 }
 
-/// The versions of this host, read without starting any process.
+/// The versions of this host, read without starting any process. Loads
+/// CoreSimulator first, since its version comes from the class it vends.
 pub fn detect() -> HostVersions {
+    let _ = objc::load_core_simulator();
     HostVersions {
         core_simulator: core_simulator(),
         xcode: xcode(&developer_dir()).map(|xcode| format!("{} ({})", xcode.version, xcode.build)),
@@ -99,12 +101,12 @@ fn string_value(value: &AnyObject) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macos::objc::load_core_simulator;
 
     #[test]
-    fn the_loaded_core_simulator_has_a_version() {
-        load_core_simulator().expect("CoreSimulator loads");
-        let version = core_simulator().expect("SimDevice's bundle has a version");
+    fn detection_loads_core_simulator_and_reads_its_version() {
+        let version = detect()
+            .core_simulator
+            .expect("SimDevice's bundle has a version");
         assert!(
             crate::version::Version::parse(&version).is_some(),
             "{version}"
