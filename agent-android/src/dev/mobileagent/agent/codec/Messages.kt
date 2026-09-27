@@ -135,6 +135,12 @@ class Window(
     @JvmField val bounds: Bounds,
     @JvmField val flags: Int,
     @JvmField val root: Node?,
+    /** Whether the window's toolkit sends change events; null when the agent cannot tell. */
+    @JvmField val emitsEvents: Boolean? = null,
+    /** String-table index of the system process that owns the window; null for the application under automation. */
+    @JvmField val ownerIndex: Int? = null,
+    /** The window keeps the user from the windows below it until it is dismissed. */
+    @JvmField val modal: Boolean = false,
 )
 
 class Node(
@@ -147,11 +153,32 @@ class Node(
     @JvmField val bounds: Bounds,
     @JvmField val flags: Int,
     @JvmField val children: Array<Node>,
+    /** How the node scrolls; null on nodes that do not scroll. */
+    @JvmField val scroll: Scroll? = null,
 ) {
     companion object {
         @JvmField val NO_CHILDREN: Array<Node> = arrayOf()
     }
 }
+
+/**
+ * Scroll semantics: the [ScrollAxis], [ScrollFlag] bits for the ways the node
+ * can scroll from where it is, and, when known, the range of its content and
+ * the part of that range inside the viewport.
+ */
+class Scroll(
+    @JvmField val axis: Int,
+    @JvmField val flags: Int,
+    @JvmField val range: ScrollRange? = null,
+    /** Only with a range. */
+    @JvmField val position: ScrollPosition? = null,
+)
+
+/** The span of a scrolling node's content in [ScrollUnit] `unit`, both ends inclusive. */
+class ScrollRange(@JvmField val unit: Int, @JvmField val min: Int, @JvmField val max: Int)
+
+/** The part of a [ScrollRange] inside the viewport, both ends inclusive. */
+class ScrollPosition(@JvmField val first: Int, @JvmField val last: Int)
 
 class Bounds(
     @JvmField val left: Int,

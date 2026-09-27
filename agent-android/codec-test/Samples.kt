@@ -92,6 +92,142 @@ object Samples {
         seq = 41,
     )
 
+    private const val VISIBLE = NodeFlag.ENABLED or NodeFlag.VISIBLE
+
+    /** A node without text, children or scroll semantics. */
+    private fun plain(id: Int, cls: Int, bounds: Bounds, flags: Int) =
+        Node(id, cls, null, null, null, null, bounds, flags, Node.NO_CHILDREN)
+
+    /** Window metadata in every state: change events yes, no and unknown; a system owner or none; modal or not. */
+    private val windowMetaSnapshot = Snapshot(
+        strings = arrayOf(
+            "android.widget.FrameLayout",
+            "com.android.systemui",
+            "com.google.android.permissioncontroller",
+            "dev.placeholder.fixture",
+        ),
+        windows = arrayOf(
+            Window(
+                id = 30,
+                type = WindowType.SYSTEM,
+                layer = 1,
+                packageIndex = 1,
+                title = null,
+                bounds = Bounds(0, 0, 1080, 132),
+                flags = 0,
+                root = plain(0, 0, Bounds(0, 0, 1080, 132), VISIBLE),
+                emitsEvents = true,
+                ownerIndex = 1,
+                modal = false,
+            ),
+            Window(
+                id = 31,
+                type = WindowType.APPLICATION,
+                layer = 0,
+                packageIndex = 2,
+                title = "Allow Fixture to access this device\u2019s location?",
+                bounds = Bounds(28, 502, 1052, 1966),
+                flags = WindowFlag.ACTIVE or WindowFlag.FOCUSED,
+                root = plain(1, 0, Bounds(28, 502, 1052, 1966), VISIBLE),
+                emitsEvents = null,
+                ownerIndex = 2,
+                modal = true,
+            ),
+            Window(
+                id = 32,
+                type = WindowType.APPLICATION,
+                layer = -1,
+                packageIndex = 3,
+                title = "Fixture",
+                bounds = Bounds(0, 0, 1080, 2400),
+                flags = 0,
+                root = plain(2, 0, Bounds(0, 0, 1080, 2400), VISIBLE),
+                emitsEvents = false,
+                ownerIndex = null,
+                modal = false,
+            ),
+        ),
+        nodeCount = 3,
+        truncated = 0,
+        seq = 7,
+    )
+
+    private fun scroller(id: Int, cls: Int, scroll: Scroll, children: Array<Node> = Node.NO_CHILDREN, resId: String? = null) =
+        Node(
+            id, cls, null, resId, null, null, Bounds(0, 132, 1080, 2127),
+            VISIBLE or NodeFlag.SCROLLABLE, children, scroll,
+        )
+
+    /**
+     * Scroll semantics in every shape: an item range with the items in view, a range without a
+     * position, scroll actions alone, a percent range, and values this version does not define
+     * with integers at head boundaries.
+     */
+    private val scrollSnapshot = Snapshot(
+        strings = arrayOf(
+            "android.view.View",
+            "android.widget.ScrollView",
+            "android.widget.HorizontalScrollView",
+            "android.widget.Button",
+        ),
+        windows = arrayOf(
+            Window(
+                id = 40,
+                type = WindowType.APPLICATION,
+                layer = 0,
+                packageIndex = null,
+                title = null,
+                bounds = Bounds(0, 0, 1080, 2400),
+                flags = WindowFlag.ACTIVE,
+                root = Node(
+                    0, 0, null, null, null, null, Bounds(0, 0, 1080, 2400), VISIBLE,
+                    arrayOf(
+                        scroller(
+                            1,
+                            0,
+                            Scroll(
+                                ScrollAxis.VERTICAL,
+                                ScrollFlag.FORWARD,
+                                ScrollRange(ScrollUnit.ITEMS, 0, 199),
+                                ScrollPosition(0, 15),
+                            ),
+                            arrayOf(
+                                Node(2, 3, null, null, "Row 1", null, Bounds(0, 132, 1080, 258), VISIBLE, Node.NO_CHILDREN),
+                            ),
+                            resId = "row-list",
+                        ),
+                        scroller(
+                            3,
+                            2,
+                            Scroll(
+                                ScrollAxis.HORIZONTAL,
+                                ScrollFlag.BACK or ScrollFlag.FORWARD,
+                                ScrollRange(ScrollUnit.ITEMS, 0, 65535),
+                            ),
+                        ),
+                        scroller(4, 1, Scroll(ScrollAxis.VERTICAL, ScrollFlag.BACK)),
+                        scroller(
+                            5,
+                            0,
+                            Scroll(ScrollAxis.UNKNOWN, 0, ScrollRange(ScrollUnit.PERCENT, 0, 100), ScrollPosition(37, 37)),
+                        ),
+                        scroller(
+                            6,
+                            0,
+                            Scroll(200, 1 shl 31, ScrollRange(24, -24, Int.MAX_VALUE), ScrollPosition(-25, 256)),
+                        ),
+                    ),
+                ),
+                emitsEvents = false,
+                ownerIndex = null,
+                modal = false,
+            ),
+        ),
+        nodeCount = 7,
+        truncated = 0,
+        seq = 8,
+    )
+
     /** Every sample, by golden file name. */
     val ALL: List<Pair<String, Message>> = listOf(
         "hello" to Hello(
@@ -151,6 +287,8 @@ object Samples {
                 seq = -1L,
             ),
         ),
+        "response_snapshot_window_meta" to ok(11, Method.SNAPSHOT, windowMetaSnapshot),
+        "response_snapshot_scroll" to ok(12, Method.SNAPSHOT, scrollSnapshot),
         "response_screenshot" to ok(
             2,
             Method.SCREENSHOT,

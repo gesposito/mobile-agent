@@ -74,6 +74,28 @@ private fun deepSnapshot(depth: Int): ByteArray {
     return out.toByteArray()
 }
 
+/** A snapshot response's single window, decoded from `hex`. */
+private fun onlyWindow(hex: String): Window {
+    val payload = bytes(hex)
+    val snapshot = (Codec.decode(payload, 0, payload.size) as Response).result as Snapshot
+    return snapshot.windows.single()
+}
+
+/**
+ * A snapshot response with one system window, modal, owned by string 1 and
+ * sending no change events, whose root carries `scroll` (hex); the frame of
+ * crates/protocol's `tagged_snapshot`.
+ */
+private fun taggedFrame(scroll: String): String = listOf(
+    "a4 00 03 01 00 02 01 03",
+    "a5 00 82 61 56 63 73 79 73 01 81",
+    "a9 00 01 01 03 02 00 05 84 00 00 01 01 06 00 07",
+    "a5 00 00 01 00 06 84 00 00 01 01 07 00 09",
+    scroll,
+    "08 f4 09 01 0a f5",
+    "02 01 03 00 04 00",
+).joinToString(" ")
+
 private fun decoderRules() {
     check("rejects an indefinite-length array") {
         rejects(bytes("9f 04 01 05 06 01 0d ff"))
@@ -122,6 +144,48 @@ private fun decoderRules() {
     }
     check("rejects nodes nested deeper than ${Protocol.MAX_NODE_DEPTH}") {
         rejects(deepSnapshot(Protocol.MAX_NODE_DEPTH + 1))
+    }
+    check("reads window metadata and skips what it does not know in scroll semantics") {
+        // scroll {0: 1, 1: 2, 2: [0, 0, 199, "x"], 3: [0, 15, 7], 5: "y"}
+        val w = onlyWindow(taggedFrame("a5 00 01 01 02 02 84 00 00 18 c7 61 78 03 83 00 0f 07 05 61 79"))
+        val scroll = w.root?.scroll
+        val range = scroll?.range
+        val position = scroll?.position
+        when {
+            w.emitsEvents != false || w.ownerIndex != 1 || !w.modal ->
+                "metadata ${w.emitsEvents} ${w.ownerIndex} ${w.modal}"
+            scroll == null || range == null || position == null -> "no scroll semantics"
+            scroll.axis != ScrollAxis.VERTICAL || scroll.flags != ScrollFlag.FORWARD -> "axis ${scroll.axis} flags ${scroll.flags}"
+            range.unit != ScrollUnit.ITEMS || range.min != 0 || range.max != 199 -> "range ${range.unit} ${range.min} ${range.max}"
+            position.first != 0 || position.last != 15 -> "position ${position.first} ${position.last}"
+            else -> null
+        }
+    }
+    check("rejects a scroll range or position missing an element, and scroll semantics without flags") {
+        rejects(bytes(taggedFrame("a4 00 01 01 02 02 82 00 00 03 82 00 0f")))
+            ?: rejects(bytes(taggedFrame("a4 00 01 01 02 02 83 00 00 18 c7 03 81 00")))
+            ?: rejects(bytes(taggedFrame("a1 00 01")))
+    }
+    check("reads a snapshot without the metadata keys with them absent") {
+        val old = "a4 00 03 01 00 02 01 03 a5 00 81 61 56 01 81 a6 00 01 01 01 02 00 05 84 00 00 01 01 06 00 07 " +
+            "a4 00 00 01 00 06 84 00 00 01 01 07 00 02 01 03 00 04 00"
+        val w = onlyWindow(old)
+        val payload = bytes(old)
+        val out = CborWriter()
+        Codec.encode(Codec.decode(payload, 0, payload.size), out)
+        if (w.emitsEvents != null || w.ownerIndex != null || w.modal || w.root?.scroll != null) {
+            "metadata ${w.emitsEvents} ${w.ownerIndex} ${w.modal} ${w.root?.scroll}"
+        } else {
+            diff(payload, out.toByteArray())
+        }
+    }
+    check("reads null as absent window metadata and scroll semantics") {
+        // window {..., 7: {..., 9: null}, 8: null, 9: null}
+        val w = onlyWindow(
+            "a4 00 03 01 00 02 01 03 a5 00 81 61 56 01 81 a8 00 01 01 01 02 00 05 84 00 00 01 01 06 00 07 " +
+                "a5 00 00 01 00 06 84 00 00 01 01 07 00 09 f6 08 f6 09 f6 02 01 03 00 04 00",
+        )
+        if (w.emitsEvents == null && w.ownerIndex == null && w.root?.scroll == null) null else "decoded metadata"
     }
     check("rejects an array longer than its input without allocating it") {
         rejects(bytes("87 04 00 01 01 00 01 9a ff ff ff ff"))
