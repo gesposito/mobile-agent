@@ -119,6 +119,14 @@ fn timeouts_are_bounded_and_must_be_numbers() {
         .failed()
         .json();
     assert_eq!(word["code"], "invalid_argument", "{word}");
+    for args in [
+        ["--json", "wait", "--settle", "--timeout", "700000"],
+        ["--json", "open", APP, "--timeout", "700000"],
+        ["--json", "wait", "#x", "--timeout", "700000"],
+    ] {
+        let reply = env.cli(&args).failed().json();
+        assert_eq!(reply["code"], "invalid_argument", "{args:?}: {reply}");
+    }
 }
 
 #[test]
