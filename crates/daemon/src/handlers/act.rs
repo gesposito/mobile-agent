@@ -3,9 +3,9 @@
 
 use std::time::{Duration, Instant};
 
-use mirror::{Action, Point, Rect, Target};
+use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, Target};
 use protocol::message::TextMethod;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
 use super::{millis, timeout};
@@ -23,6 +23,86 @@ const DEFAULT_DISTANCE: f64 = 300.0;
 
 /// The longest stroke of a scroll, as a share of the scrolled area.
 const MAX_STROKE: f64 = 0.8;
+
+/// How long a tap's effects are watched for at most.
+const WATCH_MAX: Duration = Duration::from_secs(1);
+
+/// How often the watch looks at what arrived; the spans come from the
+/// signals' own times, not from these looks.
+const WATCH_SLICE: Duration = Duration::from_millis(5);
+
+/// What a tap set off, from the moment of its dispatch.
+struct Spans {
+    dispatch: Duration,
+    /// To the capture of the first frame whose hash changed.
+    frame_change: Option<Duration>,
+    /// To the mirror's first tree delta.
+    tree_delta: Option<Duration>,
+    /// How long the effects were watched.
+    watched: Duration,
+    /// Why the watch stopped early, if it failed.
+    problem: Option<String>,
+}
+
+/// Watches the effects of a tap dispatched at `start`, when the replica
+/// was at `revision`: until the first frame change (when the target has
+/// frames) and the first tree delta have both arrived, or until nothing has
+/// changed for the settle quiet window since the tap or the last change,
+/// or for [`WATCH_MAX`]. The mirror keeps reading meanwhile, so a window
+/// without change events is re-read as it would be for a snapshot.
+fn watch(target: &mut Attached, start: Instant, revision: u64, dispatch: Duration) -> Spans {
+    let tree_delta = |target: &Attached| {
+        target
+            .mirror
+            .deltas()
+            .iter()
+            .find(|delta| delta.revision > revision)
+            .map(|delta| delta.at)
+    };
+    let mut problem = None;
+    let (frame, tree) = loop {
+        let frame = target.observer.first_frame_change_since(start);
+        let tree = tree_delta(target);
+        if tree.is_some() && (frame.is_some() || !target.frames) {
+            break (frame, tree);
+        }
+        let now = Instant::now();
+        let since_start = |at: Option<Instant>| at.filter(|&at| at >= start);
+        let last_change = [
+            since_start(target.observer.last_frame_change()),
+            since_start(target.observer.last_tree_event()),
+            target
+                .mirror
+                .deltas()
+                .last()
+                .filter(|d| d.revision > revision)
+                .map(|d| d.at),
+        ]
+        .into_iter()
+        .flatten()
+        .max()
+        .map_or(start, |at| at.max(start));
+        let deadline = start + WATCH_MAX;
+        if now >= last_change + DEFAULT_QUIET_WINDOW || now >= deadline {
+            break (frame, tree);
+        }
+        if let Err(error) = target.mirror.run_until((now + WATCH_SLICE).min(deadline)) {
+            problem = Some(error.to_string());
+            break (
+                target.observer.first_frame_change_since(start),
+                tree_delta(target),
+            );
+        }
+    };
+    let span = |at: Option<Instant>| at.map(|at| at.saturating_duration_since(start));
+    Spans {
+        dispatch,
+        frame_change: span(frame),
+        tree_delta: span(tree),
+        watched: start.elapsed(),
+        problem,
+    }
+}
 
 fn rejected(what: &str) -> Failure {
     Failure::new(
@@ -50,8 +130,12 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
             (aimed, reference, given.to_owned())
         }
     };
+    // The replica first takes in what arrived before the tap, so nothing
+    // the tap did not cause is counted as its effect.
+    target.mirror.pump()?;
+    let revision = target.mirror.revision();
     let started = Instant::now();
-    let outcome = target.mirror.act(&Action::Tap {
+    let outcome = target.act(&Action::Tap {
         target: aimed,
         hold,
     })?;
@@ -59,15 +143,27 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     if !outcome.accepted {
         return Err(rejected("tap"));
     }
+    let spans = watch(target, started, revision, dispatch);
     let point = outcome.at.unwrap_or_default();
-    Ok(Success::new(json!({
-        "clicked": clicked,
-        "ref": reference_json(reference),
-        "x": point.x,
-        "y": point.y,
-        "accepted": outcome.accepted,
-        "dispatchMs": millis(dispatch),
-    })))
+    let mut data = Map::new();
+    data.insert("clicked".into(), clicked.into());
+    data.insert("ref".into(), reference_json(reference));
+    data.insert("x".into(), point.x.into());
+    data.insert("y".into(), point.y.into());
+    data.insert("accepted".into(), outcome.accepted.into());
+    data.insert("dispatchMs".into(), millis(spans.dispatch).into());
+    // Absent, not zero, when the signal never came or the target has none.
+    if let Some(frame) = spans.frame_change {
+        data.insert("frameChangeMs".into(), millis(frame).into());
+    }
+    if let Some(tree) = spans.tree_delta {
+        data.insert("treeDeltaMs".into(), millis(tree).into());
+    }
+    data.insert("watchedMs".into(), millis(spans.watched).into());
+    let warning = spans
+        .problem
+        .map(|problem| format!("the tap went in, but watching its effects failed: {problem}"));
+    Ok(Success::new(Value::Object(data)).warn(warning))
 }
 
 fn text_param(request: &Request) -> Result<String, Failure> {
@@ -90,7 +186,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
     let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
-    let outcome = target.mirror.act(&Action::Text {
+    let outcome = target.act(&Action::Text {
         text,
         into: Some(reference),
         method: TextMethod::AUTO,
@@ -114,7 +210,7 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
         }
         None => None,
     };
-    let outcome = target.mirror.act(&Action::Text {
+    let outcome = target.act(&Action::Text {
         text: text.clone(),
         into,
         method: TextMethod::KEYS,
@@ -134,7 +230,7 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
 pub(super) fn press(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
     let key = request.required_str("key")?;
     let code = keys::resolve(target.info.platform, key)?;
-    let outcome = target.mirror.act(&Action::Key {
+    let outcome = target.act(&Action::Key {
         code: code.code,
         meta: code.meta,
     })?;
@@ -253,7 +349,7 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
             (from, to, direction.name().into())
         }
     };
-    let outcome = target.mirror.act(&Action::Swipe { from, to, duration })?;
+    let outcome = target.act(&Action::Swipe { from, to, duration })?;
     if !outcome.accepted {
         return Err(rejected("swipe"));
     }
@@ -285,7 +381,7 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
     while left > 0.5 && strokes < 20 {
         let step = left.min(longest);
         let (from, to) = stroke(area, direction.opposite(), step);
-        let outcome = target.mirror.act(&Action::Swipe {
+        let outcome = target.act(&Action::Swipe {
             from,
             to,
             duration: SWIPE_DURATION,

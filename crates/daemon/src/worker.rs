@@ -10,9 +10,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mirror::{Mirror, Ref, Snapshot};
+use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
 use crate::driver::{AppControl, Driver, Size, TargetInfo};
+use crate::signals::Observer;
 use crate::wire::{Failure, Success};
 
 /// The longest the thread waits between pumps when nothing falls due.
@@ -47,6 +48,12 @@ pub(crate) struct Attached {
     pub apps: Box<dyn AppControl>,
     /// The screen size in points, for gestures no element anchors.
     pub display: Size,
+    /// The change signals the target reported, beside the mirror.
+    pub observer: Observer,
+    /// Whether the target has a frame source.
+    pub frames: bool,
+    /// When the daemon last injected input.
+    pub last_action: Option<Instant>,
     sessions: HashMap<String, SessionOnTarget>,
     /// The session whose delta snapshots the mirror's delta state follows;
     /// another session's first delta snapshot starts again in full.
@@ -55,6 +62,13 @@ pub(crate) struct Attached {
 }
 
 impl Attached {
+    /// Injects `action` through the mirror and notes when.
+    pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
+        let outcome = self.mirror.act(action)?;
+        self.last_action = Some(Instant::now());
+        Ok(outcome)
+    }
+
     /// What `session` keeps about this target.
     pub fn session(&mut self, name: &str) -> &mut SessionOnTarget {
         self.sessions.entry(name.to_owned()).or_default()
@@ -175,11 +189,18 @@ fn serve(
                             current.attached = true;
                             current.error = None;
                             drop(current);
+                            let observer = Observer::default();
+                            let mut backend = attachment.backend;
+                            let frames = backend.frames.is_some();
+                            backend.events = observer.tee(backend.events);
                             attached = Some(Attached {
                                 info: info.clone(),
-                                mirror: Mirror::new(attachment.backend, attachment.config),
+                                mirror: Mirror::new(backend, attachment.config),
                                 apps: attachment.apps,
                                 display: attachment.display,
+                                observer,
+                                frames,
+                                last_action: None,
                                 sessions: HashMap::new(),
                                 delta_session: None,
                                 status: Arc::clone(status),

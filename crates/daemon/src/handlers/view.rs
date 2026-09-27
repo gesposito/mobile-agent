@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
 use super::{millis, origin, settle_max, timeout, verdict_json, verdict_warning};
+use crate::signals::{LastChanges, ended_by};
 use crate::wire::code::{self, IO_ERROR};
 use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
@@ -166,10 +167,11 @@ pub(super) fn get(target: &mut Attached, session: &str, request: &Request) -> Ou
     Ok(Success::new(data))
 }
 
+/// A signal as replies name it, with the names `endedBy` uses.
 fn signal_name(signal: &Signal) -> &'static str {
     match signal {
         Signal::Tree => "tree",
-        Signal::Frames => "frames",
+        Signal::Frames => "frame",
     }
 }
 
@@ -238,11 +240,23 @@ fn settle(target: &mut Attached, request: &Request) -> Outcome {
     } else {
         Signals::TreeAndFrames
     };
+    let began = Instant::now();
     let settled = target.mirror.settle(&SettleOptions {
         quiet,
         max,
         signals,
     })?;
+    // The tree's last change is the later of its last event and the
+    // mirror's last delta, as the settle predicate counts it.
+    let last_delta = target.mirror.deltas().last().map(|delta| delta.at);
+    let last = LastChanges {
+        tree: target.observer.last_tree_event().max(last_delta),
+        frame: (target.frames && signals != Signals::TreeOnly)
+            .then(|| target.observer.last_frame_change())
+            .flatten(),
+        action: target.last_action,
+    };
+    let ended = ended_by(settled.settled, last, began, quiet);
     let warning = (!settled.settled).then(|| {
         format!(
             "the screen did not settle within {} ms: {} kept arriving",
@@ -253,6 +267,7 @@ fn settle(target: &mut Attached, request: &Request) -> Outcome {
     Ok(Success::new(json!({
         "waited": "settle",
         "settled": settled.settled,
+        "endedBy": ended.name(),
         "elapsedMs": millis(settled.elapsed),
         "stillChanging": settled.still_changing.iter().map(signal_name).collect::<Vec<_>>(),
         "treeChanges": settled.tree_changes,

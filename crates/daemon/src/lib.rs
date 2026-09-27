@@ -17,6 +17,7 @@ mod keys;
 pub mod paths;
 mod registry;
 mod server;
+mod signals;
 pub mod wire;
 mod worker;
 
