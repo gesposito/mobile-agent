@@ -13,6 +13,8 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+android = { version = "0.1.0", path = "../android" }
 mirror = { version = "0.1.0", path = "../mirror" }
 protocol = { version = "0.1.0", path = "../protocol" }
 serde_json = "1.0.151"
+simulator = { version = "0.1.0", path = "../simulator" }
