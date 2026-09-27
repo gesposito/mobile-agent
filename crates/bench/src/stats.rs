@@ -40,6 +40,12 @@ pub fn summarize(samples: &[u64]) -> Option<Summary> {
     })
 }
 
+/// `part` as a percentage of `whole`, rounded half up to a tenth; 0 when
+/// `whole` is 0.
+pub fn percent(part: u32, whole: u32) -> f64 {
+    todo!("{part} of {whole} as a percentage")
+}
+
 /// Whole microseconds in `d`, saturating at `u64::MAX`.
 pub fn micros(d: Duration) -> u64 {
     u64::try_from(d.as_micros()).unwrap_or(u64::MAX)
@@ -126,6 +132,18 @@ mod tests {
         assert_eq!(ms(150_000), "150.000");
         assert_eq!(ms(0), "0.000");
         assert_eq!(ms(2_000_000), "2000.000");
+    }
+
+    #[test]
+    fn percentages_round_half_up_to_a_tenth() {
+        assert_eq!(percent(2, 50), 4.0);
+        assert_eq!(percent(1, 3), 33.3);
+        assert_eq!(percent(2, 3), 66.7);
+        assert_eq!(percent(1, 8), 12.5);
+        assert_eq!(percent(1, 1600), 0.1);
+        assert_eq!(percent(0, 50), 0.0);
+        assert_eq!(percent(50, 50), 100.0);
+        assert_eq!(percent(0, 0), 0.0);
     }
 
     #[test]

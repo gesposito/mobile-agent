@@ -13,7 +13,9 @@ use crate::provenance::{
     HarnessInfo, Probe, Provenance, SystemProbe, ToolReport, ToolStatus, capture_commit,
     capture_host, capture_xcode, complete_target, utc_timestamp,
 };
-use crate::report::{Measurement, NodeRange, Outcome, Report, SCHEMA_VERSION, SampleRecord};
+use crate::report::{
+    Measurement, NodeRange, Outcome, Reliability, Report, SCHEMA_VERSION, SampleRecord,
+};
 use crate::stats::{micros, summarize};
 use crate::target::Target;
 
@@ -63,6 +65,9 @@ pub struct RunConfig {
     pub iterations: u32,
     /// Iterations run first and excluded from every statistic.
     pub warmup: u32,
+    /// Further attempts after a failed one, within one iteration. An iteration
+    /// that succeeds on a retry is a flake; one that never succeeds, a failure.
+    pub retries: u32,
 }
 
 impl Default for RunConfig {
@@ -70,6 +75,7 @@ impl Default for RunConfig {
         RunConfig {
             iterations: 50,
             warmup: 3,
+            retries: 1,
         }
     }
 }
@@ -173,6 +179,7 @@ impl Harness {
                     version: env!("CARGO_PKG_VERSION").to_owned(),
                     iterations: self.config.iterations,
                     warmup: self.config.warmup,
+                    retries: self.config.retries,
                 },
                 targets,
                 tools,
@@ -284,6 +291,7 @@ fn measure(
         iterations: config.iterations,
         warmup: config.warmup,
         stats: summarize(&latencies),
+        reliability: Reliability::of(&samples, config.iterations),
         nodes,
         error,
         samples,

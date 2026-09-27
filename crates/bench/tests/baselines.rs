@@ -106,6 +106,7 @@ impl Setup {
             RunConfig {
                 iterations: ITERATIONS,
                 warmup: WARMUP,
+                retries: 0,
             },
             fake.targets(),
             fake.series(),

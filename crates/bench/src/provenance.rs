@@ -112,6 +112,8 @@ pub struct HarnessInfo {
     pub iterations: u32,
     /// Warm-up iterations per series, run first and excluded from statistics.
     pub warmup: u32,
+    /// Retries after a failed attempt, within one iteration.
+    pub retries: u32,
 }
 
 /// A tool as the run found it.

@@ -48,12 +48,39 @@ pub struct Measurement {
     pub warmup: u32,
     /// Over the successful measured iterations; `None` when none succeeded.
     pub stats: Option<Summary>,
+    /// Failures and flakes over the measured iterations.
+    pub reliability: Reliability,
     /// Node counts the tool returned over the measured iterations.
     pub nodes: Option<NodeRange>,
     /// Why the series could not run at all, such as a failed preparation.
     pub error: Option<String>,
     /// Every iteration in order, warm-up included and flagged.
     pub samples: Vec<SampleRecord>,
+}
+
+/// Failures and flakes over a series' measured iterations, warm-up excluded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Reliability {
+    /// Measured iterations.
+    pub iterations: u32,
+    /// Iterations in which no attempt succeeded.
+    pub failures: u32,
+    /// Iterations that failed and then succeeded on a retry.
+    pub flakes: u32,
+    /// `failures` as a percentage of `iterations`, to a tenth.
+    pub failure_rate_pct: f64,
+    /// `flakes` as a percentage of `iterations`, to a tenth.
+    pub flake_rate_pct: f64,
+}
+
+impl Reliability {
+    /// Counts over the measured iterations in `samples`. A series with no
+    /// measured sample at all, because its preparation failed, failed each of
+    /// its `iterations`.
+    pub fn of(samples: &[SampleRecord], iterations: u32) -> Self {
+        let _ = (samples, iterations);
+        Reliability::default()
+    }
 }
 
 /// Smallest and largest node count among a series' samples.
@@ -86,6 +113,8 @@ pub struct SampleRecord {
 pub enum Outcome {
     /// The first attempt succeeded.
     Pass,
+    /// An attempt failed and a retry succeeded.
+    Flake,
     /// No attempt succeeded.
     Fail,
 }

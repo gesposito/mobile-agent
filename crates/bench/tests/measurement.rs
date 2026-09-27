@@ -23,6 +23,7 @@ fn config() -> RunConfig {
     RunConfig {
         iterations: ITERATIONS,
         warmup: WARMUP,
+        retries: 0,
     }
 }
 

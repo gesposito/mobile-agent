@@ -59,6 +59,11 @@ struct RunArgs {
     #[arg(long, default_value_t = 3)]
     warmup: u32,
 
+    /// Retries of a failed attempt within one iteration; an iteration that passes
+    /// on a retry counts as a flake, one that never passes as a failure
+    #[arg(long, default_value_t = 1)]
+    retries: u32,
+
     /// Gate file replacing the default gates
     #[arg(long, value_name = "FILE")]
     gates: Option<PathBuf>,
@@ -114,6 +119,7 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let config = RunConfig {
         iterations: args.iterations,
         warmup: args.warmup,
+        retries: args.retries,
     };
     let dir = args.out.clone().unwrap_or_else(|| {
         PathBuf::from("target/bench").join(compact_timestamp(SystemTime::now()))
