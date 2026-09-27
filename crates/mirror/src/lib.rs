@@ -16,6 +16,7 @@ pub mod backend;
 mod delta;
 mod diff;
 mod error;
+mod frame;
 mod geometry;
 mod json;
 mod mirror;
@@ -33,6 +34,7 @@ mod wait;
 pub use delta::{DeltaSnapshot, RefChange, RefEntry, RefField, TreeSplice};
 pub use diff::{Change, Diff, Field};
 pub use error::{MirrorError, ResyncCause, StaleCause, code};
+pub use frame::{DEFAULT_MAX_DIMENSION, DEFAULT_QUALITY, FrameImage, FrameRequest, TreeSkew};
 pub use geometry::{Point, Rect};
 pub use mirror::{
     Action, ActionOutcome, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, Mirror,

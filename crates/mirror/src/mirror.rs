@@ -10,6 +10,7 @@ use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner, ReadRequest
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
+use crate::frame::{FrameImage, FrameRequest};
 use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
 use crate::render::{self, Line};
@@ -716,6 +717,12 @@ impl Mirror {
             refs,
         });
         Ok(result)
+    }
+
+    /// The latest frame, encoded no larger than the requested long edge,
+    /// upright, with its timestamp and age.
+    pub fn frame(&mut self, _request: &FrameRequest) -> Result<FrameImage, MirrorError> {
+        todo!("task 7.8")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

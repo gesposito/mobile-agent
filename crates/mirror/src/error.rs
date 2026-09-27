@@ -24,6 +24,8 @@ pub mod code {
     pub const ELEMENT_OFFSCREEN: &str = "element_offscreen";
     /// A wait's condition did not hold before its timeout.
     pub const WAIT_TIMEOUT: &str = "wait_timeout";
+    /// The target has no frame to return.
+    pub const NO_FRAME: &str = "no_frame";
     /// The target's connection is gone. The same code as the protocol's.
     pub const DISCONNECTED: &str = protocol::code::DISCONNECTED;
 }
@@ -95,6 +97,9 @@ pub enum MirrorError {
         waited: Duration,
         summary: Box<SnapshotSummary>,
     },
+    /// No frame is available: the target has no frame stream, or no frame
+    /// arrived yet.
+    NoFrame,
     /// The driver failed; its error is passed through.
     Backend(BackendError),
     /// The target is gone.
@@ -110,6 +115,7 @@ impl MirrorError {
             MirrorError::Covered { .. } => code::ELEMENT_COVERED,
             MirrorError::Offscreen { .. } => code::ELEMENT_OFFSCREEN,
             MirrorError::WaitTimeout { .. } => code::WAIT_TIMEOUT,
+            MirrorError::NoFrame => code::NO_FRAME,
             MirrorError::Backend(e) => &e.code,
             MirrorError::Disconnected(_) => code::DISCONNECTED,
         }
@@ -119,7 +125,7 @@ impl MirrorError {
     pub fn retryable(&self) -> bool {
         match self {
             MirrorError::Backend(e) => e.retryable,
-            MirrorError::WaitTimeout { .. } => true,
+            MirrorError::WaitTimeout { .. } | MirrorError::NoFrame => true,
             MirrorError::StaleRef { .. }
             | MirrorError::UnknownRef(_)
             | MirrorError::Covered { .. }
@@ -177,6 +183,9 @@ impl fmt::Display for MirrorError {
                 "waited {} ms for {selector} to {}; the screen now shows {summary}",
                 waited.as_millis(),
                 condition.name()
+            ),
+            MirrorError::NoFrame => f.write_str(
+                "no frame is available from this target yet; take a screenshot instead or retry once frames stream",
             ),
             MirrorError::Backend(e) => write!(f, "{}", e.message),
             MirrorError::Disconnected(why) => write!(
