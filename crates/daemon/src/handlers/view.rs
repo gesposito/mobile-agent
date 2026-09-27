@@ -4,13 +4,13 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mirror::{
-    Condition, DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Diff, Element, FrameRequest, Selector,
-    SettleOptions, Signal, Signals, Snapshot, SnapshotOptions,
+    Condition, DEFAULT_QUIET_WINDOW, Diff, Element, FrameRequest, Selector, SettleOptions, Signal,
+    Signals, Snapshot, SnapshotOptions,
 };
 use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
-use super::{millis, origin, timeout, verdict_json, verdict_warning};
+use super::{millis, origin, settle_max, timeout, verdict_json, verdict_warning};
 use crate::wire::code::{self, IO_ERROR};
 use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
@@ -229,9 +229,7 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
 }
 
 fn settle(target: &mut Attached, request: &Request) -> Outcome {
-    let max = request
-        .u64("timeout")?
-        .map_or(DEFAULT_SETTLE_MAX, Duration::from_millis);
+    let max = settle_max(request)?;
     let quiet = request
         .u64("quiet")?
         .map_or(DEFAULT_QUIET_WINDOW, Duration::from_millis);

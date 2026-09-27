@@ -86,6 +86,15 @@ pub(crate) fn timeout(request: &Request) -> Result<Duration, Failure> {
     }
 }
 
+/// How long a settle wait may last: the command's own `timeout`, else the
+/// maximum of design D8. The session's default does not apply.
+pub(crate) fn settle_max(request: &Request) -> Result<Duration, Failure> {
+    match request.u64("timeout")? {
+        Some(ms) => bounded("timeout", ms),
+        None => Ok(mirror::DEFAULT_SETTLE_MAX),
+    }
+}
+
 /// What `doctor` asks of the daemon: its identity, drivers and the rows
 /// the drivers contribute to the compatibility table.
 fn doctor(daemon: &Daemon) -> Outcome {
@@ -168,8 +177,7 @@ fn on_target(
         let handle = registry.handle(&target)?;
         (target, handle)
     };
-    let success =
-        handle.run(move |attached| command(attached, &request.session.clone(), &request))?;
+    let success = handle.run(move |attached| command(attached, &request.session, &request))?;
     Ok((success, target))
 }
 
@@ -276,9 +284,7 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
     let settled = target.mirror.settle(&mirror::SettleOptions {
-        max: request
-            .u64("timeout")?
-            .map_or(mirror::DEFAULT_SETTLE_MAX, Duration::from_millis),
+        max: settle_max(request)?,
         ..mirror::SettleOptions::default()
     })?;
     Ok(Success::new(json!({
