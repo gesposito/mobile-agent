@@ -1,0 +1,15 @@
+{
+  "description": "Typing into the Android login screen: one text event per keystroke naming the field, then a content event for the status text. Sequence numbers run without gaps.",
+  "start": "login",
+  "read_cost_ms": 3,
+  "steps": [
+    {"at": 100, "patch": [{"find": "login-username", "text": "a", "flags": ["focused"]}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 180, "patch": [{"find": "login-username", "text": "al"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 260, "patch": [{"find": "login-username", "text": "ali"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 340, "patch": [{"find": "login-username", "text": "alic"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 420, "patch": [{"find": "login-username", "text": "alice"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 520, "patch": [{"find": "login-username", "off": ["focused"]}, {"find": "login-password", "text": "•••••••", "flags": ["focused"]}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-password"}},
+    {"at": 640, "patch": [{"find": "login-password", "off": ["focused"]}, {"find": "login-status", "text": "Welcome, alice"}], "event": {"stream": "tree", "change": "content", "window": 1, "node": "login-status"}}
+  ],
+  "end": 1000
+}

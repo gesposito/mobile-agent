@@ -445,6 +445,10 @@ dependencies = [
 [[package]]
 name = "mirror"
 version = "0.1.0"
+dependencies = [
+ "protocol",
+ "serde_json",
+]
 
 [[package]]
 name = "multimap"

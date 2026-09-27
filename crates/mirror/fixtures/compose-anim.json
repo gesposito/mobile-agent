@@ -1,0 +1,35 @@
+{
+  "description": "Anim tab of the Compose fixture: the window hosts AndroidComposeView, whose content sends no change events to UiAutomation (spike S1), so the mirror infers an event-less window. The tagged toggle keeps its label and switch on child nodes. Device points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 5, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.compose", "title": "FixtureCompose",
+      "bounds": [0, 0, 408, 912], "flags": ["active", "focused"],
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
+        {"class": "androidx.compose.ui.platform.AndroidComposeView", "bounds": [0, 24, 408, 912], "children": [
+          {"class": "android.view.View", "bounds": [0, 24, 408, 840], "children": [
+            {"class": "android.widget.TextView", "text": "Anim", "bounds": [16, 40, 392, 72]},
+            {"class": "android.widget.ProgressBar", "id": "anim-spinner", "desc": "Loading", "bounds": [168, 200, 240, 272]},
+            {"class": "android.view.View", "id": "anim-toggle", "bounds": [16, 320, 392, 368], "flags": ["clickable", "focusable", "checkable", "checked"], "children": [
+              {"class": "android.widget.TextView", "text": "Animate", "bounds": [16, 328, 200, 360]},
+              {"class": "android.widget.Switch", "bounds": [328, 328, 384, 360], "flags": ["checkable", "checked"]}
+            ]}
+          ]},
+          {"class": "android.view.View", "bounds": [0, 848, 408, 912], "children": [
+            {"class": "android.view.View", "id": "tab-login", "bounds": [0, 848, 80, 912], "flags": ["clickable"], "children": [
+              {"class": "android.widget.TextView", "text": "Login", "bounds": "fill"}]},
+            {"class": "android.view.View", "id": "tab-list", "bounds": [80, 848, 160, 912], "flags": ["clickable"], "children": [
+              {"class": "android.widget.TextView", "text": "List", "bounds": "fill"}]},
+            {"class": "android.view.View", "id": "tab-big", "bounds": [160, 848, 240, 912], "flags": ["clickable"], "children": [
+              {"class": "android.widget.TextView", "text": "Big", "bounds": "fill"}]},
+            {"class": "android.view.View", "id": "tab-anim", "bounds": [240, 848, 320, 912], "flags": ["clickable", "selected"], "children": [
+              {"class": "android.widget.TextView", "text": "Anim", "bounds": "fill"}]},
+            {"class": "android.view.View", "id": "tab-system", "bounds": [320, 848, 408, 912], "flags": ["clickable"], "children": [
+              {"class": "android.widget.TextView", "text": "System", "bounds": "fill"}]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

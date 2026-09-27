@@ -1,0 +1,360 @@
+//! The driver-facing contract: what a target's driver implements so that a
+//! [`Mirror`](crate::Mirror) can keep a replica of the target's screen.
+//!
+//! A driver hands the mirror a [`Backend`]:
+//!
+//! - a [`TreeSource`], which reads the target's windows in full into the
+//!   protocol's snapshot payload, with facts per window the payload does not
+//!   carry, above all whether the window's toolkit sends change events;
+//! - an [`EventStream`] of everything the target reports on its own: protocol
+//!   events with their per-stream sequence numbers, frames with their
+//!   low-resolution hashes, and changes to the stream itself (a gap the
+//!   driver saw, a resync, a switch of tree backend, a reconnection);
+//! - optionally a [`FrameSource`], which encodes the latest frame;
+//! - an [`InputSink`], through which the mirror injects input, so it knows
+//!   when to re-read windows that send no change events;
+//! - a [`Clock`]. The mirror never reads the system clock itself, so tests
+//!   drive time through [`crate::testing`].
+//!
+//! Every call is synchronous: a driver answers from its own threads or
+//! blocks until the device answers. The mirror calls one method at a time.
+//!
+//! Units: tree payloads carry bounds in physical pixels, as the protocol
+//! defines them, and [`TreeRead::scale`] says how many pixels make a device
+//! point. Everything the mirror hands back to the driver, input coordinates
+//! included, is in device points.
+
+use std::time::{Duration, Instant};
+
+use protocol::event::{Event, Stream};
+use protocol::message::{Rotation, TextMethod};
+use protocol::snapshot::Snapshot as TreePayload;
+
+pub use crate::geometry::Point;
+
+/// A driver's failure, as the protocol defines errors: a stable code, a
+/// message, and whether the same call can succeed when repeated.
+pub type BackendError = protocol::Error;
+
+/// Where the mirror takes the time from.
+pub trait Clock: Send {
+    fn now(&self) -> Instant;
+}
+
+/// The system's monotonic clock.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+/// Everything a mirror needs from one target.
+pub struct Backend {
+    pub tree: Box<dyn TreeSource>,
+    pub events: Box<dyn EventStream>,
+    /// Absent on targets without a frame path, such as Android devices,
+    /// which take screenshots on demand instead.
+    pub frames: Option<Box<dyn FrameSource>>,
+    pub input: Box<dyn InputSink>,
+    pub clock: Box<dyn Clock>,
+}
+
+/// Reads a target's windows in full.
+pub trait TreeSource: Send {
+    /// Reads the windows `request` names, or all of them.
+    ///
+    /// The source may return more windows than requested, but every window
+    /// it returns must be current as of the read: a window whose toolkit
+    /// sends no change events (Jetpack Compose on Android, every Simulator
+    /// window) is read with the platform's node cache cleared. A requested
+    /// window missing from the result is taken as gone.
+    fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError>;
+}
+
+/// What the mirror asks a [`TreeSource`] to read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadRequest {
+    /// Window ids to read; `None` reads every window.
+    pub windows: Option<Vec<u32>>,
+    /// Why the mirror reads, so a driver can decide what caches to drop.
+    pub reason: ReadReason,
+}
+
+/// Why the mirror reads the tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ReadReason {
+    /// A window that sends no change events is due for its periodic poll.
+    Poll,
+    /// Frames changed since a window that sends no change events was read.
+    Frames,
+    /// Change events named the window, or the set of windows changed.
+    Events,
+    /// The mirror injected input and re-reads the windows that send no
+    /// change events.
+    Action,
+    /// No replica exists yet: the first acquisition after attach.
+    Attach,
+    /// The replica is rebuilt after a sequence gap, a reconnection or a
+    /// switch of tree backend; refs issued before it are stale.
+    Resync,
+}
+
+impl ReadReason {
+    /// The snake_case name, as reports print it.
+    pub fn name(self) -> &'static str {
+        match self {
+            ReadReason::Poll => "poll",
+            ReadReason::Frames => "frames",
+            ReadReason::Events => "events",
+            ReadReason::Action => "action",
+            ReadReason::Attach => "attach",
+            ReadReason::Resync => "resync",
+        }
+    }
+}
+
+/// One read of a target's windows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TreeRead {
+    /// The windows and their nodes, bounds in physical pixels. `seq` is the
+    /// last tree-stream event the target had sent when it read the tree:
+    /// the mirror skips events up to it, since the read already reflects
+    /// them.
+    pub snapshot: TreePayload,
+    /// Facts about windows that the payload does not carry. A window without
+    /// an entry gets [`WindowMeta::default_for`].
+    pub windows: Vec<WindowMeta>,
+    /// Scroll semantics of scrollable nodes, where the platform reports them
+    /// (Compose reports only the nodes inside the viewport, so hints about
+    /// scrolled-out content come from these).
+    pub scroll: Vec<ScrollInfo>,
+    /// The backend that produced the read. A read from another backend than
+    /// the previous one makes the mirror rebuild its replica.
+    pub backend: BackendInfo,
+    /// Physical pixels per device point.
+    pub scale: f64,
+}
+
+/// Facts about one window that the protocol payload does not carry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WindowMeta {
+    /// The window's id in the payload.
+    pub window: u32,
+    /// Whether the window's toolkit sends change events. `None` lets the
+    /// mirror infer it: a window hosting Jetpack Compose
+    /// (`androidx.compose.ui.platform.AndroidComposeView`) sends none,
+    /// others do. Simulator drivers set `Some(false)` for every window.
+    pub emits_events: Option<bool>,
+    /// Who owns the window: the target application or system UI.
+    pub owner: Owner,
+    /// The whole window is a modal, such as an Android dialog, that covers
+    /// the windows below it. Modal nodes inside a window (an iOS alert
+    /// controller) are recognized from their class instead.
+    pub modal: bool,
+}
+
+impl WindowMeta {
+    /// The facts assumed for a window without an entry.
+    pub fn default_for(window: u32) -> WindowMeta {
+        WindowMeta {
+            window,
+            emits_events: None,
+            owner: Owner::Target,
+            modal: false,
+        }
+    }
+}
+
+/// Who owns a window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Owner {
+    /// The application under automation.
+    #[default]
+    Target,
+    /// System UI, named by its package or bundle id, such as
+    /// `com.apple.springboard` for a permission alert.
+    System(String),
+}
+
+/// The backend that produced a read.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BackendInfo {
+    /// A stable name such as `android-agent`, `simulator-reader` or
+    /// `simulator-translator`.
+    pub name: String,
+    /// Whether this is a fallback with known gaps; its snapshots are marked
+    /// degraded.
+    pub fallback: bool,
+}
+
+impl BackendInfo {
+    pub fn new(name: impl Into<String>, fallback: bool) -> BackendInfo {
+        BackendInfo {
+            name: name.into(),
+            fallback,
+        }
+    }
+}
+
+/// Scroll semantics of one scrollable node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScrollInfo {
+    /// The window holding the node.
+    pub window: u32,
+    /// The node's id in the payload.
+    pub node: u32,
+    pub axis: Axis,
+    /// The collection's item count and the visible index range, when known.
+    pub items: Option<ItemRange>,
+    /// Whether the node can scroll back (up or left) and forward (down or
+    /// right).
+    pub can_scroll_back: bool,
+    pub can_scroll_forward: bool,
+}
+
+/// The direction a node scrolls in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Axis {
+    Vertical,
+    Horizontal,
+}
+
+/// A collection's size and the items inside its viewport, 0-based.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemRange {
+    pub total: u32,
+    pub first_visible: u32,
+    pub last_visible: u32,
+}
+
+/// Everything a target reports on its own, in arrival order.
+pub trait EventStream: Send {
+    /// The next item, waiting until `deadline` at most, or `None` once the
+    /// deadline passes with nothing to report. With a deadline that has
+    /// already passed it returns what is queued without waiting.
+    fn next(&mut self, deadline: Instant) -> Option<Timed<StreamItem>>;
+}
+
+/// An item and the host time it arrived.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Timed<T> {
+    pub at: Instant,
+    pub item: T,
+}
+
+/// Something a target reported.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StreamItem {
+    /// A protocol event with its per-stream sequence number. Tree and window
+    /// events mark the replica for a re-read; lifecycle warnings reach the
+    /// snapshot verdict. A number that skips ahead on a lossless stream
+    /// makes the mirror resynchronize.
+    Event(Event),
+    /// A new frame with its hash.
+    Frame(FrameMeta),
+    /// The driver found a lossless stream out of sync (the host session's
+    /// `OutOfSync`); the mirror resynchronizes.
+    OutOfSync {
+        stream: Stream,
+        expected: u64,
+        received: u64,
+    },
+    /// The stream is in sync again from `seq` (the host session's
+    /// `Resynced`).
+    Resynced { stream: Stream, seq: u64 },
+    /// The driver switched tree backends, for example from the Simulator's
+    /// in-guest reader to the host translator; the mirror resynchronizes.
+    BackendChanged(BackendInfo),
+    /// A new connection to the target: sequence numbers start again at 1
+    /// and the mirror resynchronizes.
+    Reconnected,
+    /// The target is gone; the message says why and how to reconnect.
+    Disconnected(String),
+}
+
+/// A frame's identity, timing and hash, without its pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameMeta {
+    /// Increasing per frame source; it may skip numbers.
+    pub seq: u64,
+    /// Host time of the capture.
+    pub at: Instant,
+    /// Hash of a low-resolution thumbnail with the status bar left out
+    /// (spike S7), so that equal hashes mean no visible change. Frame
+    /// callbacks fire without pixel changes (spike S2); only a changed hash
+    /// counts as a change.
+    pub hash: u64,
+    /// Size of the captured pixels.
+    pub width: u32,
+    pub height: u32,
+    /// Clockwise rotation that makes the captured pixels upright.
+    pub rotation: Rotation,
+}
+
+/// Encodes frames. The mirror decides the size and quality; the source
+/// owns the pixels and the codec.
+pub trait FrameSource: Send {
+    /// The most recent frame, if any.
+    fn latest(&self) -> Option<FrameMeta>;
+
+    /// Encodes frame `request.seq` as JPEG, rotated by `request.rotation`
+    /// and then scaled to exactly `request.width` by `request.height`.
+    fn encode(&mut self, request: &EncodeRequest) -> Result<Vec<u8>, BackendError>;
+}
+
+/// How the mirror wants a frame encoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EncodeRequest {
+    pub seq: u64,
+    /// Output size after rotation, in pixels.
+    pub width: u32,
+    pub height: u32,
+    /// JPEG quality, 1 to 100.
+    pub quality: u8,
+    /// Clockwise rotation to apply before scaling.
+    pub rotation: Rotation,
+}
+
+/// Injects input.
+pub trait InputSink: Send {
+    fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError>;
+}
+
+/// One input action, coordinates in device points.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Input {
+    /// A tap, or a long press when `hold` is present.
+    Tap { at: Point, hold: Option<Duration> },
+    Swipe {
+        from: Point,
+        to: Point,
+        duration: Duration,
+    },
+    /// A platform key code, such as Android's `KEYCODE_ENTER` (66).
+    Key { code: u32, meta: Option<u32> },
+    /// Text for `node`, or for the focused field when absent.
+    Text {
+        text: String,
+        node: Option<NodeHandle>,
+        method: TextMethod,
+    },
+}
+
+/// A node as the latest read of its window numbered it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NodeHandle {
+    pub window: u32,
+    pub node: u32,
+}
+
+/// What the platform said about an input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InputAck {
+    /// Whether the platform accepted the events.
+    pub accepted: bool,
+    /// For text, the way it went in.
+    pub method: Option<TextMethod>,
+}

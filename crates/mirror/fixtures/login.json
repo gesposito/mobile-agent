@@ -1,0 +1,36 @@
+{
+  "description": "Login tab of the Expo fixture on Android: React Native views send change events. The agent reports a field's hint as its description. Device points, scale 2.625 (420 dpi).",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 2, "kind": "system", "layer": 3, "package": "com.android.systemui", "title": "Status bar",
+      "bounds": [0, 0, 408, 24], "owner": "com.android.systemui",
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 24], "children": [
+        {"class": "android.widget.TextView", "text": "12:30", "bounds": [16, 0, 56, 24]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.expo", "title": "FixtureExpo",
+      "bounds": [0, 0, 408, 912], "flags": ["active", "focused"],
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
+        {"class": "android.view.ViewGroup", "bounds": [0, 24, 408, 840], "children": [
+          {"class": "android.widget.TextView", "text": "Login", "bounds": [16, 40, 392, 72]},
+          {"class": "android.widget.EditText", "id": "login-username", "desc": "Username", "bounds": [16, 96, 392, 144], "flags": ["clickable", "focusable", "editable"]},
+          {"class": "android.widget.EditText", "id": "login-password", "desc": "Password", "bounds": [16, 160, 392, 208], "flags": ["clickable", "focusable", "editable", "password"]},
+          {"class": "android.view.ViewGroup", "id": "login-submit", "bounds": [16, 232, 392, 280], "flags": ["clickable", "focusable"], "children": [
+            {"class": "android.widget.TextView", "text": "Sign in", "bounds": [168, 240, 240, 272]}
+          ]},
+          {"class": "android.widget.TextView", "id": "login-status", "text": "Signed out", "bounds": [16, 304, 392, 328]}
+        ]},
+        {"class": "android.view.ViewGroup", "bounds": [0, 848, 408, 912], "children": [
+          {"class": "android.view.ViewGroup", "id": "tab-login", "desc": "Login", "bounds": [0, 848, 80, 912], "flags": ["clickable", "focusable", "selected"]},
+          {"class": "android.view.ViewGroup", "id": "tab-list", "desc": "List", "bounds": [80, 848, 160, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-big", "desc": "Big", "bounds": [160, 848, 240, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-anim", "desc": "Anim", "bounds": [240, 848, 320, 912], "flags": ["clickable", "focusable"]},
+          {"class": "android.view.ViewGroup", "id": "tab-system", "desc": "System", "bounds": [320, 848, 408, 912], "flags": ["clickable", "focusable"]}
+        ]}
+      ]}
+    }
+  ]
+}
