@@ -7,7 +7,9 @@
 //! Maestro matches `id` and `text` selectors as regular expressions, so
 //! selector values are escaped; `launchApp` stops a running app before it
 //! launches it, and `inputText` types into the focused field, so a fill taps
-//! its field first.
+//! its field first. A scroll-to is a `scrollUntilVisible` with a
+//! [`SCROLL_TIMEOUT_MS`] timeout, long enough to reach the last row of a
+//! fixture's list.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -18,6 +20,15 @@ use super::{json_document, last_line};
 use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::Target;
+
+/// How long a `scrollUntilVisible` scrolls before it fails, in milliseconds.
+/// Maestro's default is 20 s. On the Android emulator Maestro 2.10.0, at its
+/// default speed, swipes about 9 rows of a fixture's list every 2.2 to 2.5 s,
+/// so its default reaches row 97 of 200, and row 200 takes about 21 swipes,
+/// some 52 s. 90 s leaves room for a slower host, and with the rest of the
+/// flow, which takes about 15 s, stays within a flow's 120 s deadline
+/// ([`super::BaselineConfig::flow_timeout`]).
+pub const SCROLL_TIMEOUT_MS: u64 = 90_000;
 
 /// The Maestro flow file for `flow` against the app `app_id`.
 pub fn flow_yaml(flow: &Flow, app_id: &str) -> String {
@@ -42,6 +53,7 @@ pub fn flow_yaml(flow: &Flow, app_id: &str) -> String {
                     Direction::Up => "UP",
                 };
                 yaml.push_str(&format!("    direction: {direction}\n"));
+                yaml.push_str(&format!("    timeout: {SCROLL_TIMEOUT_MS}\n"));
             }
             Step::AssertVisible(target) => {
                 yaml.push_str("- assertVisible:\n");
@@ -247,6 +259,7 @@ mod tests {
     element:
       id: "row-200"
     direction: DOWN
+    timeout: 90000
 - tapOn:
     text: "Row 200"
 - assertVisible:
@@ -258,10 +271,44 @@ mod tests {
     element:
       text: "Row 1"
     direction: UP
+    timeout: 90000
 - assertVisible:
     id: "login-status"
     text: "Welcome, agent"
 "#
+        );
+    }
+
+    /// Task 10.10: Maestro's default 20 s scroll reached row 97 of 200 on the
+    /// emulator, and the list flow's golden check failed. At the pace the
+    /// emulator run measured, about 9 rows per swipe and at most 2.5 s per
+    /// swipe, reaching row 200 from the first screen's row 16 takes 21 swipes;
+    /// the rest of the flow takes about 15 s of the flow's 120 s deadline.
+    #[test]
+    fn the_list_flow_gives_maestro_s_scroll_the_time_to_reach_row_200() {
+        let yaml = flow_yaml(
+            &crate::flow::list_scroll(Fixture::Compose),
+            "dev.mobileagent.fixture.compose",
+        );
+        let scroll = yaml
+            .split("\n- ")
+            .find(|command| command.starts_with("scrollUntilVisible:"))
+            .unwrap_or_else(|| panic!("no scrollUntilVisible in:\n{yaml}"));
+        let timeout: u64 = scroll
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("timeout: "))
+            .unwrap_or_else(|| panic!("the scroll has no timeout, so Maestro's 20 s:\n{scroll}"))
+            .parse()
+            .unwrap();
+        let swipes: u64 = (200 - 16_u64).div_ceil(9);
+        assert!(
+            timeout >= swipes * 2_500,
+            "{timeout} ms for {swipes} swipes"
+        );
+        let deadline = super::super::BaselineConfig::new("/nonexistent").flow_timeout;
+        assert!(
+            u128::from(timeout) + 15_000 < deadline.as_millis(),
+            "{timeout} ms leaves the rest of the flow no time within {deadline:?}"
         );
     }
 

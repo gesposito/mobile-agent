@@ -195,6 +195,7 @@ fn maestro_runs_each_reference_flow_as_one_flow_file() {
     element:
       id: "row-200"
     direction: DOWN
+    timeout: 90000
 - tapOn:
     id: "row-200"
 - assertVisible:
