@@ -10,8 +10,9 @@ or installed in the Simulator.
 `Input` and `Tree`. They carry no Apple types, and the tree read returns the
 protocol's snapshot payload (`crates/protocol`) in the form the mirror's
 backend traits expect (`mirror::backend`), so the daemon can put the driver
-behind those traits. On hosts other than macOS the crate still builds:
-`SimulatorDriver` exists there, and `open` fails with `platform_unsupported`.
+behind those traits. On hosts other than macOS the crate still builds
+(Building, Hosts other than macOS): `SimulatorDriver` exists there, and
+`open` fails with `platform_unsupported`.
 
 ## Layout
 
@@ -108,15 +109,28 @@ target's standard library and the iOS Simulator SDK that Xcode ships:
 rustup target add aarch64-apple-ios-sim
 ```
 
-Without the target, the build prints a warning, embeds nothing, and tree
-reads use the host translator; `doctor` says so. `MOBILE_AGENT_READER`
-names a prebuilt reader to embed instead. A reader that fails to compile
-fails the build. The binary is 0.89 MB, links only Foundation,
-CoreFoundation, libobjc, libSystem and libiconv, and carries only the ad hoc
-signature the linker gives every arm64 binary. The reader's library, the
-conversion into the snapshot payload, also builds for the host, where the
-workspace lints and tests it with the rest of the reader's code; its runtime
-exists only inside a Simulator.
+On macOS without the target, the build prints a warning, embeds nothing,
+and tree reads use the host translator; `doctor` says so.
+`MOBILE_AGENT_READER` names a prebuilt reader to embed instead. A reader
+that fails to compile fails the build. The binary is 0.89 MB, links only
+Foundation, CoreFoundation, libobjc, libSystem and libiconv, and carries
+only the ad hoc signature the linker gives every arm64 binary. The reader's
+library, the conversion into the snapshot payload, also builds for the
+host, where the workspace lints and tests it, on macOS with the rest of the
+reader's code; its runtime exists only inside a Simulator.
+
+### Hosts other than macOS
+
+On other hosts, such as the Linux CI job, the crate builds without its
+Apple parts. Its Apple dependencies (objc2 and its framework crates,
+block2, dispatch2 and libc) and both JPEG encoders are macOS-only, so
+neither libjpeg-turbo nor the `aarch64-apple-ios-sim` target is needed, and
+the `TURBOJPEG_*` settings in `.cargo/config.toml` go unused. `build.rs`
+skips the reader without a warning and embeds nothing, `src/unsupported.rs`
+stands in for `src/macos/`, and the daemon registers only the Android
+driver. The reader's `guest` module and its dependencies are Apple-only
+too, so the reader's binary builds as a stub that exits with status 2, and
+its library holds only `elements` and the error codes.
 
 ## Private calls
 
@@ -450,7 +464,10 @@ the driver makes with the image it lives in and where it was validated:
 ## Tests
 
 `cargo test -p simulator` runs the unit tests. They need macOS with Xcode,
-since some load CoreSimulator, but no Simulator.
+since some load CoreSimulator, but no Simulator. On other hosts only the
+platform-neutral unit tests run: the tests in `src/macos/` and the
+integration tests in `tests/` (each file `#![cfg(target_os = "macos")]`)
+are compiled out.
 
 The integration tests in `tests/` drive real Simulators. Each checks
 `MOBILE_AGENT_SIM_UDID` first; when it is unset, as in CI, the test prints why
