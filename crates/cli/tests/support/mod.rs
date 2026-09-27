@@ -200,6 +200,23 @@ impl TestEnv {
         self.daemon = Some(child);
     }
 
+    /// The environment every CLI run gets.
+    pub fn vars(&self) -> Vec<(String, PathBuf)> {
+        vec![
+            ("HOME".into(), self.path().join("home")),
+            ("MOBILE_AGENT_SOCKET_DIR".into(), self.path().to_path_buf()),
+            ("MOBILE_AGENT_DAEMON_BIN".into(), daemon_bin()),
+            (
+                "MOBILE_AGENT_FAKE_TARGETS".into(),
+                PathBuf::from(&self.fake),
+            ),
+            (
+                "MOBILE_AGENT_IDLE_TIMEOUT_MS".into(),
+                PathBuf::from("60000"),
+            ),
+        ]
+    }
+
     /// The CLI command with the test's environment.
     pub fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(CLI);
@@ -207,12 +224,10 @@ impl TestEnv {
         command
             .args(args)
             .current_dir(self.path())
-            .env("HOME", self.path().join("home"))
-            .env("MOBILE_AGENT_SOCKET_DIR", self.path())
-            .env("MOBILE_AGENT_DAEMON_BIN", daemon_bin())
-            .env("MOBILE_AGENT_FAKE_TARGETS", &self.fake)
-            .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "60000")
             .stdin(Stdio::null());
+        for (key, value) in self.vars() {
+            command.env(key, value);
+        }
         command
     }
 
