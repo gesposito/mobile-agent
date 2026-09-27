@@ -1,0 +1,14 @@
+# Proposes each new Rust release for rust-toolchain.toml as a pull request
+# (docs/research/toolchain.md). Dependabot's jobs do not count against the
+# Actions minutes. Only the toolchain: crates are added through Socket
+# Firewall, which Dependabot's updates would bypass.
+version: 2
+updates:
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      # Stable Rust ships on a Thursday every six weeks.
+      interval: weekly
+      day: friday
+    commit-message:
+      prefix: chore(toolchain)

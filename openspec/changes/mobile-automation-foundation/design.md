@@ -118,6 +118,7 @@ These rules bind every task in tasks.md and every subagent that implements one.
 - **Atomic commits.** Each task lands as one or more atomic commits made by the implementer, one logical change per commit, message in `type(scope): summary` form, no attribution trailers.
 - **Validation and fix after every task.** Before the next task starts: `cargo build --workspace`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `cargo test --workspace`, the agent and fixture builds where touched, `openspec validate`, and a diff review against the spec section the task implements. Failures are fixed and committed first.
 - **Installs through Socket.** Every dependency install is prefixed with Socket Firewall: `sfw cargo add`, `sfw cargo fetch`, `sfw npm install`, `sfw pnpm add`. Bun is not documented as supported; the fixture task verifies `sfw bun` and falls back to `sfw npm` if it is not wrapped. No bare installs.
+- **Pinned toolchain.** `rust-toolchain.toml` pins Rust 1.98.1 with clippy, rustfmt and the `aarch64-apple-ios-sim` target, so local builds and CI use one compiler, while `rust-version` keeps the 1.95 MSRV. Dependabot checks weekly for a new stable and opens a pull request, which the bump procedure in `docs/research/toolchain.md` completes.
 - **Recap before dispatch.** Whoever dispatches a task to an implementer restates its goal, the spec and design sections it implements, the files it owns, the acceptance checks and the constraints above.
 
 ## Spike verdicts (task 2.11)
