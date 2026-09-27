@@ -49,10 +49,10 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 5. Android host driver (`crates/android`)
 
-- [ ] 5.1 Add failing integration tests for device listing with unauthorized and offline states, push, shell and forward against an emulator, then implement the ADB transport chosen by S6; verify red-then-green
+- [x] 5.1 Add failing integration tests for device listing with unauthorized and offline states, push, shell and forward against an emulator, then implement the ADB transport chosen by S6; verify red-then-green
 - [ ] 5.2 Add failing tests for first attach, compatible reuse and incompatible replacement, then implement agent deploy, reuse and replace with version checks; verify red-then-green
 - [ ] 5.3 Add a failing full-stack snapshot test, then implement the agent session driving handshake, requests and events into the mirror; verify red-then-green
-- [ ] 5.4 Add failing tests that frames arrive and taps land with the control flag and that a warning is emitted without it, then implement the emulator gRPC client from the emulator's own installed proto with token discovery, a second connection for input, RGB888 scaled streaming, deadlines on every call and the quirks listed in the S7 report; verify red-then-green
+- [x] 5.4 Add failing tests that frames arrive and taps land with the control flag and that a warning is emitted without it, then implement the emulator gRPC client from the emulator's own installed proto with token discovery, a second connection for input, RGB888 scaled streaming, deadlines on every call and the quirks listed in the S7 report; verify red-then-green
 - [ ] 5.5 Add failing tests that `status` names the active path in both emulator configurations, then implement path selection and status reporting; verify red-then-green
 
 ## 6. Simulator driver (`crates/simulator`)
