@@ -562,3 +562,81 @@ fn a_flow_without_a_golden_is_timed_unchecked() {
         assert_eq!(log, ["run tab", "run tab"], "{}", tool.name());
     }
 }
+
+#[test]
+fn the_large_screen_records_the_node_count_each_tool_returned() {
+    let tools = Tools::new("golden-nodes", Platform::Android, end_screen);
+    let report = run(
+        fake_under_test(&emulator(), None),
+        Some(&tools),
+        RunConfig {
+            iterations: ITERATIONS,
+            warmup: WARMUP,
+            retries: 0,
+        },
+    );
+    // 507 elements on the 500-cell screen: the count, 500 cells, 5 tabs and
+    // the clock. Maestro adds its root and the window, maestro-runner its
+    // root, agent-device the application and the window.
+    assert_eq!(end_screen("big-screen").len(), 507);
+    for (tool, nodes) in [
+        ("mobile-agent", 546),
+        ("maestro", 509),
+        ("maestro-runner", 508),
+        ("agent-device", 509),
+    ] {
+        let big = find(&report, tool, "big-screen");
+        assert_eq!(
+            big.nodes.map(|n| (n.min, n.max)),
+            Some((nodes, nodes)),
+            "{tool}: {:?}",
+            big.samples
+        );
+        assert!(
+            big.samples.iter().all(|s| s.nodes == Some(nodes)),
+            "{tool}: {:?}",
+            big.samples
+        );
+        for flow in ["login", "list-scroll"] {
+            assert_eq!(find(&report, tool, flow).nodes, None, "{tool} {flow}");
+        }
+    }
+    // The count is read after each timed run of the flow, outside its
+    // timing, as the check reads the screen.
+    let runs = (1 + WARMUP + ITERATIONS) as usize;
+    for tool in ["maestro", "maestro-runner", "agent-device"] {
+        let log = tools.log(tool);
+        let big_runs: Vec<usize> = log
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| *l == "run big-screen")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(big_runs.len(), runs, "{tool}: {log:?}");
+        for i in big_runs {
+            assert_eq!(
+                log.get(i + 1).map(String::as_str),
+                Some("read"),
+                "{tool}: {log:?}"
+            );
+        }
+    }
+    let md = report.to_markdown();
+    let table = common::table(&md, "Measurements");
+    for (tool, nodes) in [
+        ("maestro", "509"),
+        ("maestro-runner", "508"),
+        ("agent-device", "509"),
+    ] {
+        let row = table
+            .rows
+            .iter()
+            .find(|r| {
+                table.cell(r, "Tool") == tool && table.cell(r, "Subject") == "flow big-screen"
+            })
+            .unwrap();
+        assert_eq!(table.cell(row, "Nodes"), nodes);
+    }
+    let json: Value = serde_json::from_str(&report.to_json()).unwrap();
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
+}
