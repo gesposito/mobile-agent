@@ -12,7 +12,7 @@ use crate::fixture::{Fixture, Screen};
 use crate::gates::GateReport;
 use crate::harness::Subject;
 use crate::provenance::Provenance;
-use crate::stats::Summary;
+use crate::stats::{Summary, percent};
 use crate::target::TargetClass;
 
 /// Version of the JSON layout, bumped on incompatible changes.
@@ -78,8 +78,23 @@ impl Reliability {
     /// measured sample at all, because its preparation failed, failed each of
     /// its `iterations`.
     pub fn of(samples: &[SampleRecord], iterations: u32) -> Self {
-        let _ = (samples, iterations);
-        Reliability::default()
+        let measured: Vec<&SampleRecord> = samples.iter().filter(|s| !s.warmup).collect();
+        let count = |outcome| {
+            let n = measured.iter().filter(|s| s.outcome == outcome).count();
+            u32::try_from(n).unwrap_or(u32::MAX)
+        };
+        let (failures, flakes) = if measured.is_empty() {
+            (iterations, 0)
+        } else {
+            (count(Outcome::Fail), count(Outcome::Flake))
+        };
+        Reliability {
+            iterations,
+            failures,
+            flakes,
+            failure_rate_pct: percent(failures, iterations),
+            flake_rate_pct: percent(flakes, iterations),
+        }
     }
 }
 

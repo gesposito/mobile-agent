@@ -43,7 +43,11 @@ pub fn summarize(samples: &[u64]) -> Option<Summary> {
 /// `part` as a percentage of `whole`, rounded half up to a tenth; 0 when
 /// `whole` is 0.
 pub fn percent(part: u32, whole: u32) -> f64 {
-    todo!("{part} of {whole} as a percentage")
+    if whole == 0 {
+        return 0.0;
+    }
+    let tenths = (u64::from(part) * 1000 + u64::from(whole) / 2) / u64::from(whole);
+    tenths as f64 / 10.0
 }
 
 /// Whole microseconds in `d`, saturating at `u64::MAX`.

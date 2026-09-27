@@ -129,10 +129,14 @@ fn provenance(out: &mut String, p: &Provenance) {
                 .map(|c| format!("{} ({})", c.sha, if c.dirty { "dirty" } else { "clean" })),
         ),
     );
+    let retries = match p.harness.retries {
+        1 => "1 retry".to_owned(),
+        n => format!("{n} retries"),
+    };
     field(
         "Harness",
         format!(
-            "bench {}, {} iterations after {} warm-up",
+            "bench {}, {} iterations after {} warm-up, {retries}",
             p.harness.version, p.harness.iterations, p.harness.warmup
         ),
     );
@@ -177,7 +181,7 @@ fn measurements(out: &mut String, measurements: &[Measurement]) {
     out.push_str("## Measurements\n\n");
     let mut table = Table::new(&[
         "Tool", "Target", "Fixture", "Screen", "Subject", "Clock", "n", "p50 ms", "p95 ms",
-        "max ms", "Nodes",
+        "max ms", "Fail %", "Flake %", "Nodes",
     ]);
     for m in measurements {
         let stat = |pick: fn(&Summary) -> u64| or_dash(m.stats.as_ref().map(|s| ms(pick(s))));
@@ -192,6 +196,8 @@ fn measurements(out: &mut String, measurements: &[Measurement]) {
             stat(|s| s.p50_us),
             stat(|s| s.p95_us),
             stat(|s| s.max_us),
+            format!("{:.1}", m.reliability.failure_rate_pct),
+            format!("{:.1}", m.reliability.flake_rate_pct),
             nodes_cell(m.nodes),
         ]);
     }

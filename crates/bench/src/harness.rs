@@ -257,11 +257,21 @@ fn measure(
         Ok(()) => {
             for iteration in 0..config.warmup + config.iterations {
                 let warmup = iteration < config.warmup;
-                let result = attempt(tool, target, &scenario, &series.subject, flows);
-                if let (Ok(sample), false) = (&result, warmup) {
+                let mut errors = Vec::new();
+                let mut success = None;
+                for _ in 0..=config.retries {
+                    match attempt(tool, target, &scenario, &series.subject, flows) {
+                        Ok(sample) => {
+                            success = Some(sample);
+                            break;
+                        }
+                        Err(e) => errors.push(e.message),
+                    }
+                }
+                if let (Some(sample), false) = (&success, warmup) {
                     clock.get_or_insert(sample.clock);
                 }
-                samples.push(record(iteration, warmup, result));
+                samples.push(record(iteration, warmup, success, errors));
             }
             None
         }
@@ -314,27 +324,39 @@ fn attempt(
     }
 }
 
-fn record(iteration: u32, warmup: bool, result: Result<Sample, AdapterError>) -> SampleRecord {
-    match result {
-        Ok(sample) => SampleRecord {
+/// One iteration: its successful attempt, if any, after the failed ones whose
+/// messages are in `errors`.
+fn record(
+    iteration: u32,
+    warmup: bool,
+    success: Option<Sample>,
+    errors: Vec<String>,
+) -> SampleRecord {
+    let failed = u32::try_from(errors.len()).unwrap_or(u32::MAX);
+    match success {
+        Some(sample) => SampleRecord {
             iteration,
             warmup,
-            outcome: Outcome::Pass,
-            attempts: 1,
+            outcome: if errors.is_empty() {
+                Outcome::Pass
+            } else {
+                Outcome::Flake
+            },
+            attempts: failed + 1,
             us: Some(micros(sample.elapsed)),
             nodes: sample.nodes,
             detail: sample.detail,
-            errors: Vec::new(),
+            errors,
         },
-        Err(e) => SampleRecord {
+        None => SampleRecord {
             iteration,
             warmup,
             outcome: Outcome::Fail,
-            attempts: 1,
+            attempts: failed,
             us: None,
             nodes: None,
             detail: None,
-            errors: vec![e.message],
+            errors,
         },
     }
 }
