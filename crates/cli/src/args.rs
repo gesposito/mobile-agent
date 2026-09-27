@@ -230,10 +230,12 @@ Examples:
 
     /// Scroll the content up, down, left or right, or until an element is on screen
     #[command(after_help = "\
-The direction is the content's: scroll down shows what is below. With --until,
-AMOUNT is each stroke's, the screen settles after each stroke, and the scroll
-stops once the element is on screen, fails with element_not_found once the
-content stops moving, and waits at most --timeout.
+The direction is the content's: scroll down shows what is below. A stroke must
+be longer than a tap, more than 8 points on Android and 10 on iOS, or the
+scroll fails with stroke_too_short. With --until, AMOUNT is each stroke's, the
+screen settles after each stroke, and the scroll stops once the element is on
+screen, fails with element_not_found once the content stops moving, and waits
+at most --timeout.
 
 Examples:
   mobile-agent scroll

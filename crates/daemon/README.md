@@ -52,7 +52,7 @@ tests/          claims, idle and lifecycle, over the socket against the binary; 
 
 ```sh
 mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
-                    [--fake <targets>] [--fake-latency <time>]
+                    [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
 ```
 
 | Flag | Environment | Default |
@@ -62,6 +62,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--drivers` | `MOBILE_AGENT_DRIVERS` | every device driver the host runs: `simulator` (macOS only) and `android`; none when fake targets are named. Comma-separated names, `ios` for `simulator`, or `none` |
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
 | `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
+| `--fake-frame-delay` | `MOBILE_AGENT_FAKE_FRAME_DELAY_MS` | `0`; how long after the attach fake targets' frame streams start, in the same forms |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -143,6 +144,19 @@ by containment, so an exact-text selector looks through the full listing,
 where every element on screen and not covered is listed with its computed
 name and value, every 10 ms while the mirror keeps the replica current.
 
+`scroll` moves the content `amount` points in as few strokes as fit in 80%
+of the scrolled area, all of one length, so no short last stroke is left
+over. A stroke no longer than the platform's tap threshold is a tap to the
+app (`scroll down 2` opened what lay under the Simulator's center), so
+`scroll` refuses one with `stroke_too_short` before it touches the screen,
+naming the threshold in the message and as `data.tapSlop`: 8 points on
+Android, whose touch slop (`config_viewConfigurationTouchSlop`) the API 36
+emulator's framework declares as 8 dp, and 10 points on iOS, where UIKit's
+scroll views pan only past 10 points. On the fixtures' lists, strokes that
+started on a row opened its detail up to 8 points on the emulator (the
+Compose fixture) and 10 points on the Simulator (the Expo fixture), and
+scrolled from 9 and 11 points.
+
 `scroll` with `until` scrolls in strokes of `amount` points (at most 80% of
 the scrolled area) and lets the screen settle after each, at most 1.5 s, so
 a check never races a moving list; it stops once the element is on screen,
@@ -162,8 +176,14 @@ notes the stop the same way. The app gets the waiting commands' default
 timeout (the session's, else 10000 ms) to show it, as the Compose fixture's
 500-cell screen needs on an emulator, where the launch takes 1 to 2 s and
 the cold read 1.5 s; the screen then gets 3000 ms to settle (design D8). An
-explicit `timeout` bounds both together. It reports `settled` false, with a
-warning, when the app did not show in time or its screen did not settle.
+explicit `timeout` bounds both together. Between the two, on a target with
+a frame source, it waits for the frame stream's first frame, at most 2 s
+from its start: the first frame is no change, so a click whose effects came
+before it would report no frame change, and an emulator's stream delivered
+its first frame up to 500 ms after the attach (a Simulator's comes with the
+subscription). It reports `settled` false, with a warning, when the app did
+not show in time or its screen did not settle, and warns when no frame
+came.
 
 ## Tap spans and settle signals
 
@@ -447,8 +467,12 @@ another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
 on the screen's final frame. A relaunch takes the running app off the
 screen at once and shows the new one after the latency, as a relaunched
-app's stopped process leaves before the new one draws. Frames are produced as the backend is called,
-not on a timer. Screenshots are placeholder bytes, not an image.
+app's stopped process leaves before the new one draws. Frames are produced
+as the backend is called, not on a timer. With `--fake-frame-delay` the
+frame stream starts that long after the attach, as an emulator's does once
+its gRPC subscription is up: frames captured before it are never delivered,
+and its first frame shows the screen as it is then. Screenshots are
+placeholder bytes, not an image.
 
 ## Errors
 
@@ -464,6 +488,7 @@ not on a timer. Screenshots are placeholder bytes, not an image.
 | `app_not_found` | the target has no such app |
 | `element_not_found` | no element matched a selector within the timeout |
 | `input_rejected` | the target refused the input, such as text for a non-field |
+| `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
 | `internal` | a command failed unexpectedly; the worker detaches the target |
@@ -544,6 +569,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.8, Android adapter) | (listing, readiness, display, launch, status, errors) | `devices::android::tests::*` |
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
+| (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end

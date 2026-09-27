@@ -43,7 +43,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes; with `--until`, stroke by stroke until the element is on screen |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is on screen |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |
@@ -138,6 +138,10 @@ the spans only the daemon observes ("the tool's own clock" in
 | `tap-to-frame-change` | `click`, `tap` | `frameChangeMs` | from the dispatch to the capture of the first frame whose hash differs from the frame before it |
 | `tap-to-tree-delta` | `click`, `tap` | `treeDeltaMs` | from the dispatch to the first tree delta the mirror finds: a re-read after a change event, or for windows without events, a re-read after the action or after frames changed |
 | `settle` | `wait --settle` | `elapsedMs`, `endedBy`, `stillChanging` | from the start of the wait until neither signal has changed for the quiet window (200 ms), at most `--timeout` (3000 ms) |
+
+`open` waits for the frame stream's first frame on a target with frames,
+at most 2 s: the first frame is no change, so the first click after an
+attach reports `frameChangeMs` only once the stream has delivered one.
 
 Spans are milliseconds on the daemon's monotonic clock, to the microsecond.
 `frameChangeMs` and `treeDeltaMs` are absent, never 0 or null, when the
@@ -374,6 +378,8 @@ spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree
 timing onto the mirror's timestamps with these outputs unchanged, and
 `commands::open_and_close_are_window_changes_that_a_settle_waits_out`
 checks that a settle counts a launch and a stop on every platform.
+Task 8.13 adds `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`
+and `spans::the_first_click_after_open_reports_its_first_frame_change`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

@@ -10,8 +10,9 @@ use serde_json::{Map, Value, json};
 use super::aim::{self, Aim};
 use super::view::element_json;
 use super::{millis, timeout};
+use crate::driver::Platform;
 use crate::keys;
-use crate::wire::code::{self, INPUT_REJECTED};
+use crate::wire::code::{self, INPUT_REJECTED, STROKE_TOO_SHORT};
 use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
 
@@ -24,6 +25,78 @@ const DEFAULT_DISTANCE: f64 = 300.0;
 
 /// The longest stroke of a scroll, as a share of the scrolled area.
 const MAX_STROKE: f64 = 0.8;
+
+/// The most strokes a scroll takes.
+const MAX_STROKES: u32 = 20;
+
+/// What a scroll leaves out rather than make a stroke of it, in points.
+const SUB_POINT: f64 = 0.5;
+
+/// The longest stroke `platform` still takes for a tap, in points; a
+/// scroll's strokes must be longer. Android's is its touch slop,
+/// `config_viewConfigurationTouchSlop`, which the API 36 emulator's
+/// framework declares as 8 dp (the mirror's points on Android); on the
+/// Compose fixture's list, strokes of up to 8 points opened the row they
+/// started on and 9 points scrolled. UIKit's scroll views start to pan
+/// only past 10 points: on the Simulator, strokes of up to 10 points opened
+/// the Expo fixture's row and 11 points scrolled.
+fn tap_slop(platform: Platform) -> f64 {
+    match platform {
+        Platform::Android => 8.0,
+        Platform::Ios => 10.0,
+    }
+}
+
+/// How `platform` is named in messages.
+fn platform_name(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Android => "Android",
+        Platform::Ios => "iOS",
+    }
+}
+
+/// Points as messages give them: to a tenth.
+fn points(value: f64) -> String {
+    format!("{}", (value * 10.0).round() / 10.0)
+}
+
+/// How a scroll of `amount` points goes when a stroke may be `longest`
+/// points at most: as few strokes as fit, all of one length, so no short
+/// last stroke is left over, and at most [`MAX_STROKES`] of them. A
+/// remainder of [`SUB_POINT`] or less is left out.
+fn split(amount: f64, longest: f64) -> (u32, f64) {
+    let count = ((amount - SUB_POINT) / longest)
+        .ceil()
+        .clamp(1.0, f64::from(MAX_STROKES));
+    // At most MAX_STROKES, so the cast keeps the value.
+    let strokes = count as u32;
+    (strokes, (amount / count).min(longest))
+}
+
+/// Refuses strokes of `step` points that `platform` takes for taps; the
+/// scroll asked for `amount` points in strokes of at most `longest`.
+fn check_stroke(platform: Platform, step: f64, amount: f64, longest: f64) -> Result<(), Failure> {
+    let slop = tap_slop(platform);
+    if step > slop {
+        return Ok(());
+    }
+    let name = platform_name(platform);
+    let message = if longest <= slop || amount > slop {
+        format!(
+            "the scrolled area takes strokes of {} points at most (80% of its extent), no longer than the {} points {name} takes for a tap, so they would tap what lies under them; scroll the screen or a larger element",
+            points(longest),
+            points(slop),
+        )
+    } else {
+        format!(
+            "a scroll stroke of {} points is no longer than the {} points {name} takes for a tap, so it would tap what lies under it; scroll more than {} points",
+            points(step),
+            points(slop),
+            points(slop),
+        )
+    };
+    Err(Failure::new(STROKE_TOO_SHORT, message).with_data(json!({"stroke": step, "tapSlop": slop})))
+}
 
 /// How long a tap's effects are watched for at most.
 const WATCH_MAX: Duration = Duration::from_secs(1);
@@ -415,16 +488,19 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
         area.width()
     };
     // The content moves in the direction, so the finger moves the other way;
-    // a long scroll takes several strokes.
+    // a long scroll takes several strokes, none of them short enough to be a
+    // tap.
     let longest = (extent * MAX_STROKE).max(1.0);
+    let platform = target.info.platform;
     if let Some(until) = request.str("until") {
         let step = amount.max(1.0).min(longest);
+        check_stroke(platform, step, amount, longest)?;
         return scroll_until(target, session, request, (area, direction, step), until);
     }
-    let mut left = amount.max(0.0);
+    let (count, step) = split(amount.max(0.0), longest);
+    check_stroke(platform, step, amount, longest)?;
     let mut strokes = 0u32;
-    while left > 0.5 && strokes < 20 {
-        let step = left.min(longest);
+    while strokes < count {
         let (from, to) = stroke(area, direction.opposite(), step);
         let outcome = target.mirror.act(&Action::Swipe {
             from,
@@ -434,7 +510,6 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
         if !outcome.accepted {
             return Err(rejected("scroll"));
         }
-        left -= step;
         strokes += 1;
     }
     Ok(Success::new(json!({
@@ -616,6 +691,44 @@ mod tests {
             assert!(
                 data[span].as_f64().is_some_and(|ms| ms >= 400.0),
                 "{span} after a fresh activation: {data}"
+            );
+        }
+    }
+
+    /// Task 8.13: a scroll takes as few strokes as fit, all of one length,
+    /// so no short last stroke is left over to be a tap.
+    #[test]
+    fn a_scroll_splits_into_equal_strokes_that_fit() {
+        assert_eq!(split(480.0, 700.0), (1, 480.0));
+        assert_eq!(split(1000.0, 700.0), (2, 500.0));
+        assert_eq!(split(703.0, 700.0), (2, 351.5), "not 700 and a 3-point tap");
+        assert_eq!(split(700.4, 700.0), (1, 700.0), "half a point is left out");
+        assert_eq!(split(100_000.0, 700.0), (MAX_STROKES, 700.0));
+    }
+
+    /// Task 8.13: strokes no longer than the platform's tap threshold are
+    /// refused, naming the threshold, whether the amount or the scrolled
+    /// area makes them short.
+    #[test]
+    fn strokes_the_platform_takes_for_taps_are_refused() {
+        assert!(check_stroke(Platform::Android, 8.5, 8.5, 700.0).is_ok());
+        assert!(check_stroke(Platform::Ios, 10.5, 10.5, 700.0).is_ok());
+        for (platform, slop) in [(Platform::Android, "8"), (Platform::Ios, "10")] {
+            let short = check_stroke(platform, 2.0, 2.0, 700.0).unwrap_err();
+            assert_eq!(short.code, STROKE_TOO_SHORT);
+            assert!(
+                short
+                    .message
+                    .contains(&format!("scroll more than {slop} points")),
+                "{}",
+                short.message
+            );
+            let narrow = check_stroke(platform, 6.4, 300.0, 6.4).unwrap_err();
+            assert_eq!(narrow.code, STROKE_TOO_SHORT);
+            assert!(
+                narrow.message.contains("6.4 points at most"),
+                "{}",
+                narrow.message
             );
         }
     }

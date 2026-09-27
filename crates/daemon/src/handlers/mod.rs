@@ -328,10 +328,18 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     // one before it was the process the relaunch stopped.
     let fresh = launch.relaunch.then_some(launched);
     let shown = first_tree(target, &app, fresh, started + first_wait)?;
+    // The first frame is no change, so the first click would report no
+    // frame change if its effects came before the frame stream's first
+    // frame, which an emulator delivers a while after the attach.
+    let frame_deadline = match explicit {
+        Some(total) => started + total.min(FIRST_FRAME_WAIT),
+        None => started + FIRST_FRAME_WAIT,
+    };
+    let primed = first_frame(target, frame_deadline)?;
     let settled = match shown {
-        Some(at) => {
+        Some(_) => {
             let max = match explicit {
-                Some(total) => (started + total).saturating_duration_since(at),
+                Some(total) => (started + total).saturating_duration_since(Instant::now()),
                 None => mirror::DEFAULT_SETTLE_MAX,
             };
             target
@@ -344,16 +352,24 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         }
         None => false,
     };
-    let warning = match (shown, settled) {
-        (None, _) => Some(format!(
+    let mut warnings = Vec::new();
+    match (shown, settled) {
+        (None, _) => warnings.push(format!(
             "{app} did not show its screen within {} ms; take a snapshot to see what is in front",
             first_wait.as_millis()
         )),
-        (Some(_), false) => Some(format!(
+        (Some(_), false) => warnings.push(format!(
             "{app} showed its screen, which did not settle; wait --settle before you act on it"
         )),
-        (Some(_), true) => None,
-    };
+        (Some(_), true) => {}
+    }
+    if !primed {
+        warnings.push(format!(
+            "no frame came from the target's frame source within {} ms, so changes may show in the tree only",
+            frame_deadline.saturating_duration_since(started).as_millis()
+        ));
+    }
+    let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
     Ok(Success::new(json!({
         "opened": app,
         "target": target.info.id,
@@ -367,6 +383,31 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
 /// How often `open` looks for the launched app's screen; the mirror keeps
 /// the replica current in between.
 const OPEN_SLICE: Duration = Duration::from_millis(10);
+
+/// How long after its start `open` waits for the target's frame stream to
+/// deliver its first frame. An emulator's arrived within 500 ms of the
+/// attach on a still launcher (spike S7: 22 to 146 ms after subscribing),
+/// a Simulator's with the subscription.
+const FIRST_FRAME_WAIT: Duration = Duration::from_secs(2);
+
+/// Waits until `deadline` for the mirror to take in the first frame of a
+/// target with a frame source; says whether it has taken one in.
+fn first_frame(target: &mut Attached, deadline: Instant) -> Result<bool, Failure> {
+    if !target.frames {
+        return Ok(true);
+    }
+    loop {
+        target.mirror.drain();
+        if target.mirror.timestamps().last_frame.is_some() {
+            return Ok(true);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(false);
+        }
+        target.mirror.run_until((now + OPEN_SLICE).min(deadline))?;
+    }
+}
 
 /// Waits until `deadline` for the replica to show `app` in front with more
 /// than its root, read after `fresh` when given; returns when it did.

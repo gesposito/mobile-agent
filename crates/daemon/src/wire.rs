@@ -32,6 +32,9 @@ pub mod code {
     pub const ELEMENT_NOT_FOUND: &str = "element_not_found";
     /// The target refused a tap, text, key or gesture.
     pub const INPUT_REJECTED: &str = "input_rejected";
+    /// A scroll's strokes would be no longer than the platform takes for a
+    /// tap, so they would tap what lies under them.
+    pub const STROKE_TOO_SHORT: &str = "stroke_too_short";
     /// `press` got a key the target's platform has no code for.
     pub const UNKNOWN_KEY: &str = "unknown_key";
     /// Writing a file, such as a screenshot, failed.
