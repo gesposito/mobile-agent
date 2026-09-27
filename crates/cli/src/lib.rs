@@ -127,6 +127,36 @@ fn help_topic(topic: &[String], json: bool) -> i32 {
     0
 }
 
+/// A doctor check failed.
+pub const DOCTOR_FAILED: &str = "doctor_failed";
+
+/// Runs doctor's checks on this host and prints them.
+fn doctor_command(settings: &Settings) -> i32 {
+    let probe = doctor::System {
+        endpoint: settings.endpoint.clone(),
+        session: settings.session.clone(),
+    };
+    let report = doctor::run_checks(&probe);
+    if !settings.json {
+        write(&mut std::io::stdout().lock(), &report.to_text());
+        return i32::from(report.failed());
+    }
+    let failed: Vec<&str> = report
+        .checks
+        .iter()
+        .filter(|c| c.status == doctor::Status::Fail)
+        .map(|c| c.name)
+        .collect();
+    let reply = Reply {
+        success: failed.is_empty(),
+        data: report.to_json(),
+        error: (!failed.is_empty()).then(|| format!("checks failed: {}", failed.join(", "))),
+        code: (!failed.is_empty()).then(|| DOCTOR_FAILED.to_owned()),
+        warning: None,
+    };
+    finish(true, "doctor", &reply)
+}
+
 /// What a command runs with once flags, environment and config are merged.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
@@ -206,6 +236,7 @@ pub fn run(args: Vec<OsString>) -> i32 {
     match &cli.command {
         args::Command::Batch(batch) => return batch::run(batch, &settings, &cwd),
         args::Command::Help(help) => return help_topic(&help.topic, settings.json),
+        args::Command::Doctor => return doctor_command(&settings),
         _ => {}
     }
     let (action, reply) = execute(&cli.command, &settings, &cwd);

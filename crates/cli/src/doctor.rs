@@ -1,8 +1,33 @@
-//! `doctor`: checks of the host's toolchains and of the daemon.
+//! `doctor`: checks of the host's toolchains and of the daemon, each with a
+//! status (ok, warn, fail or skip), a message and, when something can be
+//! done, a hint. Only a failed check fails doctor; a missing toolchain for
+//! one platform is a warning, since the other platform may be all a user
+//! drives.
+//!
+//! The checks ask the host through a [`Probe`], which tests script. The
+//! Xcode compatibility table comes from the daemon, whose drivers supply
+//! its rows ([`System::daemon`]), so the CLI links no driver code.
 
+use std::fmt::Write as _;
+use std::io::{Read, Write as _};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{Value, json};
+
+use crate::client::{self, Endpoint};
+
+/// How long a probed command may run.
+const COMMAND_LIMIT: Duration = Duration::from_secs(15);
+
+/// The adb server's port unless `ANDROID_ADB_SERVER_PORT` names another.
+const ADB_PORT: u16 = 5037;
+
+/// Emulator gRPC ports follow the console port by this much, as the
+/// emulator's own `-grpc` examples and spike S7 used them.
+const GRPC_OFFSET: u16 = 3000;
 
 /// What a command printed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +62,26 @@ pub enum Status {
     Skip,
 }
 
+impl Status {
+    pub fn name(self) -> &'static str {
+        match self {
+            Status::Ok => "ok",
+            Status::Warn => "warn",
+            Status::Fail => "fail",
+            Status::Skip => "skip",
+        }
+    }
+
+    fn mark(self) -> &'static str {
+        match self {
+            Status::Ok => "✓",
+            Status::Warn => "⚠",
+            Status::Fail => "✗",
+            Status::Skip => "-",
+        }
+    }
+}
+
 /// One check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Check {
@@ -44,6 +89,29 @@ pub struct Check {
     pub status: Status,
     pub message: String,
     pub hint: Option<String>,
+}
+
+fn check(name: &'static str, status: Status, message: impl Into<String>) -> Check {
+    Check {
+        name,
+        status,
+        message: message.into(),
+        hint: None,
+    }
+}
+
+fn hinted(
+    name: &'static str,
+    status: Status,
+    message: impl Into<String>,
+    hint: impl Into<String>,
+) -> Check {
+    Check {
+        name,
+        status,
+        message: message.into(),
+        hint: Some(hint.into()),
+    }
 }
 
 /// One row of the Xcode compatibility table.
@@ -75,13 +143,598 @@ impl Report {
         self.checks.iter().any(|c| c.status == Status::Fail)
     }
 
-    /// The report as doctor prints it.
+    /// The report as doctor prints it: a line per check, hints below, then
+    /// the compatibility table.
     pub fn to_text(&self) -> String {
-        String::new()
+        let width = self.checks.iter().map(|c| c.name.len()).max().unwrap_or(0);
+        let mut text = String::new();
+        for check in &self.checks {
+            let _ = writeln!(
+                text,
+                "{} {:width$}  {}",
+                check.status.mark(),
+                check.name,
+                check.message
+            );
+            if let Some(hint) = &check.hint {
+                let _ = writeln!(text, "    hint: {hint}");
+            }
+        }
+        let _ = writeln!(text, "\nXcode compatibility:");
+        if self.compatibility.rows.is_empty() {
+            let note = self
+                .compatibility
+                .note
+                .as_deref()
+                .unwrap_or("no driver has supplied the table");
+            let _ = writeln!(text, "  (no rows: {note})");
+        }
+        for row in &self.compatibility.rows {
+            let note = row
+                .note
+                .as_deref()
+                .map(|n| format!("  {n}"))
+                .unwrap_or_default();
+            let _ = writeln!(
+                text,
+                "  {}  {}  {}{note}",
+                row.subject, row.feature, row.status
+            );
+        }
+        text
+    }
+
+    /// The report as the JSON reply's data.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "checks": self.checks.iter().map(|c| json!({
+                "name": c.name,
+                "status": c.status.name(),
+                "message": c.message,
+                "hint": c.hint,
+            })).collect::<Vec<_>>(),
+            "compatibility": {
+                "rows": self.compatibility.rows.iter().map(|r| json!({
+                    "subject": r.subject,
+                    "feature": r.feature,
+                    "status": r.status,
+                    "note": r.note,
+                })).collect::<Vec<_>>(),
+                "note": self.compatibility.note,
+            },
+            "failed": self.failed(),
+        })
     }
 }
 
-/// Runs every check.
-pub fn run_checks(_probe: &dyn Probe) -> Report {
-    Report::default()
+/// Runs every check, in the order doctor prints them.
+pub fn run_checks(probe: &dyn Probe) -> Report {
+    let daemon = probe.daemon();
+    let mut checks = vec![daemon_check(&daemon), drivers_check(&daemon)];
+    let xcode = xcode_check(probe);
+    let has_xcode = xcode.status == Status::Ok;
+    checks.push(xcode);
+    checks.push(runtimes_check(probe, has_xcode));
+    let (sdk, adb) = android_sdk_check(probe);
+    checks.push(sdk);
+    let (server, running) = adb_server_check(probe);
+    checks.push(server);
+    checks.push(emulator_check(probe, adb.as_deref().filter(|_| running)));
+    checks.push(tool_check(
+        probe,
+        "sfw",
+        "install it with npm i -g sfw; every install goes through Socket Firewall",
+    ));
+    checks.push(tool_check(
+        probe,
+        "just",
+        "install it with sfw cargo install just",
+    ));
+    let compatibility = compatibility(&daemon);
+    checks.push(compatibility_check(probe, &compatibility));
+    Report {
+        checks,
+        compatibility,
+    }
+}
+
+fn daemon_check(daemon: &Result<Value, String>) -> Check {
+    match daemon {
+        Ok(data) => check(
+            "daemon",
+            Status::Ok,
+            format!(
+                "running, pid {}, version {}",
+                data["pid"],
+                data["version"].as_str().unwrap_or("unknown")
+            ),
+        ),
+        Err(error) => hinted(
+            "daemon",
+            Status::Fail,
+            error.clone(),
+            "see daemon.log in the socket directory, or run mobile-agent status",
+        ),
+    }
+}
+
+fn drivers_check(daemon: &Result<Value, String>) -> Check {
+    let Ok(data) = daemon else {
+        return check("drivers", Status::Skip, "needs the daemon");
+    };
+    let drivers: Vec<&str> = data["drivers"]
+        .as_array()
+        .map(|d| d.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if drivers.is_empty() {
+        return hinted(
+            "drivers",
+            Status::Warn,
+            "no device driver is registered in this build",
+            "set MOBILE_AGENT_FAKE_TARGETS=android to try the commands on a fake target",
+        );
+    }
+    check("drivers", Status::Ok, drivers.join(", "))
+}
+
+const SELECT_XCODE: &str = "install Xcode, then run sudo xcode-select -s /Applications/Xcode.app";
+
+fn xcode_check(probe: &dyn Probe) -> Check {
+    if probe.os() != "macos" {
+        return check("xcode", Status::Skip, "Xcode runs on macOS only");
+    }
+    let selected = probe
+        .run("xcode-select", &["-p"])
+        .filter(|out| out.success)
+        .map(|out| out.stdout.trim().to_owned());
+    let Some(path) = selected else {
+        return hinted(
+            "xcode",
+            Status::Warn,
+            "no Xcode is selected; iOS Simulators need Xcode",
+            SELECT_XCODE,
+        );
+    };
+    match probe.run("xcodebuild", &["-version"]) {
+        Some(out) if out.success => {
+            let mut lines = out.stdout.lines();
+            let version = lines.next().unwrap_or("Xcode").trim().to_owned();
+            let build = lines
+                .next()
+                .and_then(|line| line.trim().strip_prefix("Build version "))
+                .map(|b| format!(" ({b})"))
+                .unwrap_or_default();
+            check("xcode", Status::Ok, format!("{version}{build} at {path}"))
+        }
+        _ if path.contains("CommandLineTools") => hinted(
+            "xcode",
+            Status::Warn,
+            format!("{path} holds the Command Line Tools alone; iOS Simulators need Xcode"),
+            SELECT_XCODE,
+        ),
+        out => hinted(
+            "xcode",
+            Status::Warn,
+            format!(
+                "xcodebuild -version failed: {}",
+                out.map(|o| first_line(&o.stderr))
+                    .unwrap_or_else(|| "not found".to_owned())
+            ),
+            SELECT_XCODE,
+        ),
+    }
+}
+
+fn first_line(text: &str) -> String {
+    text.lines().next().unwrap_or_default().trim().to_owned()
+}
+
+fn runtimes_check(probe: &dyn Probe, has_xcode: bool) -> Check {
+    const NAME: &str = "simulator-runtimes";
+    if probe.os() != "macos" {
+        return check(NAME, Status::Skip, "iOS Simulators run on macOS only");
+    }
+    if !has_xcode {
+        return check(NAME, Status::Skip, "needs Xcode");
+    }
+    let listing = match probe.run("xcrun", &["simctl", "list", "runtimes", "--json"]) {
+        Some(out) if out.success => out.stdout,
+        out => {
+            return hinted(
+                NAME,
+                Status::Warn,
+                format!(
+                    "xcrun simctl list runtimes failed: {}",
+                    out.map(|o| first_line(&o.stderr))
+                        .unwrap_or_else(|| "not found".to_owned())
+                ),
+                SELECT_XCODE,
+            );
+        }
+    };
+    let runtimes: Value = serde_json::from_str(&listing).unwrap_or(Value::Null);
+    let ios: Vec<&str> = runtimes["runtimes"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .filter(|r| r["isAvailable"] == Value::Bool(true))
+                .filter_map(|r| r["name"].as_str())
+                .filter(|name| name.starts_with("iOS "))
+                .collect()
+        })
+        .unwrap_or_default();
+    if ios.is_empty() {
+        return hinted(
+            NAME,
+            Status::Warn,
+            "no iOS Simulator runtime is installed",
+            "install one with xcodebuild -downloadPlatform iOS",
+        );
+    }
+    check(NAME, Status::Ok, ios.join(", "))
+}
+
+/// The Android SDK check and the SDK's adb.
+fn android_sdk_check(probe: &dyn Probe) -> (Check, Option<PathBuf>) {
+    const NAME: &str = "android-sdk";
+    let mut candidates: Vec<PathBuf> = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+        .iter()
+        .filter_map(|key| probe.env(key))
+        .map(PathBuf::from)
+        .collect();
+    if let Some(home) = probe.env("HOME") {
+        let default = match probe.os() {
+            "macos" => Path::new(&home).join("Library/Android/sdk"),
+            _ => Path::new(&home).join("Android/Sdk"),
+        };
+        candidates.push(default);
+    }
+    let Some((sdk, adb)) = candidates.iter().find_map(|sdk| {
+        let adb = sdk.join("platform-tools").join("adb");
+        probe.is_file(&adb).then(|| (sdk.clone(), adb))
+    }) else {
+        return (
+            hinted(
+                NAME,
+                Status::Warn,
+                "no Android SDK with platform-tools/adb found",
+                "install the Android SDK with its platform tools and set ANDROID_HOME",
+            ),
+            None,
+        );
+    };
+    let adb_text = adb.to_string_lossy().into_owned();
+    let version = probe
+        .run(&adb_text, &["version"])
+        .filter(|out| out.success)
+        .map(|out| {
+            let mut lines = out.stdout.lines();
+            let bridge = lines
+                .next()
+                .and_then(|l| l.trim().strip_prefix("Android Debug Bridge version "))
+                .unwrap_or("unknown")
+                .to_owned();
+            let tools = lines
+                .next()
+                .and_then(|l| l.trim().strip_prefix("Version "))
+                .map(|v| format!(" ({v})"))
+                .unwrap_or_default();
+            format!("adb {bridge}{tools}")
+        })
+        .unwrap_or_else(|| "adb did not report its version".to_owned());
+    (
+        check(NAME, Status::Ok, format!("{}, {version}", sdk.display())),
+        Some(adb),
+    )
+}
+
+/// The adb server check and whether a server runs.
+fn adb_server_check(probe: &dyn Probe) -> (Check, bool) {
+    let port = probe
+        .env("ANDROID_ADB_SERVER_PORT")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(ADB_PORT);
+    match probe.adb_server(port) {
+        Ok(version) => (
+            check(
+                "adb-server",
+                Status::Ok,
+                format!("running on port {port}, protocol {version}"),
+            ),
+            true,
+        ),
+        Err(error) => (
+            hinted(
+                "adb-server",
+                Status::Warn,
+                format!("no adb server answers on port {port} ({error})"),
+                "start it with adb start-server",
+            ),
+            false,
+        ),
+    }
+}
+
+/// Where running emulators write their discovery files.
+fn discovery_dirs(probe: &dyn Probe) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(runtime) = probe.env("XDG_RUNTIME_DIR") {
+        dirs.push(Path::new(&runtime).join("avd/running"));
+    }
+    if probe.os() == "macos"
+        && let Some(home) = probe.env("HOME")
+    {
+        dirs.push(Path::new(&home).join("Library/Caches/TemporaryItems/avd/running"));
+    }
+    let temp = probe.env("TMPDIR").unwrap_or_else(|| "/tmp".to_owned());
+    dirs.push(Path::new(&temp).join("avd/running"));
+    dirs
+}
+
+/// The gRPC port of the emulator with console port `console`, from its
+/// discovery file.
+fn grpc_port(files: &[(PathBuf, String)], console: u16) -> Option<u16> {
+    let serial = format!("port.serial={console}");
+    files
+        .iter()
+        .find(|(_, text)| text.lines().any(|line| line.trim() == serial))
+        .and_then(|(_, text)| {
+            text.lines()
+                .find_map(|line| line.trim().strip_prefix("grpc.port="))
+                .and_then(|port| port.trim().parse().ok())
+        })
+}
+
+fn emulator_check(probe: &dyn Probe, adb: Option<&Path>) -> Check {
+    const NAME: &str = "emulator-control";
+    let Some(adb) = adb else {
+        return check(
+            NAME,
+            Status::Skip,
+            "needs the Android SDK's adb and a running adb server",
+        );
+    };
+    let listing = match probe.run(&adb.to_string_lossy(), &["devices"]) {
+        Some(out) if out.success => out.stdout,
+        _ => return check(NAME, Status::Skip, "adb devices failed"),
+    };
+    let consoles: Vec<u16> = listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let serial = fields.next()?;
+            let state = fields.next()?;
+            (state == "device")
+                .then_some(serial)?
+                .strip_prefix("emulator-")?
+                .parse()
+                .ok()
+        })
+        .collect();
+    if consoles.is_empty() {
+        return check(NAME, Status::Skip, "no emulator is running");
+    }
+    let files: Vec<(PathBuf, String)> = discovery_dirs(probe)
+        .iter()
+        .flat_map(|dir| probe.files(dir))
+        .collect();
+    let mut served = Vec::new();
+    let mut missing = Vec::new();
+    for console in consoles {
+        match grpc_port(&files, console) {
+            Some(port) => served.push(format!("emulator-{console} on port {port}")),
+            None => missing.push(console),
+        }
+    }
+    if missing.is_empty() {
+        return check(
+            NAME,
+            Status::Ok,
+            format!("gRPC control: {}", served.join(", ")),
+        );
+    }
+    let names: Vec<String> = missing.iter().map(|c| format!("emulator-{c}")).collect();
+    let hints: Vec<String> = missing
+        .iter()
+        .map(|&console| {
+            let port = console.saturating_add(GRPC_OFFSET);
+            format!(
+                "start emulator-{console} with -grpc {port} -grpc-use-token, or enable it now with adb -s emulator-{console} emu grpc {port}"
+            )
+        })
+        .collect();
+    hinted(
+        NAME,
+        Status::Warn,
+        format!(
+            "{} {} no gRPC control endpoint, so frames and fast input fall back to the agent",
+            names.join(", "),
+            if names.len() == 1 { "has" } else { "have" }
+        ),
+        hints.join("; "),
+    )
+}
+
+fn tool_check(probe: &dyn Probe, name: &'static str, install: &str) -> Check {
+    match probe.run(name, &["--version"]) {
+        Some(out) if out.success => check(name, Status::Ok, first_line(&out.stdout)),
+        _ => hinted(
+            name,
+            Status::Warn,
+            format!("{name} is not on PATH"),
+            install,
+        ),
+    }
+}
+
+fn compatibility(daemon: &Result<Value, String>) -> Compatibility {
+    let Ok(data) = daemon else {
+        return Compatibility {
+            rows: Vec::new(),
+            note: Some("the daemon did not answer".to_owned()),
+        };
+    };
+    let table = &data["compatibility"];
+    let text = |row: &Value, key: &str| row[key].as_str().unwrap_or_default().to_owned();
+    Compatibility {
+        rows: table["rows"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| Row {
+                        subject: text(row, "subject"),
+                        feature: text(row, "feature"),
+                        status: text(row, "status"),
+                        note: row["note"].as_str().map(str::to_owned),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        note: table["note"].as_str().map(str::to_owned),
+    }
+}
+
+fn compatibility_check(probe: &dyn Probe, table: &Compatibility) -> Check {
+    const NAME: &str = "xcode-compatibility";
+    if probe.os() != "macos" {
+        return check(NAME, Status::Skip, "iOS Simulators run on macOS only");
+    }
+    if table.rows.is_empty() {
+        return check(
+            NAME,
+            Status::Skip,
+            "no Simulator driver has supplied the Xcode compatibility table yet",
+        );
+    }
+    check(
+        NAME,
+        Status::Ok,
+        format!("{} validated combinations, listed below", table.rows.len()),
+    )
+}
+
+/// The host this process runs on, and its daemon.
+pub struct System {
+    pub endpoint: Endpoint,
+    pub session: String,
+}
+
+impl Probe for System {
+    fn os(&self) -> &str {
+        std::env::consts::OS
+    }
+
+    fn env(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    fn run(&self, program: &str, args: &[&str]) -> Option<Output> {
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .ok()?;
+        let reader = |pipe: Option<Box<dyn Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                if let Some(mut pipe) = pipe {
+                    let _ = pipe.read_to_string(&mut text);
+                }
+                text
+            })
+        };
+        let stdout = reader(
+            child
+                .stdout
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
+        let stderr = reader(
+            child
+                .stderr
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
+        let deadline = Instant::now() + COMMAND_LIMIT;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+            }
+        };
+        let stdout = stdout.join().unwrap_or_default();
+        let mut stderr = stderr.join().unwrap_or_default();
+        if status.is_none() {
+            stderr = format!("timed out after {} s", COMMAND_LIMIT.as_secs());
+        }
+        Some(Output {
+            success: status.is_some_and(|s| s.success()),
+            stdout,
+            stderr,
+        })
+    }
+
+    fn is_file(&self, path: &Path) -> bool {
+        path.is_file()
+    }
+
+    fn files(&self, dir: &Path) -> Vec<(PathBuf, String)> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut files: Vec<(PathBuf, String)> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+            .filter_map(|path| std::fs::read_to_string(&path).ok().map(|text| (path, text)))
+            .collect();
+        files.sort();
+        files
+    }
+
+    fn adb_server(&self, port: u16) -> Result<u32, String> {
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(500))
+            .map_err(|e| e.to_string())?;
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+        stream
+            .write_all(b"000chost:version")
+            .map_err(|e| e.to_string())?;
+        let mut head = [0u8; 8];
+        stream.read_exact(&mut head).map_err(|e| e.to_string())?;
+        if &head[..4] != b"OKAY" {
+            return Err(format!(
+                "the server answered {:?}",
+                String::from_utf8_lossy(&head)
+            ));
+        }
+        let len = usize::from_str_radix(&String::from_utf8_lossy(&head[4..]), 16)
+            .map_err(|e| e.to_string())?;
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).map_err(|e| e.to_string())?;
+        u32::from_str_radix(&String::from_utf8_lossy(&body), 16).map_err(|e| e.to_string())
+    }
+
+    fn daemon(&self) -> Result<Value, String> {
+        let mut request = serde_json::Map::new();
+        request.insert("action".into(), "doctor".into());
+        request.insert("id".into(), client::request_id().into());
+        request.insert("session".into(), self.session.clone().into());
+        match client::call(&self.endpoint, &request) {
+            Ok(reply) if reply.success => Ok(reply.data),
+            Ok(reply) => Err(reply
+                .error
+                .unwrap_or_else(|| "the daemon failed".to_owned())),
+            Err(failure) => Err(failure.message),
+        }
+    }
 }

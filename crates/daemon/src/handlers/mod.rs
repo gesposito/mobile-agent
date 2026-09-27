@@ -35,6 +35,7 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
         "devices" => return devices(daemon, request),
         "close" => return close(daemon, request),
         "set_timeout" => return set_timeout(daemon, request),
+        "doctor" => return doctor(daemon),
         "open" => open,
         "snapshot" => view::snapshot,
         "diff_snapshot" => view::diff_snapshot,
@@ -83,6 +84,33 @@ pub(crate) fn timeout(request: &Request) -> Result<Duration, Failure> {
         Some(ms) => bounded("defaultTimeout", ms),
         None => Ok(DEFAULT_TIMEOUT),
     }
+}
+
+/// What `doctor` asks of the daemon: its identity, drivers and the rows
+/// the drivers contribute to the compatibility table.
+fn doctor(daemon: &Daemon) -> Outcome {
+    let registry = daemon.registry();
+    let rows: Vec<Value> = registry
+        .compatibility()
+        .into_iter()
+        .map(|row| {
+            json!({
+                "subject": row.subject,
+                "feature": row.feature,
+                "status": row.status,
+                "note": row.note,
+            })
+        })
+        .collect();
+    let note = rows.is_empty().then_some(
+        "no driver has supplied compatibility data; the Simulator driver fills this table with each Xcode and iOS runtime it was validated on",
+    );
+    Ok(Success::new(json!({
+        "pid": std::process::id(),
+        "version": daemon.version,
+        "drivers": registry.driver_names(),
+        "compatibility": {"rows": rows, "note": note},
+    })))
 }
 
 /// Sets the session's default timeout for waiting commands.

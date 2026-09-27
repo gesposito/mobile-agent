@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::driver::{Driver, Platform, TargetInfo};
+use crate::driver::{CompatibilityRow, Driver, Platform, TargetInfo};
 use crate::wire::{Failure, code};
 use crate::worker::{Handle, Status, Worker};
 
@@ -103,6 +103,14 @@ impl Registry {
             claims: HashMap::new(),
             sessions: BTreeMap::new(),
         }
+    }
+
+    /// The rows every driver contributes to `doctor`'s compatibility table.
+    pub fn compatibility(&self) -> Vec<CompatibilityRow> {
+        self.drivers
+            .iter()
+            .flat_map(|d| d.compatibility())
+            .collect()
     }
 
     pub fn driver_names(&self) -> Vec<String> {

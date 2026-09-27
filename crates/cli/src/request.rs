@@ -53,6 +53,7 @@ pub fn build(command: &Command, cwd: &Path) -> Result<Map<String, Value>, Failur
     let action = match command {
         Command::Batch(_) => return Err(invalid("batch runs its commands one by one")),
         Command::Help(_) => return Err(invalid("help is answered without the daemon")),
+        Command::Doctor => return Err(invalid("doctor runs its checks on this host")),
         Command::Set(set) => {
             let SetWhat::Timeout { ms } = &set.what;
             request.insert("ms".into(), (*ms).into());

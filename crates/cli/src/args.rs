@@ -293,6 +293,17 @@ Examples:
   mobile-agent --session alice set timeout 20000")]
     Set(SetArgs),
 
+    /// Check the toolchains, the adb server, emulators and the daemon
+    #[command(after_help = "\
+Prints a line per check (ok, warn, fail or skip) with a hint where something
+can be done, then the Xcode compatibility table the Simulator driver supplies.
+Exits with status 1 when a check fails; warnings do not fail it.
+
+Examples:
+  mobile-agent doctor
+  mobile-agent --json doctor")]
+    Doctor,
+
     /// Stop the daemon; the next command starts a new one
     #[command(after_help = "\
 Examples:
