@@ -228,3 +228,66 @@ fn fields_in_identically_labelled_containers_collide() {
         "nothing but their position tells the two fields apart"
     );
 }
+
+#[test]
+fn a_labelled_container_whose_field_the_platform_hides_gets_a_ref() {
+    let (target, mut mirror) = mirror_on("signin-ios-hidden");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- generic \"Email\" [ref=e1]",
+            "- generic \"Password\" [ref=e2]",
+            "- button \"Tap to log in!\" [ref=e3]",
+        ]),
+        "the containers agent-device lists as cells get refs"
+    );
+    assert_eq!(
+        mirror.snapshot(&full()).unwrap().text,
+        lines(&[
+            "- text \"Log In\"",
+            "- text \"Enter your details below to unlock top secret info.\"",
+            "- generic \"Email\" [ref=e1]",
+            "- generic \"Password\" [ref=e2]",
+            "- button \"Tap to log in!\" [ref=e3]",
+        ])
+    );
+    let email = snapshot.by_name("Email").unwrap();
+    let outcome = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(email.reference.unwrap()),
+            hold: None,
+        })
+        .unwrap();
+    assert_eq!(
+        outcome.at,
+        Some(email.bounds.center()),
+        "a tap lands on the container, over the hidden field"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+#[test]
+fn only_labelled_containers_with_nothing_below_them_get_such_refs() {
+    let (_, mut mirror) = android(json!([
+        {"class": "android.view.View", "desc": "Promo", "bounds": [16, 16, 392, 64]},
+        {"class": "android.view.View", "bounds": [16, 80, 392, 128]},
+        {"class": "android.widget.TextView", "text": "Hello", "bounds": [16, 144, 392, 192]},
+        {"class": "android.widget.ImageView", "desc": "Logo", "bounds": [16, 208, 392, 256]},
+        {"class": "android.view.ViewGroup", "desc": "Section", "bounds": [16, 272, 392, 400], "children": [
+            {"class": "android.widget.TextView", "text": "Inside", "bounds": [16, 288, 392, 336]}
+        ]}
+    ]));
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "- generic \"Promo\" [ref=e1]",
+        "not an unlabelled leaf, a text, an image or a labelled container with content"
+    );
+
+    let (_, mut root) = mirror_on("sparse");
+    assert_eq!(
+        root.snapshot(&full()).unwrap().text,
+        "(empty screen)",
+        "a window's root is no such container"
+    );
+}

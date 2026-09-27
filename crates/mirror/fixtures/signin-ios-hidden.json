@@ -1,0 +1,22 @@
+{
+  "description": "Ignite's sign-in screen as the React Native smoke test read it on the Simulator (reports/10.4-rn-smoke.md, finding 1): each field is a view marked accessible with only a label, which hides the text field inside, so the read shows an Other labelled Email or Password with nothing below it. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "com.rnsmoke", "title": "RnSmoke",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "RnSmoke", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Log In", "bounds": [24, 80, 378, 116]},
+            {"class": "XCUIElementTypeStaticText", "desc": "Enter your details below to unlock top secret info.", "bounds": [24, 124, 378, 168]},
+            {"class": "XCUIElementTypeOther", "desc": "Email", "bounds": [24, 200, 378, 272]},
+            {"class": "XCUIElementTypeOther", "desc": "Password", "bounds": [24, 288, 378, 360]},
+            {"class": "XCUIElementTypeButton", "desc": "Tap to log in!", "bounds": [24, 392, 378, 440]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
