@@ -2,7 +2,7 @@
 //! what the input transport depends on (idb's
 //! `SimulatorHIDTransportSelection`, spike S3), and the selected Xcode.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
@@ -65,6 +65,32 @@ pub fn xcode(developer_dir: &Path) -> Option<Xcode> {
     })
 }
 
+/// SimulatorKit's binary: Xcode 27 keeps it in `SharedFrameworks`, earlier
+/// Xcodes under the developer directory.
+pub fn simulator_kit() -> PathBuf {
+    let developer = developer_dir();
+    let binary = "SimulatorKit.framework/Versions/A/SimulatorKit";
+    let shared = developer.join("../SharedFrameworks").join(binary);
+    if shared.exists() {
+        return shared.canonicalize().unwrap_or(shared);
+    }
+    developer.join("Library/PrivateFrameworks").join(binary)
+}
+
+/// SimulatorKit's `CFBundleVersion`, when it is installed.
+pub fn simulator_kit_version() -> Option<String> {
+    let binary = simulator_kit();
+    let info = binary.parent()?.join("Resources/Info.plist");
+    let plist = read_plist(&info)?;
+    guarded("-[NSDictionary objectForKey:]", || {
+        plist
+            .objectForKey(&NSString::from_str("CFBundleVersion"))
+            .and_then(|value| string_value(&value))
+    })
+    .ok()
+    .flatten()
+}
+
 /// A property list file's top-level dictionary.
 fn read_plist(path: &Path) -> Option<Retained<NSDictionary<NSString, AnyObject>>> {
     let bytes = std::fs::read(path).ok()?;
@@ -121,6 +147,13 @@ mod tests {
             "{xcode:?}"
         );
         assert!(!xcode.build.is_empty(), "{xcode:?}");
+    }
+
+    #[test]
+    fn simulator_kit_is_found_for_the_selected_xcode() {
+        let path = simulator_kit();
+        assert!(path.exists(), "{} does not exist", path.display());
+        assert!(simulator_kit_version().is_some());
     }
 
     #[test]

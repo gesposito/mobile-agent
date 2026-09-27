@@ -153,6 +153,15 @@ impl fmt::Display for Error {
                 detected,
                 supported,
                 notes,
+            } if detected.is_empty() => write!(
+                f,
+                "no Xcode was found in the selected developer directory; this driver \
+                 supports {supported}; see {notes}, or run doctor"
+            ),
+            Error::UnsupportedXcode {
+                detected,
+                supported,
+                notes,
             } => write!(
                 f,
                 "{detected} is outside the Xcode range this driver supports, {supported}; \

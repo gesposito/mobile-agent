@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::compat::Compatibility;
+use crate::compat::{self, Compatibility, Row, Status};
 use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
@@ -15,10 +15,11 @@ use crate::gesture;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::dtuhid::Dtuhid;
+use crate::macos::encode::Encoder;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
-use crate::macos::objc;
 use crate::macos::{frames, host, pasteboard, prefs};
+use crate::macos::{objc, xpc};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Diagnostics, Dispatch,
     DriverOptions, FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Modifiers,
@@ -57,6 +58,9 @@ pub struct SimulatorDriver {
     options: DriverOptions,
     /// The host's CoreSimulator and Xcode, which choose the transport.
     host: HostVersions,
+    /// Whether the selected Xcode is in the supported range; every command
+    /// but `compatibility` refuses when it is not.
+    gate: Result<()>,
     /// The devices input went to, by UDID, each with its transport.
     targets: Mutex<HashMap<String, Arc<Target>>>,
     /// Devices a failure in the private framework layer took out of
@@ -90,6 +94,7 @@ impl SimulatorDriver {
             context,
             set,
             options,
+            gate: compat::check_xcode(host.xcode.as_deref()),
             host,
             targets: Mutex::new(HashMap::new()),
             unavailable: Mutex::new(HashMap::new()),
@@ -98,11 +103,13 @@ impl SimulatorDriver {
 
     /// The installed runtimes.
     pub fn runtimes(&self) -> Result<Vec<RuntimeInfo>> {
+        self.gate.clone()?;
         self.context.runtimes()?.iter().map(|r| r.info()).collect()
     }
 
     /// The device types this Xcode knows.
     pub fn device_types(&self) -> Result<Vec<DeviceTypeInfo>> {
+        self.gate.clone()?;
         self.context
             .device_types()?
             .iter()
@@ -119,6 +126,7 @@ impl SimulatorDriver {
         device_type: &str,
         runtime: Option<&str>,
     ) -> Result<DeviceInfo> {
+        self.gate.clone()?;
         let types = self.context.device_types()?;
         let type_infos: Vec<DeviceTypeInfo> =
             types.iter().map(|t| t.info()).collect::<Result<_>>()?;
@@ -153,9 +161,141 @@ impl SimulatorDriver {
     }
 
     /// What the driver supports on this host, for `doctor`: the host's
-    /// components and every private call with where it was validated.
+    /// components and every private call with where it was validated. It
+    /// answers outside the supported Xcode range too.
     pub fn compatibility(&self) -> Result<Compatibility> {
-        unimplemented!("task 6.9: compatibility table")
+        let unknown = || "not found".to_string();
+        let mut rows = Vec::new();
+
+        let xcode = self.host.xcode.clone().unwrap_or_else(unknown);
+        rows.push(Row {
+            component: "Xcode".into(),
+            detected: xcode.clone(),
+            expected: compat::supported(),
+            status: match (&self.gate, compat::validated_xcode(&xcode)) {
+                (Err(_), _) => Status::Unsupported,
+                (Ok(()), true) => Status::Validated,
+                (Ok(()), false) => Status::Supported,
+            },
+            note: format!(
+                "validated on Xcode {}; the CI matrix also builds on Xcode 26",
+                compat::VALIDATED_XCODE
+            ),
+        });
+
+        let plan = select::plan(&self.host, self.options.transport);
+        let core_simulator = self.host.core_simulator.clone().unwrap_or_else(unknown);
+        let dtuhidd = plan.transports.first() == Some(&TransportKind::Dtuhid);
+        rows.push(Row {
+            component: "CoreSimulator".into(),
+            detected: core_simulator.clone(),
+            expected: format!("{} or later for dtuhidd", select::DTUHIDD_SINCE),
+            status: if core_simulator == compat::VALIDATED_CORE_SIMULATOR {
+                Status::Validated
+            } else if dtuhidd {
+                Status::Supported
+            } else {
+                Status::Limited
+            },
+            note: if dtuhidd {
+                "input through dtuhidd".into()
+            } else {
+                "input through Indigo: touch only, no keys, buttons or text".into()
+            },
+        });
+
+        let kit = host::simulator_kit_version();
+        rows.push(Row {
+            component: "SimulatorKit".into(),
+            detected: kit.clone().unwrap_or_else(unknown),
+            expected: "present, for the Indigo fallback".into(),
+            status: match kit.as_deref() {
+                Some(compat::VALIDATED_SIMULATOR_KIT) => Status::Validated,
+                Some(_) => Status::Supported,
+                None if dtuhidd => Status::Limited,
+                None => Status::Unsupported,
+            },
+            note: host::simulator_kit().display().to_string(),
+        });
+
+        let runtimes = self.context.runtimes()?;
+        let names: Vec<String> = runtimes
+            .iter()
+            .map(|runtime| {
+                runtime
+                    .info()
+                    .map(|info| format!("{} ({})", info.name, info.build))
+            })
+            .collect::<Result<_>>()?;
+        rows.push(Row {
+            component: "runtimes".into(),
+            detected: if names.is_empty() {
+                "none installed".into()
+            } else {
+                names.join(", ")
+            },
+            expected: format!("{} validated", compat::VALIDATED_RUNTIME),
+            status: if names.is_empty() {
+                Status::Unsupported
+            } else if names
+                .iter()
+                .any(|name| name.starts_with(&format!("{} ", compat::VALIDATED_RUNTIME)))
+            {
+                Status::Validated
+            } else {
+                Status::Supported
+            },
+            note: "input and frames depend on the host, not the runtime".into(),
+        });
+
+        let transports: Vec<String> = plan.transports.iter().map(|t| t.to_string()).collect();
+        rows.push(Row {
+            component: "input transport".into(),
+            detected: transports.join(", then "),
+            expected: "dtuhidd from CoreSimulator 1155.4, Indigo before".into(),
+            status: if self.gate.is_err() {
+                Status::Unsupported
+            } else if core_simulator == compat::VALIDATED_CORE_SIMULATOR {
+                Status::Validated
+            } else {
+                Status::Supported
+            },
+            note: plan.reason,
+        });
+
+        let symbols = xpc::Sim4Symbols::resolve();
+        rows.push(Row {
+            component: "XPC symbols".into(),
+            detected: match &symbols {
+                Ok(_) => "the three _4sim functions resolve".into(),
+                Err(reason) => reason.clone(),
+            },
+            expected: "resolvable with dlsym".into(),
+            status: match (&symbols, dtuhidd) {
+                (Ok(_), _) => Status::Validated,
+                (Err(_), true) => Status::Unsupported,
+                (Err(_), false) => Status::Limited,
+            },
+            note: "dtuhidd needs them".into(),
+        });
+
+        let encoder = Encoder::new(80).map(|encoder| encoder.name());
+        rows.push(Row {
+            component: "frame encoder".into(),
+            detected: encoder.clone().unwrap_or("none").to_string(),
+            expected: "turbojpeg, or jpeg-encoder without libjpeg-turbo".into(),
+            status: if encoder.is_ok() {
+                Status::Validated
+            } else {
+                Status::Unsupported
+            },
+            note: "chosen at build time; see Building in the README".into(),
+        });
+
+        Ok(Compatibility {
+            rows,
+            call_sites: compat::call_sites(),
+        })
     }
 
     /// Makes the next private framework call made for `target` raise an
@@ -182,6 +322,7 @@ impl SimulatorDriver {
     /// of service with diagnostics and fails the request with them; other
     /// devices are untouched.
     fn contain<R>(&self, target: &str, request: impl FnOnce() -> Result<R>) -> Result<R> {
+        self.gate.clone()?;
         let udid = self.udid_of(target)?;
         if let Some(diagnostics) = lock(&self.unavailable).get(&udid).cloned() {
             return Err(Error::Unavailable {
@@ -385,6 +526,7 @@ fn transient_install_failure(error: &Error) -> bool {
 
 impl Lifecycle for SimulatorDriver {
     fn devices(&self) -> Result<Vec<DeviceInfo>> {
+        self.gate.clone()?;
         self.set.devices()?.iter().map(Device::info).collect()
     }
 
@@ -492,6 +634,7 @@ impl Lifecycle for SimulatorDriver {
     }
 
     fn status(&self, target: &str) -> Result<TargetStatus> {
+        self.gate.clone()?;
         let device = self.device(target)?;
         let info = device.info()?;
         let known = lock(&self.targets).get(&info.udid).cloned();
@@ -687,6 +830,7 @@ mod tests {
         driver.devices().expect("commands work within the range");
         let table = driver.compatibility().expect("a table");
         let text = table.render();
+        eprintln!("{text}");
         for component in [
             "Xcode",
             "CoreSimulator",

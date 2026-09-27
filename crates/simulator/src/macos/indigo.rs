@@ -18,7 +18,6 @@
 //! working before and after dtuhidd was activated.
 
 use std::ffi::{CStr, c_void};
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
@@ -35,7 +34,8 @@ use objc2_foundation::{NSError, NSSize};
 use crate::error::{Error, Failure, Result};
 use crate::gate::Submitted;
 use crate::gesture::{Phase, Ratio, TouchStep};
-use crate::macos::coresim::{Device, developer_dir};
+use crate::macos::coresim::Device;
+use crate::macos::host::simulator_kit;
 use crate::macos::input::Transport;
 use crate::macos::objc::{self, Shared, guarded};
 use crate::model::{Button, Edge, TransportKind};
@@ -117,18 +117,6 @@ fn builder_lock() -> MutexGuard<'static, Option<Instant>> {
     BUILDER
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// SimulatorKit: Xcode 27 keeps it in `SharedFrameworks`, earlier Xcodes in
-/// the developer directory.
-fn simulator_kit() -> PathBuf {
-    let developer = developer_dir();
-    let binary = "SimulatorKit.framework/Versions/A/SimulatorKit";
-    let shared = developer.join("../SharedFrameworks").join(binary);
-    if shared.exists() {
-        return shared;
-    }
-    developer.join("Library/PrivateFrameworks").join(binary)
 }
 
 /// One device's legacy HID client and the builder.
@@ -394,11 +382,5 @@ mod tests {
         assert_eq!(layout::PAYLOAD + layout::PAYLOAD_STRIDE, 0xB0);
         assert_eq!(layout::EVENT + layout::X_RATIO, 0x3C);
         assert_eq!(layout::EVENT + layout::Y_RATIO, 0x44);
-    }
-
-    #[test]
-    fn simulator_kit_is_found_for_the_selected_xcode() {
-        let path = simulator_kit();
-        assert!(path.exists(), "{} does not exist", path.display());
     }
 }

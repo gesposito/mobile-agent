@@ -26,6 +26,7 @@ src/
   gate.rs          the activation gate that holds input until dtuhidd answers
   keymap.rs        characters and key names to USB HID usages
   select.rs        choosing the input transport from the host's versions
+  compat.rs        the Xcode gate and the doctor compatibility table
   lookup.rs        finding a device, runtime or device type from user input
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
@@ -236,6 +237,40 @@ The tests read a field back by putting a sentinel on the pasteboard and
 sending Command-A and Command-C: 500 characters pasted in 0.2 s and 25 typed
 in 0.47 s came back exactly.
 
+## Compatibility
+
+The driver supports Xcode 26.0 up to but not including 28 and refuses to
+work outside that range: every command fails with `unsupported_xcode`, which
+names the detected Xcode and the range and points here. The driver still
+opens, so `compatibility()`, the table the CLI's `doctor` prints, answers
+anyway. The Xcode version comes from the selected developer directory's
+`version.plist` (`DEVELOPER_DIR`, else `xcode-select`); the CoreSimulator
+version from the bundle that vends `SimDevice`, which decides the input
+transport.
+
+- Validated: Xcode 27.0 (27A266a), CoreSimulator 1171.7, SimulatorKit 1005.2
+  and iOS 26.5 (23F77), where every spike and every integration test ran.
+- Xcode 26.x is in the range because the design keeps Indigo as the input for
+  its CoreSimulator, which predates 1155.4, and CI builds on it, but nothing
+  has run there: input would be touch only, since keys, buttons and text
+  need dtuhidd, and `doctor` marks that row limited.
+- Xcode 28 and later, and 16 and earlier, are refused until validated.
+
+`compatibility()` reports Xcode, CoreSimulator, SimulatorKit, the installed
+runtimes, the input transport with the rule that picked it, the `_4sim` XPC
+symbols and the frame encoder, each validated, supported, limited or
+unsupported, followed by every private call the driver makes with the image
+it lives in and where it was validated:
+
+| Private calls | Image | Validated on |
+|---|---|---|
+| `SimServiceContext`, `SimDeviceSet` and `SimDevice` lifecycle: create, delete, boot, `bootStatus`, shutdown, install, launch, terminate | CoreSimulator | Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, `tests/lifecycle.rs` |
+| `-[SimDevice dataPath]` | CoreSimulator | `tests/lifecycle.rs` |
+| `-[SimDevice installedAppsWithError:]`, `-setPrivacyAccessForService:bundleID:granted:error:` | CoreSimulator | `tests/text.rs` |
+| `-[SimDevice io]`, `-ioPorts`, the display descriptor, `-framebufferSurface`, the SimScreen callbacks | CoreSimDeviceIO, ROCKit proxies | spike S2, `tests/frames.rs` |
+| `-[SimDevice lookup:error:]`, the three `_4sim` libxpc functions | CoreSimulator, libxpc | spike S3, `tests/dtuhid.rs` |
+| `SimDeviceLegacyHIDClient`, `IndigoHIDMessageForMouseNSEvent` (six parameters) | SimulatorKit 1005.2 | spike S3, `tests/indigo.rs` on a fresh boot |
+
 ## Tests
 
 `cargo test -p simulator` runs the unit tests. They need macOS with Xcode,
@@ -272,4 +307,5 @@ about a minute.
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
 | Parallel Simulators | Two sessions | `transport::two_sessions` |
+| Xcode compatibility statement | Unsupported Xcode | `compat::tests::unsupported_xcode`, `macos::driver::tests::commands_refuse_an_xcode_outside_the_range`, `compat::tests::a_host_without_xcode_is_refused`, `compat::tests::xcode_26_and_27_are_supported`, `compat::tests::the_table_renders_every_row_and_call_site`, `macos::driver::tests::this_host_is_within_the_range_and_the_table_says_why` |
 | Failure containment | Framework call throws | `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call` |

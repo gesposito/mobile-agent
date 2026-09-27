@@ -53,9 +53,108 @@ pub struct Compatibility {
 /// Fails unless `detected`, the selected Xcode's version and build such as
 /// "27.0 (27A266a)", is in the supported range.
 pub fn check_xcode(detected: Option<&str>) -> Result<()> {
-    let _ = (detected, Version::parse(FIRST_SUPPORTED));
-    let _ = Error::PlatformUnsupported;
-    unimplemented!("task 6.9: Xcode gate")
+    let refuse = |detected: String| {
+        Err(Error::UnsupportedXcode {
+            detected,
+            supported: supported(),
+            notes: NOTES.into(),
+        })
+    };
+    let Some(detected) = detected else {
+        return refuse(String::new());
+    };
+    let first = Version::parse(FIRST_SUPPORTED).expect("a dotted version");
+    let past = Version::parse(FIRST_UNSUPPORTED).expect("a dotted version");
+    match detected.split_whitespace().next().and_then(Version::parse) {
+        Some(version) if version >= first && version < past => Ok(()),
+        _ => refuse(format!("Xcode {detected}")),
+    }
+}
+
+/// Whether `xcode` is the version the driver was validated on.
+pub fn validated_xcode(xcode: &str) -> bool {
+    xcode.split_whitespace().next().and_then(Version::parse) == Version::parse(VALIDATED_XCODE)
+}
+
+/// The Xcode, CoreSimulator, SimulatorKit and runtime the spikes and this
+/// crate's integration tests ran on.
+pub const VALIDATED_XCODE: &str = "27.0";
+pub const VALIDATED_CORE_SIMULATOR: &str = "1171.7";
+pub const VALIDATED_SIMULATOR_KIT: &str = "1005.2";
+pub const VALIDATED_RUNTIME: &str = "iOS 26.5";
+
+/// Where the private calls the driver makes were validated.
+pub fn call_sites() -> Vec<CallSite> {
+    const S2: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs";
+    const S3: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S3 and tests/dtuhid.rs";
+    const INDIGO: &str =
+        "Xcode 27.0, SimulatorKit 1005.2, iOS 26.5: spike S3 and tests/indigo.rs, on a fresh boot";
+    const TEXT: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/text.rs";
+    const LIFECYCLE: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/lifecycle.rs";
+    let site = |call, image, validated_on| CallSite {
+        call,
+        image,
+        validated_on,
+    };
+    vec![
+        site(
+            "+[SimServiceContext sharedServiceContextForDeveloperDir:error:], -defaultDeviceSetWithError:, -supportedRuntimes, -supportedDeviceTypes",
+            "CoreSimulator",
+            S2,
+        ),
+        site(
+            "-[SimDeviceSet devices], -createDeviceAsyncWithType:runtime:name:completionQueue:completionHandler:, -deleteDeviceAsync:completionQueue:completionHandler:",
+            "CoreSimulator",
+            S2,
+        ),
+        site(
+            "-[SimDevice UDID], -name, -state, -runtime, -deviceType, -bootStatus",
+            "CoreSimulator",
+            S2,
+        ),
+        site(
+            "-[SimDevice bootAsyncWithOptions:completionQueue:completionHandler:], -shutdownAsyncWithCompletionQueue:completionHandler:",
+            "CoreSimulator",
+            S2,
+        ),
+        site(
+            "-[SimDevice installApplication:withOptions:error:], -launchApplicationAsyncWithID:options:completionQueue:completionHandler:, -terminateApplicationWithID:error:",
+            "CoreSimulator",
+            S2,
+        ),
+        site("-[SimDevice dataPath]", "CoreSimulator", LIFECYCLE),
+        site(
+            "-[SimDevice installedAppsWithError:], -setPrivacyAccessForService:bundleID:granted:error: (kTCCServicePasteboard)",
+            "CoreSimulator",
+            TEXT,
+        ),
+        site(
+            "-[SimDevice io], -[SimDeviceIOClient ioPorts], port -descriptor, descriptor -state and -displayClass",
+            "CoreSimDeviceIO, ROCKit proxies",
+            S2,
+        ),
+        site(
+            "-[SimDisplayIOSurfaceRenderable framebufferSurface], -[SimScreen registerScreenCallbacksWithUUID:callbackQueue:frameCallback:surfacesChangedCallback:propertiesChangedCallback:], -unregisterScreenCallbacksWithUUID:",
+            "CoreSimDeviceIO, ROCKit proxies",
+            S2,
+        ),
+        site("-[SimDevice lookup:error:]", "CoreSimulator", S3),
+        site(
+            "xpc_endpoint_create_mach_port_4sim, xpc_connection_create_from_endpoint, xpc_connection_enable_sim2host_4sim",
+            "libxpc",
+            S3,
+        ),
+        site(
+            "SimDeviceLegacyHIDClient -initWithDevice:error:, -sendWithMessage:freeWhenDone:completionQueue:completion:",
+            "SimulatorKit",
+            INDIGO,
+        ),
+        site(
+            "IndigoHIDMessageForMouseNSEvent (six parameters; down, dragged and up)",
+            "SimulatorKit",
+            INDIGO,
+        ),
+    ]
 }
 
 /// The supported range in words.
@@ -66,13 +165,69 @@ pub fn supported() -> String {
 impl Compatibility {
     /// The table as aligned text.
     pub fn render(&self) -> String {
-        unimplemented!("task 6.9: compatibility table")
+        let status = |status: Status| match status {
+            Status::Validated => "validated",
+            Status::Supported => "supported",
+            Status::Limited => "limited",
+            Status::Unsupported => "unsupported",
+        };
+        let rows: Vec<[&str; 5]> = self
+            .rows
+            .iter()
+            .map(|row| {
+                [
+                    row.component.as_str(),
+                    row.detected.as_str(),
+                    row.expected.as_str(),
+                    status(row.status),
+                    row.note.as_str(),
+                ]
+            })
+            .collect();
+        let mut out = table(
+            ["Component", "Detected", "Expected", "Status", "Note"],
+            &rows,
+        );
+        out.push('\n');
+        let sites: Vec<[&str; 3]> = self
+            .call_sites
+            .iter()
+            .map(|site| [site.call, site.image, site.validated_on])
+            .collect();
+        out.push_str(&table(["Private call", "Image", "Validated on"], &sites));
+        out
     }
 
     /// Whether every row is usable.
     pub fn usable(&self) -> bool {
-        unimplemented!("task 6.9: compatibility table")
+        self.rows
+            .iter()
+            .all(|row| row.status != Status::Unsupported)
     }
+}
+
+/// Left-aligned columns, two spaces apart, the last one unpadded.
+fn table<const N: usize>(header: [&str; N], rows: &[[&str; N]]) -> String {
+    let mut widths = header.map(|cell| cell.chars().count());
+    for row in rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.chars().count());
+        }
+    }
+    let mut out = String::new();
+    for row in std::iter::once(&header).chain(rows) {
+        let mut line = String::new();
+        for (index, (cell, width)) in row.iter().zip(widths).enumerate() {
+            if index + 1 == N {
+                line.push_str(cell);
+            } else {
+                line.push_str(&format!("{cell:<width$}  "));
+            }
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
 }
 
 #[cfg(test)]
