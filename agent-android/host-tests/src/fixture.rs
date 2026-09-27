@@ -38,17 +38,6 @@ pub fn force_stop(device: &Device, package: &str) {
     device.shell(&format!("am force-stop {package}"));
 }
 
-/// Hides the soft keyboard if it is showing, with Back.
-pub fn hide_keyboard(device: &Device) {
-    let shown = device
-        .shell("dumpsys input_method | grep -E 'mInputShown|isInputViewShown' || true")
-        .contains("=true");
-    if shown {
-        device.shell("input keyevent 4");
-        std::thread::sleep(Duration::from_millis(400));
-    }
-}
-
 /// The display rotation settings, put back as they were when dropped.
 pub struct RotationGuard<'a> {
     device: &'a Device,

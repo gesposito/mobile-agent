@@ -37,6 +37,8 @@ pub struct Launch {
     pub args: Vec<String>,
     /// The per-launch token passed in the environment; `None` passes none.
     pub token: Option<String>,
+    /// More environment variables for the agent.
+    pub env: Vec<(String, String)>,
 }
 
 impl Default for Launch {
@@ -44,6 +46,7 @@ impl Default for Launch {
         Launch {
             args: Vec::new(),
             token: Some(random_hex(16)),
+            env: Vec::new(),
         }
     }
 }
@@ -100,6 +103,9 @@ impl Agent {
         device.push(&jar, &remote_jar);
         let socket = format!("mobile-agent-{id}");
         let mut command = String::new();
+        for (k, v) in &launch.env {
+            command.push_str(&format!("{k}={v} "));
+        }
         if let Some(token) = &launch.token {
             command.push_str(&format!("MOBILE_AGENT_TOKEN={token} "));
         }

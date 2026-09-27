@@ -68,7 +68,14 @@ fn big_screen(package: &str) {
         return;
     };
     fixture::launch(&dev, package, "big");
-    let mut agent = Agent::launch(&dev, Launch::default().arg("--trace"));
+    // No Compose re-read poll between the reads being timed.
+    let mut agent = Agent::launch(
+        &dev,
+        Launch::default()
+            .arg("--trace")
+            .arg("--compose-poll-ms")
+            .arg("0"),
+    );
     let mut client = agent.connect();
     let (cold, cold_time) = snapshot(&mut client, no_wait());
     let (warm, warm_time) = snapshot(&mut client, no_wait());
@@ -208,7 +215,8 @@ fn the_keyboard_window_appears_with_its_keys_when_a_field_is_focused() {
                 .any(|w| w.kind == WindowType::INPUT_METHOD && w.root.is_some())
                 .then_some(s)
         });
-    fixture::hide_keyboard(&dev);
+    // Stopping the app closes the keyboard; Back could reach the app instead.
+    fixture::force_stop(&dev, fixture::COMPOSE);
     let s = with_keyboard.expect("no keyboard window within 5 s of focusing the field");
     let ime = s
         .windows

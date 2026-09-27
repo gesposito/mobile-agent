@@ -122,3 +122,26 @@ pub fn active_window(s: &Snapshot) -> Option<&Window> {
         .iter()
         .find(|w| w.flags.contains(protocol::snapshot::WindowFlags::ACTIVE))
 }
+
+/// A point inside `f`'s bounds that no window above its own covers: the
+/// Expo fixture draws under the status bar (fixture task 1.7), so the centre
+/// of `login-username` or `row-1` would land on SystemUI.
+pub fn tap_point(s: &Snapshot, f: &Found<'_>) -> (i32, i32) {
+    let mut b = f.node.bounds;
+    for w in &s.windows {
+        if w.layer <= f.window.layer || w.id == f.window.id {
+            continue;
+        }
+        let o = w.bounds;
+        let spans = o.left <= b.left && o.right >= b.right;
+        if !spans || o.bottom <= b.top || o.top >= b.bottom {
+            continue;
+        }
+        if o.top <= b.top {
+            b.top = b.top.max(o.bottom);
+        } else if o.bottom >= b.bottom {
+            b.bottom = b.bottom.min(o.top);
+        }
+    }
+    center(b)
+}

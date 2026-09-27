@@ -19,10 +19,13 @@ fn the_agent_holds_ui_automation_with_interactive_windows_once_ready() {
     let agent = Agent::launch(&dev, Launch::default());
     let ready = &agent.ready;
     assert_eq!(ready["ownership"], "held", "{ready:?}");
-    // Two interactive windows at least, the status bar and the app, which the
-    // window list only reports once FLAG_RETRIEVE_INTERACTIVE_WINDOWS is set.
+    // The window list is empty until FLAG_RETRIEVE_INTERACTIVE_WINDOWS is
+    // set; once ready it holds the status bar and the app.
     let windows: u32 = ready["windows"].parse().expect("a window count");
-    assert!(windows >= 2, "{windows} interactive windows at ready");
+    assert!(
+        windows >= 2,
+        "{windows} interactive windows at ready: {ready:?}"
+    );
     assert_eq!(ready["active"], fixture::COMPOSE, "{ready:?}");
     assert!(dev.ui_automation_registered());
     println!(

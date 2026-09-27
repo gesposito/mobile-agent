@@ -204,9 +204,14 @@ impl Client {
             .map_or(until, |t| t.min(until))
             .max(now + Duration::from_millis(1));
         let wait = wake.saturating_duration_since(now);
-        self.stream
+        if self
+            .stream
             .set_read_timeout(Some(wait.max(Duration::from_millis(1))))
-            .expect("set a read timeout");
+            .is_err()
+        {
+            // The socket is gone: macOS refuses options on a reset socket.
+            self.session.receive_eof(Instant::now());
+        }
         match self.stream.read(&mut self.buf) {
             Ok(0) => self.session.receive_eof(Instant::now()),
             Ok(n) => {

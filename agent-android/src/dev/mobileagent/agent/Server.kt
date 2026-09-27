@@ -8,6 +8,7 @@ import dev.mobileagent.agent.codec.ErrorCode
 import dev.mobileagent.agent.codec.Lifecycle
 import dev.mobileagent.agent.codec.LifecycleKind
 import dev.mobileagent.agent.codec.Protocol
+import dev.mobileagent.agent.codec.ResyncCall
 import dev.mobileagent.agent.codec.ShutdownCall
 import dev.mobileagent.agent.codec.SnapshotCall
 import dev.mobileagent.agent.codec.Stream
@@ -54,11 +55,15 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = Capability.TREE
+    private val capabilities = Capability.TREE or Capability.EVENTS
     /** Tree reads run one at a time, in arrival order. */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
     private lateinit var reader: TreeReader
     private lateinit var events: EventHub
+    private lateinit var compose: ComposeTracker
+    /** A Compose re-read is queued on the tree worker. */
+    private val pollQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var nextPoll = 0L
     /** The last tree read, whose node ids requests may name. */
     @Volatile private var lastRead: TreeReader.Result? = null
     @Volatile private var current: Session? = null
@@ -72,10 +77,15 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         automation = a
         reader = TreeReader(a)
         events = EventHub(a)
+        events.sink = { payload, timeUs -> current?.emit(payload, timeUs) }
+        compose = ComposeTracker(a, reader, { payload -> current?.emit(payload) }, options.trace)
         a.enableInteractiveWindows()
         events.start()
+        if (options.composePollMs > 0) {
+            timers.scheduleWithFixedDelay({ pollCompose() }, options.composePollMs, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
         val windowWait = a.awaitActiveWindow(options.windowWaitMs)
-        val windows = a.uia.windows
+        val windows = a.windows()
         val active = windows.firstOrNull { it.isActive }?.root?.packageName ?: "-"
         val server = try {
             LocalServerSocket(options.socket)
@@ -121,6 +131,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     override fun handle(work: Work) {
         when (val call = work.call) {
             is SnapshotCall -> treeWorker.execute { snapshot(work, call) }
+            is ResyncCall -> treeWorker.execute { resync(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -197,6 +208,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 seq,
             ) { work.cancelled }
             lastRead = result
+            compose.observe(result.snapshot)
             work.session.respond(work, result.snapshot, null)
             if (options.trace) {
                 val s = result.snapshot
@@ -214,6 +226,36 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
+
+    /**
+     * Resynchronizes a stream: for the tree stream the node cache is emptied
+     * first, so the host's next read is a full one, as after a sequence gap
+     * the host cannot trust what it holds.
+     */
+    private fun resync(work: Work, call: ResyncCall) {
+        if (call.stream == Stream.TREE) automation?.clearCache()
+        work.session.respondResync(work, call.stream)
+    }
+
+    /**
+     * Queues a re-read of the windows hosting Compose while a host is
+     * connected, every --compose-poll-ms and never more often than four times
+     * the last re-read took, so a wide screen does not keep its UI thread busy.
+     */
+    private fun pollCompose() {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now < nextPoll || current?.isReady != true || !pollQueued.compareAndSet(false, true)) return
+        treeWorker.execute {
+            try {
+                compose.reread()
+            } catch (t: Throwable) {
+                if (options.trace) Out.line("trace compose error=${t.javaClass.simpleName}:${t.message}")
+            } finally {
+                nextPoll = android.os.SystemClock.uptimeMillis() + maxOf(options.composePollMs, 4 * compose.lastRereadMs)
+                pollQueued.set(false)
+            }
+        }
+    }
 
     private fun shutdown(work: Work) {
         val session = work.session

@@ -26,6 +26,9 @@ class Automation private constructor(
     companion object {
         private const val CONNECT_TIMEOUT_MS = 5000L
 
+        /** How long the window list must stay the same before the first read. */
+        private const val STABLE_MS = 50L
+
         /**
          * Connects once. Throws [OwnershipConflict] when another process holds
          * the role (the platform refuses with `already registered!`).
@@ -68,6 +71,21 @@ class Automation private constructor(
     }
 
     /**
+     * The interactive windows. The platform call can return null for a
+     * moment while its window list is replaced; that is retried briefly and
+     * then read as no windows.
+     */
+    fun windows(): List<android.view.accessibility.AccessibilityWindowInfo> {
+        for (attempt in 0 until 5) {
+            @Suppress("UNNECESSARY_SAFE_CALL", "USELESS_ELVIS")
+            val list: List<android.view.accessibility.AccessibilityWindowInfo>? = uia.windows
+            if (list != null) return list
+            Thread.sleep(10)
+        }
+        return emptyList()
+    }
+
+    /**
      * Adds FLAG_RETRIEVE_INTERACTIVE_WINDOWS, which the connection does not
      * set at registration, so the window list covers every interactive
      * window, the keyboard and system overlays included.
@@ -79,17 +97,69 @@ class Automation private constructor(
     }
 
     /**
-     * Waits until the window list has an active window with a root: for tens
-     * of milliseconds after the flag is set the list is empty or partial
-     * (spike S1: up to 55 ms). Returns the ms waited, or -1 on timeout.
+     * Waits until the window list has an active window with a root and has
+     * not changed for [STABLE_MS]: for tens of milliseconds after the flag is
+     * set the list is empty or partial (spike S1: complete after 9 to 55 ms,
+     * one window of two in half the attaches). Returns the ms waited, or -1
+     * when no active window came within `timeoutMs`.
      */
     fun awaitActiveWindow(timeoutMs: Long): Long {
         val t0 = SystemClock.uptimeMillis()
+        var activeAt = -1L
+        var ids = emptyList<Int>()
+        var stableSince = t0
         while (true) {
-            val active = uia.windows.firstOrNull { it.isActive }
-            if (active != null && active.root != null) return SystemClock.uptimeMillis() - t0
-            if (SystemClock.uptimeMillis() - t0 >= timeoutMs) return -1
+            val now = SystemClock.uptimeMillis()
+            val windows = windows()
+            val current = windows.map { it.id }.sorted()
+            if (current != ids) {
+                ids = current
+                stableSince = now
+            }
+            if (activeAt < 0) {
+                val active = windows.firstOrNull { it.isActive }
+                if (active != null && active.root != null) activeAt = now
+            }
+            if (activeAt >= 0 && now - stableSince >= STABLE_MS) return now - t0
+            if (now - t0 >= timeoutMs) return if (activeAt >= 0) now - t0 else -1
             Thread.sleep(5)
+        }
+    }
+
+    private val connectionId: Int by lazy {
+        UiAutomation::class.java.getDeclaredField("mConnectionId").apply { isAccessible = true }.getInt(uia)
+    }
+
+    /** The connection's node cache, a hidden object; null where it cannot be reached. */
+    private fun cache(): Any? = try {
+        Class.forName("android.view.accessibility.AccessibilityInteractionClient")
+            .getDeclaredMethod("getCache", Int::class.javaPrimitiveType).invoke(null, connectionId)
+    } catch (e: ReflectiveOperationException) {
+        null
+    }
+
+    /** Empties the connection's node cache, so the next read fetches every node. */
+    fun clearCache() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            uia.clearCache()
+        } else {
+            cache()?.let { it.javaClass.getDeclaredMethod("clear").invoke(it) }
+        }
+    }
+
+    /**
+     * Evicts the cached nodes of one window: its root, fetched afresh (roots
+     * bypass the cache), and everything below it, through the cache's hidden
+     * `clearSubTree`. Empties the whole cache where that is unavailable.
+     */
+    fun evictWindow(windowId: Int) {
+        val root = windows().firstOrNull { it.id == windowId }?.root ?: return
+        try {
+            val cache = cache() ?: return clearCache()
+            cache.javaClass.getDeclaredMethod("clearSubTree", android.view.accessibility.AccessibilityNodeInfo::class.java)
+                .invoke(cache, root)
+        } catch (e: ReflectiveOperationException) {
+            clearCache()
         }
     }
 

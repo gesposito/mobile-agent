@@ -216,6 +216,29 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
   round_trips=<n>`, the round trips read from the accessibility client's
   interaction counter.
+- **Change events.** Accessibility events become protocol events, numbered
+  per stream and per connection from 1. Content changes, text, selection,
+  scroll and focus events go on the tree stream with the window id and the
+  child-index path from the window root to the event's source, found by
+  climbing parents in the platform cache (hidden `getSourceNodeId` and
+  `getChildId`); window state changes and `TYPE_WINDOWS_CHANGED` (added,
+  removed, bounds, focus, state) go on the window stream. The platform cache
+  has processed each event before the agent sees it, so the named subtree is
+  fresh for the next read while the rest of the window stays cached.
+- **Compose windows.** A window whose tree holds a class under
+  `androidx.compose.` hosts an AndroidComposeView, which sends no events to
+  UI automation (spike S1). While a host is connected the agent re-reads
+  such windows in full every `--compose-poll-ms` (default 1000, 0 turns it
+  off, never more often than four times the last re-read took), after
+  evicting their cached nodes (hidden `AccessibilityCache.clearSubTree` on a
+  fresh root), diffs the result against the last read the host received, and
+  sends a tree event naming the deepest subtree holding every difference.
+  Only windows a snapshot has shown the host are re-read. With `--trace` each
+  re-read prints `trace compose windows=<ids> nodes=<n> read_ms=<ms>
+  round_trips=<n> changed=<window:path or ->`.
+- **Resync.** `resync` answers the last sequence number sent on the stream,
+  read and written under the lock events take; for the tree stream the node
+  cache is emptied first, so the host's next snapshot is a full read.
 - **Liveness.** The agent pings a host it has not heard from for a second and
   closes the connection after three seconds of silence, as the protocol
   crate's sessions do.
@@ -311,6 +334,10 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | | Attributes of every node, 500-node screens | `tree::the_compose_500_cell_screen_returns_every_cell_with_total_and_visible_counts`, `tree::the_expo_500_cell_screen_returns_every_cell_with_total_and_visible_counts` |
 | android-driver: Bounded idle waiting | Continuous animation | `idle::a_snapshot_during_an_endless_animation_returns_within_the_default_bound_plus_read_time` |
 | | No wait at all, a requested bound, a quiet screen | `idle::idle_zero_reads_at_once_during_an_animation`, `idle::a_requested_bound_caps_the_wait`, `idle::a_quiet_screen_is_read_without_waiting_for_the_bound` |
+| android-driver: Change events | Single field changes | `events::editing_one_react_native_field_emits_events_naming_that_field_only` |
+| | Window changes, sequence numbers | `events::a_keyboard_appearing_is_reported_on_the_window_stream` (and the numbering check in every events test) |
+| | Compose windows re-read on a poll (design D5) | `events::a_compose_window_is_reread_on_a_poll_and_its_change_reported` |
+| device-protocol: Event channel with sequence numbers | Agent side of a resync | `events::a_tree_resync_answers_the_last_sequence_and_the_next_read_is_full` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |

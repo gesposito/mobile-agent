@@ -135,18 +135,19 @@ class TreeReader(private val automation: Automation) {
     }
 
     /**
-     * Reads every interactive window. `maxDepth` levels below each root and
-     * `maxNodes` nodes are serialized; `seq` is the last tree event sent.
-     * Throws [Cancelled] as soon as `cancelled` turns true.
+     * Reads every interactive window, or those whose id is in `only`.
+     * `maxDepth` levels below each root and `maxNodes` nodes are serialized;
+     * `seq` is the last tree event sent. Throws [Cancelled] as soon as
+     * `cancelled` turns true.
      */
-    fun read(maxDepth: Int, maxNodes: Int, seq: Long, cancelled: () -> Boolean): Result {
+    fun read(maxDepth: Int, maxNodes: Int, seq: Long, only: Set<Int>? = null, cancelled: () -> Boolean): Result {
         val t0 = SystemClock.uptimeMillis()
         val rt0 = RoundTrips.count()
         val depthCap = minOf(maxDepth, Protocol.MAX_NODE_DEPTH)
         val strings = LinkedHashMap<String, Int>()
         fun intern(s: String): Int = strings.getOrPut(s) { strings.size }
 
-        val windows = automation.uia.windows.sortedByDescending { it.layer }
+        val windows = automation.windows().filter { only == null || it.id in only }.sortedByDescending { it.layer }
         val queue = ArrayDeque<Item>()
         val roots = IntArray(windows.size) { -1 }
         val packages = arrayOfNulls<Int>(windows.size)

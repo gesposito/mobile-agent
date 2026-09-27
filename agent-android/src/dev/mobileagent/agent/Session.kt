@@ -20,6 +20,7 @@ import dev.mobileagent.agent.codec.Protocol
 import dev.mobileagent.agent.codec.Reply
 import dev.mobileagent.agent.codec.Request
 import dev.mobileagent.agent.codec.Response
+import dev.mobileagent.agent.codec.ResyncAck
 import dev.mobileagent.agent.codec.UnknownCall
 import dev.mobileagent.agent.codec.UnknownKindException
 import dev.mobileagent.agent.codec.Welcome
@@ -96,8 +97,8 @@ class Session(
 
         private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
 
-        /** Monotonic time in microseconds for event stamps. */
-        fun nowUs(): Long = SystemClock.elapsedRealtimeNanos() / 1000
+        /** Monotonic time in microseconds for event stamps: uptime, the clock of event times. */
+        fun nowUs(): Long = SystemClock.uptimeMillis() * 1000
     }
 
     private val output = socket.outputStream
@@ -161,6 +162,23 @@ class Session(
         work.deadlineTask?.cancel(false)
         sendResponse(work.id, work.method, reply, error)
         return true
+    }
+
+    /**
+     * Answers a resync of `stream` with the last sequence number sent on it,
+     * read and written under the lock events take, so no event slips
+     * between the number and the answer.
+     */
+    fun respondResync(work: Work, stream: Int) {
+        synchronized(lock) {
+            if (inFlight[work.id] !== work) return
+            inFlight.remove(work.id)
+            val seq = if (stream in seqs.indices) seqs[stream] else 0
+            val out = CborWriter(64)
+            Frames.write(Response(work.id, work.method, ResyncAck(stream, seq), null), limit.toInt(), out)
+            if (state != CLOSED) writeLocked(out)
+        }
+        work.deadlineTask?.cancel(false)
     }
 
     fun close(reason: String, refusal: WireError? = null) {
