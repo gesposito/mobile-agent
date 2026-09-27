@@ -157,16 +157,23 @@ jobs:
         run: brew install jpeg-turbo
       - name: Install Socket Firewall
         if: steps.xcode.outputs.available == 'true'
-        # sfw is the Socket wrapper itself, so nothing wraps its own install. Its first run
-        # downloads the firewall binary; that fetch failed once on a runner, so warm it up with retries.
+        # sfw is the Socket wrapper itself, so nothing wraps its own install. The npm launcher
+        # resolves its binary through the unauthenticated GitHub API, which shared runners exhaust,
+        # so fetch the release asset directly; the download endpoint is not rate limited.
         run: |
-          npm install -g sfw
+          mkdir -p "$HOME/.local/bin"
           for attempt in 1 2 3 4 5; do
-            if sfw --version >/dev/null 2>&1; then break; fi
-            echo "sfw warm-up attempt $attempt failed; retrying in 15 s"
+            if curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
+                 https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-macos-arm64; then
+              break
+            fi
+            echo "download attempt $attempt failed; retrying in 15 s"
             sleep 15
           done
-          sfw --version
+          test -s "$HOME/.local/bin/sfw"
+          chmod +x "$HOME/.local/bin/sfw"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          file "$HOME/.local/bin/sfw"
       - name: just validate
         if: steps.xcode.outputs.available == 'true'
         env:
