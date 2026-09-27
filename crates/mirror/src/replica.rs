@@ -222,6 +222,11 @@ impl Replica {
         let Timed { at, item } = timed;
         match item {
             StreamItem::Event(event) => {
+                // An unknown stream says nothing about the tree, so its
+                // numbering cannot put the replica out of sync.
+                if matches!(event.payload, EventPayload::Unknown(_)) {
+                    return;
+                }
                 let stream = event.stream();
                 match self.check_seq(stream, event.seq) {
                     Seq::Skip => {}
