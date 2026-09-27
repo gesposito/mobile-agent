@@ -19,6 +19,7 @@ use crate::snapshot::{
 };
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
+use crate::wait::{Condition, Selector, WaitOutcome};
 
 /// How often a window that sends no change events is re-read when nothing
 /// else re-reads it.
@@ -481,6 +482,18 @@ impl Mirror {
             self.replica.integrate(read, &request, started, finished);
         }
         Ok(())
+    }
+
+    /// Waits until an element matching `selector` meets `condition`,
+    /// re-evaluating whenever the target reports something or a re-read
+    /// falls due, and fails at `timeout` with a summary of the screen.
+    pub fn wait(
+        &mut self,
+        _selector: &Selector,
+        _condition: Condition,
+        _timeout: Duration,
+    ) -> Result<WaitOutcome, MirrorError> {
+        todo!("task 7.5")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

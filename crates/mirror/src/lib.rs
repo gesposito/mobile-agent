@@ -26,6 +26,7 @@ mod snapshot;
 pub mod testing;
 mod verdict;
 mod view;
+mod wait;
 
 pub use error::{MirrorError, StaleCause, code};
 pub use geometry::{Point, Rect};
@@ -42,3 +43,4 @@ pub use snapshot::{
     SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
 };
 pub use verdict::{Degradation, Verdict};
+pub use wait::{Condition, Selector, SnapshotSummary, WaitOutcome};

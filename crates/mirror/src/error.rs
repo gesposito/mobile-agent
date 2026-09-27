@@ -1,10 +1,12 @@
 //! Errors the mirror reports, each with a stable snake_case code.
 
 use core::fmt;
+use std::time::Duration;
 
 use crate::backend::BackendError;
 use crate::refs::Ref;
 use crate::snapshot::Role;
+use crate::wait::{Condition, Selector, SnapshotSummary};
 
 /// Codes of the errors the mirror raises itself. Backend errors keep the
 /// driver's code.
@@ -18,6 +20,8 @@ pub mod code {
     pub const ELEMENT_COVERED: &str = "element_covered";
     /// The ref's element exists but lies outside the visible area.
     pub const ELEMENT_OFFSCREEN: &str = "element_offscreen";
+    /// A wait's condition did not hold before its timeout.
+    pub const WAIT_TIMEOUT: &str = "wait_timeout";
     /// The target's connection is gone. The same code as the protocol's.
     pub const DISCONNECTED: &str = protocol::code::DISCONNECTED;
 }
@@ -45,6 +49,13 @@ pub enum MirrorError {
     Covered { reference: Ref, by: String },
     /// The ref's element is scrolled out of view.
     Offscreen { reference: Ref },
+    /// A wait timed out; the summary shows the screen it saw last.
+    WaitTimeout {
+        selector: Selector,
+        condition: Condition,
+        waited: Duration,
+        summary: Box<SnapshotSummary>,
+    },
     /// The driver failed; its error is passed through.
     Backend(BackendError),
     /// The target is gone.
@@ -59,6 +70,7 @@ impl MirrorError {
             MirrorError::UnknownRef(_) => code::UNKNOWN_REF,
             MirrorError::Covered { .. } => code::ELEMENT_COVERED,
             MirrorError::Offscreen { .. } => code::ELEMENT_OFFSCREEN,
+            MirrorError::WaitTimeout { .. } => code::WAIT_TIMEOUT,
             MirrorError::Backend(e) => &e.code,
             MirrorError::Disconnected(_) => code::DISCONNECTED,
         }
@@ -68,6 +80,7 @@ impl MirrorError {
     pub fn retryable(&self) -> bool {
         match self {
             MirrorError::Backend(e) => e.retryable,
+            MirrorError::WaitTimeout { .. } => true,
             MirrorError::StaleRef { .. }
             | MirrorError::UnknownRef(_)
             | MirrorError::Covered { .. }
@@ -111,6 +124,17 @@ impl fmt::Display for MirrorError {
             MirrorError::Offscreen { reference } => write!(
                 f,
                 "{reference} is scrolled out of view; scroll it into view and take a new snapshot"
+            ),
+            MirrorError::WaitTimeout {
+                selector,
+                condition,
+                waited,
+                summary,
+            } => write!(
+                f,
+                "waited {} ms for {selector} to {}; the screen now shows {summary}",
+                waited.as_millis(),
+                condition.name()
             ),
             MirrorError::Backend(e) => write!(f, "{}", e.message),
             MirrorError::Disconnected(why) => write!(
