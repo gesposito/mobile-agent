@@ -29,7 +29,7 @@ pub(super) fn snapshot_options(request: &Request) -> Result<SnapshotOptions, Fai
 }
 
 /// An element as replies describe it.
-pub(super) fn element_json(element: &Element) -> Value {
+pub(crate) fn element_json(element: &Element) -> Value {
     let b = element.bounds;
     json!({
         "ref": element.reference.map(|r| format!("@{r}")),
@@ -44,6 +44,8 @@ pub(super) fn element_json(element: &Element) -> Value {
 
 pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let options = snapshot_options(request)?;
+    let started = Instant::now();
+    let reads = target.observer.reads();
     target.catch_up()?;
     let snapshot = target.mirror.snapshot(&options)?;
     let mut data = Map::new();
@@ -78,6 +80,13 @@ pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) 
         data.insert("removedRefs".into(), removed.into());
     }
     data.insert("origin".into(), origin(&snapshot).into());
+    // How long the target's worker took to answer, device reads included,
+    // and whether it read the device at all.
+    data.insert("readMs".into(), millis(started.elapsed()).into());
+    data.insert(
+        "servedFromReplica".into(),
+        (target.observer.reads() == reads).into(),
+    );
     // The mirror's replica revision, apart from the delta's own revision.
     data.insert("replicaRevision".into(), snapshot.revision.into());
     data.insert("target".into(), target.info.id.clone().into());
@@ -188,8 +197,8 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
     if request.flag("settle") {
         return settle(target, request);
     }
-    let (selector, kind, given) = match request.str("text") {
-        Some(text) => (Selector::text(text), "text", text.to_owned()),
+    let (aimed, kind, given) = match request.str("text") {
+        Some(text) => (Aim::Select(Selector::text(text)), "text", text.to_owned()),
         None => {
             let given = request.str("target").ok_or_else(|| {
                 Failure::new(
@@ -197,15 +206,14 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
                     "wait takes an element, a number of milliseconds, --text or --settle",
                 )
             })?;
-            let selector = match Aim::parse(given)? {
+            let aimed = match Aim::parse(given)? {
                 Aim::Ref(reference) => {
                     aim::check_seen(target, session, reference)?;
-                    Selector::reference(reference)
+                    Aim::Select(Selector::reference(reference))
                 }
-                Aim::Select(selector) => selector,
-                Aim::Exact(_) => todo!("task 8.10"),
+                other => other,
             };
-            (selector, "selector", given.to_owned())
+            (aimed, "selector", given.to_owned())
         }
     };
     let condition = match request.str("state") {
@@ -219,9 +227,17 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
             ));
         }
     };
-    let outcome = target
-        .mirror
-        .wait(&selector, condition, timeout(request)?)?;
+    let timeout = timeout(request)?;
+    target.catch_up()?;
+    let outcome = match &aimed {
+        Aim::Exact(text) => aim::wait_exact(target, text, condition, timeout)?,
+        Aim::Select(selector) => target.mirror.wait(selector, condition, timeout)?,
+        Aim::Ref(reference) => {
+            target
+                .mirror
+                .wait(&Selector::reference(*reference), condition, timeout)?
+        }
+    };
     if let Some(reference) = outcome.element.as_ref().and_then(|e| e.reference) {
         target.session(session).seen.insert(reference);
     }

@@ -138,9 +138,13 @@ impl Shared {
     /// window event, and a frame, the first of a transition when `change`
     /// moved to another screen.
     fn show(&self, device: &Device, change: Change) {
+        self.show_after(device, change, self.latency);
+    }
+
+    /// Shows the device's screen after `delay`.
+    fn show_after(&self, device: &Device, change: Change, delay: Duration) {
         let read = read(&device.windows(), device);
         let hash = hash(&read);
-        let delay = self.latency;
         self.target.after(delay, Step::Show(read));
         if device.kit.platform == Platform::Android {
             self.target.after(
@@ -315,6 +319,13 @@ impl AppControl for Part {
     fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
         self.shared.sync();
         let mut device = lock(&self.shared.device);
+        if launch.relaunch && device.runs(app) {
+            // The stopped process leaves the screen at once; the new one
+            // shows its own after the latency, as a relaunched app does.
+            device.terminate(app)?;
+            self.shared
+                .show_after(&device, Change::Screen, Duration::ZERO);
+        }
         device.launch(app, launch)?;
         self.shared.show(&device, Change::Screen);
         Ok(())

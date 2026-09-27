@@ -99,18 +99,18 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 
 | Action | Parameters | Data |
 |---|---|---|
-| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers}`, `targets [{id, platform, class, name, state, attached, app, claimedBy, driver}]` (`driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
+| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers}`, `targets [{id, platform, class, name, state, attached, frameSource, app, claimedBy, driver}]` (`frameSource` whether the attached target has a frame source, null before it is attached; `driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
 | `devices` | `platform` | `devices [{id, platform, class, name, state, model, os, advice, claimedBy}]` (`advice` only for a target its state keeps from automation) |
-| `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` |
+| `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` (from the launch request until the screen settled), `firstTreeMs` (until the replica showed the app, null when it did not) |
 | `close` | | `closed`, `app`, `target`; the claim is released |
-| `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
+| `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
 | `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
-| `scroll` | `direction`, `amount`, `target`, `timeout` | `scrolled`, `direction`, `amount`, `strokes` |
+| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`; with `until`, `until` and `element` |
 | `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
@@ -121,6 +121,28 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
 sink took to accept the tap, the span of the benchmark's `tap-dispatch`.
+
+Element arguments (`target`, `until`) are a ref (`@e3`, `ref=e3`, `e3`), or
+a selector: `#id` or `id=<id>`, `text=<text>` or bare text for an element
+whose name or value contains the text, `text==<text>` for one whose whole
+name or value is the text, `role=<role>`. The mirror's selectors match text
+by containment, so an exact-text selector looks through the full listing,
+where every element on screen and not covered is listed with its computed
+name and value, every 10 ms while the mirror keeps the replica current.
+
+`scroll` with `until` scrolls in strokes of `amount` points (at most 80% of
+the scrolled area) and lets the screen settle after each, at most 1.5 s, so
+a check never races a moving list; it stops once the element is on screen,
+not covered and not scrolled away, and fails with `element_not_found` when
+two strokes in a row change nothing (the content stopped moving), after 50
+strokes, or at its timeout.
+
+`open` waits for the launched app's first tree before it settles: until
+the replica shows the app in front with more than its root, read after the
+launch returned when the app was relaunched, since a read before that can
+still show the process the relaunch stopped. It then waits for the screen
+to settle, the whole within `timeout` (3000 ms by default), and reports
+`settled` false, with a warning, when the app did not show in time.
 
 ## Tap spans and settle signals
 
@@ -376,7 +398,9 @@ has it, so `screenshot` answers them with `no_frame`. Every change shows
 after `--fake-latency`, together with its window event and frame; a move to
 another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
-on the screen's final frame. Frames are produced as the backend is called,
+on the screen's final frame. A relaunch takes the running app off the
+screen at once and shows the new one after the latency, as a relaunched
+app's stopped process leaves before the new one draws. Frames are produced as the backend is called,
 not on a timer. Screenshots are placeholder bytes, not an image.
 
 ## Errors
@@ -471,6 +495,7 @@ Worked around here without changing `crates/mirror`:
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
 | Command grammar | Interactive snapshot output | `lifecycle::a_snapshot_of_the_fake_launcher_lists_a_heading_and_two_buttons`, `lifecycle::devices_lists_every_fake_target_with_its_platform_and_class`, `lifecycle::open_launches_an_installed_app_and_refuses_an_unknown_one` |
 | Command grammar | (keys, element arguments) | `keys::tests::*`, `handlers::aim::tests::arguments_are_refs_identifiers_texts_or_roles` |
+| Command grammar | (task 8.10: CLI gaps the harness found) | the CLI's `commands::an_exact_text_selector_matches_the_whole_name_or_value_only`, `commands::scroll_until_moves_the_content_until_the_element_is_on_screen`, `commands::open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen`, `commands::status_names_whether_each_attached_target_has_a_frame_source`, `snapshot::a_snapshot_says_how_long_the_daemon_took_and_whether_the_replica_served_it`; `handlers::aim::tests::text_double_equals_is_an_exact_text_selector` |
 | Command grammar | (task 8.8: the device drivers end to end) | `devices::devices_lists_the_simulator_and_the_emulator_with_platform_and_state`, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`, `devices::doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills` |
 | (task 8.8, registration) | (device drivers, fakes) | `driver::tests::every_device_driver_the_host_runs_registers_unless_fake_targets_are_named`, `driver::tests::named_drivers_register_alone_or_beside_fake_targets`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `server::tests::the_drivers_flag_names_the_device_drivers_to_register` |
 | (task 8.8, Simulator adapter) | (listing, keys, errors, doctor table, status, display, text) | `devices::simulator::tests::*` |

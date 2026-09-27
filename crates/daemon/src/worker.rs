@@ -148,6 +148,9 @@ impl Attached {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Status {
     pub attached: bool,
+    /// Whether the attached target has a frame source; `None` until it is
+    /// attached.
+    pub frames: Option<bool>,
     /// The app a session opened last, until it is closed.
     pub app: Option<String>,
     /// Why the last attach failed.
@@ -274,6 +277,7 @@ fn serve(
                         Ok(attachment) => {
                             let mut current = lock(status);
                             current.attached = true;
+                            current.frames = Some(attachment.backend.frames.is_some());
                             current.error = None;
                             drop(current);
                             *lock(report) = attachment.report.clone();

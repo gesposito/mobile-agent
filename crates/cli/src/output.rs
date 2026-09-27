@@ -297,6 +297,11 @@ fn status(data: &Value, out: &mut String) {
                 } else {
                     "not attached".to_owned()
                 });
+                match t.get("frameSource").and_then(Value::as_bool) {
+                    Some(true) => state.push("frames".to_owned()),
+                    Some(false) => state.push("no frames".to_owned()),
+                    None => {}
+                }
                 if let Some(holder) = t.get("claimedBy").and_then(Value::as_str) {
                     state.push(format!("claimed by {holder}"));
                 }

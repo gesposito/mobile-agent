@@ -3,11 +3,12 @@
 
 use std::time::{Duration, Instant};
 
-use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, Target};
+use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, SettleOptions, Target};
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
+use super::view::element_json;
 use super::{millis, timeout};
 use crate::keys;
 use crate::wire::code::{self, INPUT_REJECTED};
@@ -30,6 +31,17 @@ const WATCH_MAX: Duration = Duration::from_secs(1);
 /// How often the watch looks at what arrived; the spans come from the
 /// signals' own times, not from these looks.
 const WATCH_SLICE: Duration = Duration::from_millis(5);
+
+/// The most strokes a scroll that looks for an element takes.
+const UNTIL_STROKES: u32 = 50;
+
+/// How long the screen may take to settle after each stroke of a scroll
+/// that looks for an element, so a check never races a moving list.
+const UNTIL_SETTLE: Duration = Duration::from_millis(1500);
+
+/// Strokes in a row that change nothing before a scroll that looks for an
+/// element gives up: the content has stopped moving.
+const STILL_STROKES: u32 = 2;
 
 /// What a tap set off, from the moment of its dispatch.
 struct Spans {
@@ -376,6 +388,10 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
     // The content moves in the direction, so the finger moves the other way;
     // a long scroll takes several strokes.
     let longest = (extent * MAX_STROKE).max(1.0);
+    if let Some(until) = request.str("until") {
+        let step = amount.max(1.0).min(longest);
+        return scroll_until(target, session, request, (area, direction, step), until);
+    }
     let mut left = amount.max(0.0);
     let mut strokes = 0u32;
     while left > 0.5 && strokes < 20 {
@@ -398,4 +414,82 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
         "amount": amount,
         "strokes": strokes,
     })))
+}
+
+/// Scrolls `direction` inside `area` in strokes of `step` points until the
+/// element `until` names is on screen, not covered and not scrolled away,
+/// letting the screen settle after each stroke so a check never races a
+/// moving list. Fails with `element_not_found` once the content stops
+/// moving, after [`UNTIL_STROKES`] strokes, or at the command's timeout.
+fn scroll_until(
+    target: &mut Attached,
+    session: &str,
+    request: &Request,
+    (area, direction, step): (Rect, Direction, f64),
+    until: &str,
+) -> Outcome {
+    let aim = Aim::parse(until)?;
+    let deadline = Instant::now() + timeout(request)?;
+    let mut strokes = 0u32;
+    let mut still = 0u32;
+    loop {
+        target.catch_up()?;
+        if let Some(element) = aim::on_screen(target, session, &aim)? {
+            if let Some(reference) = element.reference {
+                target.session(session).seen.insert(reference);
+            }
+            return Ok(Success::new(json!({
+                "scrolled": strokes > 0,
+                "direction": direction.name(),
+                "amount": step,
+                "strokes": strokes,
+                "until": until,
+                "element": element_json(&element),
+            })));
+        }
+        let now = Instant::now();
+        let reason = if still >= STILL_STROKES {
+            Some("the content stopped moving".to_owned())
+        } else if strokes >= UNTIL_STROKES {
+            Some(format!("{UNTIL_STROKES} strokes are the most it takes"))
+        } else if now >= deadline {
+            Some(format!(
+                "the {} ms timeout passed",
+                timeout(request)?.as_millis()
+            ))
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(Failure::new(
+                code::ELEMENT_NOT_FOUND,
+                format!(
+                    "{until} was not on screen after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
+                    direction.name()
+                ),
+            )
+            .with_data(json!({"strokes": strokes, "until": until})));
+        }
+        let revision = target.mirror.revision();
+        let (from, to) = stroke(area, direction.opposite(), step);
+        let outcome = target.act(&Action::Swipe {
+            from,
+            to,
+            duration: SWIPE_DURATION,
+        })?;
+        if !outcome.accepted {
+            return Err(rejected("scroll"));
+        }
+        strokes += 1;
+        target.mirror.settle(&SettleOptions {
+            max: UNTIL_SETTLE.min(deadline.saturating_duration_since(Instant::now())),
+            ..SettleOptions::default()
+        })?;
+        target.catch_up()?;
+        if target.mirror.revision() == revision {
+            still += 1;
+        } else {
+            still = 0;
+        }
+    }
 }

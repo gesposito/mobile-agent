@@ -5,10 +5,10 @@ mod act;
 mod aim;
 mod view;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mirror::backend::Owner;
-use mirror::{Degradation, Snapshot, Verdict};
+use mirror::{Degradation, Snapshot, SnapshotOptions, Verdict};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{Launch, Platform, TargetInfo, TargetReport};
@@ -205,6 +205,7 @@ fn status(daemon: &Daemon) -> Outcome {
             let worker = registry.worker_status(&target.id).unwrap_or_default();
             let mut entry = target_json(target);
             entry.insert("attached".into(), worker.attached.into());
+            entry.insert("frameSource".into(), worker.frames.into());
             entry.insert("app".into(), worker.app.into());
             entry.insert("claimedBy".into(), registry.holder(&target.id).into());
             if let Some(error) = worker.error {
@@ -297,19 +298,90 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
         relaunch: request.flag("relaunch"),
         env,
     };
+    let max = settle_max(request)?;
+    let started = Instant::now();
     target.apps.launch(&app, &launch)?;
+    let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
-    let settled = target.mirror.settle(&mirror::SettleOptions {
-        max: settle_max(request)?,
-        ..mirror::SettleOptions::default()
-    })?;
+    let deadline = started + max;
+    // A relaunched app's tree is the one a read after the launch shows: the
+    // one before it was the process the relaunch stopped.
+    let fresh = launch.relaunch.then_some(launched);
+    let shown = first_tree(target, &app, fresh, deadline)?;
+    let settled = match shown {
+        Some(_) => {
+            target
+                .mirror
+                .settle(&mirror::SettleOptions {
+                    max: deadline.saturating_duration_since(Instant::now()),
+                    ..mirror::SettleOptions::default()
+                })?
+                .settled
+        }
+        None => false,
+    };
+    let warning = shown.is_none().then(|| {
+        format!(
+            "{app} did not show its screen within {} ms; take a snapshot to see what is in front",
+            max.as_millis()
+        )
+    });
     Ok(Success::new(json!({
         "opened": app,
         "target": target.info.id,
-        "settled": settled.settled,
-        "elapsedMs": millis(settled.elapsed),
-    })))
+        "settled": settled,
+        "elapsedMs": millis(started.elapsed()),
+        "firstTreeMs": shown.map(|at| millis(at.saturating_duration_since(started))),
+    }))
+    .warn(warning))
+}
+
+/// How often `open` looks for the launched app's screen; the mirror keeps
+/// the replica current in between.
+const OPEN_SLICE: Duration = Duration::from_millis(10);
+
+/// Waits until `deadline` for the replica to show `app` in front with more
+/// than its root, read after `fresh` when given; returns when it did.
+fn first_tree(
+    target: &mut Attached,
+    app: &str,
+    fresh: Option<Instant>,
+    deadline: Instant,
+) -> Result<Option<Instant>, Failure> {
+    // Only what is in front and whether it is sparse matter, not the
+    // listing, so one level is enough.
+    let probe = SnapshotOptions {
+        interactive: true,
+        max_depth: Some(1),
+    };
+    loop {
+        let snapshot = target.mirror.snapshot(&probe)?;
+        let read_after = fresh.is_none_or(|launched| {
+            target
+                .observer
+                .last_read_started()
+                .is_some_and(|started| started >= launched)
+        });
+        if read_after && shows(&snapshot, app) {
+            return Ok(Some(Instant::now()));
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(None);
+        }
+        target.mirror.run_until((now + OPEN_SLICE).min(deadline))?;
+    }
+}
+
+/// Whether `snapshot` shows `app` in front with more than its root.
+fn shows(snapshot: &Snapshot, app: &str) -> bool {
+    origin(snapshot) == app
+        && !snapshot
+            .verdict
+            .reasons
+            .iter()
+            .any(|reason| matches!(reason, Degradation::SparseTree { .. }))
 }
 
 fn close(daemon: &Daemon, request: &Request) -> Outcome {

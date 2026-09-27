@@ -1,16 +1,25 @@
 //! Element arguments: a ref as snapshots print it (`@e3`, `ref=e3`, `e3`)
 //! or a selector: `#id` or `id=<id>` for a test identifier, `text=<text>` or
-//! any other text for an element whose name or value contains it, and
+//! any other text for an element whose name or value contains it,
+//! `text==<text>` for one whose whole name or value is the text, and
 //! `role=<role>`.
 //!
 //! A session acts only on refs its own snapshots listed on the target,
 //! which keeps refs isolated between sessions. A selector waits for a match
 //! up to the command's timeout. Either first brings the replica up to the
 //! display (`Attached::catch_up`), so an element is aimed at where it is.
+//!
+//! The mirror's selectors match text by containment, so an exact-text
+//! selector looks through the full listing instead, where every element on
+//! screen and not covered is listed with its computed name and value, and
+//! waits between looks while the mirror keeps the replica current.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use mirror::{Condition, Element, MirrorError, Ref, Role, Selector, SnapshotOptions, Target};
+use mirror::{
+    Condition, Element, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
+    SnapshotSummary, Target, WaitOutcome,
+};
 
 use crate::wire::Failure;
 use crate::wire::code::{self, ELEMENT_NOT_FOUND};
@@ -22,9 +31,16 @@ pub(crate) enum Aim {
     Ref(Ref),
     Select(Selector),
     /// `text==<text>`: an element whose name or value is exactly the text.
-    #[allow(dead_code)]
     Exact(String),
 }
+
+/// How often an exact-text wait looks at the screen again; the mirror
+/// applies what the target reports and reads what falls due in between.
+const EXACT_SLICE: Duration = Duration::from_millis(10);
+
+/// Lines of the interactive listing a timeout shows, as the mirror's own
+/// wait timeouts do.
+const SUMMARY_LINES: usize = 20;
 
 const ROLES: [Role; 28] = [
     Role::Button,
@@ -80,6 +96,12 @@ impl Aim {
                 return Err(invalid("an identifier"));
             }
             return Ok(Aim::Select(Selector::identifier(id)));
+        }
+        if let Some(text) = trimmed.strip_prefix("text==") {
+            if text.is_empty() {
+                return Err(invalid("an exact text"));
+            }
+            return Ok(Aim::Exact(text.to_owned()));
         }
         if let Some(name) = trimmed.strip_prefix("role=") {
             let role = ROLES
@@ -151,7 +173,7 @@ pub(crate) fn element(
             Ok(target.mirror.resolve(*reference)?)
         }
         Aim::Select(selector) => find(target, selector, timeout),
-        Aim::Exact(_) => todo!("task 8.10"),
+        Aim::Exact(text) => find_exact(target, text, timeout),
     }
 }
 
@@ -170,14 +192,17 @@ pub(crate) fn action_target(
             check_seen(target, session, *reference)?;
             Ok((Target::Ref(*reference), Some(*reference)))
         }
-        Aim::Select(selector) => {
-            let element = find(target, selector, timeout)?;
-            Ok(match element.reference {
-                Some(reference) => (Target::Ref(reference), Some(reference)),
-                None => (Target::Point(element.bounds.center()), None),
-            })
-        }
-        Aim::Exact(_) => todo!("task 8.10"),
+        Aim::Select(selector) => Ok(aimed_at(find(target, selector, timeout)?)),
+        Aim::Exact(text) => Ok(aimed_at(find_exact(target, text, timeout)?)),
+    }
+}
+
+/// Where an action on a found element lands: its ref, which the mirror
+/// checks, else its center.
+fn aimed_at(element: Element) -> (Target, Option<Ref>) {
+    match element.reference {
+        Some(reference) => (Target::Ref(reference), Some(reference)),
+        None => (Target::Point(element.bounds.center()), None),
     }
 }
 
@@ -197,23 +222,159 @@ pub(crate) fn text_ref(
         }
         Aim::Select(selector) => {
             let element = find(target, selector, timeout)?;
-            if let Some(reference) = element.reference {
-                return Ok(reference);
-            }
-            let listing = target.mirror.snapshot(&SnapshotOptions::interactive())?;
-            listing
-                .elements
-                .iter()
-                .find(|listed| listed.id == element.id)
-                .and_then(|listed| listed.reference)
-                .ok_or_else(|| {
-                    Failure::new(
-                        code::INVALID_ARGUMENT,
-                        format!("{selector} matches a {} that takes no text", element.role),
-                    )
-                })
+            listed_ref(target, &element, &selector.to_string())
         }
-        Aim::Exact(_) => todo!("task 8.10"),
+        Aim::Exact(text) => {
+            let element = find_exact(target, text, timeout)?;
+            listed_ref(target, &element, &format!("exact text {text:?}"))
+        }
+    }
+}
+
+/// The ref of `element`, from an interactive listing if no snapshot listed
+/// it; `described` names the argument that found it.
+fn listed_ref(target: &mut Attached, element: &Element, described: &str) -> Result<Ref, Failure> {
+    if let Some(reference) = element.reference {
+        return Ok(reference);
+    }
+    let listing = target.mirror.snapshot(&SnapshotOptions::interactive())?;
+    listing
+        .elements
+        .iter()
+        .find(|listed| listed.id == element.id)
+        .and_then(|listed| listed.reference)
+        .ok_or_else(|| {
+            Failure::new(
+                code::INVALID_ARGUMENT,
+                format!("{described} matches a {} that takes no text", element.role),
+            )
+        })
+}
+
+/// Whether `element`'s whole name or value is `text`.
+fn is_exactly(element: &Element, text: &str) -> bool {
+    element.name == text || element.value.as_deref() == Some(text)
+}
+
+/// The first element of the full listing, on screen and not covered, whose
+/// name or value is exactly `text`, and enabled when `enabled` says so.
+fn exact_on_screen(
+    target: &mut Attached,
+    text: &str,
+    enabled: bool,
+) -> Result<Option<Element>, Failure> {
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+    Ok(listing
+        .elements
+        .into_iter()
+        .find(|element| is_exactly(element, text) && (!enabled || element.enabled)))
+}
+
+/// Waits until an element whose name or value is exactly `text` meets
+/// `condition`, looking again every [`EXACT_SLICE`]; fails at `timeout`
+/// with `wait_timeout` and a summary of the screen, as the mirror's waits
+/// do.
+pub(crate) fn wait_exact(
+    target: &mut Attached,
+    text: &str,
+    condition: Condition,
+    timeout: Duration,
+) -> Result<WaitOutcome, Failure> {
+    let started = Instant::now();
+    let deadline = started + timeout;
+    loop {
+        let found = exact_on_screen(target, text, condition == Condition::Enabled)?;
+        let holds = match condition {
+            Condition::Disappear => found.is_none(),
+            Condition::Appear | Condition::Enabled => found.is_some(),
+        };
+        if holds {
+            return Ok(WaitOutcome {
+                elapsed: started.elapsed(),
+                element: found,
+            });
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            let summary = summary(target)?;
+            return Err(Failure::new(
+                mirror::code::WAIT_TIMEOUT,
+                format!(
+                    "waited {} ms for exact text {text:?} to {}; the screen now shows {summary}",
+                    now.duration_since(started).as_millis(),
+                    condition.name()
+                ),
+            ));
+        }
+        target.mirror.run_until((now + EXACT_SLICE).min(deadline))?;
+    }
+}
+
+/// The first element on screen whose name or value is exactly `text`,
+/// waiting up to `timeout`; a timeout becomes `element_not_found` with the
+/// screen seen.
+fn find_exact(target: &mut Attached, text: &str, timeout: Duration) -> Result<Element, Failure> {
+    match wait_exact(target, text, Condition::Appear, timeout) {
+        Ok(outcome) => outcome
+            .element
+            .ok_or_else(|| Failure::internal("a wait for an element returned none")),
+        Err(failure) if failure.code == mirror::code::WAIT_TIMEOUT => Err(Failure::new(
+            ELEMENT_NOT_FOUND,
+            failure.message.replacen(
+                &format!("for exact text {text:?} to appear"),
+                &format!("for an element whose name or value is exactly {text:?}"),
+                1,
+            ),
+        )),
+        Err(failure) => Err(failure),
+    }
+}
+
+/// The screen as a wait's timeout shows it: the replica's revision, its
+/// windows, the elements with refs and the first lines of the interactive
+/// listing.
+fn summary(target: &mut Attached) -> Result<SnapshotSummary, Failure> {
+    let snapshot: Snapshot = target.mirror.snapshot(&SnapshotOptions::interactive())?;
+    let lines: Vec<String> = snapshot.text.lines().map(str::to_owned).collect();
+    let age = snapshot
+        .windows
+        .iter()
+        .map(|window| window.source.age)
+        .min()
+        .unwrap_or_default();
+    Ok(SnapshotSummary {
+        revision: snapshot.revision,
+        age,
+        windows: snapshot.windows.len(),
+        elements: snapshot.refs().len(),
+        omitted: lines.len().saturating_sub(SUMMARY_LINES),
+        lines: lines.into_iter().take(SUMMARY_LINES).collect(),
+        verdict: snapshot.verdict,
+    })
+}
+
+/// The element `aim` names if it is on screen now, not covered and not
+/// scrolled away, without waiting.
+pub(crate) fn on_screen(
+    target: &mut Attached,
+    session: &str,
+    aim: &Aim,
+) -> Result<Option<Element>, Failure> {
+    let selector = match aim {
+        Aim::Ref(reference) => {
+            check_seen(target, session, *reference)?;
+            Selector::reference(*reference)
+        }
+        Aim::Select(selector) => selector.clone(),
+        Aim::Exact(text) => return exact_on_screen(target, text, false),
+    };
+    match target
+        .mirror
+        .wait(&selector, Condition::Appear, Duration::ZERO)
+    {
+        Ok(outcome) => Ok(outcome.element),
+        Err(MirrorError::WaitTimeout { .. }) => Ok(None),
+        Err(error) => Err(error.into()),
     }
 }
 

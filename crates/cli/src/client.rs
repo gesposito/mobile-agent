@@ -128,12 +128,13 @@ pub fn request_id() -> String {
 }
 
 /// Whether `request` may wait for an element for as long as its session's
-/// default timeout: a wait for an element or text, or an action on a
-/// selector rather than a ref.
+/// default timeout: a wait for an element or text, an action on a selector
+/// rather than a ref, or a scroll until an element is on screen.
 fn waits_by_default(request: &Map<String, Value>) -> bool {
     let target = request.get("target").and_then(Value::as_str);
     match request.get("action").and_then(Value::as_str) {
         Some("wait") => !request.contains_key("settle"),
+        Some("scroll") if request.contains_key("until") => true,
         Some("click" | "fill" | "type" | "get" | "scroll") => {
             target.is_some_and(|target| !crate::request::looks_like_ref(target))
         }
@@ -481,6 +482,13 @@ mod tests {
             read_timeout(&request(json!({"action": "click", "target": "@e3"}))),
             Duration::from_secs(30),
             "a ref never waits"
+        );
+        assert_eq!(
+            read_timeout(&request(
+                json!({"action": "scroll", "direction": "down", "until": "@e40"})
+            )),
+            Duration::from_secs(610),
+            "a scroll until an element shows waits, even for a ref"
         );
     }
 

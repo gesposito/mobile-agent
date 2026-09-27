@@ -242,6 +242,11 @@ impl Device {
         Ok(())
     }
 
+    /// Whether `app` runs.
+    pub fn runs(&self, app: &str) -> bool {
+        self.fixtures.contains_key(app)
+    }
+
     pub fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
         if !self.installed().contains(&app) {
             return Err(self.not_installed(app));

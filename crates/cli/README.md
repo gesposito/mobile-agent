@@ -43,7 +43,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>]` | moves the content, in strokes |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes; with `--until`, stroke by stroke until the element is on screen |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |
@@ -57,8 +57,9 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
 or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
-text for an element whose name or value contains it, `role=...`. Refs never
-wait; selectors wait for a match up to the command's timeout.
+text for an element whose name or value contains it, `text==...` for one
+whose whole name or value is the text, `role=...`. Refs never wait;
+selectors wait for a match up to the command's timeout.
 
 ## Global flags
 
@@ -98,8 +99,14 @@ its order, `code` and `warning` only when set:
 
 A snapshot's data holds agent-browser's `snapshot`, `origin` (the app in
 front), `refs` (`eN` to `{role, name}`) and `removedRefs` (`@eN`), with the
-mirror's `replicaRevision`, the `target` and the quality `verdict` beside
-them; a degraded verdict also sets `warning`. With `--delta`, `snapshot`
+mirror's `replicaRevision`, the `target`, the quality `verdict`, `readMs`
+(how long the daemon took to answer, device reads included) and
+`servedFromReplica` (whether it answered without reading the device)
+beside them; a degraded verdict also sets `warning`. `open` replies
+`settled` once the launched app has shown its first tree and the screen
+has settled after it, with `elapsedMs` from the launch and `firstTreeMs`;
+`status` says for each attached target whether it has a frame source
+(`frameSource`; `frames` or `no frames` in human mode). With `--delta`, `snapshot`
 becomes agent-browser's delta object, byte for byte as the mirror writes it:
 
 ```json

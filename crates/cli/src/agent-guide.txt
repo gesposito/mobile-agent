@@ -32,7 +32,8 @@ Refs
 
 Selectors
   Where a ref goes, a selector works too: #login-submit (test id),
-  text=Sign in (name or value contains it), role=switch, or bare text.
+  text=Sign in (name or value contains it), text==Row 1 (the whole name
+  or value), role=switch, or bare text.
   Selectors wait up to the timeout for a match; refs never wait.
 
 Acting
@@ -43,6 +44,7 @@ Acting
   type @e2 ' smith'           add key events; without a ref, the focused field
   press Enter | Back | Home   keys; join modifiers with +, as Control+a
   scroll down 600             move the content; -s @e7 scrolls inside @e7
+  scroll down --until '#row-150'   scroll until the element is on screen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
   open com.example.app        launch an app; close stops it and frees the target
 

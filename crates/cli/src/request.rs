@@ -159,6 +159,7 @@ pub fn build(command: &Command, cwd: &Path) -> Result<Map<String, Value>, Failur
             put(&mut request, "direction", scroll.direction.clone());
             put(&mut request, "amount", scroll.amount);
             put(&mut request, "target", scroll.selector.clone());
+            put(&mut request, "until", scroll.until.clone());
             put(&mut request, "timeout", scroll.timeout);
             "scroll"
         }

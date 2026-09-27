@@ -38,6 +38,8 @@ struct Log {
     tree_event: Option<Instant>,
     /// When the latest tree read that succeeded began.
     read_started: Option<Instant>,
+    /// Tree reads asked of the target so far, whether they succeeded or not.
+    reads: u64,
 }
 
 /// Records the change signals a target reports; clones share the record.
@@ -66,6 +68,11 @@ impl Observer {
     /// When the latest tree read that succeeded began.
     pub fn last_read_started(&self) -> Option<Instant> {
         lock(&self.log).read_started
+    }
+
+    /// How many tree reads the target was asked for so far.
+    pub fn reads(&self) -> u64 {
+        lock(&self.log).reads
     }
 
     /// Records one item as the mirror receives it. A frame counts as a
@@ -138,6 +145,7 @@ struct ReadTee {
 impl TreeSource for ReadTee {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
         let started = Instant::now();
+        lock(&self.observer.log).reads += 1;
         let read = self.inner.read(request)?;
         let mut log = lock(&self.observer.log);
         log.read_started = log.read_started.max(Some(started));

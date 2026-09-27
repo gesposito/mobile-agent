@@ -165,8 +165,8 @@ Examples:
     #[command(
         visible_alias = "tap",
         after_help = "\
-Targets: @e3, ref=e3 or e3 from the last snapshot; #id; text=Sign in; role=switch;
-or x y in device points.
+Targets: @e3, ref=e3 or e3 from the last snapshot; #id; text=Sign in (contains);
+text==Sign in (the whole name or value); role=switch; or x y in device points.
 
 The reply comes once the tap's first frame change and first tree delta have
 arrived, or after 200 ms without a change, at most 1 s, and reports them from
@@ -227,14 +227,18 @@ Examples:
   mobile-agent swipe 200 700 200 200 --duration 500")]
     Swipe(SwipeArgs),
 
-    /// Scroll the content up, down, left or right
+    /// Scroll the content up, down, left or right, or until an element is on screen
     #[command(after_help = "\
-The direction is the content's: scroll down shows what is below.
+The direction is the content's: scroll down shows what is below. With --until,
+AMOUNT is each stroke's, the screen settles after each stroke, and the scroll
+stops once the element is on screen, fails with element_not_found once the
+content stops moving, and waits at most --timeout.
 
 Examples:
   mobile-agent scroll
   mobile-agent scroll down 600
-  mobile-agent scroll up 300 -s @e7")]
+  mobile-agent scroll up 300 -s @e7
+  mobile-agent scroll down 600 --until '#row-150'")]
     Scroll(ScrollArgs),
 
     /// Save the latest frame as a JPEG
@@ -361,7 +365,7 @@ const SELECTOR_TIMEOUT: &str = "Longest wait for a selector's element, in ms [de
 
 #[derive(Args, Debug)]
 pub struct ClickArgs {
-    /// A ref (@e3, ref=e3, e3), a selector (#id, text=..., role=...) or x and y in device points
+    /// A ref (@e3, ref=e3, e3), a selector (#id, text=..., text==..., role=...) or x and y in device points
     #[arg(required = true, num_args = 1..=2, value_name = "TARGET")]
     pub target: Vec<String>,
     /// Hold that long, in ms: a long press
@@ -416,6 +420,9 @@ pub struct ScrollArgs {
     /// Scroll inside this element (a ref or a selector) instead of the screen
     #[arg(short, long, value_name = "TARGET")]
     pub selector: Option<String>,
+    /// Keep scrolling until this element (a ref or a selector) is on screen
+    #[arg(long, value_name = "TARGET")]
+    pub until: Option<String>,
     #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
