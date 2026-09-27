@@ -234,6 +234,98 @@ fn full_stack(device: &Device) -> Result<(), Disturbed> {
     Ok(())
 }
 
+/// Task 10.9, through the driver: the mirror's read after a tap that tears
+/// the Compose Big screen down under the agent's own re-read of it is
+/// answered within the session's deadline. An injected action brings the
+/// agent's re-read of a Compose window forward to 200 ms after it (on its
+/// 100 ms tick), and a cold read of the 500 cells takes about 350 ms, so
+/// after a tap on the Big tab the agent starts walking the cells 200 to
+/// 300 ms later and is still among them past 500 ms, and a tap on the Login
+/// tab 350 ms after the first takes them away under that walk. In the 10.1
+/// run the read after such a tap waited behind a walk that spent about
+/// 57 ms on each cell that was gone, and failed with `deadline_exceeded`
+/// after 10 s.
+#[test]
+fn a_snapshot_after_a_tap_that_tears_the_big_screen_down_under_the_agents_reread_is_answered_in_time()
+ {
+    let test = "a_snapshot_after_a_tap_that_tears_the_big_screen_down_under_the_agents_reread_is_answered_in_time";
+    let Some(serial) = serial_or_skip(test) else {
+        return;
+    };
+    let _device = device_lock();
+    let device = device(&serial);
+    retry_when_disturbed(test, &device, || teardown_under_the_reread(&device));
+}
+
+fn teardown_under_the_reread(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    launch_compose(device, "login")?;
+    let _fixture = Fixture(device.clone());
+    let attached = attach(device, &mut leftovers)?;
+    let options = SessionOptions::default();
+    let deadline = options.read.deadline;
+    let session = Session::start(attached, options, None).unwrap_or_else(|e| panic!("{e}"));
+    let mut mirror = Mirror::new(session.backend(), MirrorConfig::default());
+    // Every element: the interactive listing leaves out the selected tab.
+    let login = mirror.snapshot(&SnapshotOptions::full()).unwrap();
+    compose_in_front(device, "the first snapshot")?;
+    // Points rather than refs, since aiming at a ref reads the tree first.
+    let tab = |id: &str| {
+        login
+            .elements
+            .iter()
+            .find(|e| e.identifier.as_deref() == Some(id))
+            .map(|e| e.bounds.center())
+            .unwrap_or_else(|| panic!("no {id} in {}", login.text))
+    };
+    let (big, back) = (tab("tab-big"), tab("tab-login"));
+    let mut answered = Vec::new();
+    for round in 1..=3 {
+        mirror
+            .act(&Action::Tap {
+                target: Target::Point(big),
+                hold: None,
+            })
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(350));
+        mirror
+            .act(&Action::Tap {
+                target: Target::Point(back),
+                hold: None,
+            })
+            .unwrap();
+        let asked = Instant::now();
+        let after = mirror.snapshot(&SnapshotOptions::interactive());
+        let took = asked.elapsed();
+        compose_in_front(device, "the taps")?;
+        let after = after.unwrap_or_else(|e| {
+            panic!(
+                "round {round}: the read after the Login tap failed after {:.0} ms: {e}",
+                ms(took)
+            )
+        });
+        assert!(
+            after.text.contains("login-username"),
+            "round {round}: {}",
+            after.text
+        );
+        assert!(
+            !after.text.contains("cell-1"),
+            "round {round}: {}",
+            after.text
+        );
+        assert!(took < deadline, "round {round}: {:.0} ms", ms(took));
+        answered.push(ms(took));
+    }
+    eprintln!(
+        "read after a tap that took the Big screen away under the agent's re-read, answered after \
+         {answered:.0?} ms (deadline {} ms)",
+        deadline.as_millis()
+    );
+    session.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
+}
+
 /// Spec scenario "App restarted" (Agent lifecycle), through the driver: the
 /// same agent and session serve the mirror after the app is force-stopped
 /// and relaunched.
