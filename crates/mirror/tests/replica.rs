@@ -182,9 +182,13 @@ fn an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchan
     target.read_cost(ms(21));
     mirror.snapshot(&full()).unwrap();
     let revision = mirror.revision();
-    assert_eq!(mirror.next_wakeup(), Some(target.instant(ms(1_000))));
+    assert_eq!(
+        mirror.next_wakeup(),
+        Some(target.instant(ms(1_000))),
+        "a poll interval after the read started"
+    );
 
-    target.advance(ms(999));
+    target.advance(ms(999) - target.elapsed());
     mirror.pump().unwrap();
     assert_eq!(target.reads().len(), 1, "not due before the poll interval");
 

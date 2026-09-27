@@ -16,8 +16,11 @@ pub mod backend;
 mod error;
 mod geometry;
 mod mirror;
+mod replica;
+mod roles;
 mod snapshot;
 pub mod testing;
+mod view;
 
 pub use error::{MirrorError, code};
 pub use geometry::{Point, Rect};
