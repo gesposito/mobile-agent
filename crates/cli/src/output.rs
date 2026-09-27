@@ -1,0 +1,333 @@
+//! Printing replies as agent-browser does: in JSON mode one line on stdout,
+//! `{"success", "data", "error"}` plus `code` and `warning` when set; in
+//! human mode the listing or a short confirmation on stdout, and errors and
+//! warnings on stderr marked ✗ and ⚠.
+
+use std::fmt::Write as _;
+
+use serde_json::Value;
+
+use crate::client::Reply;
+
+/// The reply as one JSON line, fields in agent-browser's order.
+pub fn json_line(reply: &Reply) -> String {
+    let text = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map_or_else(|| "null".to_owned(), |s| Value::from(s).to_string())
+    };
+    let mut line = format!(
+        "{{\"success\":{},\"data\":{},\"error\":{}",
+        reply.success,
+        reply.data,
+        text(&reply.error)
+    );
+    if reply.code.is_some() {
+        let _ = write!(line, ",\"code\":{}", text(&reply.code));
+    }
+    if reply.warning.is_some() {
+        let _ = write!(line, ",\"warning\":{}", text(&reply.warning));
+    }
+    line.push('}');
+    line
+}
+
+/// What human mode prints for a reply: standard output and standard error.
+pub fn human(action: &str, reply: &Reply) -> (String, String) {
+    let mut out = String::new();
+    let mut err = String::new();
+    if !reply.success {
+        let _ = writeln!(
+            err,
+            "✗ {}",
+            reply.error.as_deref().unwrap_or("unknown error")
+        );
+    } else {
+        human_success(action, &reply.data, &mut out);
+    }
+    if let Some(warning) = &reply.warning {
+        let _ = writeln!(err, "⚠ {warning}");
+    }
+    (out, err)
+}
+
+fn str_of<'a>(data: &'a Value, key: &str) -> &'a str {
+    data.get(key).and_then(Value::as_str).unwrap_or_default()
+}
+
+fn number(value: &Value) -> String {
+    match value.as_f64() {
+        Some(n) => format!("{}", (n * 100.0).round() / 100.0),
+        None => value.to_string(),
+    }
+}
+
+fn human_success(action: &str, data: &Value, out: &mut String) {
+    match action {
+        "snapshot" => snapshot(data, out),
+        "devices" => devices(data, out),
+        "status" => status(data, out),
+        "diff_snapshot" => diff(data, out),
+        "open" => {
+            let _ = writeln!(
+                out,
+                "✓ Opened {} on {}",
+                str_of(data, "opened"),
+                str_of(data, "target")
+            );
+        }
+        "close" => match data.get("app").and_then(Value::as_str) {
+            Some(app) => {
+                let _ = writeln!(
+                    out,
+                    "✓ Closed {app} and released {}",
+                    str_of(data, "target")
+                );
+            }
+            None => {
+                let _ = writeln!(out, "✓ Released {}", str_of(data, "target"));
+            }
+        },
+        "get" => {
+            if let Some(text) = data.get("text").and_then(Value::as_str) {
+                let _ = writeln!(out, "{text}");
+            } else if data.get("value").is_some() {
+                let _ = writeln!(out, "{}", str_of(data, "value"));
+            } else {
+                for (label, key) in [
+                    ("x:     ", "x"),
+                    ("y:     ", "y"),
+                    ("width: ", "width"),
+                    ("height:", "height"),
+                ] {
+                    let _ = writeln!(out, "{label} {}", number(&data[key]));
+                }
+            }
+        }
+        "screenshot" => {
+            let _ = writeln!(out, "✓ Screenshot saved to {}", str_of(data, "path"));
+        }
+        "wait" if str_of(data, "waited") == "settle" => {
+            let elapsed = number(&data["elapsedMs"]);
+            if data["settled"] == Value::Bool(true) {
+                let _ = writeln!(out, "✓ Settled after {elapsed} ms");
+            } else {
+                let _ = writeln!(out, "✓ Stopped waiting after {elapsed} ms");
+            }
+        }
+        "shutdown" => {
+            let _ = writeln!(out, "✓ Daemon stopped");
+        }
+        _ => {
+            let _ = writeln!(out, "✓ Done");
+        }
+    }
+}
+
+fn snapshot(data: &Value, out: &mut String) {
+    match &data["snapshot"] {
+        Value::String(listing) => {
+            let _ = writeln!(out, "{listing}");
+        }
+        Value::Object(delta) => match delta.get("kind").and_then(Value::as_str) {
+            Some("full") => {
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    delta
+                        .get("tree")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                );
+            }
+            Some("unchanged") => {
+                let revision = delta.get("revision").and_then(Value::as_u64).unwrap_or(0);
+                let _ = writeln!(out, "unchanged (revision {revision})");
+            }
+            _ => {
+                let pretty = serde_json::to_string_pretty(delta).unwrap_or_default();
+                let _ = writeln!(out, "{pretty}");
+            }
+        },
+        other => {
+            let _ = writeln!(out, "{other}");
+        }
+    }
+}
+
+/// Rows as columns separated by two spaces.
+fn table(rows: &[Vec<String>], out: &mut String) {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let widths: Vec<usize> = (0..columns)
+        .map(|c| {
+            rows.iter()
+                .filter_map(|r| r.get(c))
+                .map(|s| s.chars().count())
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    for row in rows {
+        let mut line = String::new();
+        for (c, cell) in row.iter().enumerate() {
+            if c + 1 == row.len() {
+                line.push_str(cell);
+            } else {
+                let _ = write!(line, "{cell:width$}  ", width = widths[c]);
+            }
+        }
+        let _ = writeln!(out, "{}", line.trim_end());
+    }
+}
+
+fn devices(data: &Value, out: &mut String) {
+    let devices = data["devices"].as_array().cloned().unwrap_or_default();
+    if devices.is_empty() {
+        let _ = writeln!(out, "(no targets connected)");
+        return;
+    }
+    let rows: Vec<Vec<String>> = devices
+        .iter()
+        .map(|d| {
+            let mut row = vec![
+                str_of(d, "id").to_owned(),
+                str_of(d, "platform").to_owned(),
+                str_of(d, "class").to_owned(),
+                str_of(d, "name").to_owned(),
+            ];
+            if let Some(holder) = d.get("claimedBy").and_then(Value::as_str) {
+                row.push(format!("claimed by {holder}"));
+            }
+            row
+        })
+        .collect();
+    table(&rows, out);
+}
+
+fn status(data: &Value, out: &mut String) {
+    let daemon = &data["daemon"];
+    let idle = match daemon["idleTimeoutMs"].as_u64() {
+        Some(ms) => format!("idle timeout {ms} ms"),
+        None => "no idle timeout".to_owned(),
+    };
+    let _ = writeln!(
+        out,
+        "daemon: running, pid {}, version {}, up {} s, {idle}",
+        daemon["pid"],
+        str_of(daemon, "version"),
+        daemon["uptimeMs"].as_u64().unwrap_or(0) / 1000,
+    );
+    let _ = writeln!(out, "socket: {}", str_of(daemon, "socket"));
+    let targets = data["targets"].as_array().cloned().unwrap_or_default();
+    if targets.is_empty() {
+        let _ = writeln!(out, "targets: none connected");
+    } else {
+        let _ = writeln!(out, "targets:");
+        let rows: Vec<Vec<String>> = targets
+            .iter()
+            .map(|t| {
+                let mut state = vec![if t["attached"] == Value::Bool(true) {
+                    "attached".to_owned()
+                } else {
+                    "not attached".to_owned()
+                }];
+                if let Some(holder) = t.get("claimedBy").and_then(Value::as_str) {
+                    state.push(format!("claimed by {holder}"));
+                }
+                if let Some(app) = t.get("app").and_then(Value::as_str) {
+                    state.push(format!("app {app}"));
+                }
+                vec![
+                    format!("  {}", str_of(t, "id")),
+                    str_of(t, "platform").to_owned(),
+                    str_of(t, "name").to_owned(),
+                    state.join(", "),
+                ]
+            })
+            .collect();
+        table(&rows, out);
+    }
+    if let Some(sessions) = data["sessions"].as_array().filter(|s| !s.is_empty()) {
+        let _ = writeln!(out, "sessions:");
+        for session in sessions {
+            let held: Vec<&str> = session["targets"]
+                .as_array()
+                .map(|t| t.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let _ = writeln!(
+                out,
+                "  {}: {}",
+                str_of(session, "name"),
+                if held.is_empty() {
+                    "no target".to_owned()
+                } else {
+                    held.join(", ")
+                }
+            );
+        }
+    }
+}
+
+fn diff(data: &Value, out: &mut String) {
+    if data["changed"] != Value::Bool(true) {
+        let _ = writeln!(out, "✓ No changes detected");
+        return;
+    }
+    let _ = writeln!(out, "{}", str_of(data, "diff"));
+    let count = |key: &str| data[key].as_u64().unwrap_or(0);
+    let _ = writeln!(
+        out,
+        "\n{} additions, {} removals, {} changes, {} unchanged",
+        count("additions"),
+        count("removals"),
+        count("modifications"),
+        count("unchanged")
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_json_line_keeps_agent_browser_field_order_and_omits_unset_fields() {
+        let ok = Reply {
+            success: true,
+            data: json!({"a": 1}),
+            error: None,
+            code: None,
+            warning: None,
+        };
+        assert_eq!(
+            json_line(&ok),
+            r#"{"success":true,"data":{"a":1},"error":null}"#
+        );
+        let failed = Reply {
+            success: false,
+            data: Value::Null,
+            error: Some("gone".into()),
+            code: Some("stale_ref".into()),
+            warning: Some("careful".into()),
+        };
+        assert_eq!(
+            json_line(&failed),
+            r#"{"success":false,"data":null,"error":"gone","code":"stale_ref","warning":"careful"}"#
+        );
+    }
+
+    #[test]
+    fn human_errors_and_warnings_go_to_stderr() {
+        let failed = Reply {
+            success: false,
+            data: Value::Null,
+            error: Some("gone".into()),
+            code: Some("stale_ref".into()),
+            warning: None,
+        };
+        assert_eq!(
+            human("click", &failed),
+            (String::new(), "✗ gone\n".to_owned())
+        );
+    }
+}

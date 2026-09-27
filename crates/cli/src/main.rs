@@ -1,6 +1,9 @@
-//! `mobile-agent`: the CLI of the mobile automation daemon.
+//! `mobile-agent`: drive devices, emulators and Simulators with
+//! agent-browser's grammar. See the crate's README.
 
-fn main() {
-    eprintln!("mobile-agent: not implemented");
-    std::process::exit(1);
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let status = cli::run(std::env::args_os().collect());
+    ExitCode::from(u8::try_from(status).unwrap_or(1))
 }

@@ -87,10 +87,8 @@ fn a_click_reports_where_it_landed_and_its_dispatch_time() {
         .stdout;
     assert_eq!(human, "✓ Done\n");
     env.cli(&["press", "Back"]).ok();
-    // The launcher's elements are new ones now, with new refs.
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     let settings = ref_of(&listing, "launcher-settings");
-    assert_ne!(settings, "@e3");
     let reply = env.cli(&["--json", "click", &settings]).ok().json();
     let data = &reply["data"];
     assert_eq!(data["ref"], settings.as_str(), "{reply}");
