@@ -1,0 +1,13 @@
+{
+  "description": "The driver's host session reports the tree stream out of sync, resynchronizes it at number 3, and events continue from 4. Number 3 never reaches the mirror.",
+  "start": "login",
+  "read_cost_ms": 4,
+  "steps": [
+    {"at": 100, "patch": [{"find": "login-username", "text": "a"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 200, "patch": [{"find": "login-username", "text": "ab"}], "out_of_sync": {"stream": "tree", "expected": 2, "received": 3}},
+    {"at": 250, "resynced": {"stream": "tree", "seq": 3}},
+    {"at": 300, "patch": [{"find": "login-username", "text": "abc"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username", "seq": 4}},
+    {"at": 400, "patch": [{"find": "login-username", "text": "abcd"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username", "seq": 5}}
+  ],
+  "end": 600
+}

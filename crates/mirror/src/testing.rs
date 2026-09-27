@@ -85,6 +85,7 @@ struct State {
     frames: Vec<FrameMeta>,
     read_cost: Duration,
     input_cost: Duration,
+    delivery_delay: Duration,
     whole_reads: bool,
     read_failures: VecDeque<BackendError>,
     reads: Vec<ReadRecord>,
@@ -112,6 +113,7 @@ impl FakeTarget {
                 frames: Vec::new(),
                 read_cost: Duration::ZERO,
                 input_cost: Duration::ZERO,
+                delivery_delay: Duration::ZERO,
                 whole_reads: false,
                 read_failures: VecDeque::new(),
                 reads: Vec::new(),
@@ -209,6 +211,13 @@ impl FakeTarget {
         self.lock().input_cost = cost;
     }
 
+    /// How long an item takes from the target to the host: a read made in
+    /// between already reflects it, as a snapshot response can overtake the
+    /// events queued before it.
+    pub fn delivery_delay(&self, delay: Duration) {
+        self.lock().delivery_delay = delay;
+    }
+
     /// Whether reads return every window, as the Android agent does, rather
     /// than only the requested ones.
     pub fn whole_reads(&self, whole: bool) {
@@ -299,13 +308,23 @@ impl State {
                     rotation,
                 };
                 self.frames.push(meta);
-                self.outbox.push_back(Timed {
-                    at,
-                    item: StreamItem::Frame(meta),
-                });
+                self.deliver(at, StreamItem::Frame(meta));
             }
-            Step::Item(item) => self.outbox.push_back(Timed { at, item }),
+            Step::Item(item) => {
+                if item == StreamItem::Reconnected {
+                    // A new connection numbers its events from 1 again.
+                    self.next_seq.clear();
+                    self.sent_tree_seq = 0;
+                }
+                self.deliver(at, item);
+            }
         }
+    }
+
+    /// Queues `item`, sent at `at`, to arrive after the delivery delay.
+    fn deliver(&mut self, at: Instant, item: StreamItem) {
+        let at = at + self.delivery_delay;
+        self.outbox.push_back(Timed { at, item });
     }
 
     fn take_seq(&mut self, stream: Stream) -> u64 {
@@ -320,14 +339,14 @@ impl State {
             self.sent_tree_seq = self.sent_tree_seq.max(seq);
         }
         let time_us = u64::try_from((at - self.start).as_micros()).unwrap_or(u64::MAX);
-        self.outbox.push_back(Timed {
+        self.deliver(
             at,
-            item: StreamItem::Event(Event {
+            StreamItem::Event(Event {
                 seq,
                 time_us,
                 payload,
             }),
-        });
+        );
     }
 
     fn hit(&self, x: f64, y: f64) -> Option<String> {
@@ -409,18 +428,24 @@ impl EventStream for FakeTarget {
         loop {
             let now = s.now;
             s.happen(now);
-            if let Some(item) = s.outbox.pop_front() {
-                return Some(item);
+            if s.outbox.front().is_some_and(|item| item.at <= now) {
+                return s.outbox.pop_front();
             }
-            match s.timeline.first() {
-                Some(next) if next.at <= deadline => {
-                    s.now = s.now.max(next.at);
+            let step = s.timeline.first().map(|step| step.at);
+            let arrival = s.outbox.front().map(|item| item.at);
+            match [step, arrival].into_iter().flatten().min() {
+                Some(upcoming) if upcoming <= deadline => {
+                    s.now = s.now.max(upcoming);
                 }
                 _ => {
                     s.now = s.now.max(deadline);
                     let now = s.now;
                     s.happen(now);
-                    return s.outbox.pop_front();
+                    return if s.outbox.front().is_some_and(|item| item.at <= now) {
+                        s.outbox.pop_front()
+                    } else {
+                        None
+                    };
                 }
             }
         }

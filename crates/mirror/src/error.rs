@@ -3,7 +3,9 @@
 use core::fmt;
 use std::time::Duration;
 
-use crate::backend::BackendError;
+use protocol::event::Stream;
+
+use crate::backend::{BackendError, BackendInfo};
 use crate::refs::Ref;
 use crate::snapshot::Role;
 use crate::wait::{Condition, Selector, SnapshotSummary};
@@ -27,10 +29,47 @@ pub mod code {
 }
 
 /// Why a ref is stale.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StaleCause {
     /// Its element left the screen.
     Removed,
+    /// The mirror rebuilt its replica after it was issued.
+    Resync(ResyncCause),
+}
+
+/// Why the mirror rebuilt its replica (spec: Resynchronization).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResyncCause {
+    /// A lossless event stream skipped numbers, seen by the mirror or
+    /// reported by the driver.
+    Gap {
+        stream: Stream,
+        expected: u64,
+        received: u64,
+    },
+    /// The driver switched tree backends.
+    Backend(BackendInfo),
+    /// A new connection to the target.
+    Reconnected,
+}
+
+impl fmt::Display for ResyncCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResyncCause::Gap {
+                stream,
+                expected,
+                received,
+            } => write!(
+                f,
+                "a gap in the {stream} event stream (expected {expected}, received {received})"
+            ),
+            ResyncCause::Backend(backend) => {
+                write!(f, "a switch to the {} tree backend", backend.name)
+            }
+            ResyncCause::Reconnected => f.write_str("a reconnection to the target"),
+        }
+    }
 }
 
 /// Why a mirror operation failed.
@@ -107,6 +146,9 @@ impl fmt::Display for MirrorError {
                     StaleCause::Removed => {
                         format!("the {what} it named is no longer on the screen")
                     }
+                    StaleCause::Resync(resync) => format!(
+                        "the mirror rebuilt its view of the screen after {resync}, which invalidates refs issued before"
+                    ),
                 };
                 write!(
                     f,

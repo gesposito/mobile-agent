@@ -32,7 +32,7 @@ mod wait;
 
 pub use delta::{DeltaSnapshot, RefChange, RefEntry, RefField, TreeSplice};
 pub use diff::{Change, Diff, Field};
-pub use error::{MirrorError, StaleCause, code};
+pub use error::{MirrorError, ResyncCause, StaleCause, code};
 pub use geometry::{Point, Rect};
 pub use mirror::{
     Action, ActionOutcome, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, Mirror,

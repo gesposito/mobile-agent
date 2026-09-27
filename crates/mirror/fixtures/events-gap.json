@@ -1,0 +1,12 @@
+{
+  "description": "Typing into the Android login screen while one tree event is lost in transit: sequence number 2 never arrives, so number 3 reveals a gap and the mirror must rebuild its replica.",
+  "start": "login",
+  "read_cost_ms": 4,
+  "steps": [
+    {"at": 100, "patch": [{"find": "login-username", "text": "a"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 200, "patch": [{"find": "login-username", "text": "ab"}], "drop": "tree"},
+    {"at": 300, "patch": [{"find": "login-username", "text": "abc"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}},
+    {"at": 400, "patch": [{"find": "login-username", "text": "abcd"}], "event": {"stream": "tree", "change": "text", "window": 1, "node": "login-username"}}
+  ],
+  "end": 600
+}

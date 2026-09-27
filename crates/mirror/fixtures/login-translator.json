@@ -1,0 +1,19 @@
+{
+  "description": "The SwiftUI Login tab as the host translator returns it, the Simulator driver's fallback: a flat list of leaf elements under the application, without the tab bar's buttons (spike S4). iOS points, scale 3.",
+  "backend": {"name": "simulator-translator", "fallback": true},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui", "title": "FixtureSwiftUI",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeStaticText", "desc": "Login", "bounds": [16, 70, 386, 104]},
+        {"class": "XCUIElementTypeTextField", "id": "login-username", "desc": "Username", "bounds": [16, 120, 386, 164]},
+        {"class": "XCUIElementTypeSecureTextField", "id": "login-password", "desc": "Password", "bounds": [16, 176, 386, 220], "flags": ["password"]},
+        {"class": "XCUIElementTypeButton", "id": "login-submit", "desc": "Sign in", "bounds": [16, 236, 386, 280]},
+        {"class": "XCUIElementTypeStaticText", "id": "login-status", "desc": "Signed out", "bounds": [16, 296, 386, 320]},
+        {"class": "XCUIElementTypeOther", "desc": "Tab Bar", "bounds": [0, 791, 402, 874]}
+      ]}
+    }
+  ]
+}
