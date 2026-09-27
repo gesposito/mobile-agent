@@ -524,7 +524,10 @@ automation role. Each one starts its own agent from a jar pushed under a
 unique name, and kills it by pid (after checking that `/proc/<pid>/cmdline`
 still names its socket) and removes the jar when it ends. They need the
 Compose and Expo fixtures installed (`fixtures/`) and put back every device
-setting they change.
+setting they change. Every fixture launch first puts the display back in
+touch mode, which the tests that inject key events take it out of: an app
+launched out of touch mode gives its first field focus, and the keyboard is
+up before a test taps anything.
 
 ## Spec scenarios and their checks
 

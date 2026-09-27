@@ -24,14 +24,28 @@ pub fn require(device: &Device, package: &str) {
     );
 }
 
-/// Starts `package` afresh on `tab` and waits for its first frame.
+/// Starts `package` afresh on `tab`, in touch mode, and waits for its
+/// first frame.
 pub fn launch(device: &Device, package: &str, tab: &str) {
     require(device, package);
+    touch_mode(device);
     device.shell(&format!(
         "am start -W -S -n {package}/.MainActivity --es initial_tab {tab}"
     ));
     // The first frame is drawn before the tree has settled.
     std::thread::sleep(Duration::from_millis(800));
+}
+
+/// Puts the display back in touch mode when it is not. Key events, which
+/// several tests inject, take it out of touch mode, and an app launched
+/// then gives its first field focus, so the keyboard is up before a test
+/// taps anything. A tap on the status bar's first pixel, which does nothing
+/// there, puts it back.
+pub fn touch_mode(device: &Device) {
+    let mode = device.shell_output("dumpsys window | grep -m1 mInTouchMode");
+    if String::from_utf8_lossy(&mode.stdout).contains("mInTouchMode=false") {
+        device.shell("input tap 1 1");
+    }
 }
 
 pub fn force_stop(device: &Device, package: &str) {
