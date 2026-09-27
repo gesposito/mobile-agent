@@ -108,8 +108,8 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 10. Integration verification
 
-- [ ] 10.1 Run the full harness on an Android emulator started with `-gpu host`, with the control flag on and off; verify all Android gates pass (re-measure the 50 ms tap-to-frame gate first, since S7 measured 107 ms p50 under software rendering) and commit the reports under `reports/`
-- [ ] 10.2 Run the full harness on iOS Simulators for every installed runtime; verify all Simulator gates pass and commit the reports under `reports/`
+- [ ] 10.1 With no other user on the emulator, first verify the Android driver's and agent's gated suites pass in full, then run the full harness on an Android emulator started with `-gpu host`, with the control flag on and off; verify all Android gates pass (re-measure the 50 ms tap-to-frame gate first, since S7 measured 107 ms p50 under software rendering) and commit the reports under `reports/`
+- [ ] 10.2 With no other user on the Simulator, first verify the Simulator driver's 31 gated integration tests pass in full with their failure messages captured (a shared-device run on 2026-09-27 failed 7 of 31 without usable messages), then run the full harness on iOS Simulators for every installed runtime; verify all Simulator gates pass and commit the reports under `reports/`
 - [ ] 10.3 Run the harness on a physical Android device; verify tap acknowledgement and warm snapshot gates and commit the report
 - [ ] 10.4 Smoke-test a Bluesky-class React Native app on Simulator and emulator; verify snapshots are not degraded on screens where an XCTest-based tool reports sparse roots, and record the finding in `reports/`
 - [ ] 10.5 Write the README with the supported Xcode and Android ranges, the results tables and the agent guide; verify a new user can run `doctor`, `devices`, `open` and `snapshot` from the README alone
