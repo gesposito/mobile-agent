@@ -10,7 +10,7 @@ version banner described below.
 
 ```
 agent-android/
-  VERSION                  agent version, compiled into the banner
+  VERSION                  agent version, compiled into the banner and the hello
   build.sh                 kotlinc + R8 build, no Gradle
   agent.pro                R8 keep rules
   test.sh                  on-device smoke test
@@ -127,7 +127,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.1.0 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.2.0 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -137,6 +137,26 @@ platform code has started non-daemon threads.
 
 adb's shell protocol v2, available since Android 7, returns stdout, stderr and
 the exit status separately, so the host can check all three.
+
+## Versions
+
+`VERSION` holds the agent's version. `build.sh` compiles it into the banner
+and the hello (`mobile-agent-android <VERSION>`); `test.sh` and the host
+tests read it from the file and name no version of their own; the driver
+compiles it in as the version it deploys (`AGENT_VERSION` in
+`crates/android`). The version is not what tells two builds apart: the
+driver names each jar by a digest of its bytes (`AgentJar::build`, the
+first 12 hex digits of an xxh3 digest), carries that build in the socket
+name and in the record of every agent it starts, and reuses a running agent
+only when it was started from the same build. An agent started from a jar
+with other bytes is therefore replaced whether or not the version changed
+(`crates/android/README.md`, Agent deployment). A version says what its
+builds have in common:
+
+| Version | Builds |
+|---|---|
+| 0.2.0 | From the agent of task 4.11 on, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. |
+| 0.1.0 | Every build from the banner-only agent of task 1.5 to the agent of task 4.11, both sides of task 3.6 included: 0.1.0 builds differ in what their snapshots carry, and only the driver's build digest tells them apart. |
 
 ## Serving the protocol
 
@@ -395,6 +415,9 @@ to `/data/local/tmp`. It then runs the agent through `app_process` three times:
 with `--version`, with no arguments, and with an unknown argument. Each run has
 a 30-second timeout on the device. The test checks:
 
+- the version in the banner is the content of `VERSION`, checked on its own
+  first, so that a jar built from another `VERSION` fails naming both; the
+  script names no version itself;
 - the banner equals `mobile-agent-android <VERSION> protocol=<n>` exactly,
   where `<n>` is read from the codec's `Protocol.VERSION`;
 - the exit statuses are 0, 0 and 2;
@@ -505,4 +528,4 @@ the agent answers by id and its tests exercise it throughout.
 | | App restarted | `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` |
 | | Rotation | `lifecycle::the_same_agent_serves_snapshots_across_a_rotation` |
 | Test hooks armed only with `--test-hooks` (task 4.11) | | `getchild::the_hook_variable_arms_nothing_without_the_test_hooks_flag` |
-| Banner and arguments, the shrunk dex | | `test.sh`: `--version` and no arguments print the banner, an unknown argument and `serve` without a socket name exit 2, `classes.dex` is under 300 KB, no agent process remains |
+| Banner and arguments, the shrunk dex | | `test.sh`: `--version` and no arguments print the banner with the version in `VERSION` (task 4.12), an unknown argument and `serve` without a socket name exit 2, `classes.dex` is under 300 KB, no agent process remains |
