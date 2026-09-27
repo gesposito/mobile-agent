@@ -70,6 +70,10 @@ pub const KEYBOARD_WINDOW_CLASS: &str = "UIRemoteKeyboardWindow";
 /// Set in a keyboard window's id, which is otherwise its process id.
 pub const KEYBOARD_WINDOW: u32 = 1 << 31;
 
+/// Set in the id of the window an in-app alert moves to, which is otherwise
+/// its process id.
+pub const ALERT_WINDOW: u32 = 1 << 30;
+
 /// The bundle identifier of SpringBoard, which owns the home screen and
 /// system alerts.
 pub const SPRINGBOARD: &str = "com.apple.springboard";
@@ -660,6 +664,154 @@ mod tests {
         &snapshot.strings[node.class as usize]
     }
 
+    /// Whether a node of `window` has this identifier, or this label when
+    /// the identifier starts with `label:`.
+    fn holds(window: &Window, wanted: &str) -> bool {
+        fn walk(node: &Node, wanted: &str) -> bool {
+            let found = match wanted.strip_prefix("label:") {
+                Some(label) => node.desc.as_deref() == Some(label),
+                None => node.res_id.as_deref() == Some(wanted),
+            };
+            found || node.children.iter().any(|child| walk(child, wanted))
+        }
+        window.root.as_ref().is_some_and(|root| walk(root, wanted))
+    }
+
+    fn owner_name<'a>(snapshot: &'a Snapshot, window: &Window) -> Option<&'a str> {
+        window
+            .owner
+            .map(|index| snapshot.strings[index as usize].as_str())
+    }
+
+    fn button(class: &str, identifier: Option<&str>, label: &str, frame: [f64; 4]) -> Element {
+        at(
+            with(element(9, class), |e| {
+                e.identifier = identifier.map(str::to_owned);
+                e.label = Some(label.into());
+                e.traits = traits::BUTTON;
+            }),
+            frame,
+        )
+    }
+
+    /// An alert controller's container titled `title` with one button,
+    /// which carries `identifier` where the platform allows one.
+    fn alert_container(title: &str, action: &str, identifier: Option<&str>) -> Element {
+        let action = button(
+            "_UIAlertControllerActionView",
+            identifier,
+            action,
+            [57.0, 463.0, 288.0, 48.0],
+        );
+        at(
+            with(element(3, "_UIAlertControllerPhoneTVMacView"), |e| {
+                e.label = Some(title.into());
+                e.children = vec![action];
+            }),
+            [41.0, 375.0, 320.0, 152.0],
+        )
+    }
+
+    /// A presentation's transition view: two dimming views and the alert.
+    fn presentation(alert: Element) -> Element {
+        with(element(0, "UITransitionView"), |e| {
+            e.children = vec![element(0, "UIView"), element(0, "UIView"), alert]
+        })
+    }
+
+    /// The System screen in a transition view, with its request button.
+    fn system_screen() -> Element {
+        with(element(0, "UITransitionView"), |e| {
+            e.children = vec![button(
+                "SwiftUI.AccessibilityNode",
+                Some("system-permission"),
+                "Request location permission",
+                [16.0, 78.0, 238.67, 34.33],
+            )]
+        })
+    }
+
+    /// The SwiftUI fixture's System screen under its in-app alert, as the
+    /// reader returned it on iOS 26.5, containers trimmed: the one window
+    /// holds the screen in a transition view and the alert, with two
+    /// dimming views, in another.
+    fn swiftui_alert() -> Element {
+        let alert = alert_container("In-app alert", "OK", Some("inapp-alert-ok"));
+        let window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![system_screen(), presentation(alert)]
+        });
+        with(element(1, "SwiftUIApplication"), |e| {
+            e.label = Some("FixtureSwiftUI".into());
+            e.children = vec![window];
+        })
+    }
+
+    /// The Expo fixture's System screen under its in-app alert: React
+    /// Native presents the alert in a window of its own, next to the empty
+    /// view of the controller that presents it, and its button carries no
+    /// identifier.
+    fn expo_alert() -> Element {
+        let screen = with(element(2, "UIWindow"), |e| {
+            e.children = vec![system_screen()]
+        });
+        let presenter = with(element(0, "UITransitionView"), |e| {
+            e.children = vec![with(element(0, "UIDropShadowView"), |e| {
+                e.children = vec![element(0, "UIView")]
+            })]
+        });
+        let alert = alert_container("In-app alert", "OK", None);
+        let alert_window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![presenter, presentation(alert)]
+        });
+        with(element(1, "UIApplication"), |e| {
+            e.label = Some("FixtureExpo".into());
+            e.children = vec![screen, alert_window];
+        })
+    }
+
+    /// The keyboard's window with one key.
+    fn keyboard() -> Element {
+        let key = at(
+            with(element(20, "UIAccessibilityElementKBKey"), |e| {
+                e.label = Some("q".into())
+            }),
+            [4.67, 590.0, 39.33, 54.0],
+        );
+        with(element(2, KEYBOARD_WINDOW_CLASS), |e| {
+            e.children = vec![key]
+        })
+    }
+
+    /// SpringBoard under the location permission alert, containers trimmed:
+    /// a window of the status bar's and the one holding the alert.
+    fn springboard_alert() -> Read {
+        let alert = alert_container(
+            "Allow “FixtureSwiftUI” to use your location?",
+            "Don’t Allow",
+            None,
+        );
+        let status_bar = with(element(2, "UIWindow"), |e| {
+            e.children = vec![at(
+                element(0, "_SBSystemApertureMagiciansCurtainView"),
+                [138.33, 14.0, 125.33, 36.67],
+            )]
+        });
+        let window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![presentation(alert)]
+        });
+        let mut read = read(with(element(1, "SpringBoard"), |e| {
+            e.label = Some(" ".into());
+            e.children = vec![status_bar, window];
+        }));
+        read.owner = Owner {
+            pid: 22789,
+            bundle_id: Some(SPRINGBOARD.into()),
+            name: "SpringBoard".into(),
+            system: true,
+        };
+        read
+    }
+
     #[test]
     fn one_window_per_process_named_by_its_pid_bundle_and_label() {
         let snapshot = snapshot(&read(login()));
@@ -895,6 +1047,152 @@ mod tests {
         assert_eq!(window.kind, WindowType::SYSTEM);
         assert_eq!(window.title.as_deref(), Some("SpringBoard"));
         assert_eq!(window.root.as_ref().unwrap().desc, None);
+    }
+
+    #[test]
+    fn an_in_app_alert_moves_to_a_modal_window_above_the_application() {
+        let snapshot = snapshot(&read(swiftui_alert()));
+        assert_eq!(snapshot.windows.len(), 2, "{:?}", snapshot.windows);
+        let (alert, app) = (&snapshot.windows[0], &snapshot.windows[1]);
+        assert!(alert.modal, "the alert's window is a modal");
+        assert_eq!(alert.id, 4242 | ALERT_WINDOW);
+        assert_eq!(alert.kind, WindowType::APPLICATION);
+        assert_eq!(alert.layer, 1);
+        assert_eq!(alert.package, app.package);
+        assert_eq!(alert.title.as_deref(), Some("In-app alert"));
+        assert_eq!(alert.flags, WindowFlags::ACTIVE | WindowFlags::FOCUSED);
+        assert_eq!(alert.bounds, Bounds::new(0, 0, 1206, 2622));
+        assert_eq!(alert.owner, None);
+        let presentation = alert.root.as_ref().expect("the alert's presentation");
+        assert_eq!(class(&snapshot, presentation), "UITransitionView");
+        assert!(holds(alert, "inapp-alert-ok"));
+        assert!(!holds(alert, "system-permission"));
+
+        assert!(!app.modal, "the application's window is not a modal");
+        assert_eq!(app.id, 4242);
+        assert_eq!(app.layer, 0);
+        assert_eq!(
+            app.flags,
+            WindowFlags::EMPTY,
+            "the alert's window has the focus"
+        );
+        assert!(
+            holds(app, "system-permission"),
+            "what the alert covers stays in the payload, for the mirror"
+        );
+        assert!(!holds(app, "inapp-alert-ok"));
+        assert_eq!(snapshot.node_count, 9);
+        assert_eq!(nodes(&snapshot).len(), 9, "no node is lost");
+    }
+
+    #[test]
+    fn an_alert_in_a_window_of_its_own_moves_with_its_presentation() {
+        let snapshot = snapshot(&read(expo_alert()));
+        assert_eq!(snapshot.windows.len(), 2, "{:?}", snapshot.windows);
+        let (alert, app) = (&snapshot.windows[0], &snapshot.windows[1]);
+        assert!(alert.modal && !app.modal);
+        assert_eq!(alert.id, 4242 | ALERT_WINDOW);
+        assert_eq!(alert.title.as_deref(), Some("In-app alert"));
+        let presentation = alert.root.as_ref().expect("the alert's presentation");
+        assert_eq!(class(&snapshot, presentation), "UITransitionView");
+        assert_eq!(
+            presentation.children.len(),
+            3,
+            "the dimming views and the alert"
+        );
+        assert!(holds(alert, "label:OK"));
+        assert!(holds(app, "system-permission"));
+        // The alert's window stays in the application's, holding only the
+        // empty view of the controller that presented the alert.
+        let application = app.root.as_ref().expect("the application");
+        assert_eq!(application.children.len(), 2);
+        assert!(!holds(app, "label:OK"));
+    }
+
+    #[test]
+    fn an_alert_that_is_not_on_screen_stays_where_it_is() {
+        let mut root = swiftui_alert();
+        root.children[0].children[1].children[2].frame = Some([41.0, 375.0, 0.0, 0.0]);
+        let snapshot = snapshot(&read(root));
+        assert_eq!(snapshot.windows.len(), 1);
+        assert!(!snapshot.windows[0].modal);
+        assert_eq!(
+            snapshot.windows[0].flags,
+            WindowFlags::ACTIVE | WindowFlags::FOCUSED
+        );
+    }
+
+    #[test]
+    fn system_ui_owns_its_windows_by_process_name_and_keeps_its_alert() {
+        let mut springboard = springboard_alert();
+        springboard.root.children.push(keyboard());
+        let snapshot = snapshot(&springboard);
+        assert_eq!(snapshot.windows.len(), 2, "{:?}", snapshot.windows);
+        for window in &snapshot.windows {
+            assert_eq!(
+                owner_name(&snapshot, window),
+                Some("SpringBoard"),
+                "window {}",
+                window.id
+            );
+            assert!(!window.modal, "window {}", window.id);
+        }
+        let system = &snapshot.windows[1];
+        assert_eq!(system.kind, WindowType::SYSTEM);
+        assert!(
+            holds(system, "label:Don’t Allow"),
+            "the alert stays in SpringBoard's window, whose other content it covers"
+        );
+        let names = snapshot
+            .strings
+            .iter()
+            .filter(|s| *s == "SpringBoard")
+            .count();
+        assert_eq!(names, 1, "interned once: {:?}", snapshot.strings);
+    }
+
+    #[test]
+    fn an_applications_windows_have_no_owner() {
+        let mut root = swiftui_alert();
+        root.children.push(keyboard());
+        let snapshot = snapshot(&read(root));
+        assert_eq!(snapshot.windows.len(), 3);
+        for window in &snapshot.windows {
+            assert_eq!(window.owner, None, "window {}", window.id);
+        }
+    }
+
+    #[test]
+    fn every_window_says_it_sends_no_change_events() {
+        let mut root = swiftui_alert();
+        root.children.push(keyboard());
+        let mut springboard = springboard_alert();
+        springboard.root.children.push(keyboard());
+        for snapshot in [snapshot(&read(root)), snapshot(&springboard)] {
+            for window in &snapshot.windows {
+                assert_eq!(window.emits_events, Some(false), "window {}", window.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_keyboard_stays_above_an_alert_window() {
+        let mut root = swiftui_alert();
+        root.children.push(keyboard());
+        let snapshot = snapshot(&read(root));
+        let stack: Vec<(u32, i32, bool)> = snapshot
+            .windows
+            .iter()
+            .map(|window| (window.id, window.layer, window.modal))
+            .collect();
+        assert_eq!(
+            stack,
+            [
+                (4242 | KEYBOARD_WINDOW, 2, false),
+                (4242 | ALERT_WINDOW, 1, true),
+                (4242, 0, false),
+            ]
+        );
     }
 
     #[test]

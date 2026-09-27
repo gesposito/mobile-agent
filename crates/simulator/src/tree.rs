@@ -613,13 +613,40 @@ mod tests {
     }
 
     #[test]
+    fn a_modal_window_above_the_application_is_not_taken_for_the_foreground() {
+        let snapshot = payload(in_app_alert(), fixture_owner());
+        let application = snapshot
+            .windows
+            .iter()
+            .find(|window| window.id == 4242)
+            .expect("the application's window")
+            .clone();
+        let modal = Window {
+            id: 4242 | elements::ALERT_WINDOW,
+            title: Some("In-app alert".into()),
+            modal: true,
+            root: None,
+            ..application.clone()
+        };
+        let read = tree(
+            Snapshot {
+                windows: vec![modal, application],
+                ..snapshot
+            },
+            TreeBackend::Reader,
+        );
+        assert_eq!(read.foreground.pid, 4242);
+        assert_eq!(read.foreground.name, "FixtureSwiftUI");
+    }
+
+    #[test]
     fn an_alert_is_found_with_its_title_message_and_buttons_once_each() {
         let read = tree(
             payload(in_app_alert(), fixture_owner()),
             TreeBackend::Reader,
         );
         let alert = read.alert.as_ref().expect("the alert");
-        assert_eq!(alert.window, 4242);
+        assert_eq!(alert.window, 4242 | elements::ALERT_WINDOW);
         assert_eq!(alert.title.as_deref(), Some("In-app alert"));
         assert_eq!(
             alert.message.as_deref(),
