@@ -58,18 +58,20 @@ impl FakeDriver {
             if targets.iter().any(|t| t.id == id) {
                 return Err(format!("fake target {id} is listed twice"));
             }
-            let (class, name, os) = match platform {
+            let (class, name, os, state) = match platform {
                 Platform::Android if id.starts_with("emulator-") => (
                     TargetClass::AndroidEmulator,
                     "Fake Android emulator",
                     "Android 16",
+                    "device",
                 ),
                 Platform::Android => (
                     TargetClass::AndroidDevice,
                     "Fake Android device",
                     "Android 16",
+                    "device",
                 ),
-                Platform::Ios => (TargetClass::Simulator, "Fake iPhone", "iOS 26.5"),
+                Platform::Ios => (TargetClass::Simulator, "Fake iPhone", "iOS 26.5", "booted"),
             };
             targets.push(TargetInfo {
                 id,
@@ -78,6 +80,8 @@ impl FakeDriver {
                 name: name.to_owned(),
                 model: Some("fake".to_owned()),
                 os: Some(os.to_owned()),
+                state: state.to_owned(),
+                advice: None,
                 driver: "fake".to_owned(),
             });
         }

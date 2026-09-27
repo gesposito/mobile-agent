@@ -2,17 +2,21 @@
 //!
 //! A [`Driver`] is the factory the target registry takes backends from: it
 //! lists the targets of one kind and attaches to one, handing back the
-//! [`mirror::backend::Backend`] the target's mirror runs on and the app
-//! control the mirror has no place for. The daemon calls a driver from the
-//! registry and from the target's own worker thread, one attach per target
-//! for the daemon's lifetime.
+//! [`mirror::backend::Backend`] the target's mirror runs on and what the
+//! mirror has no place for: app control, on-demand screenshots and the
+//! driver's own status. The daemon calls a driver from the registry and
+//! from the target's own worker thread, one attach per target until the
+//! target is detached; dropping the [`Attachment`] detaches it.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use mirror::MirrorConfig;
 use mirror::backend::Backend;
+use serde_json::{Map, Value};
 
+use crate::devices;
 use crate::fake::FakeDriver;
 
 /// A driver's failure: a stable code, a message and a retryable flag.
@@ -89,8 +93,14 @@ pub struct TargetInfo {
     /// A human name, such as the device model or the Simulator's name.
     pub name: String,
     pub model: Option<String>,
-    /// OS name and version, such as `Android 16` or `iOS 26.5`.
+    /// OS name and version, such as `Android API 36` or `iOS 26.5`.
     pub os: Option<String>,
+    /// The state its platform reports: `booted` for a Simulator; the adb
+    /// server's `device`, `offline`, `unauthorized` and so on for Android.
+    pub state: String,
+    /// What makes the target usable when its state keeps it from being
+    /// automated, such as accepting the USB debugging prompt.
+    pub advice: Option<String>,
     /// The driver that found it.
     pub driver: String,
 }
@@ -102,7 +112,9 @@ pub struct Size {
     pub height: f64,
 }
 
-/// What attaching to a target yields.
+/// What attaching to a target yields. Dropping it detaches the target: a
+/// driver stops what it started for the target, such as the Android agent
+/// or the Simulator's reader, when its parts are dropped.
 pub struct Attachment {
     /// The backend the target's mirror runs on.
     pub backend: Backend,
@@ -110,6 +122,12 @@ pub struct Attachment {
     /// The screen size, for gestures that no element anchors.
     pub display: Size,
     pub config: MirrorConfig,
+    /// Screenshots the driver takes on demand. Without one, `screenshot`
+    /// encodes the mirror's latest frame.
+    pub capture: Option<Box<dyn Capture>>,
+    /// What `status` reports about the target from the driver: its input
+    /// path or transport, helpers and failures.
+    pub report: Option<Arc<dyn Report>>,
 }
 
 /// Launches and stops apps: what the mirror's backend has no place for.
@@ -127,42 +145,177 @@ pub trait AppControl: Send {
 pub struct Launch {
     /// Stop the app first if it runs.
     pub relaunch: bool,
-    /// Launch environment variables (Android intent string extras).
+    /// The launch environment on iOS; string extras of the launch intent
+    /// on Android, under the same names.
     pub env: Vec<(String, String)>,
+}
+
+/// Takes screenshots on demand.
+pub trait Capture: Send {
+    /// The screen as it is now.
+    fn screenshot(&mut self, request: &CaptureRequest) -> Result<Image, DriverError>;
+}
+
+/// How to take a screenshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureRequest {
+    /// The longest side of the image in pixels; larger screens are scaled
+    /// down.
+    pub max_dimension: u32,
+    /// JPEG quality, 1 to 100.
+    pub quality: u8,
+}
+
+/// An encoded screenshot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Image {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// `jpeg` or `png`.
+    pub format: &'static str,
+}
+
+/// Reports what the driver knows about an attached target. The daemon asks
+/// from the thread serving `status`, while the target's worker may be busy.
+pub trait Report: Send + Sync {
+    fn report(&self) -> TargetReport;
+}
+
+/// What `status` shows about a target from its driver.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TargetReport {
+    /// Lines for people, such as `input: dtuhidd, ...`.
+    pub lines: Vec<String>,
+    /// The same facts as JSON fields.
+    pub data: Map<String, Value>,
 }
 
 /// One row of `doctor`'s compatibility table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompatibilityRow {
-    /// What was validated, such as `Xcode 27.0 / iOS 26.5`.
+    /// What was validated or found, such as `Xcode 27.0 (27A266a)`.
     pub subject: String,
-    /// The call site or path, such as `dtuhidd XPC input`.
+    /// The call site or path, such as `-[SimDevice lookup:error:]`, or
+    /// what the driver expects.
     pub feature: String,
-    /// `supported`, `degraded` or `unsupported`.
+    /// The Simulator driver's words: `validated`, `supported`, `limited`
+    /// or `unsupported`.
     pub status: String,
     pub note: Option<String>,
 }
 
+/// Which drivers a daemon registers, and where they keep what outlives it.
+#[derive(Clone, Copy, Debug)]
+pub struct Registration<'a> {
+    /// Fake targets, as `MOBILE_AGENT_FAKE_TARGETS` lists them.
+    pub fake: Option<&'a str>,
+    /// How long fake targets take to show a change.
+    pub fake_latency: Duration,
+    /// Device drivers by name, as `MOBILE_AGENT_DRIVERS` lists them; see
+    /// [`device_drivers`].
+    pub drivers: Option<&'a str>,
+    /// The daemon's own directory, where drivers keep state for the next
+    /// daemon, such as the records of the Android agents it started.
+    pub state_dir: &'a Path,
+}
+
 /// The drivers a daemon registers.
 ///
-/// This is the registration point for device drivers. The Android driver
-/// (`crates/android`: adb discovery, agent deploy and session, task 5.3)
-/// and the Simulator driver (`crates/simulator`, tasks 6.1 to 6.9) join the
-/// list here when they land: each implements [`Driver`], hands the daemon a
-/// mirror backend per attached target, and fills `doctor`'s compatibility
-/// table through [`Driver::compatibility`]. Until then the list holds only
-/// the fake driver, and only when `fake` names fake targets
-/// (`MOBILE_AGENT_FAKE_TARGETS` or the daemon's `--fake` flag), which show
-/// every change `fake_latency` after its cause.
-pub fn registered(
-    fake: Option<&str>,
-    fake_latency: Duration,
-) -> Result<Vec<Arc<dyn Driver>>, String> {
+/// This is the registration point for device drivers: the Simulator driver
+/// (`crates/simulator`) on macOS and the Android driver (`crates/android`)
+/// everywhere, both put behind the mirror's backend traits in
+/// [`crate::devices`], the Simulator driver also filling `doctor`'s Xcode
+/// compatibility table through [`Driver::compatibility`]. Fake targets
+/// stand in for them: when `fake` names any, only the fake driver serves,
+/// showing every change `fake_latency` after its cause, unless `drivers`
+/// names device drivers too.
+pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
+    let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
-    if let Some(spec) = fake.filter(|spec| !spec.trim().is_empty()) {
+    if let Some(spec) = fake {
         drivers.push(Arc::new(
-            FakeDriver::parse(spec)?.with_latency(fake_latency),
+            FakeDriver::parse(spec)?.with_latency(registration.fake_latency),
         ));
     }
     Ok(drivers)
+}
+
+/// The device drivers a daemon registers: those `drivers` names
+/// (comma-separated `simulator`, or `ios`, and `android`; `none` for
+/// none), else every device driver this host runs unless fake targets are
+/// named.
+pub fn device_drivers(drivers: Option<&str>, fake: bool) -> Result<Vec<&'static str>, String> {
+    let _ = (drivers, fake, devices::DEFAULT);
+    todo!("task 8.8")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The device drivers this host runs, in registration order.
+    fn host() -> Vec<&'static str> {
+        if cfg!(target_os = "macos") {
+            vec!["simulator", "android"]
+        } else {
+            vec!["android"]
+        }
+    }
+
+    #[test]
+    fn every_device_driver_the_host_runs_registers_unless_fake_targets_are_named() {
+        assert_eq!(device_drivers(None, false).unwrap(), host());
+        assert_eq!(device_drivers(Some("  "), false).unwrap(), host());
+        assert!(device_drivers(None, true).unwrap().is_empty());
+    }
+
+    #[test]
+    fn named_drivers_register_alone_or_beside_fake_targets() {
+        assert_eq!(device_drivers(Some("android"), true).unwrap(), ["android"]);
+        assert_eq!(
+            device_drivers(Some(" Android , android"), false).unwrap(),
+            ["android"]
+        );
+        assert!(device_drivers(Some("none"), false).unwrap().is_empty());
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                device_drivers(Some("android,ios"), false).unwrap(),
+                ["android", "simulator"]
+            );
+        } else {
+            let refused = device_drivers(Some("simulator"), false).unwrap_err();
+            assert!(refused.contains("macOS"), "{refused}");
+        }
+        let unknown = device_drivers(Some("windows"), false).unwrap_err();
+        assert!(
+            unknown.contains("windows")
+                && unknown.contains("simulator")
+                && unknown.contains("none"),
+            "{unknown}"
+        );
+        assert!(device_drivers(Some("none,android"), false).is_err());
+    }
+
+    #[test]
+    fn registration_puts_device_drivers_before_the_fake_one() {
+        let dir = std::env::temp_dir().join(format!("daemon-registration-{}", std::process::id()));
+        let names = |fake: Option<&str>, drivers: Option<&str>| -> Vec<String> {
+            registered(&Registration {
+                fake,
+                fake_latency: Duration::ZERO,
+                drivers,
+                state_dir: &dir,
+            })
+            .unwrap()
+            .iter()
+            .map(|driver| driver.name().to_owned())
+            .collect()
+        };
+        assert_eq!(names(Some("ios"), None), ["fake"]);
+        assert_eq!(names(Some("ios"), Some("android")), ["android", "fake"]);
+        assert_eq!(names(None, Some("none")), Vec::<String>::new());
+        assert_eq!(names(Some(" "), Some("android")), ["android"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

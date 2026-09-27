@@ -225,6 +225,8 @@ pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Att
             height: kit.height(),
         },
         config: MirrorConfig::default(),
+        capture: None,
+        report: None,
     }
 }
 

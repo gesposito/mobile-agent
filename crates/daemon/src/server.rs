@@ -59,6 +59,10 @@ pub struct Options {
     pub fake: Option<String>,
     /// How long fake targets take to show a change.
     pub fake_latency: Duration,
+    /// Device drivers to register, as `MOBILE_AGENT_DRIVERS` lists them;
+    /// `None` registers the host's device drivers unless fake targets are
+    /// named (see [`driver::device_drivers`]).
+    pub drivers: Option<String>,
 }
 
 impl Options {
@@ -113,6 +117,7 @@ impl Options {
             idle_timeout: (!idle.is_zero()).then_some(idle),
             fake: fake.or_else(|| env("MOBILE_AGENT_FAKE_TARGETS")),
             fake_latency,
+            drivers: None,
         })
     }
 }
@@ -207,7 +212,12 @@ impl Daemon {
 
 /// Runs a daemon until it is shut down or stays idle for its timeout.
 pub fn run(options: Options) -> Result<Exit, String> {
-    let drivers = driver::registered(options.fake.as_deref(), options.fake_latency)?;
+    let drivers = driver::registered(&driver::Registration {
+        fake: options.fake.as_deref(),
+        fake_latency: options.fake_latency,
+        drivers: options.drivers.as_deref(),
+        state_dir: &options.socket_dir,
+    })?;
     let paths = Paths::new(options.socket_dir);
     paths.check_socket_len()?;
     fs::DirBuilder::new()
@@ -505,5 +515,16 @@ mod tests {
         assert_eq!(options.idle_timeout, None);
         assert_eq!(options.fake.as_deref(), Some("ios"));
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
+    }
+
+    #[test]
+    fn the_drivers_flag_names_the_device_drivers_to_register() {
+        let options =
+            Options::from_args(["--drivers", "android", "--fake=ios"].map(OsString::from)).unwrap();
+        assert_eq!(options.drivers.as_deref(), Some("android"));
+        assert_eq!(options.fake.as_deref(), Some("ios"));
+        let inline = Options::from_args([OsString::from("--drivers=none")]).unwrap();
+        assert_eq!(inline.drivers.as_deref(), Some("none"));
+        assert!(Options::from_args([OsString::from("--drivers")]).is_err());
     }
 }

@@ -7,9 +7,11 @@
 //! owner per device; sessions are claims inside it rather than daemons of
 //! their own, and commands for different targets run concurrently on
 //! per-target worker threads. Targets come from [`driver::Driver`]s: the
-//! device drivers register in [`driver::registered`], and the fake driver in
-//! [`fake`] serves every test.
+//! Simulator and Android drivers register in [`driver::registered`], and
+//! the fake driver in [`fake`] serves every test that needs no device.
 
+#[allow(dead_code)]
+mod devices;
 pub mod driver;
 pub mod fake;
 mod handlers;
