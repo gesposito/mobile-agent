@@ -28,7 +28,15 @@ const SCALE: f64 = 2.625;
 
 /// A session over a scripted agent answering with `handler`.
 fn session(handler: Handler) -> (FakeAgent, Session) {
-    let agent = FakeAgent::start(config(Some("tok")), handler);
+    session_with(config(Some("tok")), handler)
+}
+
+/// A session over a scripted agent with `agent_config`.
+fn session_with(
+    agent_config: protocol::session::AgentConfig,
+    handler: Handler,
+) -> (FakeAgent, Session) {
+    let agent = FakeAgent::start(agent_config, handler);
     let connection = Connection::open(
         agent.connect(),
         HostConfig {
@@ -503,4 +511,34 @@ fn the_backend_is_taken_once() {
     let (_agent, session) = session(Box::new(|_| None));
     let _first = session.backend();
     let _second = session.backend();
+}
+
+/// An agent that lost the events capability cannot resync; the read after
+/// foreign input then reads without emptying the cache rather than failing.
+#[test]
+fn without_the_events_capability_a_read_after_foreign_input_still_succeeds() {
+    let mut agent_config = config(Some("tok"));
+    agent_config.capabilities = protocol::Capabilities::TREE | protocol::Capabilities::INPUT;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    let (_agent, session) = session_with(
+        agent_config,
+        Box::new(move |request| {
+            seen.lock().unwrap().push(request.call.clone());
+            match &request.call {
+                Call::Snapshot(_) => Some(Ok(Reply::Snapshot(compose_screen(2)))),
+                _ => None,
+            }
+        }),
+    );
+    let mut backend = session.backend();
+    backend.tree.read(&read(ReadReason::Attach)).unwrap();
+    session.note_foreign_input(Instant::now());
+    backend.tree.read(&read(ReadReason::Action)).unwrap();
+    let calls = requests.lock().unwrap().clone();
+    assert!(
+        calls.iter().all(|c| matches!(c, Call::Snapshot(_))),
+        "{calls:?}"
+    );
+    assert!(!session.last_read().unwrap().cleared_cache);
 }
