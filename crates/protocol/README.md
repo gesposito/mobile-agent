@@ -157,9 +157,9 @@ the platform's own window states (task 3.6):
   windows below it until it is dismissed. Omitted when false.
 
 Key 9 of a node is present on nodes that scroll. `axis` is 0 unknown, 1
-vertical, 2 horizontal. Flag bits: back (0), toward the start, up or left, and
-forward (1), toward the end, down or right, each set when the node can scroll
-that way from where it is. `range` is the span of the content in `unit`, both
+vertical, 2 horizontal. Flag bits: back (0), toward the start of the content
+(up, or left in a left-to-right layout), and forward (1), toward its end, each
+set when the node can scroll that way from where it is. `range` is the span of the content in `unit`, both
 ends inclusive: 0 items, a collection's items along the axis numbered from 0
 (`[0, 0, 199]` for 200 rows), or 1 percent of the scrollable range, 0 to 100,
 for a position the platform reports as a value between bounds. `position`,

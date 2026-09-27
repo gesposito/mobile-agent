@@ -119,9 +119,10 @@ pub struct Node {
 }
 
 /// Scroll semantics of a node that scrolls: the axis, whether it can scroll
-/// back (up or left) and forward (down or right) from where it is, and,
-/// where the platform reports them, the range its content spans and the
-/// part of that range inside its viewport, both in the range's unit.
+/// back toward the start of its content and forward toward its end from
+/// where it is, and, where the platform reports them, the range its content
+/// spans and the part of that range inside its viewport, both in the
+/// range's unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 #[cbor(map)]
 pub struct Scroll {
@@ -375,9 +376,9 @@ wire_enum! {
 wire_flags! {
     /// Which ways a node can scroll from where it is.
     pub struct ScrollFlags;
-    /// Back, toward the start: up or left.
+    /// Back, toward the start: up, or left in a left-to-right layout.
     BACK = 0, "back";
-    /// Forward, toward the end: down or right.
+    /// Forward, toward the end: down, or right in a left-to-right layout.
     FORWARD = 1, "forward";
 }
 
