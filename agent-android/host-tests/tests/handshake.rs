@@ -4,8 +4,9 @@
 use std::time::{Duration, Instant};
 
 use agent_android_host_tests::{Agent, Launch, device, ms};
+use protocol::capability::Capabilities;
 use protocol::code;
-use protocol::message::{Call, Method, Reply};
+use protocol::message::{Call, FramesParams, Method, Reply};
 use protocol::session::{DisconnectReason, HandshakeError, HostConfig};
 
 #[test]
@@ -256,4 +257,44 @@ fn every_ping_answer_keeps_a_quiet_session_open_past_the_peer_timeout() {
         .call(Call::Unknown(Method(999)))
         .expect_err("unknown method");
     assert_eq!(error.code, code::UNKNOWN_METHOD);
+}
+
+#[test]
+fn the_hello_advertises_every_capability_this_build_implements() {
+    let Some(dev) = device("the_hello_advertises_every_capability_this_build_implements") else {
+        return;
+    };
+    let agent = Agent::launch(&dev, Launch::default());
+    let mut client = agent.connect();
+    let negotiated = client.negotiated().expect("negotiated").clone();
+    let expected = Capabilities::TREE
+        | Capabilities::INPUT
+        | Capabilities::SCREENSHOT
+        | Capabilities::EVENTS
+        | Capabilities::TEXT_SET;
+    assert_eq!(
+        negotiated.capabilities, expected,
+        "{}",
+        negotiated.capabilities
+    );
+    // Frame streaming is a later change (the emulator's controller serves it).
+    assert!(!negotiated.capabilities.contains(Capabilities::FRAMES));
+    let error = client
+        .call(Call::FramesStart(FramesParams::default()))
+        .expect_err("frames_start was served");
+    assert_eq!(error.code, code::CAPABILITY_MISSING);
+    assert!(
+        error.message.contains("frame streaming"),
+        "{}",
+        error.message
+    );
+    // Its lifecycle events name the role and any capability this device lost.
+    let ready = client.wait_event(Duration::from_secs(5), |_| true);
+    assert!(ready.is_some());
+    let lifecycle = client.lifecycle();
+    assert_eq!(lifecycle[0].0, "ready");
+    assert!(
+        lifecycle.iter().all(|(kind, _)| kind != "warning"),
+        "{lifecycle:?}"
+    );
 }

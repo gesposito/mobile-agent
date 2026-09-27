@@ -76,9 +76,6 @@ class ComposeTracker(
     /** Window ids known to host Compose. */
     private val compose = HashSet<Int>()
 
-    /** Window ids a read has classified, with or without Compose. */
-    private val classified = HashSet<Int>()
-
     /** Per Compose window, the content of the last read the host could have seen. */
     private val seen = HashMap<Int, HashMap<String, Long>>()
 
@@ -105,7 +102,6 @@ class ComposeTracker(
     fun observe(s: Snapshot) {
         for (w in s.windows) {
             val root = w.root ?: continue
-            classified.add(w.id)
             if (hasCompose(s, root)) {
                 compose.add(w.id)
                 seen[w.id] = signatures(s, root)
@@ -123,8 +119,8 @@ class ComposeTracker(
     }
 
     /**
-     * Evicts every cached node of the Compose windows on screen that a read
-     * has classified, re-reads them, and reports a tree event for each whose
+     * Evicts every cached node of the Compose windows on screen that a
+     * snapshot has shown the host, re-reads them, and reports a tree event for each whose
      * content differs from what the host last saw. Windows the host has not
      * read are left alone: it holds nothing of them that could be stale, and
      * the window events announce them. Runs on the tree worker.
@@ -134,7 +130,6 @@ class ComposeTracker(
         val targets: List<Int>
         synchronized(this) {
             compose.retainAll(ids)
-            classified.retainAll(ids)
             seen.keys.retainAll(ids)
             targets = ids.filter { it in compose }
         }

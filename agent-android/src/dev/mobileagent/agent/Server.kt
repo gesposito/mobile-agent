@@ -4,23 +4,23 @@ import android.net.LocalServerSocket
 import android.net.LocalSocket
 import dev.mobileagent.agent.codec.Capability
 import dev.mobileagent.agent.codec.EmptyReply
+import dev.mobileagent.agent.codec.ErrorCode
+import dev.mobileagent.agent.codec.ImageFormat
 import dev.mobileagent.agent.codec.InputAck
 import dev.mobileagent.agent.codec.KeyCall
+import dev.mobileagent.agent.codec.Lifecycle
+import dev.mobileagent.agent.codec.LifecycleKind
+import dev.mobileagent.agent.codec.Protocol
+import dev.mobileagent.agent.codec.ResyncCall
+import dev.mobileagent.agent.codec.ScreenshotCall
+import dev.mobileagent.agent.codec.ShutdownCall
+import dev.mobileagent.agent.codec.SnapshotCall
+import dev.mobileagent.agent.codec.Stream
 import dev.mobileagent.agent.codec.SwipeCall
 import dev.mobileagent.agent.codec.TapCall
 import dev.mobileagent.agent.codec.TextAck
 import dev.mobileagent.agent.codec.TextMethod
 import dev.mobileagent.agent.codec.TextSetCall
-import dev.mobileagent.agent.codec.ErrorCode
-import dev.mobileagent.agent.codec.Lifecycle
-import dev.mobileagent.agent.codec.LifecycleKind
-import dev.mobileagent.agent.codec.ImageFormat
-import dev.mobileagent.agent.codec.Protocol
-import dev.mobileagent.agent.codec.ScreenshotCall
-import dev.mobileagent.agent.codec.ResyncCall
-import dev.mobileagent.agent.codec.ShutdownCall
-import dev.mobileagent.agent.codec.SnapshotCall
-import dev.mobileagent.agent.codec.Stream
 import dev.mobileagent.agent.codec.WireError
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -64,14 +64,22 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT or Capability.TEXT_SET or
-        Capability.SCREENSHOT
+    /** What this device lacks of the hidden members the agent uses. */
+    private val warnings = ArrayList<String>()
+    /** Input injection; null where the hidden injection method is missing. */
+    private val input: Input? = try {
+        Input()
+    } catch (e: ReflectiveOperationException) {
+        warnings.add("input injection is unavailable: ${e.javaClass.simpleName}: ${e.message}")
+        null
+    }
+    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.TEXT_SET or
+        Capability.SCREENSHOT or (if (input != null) Capability.INPUT else 0)
     /** Screenshots run one at a time, beside tree reads and input. */
     private val captureWorker = Executors.newSingleThreadExecutor(daemonThreads("capture"))
     private lateinit var screenshots: Screenshots
     /** Input runs one action at a time, beside tree reads. */
     private val inputWorker = Executors.newSingleThreadExecutor(daemonThreads("input"))
-    private val input = Input()
     private lateinit var textSetter: TextSetter
     /** Tree reads run one at a time, in arrival order. */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
@@ -157,12 +165,12 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             is SnapshotCall -> treeWorker.execute { snapshot(work, call) }
             is ResyncCall -> treeWorker.execute { resync(work, call) }
             is TapCall -> inputWorker.execute {
-                act(work) { input.tap(call.x, call.y, call.durationMs?.let { unsigned(it) } ?: 0L) { work.cancelled } }
+                act(work) { input!!.tap(call.x, call.y, call.durationMs?.let { unsigned(it) } ?: 0L) { work.cancelled } }
             }
             is SwipeCall -> inputWorker.execute {
-                act(work) { input.swipe(call.x1, call.y1, call.x2, call.y2, unsigned(call.durationMs)) { work.cancelled } }
+                act(work) { input!!.swipe(call.x1, call.y1, call.x2, call.y2, unsigned(call.durationMs)) { work.cancelled } }
             }
-            is KeyCall -> inputWorker.execute { act(work) { input.key(call.code, call.meta ?: 0) } }
+            is KeyCall -> inputWorker.execute { act(work) { input!!.key(call.code, call.meta ?: 0) } }
             is TextSetCall -> inputWorker.execute { setText(work, call) }
             is ScreenshotCall -> captureWorker.execute { screenshot(work, call) }
             ShutdownCall -> shutdown(work)
@@ -214,6 +222,9 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     override fun onReady(session: Session) {
         val role = forced?.let { "took UI automation over from ${it.describe()}" } ?: "UI automation held"
         session.emit(Lifecycle(LifecycleKind.READY, "${Main.AGENT} serving @${options.socket}; $role"))
+        // A hidden member this device does not have costs a capability rather
+        // than the attach (design, Risks).
+        for (warning in warnings) session.emit(Lifecycle(LifecycleKind.WARNING, warning))
     }
 
     override fun onClosed(session: Session, reason: String, refusal: WireError?) {

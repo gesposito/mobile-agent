@@ -189,7 +189,12 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   (`token_mismatch`).
 - **Handshake.** The agent speaks first: its hello offers versions `[1]`, its
   capabilities, a 16 MiB frame limit and `mobile-agent-android <VERSION>`.
-  After the welcome it sends a `ready` lifecycle event. A welcome refusing
+  It advertises tree reads, input injection, screenshots, change events and
+  direct text setting, but not frame streaming, which the emulator's
+  controller serves (design D7). A hidden member this build cannot find on a
+  device costs its capability rather than the attach: the hello leaves it
+  out and a `warning` lifecycle event names what was lost. After the welcome
+  it sends a `ready` lifecycle event. A welcome refusing
   the connection with `version_mismatch` makes the agent exit, so a host that
   needs another version replaces it; any other refusal only closes that
   connection.
@@ -393,6 +398,7 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 |---|---|---|
 | device-protocol: Version negotiation on connect | Common version selected | `handshake::the_agent_speaks_first_with_a_hello_naming_protocol_1_and_its_token` |
 | | No common version | `handshake::a_host_speaking_only_a_newer_version_is_refused_and_the_agent_exits_for_replacement` |
+| device-protocol: Capability advertisement | Command needs an unadvertised capability | `handshake::the_hello_advertises_every_capability_this_build_implements` |
 | device-protocol: Structured errors | Transient versus permanent failure (unknown method) | `handshake::an_unknown_method_gets_a_permanent_error_and_the_connection_stays_usable` |
 | device-protocol: Liveness detection | Agent side of the pings | `handshake::the_agent_pings_a_silent_host_every_second`, `handshake::every_ping_answer_keeps_a_quiet_session_open_past_the_peer_timeout`, `handshake::the_agent_closes_a_connection_whose_host_stops_answering` |
 | design D3: token and peer check | | `handshake::a_host_expecting_another_token_refuses_the_hello_and_the_agent_keeps_serving`, `handshake::a_peer_that_is_not_the_shell_user_gets_no_hello` |

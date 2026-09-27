@@ -15,7 +15,7 @@ class TextRefused(message: String) : Exception(message)
  * node offers it, typed as key events otherwise (spec android-driver, Direct
  * text setting with fallback). Both replace what the field held.
  */
-class TextSetter(private val automation: Automation, private val input: Input) {
+class TextSetter(private val automation: Automation, private val input: Input?) {
     private val keyMap: KeyCharacterMap by lazy { KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD) }
 
     /**
@@ -59,6 +59,7 @@ class TextSetter(private val automation: Automation, private val input: Input) {
      * focus and selecting what an editable field held, so the keys replace it.
      */
     private fun type(target: AccessibilityNodeInfo, text: String) {
+        val keys = input ?: throw TextRefused("this device offers no input injection, so text can only be set directly")
         val events = keyMap.getEvents(text.toCharArray()) ?: run {
             val bad = text.first { keyMap.getEvents(charArrayOf(it)) == null }
             throw TextRefused(
@@ -67,9 +68,9 @@ class TextSetter(private val automation: Automation, private val input: Input) {
         }
         if (!target.isFocused) target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         if (target.isEditable && !target.text.isNullOrEmpty() && !target.isShowingHintText) {
-            input.key(KeyEvent.KEYCODE_A, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+            keys.key(KeyEvent.KEYCODE_A, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
         }
         for (e in events) e.source = InputDevice.SOURCE_KEYBOARD
-        if (!input.keys(events)) throw TextRefused("the platform refused the key events")
+        if (!keys.keys(events)) throw TextRefused("the platform refused the key events")
     }
 }
