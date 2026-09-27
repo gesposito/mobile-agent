@@ -26,6 +26,9 @@ pub struct Record {
     pub agent: String,
     /// The protocol version negotiated with it.
     pub protocol: u16,
+    /// The build it was started from; empty in a record written before
+    /// builds were recorded.
+    pub build: String,
 }
 
 impl fmt::Debug for Record {
@@ -38,6 +41,7 @@ impl fmt::Debug for Record {
             .field("token", &"<redacted>")
             .field("agent", &self.agent)
             .field("protocol", &self.protocol)
+            .field("build", &self.build)
             .finish()
     }
 }
@@ -65,6 +69,7 @@ impl Record {
             token: get("token")?.to_owned(),
             agent: get("agent")?.to_owned(),
             protocol: get("protocol")?.parse().ok()?,
+            build: String::new(),
         })
     }
 }
@@ -190,6 +195,7 @@ mod tests {
             token: "0123456789abcdef".into(),
             agent: "mobile-agent-android 0.1.0".into(),
             protocol: 1,
+            build: "0123456789ab".into(),
         }
     }
 
@@ -219,6 +225,15 @@ mod tests {
             Record::from_text(&r.to_text().replace("pid=812", "pid=x")),
             None
         );
+    }
+
+    #[test]
+    fn a_record_written_before_builds_were_recorded_has_an_unknown_build() {
+        let old = "serial=emulator-5554\nsocket=mobile-agent-0.1.0-p1-00ff\npid=812\n\
+                   token=0123456789abcdef\nagent=mobile-agent-android 0.1.0\nprotocol=1\n";
+        let record = Record::from_text(old).unwrap();
+        assert_eq!(record.build, "");
+        assert_eq!(record.pid, 812);
     }
 
     #[test]

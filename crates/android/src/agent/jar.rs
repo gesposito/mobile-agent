@@ -102,6 +102,13 @@ impl AgentJar {
         &self.version
     }
 
+    /// The build: the first 12 hex digits of an xxh3 digest of the jar's
+    /// bytes. Two jars that report the same version but differ, such as the
+    /// agent before and after a change to its payload, are two builds.
+    pub fn build(&self) -> String {
+        todo!("build identity")
+    }
+
     /// The agent name and version its hello carries:
     /// `mobile-agent-android <version>`.
     pub fn agent_name(&self) -> String {
@@ -129,6 +136,17 @@ mod tests {
         assert_eq!(jar.agent_name(), "mobile-agent-android 0.1.0");
         assert_eq!(jar.bytes(), &[1, 2, 3]);
         assert_eq!(jar.path(), None);
+    }
+
+    #[test]
+    fn a_jars_build_is_a_digest_of_its_bytes() {
+        let a = AgentJar::from_bytes(vec![1, 2, 3], AGENT_VERSION);
+        let same = AgentJar::from_bytes(vec![1, 2, 3], "9.9.9");
+        let other = AgentJar::from_bytes(vec![1, 2, 4], AGENT_VERSION);
+        assert_eq!(a.build(), same.build(), "the version is not part of it");
+        assert_ne!(a.build(), other.build());
+        assert_eq!(a.build().len(), 12);
+        assert!(a.build().chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

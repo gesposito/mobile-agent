@@ -74,70 +74,58 @@ fn quote(text: &str) -> String {
 }
 
 /// A per-launch socket name that also says which agent listens on it:
-/// `mobile-agent-<version>-p<protocol>-<id>`. The process list shows it, so
-/// the agent state of a target is known without connecting, which would
-/// take the agent's connection away from whoever holds it.
+/// `mobile-agent-<version>-p<protocol>-<build>-<id>`. The process list shows
+/// it, so the agent state of a target is known without connecting, which
+/// would take the agent's connection away from whoever holds it. The build
+/// tells apart two builds that report the same version.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SocketName {
     /// The agent version, with characters a socket name cannot hold replaced
     /// by `_`.
     pub version: String,
     pub protocol: u16,
+    /// The build the agent was started from ([`crate::agent::AgentJar::build`]).
+    pub build: String,
     /// Random, unique per launch.
     pub id: String,
 }
 
 impl SocketName {
-    /// A name for a launch of `version` speaking `protocol`, with `id`.
-    pub fn new(version: &str, protocol: u16, id: &str) -> SocketName {
+    /// A name for a launch of `version` speaking `protocol` from `build`,
+    /// with `id`.
+    pub fn new(version: &str, protocol: u16, build: &str, id: &str) -> SocketName {
         SocketName {
             version: socket_safe(version),
             protocol,
+            build: socket_safe(build),
             id: socket_safe(id),
         }
     }
 
-    /// A name for a new launch of `version` speaking `protocol`, with a
-    /// random id.
-    pub fn generate(version: &str, protocol: u16) -> SocketName {
-        SocketName::new(version, protocol, &random_hex(6))
+    /// A name for a new launch of `version` speaking `protocol` from
+    /// `build`, with a random id.
+    pub fn generate(version: &str, protocol: u16, build: &str) -> SocketName {
+        SocketName::new(version, protocol, build, &random_hex(6))
     }
 
     /// Parses a name this driver made; `None` for any other name.
     pub fn parse(name: &str) -> Option<SocketName> {
-        let rest = name.strip_prefix("mobile-agent-")?;
-        let mut parts = rest.rsplitn(3, '-');
-        let id = parts.next()?;
-        let protocol = parts.next()?.strip_prefix('p')?;
-        let version = parts.next()?;
-        let valid = !id.is_empty()
-            && id.chars().all(|c| c.is_ascii_alphanumeric())
-            && !protocol.is_empty()
-            && protocol.chars().all(|c| c.is_ascii_digit())
-            && !version.is_empty();
-        if !valid {
-            return None;
-        }
-        Some(SocketName {
-            version: version.to_owned(),
-            protocol: protocol.parse().ok()?,
-            id: id.to_owned(),
-        })
+        let _ = name;
+        todo!("build identity")
     }
 
-    /// Whether this name says the agent is `version` speaking `protocol`.
-    pub fn is(&self, version: &str, protocol: u16) -> bool {
-        self.version == socket_safe(version) && self.protocol == protocol
+    /// Whether this name says the agent is `version` speaking `protocol`,
+    /// started from `build`.
+    pub fn is(&self, version: &str, protocol: u16, build: &str) -> bool {
+        let _ = (version, protocol, build);
+        todo!("build identity")
     }
 }
 
 impl fmt::Display for SocketName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "mobile-agent-{}-p{}-{}",
-            self.version, self.protocol, self.id
-        )
+        let _ = f;
+        todo!("build identity")
     }
 }
 
@@ -352,28 +340,34 @@ pub fn parse_agents(ps: &str) -> Vec<RunningAgent> {
 mod tests {
     use super::*;
 
+    const BUILD: &str = "0123456789ab";
+
     #[test]
-    fn a_socket_name_carries_the_agent_version_and_protocol() {
-        let name = SocketName::new("0.1.0", 1, "3f9a1c2b7d4e");
-        assert_eq!(name.to_string(), "mobile-agent-0.1.0-p1-3f9a1c2b7d4e");
+    fn a_socket_name_carries_the_agent_version_protocol_and_build() {
+        let name = SocketName::new("0.1.0", 1, BUILD, "3f9a1c2b7d4e");
+        assert_eq!(
+            name.to_string(),
+            "mobile-agent-0.1.0-p1-0123456789ab-3f9a1c2b7d4e"
+        );
         assert_eq!(SocketName::parse(&name.to_string()), Some(name.clone()));
-        assert!(name.is("0.1.0", 1));
-        assert!(!name.is("0.1.1", 1));
-        assert!(!name.is("0.1.0", 2));
+        assert!(name.is("0.1.0", 1, BUILD));
+        assert!(!name.is("0.1.1", 1, BUILD));
+        assert!(!name.is("0.1.0", 2, BUILD));
+        assert!(!name.is("0.1.0", 1, "ba9876543210"), "another build");
     }
 
     #[test]
     fn versions_with_hyphens_and_build_metadata_survive_the_name() {
-        let name = SocketName::new("1.2.0-rc.1+abc", 12, "00ff");
+        let name = SocketName::new("1.2.0-rc.1+abc", 12, "00aa", "00ff");
         let text = name.to_string();
-        assert_eq!(text, "mobile-agent-1.2.0-rc.1_abc-p12-00ff");
+        assert_eq!(text, "mobile-agent-1.2.0-rc.1_abc-p12-00aa-00ff");
         assert!(
             text.chars()
                 .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)),
             "{text}"
         );
         let parsed = SocketName::parse(&text).unwrap();
-        assert!(parsed.is("1.2.0-rc.1+abc", 12));
+        assert!(parsed.is("1.2.0-rc.1+abc", 12, "00aa"));
         assert_eq!(parsed.version, "1.2.0-rc.1_abc");
     }
 
@@ -382,9 +376,11 @@ mod tests {
         for other in [
             "mobile-agent-3f9a1c2b7d4e",
             "mobile-agent-it-foo-1-2",
-            "mobile-agent-0.1.0-px-1a",
+            "mobile-agent-0.1.0-px-00aa-1a",
             "scrcpy",
-            "mobile-agent--p1-1a",
+            "mobile-agent--p1-00aa-1a",
+            // A name without a build, from a driver before builds were named.
+            "mobile-agent-0.1.0-p1-3f9a1c2b7d4e",
         ] {
             assert_eq!(SocketName::parse(other), None, "{other}");
         }
@@ -392,8 +388,8 @@ mod tests {
 
     #[test]
     fn generated_names_differ_and_fit_the_agents_socket_rule() {
-        let a = SocketName::generate("0.1.0", 1);
-        let b = SocketName::generate("0.1.0", 1);
+        let a = SocketName::generate("0.1.0", 1, BUILD);
+        let b = SocketName::generate("0.1.0", 1, BUILD);
         assert_ne!(a, b);
         let text = a.to_string();
         assert!(text.len() <= 100, "{text}");
@@ -546,7 +542,7 @@ mod tests {
     fn agents_are_found_in_the_process_list_by_name_or_main_class() {
         let ps = "  PID ARGS\n\
                   \x20   1 init second_stage\n\
-                  \x20 812 mobile-agent mobile-agent-0.1.0-p1-00ff\n\
+                  \x20 812 mobile-agent mobile-agent-0.1.0-p1-0123456789ab-00ff\n\
                   \x20 900 mobile-agent mobile-agent-3f9a1c2b7d4e\n\
                   \x20 901 app_process / dev.mobileagent.agent.Main serve --socket s1 --idle-exit-ms 10\n\
                   \x20 902 timeout -s KILL 600 app_process / dev.mobileagent.agent.Main serve --socket s2\n\
@@ -559,8 +555,8 @@ mod tests {
             vec![
                 RunningAgent {
                     pid: 812,
-                    socket: "mobile-agent-0.1.0-p1-00ff".into(),
-                    name: Some(SocketName::new("0.1.0", 1, "00ff")),
+                    socket: "mobile-agent-0.1.0-p1-0123456789ab-00ff".into(),
+                    name: Some(SocketName::new("0.1.0", 1, BUILD, "00ff")),
                 },
                 RunningAgent {
                     pid: 900,

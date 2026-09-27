@@ -287,6 +287,65 @@ fn incompatible_replacement(device: &Device) -> Result<(), Disturbed> {
     Ok(())
 }
 
+/// An agent of another build that reports the same version, as the agent
+/// before and after the window metadata (task 3.6) does, runs from a
+/// previous session: the driver replaces it. The other build is the jar's
+/// own dex pushed bare, which `app_process` loads alike.
+#[test]
+fn an_agent_of_another_build_of_the_same_version_is_replaced() {
+    let test = "an_agent_of_another_build_of_the_same_version_is_replaced";
+    let Some(serial) = serial_or_skip(test) else {
+        return;
+    };
+    let _device = device_lock();
+    let device = device(&serial);
+    retry_when_disturbed(test, &device, || other_build(&device));
+}
+
+fn other_build(device: &Device) -> Result<(), Disturbed> {
+    let mut leftovers = Leftovers::new(device);
+    let records = Records::in_memory();
+    let jar = agent_jar();
+    let bare = AgentJar::from_bytes(common::dex_of(jar.bytes()), AGENT_VERSION);
+    assert_ne!(bare.build(), jar.build());
+    let old = Deployer::new(device.clone(), bare.clone(), records.clone());
+    let old = attach(&old, &options(), &mut leftovers)?;
+    assert_eq!(old.agent.agent, jar.agent_name(), "the same version");
+    let (old_pid, old_socket) = (old.agent.pid, old.agent.socket.clone());
+    drop(old);
+
+    let current = Deployer::new(device.clone(), jar.clone(), records);
+    only_ours(&current, &[old_pid])?;
+    match current.state().unwrap() {
+        AgentState::Incompatible(agent) => assert_eq!(agent.pid, old_pid),
+        other => panic!("another build's state is {other:?}"),
+    }
+    let attached = attach(&current, &options(), &mut leftovers)?;
+    let Outcome::Launched(launched) = &attached.outcome else {
+        panic!("another build was reused");
+    };
+    let replaced = launched
+        .replaced
+        .as_ref()
+        .expect("the other build replaced");
+    assert_eq!(replaced.pid, old_pid);
+    assert_eq!(
+        replaced.reason,
+        Incompatibility::Build {
+            running: bare.build(),
+            deploying: jar.build(),
+        }
+    );
+    assert_eq!(replaced.stopped, Stopped::Exited, "shutdown ends it");
+    assert!(!agent_alive(device, old_pid, &old_socket));
+    match current.state().unwrap() {
+        AgentState::Running(agent) => assert_eq!(agent.pid, attached.agent.pid),
+        other => panic!("the current build's state is {other:?}"),
+    }
+    attached.stop(Duration::from_secs(3)).unwrap();
+    Ok(())
+}
+
 /// `uiautomator events` started on a stream, with its pid, once it holds UI
 /// automation; dropping the stream ends it (adbd sends SIGHUP).
 fn start_uiautomator_events(device: &Device) -> Result<(ShellStream, u32), Disturbed> {

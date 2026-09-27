@@ -182,6 +182,9 @@ pub enum Incompatibility {
     /// It does not answer as recorded: no connection, another token, or no
     /// hello in time.
     Unreachable(String),
+    /// Another build reporting the same version, as the agent before and
+    /// after a change to its payload can.
+    Build { running: String, deploying: String },
 }
 
 impl fmt::Display for Incompatibility {
@@ -197,6 +200,7 @@ impl fmt::Display for Incompatibility {
             Incompatibility::Unreachable(why) => {
                 write!(f, "it does not answer as this host recorded it: {why}")
             }
+            Incompatibility::Build { .. } => todo!("build identity"),
         }
     }
 }
@@ -233,6 +237,14 @@ pub fn compatibility(
     }
 }
 
+/// Judges a recorded agent's build against the one being deployed: an
+/// empty recorded build, from a record written before builds were
+/// recorded, is another build.
+pub fn build_compatibility(recorded: &str, deploying: &str) -> Compatibility {
+    let _ = (recorded, deploying);
+    todo!("build identity")
+}
+
 /// Where an attach spent its time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Timings {
@@ -260,18 +272,17 @@ pub enum AgentState {
     Incompatible(RunningAgent),
 }
 
-/// The state `agents` add up to for a driver deploying `version` over
-/// `protocol`: running when one of them is that build, else incompatible
-/// when any runs.
-pub fn agent_state(agents: &[RunningAgent], version: &str, protocol: u16) -> AgentState {
-    let current = agents
-        .iter()
-        .find(|agent| agent.name.as_ref().is_some_and(|n| n.is(version, protocol)));
-    match (current, agents.first()) {
-        (Some(agent), _) => AgentState::Running(agent.clone()),
-        (None, Some(agent)) => AgentState::Incompatible(agent.clone()),
-        (None, None) => AgentState::Absent,
-    }
+/// The state `agents` add up to for a driver deploying `build` of
+/// `version` over `protocol`: running when one of them is that build, else
+/// incompatible when any runs.
+pub fn agent_state(
+    agents: &[RunningAgent],
+    version: &str,
+    protocol: u16,
+    build: &str,
+) -> AgentState {
+    let _ = (agents, version, protocol, build);
+    todo!("build identity")
 }
 
 /// Another process holds UI automation.
@@ -542,6 +553,7 @@ impl Deployer {
             &self.running()?,
             self.jar.version(),
             PROTOCOL_VERSION,
+            &self.jar.build(),
         ))
     }
 
@@ -734,7 +746,8 @@ impl Deployer {
         mut timings: Timings,
         started: Instant,
     ) -> Result<Attached, DeployError> {
-        let socket = SocketName::generate(self.jar.version(), PROTOCOL_VERSION).to_string();
+        let socket = SocketName::generate(self.jar.version(), PROTOCOL_VERSION, &self.jar.build())
+            .to_string();
         let token = random_hex(16);
         let remote = remote_jar(&socket);
         let pushing = Instant::now();
@@ -819,6 +832,7 @@ impl Deployer {
                 token: agent.token.clone(),
                 agent: agent.agent.clone(),
                 protocol: agent.protocol,
+                build: self.jar.build(),
             })
             .map_err(DeployError::Records)?;
         timings.total = started.elapsed();
@@ -1018,30 +1032,34 @@ mod tests {
         );
     }
 
+    const BUILD: &str = "0123456789ab";
+
     #[test]
     fn no_agent_process_is_absent() {
-        assert_eq!(agent_state(&[], "0.1.0", 1), AgentState::Absent);
+        assert_eq!(agent_state(&[], "0.1.0", 1, BUILD), AgentState::Absent);
     }
 
     #[test]
     fn an_agent_named_for_this_build_is_running() {
-        let agent = running(812, "mobile-agent-0.1.0-p1-00ff");
+        let agent = running(812, "mobile-agent-0.1.0-p1-0123456789ab-00ff");
         assert_eq!(
-            agent_state(std::slice::from_ref(&agent), "0.1.0", 1),
+            agent_state(std::slice::from_ref(&agent), "0.1.0", 1, BUILD),
             AgentState::Running(agent)
         );
     }
 
     #[test]
-    fn another_version_protocol_or_an_unknown_name_is_incompatible() {
+    fn another_version_protocol_build_or_an_unknown_name_is_incompatible() {
         for socket in [
-            "mobile-agent-0.0.9-p1-00ff",
-            "mobile-agent-0.1.0-p2-00ff",
+            "mobile-agent-0.0.9-p1-0123456789ab-00ff",
+            "mobile-agent-0.1.0-p2-0123456789ab-00ff",
+            "mobile-agent-0.1.0-p1-ba9876543210-00ff",
+            "mobile-agent-0.1.0-p1-00ff",
             "mobile-agent-3f9a1c2b7d4e",
         ] {
             let agent = running(812, socket);
             assert_eq!(
-                agent_state(std::slice::from_ref(&agent), "0.1.0", 1),
+                agent_state(std::slice::from_ref(&agent), "0.1.0", 1, BUILD),
                 AgentState::Incompatible(agent),
                 "{socket}"
             );
@@ -1050,11 +1068,42 @@ mod tests {
 
     #[test]
     fn a_compatible_agent_wins_over_an_incompatible_one() {
-        let old = running(700, "mobile-agent-0.0.9-p1-aa");
-        let current = running(812, "mobile-agent-0.1.0-p1-bb");
+        let old = running(700, "mobile-agent-0.1.0-p1-ba9876543210-aa");
+        let current = running(812, "mobile-agent-0.1.0-p1-0123456789ab-bb");
         assert_eq!(
-            agent_state(&[old, current.clone()], "0.1.0", 1),
+            agent_state(&[old, current.clone()], "0.1.0", 1, BUILD),
             AgentState::Running(current)
+        );
+    }
+
+    /// The agent's payload gained window metadata without a version bump:
+    /// a recorded agent of another build reporting the same version is
+    /// replaced, as is one recorded before builds were.
+    #[test]
+    fn a_recorded_agent_of_another_build_is_incompatible() {
+        assert_eq!(build_compatibility(BUILD, BUILD), Compatibility::Compatible);
+        assert_eq!(
+            build_compatibility("ba9876543210", BUILD),
+            Compatibility::Incompatible(Incompatibility::Build {
+                running: "ba9876543210".into(),
+                deploying: BUILD.into(),
+            })
+        );
+        assert_eq!(
+            build_compatibility("", BUILD),
+            Compatibility::Incompatible(Incompatibility::Build {
+                running: String::new(),
+                deploying: BUILD.into(),
+            })
+        );
+        let text = Incompatibility::Build {
+            running: "ba9876543210".into(),
+            deploying: BUILD.into(),
+        }
+        .to_string();
+        assert!(
+            text.contains("ba9876543210") && text.contains(BUILD),
+            "{text}"
         );
     }
 
