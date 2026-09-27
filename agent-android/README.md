@@ -127,7 +127,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.2.0 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.2.1 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -155,7 +155,8 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
-| 0.2.0 | From the agent of task 4.11 on, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. Builds from task 3.7 on honor the snapshot request's `evict_event_less`, which earlier 0.2.0 builds skip, reading with their cache. |
+| 0.2.1 | From the agent of task 10.9 on. Their snapshots carry what 0.2.0 snapshots carry; the difference is in how a read behaves. A read spends at most 100 ms on retries of children whose fetch throws, a walk that finds a child's parent gone or changed starts again from the window roots, and a Compose re-read yields to a snapshot or resync request, so that a tap taking a screen away mid-walk does not hold a snapshot past its deadline, as it can on 0.2.0. The snapshot trace line adds `queued_ms` and `restarts`. To the driver, an agent reporting 0.2.0 is another version. |
+| 0.2.0 | From the agent of task 4.11 to the last one before task 10.9, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. Builds from task 3.7 on honor the snapshot request's `evict_event_less`, which earlier 0.2.0 builds skip, reading with their cache. |
 | 0.1.0 | Every build from the banner-only agent of task 1.5 to the agent of task 4.11, both sides of task 3.6 included: 0.1.0 builds differ in what their snapshots carry, and only the driver's build digest tells them apart. |
 
 ## Serving the protocol
@@ -442,9 +443,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
 
 | Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
 | --- | --- | --- |
-| `classes.dex` | 126,448 bytes | 2,433,604 bytes |
-| `mobile-agent-android.jar` (deflated) | 64,751 bytes | 729,489 bytes |
-| Dex contents | 156 classes, 770 method references | 1,227 classes, 13,384 method references |
+| `classes.dex` | 134,864 bytes | 2,441,728 bytes |
+| `mobile-agent-android.jar` (deflated) | 69,035 bytes | 732,314 bytes |
+| Dex contents | 164 classes, 800 method references | 1,231 classes, 13,411 method references |
 | Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
 `test.sh` fails when `classes.dex` is not under 300,000 bytes (task 4.10).
