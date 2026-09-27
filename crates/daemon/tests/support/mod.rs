@@ -175,23 +175,28 @@ impl Daemon {
         self.child.id()
     }
 
-    /// Waits until the socket accepts connections, failing the test with the
-    /// daemon's error output if it exits first.
+    /// Waits until this daemon serves: its pid is in the pid file and the
+    /// socket accepts connections. A daemon it replaces may still accept
+    /// on the socket meanwhile. Fails the test with the daemon's error
+    /// output if it exits first.
     pub fn wait_ready(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            if UnixStream::connect(self.socket()).is_ok() {
+            let ours = self
+                .file(PID)
+                .is_some_and(|pid| pid.trim() == self.pid().to_string());
+            if ours && UnixStream::connect(self.socket()).is_ok() {
                 return;
             }
             if let Some(status) = self.child.try_wait().expect("the daemon can be polled") {
                 panic!(
-                    "the daemon exited with {status} before accepting connections: {}",
+                    "the daemon exited with {status} before serving: {}",
                     self.stderr()
                 );
             }
             assert!(
                 Instant::now() < deadline,
-                "the daemon did not accept connections within 10 s"
+                "the daemon did not serve within 10 s"
             );
             std::thread::sleep(Duration::from_millis(10));
         }

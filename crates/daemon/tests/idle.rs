@@ -36,20 +36,25 @@ fn requests_postpone_the_idle_exit() {
         .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "600")
         .start();
     let busy_until = Instant::now() + Duration::from_millis(1500);
+    let mut last = Instant::now();
     while Instant::now() < busy_until {
         let status = daemon.request(json!({"action": "status"}));
         assert_eq!(status["success"], true, "{status}");
+        last = Instant::now();
         std::thread::sleep(Duration::from_millis(150));
     }
     assert!(
         daemon.is_running(),
         "requests every 150 ms keep the daemon up"
     );
-    let quiet = Instant::now();
     daemon
         .wait_exit(Duration::from_secs(5))
         .expect("the daemon exits once the requests stop");
-    assert!(quiet.elapsed() >= Duration::from_millis(500));
+    let quiet = last.elapsed();
+    assert!(
+        quiet >= Duration::from_millis(600),
+        "exited {quiet:?} after the last request"
+    );
 }
 
 #[test]
