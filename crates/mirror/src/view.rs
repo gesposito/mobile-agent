@@ -12,7 +12,12 @@
 //!    services compute a name (design D5);
 //! 4. a node that repeats its parent's role, name and identifier, as XCTest
 //!    reports UIKit's nested alert buttons, is folded into the parent;
-//! 5. the top-most modal (a modal window, or an alert or dialog node) cuts
+//! 5. a field with no label of its own takes the label of the container it
+//!    sits in, when that container holds no other field, as React Native
+//!    lays out a field marked accessible with a label (Ignite's sign-in
+//!    fields in the React Native smoke test); the container is then not
+//!    listed again;
+//! 6. the top-most modal (a modal window, or an alert or dialog node) cuts
 //!    what lies outside it, since the Simulator's reader still returns the
 //!    screen under an alert (spike S4); keyboard windows are collapsed.
 
@@ -54,6 +59,8 @@ pub(crate) struct Facts {
     pub signature: u64,
     /// Folded into an ancestor: its label, its role, or a duplicate of it.
     pub absorbed: bool,
+    /// A container whose label names the one field inside it.
+    pub lent: bool,
     pub hidden: Hidden,
 }
 
@@ -123,6 +130,7 @@ fn window_facts(window: &Win, scale: f64) -> Vec<Facts> {
     promote_roles(window, &mut out);
     name_from_descendants(window, &mut out);
     fold_duplicates(window, &mut out);
+    lend_container_labels(window, &mut out);
     if window.kind == WindowType::INPUT_METHOD {
         for facts in &mut out {
             facts.hidden = Hidden::Keyboard;
@@ -166,6 +174,7 @@ fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
         checked: checkable.then(|| node.flags.contains(NodeFlags::CHECKED)),
         signature: 0,
         absorbed: false,
+        lent: false,
         hidden: Hidden::No,
     }
 }
@@ -287,6 +296,57 @@ fn fold_duplicates(window: &Win, facts: &mut [Facts]) {
             let folded = &mut facts[i];
             folded.absorbed = true;
             folded.bears_ref = false;
+        }
+    }
+}
+
+/// Whether a node takes text.
+fn field(node: &RNode, role: Role) -> bool {
+    node.editable() || matches!(role, Role::Textbox | Role::Searchbox)
+}
+
+/// How many fields lie below `root`.
+fn fields_below(window: &Win, facts: &[Facts], root: usize) -> usize {
+    let mut count = 0;
+    let mut stack: Vec<usize> = window.nodes[root].children.clone();
+    while let Some(d) = stack.pop() {
+        if field(&window.nodes[d], facts[d].role) && !facts[d].absorbed {
+            count += 1;
+        }
+        stack.extend(window.nodes[d].children.iter().copied());
+    }
+    count
+}
+
+/// Names each field without a label of its own after its nearest labelled
+/// ancestor, when that ancestor is a container rather than an element of
+/// its own (not actionable, not the window's root) and holds no other
+/// field. The container's label then names the field alone.
+fn lend_container_labels(window: &Win, facts: &mut [Facts]) {
+    for i in 0..window.nodes.len() {
+        let f = &facts[i];
+        if !f.name.is_empty() || f.absorbed || !field(&window.nodes[i], f.role) {
+            continue;
+        }
+        let mut up = window.nodes[i].parent;
+        while let Some(a) = up {
+            let container = &facts[a];
+            if container.actionable {
+                break;
+            }
+            if !container.name.is_empty() {
+                let lends = matches!(container.role, Role::Generic | Role::Group)
+                    && !container.absorbed
+                    && window.nodes[a].parent.is_some()
+                    && fields_below(window, facts, a) == 1;
+                if lends {
+                    let name = container.name.clone();
+                    facts[a].lent = true;
+                    facts[i].name = name;
+                }
+                break;
+            }
+            up = window.nodes[a].parent;
         }
     }
 }

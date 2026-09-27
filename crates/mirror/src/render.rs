@@ -5,8 +5,9 @@
 //! which is one `- keyboard` line. Within a window, a node is listed when it
 //! is visible and not absorbed or covered, and, in an interactive listing,
 //! when it has a ref, as agent-browser's `-i`; in a full listing, unnamed
-//! generic containers, unnamed text and images and window roots are skipped
-//! and their children listed in their place. Scroll hints sit next to their
+//! generic containers, containers whose label names the field inside them,
+//! unnamed text and images and window roots are skipped and their children
+//! listed in their place. Scroll hints sit next to their
 //! container's children: content above or to the left before them, below or
 //! to the right after them.
 
@@ -55,9 +56,10 @@ fn listed_in_full(facts: &Facts, node: &RNode) -> bool {
         return false;
     }
     match facts.role {
-        Role::Generic | Role::Group | Role::Text | Role::Image => {
-            !facts.name.is_empty() || node.identifier.is_some()
+        Role::Generic | Role::Group => {
+            (!facts.name.is_empty() && !facts.lent) || node.identifier.is_some()
         }
+        Role::Text | Role::Image => !facts.name.is_empty() || node.identifier.is_some(),
         _ => true,
     }
 }
