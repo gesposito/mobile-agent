@@ -1,12 +1,6 @@
-//! `mobile-agent` CLI: thin client and output formatting.
+//! `mobile-agent`: the CLI of the mobile automation daemon.
 
-fn main() {}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
+fn main() {
+    eprintln!("mobile-agent: not implemented");
+    std::process::exit(1);
 }
