@@ -391,8 +391,13 @@ setting they change.
 ## Spec scenarios and their checks
 
 Every agent-side scenario of `specs/android-driver/spec.md`, and the
-agent-side behaviour of `specs/device-protocol/spec.md`, maps to a named check.
-Rust tests are `host-tests/tests/<file>.rs::<name>`.
+agent-side behaviour of `specs/device-protocol/spec.md`, maps to a named
+check. Rust tests are `host-tests/tests/<file>.rs::<name>`; `test.sh` names
+its checks in its `ok:` lines. Two requirements of the android-driver spec
+have no agent side and are not listed: *Target discovery*, which is the
+host's adb client, and *Emulator fast path*, which is the host's gRPC client
+(both in `crates/android`). *Request multiplexing* is the protocol crate's;
+the agent answers by id and its tests exercise it throughout.
 
 | Requirement | Scenario | Checks |
 |---|---|---|
@@ -431,4 +436,4 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | | No process left after the host disconnects | `lifecycle::after_the_host_disconnects_the_agent_exits_within_its_idle_bound`, `lifecycle::an_agent_no_host_ever_reaches_exits_within_its_idle_bound` |
 | | App restarted | `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` |
 | | Rotation | `lifecycle::the_same_agent_serves_snapshots_across_a_rotation` |
-| Banner and arguments | | `test.sh` |
+| Banner and arguments, the shrunk dex | | `test.sh`: `--version` and no arguments print the banner, an unknown argument and `serve` without a socket name exit 2, `classes.dex` is under 300 KB, no agent process remains |
