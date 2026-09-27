@@ -23,6 +23,8 @@ pub enum Failure {
     Nil,
     /// The call's completion handler did not run within this time.
     NoCompletion(Duration),
+    /// Rust code in the call panicked, and the driver caught it.
+    Panic(String),
 }
 
 impl fmt::Display for Failure {
@@ -36,6 +38,7 @@ impl fmt::Display for Failure {
             } => write!(f, "failed with {domain} {code}: {description}"),
             Failure::Nil => f.write_str("returned nil"),
             Failure::NoCompletion(after) => write!(f, "did not complete within {after:?}"),
+            Failure::Panic(message) => write!(f, "panicked: {message}"),
         }
     }
 }
@@ -75,6 +78,12 @@ pub enum Error {
         transport: crate::model::TransportKind,
         reason: String,
     },
+    /// A failure inside the private framework layer took this device out of
+    /// service; `reset_target` brings it back.
+    Unavailable {
+        target: String,
+        diagnostics: crate::model::Diagnostics,
+    },
     /// No input transport works for this host and runtime.
     NoInputTransport {
         /// The host's CoreSimulator and Xcode versions.
@@ -103,6 +112,7 @@ impl Error {
             Error::Unsupported { .. } => "unsupported",
             Error::InputUnavailable { .. } => "input_unavailable",
             Error::NoInputTransport { .. } => "no_input_transport",
+            Error::Unavailable { .. } => "target_unavailable",
         }
     }
 }
@@ -132,6 +142,14 @@ impl fmt::Display for Error {
             Error::InvalidArgument(reason) => f.write_str(reason),
             Error::Frame { reason } => write!(f, "frame capture failed: {reason}"),
             Error::Unsupported { what } => write!(f, "{what} is not supported"),
+            Error::Unavailable {
+                target,
+                diagnostics,
+            } => write!(
+                f,
+                "Simulator {target} is unavailable: {} {} (with {}); reset the target to use it again",
+                diagnostics.call, diagnostics.failure, diagnostics.host
+            ),
             Error::NoInputTransport {
                 host,
                 runtime,

@@ -52,6 +52,15 @@ impl SimulatorDriver {
     pub fn prepare_accessibility(&self, _target: &str) -> Result<PreferencesOutcome> {
         match *self {}
     }
+
+    pub fn reset_target(&self, _target: &str) -> Result<()> {
+        match *self {}
+    }
+
+    #[cfg(feature = "fault-injection")]
+    pub fn inject_fault(&self, _target: &str) -> Result<()> {
+        match *self {}
+    }
 }
 
 impl Lifecycle for SimulatorDriver {

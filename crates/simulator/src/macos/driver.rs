@@ -128,6 +128,21 @@ impl SimulatorDriver {
         self.set.delete(&device)
     }
 
+    /// Returns a device that a failure took out of service to use, dropping
+    /// its sessions so the next request opens them anew.
+    pub fn reset_target(&self, target: &str) -> Result<()> {
+        let _ = target;
+        unimplemented!("task 6.8: failure containment")
+    }
+
+    /// Makes the next private framework call made for `target` raise an
+    /// Objective-C exception inside the driver's guard.
+    #[cfg(feature = "fault-injection")]
+    pub fn inject_fault(&self, target: &str) -> Result<()> {
+        let _ = target;
+        unimplemented!("task 6.8: failure containment")
+    }
+
     /// Writes the accessibility preferences into a device that is shut down;
     /// `boot` does this itself.
     pub fn prepare_accessibility(&self, target: &str) -> Result<PreferencesOutcome> {
@@ -399,6 +414,7 @@ impl Lifecycle for SimulatorDriver {
                 connections: transport.connections(),
                 reason: known.as_ref().map(|t| t.reason()).unwrap_or_default(),
             }),
+            unavailable: None,
         })
     }
 }

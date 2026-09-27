@@ -31,10 +31,10 @@ pub use driver::{Frames, Input, Lifecycle};
 pub use error::{Error, Failure, Result};
 pub use frames::FrameStream;
 pub use model::{
-    BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions, Edge,
-    Frame, FrameOptions, FrameStats, Gesture, ImageFormat, InputStatus, Key, LaunchOptions,
-    Launched, Modifiers, Point, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
-    Swipe, TargetStatus, TextEntry, TextMethod, TransportChoice, TransportKind,
+    BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Diagnostics, Dispatch,
+    DriverOptions, Edge, Frame, FrameOptions, FrameStats, Gesture, ImageFormat, InputStatus, Key,
+    LaunchOptions, Launched, Modifiers, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
+    ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod, TransportChoice, TransportKind,
 };
 
 #[cfg(target_os = "macos")]

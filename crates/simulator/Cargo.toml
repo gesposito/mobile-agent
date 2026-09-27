@@ -32,3 +32,10 @@ libc = "0.2"
 default = ["turbojpeg"]
 turbojpeg = ["dep:turbojpeg"]
 jpeg-encoder = ["dep:jpeg-encoder"]
+# `SimulatorDriver::inject_fault`, which makes a target's next private call
+# raise an Objective-C exception inside the guard. Only this crate's own
+# tests enable it, through the dev-dependency on itself below.
+fault-injection = []
+
+[dev-dependencies]
+simulator = { path = ".", features = ["fault-injection"] }

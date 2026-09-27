@@ -436,12 +436,26 @@ pub struct InputStatus {
     pub reason: String,
 }
 
+/// Why a device was taken out of service: the private call that failed,
+/// how, when, and on which host versions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Diagnostics {
+    pub call: String,
+    pub failure: String,
+    pub at: SystemTime,
+    /// The host's CoreSimulator and Xcode.
+    pub host: String,
+}
+
 /// What the driver knows about one device.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TargetStatus {
     pub device: DeviceInfo,
     /// The input session, once input was sent to the device.
     pub input: Option<InputStatus>,
+    /// Set once a failure in the private framework layer took the device
+    /// out of service.
+    pub unavailable: Option<Diagnostics>,
 }
 
 /// How text goes into the focused field.

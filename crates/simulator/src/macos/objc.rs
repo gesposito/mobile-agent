@@ -255,6 +255,23 @@ mod tests {
     }
 
     #[test]
+    fn a_rust_panic_in_a_call_becomes_an_error_naming_the_call() {
+        let result = guarded("a call that panics", || -> u32 {
+            panic!("a bug in the call")
+        });
+        match result {
+            Err(Error::Framework {
+                call,
+                failure: Failure::Panic(message),
+            }) => {
+                assert_eq!(call, "a call that panics");
+                assert!(message.contains("a bug in the call"), "{message}");
+            }
+            other => panic!("expected a contained panic, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_call_that_does_not_raise_returns_its_value() {
         assert_eq!(guarded("a sum", || 2 + 2), Ok(4));
     }
