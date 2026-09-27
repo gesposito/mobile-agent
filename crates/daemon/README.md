@@ -76,7 +76,7 @@ that to `daemon.log` and reports its end).
 | `daemon.sock` | the Unix socket; its path must fit in 103 bytes |
 | `daemon.pid` | the serving daemon's pid |
 | `daemon.version` | the release, `+`, then the executable's size and modification time in nanoseconds, in hex: `0.1.0+47f518.18d90f0fdb09d75c` |
-| `daemon.lock` | serializes startups |
+| `daemon.lock` | serializes startups; removed on exit when no startup holds it |
 | `daemon.log` | stderr of daemons the CLI started, appended |
 | `android-agents/` | a record per serial of the Android agents this daemon started (socket, pid, token, versions, build), mode 0600, so the next daemon reuses an agent this one left running |
 
@@ -89,7 +89,15 @@ writes its pid and version files, then binds the socket, so a client that
 reaches the socket finds the version of the daemon behind it. On exit a
 daemon removes the socket only if its inode is still the one it bound, and
 the version and pid files only if the pid file still names it, so a
-successor's files survive.
+successor's files survive; then the lock file, unless a startup holds the
+lock, and the directory when nothing else is left in it, so a daemon on a
+directory of its own, such as a test's under the temporary directory,
+leaves nothing behind. A startup that locked a lock file an exiting daemon
+then removed takes the lock again on the file at the path, so no two
+startups hold locks on different files. Shutting down and the idle exit
+wake the accept loop through a pipe it waits on beside the socket, not by
+connecting to the socket's path, so a daemon whose socket file was removed
+still stops.
 
 Because the version names the build, the CLI replaces a daemon started from
 an older build of the same release, not only from another release.
@@ -557,8 +565,8 @@ Worked around here without changing `crates/mirror`:
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Sessions | Claimed target | `claims::a_claimed_target_refuses_another_session_naming_the_holder`, `claims::force_takes_the_target_over_and_the_previous_holder_is_refused`, `claims::every_target_command_claims_an_unclaimed_target`, `claims::a_released_target_serves_another_session_without_force`, `claims::the_holder_keeps_using_its_target`, `claims::status_names_the_holder_of_each_target`, `claims::a_request_without_a_session_uses_the_default_session` |
-| Daemon lifecycle | (idle exit, configurable) | `idle::the_daemon_exits_after_its_idle_timeout_and_removes_its_files`, `idle::requests_postpone_the_idle_exit`, `idle::an_idle_timeout_of_zero_disables_the_exit`, `idle::the_idle_timeout_defaults_to_one_hour`, `idle::idle_timeouts_take_the_units_agent_browser_takes` |
-| Daemon lifecycle | (version file, replacement, socket) | `lifecycle::the_daemon_writes_its_pid_and_version_files`, `lifecycle::a_daemon_of_another_version_is_shut_down_and_replaced`, `lifecycle::a_second_daemon_of_the_same_version_leaves_the_first_serving`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_a_new_one`, `lifecycle::shutdown_stops_the_daemon_and_removes_its_files`, `lifecycle::the_socket_lives_under_the_runtime_directory`, `lifecycle::an_overlong_socket_path_is_refused_with_a_hint` |
+| Daemon lifecycle | (idle exit, configurable) | `idle::the_daemon_exits_after_its_idle_timeout_and_removes_its_files`, `idle::requests_postpone_the_idle_exit`, `idle::an_idle_timeout_of_zero_disables_the_exit`, `idle::the_idle_timeout_defaults_to_one_hour`, `idle::idle_timeouts_take_the_units_agent_browser_takes`, `idle::a_daemon_whose_socket_file_was_removed_still_exits_when_idle` (task 8.14) |
+| Daemon lifecycle | (version file, replacement, socket) | `lifecycle::the_daemon_writes_its_pid_and_version_files`, `lifecycle::a_daemon_of_another_version_is_shut_down_and_replaced`, `lifecycle::a_second_daemon_of_the_same_version_leaves_the_first_serving`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_a_new_one`, `lifecycle::shutdown_stops_the_daemon_and_removes_its_files`, `lifecycle::the_socket_lives_under_the_runtime_directory`, `lifecycle::an_overlong_socket_path_is_refused_with_a_hint`; task 8.14: `lifecycle::shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory`, `server::tests::an_exiting_daemon_removes_the_lock_unless_a_startup_holds_it`, `server::tests::a_startup_takes_the_lock_again_after_an_exit_removed_its_file` |
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
 | Command grammar | Interactive snapshot output | `lifecycle::a_snapshot_of_the_fake_launcher_lists_a_heading_and_two_buttons`, `lifecycle::devices_lists_every_fake_target_with_its_platform_and_class`, `lifecycle::open_launches_an_installed_app_and_refuses_an_unknown_one` |
 | Command grammar | (keys, element arguments) | `keys::tests::*`, `handlers::aim::tests::arguments_are_refs_identifiers_texts_or_roles` |

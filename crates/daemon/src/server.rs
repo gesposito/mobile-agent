@@ -8,11 +8,16 @@
 //! SIGTERM and SIGKILL if it does not) and replaced. The new daemon writes
 //! its pid and version files before it binds the socket, so a client that
 //! reaches the socket finds the version of the daemon behind it. A daemon
-//! removes only files that are still its own when it exits.
+//! removes only files that are still its own when it exits, then the lock
+//! file when no startup holds it, and the directory when that empties it.
+//!
+//! The accept loop waits on the listener and on a pipe of its own, so
+//! stopping wakes it without the socket's path, which may be gone.
 
 use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, PipeReader, PipeWriter, Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -40,6 +45,10 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long a daemon of another version gets to leave on request.
 const REPLACE_WAIT: Duration = Duration::from_secs(5);
+
+/// How many times a startup takes the lock again after an exiting daemon
+/// removed the lock file it had opened.
+const LOCK_ATTEMPTS: u32 = 10;
 
 const SIGKILL: i32 = 9;
 const SIGTERM: i32 = 15;
@@ -185,6 +194,8 @@ pub(crate) struct Daemon {
     activity: Mutex<Activity>,
     changed: Condvar,
     stopping: AtomicBool,
+    /// Wakes the accept loop: a byte written here ends its wait.
+    wake: PipeWriter,
 }
 
 struct Activity {
@@ -218,12 +229,12 @@ impl Daemon {
         self.stopping.load(Ordering::SeqCst)
     }
 
-    /// Stops accepting connections: the accept loop wakes on a connection
-    /// of our own and sees the flag.
+    /// Stops accepting connections: the accept loop wakes on a byte in its
+    /// pipe, whether or not the socket's path still exists.
     fn stop(&self) {
         if !self.stopping.swap(true, Ordering::SeqCst) {
             self.changed.notify_all();
-            let _ = UnixStream::connect(self.paths.socket());
+            let _ = (&self.wake).write_all(&[1]);
         }
     }
 }
@@ -239,21 +250,8 @@ pub fn run(options: Options) -> Result<Exit, String> {
     })?;
     let paths = Paths::new(options.socket_dir);
     paths.check_socket_len()?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(paths.dir())
-        .map_err(|e| format!("cannot create {}: {e}", paths.dir().display()))?;
     let version = paths::own_version();
-    let lock_file = File::options()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(paths.lock())
-        .map_err(|e| format!("cannot open {}: {e}", paths.lock().display()))?;
-    lock_file
-        .lock()
-        .map_err(|e| format!("cannot lock {}: {e}", paths.lock().display()))?;
+    let lock_file = take_lock(&paths)?;
     if let Ok(stream) = UnixStream::connect(paths.socket()) {
         let pid = read_pid(&paths);
         let recorded = fs::read_to_string(paths.version()).unwrap_or_default();
@@ -271,6 +269,10 @@ pub fn run(options: Options) -> Result<Exit, String> {
         .map_err(|e| format!("cannot listen on {}: {e}", paths.socket().display()))?;
     let socket_id = file_id(&paths.socket());
     drop(lock_file);
+    let (woken, wake) = std::io::pipe().map_err(|e| format!("cannot create a pipe: {e}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("cannot listen on {}: {e}", paths.socket().display()))?;
 
     let daemon = Arc::new(Daemon {
         registry: Mutex::new(Registry::new(drivers)),
@@ -284,6 +286,7 @@ pub fn run(options: Options) -> Result<Exit, String> {
         }),
         changed: Condvar::new(),
         stopping: AtomicBool::new(false),
+        wake,
     });
     eprintln!(
         "mobile-agent-daemon: serving {} (pid {}, version {version})",
@@ -294,15 +297,24 @@ pub fn run(options: Options) -> Result<Exit, String> {
         let watched = Arc::clone(&daemon);
         std::thread::spawn(move || watch_idle(&watched, idle));
     }
-    for stream in listener.incoming() {
-        if daemon.stopping() {
-            break;
+    while !daemon.stopping() {
+        match ready(&listener, &woken) {
+            Ok(Ready::Woken) => break,
+            Ok(Ready::Connection) => {}
+            Err(error) => {
+                eprintln!("mobile-agent-daemon: waiting for connections failed: {error}");
+                break;
+            }
         }
-        match stream {
-            Ok(stream) => {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                // A connection accepted from a non-blocking listener is
+                // non-blocking on macOS; serving reads with timeouts.
+                let _ = stream.set_nonblocking(false);
                 let served = Arc::clone(&daemon);
                 std::thread::spawn(move || serve(&served, stream));
             }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             Err(error) => eprintln!("mobile-agent-daemon: accept failed: {error}"),
         }
     }
@@ -315,7 +327,108 @@ pub fn run(options: Options) -> Result<Exit, String> {
         let _ = fs::remove_file(paths.version());
         let _ = fs::remove_file(paths.pid());
     }
+    release_dir(&paths);
     Ok(Exit::Stopped)
+}
+
+/// What the accept loop woke for.
+enum Ready {
+    /// A connection is waiting on the listener.
+    Connection,
+    /// The pipe has a byte: the daemon is stopping.
+    Woken,
+}
+
+/// Waits until `listener` has a connection or `woken` has a byte.
+fn ready(listener: &UnixListener, woken: &PipeReader) -> std::io::Result<Ready> {
+    let mut fds = [
+        libc::pollfd {
+            fd: listener.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: woken.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        },
+    ];
+    loop {
+        // SAFETY: `fds` is an array of two initialized pollfd structures
+        // that outlives the call, and its length goes with it.
+        let found = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) };
+        if found >= 0 {
+            break;
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+    if fds[1].revents != 0 {
+        Ok(Ready::Woken)
+    } else {
+        Ok(Ready::Connection)
+    }
+}
+
+/// Takes the lock that serializes startups, creating the directory and
+/// the lock file as needed. An exiting daemon removes the lock file under
+/// the lock, so a startup that locked a file no longer at the path takes
+/// the lock again: two startups never hold locks on different files.
+fn take_lock(paths: &Paths) -> Result<File, String> {
+    for _ in 0..LOCK_ATTEMPTS {
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(paths.dir())
+            .map_err(|e| format!("cannot create {}: {e}", paths.dir().display()))?;
+        let file = match File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(paths.lock())
+        {
+            Ok(file) => file,
+            // The directory went with an exiting daemon's lock file.
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!("cannot open {}: {error}", paths.lock().display()));
+            }
+        };
+        file.lock()
+            .map_err(|e| format!("cannot lock {}: {e}", paths.lock().display()))?;
+        if same_file(&file, &paths.lock()) {
+            return Ok(file);
+        }
+    }
+    Err(format!(
+        "cannot lock {}: daemons exiting at the same time kept removing it",
+        paths.lock().display()
+    ))
+}
+
+/// Removes the lock file, unless a startup holds it, and then the
+/// directory, if nothing else is in it, so a daemon on a directory of its
+/// own, such as a test's under the temporary directory, leaves nothing.
+fn release_dir(paths: &Paths) {
+    let Ok(file) = File::options().write(true).open(paths.lock()) else {
+        return;
+    };
+    if file.try_lock().is_err() || !same_file(&file, &paths.lock()) {
+        return;
+    }
+    let _ = fs::remove_file(paths.lock());
+    // Fails, leaving it, when anything else is in it.
+    let _ = fs::remove_dir(paths.dir());
+}
+
+/// Whether `path` names the file `file` has open.
+fn same_file(file: &File, path: &Path) -> bool {
+    match (file.metadata(), fs::metadata(path)) {
+        (Ok(open), Ok(named)) => open.dev() == named.dev() && open.ino() == named.ino(),
+        _ => false,
+    }
 }
 
 /// Writes a sidecar file whole, through a temporary file and a rename.
@@ -537,6 +650,57 @@ mod tests {
         assert_eq!(options.fake.as_deref(), Some("ios"));
         assert_eq!(options.fake_frame_delay, Duration::from_secs(2));
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
+    }
+
+    /// A fresh directory under the temporary directory, not created.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("daemon-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// Task 8.14: an exiting daemon removes the lock file and then the
+    /// directory, but not while a startup holds the lock, and not a
+    /// directory that holds anything else.
+    #[test]
+    fn an_exiting_daemon_removes_the_lock_unless_a_startup_holds_it() {
+        let dir = scratch("release");
+        let paths = Paths::new(&dir);
+        let starting = take_lock(&paths).unwrap();
+        release_dir(&paths);
+        assert!(paths.lock().exists(), "a startup holds the lock");
+        drop(starting);
+        fs::write(paths.log(), "started\n").unwrap();
+        release_dir(&paths);
+        assert!(!paths.lock().exists());
+        assert!(dir.exists(), "the log keeps the directory");
+        fs::remove_file(paths.log()).unwrap();
+        drop(take_lock(&paths).unwrap());
+        release_dir(&paths);
+        assert!(!dir.exists(), "nothing else was in it");
+    }
+
+    /// Task 8.14: a startup waiting on the lock of a file an exiting daemon
+    /// removes takes the lock again on the file at the path, so no two
+    /// startups hold locks on different files.
+    #[test]
+    fn a_startup_takes_the_lock_again_after_an_exit_removed_its_file() {
+        let dir = scratch("retake");
+        let paths = Paths::new(&dir);
+        let exiting = take_lock(&paths).unwrap();
+        let starting = std::thread::spawn({
+            let paths = paths.clone();
+            move || take_lock(&paths)
+        });
+        // The startup has opened the file and waits on its lock meanwhile.
+        std::thread::sleep(Duration::from_millis(100));
+        fs::remove_file(paths.lock()).unwrap();
+        fs::remove_dir(&dir).unwrap();
+        drop(exiting);
+        let taken = starting.join().unwrap().unwrap();
+        assert!(same_file(&taken, &paths.lock()));
+        drop(taken);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
