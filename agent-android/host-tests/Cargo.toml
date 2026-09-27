@@ -19,3 +19,6 @@ correctness = { level = "deny", priority = -1 }
 
 [dependencies]
 protocol = { path = "../../crates/protocol" }
+
+[dev-dependencies]
+png = "0.18.1"
