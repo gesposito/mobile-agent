@@ -193,6 +193,12 @@ impl Agent {
         }
     }
 
+    /// Drops the stdout lines received so far, so the next [`Agent::wait_line`]
+    /// sees only later ones.
+    pub fn drain_lines(&mut self) {
+        while self.stdout.try_recv().is_ok() {}
+    }
+
     /// Everything the agent printed so far, stdout and stderr interleaved.
     pub fn transcript(&self) -> String {
         self.output.lock().unwrap().join("\n")
