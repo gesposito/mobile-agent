@@ -1,8 +1,13 @@
 //! Refs: the `eN` handles snapshots print, as agent-browser numbers them.
 //!
-//! A ref names one element for as long as the element survives from read to
-//! read. Numbers only grow and are never reused, so a ref whose element is
-//! gone can only be refused as stale, never resolve to another element.
+//! A ref names one control: an element, and for an element without an
+//! identifier, also its accessible name. It names that control for as long
+//! as the element survives from read to read and, without an identifier,
+//! keeps the name: an element renamed, as a screen transition renames a
+//! button that stays where it was, is another control, whose snapshot gives
+//! it a fresh ref. Numbers only grow and are never reused, so a ref whose
+//! control is gone can only be refused as stale, never resolve to another
+//! control.
 
 use core::fmt;
 use std::collections::HashMap;
@@ -52,6 +57,9 @@ pub(crate) struct Issued {
     pub name: String,
     /// The replica generation the ref was issued in.
     pub generation: u64,
+    /// The element, having no identifier, was renamed and given a fresh
+    /// ref: this one named another control.
+    pub retired: bool,
 }
 
 /// What the table knows about a ref.
@@ -79,16 +87,28 @@ impl RefTable {
         }
     }
 
-    /// The element's ref, issuing the next number when it has none.
-    pub fn assign(&mut self, element: ElementId, role: Role, name: &str, generation: u64) -> Ref {
-        if let Some(&reference) = self.by_element.get(&element) {
-            if let Some(issued) = self.issued.get_mut(&reference) {
+    /// The element's ref, issuing the next number when it has none, or when
+    /// it has no identifier (`identified` false) and its ref was issued under
+    /// another name, which retires that ref.
+    pub fn assign(
+        &mut self,
+        element: ElementId,
+        role: Role,
+        name: &str,
+        identified: bool,
+        generation: u64,
+    ) -> Ref {
+        if let Some(&reference) = self.by_element.get(&element)
+            && let Some(issued) = self.issued.get_mut(&reference)
+        {
+            if identified || issued.name == name {
                 issued.role = role;
                 if issued.name != name {
                     issued.name = name.to_owned();
                 }
+                return reference;
             }
-            return reference;
+            issued.retired = true;
         }
         let reference = Ref(self.next);
         self.next += 1;
@@ -100,14 +120,18 @@ impl RefTable {
                 role,
                 name: name.to_owned(),
                 generation,
+                retired: false,
             },
         );
         reference
     }
 
-    /// The element's ref, if it has one.
-    pub fn of(&self, element: ElementId) -> Option<Ref> {
-        self.by_element.get(&element).copied()
+    /// The element's ref, if it has one that names it by `name` or, for an
+    /// identified element, by any name.
+    pub fn of(&self, element: ElementId, name: &str, identified: bool) -> Option<Ref> {
+        let reference = *self.by_element.get(&element)?;
+        let issued = self.issued.get(&reference)?;
+        (identified || issued.name == name).then_some(reference)
     }
 
     pub fn lookup(&self, reference: Ref) -> Lookup<'_> {
@@ -120,8 +144,8 @@ impl RefTable {
         }
     }
 
-    /// Forgets the elements that `live` no longer holds once the table grows
-    /// past its bound, oldest refs first.
+    /// Forgets retired refs and those of the elements that `live` no longer
+    /// holds once the table grows past its bound, oldest refs first.
     pub fn prune(&mut self, live: impl Fn(ElementId) -> bool) {
         if self.issued.len() <= KEEP {
             return;
@@ -129,13 +153,15 @@ impl RefTable {
         let mut dead: Vec<Ref> = self
             .issued
             .iter()
-            .filter(|(_, issued)| !live(issued.element))
+            .filter(|(_, issued)| issued.retired || !live(issued.element))
             .map(|(reference, _)| *reference)
             .collect();
         dead.sort_unstable();
         let excess = self.issued.len() - KEEP;
         for reference in dead.into_iter().take(excess) {
-            if let Some(issued) = self.issued.remove(&reference) {
+            if let Some(issued) = self.issued.remove(&reference)
+                && self.by_element.get(&issued.element) == Some(&reference)
+            {
                 self.by_element.remove(&issued.element);
             }
         }

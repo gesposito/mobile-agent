@@ -265,8 +265,13 @@ impl Mirror {
                     let facts = &view.windows[w][i];
                     let generation = self.replica.generation;
                     let reference = facts.bears_ref.then(|| {
-                        self.refs
-                            .assign(node.element, facts.role, &facts.name, generation)
+                        self.refs.assign(
+                            node.element,
+                            facts.role,
+                            &facts.name,
+                            node.identifier.is_some(),
+                            generation,
+                        )
                     });
                     if let Some(reference) = reference {
                         listed.push((facts.signature, reference));
@@ -375,7 +380,9 @@ impl Mirror {
         Ok(element(window, &window.nodes[i], &facts, Some(reference)))
     }
 
-    /// Where the element `reference` names is in the replica.
+    /// Where the element `reference` names is in the replica. The element
+    /// must still be the control the ref was issued for: without an
+    /// identifier, under the same accessible name.
     fn locate_ref(&self, reference: Ref) -> Result<(usize, usize), MirrorError> {
         match self.refs.lookup(reference) {
             Lookup::Unknown => Err(MirrorError::UnknownRef(reference.to_string())),
@@ -400,13 +407,20 @@ impl Mirror {
                         was,
                     });
                 }
-                self.replica
-                    .locate(issued.element)
-                    .ok_or(MirrorError::StaleRef {
-                        reference,
-                        cause: StaleCause::Removed,
-                        was,
-                    })
+                let gone = MirrorError::StaleRef {
+                    reference,
+                    cause: StaleCause::Removed,
+                    was,
+                };
+                let Some((w, i)) = self.replica.locate(issued.element) else {
+                    return Err(gone);
+                };
+                let renamed = self.replica.windows[w].nodes[i].identifier.is_none()
+                    && view::facts_of(&self.replica, w, i).name != issued.name;
+                if issued.retired || renamed {
+                    return Err(gone);
+                }
+                Ok((w, i))
             }
         }
     }
@@ -674,7 +688,9 @@ impl Mirror {
                 if enabled && !node.flags.contains(NodeFlags::ENABLED) {
                     continue;
                 }
-                let reference = self.refs.of(node.element);
+                let reference = self
+                    .refs
+                    .of(node.element, &facts.name, node.identifier.is_some());
                 if selector.matches(
                     &facts.name,
                     facts.value.as_deref(),
