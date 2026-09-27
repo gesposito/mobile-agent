@@ -22,7 +22,10 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use simulator::{Frame, FrameStream, LaunchOptions, Lifecycle, SimulatorDriver};
+use simulator::{
+    Frame, FrameStream, Frames, ImageFormat, LaunchOptions, Lifecycle, ScreenshotOptions,
+    SimulatorDriver,
+};
 
 /// The variable that enables the integration tests.
 pub const UDID_VARIABLE: &str = "MOBILE_AGENT_SIM_UDID";
@@ -374,4 +377,135 @@ pub fn process_cpu() -> Duration {
         Duration::new(t.tv_sec as u64, 0) + Duration::from_micros(t.tv_usec as u64)
     };
     time(usage.ru_utime) + time(usage.ru_stime)
+}
+
+/// Where the Expo fixture's controls sit on an iPhone 17 (402x874 points),
+/// as spike S3 measured them.
+pub mod expo {
+    use simulator::Point;
+
+    pub const USERNAME: Point = Point { x: 201.0, y: 113.0 };
+    pub const PASSWORD: Point = Point { x: 201.0, y: 168.0 };
+    pub const SIGN_IN: Point = Point { x: 201.0, y: 218.0 };
+    /// Blank space between the status line and the tab bar.
+    pub const BLANK: Point = Point { x: 201.0, y: 520.0 };
+    pub const TAB_LOGIN: Point = Point { x: 40.2, y: 812.0 };
+    pub const TAB_LIST: Point = Point { x: 120.6, y: 812.0 };
+    /// The status line under Sign in, in points: "Signed out" at launch.
+    pub const STATUS_ROWS: (f64, f64) = (258.0, 288.0);
+    /// The two text fields, in points.
+    pub const FIELD_ROWS: (f64, f64) = (90.0, 190.0);
+    /// The list between the status bar and the tab bar, in points.
+    pub const LIST_ROWS: (f64, f64) = (80.0, 770.0);
+}
+
+/// A packed BGRA screenshot scaled to 1000 pixels on its longer side.
+pub struct Raw {
+    pub width: usize,
+    pub height: usize,
+    pub bgra: Vec<u8>,
+}
+
+impl Raw {
+    /// The pixel row of a y coordinate in points on a 874-point screen.
+    pub fn row(&self, points: f64) -> usize {
+        ((points / 874.0) * self.height as f64).round() as usize
+    }
+
+    fn luma(&self, x: usize, y: usize) -> f64 {
+        let at = (y * self.width + x) * 4;
+        let [b, g, r] = [self.bgra[at], self.bgra[at + 1], self.bgra[at + 2]];
+        0.114 * f64::from(b) + 0.587 * f64::from(g) + 0.299 * f64::from(r)
+    }
+}
+
+pub fn raw_screenshot(driver: &SimulatorDriver, udid: &str) -> Raw {
+    let shot = driver
+        .screenshot(
+            udid,
+            &ScreenshotOptions {
+                max_dimension: 1000,
+                format: ImageFormat::Bgra,
+                ..ScreenshotOptions::default()
+            },
+        )
+        .expect("a raw screenshot");
+    assert_eq!(shot.format, ImageFormat::Bgra);
+    assert_eq!(
+        shot.data.len(),
+        shot.width as usize * shot.height as usize * 4
+    );
+    Raw {
+        width: shot.width as usize,
+        height: shot.height as usize,
+        bgra: shot.data,
+    }
+}
+
+/// The mean absolute brightness difference of two screenshots over the rows
+/// between `rows.0` and `rows.1` points.
+pub fn difference(a: &Raw, b: &Raw, rows: (f64, f64)) -> f64 {
+    let (top, bottom) = (a.row(rows.0), a.row(rows.1));
+    let mut total = 0.0;
+    let mut count = 0usize;
+    for y in top..bottom {
+        for x in 0..a.width {
+            total += (a.luma(x, y) - b.luma(x, y)).abs();
+            count += 1;
+        }
+    }
+    total / count.max(1) as f64
+}
+
+/// How far the content between `rows` moved up from `before` to `after`:
+/// the pixel shift at which the two agree best, the difference there, and
+/// the difference without a shift.
+pub fn vertical_shift(before: &Raw, after: &Raw, rows: (f64, f64)) -> (usize, f64, f64) {
+    let (top, bottom) = (before.row(rows.0), before.row(rows.1));
+    let compare = |shift: usize| {
+        let mut total = 0.0;
+        let mut count = 0usize;
+        for y in (top..bottom.saturating_sub(shift)).step_by(2) {
+            for x in (0..before.width).step_by(3) {
+                total += (after.luma(x, y) - before.luma(x, y + shift)).abs();
+                count += 1;
+            }
+        }
+        total / count.max(1) as f64
+    };
+    let unshifted = compare(0);
+    let span = bottom - top;
+    let (shift, best) = (8..span * 3 / 4)
+        .map(|shift| (shift, compare(shift)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .expect("some shift is compared");
+    (shift, best, unshifted)
+}
+
+/// Frames until the display has been quiet for `quiet`, from a new
+/// subscription, and the last one.
+pub fn settle(driver: &SimulatorDriver, udid: &str) -> (FrameStream, Frame) {
+    let stream = driver
+        .frames(udid, &simulator::FrameOptions::default())
+        .expect("the display is subscribed");
+    let settled = drain_until_quiet(
+        &stream,
+        None,
+        Duration::from_millis(700),
+        Duration::from_secs(15),
+    );
+    (stream, settled)
+}
+
+/// The first frame within `timeout` whose content differs from `from`.
+pub fn wait_for_change(stream: &FrameStream, from: &Frame, timeout: Duration) -> Option<Frame> {
+    let deadline = Instant::now() + timeout;
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        if let Some(frame) = stream.next(remaining)
+            && frame.content_hash != from.content_hash
+        {
+            return Some(frame);
+        }
+    }
+    None
 }

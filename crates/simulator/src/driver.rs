@@ -6,11 +6,13 @@
 //! one device has.
 
 use std::path::Path;
+use std::time::Duration;
 
 use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
-    BootReport, DeviceInfo, FrameOptions, LaunchOptions, Launched, Screenshot, ScreenshotOptions,
+    BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, Key, LaunchOptions, Launched,
+    Point, Screenshot, ScreenshotOptions, Swipe,
 };
 
 /// Lists Simulators and drives their lifecycle (simulator-driver spec,
@@ -48,4 +50,26 @@ pub trait Frames {
 
     /// A JPEG of the display as it is now.
     fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot>;
+}
+
+/// Touches, hardware buttons and keys (simulator-driver spec, "Input
+/// actions"). Points are in iOS points on the upright screen.
+pub trait Input {
+    /// A tap: touch down and up at once, which S3 found enough.
+    fn tap(&self, target: &str, point: Point) -> Result<Dispatch>;
+
+    /// A touch held for `hold`, a long press when the hold is long enough.
+    fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch>;
+
+    /// A one-finger drag whose duration sets its velocity.
+    fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch>;
+
+    /// A gesture of one or two fingers, such as a pinch.
+    fn gesture(&self, target: &str, gesture: &Gesture) -> Result<Dispatch>;
+
+    /// A short press of a hardware button.
+    fn button(&self, target: &str, button: Button) -> Result<Dispatch>;
+
+    /// A key press, with its modifiers held around it.
+    fn key(&self, target: &str, key: Key) -> Result<Dispatch>;
 }

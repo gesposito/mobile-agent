@@ -219,7 +219,7 @@ fn a_screenshot_is_timestamped_at_the_display_size() {
         .expect("a screenshot");
     assert!(native.captured_at >= before && native.captured_at <= SystemTime::now());
     assert_eq!(
-        common::jpeg_dimensions(&native.jpeg),
+        common::jpeg_dimensions(&native.data),
         Some((native.width, native.height))
     );
     assert!(native.height > native.width, "portrait");
@@ -233,12 +233,13 @@ fn a_screenshot_is_timestamped_at_the_display_size() {
             &ScreenshotOptions {
                 max_dimension: 1000,
                 quality: 80,
+                ..ScreenshotOptions::default()
             },
         )
         .expect("a scaled screenshot");
     assert_eq!(small.height, 1000);
     assert_eq!(
-        common::jpeg_dimensions(&small.jpeg),
+        common::jpeg_dimensions(&small.data),
         Some((small.width, small.height))
     );
     if iphone_17 {

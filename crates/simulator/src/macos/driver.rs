@@ -4,15 +4,16 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::driver::{Frames, Lifecycle};
+use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::{frames, prefs};
 use crate::model::{
-    BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, FrameOptions, LaunchOptions, Launched,
-    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
+    BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
+    FrameOptions, Gesture, Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo,
+    Screenshot, ScreenshotOptions, Swipe,
 };
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
@@ -38,6 +39,12 @@ impl SimulatorDriver {
         let context = ServiceContext::connect()?;
         let set = context.default_set()?;
         Ok(SimulatorDriver { context, set })
+    }
+
+    /// `open` with the input transport chosen by `options`.
+    pub fn open_with(options: DriverOptions) -> Result<SimulatorDriver> {
+        let _ = options;
+        unimplemented!("task 6.3: driver options")
     }
 
     /// The installed runtimes.
@@ -255,6 +262,38 @@ impl Frames for SimulatorDriver {
     fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot> {
         let device = self.booted(target)?;
         frames::screenshot(&device, options)
+    }
+}
+
+impl Input for SimulatorDriver {
+    fn tap(&self, target: &str, point: Point) -> Result<Dispatch> {
+        let _ = (target, point);
+        unimplemented!("task 6.3: input")
+    }
+
+    fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch> {
+        let _ = (target, point, hold);
+        unimplemented!("task 6.3: input")
+    }
+
+    fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch> {
+        let _ = (target, swipe);
+        unimplemented!("task 6.3: input")
+    }
+
+    fn gesture(&self, target: &str, gesture: &Gesture) -> Result<Dispatch> {
+        let _ = (target, gesture);
+        unimplemented!("task 6.3: input")
+    }
+
+    fn button(&self, target: &str, button: Button) -> Result<Dispatch> {
+        let _ = (target, button);
+        unimplemented!("task 6.3: input")
+    }
+
+    fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
+        let _ = (target, key);
+        unimplemented!("task 6.3: input")
     }
 }
 

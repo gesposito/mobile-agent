@@ -26,7 +26,7 @@ use crate::macos::display::{
     self, Callbacks, Display, ObjectBlock, Surface, TwoObjectBlock, VoidBlock,
 };
 use crate::macos::encode::Encoder;
-use crate::model::{Frame, FrameOptions, FrameStats, Screenshot, ScreenshotOptions};
+use crate::model::{Frame, FrameOptions, FrameStats, ImageFormat, Screenshot, ScreenshotOptions};
 use crate::pipeline::{self, FrameView, Throttle, fit_within, scale_bgra};
 
 /// How long SimScreen gets to report the current surface after registration
@@ -470,11 +470,16 @@ pub fn screenshot(device: &Device, options: &ScreenshotOptions) -> Result<Screen
             continue;
         }
         let (width, height) = read.value;
+        let data = match options.format {
+            ImageFormat::Jpeg => encoder.encode(&scaled, width, height)?,
+            ImageFormat::Bgra => unimplemented!("task 6.3: raw screenshots"),
+        };
         return Ok(Screenshot {
             captured_at,
             width: width as u32,
             height: height as u32,
-            jpeg: encoder.encode(&scaled, width, height)?,
+            format: options.format,
+            data,
         });
     }
 }

@@ -3,13 +3,15 @@
 //! has no values, so none of its methods can run.
 
 use std::path::Path;
+use std::time::Duration;
 
-use crate::driver::{Frames, Lifecycle};
+use crate::driver::{Frames, Input, Lifecycle};
 use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
-    BootReport, DeviceInfo, DeviceTypeInfo, FrameOptions, LaunchOptions, Launched,
-    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
+    BootReport, Button, DeviceInfo, DeviceTypeInfo, Dispatch, DriverOptions, FrameOptions, Gesture,
+    Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
+    ScreenshotOptions, Swipe,
 };
 
 /// Drives iOS Simulators; available on macOS only.
@@ -18,6 +20,11 @@ pub enum SimulatorDriver {}
 impl SimulatorDriver {
     /// Fails with [`Error::PlatformUnsupported`].
     pub fn open() -> Result<SimulatorDriver> {
+        Err(Error::PlatformUnsupported)
+    }
+
+    /// Fails with [`Error::PlatformUnsupported`].
+    pub fn open_with(_options: DriverOptions) -> Result<SimulatorDriver> {
         Err(Error::PlatformUnsupported)
     }
 
@@ -84,6 +91,32 @@ impl Frames for SimulatorDriver {
     }
 
     fn screenshot(&self, _target: &str, _options: &ScreenshotOptions) -> Result<Screenshot> {
+        match *self {}
+    }
+}
+
+impl Input for SimulatorDriver {
+    fn tap(&self, _target: &str, _point: Point) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn press(&self, _target: &str, _point: Point, _hold: Duration) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn swipe(&self, _target: &str, _swipe: &Swipe) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn gesture(&self, _target: &str, _gesture: &Gesture) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn button(&self, _target: &str, _button: Button) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn key(&self, _target: &str, _key: Key) -> Result<Dispatch> {
         match *self {}
     }
 }

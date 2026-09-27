@@ -219,6 +219,15 @@ pub struct FrameStats {
     pub encoder: &'static str,
 }
 
+/// The encoding of a screenshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    /// Baseline JPEG.
+    Jpeg,
+    /// Packed BGRA, four bytes a pixel and no row padding.
+    Bgra,
+}
+
 /// How to take a screenshot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScreenshotOptions {
@@ -226,6 +235,7 @@ pub struct ScreenshotOptions {
     pub max_dimension: u32,
     /// JPEG quality, 1 to 100.
     pub quality: u8,
+    pub format: ImageFormat,
 }
 
 impl Default for ScreenshotOptions {
@@ -233,15 +243,151 @@ impl Default for ScreenshotOptions {
         ScreenshotOptions {
             max_dimension: 0,
             quality: 90,
+            format: ImageFormat::Jpeg,
         }
     }
 }
 
-/// A JPEG of the display, read on demand.
+/// The display, read on demand.
 #[derive(Clone, Debug)]
 pub struct Screenshot {
     pub captured_at: SystemTime,
     pub width: u32,
     pub height: u32,
-    pub jpeg: Vec<u8>,
+    pub format: ImageFormat,
+    pub data: Vec<u8>,
+}
+
+/// A position on the upright screen in iOS points, from the top left.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub fn new(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+}
+
+/// The screen edge a touch starts from. iOS reads its system gestures, such
+/// as the home indicator swipe, from this flag rather than the coordinates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Edge {
+    #[default]
+    None,
+    Top,
+    Left,
+    Bottom,
+    Right,
+}
+
+/// A one-finger drag from `from` to `to`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Swipe {
+    pub from: Point,
+    pub to: Point,
+    /// From touch-down to lift-off; with the distance it sets the velocity.
+    pub duration: Duration,
+    /// Positions sent between the two ends.
+    pub steps: u32,
+    pub edge: Edge,
+}
+
+impl Swipe {
+    /// 20 steps and no edge, as in spike S3.
+    pub fn new(from: Point, to: Point, duration: Duration) -> Swipe {
+        Swipe {
+            from,
+            to,
+            duration,
+            steps: 20,
+            edge: Edge::None,
+        }
+    }
+}
+
+/// A gesture of one or two fingers, each following a path of points that is
+/// walked at an even pace over `duration`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gesture {
+    pub fingers: Vec<Vec<Point>>,
+    pub duration: Duration,
+    pub steps: u32,
+}
+
+/// A hardware button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    Home,
+    Lock,
+    VolumeUp,
+    VolumeDown,
+    Siri,
+}
+
+/// Modifier keys held around a key press.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub option: bool,
+    pub command: bool,
+}
+
+/// A key of the USB HID keyboard page (0x07).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Key {
+    pub usage: u32,
+    pub modifiers: Modifiers,
+}
+
+/// The input transports (design D6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TransportKind {
+    /// The dtuhidd XPC service, from CoreSimulator 1155.4.
+    Dtuhid,
+    /// SimulatorKit's legacy Indigo HID client, before 1155.4.
+    Indigo,
+}
+
+impl fmt::Display for TransportKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TransportKind::Dtuhid => "dtuhidd",
+            TransportKind::Indigo => "Indigo",
+        })
+    }
+}
+
+/// How one input request went.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dispatch {
+    pub transport: TransportKind,
+    /// How long the input waited for the transport's activation reply, when
+    /// it was requested before activation completed.
+    pub activation_wait: Option<Duration>,
+    /// From the request until the first event was handed to the transport.
+    pub dispatched: Duration,
+    /// From the request until the transport had sent every event.
+    pub completed: Duration,
+    /// The events sent.
+    pub events: usize,
+}
+
+/// How the driver picks a device's input transport.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TransportChoice {
+    /// The transport of the host's CoreSimulator (design D6).
+    #[default]
+    Auto,
+    /// Only this transport, for tests and diagnosis.
+    Only(TransportKind),
+}
+
+/// How a driver is opened.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DriverOptions {
+    pub transport: TransportChoice,
 }
