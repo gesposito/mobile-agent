@@ -28,15 +28,15 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 3. Protocol crate and agent message set
 
-- [ ] 3.1 Add failing tests that round-trip every message kind (request, response, event, error with retryable flag, capability set, version list) in CBOR as decided by S5 (integer-keyed maps, positional event arrays, per-snapshot string table), then implement the schema in `crates/protocol` with minicbor, preallocating arrays from their length; verify red-then-green
-- [ ] 3.2 Add failing tests for the length-prefixed framing codec, including an oversized frame producing an explicit error and partial frames being buffered, then implement it; verify red-then-green
-- [ ] 3.3 Add failing tests for the handshake and capability negotiation covering common version, no common version and refusal of an unadvertised capability, then implement the state machine; verify red-then-green
-- [ ] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
-- [ ] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
+- [x] 3.1 Add failing tests that round-trip every message kind (request, response, event, error with retryable flag, capability set, version list) in CBOR as decided by S5 (integer-keyed maps, positional event arrays, per-snapshot string table), then implement the schema in `crates/protocol` with minicbor, preallocating arrays from their length; verify red-then-green
+- [x] 3.2 Add failing tests for the length-prefixed framing codec, including an oversized frame producing an explicit error and partial frames being buffered, then implement it; verify red-then-green
+- [x] 3.3 Add failing tests for the handshake and capability negotiation covering common version, no common version and refusal of an unadvertised capability, then implement the state machine; verify red-then-green
+- [x] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
+- [x] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
 
 ## 4. Android agent (Kotlin, `agent-android`)
 
-- [ ] 4.1 Add a failing Rust test client that expects a handshake from the agent, then implement the `app_process` entry point, argument parsing and abstract-socket server; verify the handshake completes on an emulator
+- [ ] 4.1 Add a failing Rust test client that expects a handshake from the agent, then implement the `app_process` entry point, argument parsing and abstract-socket server using the group 3 codec, switch the banner to `protocol=1` from `Protocol.VERSION` with `test.sh` updated, and list the codec in `agent-android/README.md`; verify the handshake completes on an emulator
 - [ ] 4.2 Add failing tests for ownership attach, for a conflict error while a lasting holder such as `uiautomator events` holds the role (a conflicting `uiautomator dump` dies within milliseconds), and for the likely-holder name taken from `ps`, then implement UI automation ownership with conflict detection, the interactive-windows flag with an active-window wait, and a force option; verify red-then-green on an emulator
 - [ ] 4.3 Add failing tests that the 500-node fixture returns its full count with truncation flags at lower caps and that the keyboard window appears when a field is focused, then implement tree serialization across interactive windows; verify red-then-green
 - [ ] 4.4 Add a failing test that a snapshot on the animation fixture returns within the idle bound plus read time, then implement the bounded idle wait with a default under one second and zero allowed; verify red-then-green

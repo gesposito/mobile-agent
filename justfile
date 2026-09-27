@@ -29,6 +29,10 @@ fmt-check:
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
 
+# Cross-check the Kotlin codec against the Rust golden frames on the host JVM, skipping without kotlinc
+codec-test:
+    if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the codec cross-check"; elif ! command -v kotlinc >/dev/null 2>&1; then echo "kotlinc not present, skipping the codec cross-check"; elif [ -f agent-android/codec-test.sh ]; then agent-android/codec-test.sh --host-only; else echo "agent-android/codec-test.sh not present, skipping"; fi
+
 # Build the reference fixture apps, skipping when fixtures/build.sh is absent
 fixtures-build:
     if [ -f fixtures/build.sh ]; then fixtures/build.sh; else echo "fixtures/build.sh not present, skipping"; fi
@@ -43,4 +47,4 @@ openspec-validate:
     openspec validate mobile-automation-foundation --strict
 
 # Run build, lint, fmt-check, test, agent-build, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check test agent-build fixtures-build openspec-validate
+validate: build lint fmt-check test agent-build codec-test fixtures-build openspec-validate
