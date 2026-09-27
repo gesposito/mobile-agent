@@ -19,6 +19,7 @@ mod keymap;
 mod lookup;
 mod model;
 mod pipeline;
+mod select;
 mod version;
 
 #[cfg(target_os = "macos")]

@@ -75,6 +75,15 @@ pub enum Error {
         transport: crate::model::TransportKind,
         reason: String,
     },
+    /// No input transport works for this host and runtime.
+    NoInputTransport {
+        /// The host's CoreSimulator and Xcode versions.
+        host: String,
+        /// The device's runtime.
+        runtime: String,
+        /// Every transport tried, with why it failed.
+        tried: Vec<(crate::model::TransportKind, String)>,
+    },
 }
 
 impl Error {
@@ -93,6 +102,7 @@ impl Error {
             Error::Frame { .. } => "frame_failed",
             Error::Unsupported { .. } => "unsupported",
             Error::InputUnavailable { .. } => "input_unavailable",
+            Error::NoInputTransport { .. } => "no_input_transport",
         }
     }
 }
@@ -122,6 +132,24 @@ impl fmt::Display for Error {
             Error::InvalidArgument(reason) => f.write_str(reason),
             Error::Frame { reason } => write!(f, "frame capture failed: {reason}"),
             Error::Unsupported { what } => write!(f, "{what} is not supported"),
+            Error::NoInputTransport {
+                host,
+                runtime,
+                tried,
+            } => {
+                write!(
+                    f,
+                    "no input transport works with {host} and runtime {runtime}; tried"
+                )?;
+                for (index, (transport, reason)) in tried.iter().enumerate() {
+                    let separator = if index == 0 { " " } else { "; " };
+                    write!(f, "{separator}{transport} ({reason})")?;
+                }
+                if tried.is_empty() {
+                    f.write_str(" nothing")?;
+                }
+                Ok(())
+            }
             Error::InputUnavailable { transport, reason } => {
                 write!(
                     f,

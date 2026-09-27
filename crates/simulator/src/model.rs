@@ -422,7 +422,7 @@ pub struct DriverOptions {
 }
 
 /// The input session of a device.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InputStatus {
     pub transport: TransportKind,
     /// How long the transport took to answer its activation probe; `None`
@@ -431,6 +431,9 @@ pub struct InputStatus {
     /// Connections opened to the device: one, unless the peer went away and
     /// the session reconnected.
     pub connections: u32,
+    /// Why this transport: the host version rule that chose it, or the
+    /// driver option that forced it.
+    pub reason: String,
 }
 
 /// What the driver knows about one device.

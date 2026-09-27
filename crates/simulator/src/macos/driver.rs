@@ -325,6 +325,7 @@ impl Lifecycle for SimulatorDriver {
                 transport: transport.kind(),
                 activation: transport.activation(),
                 connections: transport.connections(),
+                reason: String::new(),
             }),
         })
     }
