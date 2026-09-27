@@ -100,10 +100,22 @@ pub enum Command {
     Get(GetArgs),
     /// Compare the screen with this session's last snapshot
     Diff(DiffArgs),
+    /// Run several commands in order, from quoted arguments or a JSON array on stdin
+    Batch(BatchArgs),
     /// Report the daemon, its targets and its sessions
     Status,
     /// Stop the daemon; the next command starts a new one
     Shutdown,
+}
+
+#[derive(Args, Debug)]
+pub struct BatchArgs {
+    /// Stop at the first command that fails
+    #[arg(long)]
+    pub bail: bool,
+    /// Commands as quoted strings, such as "snapshot -i"; without any, a JSON array of argv arrays on stdin
+    #[arg(value_name = "COMMAND")]
+    pub commands: Vec<String>,
 }
 
 #[derive(Args, Debug)]

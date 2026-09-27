@@ -51,6 +51,7 @@ fn looks_like_ref(text: &str) -> bool {
 pub fn build(command: &Command, cwd: &Path) -> Result<Map<String, Value>, Failure> {
     let mut request = Map::new();
     let action = match command {
+        Command::Batch(_) => return Err(invalid("batch runs its commands one by one")),
         Command::Devices => "devices",
         Command::Close => "close",
         Command::Status => "status",
