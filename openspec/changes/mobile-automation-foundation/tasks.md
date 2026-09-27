@@ -94,6 +94,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
 - [x] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
 - [ ] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
+- [ ] 8.10 Add failing tests for an exact-text selector (`text==`), a `scroll --until <selector>` that scrolls until the element is visible, `open --relaunch` reporting settled only after the relaunched app's first tree, snapshot replies carrying daemon-side `readMs` and `servedFromReplica`, and `status` naming whether a target has a frame source; then implement them in the daemon and CLI; verify red-then-green
 - [x] 8.9 Add failing tests that `click` and `tap` results carry the tap-to-first-frame-change and tap-to-first-tree-delta spans when the target has frames and events, and that `wait --settle` reports which signal ended the wait, then implement them in the daemon and CLI so the harness can measure those primitives; verify red-then-green
 
 ## 9. Benchmark harness (`crates/bench`)
@@ -101,8 +102,9 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 9.1 Add failing tests that a run writes JSON and markdown agreeing on every number with provenance recorded, then implement primitive measurement with warm-up exclusion; verify red-then-green
 - [x] 9.2 Add a failing test forcing one gate to fail and expecting the table and non-zero exit, then implement gate configuration with the spec defaults; verify red-then-green
 - [x] 9.3 Add a failing test that an absent tool is noted as skipped, then implement baseline adapters for Maestro, maestro-runner and agent-device; verify red-then-green and one baseline run
-- [ ] 9.4 Add failing golden end-state tests for the login, list scroll and 500-node flows across adapters, then write the flow descriptions and adapter execution; verify red-then-green
+- [x] 9.4 Add failing golden end-state tests for the login, list scroll and 500-node flows across adapters, then write the flow descriptions and adapter execution; verify red-then-green
 - [x] 9.5 Add a failing test with two injected failures expecting the reported rate, then implement failure and flake rates; verify red-then-green
+- [ ] 9.6 Add failing tests that `mobile-agent-bench run --target <id>` drives the real CLI adapter against a daemon (fake targets in tests), selects fixtures per platform, runs the golden checks then the timed series, and writes both reports; then implement it so group 10 can run the harness end to end; verify red-then-green
 
 ## 10. Integration verification
 
