@@ -90,11 +90,11 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 9. Benchmark harness (`crates/bench`)
 
-- [ ] 9.1 Add failing tests that a run writes JSON and markdown agreeing on every number with provenance recorded, then implement primitive measurement with warm-up exclusion; verify red-then-green
-- [ ] 9.2 Add a failing test forcing one gate to fail and expecting the table and non-zero exit, then implement gate configuration with the spec defaults; verify red-then-green
-- [ ] 9.3 Add a failing test that an absent tool is noted as skipped, then implement baseline adapters for Maestro, maestro-runner and agent-device; verify red-then-green and one baseline run
+- [x] 9.1 Add failing tests that a run writes JSON and markdown agreeing on every number with provenance recorded, then implement primitive measurement with warm-up exclusion; verify red-then-green
+- [x] 9.2 Add a failing test forcing one gate to fail and expecting the table and non-zero exit, then implement gate configuration with the spec defaults; verify red-then-green
+- [x] 9.3 Add a failing test that an absent tool is noted as skipped, then implement baseline adapters for Maestro, maestro-runner and agent-device; verify red-then-green and one baseline run
 - [ ] 9.4 Add failing golden end-state tests for the login, list scroll and 500-node flows across adapters, then write the flow descriptions and adapter execution; verify red-then-green
-- [ ] 9.5 Add a failing test with two injected failures expecting the reported rate, then implement failure and flake rates; verify red-then-green
+- [x] 9.5 Add a failing test with two injected failures expecting the reported rate, then implement failure and flake rates; verify red-then-green
 
 ## 10. Integration verification
 
