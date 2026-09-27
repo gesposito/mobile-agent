@@ -4,10 +4,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::adapter::Role;
 use crate::fixture::{Fixture, Screen};
+use crate::harness::Subject;
+use crate::markdown::{Table, or_dash};
 use crate::primitive::Primitive;
 use crate::report::{Measurement, Report};
-use crate::stats::Summary;
+use crate::stats::{Summary, ms};
 use crate::target::TargetClass;
 
 /// Which statistic of a series a gate reads.
@@ -94,12 +97,15 @@ impl Gate {
 
     /// The limit in whole microseconds.
     pub fn limit_us(&self) -> u64 {
-        todo!("convert {} ms", self.limit_ms)
+        (self.limit_ms * 1000.0).round() as u64
     }
 
     /// Whether the gate judges `measurement`, ignoring which tool made it.
     pub fn applies_to(&self, measurement: &Measurement) -> bool {
-        todo!("match {} against {}", self.name(), measurement.subject)
+        measurement.target_class == self.class
+            && measurement.subject == Subject::Primitive(self.primitive)
+            && self.fixture.is_none_or(|f| measurement.fixture == Some(f))
+            && self.screen.is_none_or(|s| measurement.screen == Some(s))
     }
 }
 
@@ -114,12 +120,44 @@ impl GateSet {
     /// snapshot, dispatch and tap-to-frame gates and no statistic for CLI start
     /// and cold attach, which get p95 too.
     pub fn defaults() -> Self {
-        todo!("the spec's default gates")
+        use Primitive::{CliStart, ColdAttach, TapDispatch, TapToFrameChange, WarmSnapshot};
+        use TargetClass::{AndroidDevice, AndroidEmulator, Simulator};
+        GateSet {
+            gates: vec![
+                Gate::new(Simulator, CliStart, 20.0),
+                Gate::new(Simulator, ColdAttach, 2000.0),
+                Gate::new(Simulator, WarmSnapshot, 150.0).on(Some(Fixture::SwiftUi), Screen::Big),
+                // React Native's own accessibility snapshot of this screen costs
+                // about 236 ms (spike S4).
+                Gate::new(Simulator, WarmSnapshot, 250.0).on(Some(Fixture::Expo), Screen::Big),
+                Gate::new(Simulator, TapDispatch, 20.0),
+                Gate::new(AndroidEmulator, CliStart, 20.0),
+                Gate::new(AndroidEmulator, ColdAttach, 1500.0),
+                Gate::new(AndroidEmulator, WarmSnapshot, 100.0).on(None, Screen::Big),
+                Gate::new(AndroidEmulator, TapToFrameChange, 50.0),
+                Gate::new(AndroidDevice, CliStart, 20.0),
+                Gate::new(AndroidDevice, ColdAttach, 1500.0),
+            ],
+        }
     }
 
-    /// Parses a gate file.
+    /// Parses a gate file; every limit must be a positive number of
+    /// milliseconds.
     pub fn from_json(text: &str) -> Result<Self, String> {
-        serde_json::from_str(text).map_err(|e| format!("not a gate file: {e}"))
+        let set: GateSet =
+            serde_json::from_str(text).map_err(|e| format!("not a gate file: {e}"))?;
+        if let Some(gate) = set
+            .gates
+            .iter()
+            .find(|g| !(g.limit_ms.is_finite() && g.limit_ms > 0.0))
+        {
+            return Err(format!(
+                "gate {} has limit {} ms; limits are positive milliseconds",
+                gate.name(),
+                gate.limit_ms
+            ));
+        }
+        Ok(set)
     }
 
     /// Pretty-printed JSON, the gate file format.
@@ -130,11 +168,58 @@ impl GateSet {
     /// Judges the tool under test's measurements in `report`. Gates for target
     /// classes the run has no target of are left out.
     pub fn evaluate(&self, report: &Report) -> GateReport {
-        todo!(
-            "evaluate {} gates against {} measurements",
-            self.gates.len(),
-            report.measurements.len()
-        )
+        let under_test: Vec<&str> = report
+            .provenance
+            .tools
+            .iter()
+            .filter(|t| t.role == Role::UnderTest)
+            .map(|t| t.name.as_str())
+            .collect();
+        let mut rows = Vec::new();
+        for gate in &self.gates {
+            if !report
+                .provenance
+                .targets
+                .iter()
+                .any(|t| t.class == gate.class)
+            {
+                continue;
+            }
+            let row = |tool, target, measured_us, status| GateRow {
+                gate: gate.name(),
+                statistic: gate.statistic,
+                limit_us: gate.limit_us(),
+                tool,
+                target,
+                measured_us,
+                status,
+            };
+            let judged: Vec<&Measurement> = report
+                .measurements
+                .iter()
+                .filter(|m| under_test.contains(&m.tool.as_str()) && gate.applies_to(m))
+                .collect();
+            if judged.is_empty() {
+                rows.push(row(None, None, None, GateStatus::NotMeasured));
+            }
+            for m in judged {
+                let measured = m.stats.as_ref().map(|s| gate.statistic.of(s));
+                let status = match measured {
+                    Some(us) if us < gate.limit_us() => GateStatus::Pass,
+                    _ => GateStatus::Fail,
+                };
+                rows.push(row(
+                    Some(m.tool.clone()),
+                    Some(m.target.clone()),
+                    measured,
+                    status,
+                ));
+            }
+        }
+        GateReport {
+            passed: rows.iter().all(|r| r.status != GateStatus::Fail),
+            rows,
+        }
     }
 }
 
@@ -175,12 +260,58 @@ pub struct GateReport {
 impl GateReport {
     /// 0 when every gate passed, 1 when any failed.
     pub fn exit_code(&self) -> u8 {
-        todo!("exit code for {} rows", self.rows.len())
+        u8::from(!self.passed)
     }
 
     /// The gate table in markdown, followed by a one-line verdict.
     pub fn table(&self) -> String {
-        todo!("table of {} rows", self.rows.len())
+        if self.rows.is_empty() {
+            return "No gate applies to the run's targets.\n".to_owned();
+        }
+        let mut table = Table::new(&[
+            "Gate",
+            "Tool",
+            "Target",
+            "Statistic",
+            "Limit ms",
+            "Measured ms",
+            "Result",
+        ]);
+        for row in &self.rows {
+            table.row(vec![
+                row.gate.clone(),
+                or_dash(row.tool.as_deref()),
+                or_dash(row.target.as_deref()),
+                row.statistic.id().to_owned(),
+                ms(row.limit_us),
+                match (row.measured_us, row.status) {
+                    (Some(us), _) => ms(us),
+                    (None, GateStatus::NotMeasured) => "—".to_owned(),
+                    (None, _) => "no samples".to_owned(),
+                },
+                match row.status {
+                    GateStatus::Pass => "pass",
+                    GateStatus::Fail => "FAIL",
+                    GateStatus::NotMeasured => "not measured",
+                }
+                .to_owned(),
+            ]);
+        }
+        let mut out = String::new();
+        table.render(&mut out);
+        let count = |status| self.rows.iter().filter(|r| r.status == status).count();
+        let (failed, unmeasured) = (count(GateStatus::Fail), count(GateStatus::NotMeasured));
+        let checked = self.rows.len() - unmeasured;
+        if failed > 0 {
+            out.push_str(&format!("{failed} of {checked} gate checks failed."));
+        } else {
+            out.push_str(&format!("All {checked} gate checks passed."));
+        }
+        if unmeasured > 0 {
+            out.push_str(&format!(" {unmeasured} not measured."));
+        }
+        out.push('\n');
+        out
     }
 }
 
@@ -231,5 +362,14 @@ mod tests {
             )]
         );
         assert_eq!(GateSet::from_json(&set.to_json()), Ok(set));
+    }
+
+    #[test]
+    fn a_gate_file_with_a_limit_that_is_not_positive_is_refused() {
+        let error = GateSet::from_json(
+            r#"{"gates": [{"class": "simulator", "primitive": "cli-start", "limit_ms": 0}]}"#,
+        )
+        .unwrap_err();
+        assert!(error.contains("simulator cli-start"), "{error}");
     }
 }

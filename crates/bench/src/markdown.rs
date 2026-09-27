@@ -35,24 +35,24 @@ pub fn render(report: &Report) -> String {
 }
 
 /// A markdown table being built.
-struct Table {
+pub(crate) struct Table {
     header: Vec<String>,
     rows: Vec<Vec<String>>,
 }
 
 impl Table {
-    fn new(header: &[&str]) -> Self {
+    pub(crate) fn new(header: &[&str]) -> Self {
         Table {
             header: header.iter().map(|h| (*h).to_owned()).collect(),
             rows: Vec::new(),
         }
     }
 
-    fn row(&mut self, cells: Vec<String>) {
+    pub(crate) fn row(&mut self, cells: Vec<String>) {
         self.rows.push(cells);
     }
 
-    fn render(&self, out: &mut String) {
+    pub(crate) fn render(&self, out: &mut String) {
         let line = |cells: &[String]| {
             let escaped: Vec<String> = cells.iter().map(|c| escape(c)).collect();
             format!("| {} |\n", escaped.join(" | "))
@@ -67,12 +67,12 @@ impl Table {
 }
 
 /// A cell's text with the characters that would break a table row replaced.
-fn escape(text: &str) -> String {
+pub(crate) fn escape(text: &str) -> String {
     text.replace('|', "\\|").replace('\n', " ")
 }
 
 /// The value, or a dash when there is none.
-fn or_dash<T: Display>(value: Option<T>) -> String {
+pub(crate) fn or_dash<T: Display>(value: Option<T>) -> String {
     value.map_or_else(|| "—".to_owned(), |v| v.to_string())
 }
 
