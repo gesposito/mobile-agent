@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::driver::{Driver, TargetInfo};
+use crate::driver::{Driver, Platform, TargetInfo};
 use crate::wire::{Failure, code};
 use crate::worker::{Handle, Status, Worker};
 
@@ -18,6 +18,60 @@ const DISCOVERY_TTL: Duration = Duration::from_secs(2);
 
 /// How long the daemon waits for each worker to detach when it exits.
 const STOP_WAIT: Duration = Duration::from_secs(2);
+
+/// Which target a command asks for: `--device` and `--platform`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Selection {
+    /// A target id, or a name that one target alone has.
+    pub device: Option<String>,
+    pub platform: Option<Platform>,
+}
+
+impl Selection {
+    fn admits(&self, target: &TargetInfo) -> bool {
+        self.platform
+            .is_none_or(|platform| target.platform == platform)
+    }
+
+    /// The targets `device` names: the one with that id, else those whose
+    /// name it is, ignoring case.
+    fn named<'a>(&self, targets: &[&'a TargetInfo]) -> Vec<&'a TargetInfo> {
+        let Some(device) = &self.device else {
+            return targets.to_vec();
+        };
+        if let Some(target) = targets.iter().find(|t| t.id == *device) {
+            return vec![target];
+        }
+        targets
+            .iter()
+            .filter(|t| t.name.eq_ignore_ascii_case(device))
+            .copied()
+            .collect()
+    }
+
+    fn describe(&self) -> String {
+        match (&self.device, self.platform) {
+            (Some(device), Some(platform)) => format!("{} target {device:?}", platform.id()),
+            (Some(device), None) => format!("target {device:?}"),
+            (None, Some(platform)) => format!("{} target", platform.id()),
+            (None, None) => "target".to_owned(),
+        }
+    }
+}
+
+/// Targets as an error's details and lines.
+fn candidates(targets: &[&TargetInfo]) -> (serde_json::Value, String) {
+    let data = targets
+        .iter()
+        .map(|t| json!({"id": t.id, "platform": t.platform.id(), "class": t.class.id(), "name": t.name}))
+        .collect::<Vec<_>>();
+    let width = targets.iter().map(|t| t.id.len()).max().unwrap_or(0);
+    let lines = targets
+        .iter()
+        .map(|t| format!("\n  {:width$}  {:7}  {}", t.id, t.platform.id(), t.name))
+        .collect::<String>();
+    (json!({"candidates": data}), lines)
+}
 
 /// What a session sets for itself.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -80,22 +134,80 @@ impl Registry {
         &self.failures
     }
 
-    /// The target a command of `session` addresses.
-    pub fn resolve(&mut self, _session: &str) -> Result<TargetInfo, Failure> {
+    /// The target a command of `session` addresses: the one `selection`
+    /// names; else the only connected target of the selected platform; else
+    /// the one target of that platform the session holds. Several without a
+    /// choice fail listing them.
+    pub fn resolve(&mut self, session: &str, selection: &Selection) -> Result<TargetInfo, Failure> {
         let mut targets = self.targets(false);
-        if targets.is_empty() {
+        let known = |targets: &[TargetInfo]| {
+            let admitted: Vec<&TargetInfo> =
+                targets.iter().filter(|t| selection.admits(t)).collect();
+            !selection.named(&admitted).is_empty()
+        };
+        // A target missing from the cached listing may have just connected.
+        if targets.is_empty() || !known(&targets) {
             targets = self.targets(true);
         }
-        match targets.len() {
-            0 => Err(Failure::new(
+        if targets.is_empty() {
+            return Err(Failure::new(
                 code::NO_TARGET,
                 "no target is connected; start an emulator or boot a Simulator, then run devices",
-            )),
-            1 => Ok(targets.remove(0)),
-            n => Err(Failure::new(
-                code::AMBIGUOUS_TARGET,
-                format!("{n} targets are connected; choose one"),
-            )),
+            ));
+        }
+        let all: Vec<&TargetInfo> = targets.iter().collect();
+        let admitted: Vec<&TargetInfo> = all
+            .iter()
+            .copied()
+            .filter(|t| selection.admits(t))
+            .collect();
+        let named = selection.named(&admitted);
+        if selection.device.is_some() && named.is_empty() {
+            let (data, lines) = candidates(&all);
+            return Err(Failure::new(
+                code::TARGET_NOT_FOUND,
+                format!(
+                    "no {} is connected; connected targets:{lines}",
+                    selection.describe()
+                ),
+            )
+            .with_data(data));
+        }
+        match named.as_slice() {
+            [] => {
+                let (data, lines) = candidates(&all);
+                Err(Failure::new(
+                    code::NO_TARGET,
+                    format!(
+                        "no {} is connected; connected targets:{lines}",
+                        selection.describe()
+                    ),
+                )
+                .with_data(data))
+            }
+            [target] => Ok((*target).clone()),
+            several => {
+                let held: Vec<&&TargetInfo> = several
+                    .iter()
+                    .filter(|t| {
+                        self.claims
+                            .get(&t.id)
+                            .is_some_and(|holder| holder == session)
+                    })
+                    .collect();
+                if let [target] = held.as_slice() {
+                    return Ok((**target).clone());
+                }
+                let (data, lines) = candidates(several);
+                Err(Failure::new(
+                    code::AMBIGUOUS_TARGET,
+                    format!(
+                        "{} targets are connected; choose one with --device (or narrow with --platform):{lines}",
+                        several.len()
+                    ),
+                )
+                .with_data(data))
+            }
         }
     }
 

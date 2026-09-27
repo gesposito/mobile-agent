@@ -96,6 +96,8 @@ fn usage_error(error: &clap::Error, json: bool) -> i32 {
 pub struct Settings {
     pub json: bool,
     pub session: String,
+    pub platform: Option<String>,
+    pub device: Option<String>,
     pub force: bool,
     pub endpoint: client::Endpoint,
 }
@@ -113,6 +115,12 @@ pub(crate) fn execute(command: &args::Command, settings: &Settings, cwd: &Path) 
         .to_owned();
     request.insert("id".into(), client::request_id().into());
     request.insert("session".into(), settings.session.clone().into());
+    if let Some(platform) = &settings.platform {
+        request.insert("platform".into(), platform.to_ascii_lowercase().into());
+    }
+    if let Some(device) = &settings.device {
+        request.insert("device".into(), device.clone().into());
+    }
     if settings.force {
         request.insert("force".into(), Value::Bool(true));
     }
@@ -142,6 +150,8 @@ pub fn run(args: Vec<OsString>) -> i32 {
             .clone()
             .or(config.session)
             .unwrap_or_else(|| "default".to_owned()),
+        platform: global.platform.clone().or(config.platform),
+        device: global.device.clone().or(config.device),
         force: global.force,
         endpoint: client::Endpoint {
             dir: client::socket_dir(global.socket_dir.as_deref()),

@@ -22,6 +22,8 @@ pub mod code {
     pub const NO_TARGET: &str = "no_target";
     /// Several targets are connected and none was chosen.
     pub const AMBIGUOUS_TARGET: &str = "ambiguous_target";
+    /// No connected target has the id or name `--device` gave.
+    pub const TARGET_NOT_FOUND: &str = "target_not_found";
     /// Another session holds the target.
     pub const TARGET_CLAIMED: &str = "target_claimed";
     /// The target has no such app installed.

@@ -81,8 +81,8 @@ pub fn split(line: &str) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
-/// Parses one batch entry. The batch's settings apply, except a session or
-/// force flag written on the entry's own command line.
+/// Parses one batch entry. The batch's settings apply, except a session,
+/// device, platform or force flag written on the entry's own command line.
 fn parse(argv: &[String], batch: &Settings) -> Result<(Command, Settings), Failure> {
     let mut line = vec!["mobile-agent".to_owned()];
     line.extend(argv.iter().cloned());
@@ -110,6 +110,12 @@ fn parse(argv: &[String], batch: &Settings) -> Result<(Command, Settings), Failu
         && let Some(session) = cli.global.session.clone()
     {
         settings.session = session;
+    }
+    if own("device") {
+        settings.device = cli.global.device.clone();
+    }
+    if own("platform") {
+        settings.platform = cli.global.platform.clone();
     }
     if own("force") {
         settings.force = cli.global.force;

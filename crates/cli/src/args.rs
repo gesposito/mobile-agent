@@ -31,6 +31,14 @@ pub struct Global {
     #[arg(long, global = true, env = "MOBILE_AGENT_SESSION", value_name = "NAME")]
     pub session: Option<String>,
 
+    /// The target's platform: ios or android
+    #[arg(long, global = true, env = "MOBILE_AGENT_PLATFORM", value_name = "PLATFORM", value_parser = ["ios", "android"], ignore_case = true)]
+    pub platform: Option<String>,
+
+    /// The target: a Simulator UDID or adb serial as devices lists it, or a target's name
+    #[arg(long, global = true, env = "MOBILE_AGENT_DEVICE", value_name = "ID")]
+    pub device: Option<String>,
+
     /// Take the target over from the session that holds it
     #[arg(long, global = true, env = "MOBILE_AGENT_FORCE", action = ArgAction::SetTrue, value_parser = BoolishValueParser::new())]
     pub force: bool,

@@ -13,6 +13,8 @@ use serde_json::Value;
 pub struct Config {
     pub json: Option<bool>,
     pub session: Option<String>,
+    pub platform: Option<String>,
+    pub device: Option<String>,
     /// The idle timeout of a daemon the CLI starts, as `--idle-timeout`
     /// takes it; a number is milliseconds.
     pub idle_timeout: Option<String>,
@@ -24,6 +26,14 @@ impl Config {
             json: value.get("json").and_then(Value::as_bool),
             session: value
                 .get("session")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            platform: value
+                .get("platform")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            device: value
+                .get("device")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             idle_timeout: match value.get("idleTimeout") {
@@ -39,6 +49,8 @@ impl Config {
         Config {
             json: top.json.or(self.json),
             session: top.session.or(self.session),
+            platform: top.platform.or(self.platform),
+            device: top.device.or(self.device),
             idle_timeout: top.idle_timeout.or(self.idle_timeout),
         }
     }
@@ -92,12 +104,15 @@ mod tests {
     fn a_project_file_overrides_the_user_file_key_by_key() {
         let user =
             Config::from_json(&json!({"json": true, "session": "user", "idleTimeout": 5000}));
-        let project = Config::from_json(&json!({"session": "project", "extra": 1}));
+        let project =
+            Config::from_json(&json!({"session": "project", "device": "FAKE-IOS-1", "extra": 1}));
         assert_eq!(
             user.overlay(project),
             Config {
                 json: Some(true),
                 session: Some("project".into()),
+                platform: None,
+                device: Some("FAKE-IOS-1".into()),
                 idle_timeout: Some("5000".into()),
             }
         );

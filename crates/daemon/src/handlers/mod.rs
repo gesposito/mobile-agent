@@ -11,7 +11,8 @@ use mirror::backend::Owner;
 use mirror::{Degradation, Snapshot, Verdict};
 use serde_json::{Map, Value, json};
 
-use crate::driver::{Launch, TargetInfo};
+use crate::driver::{Launch, Platform, TargetInfo};
+use crate::registry::Selection;
 use crate::server::Daemon;
 use crate::wire::{Failure, Request, Success, code};
 use crate::worker::{Attached, Outcome};
@@ -25,7 +26,7 @@ type Command = fn(&mut Attached, &str, &Request) -> Outcome;
 pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
     let command: Command = match request.action.as_str() {
         "status" => return status(daemon),
-        "devices" => return devices(daemon),
+        "devices" => return devices(daemon, request),
         "close" => return close(daemon, request),
         "open" => open,
         "snapshot" => view::snapshot,
@@ -56,6 +57,23 @@ pub(crate) fn timeout(request: &Request) -> Result<Duration, Failure> {
         .map_or(DEFAULT_TIMEOUT, Duration::from_millis))
 }
 
+/// The target selection a request makes with `device` and `platform`.
+fn selection(request: &Request) -> Result<Selection, Failure> {
+    let platform = match request.str("platform") {
+        None => None,
+        Some(text) => Some(Platform::parse(text).ok_or_else(|| {
+            Failure::new(
+                code::INVALID_ARGUMENT,
+                format!("{text:?} is not a platform; use ios or android"),
+            )
+        })?),
+    };
+    Ok(Selection {
+        device: request.str("device").map(str::to_owned),
+        platform,
+    })
+}
+
 /// Resolves the request's target, claims it for the request's session and
 /// runs `command` on its worker.
 fn on_target(
@@ -65,7 +83,7 @@ fn on_target(
 ) -> Result<(Success, TargetInfo), Failure> {
     let (target, handle) = {
         let mut registry = daemon.registry();
-        let target = registry.resolve(&request.session)?;
+        let target = registry.resolve(&request.session, &selection(request)?)?;
         registry.claim(&target, &request.session, request.flag("force"))?;
         let handle = registry.handle(&target)?;
         (target, handle)
@@ -141,11 +159,13 @@ fn discovery_warning(failures: &[String]) -> Option<String> {
     })
 }
 
-fn devices(daemon: &Daemon) -> Outcome {
+fn devices(daemon: &Daemon, request: &Request) -> Outcome {
+    let selection = selection(request)?;
     let mut registry = daemon.registry();
     let devices: Vec<Value> = registry
         .targets(true)
         .iter()
+        .filter(|target| selection.platform.is_none_or(|p| target.platform == p))
         .map(|target| {
             let mut entry = target_json(target);
             entry.insert("model".into(), target.model.clone().into());
