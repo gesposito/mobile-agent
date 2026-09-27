@@ -43,11 +43,11 @@ enum Command {
 #[derive(Args)]
 struct RunArgs {
     /// Drive the scripted fake adapter described by this JSON file as the tool
-    /// under test; its targets and series make up the run
+    /// under test; its targets, series and flows make up the run
     #[arg(long, value_name = "SCRIPT")]
     fake: PathBuf,
 
-    /// Directory for report.json and report.md [default: target/bench/<UTC time>]
+    /// Directory for report.json and report.md [default: target/bench/ and the UTC start time, such as target/bench/20260927T101500Z]
     #[arg(long, value_name = "DIR")]
     out: Option<PathBuf>,
 

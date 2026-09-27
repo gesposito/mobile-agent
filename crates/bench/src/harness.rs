@@ -127,8 +127,10 @@ impl Harness {
     }
 
     /// Detects every tool, runs every series through each available tool that
-    /// supports it, and returns the report. Fails only on a series the run
-    /// cannot carry out, before anything runs: see [`Harness::check`].
+    /// supports it, and returns the report. Fails, before anything runs, on a
+    /// series naming a target the run lacks or a fixture its target's platform
+    /// lacks, and on a flow series naming a flow the run lacks, another fixture
+    /// than its flow's, or a screen.
     pub fn run(&mut self) -> Result<Report, String> {
         self.series.iter().try_for_each(|s| self.check(s))?;
         let started = SystemTime::now();
@@ -188,12 +190,8 @@ impl Harness {
             gates: None,
         })
     }
-}
 
-impl Harness {
-    /// A series must name a target of the run and a fixture that exists on
-    /// that target's platform; a flow series must name one of the run's flows,
-    /// that flow's fixture and no screen.
+    /// Refuses a series the run cannot carry out; see [`Harness::run`].
     fn check(&self, series: &Series) -> Result<(), String> {
         let Some(target) = self.targets.iter().find(|t| t.id == series.target) else {
             return Err(format!(

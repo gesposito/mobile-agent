@@ -20,7 +20,8 @@ pub fn render(report: &Report) -> String {
     out.push_str(&format!(
         "Started {}, finished {}. Durations are milliseconds; percentiles are \
          nearest-rank over the measured iterations, with warm-up iterations \
-         excluded.\n\n",
+         excluded. Fail % is the share of measured iterations in which no \
+         attempt succeeded, Flake % the share that succeeded only on a retry.\n\n",
         p.started_at, p.finished_at
     ));
     provenance(&mut out, p);
