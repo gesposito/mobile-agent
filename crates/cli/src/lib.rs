@@ -8,6 +8,7 @@ pub mod args;
 pub mod batch;
 pub mod client;
 pub mod config;
+pub mod doctor;
 pub mod output;
 pub mod request;
 
