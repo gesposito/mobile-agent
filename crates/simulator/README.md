@@ -205,7 +205,13 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   system UI (SpringBoard and the other processes of the runtime's
   CoreServices) and `application` otherwise, with the owner's bundle
   identifier and name; the keyboard's `UIRemoteKeyboardWindow` becomes an
-  input-method window above it, its id the pid with bit 31 set;
+  input-method window above it, its id the pid with bit 31 set. Its keys
+  come in the application's own read (37 on both fixtures' login fields):
+  agent-device lists that window as an `Application` only because iOS 26.5
+  gives every window automation type 2, which XCTest's enum names so. A
+  child moved to a window of its own still counts as delivered, so the move
+  marks nothing truncated, as it did before task 6.12 whenever the keyboard
+  was up;
 - an application's alert on screen moves, with the view that presents it,
   to a window of its own between the two, its id the pid with bit 30 set,
   titled by the alert, marked `modal`, and `active` and `focused` in the
@@ -217,13 +223,31 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   keeps its alerts in its own window, which is not modal: the read holds no
   application window for them to cover, and the mirror cuts the rest of
   SpringBoard's window by the alert's class;
+- a sheet that blocks the screen moves likewise, with its transition view,
+  to a window of its own, its id the pid with bit 29 set, titled by its
+  navigation bar or first heading, marked `modal` and, unless an alert sits
+  above it, `active` and `focused`. UIKit presents a sheet in a
+  `UITransitionView`, a later sibling of the one holding the screen, beside
+  a `UIDimmingView` spanning three screens (reading "dismiss popup",
+  `PopoverDismissRegion`, where it dismisses the sheet, as on Bluesky); the
+  sheet blocks what it covers while that dimming view takes touches, which
+  the reader asks of each dimming view in a snapshot of its own element
+  (`XC_kAXXCAttributeIsUserInteractionEnabled`, at most 8 a read), as
+  agent-device's bridge does. The last child of an application's window
+  that is such a view is taken, from the top-most window that has one. A
+  dimming view that lets touches through, at an undimmed detent, or whose
+  answer the runtime does not give, blocks nothing, and the sheet stays in
+  the application's window; so does a system UI sheet. Contacts' New
+  Contact sheet and Bluesky's hosting-provider sheet and birth-date dialog
+  have this shape;
 - every window says it sends no change events (`emits_events` false), since
   the Simulator sends none (spikes S3 and S4) and the mirror reads it again
   after each action and on a poll; system UI names itself as the `owner` of
   each of its windows by its process name, `SpringBoard`, in the string
   table, and an application's windows name no owner;
-- windows are listed, and their nodes numbered, top-most first, so a node
-  limit cuts the windows behind first;
+- windows are listed, and their nodes numbered, top-most first (the
+  keyboard, an alert, a sheet, the process's own), so a node limit cuts the
+  windows behind first;
 - `class` is the `XCUIElementType` name, or the UIKit class for elements the
   runtime types as `Other` or `Group`, so the alert controller's
   `_UIAlertControllerPhoneTVMacView` names itself; a static text with the
@@ -264,8 +288,10 @@ static texts, and its buttons the outermost ones, since UIKit nests each
 action's button in another with the same label. The payload keeps what an
 alert covers, as the reader returns it, because the mirror cuts that itself
 and still reports a ref to a covered element as covered; `uncovered()`
-returns the payload with only the alert and the containers it sits in. The
-foreground is the process's own window, never the alert's. UIKit ignores
+returns the payload without the windows below the top-most modal window,
+and with only the alert and the containers it sits in in the alert's
+window. The foreground is the process's own window, never an alert's or a
+sheet's. UIKit ignores
 touches while an alert presents, although the alert is in the tree from the
 start, so a client waits for the display to settle before tapping its
 buttons.
@@ -487,7 +513,8 @@ MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
 
 The tree tests use the SwiftUI fixture on the same Simulator and put the
 Expo fixture back on Login when they end; the metadata tests use both
-fixtures. The permission alert tests reset the fixture's location
+fixtures, and Contacts, which every Simulator has, for a sheet: they open
+its New Contact sheet, close it without saving and terminate the app. The permission alert tests reset the fixture's location
 permission before and after, with `simctl privacy`. SpringBoard keeps a
 permission alert up after its application is gone, over whatever runs
 next, so the metadata test dismisses it whether its checks passed or not.
@@ -511,6 +538,7 @@ about a minute.
 | Foreground tree read | Sparse tree flagged | `tree::sparse_tree_flagged`, `tree::tests::an_application_root_alone_is_sparse`, `tree::tests::the_translator_and_truncation_degrade_the_read_with_reasons` |
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
 | Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
+| Foreground tree read | The keyboard read whole, sheets that block the screen as modal windows (task 6.12) | `metadata::a_read_with_the_keyboard_up_is_whole_and_holds_the_keys` (both fixtures), `metadata::a_sheet_over_the_screen_is_a_modal_window` (Contacts' New Contact sheet), `tree::tests::a_modal_window_cuts_the_windows_below_it`, and in `reader/`: `elements::tests::a_read_with_the_keyboard_up_is_not_truncated`, `elements::tests::an_alert_moved_to_its_own_window_leaves_the_read_whole`, `elements::tests::a_sheet_that_takes_touches_moves_to_a_modal_window_above_the_screen`, `elements::tests::blueskys_bottom_sheet_is_a_modal_window_and_its_presenter_is_not`, `elements::tests::a_sheet_that_lets_touches_through_stays_in_the_application_window`, `elements::tests::a_dimming_view_that_does_not_span_the_screen_dims_nothing`, `elements::tests::an_alert_over_a_sheet_is_the_top_most_modal`, `elements::tests::system_ui_keeps_a_sheet_in_its_window` |
 | Foreground tree read | Scroll semantics of scroll views (task 6.10) | `metadata::a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top`, and in `reader/`: `elements::tests::a_list_at_its_top_scrolls_forward_only`, `elements::tests::a_list_scrolled_down_scrolls_both_ways`, `elements::tests::a_list_at_its_end_scrolls_back_only`, `elements::tests::content_that_fits_its_visible_frame_does_not_scroll`, `elements::tests::content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it`, `elements::tests::a_carousel_scrolls_horizontally`, `elements::tests::content_that_scrolls_both_ways_names_no_axis`, `elements::tests::elements_without_a_scroll_area_have_no_scroll_semantics` |
 | Foreground tree read | Covered content cut under alerts, the translator fallback (tasks 6.6 and 6.11) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::a_build_without_the_reader_reads_through_the_translator` (without the `reader` feature), `macos::reader::tests::a_spawn_can_record_on_the_slot_while_it_runs`, `macos::reader::tests::a_build_without_the_reader_feature_embeds_none` (without the feature), `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
 | Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |

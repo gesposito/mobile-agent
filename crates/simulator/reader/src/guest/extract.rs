@@ -10,6 +10,8 @@
 //! its own element (`UIAccessibilitySnapshotKeyElement`), since asking every
 //! node for it costs a read far more (see
 //! [`SCROLL_ATTRIBUTE_NAMES`](crate::guest::runtime::SCROLL_ATTRIBUTE_NAMES)).
+//! A dimming view is asked the same way whether it takes touches (see
+//! [`INTERACTION_ATTRIBUTE_NAME`](crate::guest::runtime::INTERACTION_ATTRIBUTE_NAME)).
 
 use std::ffi::c_void;
 
@@ -30,6 +32,10 @@ const AX_VALUE_CG_RECT: u32 = 3;
 /// The most scroll views asked for their scroll area in one read; each is
 /// a round trip to the application.
 pub const MAX_SCROLL_VIEWS: usize = 32;
+
+/// The most dimming views asked whether they take touches in one read.
+/// UIKit keeps one per presentation: two with one sheet up.
+pub const MAX_DIMMING_VIEWS: usize = 8;
 
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
@@ -56,6 +62,7 @@ pub fn element(
         budget: max_nodes as usize + 1,
         screen: None,
         scroll_views: MAX_SCROLL_VIEWS,
+        dimming_views: MAX_DIMMING_VIEWS,
     };
     guarded("reading the snapshot dictionaries", || {
         extractor.node(snapshot, 0)
@@ -72,6 +79,8 @@ struct Extractor<'a> {
     screen: Option<[f64; 4]>,
     /// Scroll views still to ask; none after one fails.
     scroll_views: usize,
+    /// Dimming views still to ask; none after one fails.
+    dimming_views: usize,
 }
 
 fn is_kind(object: &AnyObject, class: &AnyClass) -> bool {
@@ -156,6 +165,12 @@ impl Extractor<'_> {
         {
             element.scroll_area = self.scroll_area(&own)?;
         }
+        if self.dimming_views > 0
+            && element.class.as_deref() == Some(elements::DIMMING_CLASS)
+            && let Some(own) = object_for(snapshot, &keys.element)
+        {
+            element.user_interaction = self.user_interaction(&own)?;
+        }
         if let Some(children) = object_for(snapshot, &keys.children)
             .filter(|children| is_kind(children, runtime.array_class))
         {
@@ -186,6 +201,26 @@ impl Extractor<'_> {
         // as a value of `kind`.
         let ok = unsafe { (self.runtime.value_get_value)(raw, kind, out.as_mut_ptr().cast()) };
         (ok != 0 && out.iter().all(|v| v.is_finite())).then_some(out)
+    }
+
+    /// Whether the dimming view whose element is `own` takes touches, from a
+    /// snapshot of that element alone. A call that fails ends the asking for
+    /// this read.
+    fn user_interaction(&mut self, own: &AnyObject) -> Result<Option<bool>, ReadError> {
+        self.dimming_views -= 1;
+        let Some((key, _)) = &self.runtime.attributes.interaction else {
+            return Ok(None);
+        };
+        let element = AXUIElementRef((own as *const AnyObject).cast_mut().cast());
+        let Some(snapshot) = self.runtime.interaction_snapshot(element)? else {
+            self.dimming_views = 0;
+            return Ok(None);
+        };
+        Ok(object_for(&snapshot, &self.runtime.keys.attributes)
+            .filter(|values| is_kind(values, self.runtime.dictionary_class))
+            .and_then(|values| object_for(&values, key))
+            .and_then(|value| number(&value))
+            .map(|value| value != 0))
     }
 
     /// The scroll area of the scroll view whose element is `own`, from a

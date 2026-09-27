@@ -292,27 +292,42 @@ impl ForegroundTree {
         center(node, self.scale)
     }
 
-    /// The payload without what the alert in front covers: in the alert's
-    /// window only the alert and the containers it sits in, and no window
-    /// below it. Without an alert, the payload as read.
+    /// The payload without what the alert or the modal window in front
+    /// covers: no window below the top-most modal window, a sheet's or an
+    /// alert's, and in the alert's window only the alert and the containers
+    /// it sits in. Without either, the payload as read.
     pub fn uncovered(&self) -> Snapshot {
-        let Some(alert) = &self.alert else {
+        let windows = &self.snapshot.windows;
+        let modal = windows
+            .iter()
+            .position(|window| window.modal && window.kind != WindowType::INPUT_METHOD);
+        let alert = self.alert.as_ref().and_then(|alert| {
+            windows
+                .iter()
+                .position(|window| window.id == alert.window)
+                .map(|index| (index, alert.node))
+        });
+        let Some(last) = [modal, alert.map(|(index, _)| index)]
+            .into_iter()
+            .flatten()
+            .min()
+        else {
             return self.snapshot.clone();
         };
-        let mut windows = Vec::new();
-        for window in &self.snapshot.windows {
-            if window.id != alert.window {
-                windows.push(window.clone());
-                continue;
-            }
-            let mut kept = window.clone();
-            kept.root = window
-                .root
-                .as_ref()
-                .and_then(|root| keep_path_to(root, alert.node));
-            windows.push(kept);
-            break;
-        }
+        let windows: Vec<Window> = windows[..=last]
+            .iter()
+            .enumerate()
+            .map(|(index, window)| match alert {
+                Some((at, node)) if at == index => Window {
+                    root: window
+                        .root
+                        .as_ref()
+                        .and_then(|root| keep_path_to(root, node)),
+                    ..window.clone()
+                },
+                _ => window.clone(),
+            })
+            .collect();
         let node_count = windows
             .iter()
             .filter_map(|window| window.root.as_ref())

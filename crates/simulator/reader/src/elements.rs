@@ -26,8 +26,11 @@
 //! One read is one process, the one that owns the foreground: its
 //! application element becomes a window whose id is the process id, and the
 //! keyboard window inside it (`UIRemoteKeyboardWindow`) a separate input
-//! method window, which the mirror collapses to one line. The window
-//! metadata of protocol task 3.6:
+//! method window, which the mirror collapses to one line. The keys come in
+//! the application's own read: agent-device lists that window as an
+//! Application because iOS 26.5 gives every window automation type 2. A
+//! child moved to a window of its own still counts as delivered, so moving
+//! it cuts nothing. The window metadata of protocol task 3.6:
 //!
 //! - `emits_events` is `Some(false)` on every window: the Simulator sends no
 //!   change events (spikes S3 and S4), so the mirror reads its windows again
@@ -42,9 +45,15 @@
 //!   keeps its alerts in its window, which is not modal: the read holds no
 //!   application window for them to cover, and the mirror cuts the rest of
 //!   the window by the alert's class.
+//! - So does a sheet that blocks the screen: a transition view that is the
+//!   last child of an application's window, holding a dimming view that
+//!   spans it and takes touches (UIKit's rule, and agent-device's), with the
+//!   sheet beside it. A dimming view that lets touches through, at an
+//!   undimmed detent, or whose answer the runtime does not give, blocks
+//!   nothing, and the sheet stays in the application's window.
 //! - Windows are listed and their nodes numbered top-most first: the
-//!   keyboard, the alert, then the process's own window, so a node limit
-//!   cuts the windows behind first.
+//!   keyboard, the alert, the sheet, then the process's own window, so a
+//!   node limit cuts the windows behind first.
 
 use protocol::message::SnapshotParams;
 use protocol::snapshot::{
@@ -255,25 +264,30 @@ pub fn snapshot(read: &Read) -> Snapshot {
 
     // The keyboard window leaves the application's tree for its own window.
     let mut app = read.root.clone();
-    let keyboards: Vec<Element> = {
-        let (keyboards, rest) = std::mem::take(&mut app.children)
-            .into_iter()
-            .partition(is_keyboard_window);
-        app.children = rest;
-        keyboards
-    };
-    // So does an application's alert, for a modal window.
+    let mut keyboards = Vec::new();
+    while let Some(index) = app.children.iter().position(is_keyboard_window) {
+        keyboards.push(take_child(&mut app, index));
+    }
+    // So does an application's alert, and then a sheet that blocks the
+    // screen, each for a modal window.
     let alert = if read.owner.system {
         None
     } else {
         take_alert(&mut app, builder.screen)
+    };
+    let sheet = if read.owner.system {
+        None
+    } else {
+        take_sheet(&mut app, builder.screen)
     };
 
     let title = present(&app.label)
         .map(str::to_owned)
         .or_else(|| (!read.owner.name.is_empty()).then(|| read.owner.name.clone()));
     let mut windows = Vec::new();
-    let keyboard_layer = if alert.is_some() { 2 } else { 1 };
+    let sheet_layer = 1;
+    let alert_layer = sheet_layer + i32::from(sheet.is_some());
+    let keyboard_layer = alert_layer + i32::from(alert.is_some());
     for keyboard in &keyboards {
         let root = builder.node(keyboard, 1);
         windows.push(Window {
@@ -295,11 +309,31 @@ pub fn snapshot(read: &Read) -> Snapshot {
         windows.push(Window {
             id: pid | ALERT_WINDOW,
             kind: WindowType::APPLICATION,
-            layer: 1,
+            layer: alert_layer,
             package,
             title: alert.title.clone(),
             bounds: builder.bounds(alert.view.frame),
             flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+            root,
+            emits_events: Some(false),
+            owner,
+            modal: true,
+        });
+    }
+    if let Some(sheet) = &sheet {
+        let root = builder.node(&sheet.view, sheet.level);
+        windows.push(Window {
+            id: pid | SHEET_WINDOW,
+            kind: WindowType::APPLICATION,
+            layer: sheet_layer,
+            package,
+            title: sheet.title.clone(),
+            bounds: builder.bounds(sheet.view.frame),
+            flags: if alert.is_some() {
+                WindowFlags::EMPTY
+            } else {
+                WindowFlags::ACTIVE | WindowFlags::FOCUSED
+            },
             root,
             emits_events: Some(false),
             owner,
@@ -318,7 +352,7 @@ pub fn snapshot(read: &Read) -> Snapshot {
         package,
         title,
         bounds: builder.bounds(app.frame),
-        flags: if alert.is_some() {
+        flags: if alert.is_some() || sheet.is_some() {
             WindowFlags::EMPTY
         } else {
             WindowFlags::ACTIVE | WindowFlags::FOCUSED
@@ -352,14 +386,28 @@ fn system_name(owner: &Owner) -> Option<&str> {
         .or(owner.bundle_id.as_deref())
 }
 
-/// An application's alert, taken out of its tree for a window of its own.
+/// Removes child `index` of `parent` for a window of its own. The child
+/// still counts as delivered, so the child count the runtime reported for
+/// `parent` drops with it and the move reads as no cut.
+fn take_child(parent: &mut Element, index: usize) -> Element {
+    let child = parent.children.remove(index);
+    if let Some(count) = &mut parent.children_count {
+        *count = count.saturating_sub(1);
+    }
+    child
+}
+
+/// An application's alert or sheet, taken out of its tree for a window of
+/// its own.
 struct Presentation {
-    /// The view that presents the alert: the child of the alert's window
-    /// that holds it, or the alert itself when it sits right in a window.
+    /// The view that presents it: for an alert, the child of the alert's
+    /// window that holds it, or the alert itself when it sits right in a
+    /// window; for a sheet, its transition view.
     view: Element,
     /// How many levels below the application element `view` sat.
     level: u32,
-    /// The alert's title, its container's label.
+    /// An alert's title, its container's label; a sheet's, its navigation
+    /// bar's identifier or its first heading.
     title: Option<String>,
 }
 
@@ -395,11 +443,78 @@ fn take_alert(app: &mut Element, screen: Option<[f64; 4]>) -> Option<Presentatio
     for &index in &path[..depth - 1] {
         parent = &mut parent.children[index];
     }
-    let view = parent.children.remove(path[depth - 1]);
+    let view = take_child(parent, path[depth - 1]);
     Some(Presentation {
         view,
         level: depth as u32,
         title,
+    })
+}
+
+/// Takes the top-most sheet that blocks the screen out of the application's
+/// tree `app`: the last child of one of its windows that [`blocks`], in the
+/// top-most window that has one.
+fn take_sheet(app: &mut Element, screen: Option<[f64; 4]>) -> Option<Presentation> {
+    let window = (0..app.children.len()).rev().find(|&index| {
+        app.children[index]
+            .children
+            .last()
+            .is_some_and(|view| blocks(view, screen))
+    })?;
+    let window = &mut app.children[window];
+    let view = take_child(window, window.children.len() - 1);
+    let title = sheet_title(&view);
+    Some(Presentation {
+        view,
+        level: 2,
+        title,
+    })
+}
+
+/// Whether `view` presents a sheet that keeps touches from what lies below
+/// it: a transition view on screen holding, beside the sheet, a dimming
+/// view that spans it and takes touches.
+fn blocks(view: &Element, screen: Option<[f64; 4]>) -> bool {
+    let spans = |dimming: &Element| match (dimming.frame, view.frame.or(screen)) {
+        (Some([x, y, width, height]), Some([vx, vy, vw, vh])) => {
+            x <= vx && y <= vy && x + width >= vx + vw && y + height >= vy + vh
+        }
+        _ => false,
+    };
+    view.class.as_deref() == Some(PRESENTATION_CLASS)
+        && on_screen(view.frame, screen)
+        && view.children.len() >= 2
+        && view.children.iter().any(|child| {
+            child.class.as_deref() == Some(DIMMING_CLASS)
+                && child.user_interaction == Some(true)
+                && spans(child)
+        })
+}
+
+/// A sheet's title: the identifier of its first navigation bar, which UIKit
+/// names after the title, else its first heading.
+fn sheet_title(view: &Element) -> Option<String> {
+    fn find(element: &Element, wanted: &impl Fn(&Element) -> Option<String>) -> Option<String> {
+        wanted(element).or_else(|| {
+            element
+                .children
+                .iter()
+                .find_map(|child| find(child, wanted))
+        })
+    }
+    let navigation_bar = xcui_element_type("NavigationBar");
+    find(view, &|element| {
+        (element.automation_type == navigation_bar)
+            .then(|| present(&element.identifier).map(str::to_owned))
+            .flatten()
+    })
+    .or_else(|| {
+        find(view, &|element| {
+            (element.automation_type == Some(types::STATIC_TEXT)
+                && element.traits & traits::HEADER != 0)
+                .then(|| present(&element.label).map(str::to_owned))
+                .flatten()
+        })
     })
 }
 

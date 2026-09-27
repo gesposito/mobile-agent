@@ -624,8 +624,9 @@ fn a_sheet_over_the_screen_is_a_modal_window() {
     );
 
     // Closing the sheet hands the screen back. UIKit ignores touches until
-    // the sheet's presentation ends.
-    common::settle(&driver, &udid);
+    // the sheet's presentation ends; the display never settles meanwhile,
+    // since the focused field's cursor blinks, so the tap waits a second.
+    std::thread::sleep(Duration::from_secs(1));
     let close = covered.center(
         covered
             .find_label("close")

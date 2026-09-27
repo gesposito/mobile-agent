@@ -60,6 +60,13 @@ pub const SCROLL_ATTRIBUTE_NAMES: [&str; 3] = [
     "XC_kAXXCAttributeVisibleFrame",
 ];
 
+/// The attribute asked of each dimming view, in a snapshot of its own
+/// element: whether it takes touches, which tells a sheet that blocks the
+/// screen from one at an undimmed detent. agent-device's bridge asks it of
+/// dimming views alone for the same reason as the scroll attributes: asked
+/// of every node, it costs a read far more.
+pub const INTERACTION_ATTRIBUTE_NAME: &str = "XC_kAXXCAttributeIsUserInteractionEnabled";
+
 /// `kAXErrorIllegalArgument` from the AX server, which rejects a snapshot
 /// deeper than it will serialize; XCTAutomationSupport reports the same
 /// rejection as its error 5.
@@ -130,6 +137,9 @@ pub struct Attributes {
     pub traits: Option<Retained<NSNumber>>,
     /// The scroll attributes, when the runtime numbers them.
     pub scroll: Option<ScrollAttributes>,
+    /// [`INTERACTION_ATTRIBUTE_NAME`]'s key and the request that asks for
+    /// it alone, when the runtime numbers it.
+    pub interaction: Option<(Retained<NSNumber>, Retained<NSArray<NSNumber>>)>,
 }
 
 /// The keys of [`SCROLL_ATTRIBUTE_NAMES`] and the request that asks for
@@ -374,6 +384,18 @@ impl Runtime {
         Ok(self.snapshot_call(element, &scroll.request, 0, 1)?.ok())
     }
 
+    /// A snapshot of `element` alone with [`INTERACTION_ATTRIBUTE_NAME`];
+    /// `None` when the runtime does not number it or the call fails.
+    pub(crate) fn interaction_snapshot(
+        &self,
+        element: AXUIElementRef,
+    ) -> Result<Option<Retained<AnyObject>>, Failure> {
+        let Some((_, request)) = &self.attributes.interaction else {
+            return Ok(None);
+        };
+        Ok(self.snapshot_call(element, request, 0, 1)?.ok())
+    }
+
     /// Reads the tree of the process that owns the foreground: an
     /// application, or SpringBoard while it shows the home screen or a system
     /// alert. The owner is checked before and after, and a depth the server
@@ -490,6 +512,11 @@ fn resolve_attributes(attributes_for_names: AttributesForNamesFn) -> Result<Attr
             request: NSArray::from_retained_slice(&keys),
         }
     });
+    let interaction = numbers_for(&[INTERACTION_ATTRIBUTE_NAME])?.map(|numbers| {
+        let key = NSNumber::new_u64(numbers[0]);
+        let request = NSArray::from_retained_slice(std::slice::from_ref(&key));
+        (key, request)
+    });
     Ok(Attributes {
         element_type: key("XC_kAXXCAttributeElementType"),
         base_type: key("XC_kAXXCAttributeElementBaseType"),
@@ -501,6 +528,7 @@ fn resolve_attributes(attributes_for_names: AttributesForNamesFn) -> Result<Attr
         automation_type: key("XC_kAXXCAttributeAutomationType"),
         traits: key("XC_kAXXCAttributeTraits"),
         scroll,
+        interaction,
         request: NSArray::from_retained_slice(&request),
         names,
         numbers,
