@@ -32,7 +32,7 @@ src/
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
-                timestamps, editables
+                timestamps, editables, controls
 tests/support/  the fixture loader
 ```
 
@@ -204,10 +204,13 @@ also counts).
   field whose wrapper carries the label; the container is then not listed
   again.
 - Refs go to actionable elements; to named headings, cells and list items;
-  and to labelled generic nodes with nothing below them in the read, other
-  than a window's root. On iOS a React Native view marked accessible with a
-  label hides the field inside it, so the view is all the read has of the
-  field, and a tap by its ref lands on its center, over the field.
+  and to labelled generic nodes whose children, if any, are static text,
+  other than a window's root and the nodes an actionable element holds,
+  which name it or stay its content. React Native exposes a view marked
+  accessible without a role this way, as Bluesky's sheet options and
+  language rows. On iOS it hides a field inside such a view, so the view is
+  all the read has of the field, and a tap by its ref lands on its center,
+  over the field.
   An interactive listing (`SnapshotOptions::interactive()`) keeps only
   elements with refs, as agent-browser's `-i`. A full listing leaves out
   window roots and unnamed, unidentified generic containers, texts and images,
@@ -224,9 +227,13 @@ also counts).
   left-to-right layout. Content above or left is hinted before the
   container's children, below or right after them.
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
-- Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow and
-  an element keeps its ref while it survives. `removed_refs` lists the refs
-  the previous snapshot listed and this one does not.
+- Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow. A
+  ref names one control: its element, and for an element without an
+  identifier, also its accessible name. An element keeps its ref while it
+  survives, and without an identifier, while it keeps its name; renamed, it
+  is another control, which the next snapshot gives a fresh ref, and the old
+  ref is refused as stale from the moment the rename is read. `removed_refs`
+  lists the refs the previous snapshot listed and this one does not.
 
 Every snapshot carries a `Verdict`: the backend, whether it is degraded, and
 the reasons in this order, each with advice:
@@ -311,6 +318,10 @@ apps, in device points with the scale beside them:
 | `signin-android` | Ignite's sign-in screen on Android: each field an unlabelled `EditText` inside a focusable view that carries its label |
 | `signin-ios` | the same screen in XCTest's classes: each field an unlabelled text field inside a labelled `Other` |
 | `signin-ios-hidden` | the same screen as the React Native smoke test read it on iOS: labelled `Other`s with their fields hidden |
+| `bluesky-signin` | Bluesky's sign-in form on iOS: Forgot password? is the form's only button without an identifier |
+| `bluesky-forgot` | the forgot-password form it opens: Next is the form's only button without an identifier, where Forgot password? sat |
+| `bluesky-hosting` | Bluesky's hosting provider sheet: Automatic and Manual as labelled `Other`s over static text, Dismiss as a labelled leaf, Done a button |
+| `bluesky-language` | Bluesky's language selector: 16 rows as labelled `Other`s over static text, 10 in the viewport |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -348,16 +359,29 @@ cargo test -p mirror
   `id=` and `focused`, which agent-browser has no counterpart for, and hint
   lines in parentheses, as agent-browser writes its empty-page lines.
 - *Snapshot content* keeps actionable elements in an interactive listing.
-  The mirror counts among them a labelled generic node with nothing below it
-  in the read, which the platform exposes as an element without traits: the
-  React Native smoke test's iOS read of Ignite's sign-in screen shows each
-  field as such a node, labelled Email or Password, with the text field
-  hidden, and agent-device lists them as cells (`reports/10.4-rn-smoke.md`,
-  finding 1). Where the read keeps the field, the field is the element, named
-  after its container; a container of two fields names neither.
+  The mirror counts among them a labelled generic node whose children, if
+  any, are static text, outside actionable elements, which the platform
+  exposes as an element without traits. The React Native smoke test's iOS
+  read of Ignite's sign-in screen shows each field as such a node with
+  nothing below it, labelled Email or Password, the text field hidden, and
+  agent-device lists them as cells (`reports/10.4-rn-smoke.md`, finding 1);
+  Bluesky's sheet options and language rows are such nodes over static
+  text, which agent-device lists as `Other` and `Cell` (second run, finding
+  4). Where the read keeps the field, the field is the element, named after
+  its container; a container of two fields names neither.
 - *Stable refs*: siblings that share class, identifier and subtree content
   cannot be told apart; their refs follow order, and the verdict reports a
   `sibling_collision` rather than merging them (design D5, Risks).
+- *Stable refs* keeps a ref while its element survives. The replica pairs
+  the only sibling of a class without an identifier with the only such
+  sibling in the next read, so an element can survive a screen transition
+  as another control: Bluesky's Forgot password? became the forgot-password
+  form's Next, and its ref with it (second run, finding 6). A ref's
+  identity therefore includes the accessible name of an element without an
+  identifier. A control renamed in place, such as a counter's label, also
+  gets a fresh ref; an identified element keeps its ref under any name.
+  Element identities, and with them deltas and structural diffs, still
+  follow the element.
 - *Quality verdict*: a root-only application window is reported as sparse
   without inspecting the frame; the advice points to the frame.
 - *Resynchronization* also covers a read that comes back from another
@@ -384,9 +408,11 @@ cargo test -p mirror
 | Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path`, `replica::without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path` |
 | | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
 | Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
-| | (task 7.11: fields in labelled containers) | `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_android`, `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_ios`, `editables::a_container_names_only_its_single_unlabelled_field`, `editables::a_labelled_container_whose_field_the_platform_hides_gets_a_ref`, `editables::only_labelled_containers_with_nothing_below_them_get_such_refs`, `editables::fields_below_the_fold_are_hinted_once_each`, `editables::a_named_field_under_an_alert_is_covered_and_its_ref_says_which_field`, `editables::fields_in_identically_labelled_containers_collide` |
+| | (task 7.11: fields in labelled containers) | `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_android`, `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_ios`, `editables::a_container_names_only_its_single_unlabelled_field`, `editables::a_labelled_container_whose_field_the_platform_hides_gets_a_ref`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs`, `editables::fields_below_the_fold_are_hinted_once_each`, `editables::a_named_field_under_an_alert_is_covered_and_its_ref_says_which_field`, `editables::fields_in_identically_labelled_containers_collide` |
+| | (task 7.12: labelled controls without traits) | `controls::labelled_controls_without_traits_on_the_hosting_provider_sheet_get_refs`, `controls::language_rows_get_refs_and_those_below_the_fold_are_hinted`, `controls::a_labelled_control_under_an_alert_is_covered`, `controls::inside_a_clickable_ancestor_such_controls_name_it_and_get_no_ref`, `controls::identical_labelled_controls_collide`, `controls::nodes_with_more_than_static_text_below_them_or_no_label_are_no_such_controls`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
+| | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
 | Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting`, `settle::a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn`, `settle::a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event` |
 | | Continuous animation | `settle::a_continuous_animation_is_not_settled_after_the_maximum_and_names_frame_changes`, `settle::an_animation_that_also_sends_tree_events_names_both_signals`, `settle::tree_only_settling_ignores_frames` |
