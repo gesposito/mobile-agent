@@ -20,11 +20,14 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use android::adb::{self, AdbServer, Device};
+use android::agent::Attached;
 use android::agent::{
     AGENT_VERSION, AgentJar, DeployError, DeployOptions, Deployer, JAR_VAR, Records,
 };
 use android::emulator;
-use android::session::{ControllerChoice, Session, SessionOptions, Status, select_paths};
+use android::session::{
+    ControllerChoice, Session, SessionError, SessionOptions, Status, select_paths,
+};
 use mirror::MirrorConfig;
 use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
@@ -244,6 +247,18 @@ impl Driver for AndroidDevices {
 
 fn adb_error(failure: adb::Error) -> DriverError {
     DriverError::new(ADB_FAILED, failure.to_string())
+}
+
+/// Starts the session over `attached` with `start`; when it cannot start,
+/// stops the agent the attach started or reused, so no agent outlives a
+/// failed attach.
+#[allow(dead_code)]
+pub(crate) fn start_or_stop(
+    attached: Attached,
+    start: impl FnOnce(Attached) -> Result<Session, SessionError>,
+) -> Result<Session, DriverError> {
+    let _ = (attached, start);
+    todo!("task 8.11")
 }
 
 /// Stops the agent when dropped: `shutdown`, then a kill past
@@ -764,6 +779,73 @@ mod tests {
             missing.message.contains("/nonexistent/agent.jar"),
             "{missing:?}"
         );
+    }
+
+    /// Task 8.11, on the device `MOBILE_AGENT_ANDROID_SERIAL` names: an
+    /// agent whose session cannot start is stopped and forgotten, not left
+    /// to its idle exit.
+    #[test]
+    fn an_agent_whose_session_cannot_start_is_stopped() {
+        let Some(serial) = std::env::var("MOBILE_AGENT_ANDROID_SERIAL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+        else {
+            eprintln!(
+                "skipped an_agent_whose_session_cannot_start_is_stopped: set \
+                 MOBILE_AGENT_ANDROID_SERIAL to run it on a device"
+            );
+            return;
+        };
+        let device = AdbServer::from_env().device(serial.trim());
+        let agents = || {
+            device
+                .shell(android::agent::PS_COMMAND)
+                .map(|out| android::agent::parse_agents(&out.stdout_text()))
+                .unwrap_or_default()
+        };
+        let quiet = std::time::Instant::now();
+        while !agents().is_empty() {
+            assert!(
+                quiet.elapsed() < Duration::from_secs(60),
+                "the shared device kept an agent for a minute: {:?}",
+                agents()
+            );
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        let dir = std::env::temp_dir().join(format!("daemon-stop-{}", std::process::id()));
+        let records = Records::in_dir(&dir).unwrap();
+        let attached = Deployer::new(
+            device.clone(),
+            agent_jar(&JarSource::Embedded).expect("an agent jar"),
+            records.clone(),
+        )
+        .attach(&DeployOptions {
+            idle_exit: Duration::from_secs(10),
+            ..DeployOptions::default()
+        })
+        .expect("the agent starts");
+        let (pid, socket) = (attached.agent.pid, attached.agent.socket.clone());
+        assert!(agents().iter().any(|a| a.pid == pid));
+
+        let failed = start_or_stop(attached, |_| {
+            Err(SessionError::Density("injected for the test".into()))
+        })
+        .expect_err("the session cannot start");
+        assert!(
+            failed.message.contains("injected for the test"),
+            "{failed:?}"
+        );
+        let gone = std::time::Instant::now();
+        while agents().iter().any(|a| a.pid == pid && a.socket == socket) {
+            assert!(
+                gone.elapsed() < Duration::from_secs(5),
+                "the agent is still there: {:?}",
+                agents()
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(records.get(serial.trim()).is_none(), "its record is gone");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
