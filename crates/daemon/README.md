@@ -27,6 +27,7 @@ src/
                 doctor), view (snapshot, diff, get, wait, screenshot), act (click,
                 fill, type, press, swipe, scroll), aim (refs and selectors)
   keys.rs       key names to Android key codes and iOS HID usages
+  signals.rs    frame and tree change times read off the event stream; a settle's ending signal
   driver.rs     the Driver factory contract and the registration point
   fake/         the fake driver: target list, device model, real-time adapter, trees
 tests/          claims, idle and lifecycle, over the socket against the binary
@@ -36,6 +37,7 @@ tests/          claims, idle and lifecycle, over the socket against the binary
 
 ```sh
 mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--fake <targets>]
+                    [--fake-latency <time>]
 ```
 
 | Flag | Environment | Default |
@@ -43,6 +45,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--fake <target
 | `--socket-dir` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent`, else `mobile-agent` in the temporary directory |
 | `--idle-timeout` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h`; raw milliseconds or a whole number with `s`, `m` or `h`; `0` never exits |
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
+| `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -96,14 +99,14 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `close` | | `closed`, `app`, `target`; the claim is released |
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
-| `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs` |
+| `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
 | `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
 | `scroll` | `direction`, `amount`, `target`, `timeout` | `scrolled`, `direction`, `amount`, `strokes` |
 | `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs` |
-| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `elapsedMs`, `stillChanging`, `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
+| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
 | `doctor` | | `pid`, `version`, `drivers`, `compatibility {rows [{subject, feature, status, note}], note}` |
@@ -112,6 +115,35 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
 sink took to accept the tap, the span of the benchmark's `tap-dispatch`.
+
+## Tap spans and settle signals
+
+The mirror keeps when the tree and the frames last changed, and the
+frames' hashes, to itself, so the worker wraps each target's event stream
+before the mirror gets it: an observer (`signals.rs`) records the capture
+time of every frame whose hash differs from the frame before, as the mirror
+counts a frame change, and the arrival of every tree and window event. The
+mirror's tree deltas (`Mirror::deltas`) supply the rest.
+
+A click brings the replica current, notes the replica's revision, and
+dispatches the tap; `dispatchMs` runs until the input is accepted. It then
+pumps the mirror in 5 ms slices, so windows are re-read as they would be
+for a snapshot, until the first frame change after the dispatch (on
+targets with a frame source) and the first delta of a later revision have
+both arrived, until nothing has changed for the 200 ms quiet window since
+the tap or the last change, or for 1 s. `frameChangeMs` and `treeDeltaMs`
+run from the dispatch to the frame's capture and to the delta's read, and
+are omitted when the signal never came; `watchedMs` says how long the watch
+lasted. A watch that fails after the tap went in becomes a warning.
+
+A settle wait (`wait --settle`) ends one quiet window after the latest of
+the last tree change (event or delta), the last frame change and the last
+input the daemon injected. `endedBy` names the signal whose change that
+was: `tree`, `frame`, or `both` when their last changes came within 20 ms;
+`none` when the input came later than any change or the quiet window had
+already passed when the wait began; `timeout` when the wait reached its
+maximum, with `stillChanging` naming what changed in the last quiet window.
+`--tree-only` leaves frames out, as it does for the mirror.
 
 ## Sessions and claims
 
@@ -201,8 +233,14 @@ settle windows take real time, and a device model:
 Android fakes use widget classes, a status bar, a keyboard window and
 dialog windows, and send window events; iOS fakes use `XCUIElementType`
 classes, alert nodes and SpringBoard's window, and send no events, so the
-mirror re-reads them as it re-reads a Simulator. Screenshots are
-placeholder bytes, not an image.
+mirror re-reads them as it re-reads a Simulator. Emulators and Simulators
+have a frame source; Android devices have none, as design D7 has it, so
+`screenshot` answers them with `no_frame`. Every change shows after
+`--fake-latency`, together with its window event and frame; a move to
+another screen (another app, tab, detail, alert or prompt) animates, its
+frames changing every 16 ms for 96 ms after the tree changed, then settling
+on the screen's final frame. Frames are produced as the backend is called,
+not on a timer. Screenshots are placeholder bytes, not an image.
 
 ## Errors
 
@@ -256,6 +294,11 @@ Worked around here without changing `crates/mirror`:
   the driver contract adds `AppControl` and `display`, and targets without
   a frame source answer `screenshot` with `no_frame` until a driver adds a
   capture path.
+- The mirror records when the tree and the frames last changed and the
+  latest frame's hash, but exposes only a settle's change counts, so the
+  worker reads frame hashes and event arrivals off the event stream on its
+  way to the mirror (`signals.rs`) to time a tap's effects and a settle's
+  ending signal.
 - `testing::FakeTarget` runs on a fake clock and its tap reactions are
   fixed per identifier; the fake driver adds a real-time adapter and a
   stateful device model. Its `inputs()` copies the whole history, so the
@@ -271,6 +314,7 @@ Worked around here without changing `crates/mirror`:
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
 | Command grammar | Interactive snapshot output | `lifecycle::a_snapshot_of_the_fake_launcher_lists_a_heading_and_two_buttons`, `lifecycle::devices_lists_every_fake_target_with_its_platform_and_class`, `lifecycle::open_launches_an_installed_app_and_refuses_an_unknown_one` |
 | Command grammar | (keys, element arguments) | `keys::tests::*`, `handlers::aim::tests::arguments_are_refs_identifiers_texts_or_roles` |
+| (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::only_frames_whose_hash_changed_count_as_frame_changes`, `signals::tests::tree_and_window_events_are_tree_changes_and_others_are_not`, `signals::tests::the_tee_records_what_passes_through`, `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon.

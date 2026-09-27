@@ -53,6 +53,8 @@ Waiting
   wait --text Welcome         until an element shows the text
   wait '#spinner' --state hidden   until it is gone (also visible, enabled)
   wait 500                    fixed milliseconds, a last resort
+  click waits for the tap's first effect, at most 1 s, so a snapshot right
+  after it already sees the change; wait --settle waits out the rest.
   Waits take --timeout MS. The default is the session's (set timeout 5000),
   else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000.
 

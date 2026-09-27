@@ -168,6 +168,11 @@ Examples:
 Targets: @e3, ref=e3 or e3 from the last snapshot; #id; text=Sign in; role=switch;
 or x y in device points.
 
+The reply comes once the tap's first frame change and first tree delta have
+arrived, or after 200 ms without a change, at most 1 s, and reports them from
+the dispatch: dispatchMs, frameChangeMs and treeDeltaMs, the last two absent
+when they did not come.
+
 Examples:
   mobile-agent click @e3
   mobile-agent tap @e3
@@ -245,7 +250,8 @@ Examples:
 Element and text waits end at --timeout: the session's default (set timeout),
 else MOBILE_AGENT_DEFAULT_TIMEOUT or the config's defaultTimeout, else 10000 ms.
 wait --settle ends once neither the tree nor the frames change for the quiet
-window, or at --timeout, default 3000 ms, reporting what kept changing.
+window, or at --timeout, default 3000 ms. endedBy says which signal changed
+last (tree, frame, both or none) or timeout, and stillChanging what kept changing.
 
 Examples:
   mobile-agent wait --settle

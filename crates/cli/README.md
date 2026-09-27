@@ -27,7 +27,7 @@ src/
   doctor.rs          doctor's checks, the host probe, the report
   agent-guide.txt    what help agent prints
 tests/               one file per concern: snapshot, errors, commands, sessions, lifecycle,
-                     overhead, batch, selection, timeouts, help, doctor
+                     overhead, batch, selection, timeouts, help, doctor, spans
 ```
 
 ## Commands
@@ -87,8 +87,8 @@ else `~/.mobile-agent/config.json` overlaid key by key by
 ## Output
 
 Human mode prints the listing or a short confirmation (`✓ Done`, as
-agent-browser does) on stdout and errors (`✗`) and warnings (`⚠`) on
-stderr. `--json` prints one line in agent-browser's envelope, fields in
+agent-browser does, which a click follows with its spans) on stdout and
+errors (`✗`) and warnings (`⚠`) on stderr. `--json` prints one line in agent-browser's envelope, fields in
 its order, `code` and `warning` only when set:
 
 ```json
@@ -116,6 +116,63 @@ own are `invalid_argument` (usage), `unknown_command`, `invalid_config`,
 `daemon_unavailable`, `daemon_timeout` and `doctor_failed`; the daemon's,
 such as `stale_ref`, `target_claimed` or `ambiguous_target`, arrive in its
 reply.
+
+## Timing spans
+
+`click` and `tap` watch what the tap sets off before they reply, and `wait
+--settle` says which signal it waited out, so the benchmark harness can read
+the spans only the daemon observes ("the tool's own clock" in
+`crates/bench/README.md`) from each reply's `data`:
+
+| Harness primitive | Command | Field | Measured |
+|---|---|---|---|
+| `tap-dispatch` | `click`, `tap` | `dispatchMs` | from the tap's dispatch, once its ref or selector is resolved, until the target accepts the input |
+| `tap-to-frame-change` | `click`, `tap` | `frameChangeMs` | from the dispatch to the capture of the first frame whose hash differs from the frame before it |
+| `tap-to-tree-delta` | `click`, `tap` | `treeDeltaMs` | from the dispatch to the first tree delta the mirror finds: a re-read after a change event, or for windows without events, a re-read after the action or after frames changed |
+| `settle` | `wait --settle` | `elapsedMs`, `endedBy`, `stillChanging` | from the start of the wait until neither signal has changed for the quiet window (200 ms), at most `--timeout` (3000 ms) |
+
+Spans are milliseconds on the daemon's monotonic clock, to the microsecond.
+`frameChangeMs` and `treeDeltaMs` are absent, never 0 or null, when the
+signal did not come: the target has no frame source (Android devices, per
+design D7), or the tap changed nothing. The watch lasts until both first
+effects have arrived (the frame change only on targets with frames), or
+nothing has changed for 200 ms since the tap or the last change, or 1 s;
+`watchedMs` says how long it lasted. So a tap that changes nothing replies
+after about 200 ms, and on a screen that was already animating the first
+frame change can be the animation's.
+
+`endedBy` names the signal whose last change began the settle's final
+quiet window:
+
+| Value | When |
+|---|---|
+| `tree` | the tree changed last, as on a target without frames |
+| `frame` | frames changed last, as when a transition animates after the tree changed |
+| `both` | their last changes came within 20 ms of each other |
+| `none` | nothing changed since the last action, or the screen was already quiet when the wait began (`elapsedMs` about 0) |
+| `timeout` | the screen did not settle in time; `settled` is false and `stillChanging` names the signals, `tree` and `frame`, that changed in the last quiet window |
+
+With a fake target that shows every change 120 ms late
+(`MOBILE_AGENT_FAKE_LATENCY_MS=120`, see `crates/daemon/README.md`):
+
+```json
+{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.314,"frameChangeMs":120.078,"ref":"@e2","treeDeltaMs":120.688,"watchedMs":123.28,"x":204.0,"y":120.0},"error":null}
+{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.303,"ref":"@e2","treeDeltaMs":121.268,"watchedMs":123.903,"x":204.0,"y":120.0},"error":null}
+{"success":true,"data":{"accepted":true,"clicked":"204 600","dispatchMs":0.026,"ref":null,"watchedMs":304.642,"x":204.0,"y":600.0},"error":null}
+{"success":true,"data":{"elapsedMs":297.58,"endedBy":"frame","frameChanges":6,"settled":true,"stillChanging":[],"treeChanges":0,"waited":"settle"},"error":null}
+```
+
+The lines are a click on an emulator, the same click on a device without
+frames, a tap on empty space (whose watch ran past 200 ms because the
+attach's own delayed change arrived during it), and a settle after a move
+to another screen, whose 96 ms transition ended it. In human mode:
+
+```
+✓ Done (dispatch 0.3 ms, first frame change 120.1 ms, first tree delta 120.7 ms)
+✓ Done (dispatch 0.0 ms, no change in 305 ms)
+✓ Settled after 297.58 ms: frames changed last
+✓ Stopped waiting after 3000.36 ms: frames kept changing
+```
 
 ## Daemon lifecycle
 
@@ -196,7 +253,7 @@ On this machine every check reports a status:
 
 Every command's help ends with examples and states its defaults; `help
 <command>` prints the same as `<command> --help`, and `help get text`
-reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 80 lines
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 82 lines
 for an agent's prompt: the snapshot, act and snapshot-again loop, the
 listing format, refs and `stale_ref`, selectors, acting, waiting and
 settle, reading, output and codes, targets and sessions, and batch.
@@ -254,6 +311,9 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
   keep `result: null`.
 - Timeouts are capped at 10 minutes and the default is 10 s, where
   agent-browser's is 25 s.
+- `click` and `tap` reply once the tap's first effects have arrived, or
+  after 200 ms of quiet, at most 1 s, rather than as soon as the input is
+  accepted, and report the spans above.
 - The version file names the build as well as the release.
 - A config file cannot set the socket directory, and there is no
   namespace flag; `--socket-dir` covers both uses.
@@ -271,6 +331,21 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
 | Configurable timeouts | Per-command timeout | `timeouts::a_2_s_wait_fails_at_2_s_not_after_the_session_default`, `timeouts::the_session_default_applies_to_waits_that_name_no_timeout`, `timeouts::session_defaults_belong_to_their_session`, `timeouts::the_environment_default_applies_when_the_session_sets_none`, `timeouts::timeouts_are_bounded_and_must_be_numbers`, `timeouts::a_long_wait_outlasts_a_short_idle_timeout`, `help::waiting_commands_document_their_default_timeouts`, `client::tests::waits_get_their_own_timeout_plus_a_margin_and_other_commands_30_s` |
 | Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
+
+The timing spans (task 8.9) serve the benchmark harness rather than a
+spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree_delta`,
+`spans::a_tap_reports_the_same_spans_as_a_click`,
+`spans::an_ios_target_reports_the_tree_delta_its_re_reads_find`,
+`spans::a_target_without_frames_reports_no_frame_change_rather_than_zero`,
+`spans::a_tap_that_changes_nothing_reports_neither_span`,
+`spans::a_click_prints_its_spans`,
+`spans::a_settle_after_an_edit_ended_on_both_signals`,
+`spans::a_settle_after_a_transition_ended_on_the_frames`,
+`spans::a_settle_on_a_target_without_frames_ended_on_the_tree`,
+`spans::a_settle_that_times_out_names_the_signal_still_changing`,
+`spans::a_settle_on_a_screen_already_quiet_ended_on_nothing` and
+`spans::a_settle_prints_the_signal_it_ended_on`, with the daemon's
+`signals::tests::*` for the classification.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and
