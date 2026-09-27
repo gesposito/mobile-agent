@@ -8,11 +8,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::SystemTime;
 
-use bench::adapter::Detection;
+use bench::adapter::{Adapter, Detection};
 use bench::baseline::{BaselineConfig, baselines};
+use bench::cli::{self, CliAdapter, CliConfig};
 use bench::fake::FakeAdapter;
+use bench::fixture::Fixture;
 use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
+use bench::plan;
 use bench::provenance::compact_timestamp;
 use bench::report::Report;
 use clap::{Args, Parser, Subcommand};
@@ -146,12 +149,15 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let dir = args.out.clone().unwrap_or_else(|| {
         PathBuf::from("target/bench").join(compact_timestamp(SystemTime::now()))
     });
-    let Some(script) = &args.fake else {
-        return Err("runs of mobile-agent are not written yet".to_owned());
+    let mut harness = match &args.fake {
+        Some(script) => {
+            let fake = FakeAdapter::from_json(&read(script)?)?;
+            Harness::new(config, fake.targets(), fake.series())
+                .flows(fake.flows())
+                .tool(Box::new(fake))
+        }
+        None => mobile_agent(args, config, &dir)?,
     };
-    let fake = FakeAdapter::from_json(&read(script)?)?;
-    let mut harness = Harness::new(config, fake.targets(), fake.series()).flows(fake.flows());
-    harness = harness.tool(Box::new(fake));
     if !args.no_baselines {
         for baseline in baselines(&BaselineConfig::new(dir.join("flows"))) {
             harness = harness.tool(baseline);
@@ -170,6 +176,43 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     );
     print!("{}", verdict.table());
     Ok(ExitCode::from(verdict.exit_code()))
+}
+
+/// The run of mobile-agent through the CLI adapter: the targets `--target`
+/// names among those `mobile-agent devices` lists, each with its fixtures,
+/// and the plan's series and flows for them. The golden checks run first, as
+/// in every run, then the timed series.
+fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness, String> {
+    let mut settings = CliConfig::new(dir.join("cli"));
+    settings.program = args.cli.clone().unwrap_or_else(cli::default_program);
+    let mut adapter = CliAdapter::new(settings);
+    if let Detection::Absent { note } = adapter.detect() {
+        return Err(format!("cannot run {}: {note}", args.tool));
+    }
+    let connected = adapter
+        .devices()
+        .map_err(|e| format!("cannot list the targets: {e}"))?;
+    let chosen: Vec<Fixture> = args
+        .fixtures
+        .iter()
+        .filter_map(|id| plan::FIXTURES.into_iter().find(|f| f.id() == id))
+        .collect();
+    let mut targets = Vec::new();
+    let mut series = Vec::new();
+    let mut fixtures: Vec<Fixture> = Vec::new();
+    for (target, runs) in plan::select(&connected, &args.targets, &chosen)? {
+        series.extend(plan::series(&target, &runs));
+        for fixture in runs {
+            if !fixtures.contains(&fixture) {
+                fixtures.push(fixture);
+            }
+        }
+        targets.push(target);
+    }
+    fixtures.sort();
+    Ok(Harness::new(config, targets, series)
+        .flows(plan::flows(&fixtures))
+        .tool(Box::new(adapter)))
 }
 
 /// Prints each baseline tool as detection finds it.

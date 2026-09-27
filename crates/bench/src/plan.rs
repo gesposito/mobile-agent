@@ -7,7 +7,7 @@ use crate::fixture::{Fixture, Screen};
 use crate::flow::{self, Flow};
 use crate::harness::{Series, Subject};
 use crate::primitive::Primitive;
-use crate::target::{Platform, Target};
+use crate::target::{Platform, Target, TargetClass};
 
 /// Every fixture, in report order.
 pub const FIXTURES: [Fixture; 3] = [Fixture::SwiftUi, Fixture::Expo, Fixture::Compose];
@@ -73,15 +73,74 @@ pub fn series(target: &Target, fixtures: &[Fixture]) -> Vec<Series> {
     planned
 }
 
-/// The targets `ids` names among `connected`, in the order named, each with
-/// the fixtures it runs.
+/// The targets `ids` names among `connected`, in the order named and each
+/// once, with the fixtures each runs: `chosen` when given, else every fixture
+/// of its platform (SwiftUI and Expo on a Simulator, Expo and Compose on
+/// Android). Fails when `ids` names no target, on an id no connected target
+/// has, naming the connected ones, and on a chosen fixture a target's
+/// platform lacks.
 pub fn select(
     connected: &[Target],
     ids: &[String],
     chosen: &[Fixture],
 ) -> Result<Vec<(Target, Vec<Fixture>)>, String> {
-    let _ = (connected, ids, chosen);
-    Err("not written yet".to_owned())
+    if ids.is_empty() {
+        return Err("name a target to measure".to_owned());
+    }
+    let mut selected: Vec<(Target, Vec<Fixture>)> = Vec::new();
+    for id in ids {
+        if selected.iter().any(|(target, _)| target.id == *id) {
+            continue;
+        }
+        let target = connected
+            .iter()
+            .find(|target| target.id == *id)
+            .ok_or_else(|| {
+                let listed: Vec<String> = connected
+                    .iter()
+                    .map(|target| format!("{} ({})", target.id, target.class))
+                    .collect();
+                format!(
+                    "no connected target is {id}; mobile-agent devices lists {}",
+                    joined(&listed)
+                )
+            })?;
+        let platform = target.class.platform();
+        let available = fixtures(platform);
+        let mut runs = Vec::new();
+        for &fixture in chosen {
+            if fixture.app_id(platform).is_none() {
+                let names: Vec<String> = available.iter().map(ToString::to_string).collect();
+                let article = match target.class {
+                    TargetClass::Simulator => "a",
+                    TargetClass::AndroidEmulator | TargetClass::AndroidDevice => "an",
+                };
+                return Err(format!(
+                    "the {fixture} fixture does not run on {}, {article} {}; its fixtures are {}",
+                    target.id,
+                    target.class,
+                    joined(&names)
+                ));
+            }
+            if !runs.contains(&fixture) {
+                runs.push(fixture);
+            }
+        }
+        if runs.is_empty() {
+            runs = available;
+        }
+        selected.push((target.clone(), runs));
+    }
+    Ok(selected)
+}
+
+/// `items` as a phrase: `a`, `a and b`, `a, b and c`; `none` for no items.
+fn joined(items: &[String]) -> String {
+    match items {
+        [] => "none".to_owned(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// The reference flows of `fixtures`, which the plan's flow series name.
@@ -95,7 +154,6 @@ mod tests {
     use crate::fixture::Screen;
     use crate::flow;
     use crate::harness::Subject;
-    use crate::target::TargetClass;
 
     fn connected() -> Vec<Target> {
         vec![

@@ -107,9 +107,15 @@ impl CliConfig {
     }
 }
 
-/// The `mobile-agent` to drive when none is named.
+/// The `mobile-agent` to drive when none is named: the one beside the running
+/// executable, where a build of the workspace puts it beside
+/// `mobile-agent-bench`, else `mobile-agent`, looked up on `PATH`.
 pub fn default_program() -> PathBuf {
-    PathBuf::from(TOOL)
+    std::env::current_exe()
+        .ok()
+        .map(|exe| exe.with_file_name(TOOL))
+        .filter(|path| is_executable(path))
+        .unwrap_or_else(|| PathBuf::from(TOOL))
 }
 
 /// `mobile-agent` driven through its CLI.
@@ -154,9 +160,14 @@ impl CliAdapter {
         CliAdapter { config, path: None }
     }
 
-    /// The targets `mobile-agent devices` lists.
+    /// The targets `mobile-agent devices` lists, with the model and OS it
+    /// reports for each. The first command starts a daemon if none serves.
     pub fn devices(&self) -> Result<Vec<Target>, AdapterError> {
-        read_devices(&Value::Null).map_err(AdapterError::new)
+        let reply = self.send(None, &["devices"])?;
+        if !reply.success {
+            return Err(failure(&["devices"], &reply));
+        }
+        read_devices(&reply.data).map_err(AdapterError::new)
     }
 
     fn executable(&self) -> Result<&Path, AdapterError> {
@@ -685,10 +696,31 @@ fn command_line<'a>(target: Option<&'a Target>, command: &[&'a str]) -> Vec<&'a 
     args
 }
 
-/// The targets in the data of a `devices` reply.
+/// The targets in the data of a `devices` reply: each device's id, class,
+/// model and OS.
 fn read_devices(data: &Value) -> Result<Vec<Target>, String> {
-    let _ = data;
-    Err("not written yet".to_owned())
+    #[derive(Deserialize)]
+    struct Device {
+        id: String,
+        class: TargetClass,
+        model: Option<String>,
+        os: Option<String>,
+    }
+    let devices = data
+        .get("devices")
+        .ok_or("the devices reply lists no devices")?;
+    let devices: Vec<Device> = serde_json::from_value(devices.clone())
+        .map_err(|e| format!("the devices reply does not list devices: {e}"))?;
+    Ok(devices
+        .into_iter()
+        .map(|device| Target {
+            id: device.id,
+            class: device.class,
+            model: device.model,
+            os: device.os,
+            api_level: None,
+        })
+        .collect())
 }
 
 /// The envelope `--json` printed, or `None` when stdout holds none.
