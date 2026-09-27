@@ -70,7 +70,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 6.7 Add a failing test that a 500 character string appears in the focused field with the method reported, then implement keyboard text entry and paste through `devicectl device pasteboard copy` (simctl pbcopy writes nothing under Xcode 27); verify red-then-green
 - [x] 6.8 Add a failing test that an injected framework failure marks the target unavailable while another Simulator keeps working, then wrap every private call with exception containment; verify red-then-green
 - [x] 6.9 Add a failing test for the refusal message outside the supported Xcode range, then implement the version gate and the `doctor` compatibility table; verify red-then-green
-- [ ] 6.10 Add failing tests that the Simulator reader fills the snapshot's window owner (system process name interned in the string table when SpringBoard or another system process owns the window), the modal flag for alerts, and per-node scroll semantics for scroll views, then implement them in the reader; verify red-then-green against the fixtures on a booted Simulator
+- [x] 6.10 Add failing tests that the Simulator reader fills the snapshot's window owner (system process name interned in the string table when SpringBoard or another system process owns the window), the modal flag for alerts, and per-node scroll semantics for scroll views, then implement them in the reader; verify red-then-green against the fixtures on a booted Simulator
 
 ## 7. Mirror (`crates/mirror`)
 
