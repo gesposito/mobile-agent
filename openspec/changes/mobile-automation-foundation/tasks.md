@@ -33,6 +33,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 3.3 Add failing tests for the handshake and capability negotiation covering common version, no common version and refusal of an unadvertised capability, then implement the state machine; verify red-then-green
 - [x] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
 - [x] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
+- [ ] 3.6 Add failing round-trip and golden tests for per-window metadata (emits change events, owner, modal) and scroll semantics (range and position) in the protocol snapshot, then extend the Rust schema and the Kotlin codec, regenerate the goldens and have the mirror consume the new fields instead of its own side types; verify red-then-green on both sides and `codec-test.sh` green
 
 ## 4. Android agent (Kotlin, `agent-android`)
 
@@ -69,14 +70,14 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 
 ## 7. Mirror (`crates/mirror`)
 
-- [ ] 7.1 Add failing tests replaying recorded event fixtures to expected trees, then implement the replica with full acquisition, delta application and the event-less window path (full re-read after each injected action and on a poll, deltas by diff, read cost in metadata); verify red-then-green
-- [ ] 7.2 Add failing tests for a surviving element, a stale ref and a sibling collision marked degraded, then implement ref identity and stability; verify red-then-green
-- [ ] 7.3 Add a failing test on the scrolling-list fixture expecting visible buttons and a hint of three below the fold, then implement interactive filtering and off-screen hints; verify red-then-green
-- [ ] 7.4 Add failing tests for a settling transition and for a continuous animation returning the frame-change reason, then implement the settle predicate over tree deltas and frame hashes with the 200 ms default quiet window from S1; verify red-then-green
-- [ ] 7.5 Add failing tests that appear, disappear and enabled waits resolve within one processing cycle and time out with the last snapshot summary, then implement them from the event stream; verify red-then-green
-- [ ] 7.6 Add a failing diff test on the form-submit fixture, then implement the structural diff; verify red-then-green
-- [ ] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green
-- [ ] 7.8 Add a failing scaled-frame test with age reporting, then implement frame access; verify red-then-green
+- [x] 7.1 Add failing tests replaying recorded event fixtures to expected trees, then implement the replica with full acquisition, delta application and the event-less window path (full re-read after each injected action and on a poll, deltas by diff, read cost in metadata); verify red-then-green
+- [x] 7.2 Add failing tests for a surviving element, a stale ref and a sibling collision marked degraded, then implement ref identity and stability; verify red-then-green
+- [x] 7.3 Add a failing test on the scrolling-list fixture expecting visible buttons and a hint of three below the fold, then implement interactive filtering and off-screen hints; verify red-then-green
+- [x] 7.4 Add failing tests for a settling transition and for a continuous animation returning the frame-change reason, then implement the settle predicate over tree deltas and frame hashes with the 200 ms default quiet window from S1; verify red-then-green
+- [x] 7.5 Add failing tests that appear, disappear and enabled waits resolve within one processing cycle and time out with the last snapshot summary, then implement them from the event stream; verify red-then-green
+- [x] 7.6 Add a failing diff test on the form-submit fixture, then implement the structural diff; verify red-then-green
+- [x] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green
+- [x] 7.8 Add a failing scaled-frame test with age reporting, then implement frame access; verify red-then-green
 
 ## 8. Daemon and CLI (`crates/daemon`, `crates/cli`)
 
