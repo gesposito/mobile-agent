@@ -7,3 +7,17 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+prost = "0.14.4"
+tokio = { version = "1.53.1", features = ["time"] }
+tonic = { version = "0.14.6", default-features = false, features = ["channel", "codegen"] }
+tonic-prost = "0.14.6"
+xxhash-rust = { version = "0.8.18", features = ["xxh3"] }
+
+[build-dependencies]
+protoc-bin-vendored = "3.2.0"
+tonic-prost-build = "0.14.6"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "time"] }
