@@ -11,8 +11,10 @@ mod common;
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Duration;
 
-use protocol::snapshot::{Node, Window};
-use simulator::{ForegroundTree, Input, Lifecycle, SimulatorDriver, Tree, TreeOptions};
+use protocol::snapshot::{Node, NodeFlags, ScrollAxis, ScrollFlags, ScrollUnit, Window};
+use simulator::{
+    ForegroundTree, Input, Lifecycle, Point, SimulatorDriver, Swipe, Tree, TreeOptions,
+};
 
 use common::{EXPO_BUNDLE, ExpoOnLogin, SWIFTUI_BUNDLE};
 
@@ -73,6 +75,36 @@ fn window_of<'a>(tree: &'a ForegroundTree, identifier: &str) -> Option<&'a Windo
             .as_ref()
             .is_some_and(|root| holds(root, identifier))
     })
+}
+
+/// The scroll view around the List tab's rows: the nearest scrollable
+/// ancestor of the first row in the tree.
+fn list_of(tree: &ForegroundTree) -> Option<&Node> {
+    fn trail<'a>(node: &'a Node, path: &mut Vec<&'a Node>) -> bool {
+        path.push(node);
+        let row = node
+            .res_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("row-"));
+        if row || node.children.iter().any(|child| trail(child, path)) {
+            return true;
+        }
+        path.pop();
+        false
+    }
+    tree.snapshot
+        .windows
+        .iter()
+        .filter_map(|window| window.root.as_ref())
+        .find_map(|root| {
+            let mut path = Vec::new();
+            trail(root, &mut path).then(|| {
+                path.into_iter()
+                    .rev()
+                    .skip(1)
+                    .find(|node| node.flags.contains(NodeFlags::SCROLLABLE))
+            })?
+        })
 }
 
 /// The name a window's owner indexes in the read's string table.
@@ -296,6 +328,87 @@ fn an_in_app_alert_window_is_modal_and_the_application_window_is_not() {
             "{fixture:?}: no modal once the alert is dismissed"
         );
         assert_event_less(&back);
+        driver
+            .terminate(&udid, fixture.bundle())
+            .expect("terminated");
+    }
+}
+
+#[test]
+fn a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top() {
+    let Some(udid) =
+        common::gated("a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = SimulatorDriver::open().expect("the driver opens");
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    for fixture in Fixture::ALL {
+        let top = fixture.show(&driver, &udid, "list", "row-1");
+        assert_event_less(&top);
+        let list = list_of(&top).expect("the rows sit in a scroll view");
+        let class = top.class_of(list).to_owned();
+        eprintln!("{fixture:?} list at its top: {class} {:?}", list.scroll);
+        let scroll = list.scroll.unwrap_or_else(|| {
+            panic!("{fixture:?}: the list's scroll view, {class}, carries no scroll semantics")
+        });
+        assert_eq!(scroll.axis, ScrollAxis::VERTICAL, "{fixture:?}");
+        assert_eq!(
+            scroll.flags,
+            ScrollFlags::FORWARD,
+            "{fixture:?}: at its top the list scrolls forward only"
+        );
+        let range = scroll
+            .range
+            .expect("the runtime reports where the viewport is");
+        assert_eq!(
+            (range.unit, range.min, range.max),
+            (ScrollUnit::PERCENT, 0, 100),
+            "{fixture:?}"
+        );
+        let position = scroll.position.expect("the viewport's part of the range");
+        assert_eq!(
+            position.first, 0,
+            "{fixture:?}: the viewport shows the start"
+        );
+        assert!(
+            position.last > 0 && position.last < 100,
+            "{fixture:?}: the viewport shows part of the rows: {position:?}"
+        );
+
+        // A slow drag up of 300 points scrolls the list down, away from its
+        // top. The first rows can leave the tree, so the list is found
+        // again by whichever rows it holds.
+        common::settle(&driver, &udid);
+        let drag = Swipe::new(
+            Point::new(201.0, 650.0),
+            Point::new(201.0, 350.0),
+            Duration::from_millis(1000),
+        );
+        driver.swipe(&udid, &drag).expect("a drag up the list");
+        common::settle(&driver, &udid);
+        let scrolled = common::snapshot_until(&driver, &udid, Duration::from_secs(10), |tree| {
+            list_of(tree)
+                .and_then(|list| list.scroll)
+                .is_some_and(|scroll| scroll.flags.contains(ScrollFlags::BACK))
+        });
+        let scroll = list_of(&scrolled).and_then(|list| list.scroll).unwrap();
+        eprintln!("{fixture:?} list scrolled: {scroll:?}");
+        assert_eq!(scroll.axis, ScrollAxis::VERTICAL, "{fixture:?}");
+        assert_eq!(
+            scroll.flags,
+            ScrollFlags::BACK | ScrollFlags::FORWARD,
+            "{fixture:?}: away from its top and its end, the list scrolls both ways"
+        );
+        let position = scroll.position.expect("the viewport's part of the range");
+        assert!(
+            0 < position.first && position.first < position.last && position.last < 100,
+            "{fixture:?}: the viewport shows neither end: {position:?}"
+        );
         driver
             .terminate(&udid, fixture.bundle())
             .expect("terminated");

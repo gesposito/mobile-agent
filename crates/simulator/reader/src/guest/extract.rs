@@ -134,6 +134,7 @@ impl Extractor<'_> {
             frame: get(&names.frame).and_then(|v| self.frame(&v)),
             children_count: object_for(snapshot, &keys.children_count).and_then(|v| number(&v)),
             children: Vec::new(),
+            scroll_area: None,
         };
         if let Some(children) = object_for(snapshot, &keys.children)
             .filter(|children| is_kind(children, runtime.array_class))

@@ -127,6 +127,26 @@ pub struct Element {
     /// when it said; more than `children` holds means some were withheld.
     pub children_count: Option<u64>,
     pub children: Vec<Element>,
+    /// Where a scroll view's viewport is in its content, as the runtime
+    /// reports it; absent on other elements.
+    pub scroll_area: Option<ScrollArea>,
+}
+
+/// What the runtime reports about a scroll view's viewport: where the edges
+/// of the element's frame fall in its content along each axis, as fractions
+/// of the content's length (`XC_kAXXCAttributeVisibleVerticalScrollArea`
+/// and `XC_kAXXCAttributeVisibleHorizontalScrollArea`, points whose x is the
+/// start and y the end), and the part of the frame that shows content
+/// (`XC_kAXXCAttributeVisibleFrame`), which leaves out the insets UIKit
+/// keeps under bars.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollArea {
+    /// The frame's top and bottom, as fractions of the content's height.
+    pub vertical: Option<[f64; 2]>,
+    /// The frame's left and right, as fractions of the content's width.
+    pub horizontal: Option<[f64; 2]>,
+    /// `[x, y, width, height]` in points.
+    pub visible_frame: Option<[f64; 4]>,
 }
 
 /// The process whose tree was read: the one that owns the foreground.
@@ -650,6 +670,10 @@ const XCUI_ELEMENT_TYPES: [&str; 83] = [
 
 #[cfg(test)]
 mod tests {
+    use protocol::snapshot::{
+        Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit,
+    };
+
     use super::*;
 
     fn element(automation_type: u64, class: &str) -> Element {
@@ -1314,6 +1338,206 @@ mod tests {
                 (4242, 0, false),
             ]
         );
+    }
+
+    /// A scroll view with the identifier `list` at `frame`, whose frame's
+    /// edges the runtime puts at `vertical` and `horizontal` of its content,
+    /// and whose content shows in `visible`.
+    fn scroller(
+        automation_type: u64,
+        class: &str,
+        frame: [f64; 4],
+        visible: [f64; 4],
+        vertical: [f64; 2],
+        horizontal: [f64; 2],
+    ) -> Element {
+        at(
+            with(element(automation_type, class), |e| {
+                e.identifier = Some("list".into());
+                e.scroll_area = Some(ScrollArea {
+                    vertical: Some(vertical),
+                    horizontal: Some(horizontal),
+                    visible_frame: Some(visible),
+                });
+            }),
+            frame,
+        )
+    }
+
+    /// The SwiftUI fixture's List as the runtime reported it on iOS 26.5: a
+    /// collection view over the whole screen whose 200 rows of 52 points
+    /// (10,400 in all) scroll under the status bar's 62 points and the tab
+    /// bar's 83, which its visible frame leaves out.
+    fn swiftui_list(vertical: [f64; 2]) -> Element {
+        scroller(
+            types::COLLECTION_VIEW,
+            "SwiftUI.UpdateCoalescingCollectionView",
+            [0.0, 0.0, 402.0, 874.0],
+            [0.0, 62.0, 402.0, 729.0],
+            vertical,
+            [0.0, 1.0],
+        )
+    }
+
+    /// The Expo fixture's List: a scroll view between the status bar and
+    /// the tab bar over 200 rows of 48 points (9,600), without insets.
+    fn expo_list(vertical: [f64; 2]) -> Element {
+        scroller(
+            types::SCROLL_VIEW,
+            "RCTEnhancedScrollView",
+            [0.0, 62.0, 402.0, 722.0],
+            [0.0, 62.0, 402.0, 722.0],
+            vertical,
+            [0.0, 1.0],
+        )
+    }
+
+    fn scroll_of(element: Element) -> Option<Scroll> {
+        by_id(&snapshot_of(element), "list").scroll
+    }
+
+    fn percent(first: i32, last: i32) -> (Option<ScrollRange>, Option<ScrollPosition>) {
+        (
+            Some(ScrollRange {
+                unit: ScrollUnit::PERCENT,
+                min: 0,
+                max: 100,
+            }),
+            Some(ScrollPosition { first, last }),
+        )
+    }
+
+    #[test]
+    fn a_list_at_its_top_scrolls_forward_only() {
+        // At rest, the collection view's frame starts 62 points above its
+        // content, under the status bar.
+        let swiftui = scroll_of(swiftui_list([-0.005962, 0.078077])).expect("scroll semantics");
+        assert_eq!(swiftui.axis, ScrollAxis::VERTICAL);
+        assert_eq!(swiftui.flags, ScrollFlags::FORWARD);
+        assert_eq!((swiftui.range, swiftui.position), percent(0, 7));
+        let expo = scroll_of(expo_list([0.0, 0.075208])).expect("scroll semantics");
+        assert_eq!(expo.axis, ScrollAxis::VERTICAL);
+        assert_eq!(expo.flags, ScrollFlags::FORWARD);
+        assert_eq!((expo.range, expo.position), percent(0, 8));
+    }
+
+    #[test]
+    fn a_list_scrolled_down_scrolls_both_ways() {
+        // 20 points down: the frame's top is still above the content, but
+        // the visible frame's is not.
+        let nudged = scroll_of(swiftui_list([-0.004038, 0.08])).expect("scroll semantics");
+        assert_eq!(nudged.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        assert_eq!(
+            (nudged.range, nudged.position),
+            percent(1, 7),
+            "the position leaves 0 as soon as the start is out of view"
+        );
+        let expo = scroll_of(expo_list([0.002083, 0.077292])).expect("scroll semantics");
+        assert_eq!(expo.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        assert_eq!((expo.range, expo.position), percent(1, 8));
+        let further = scroll_of(swiftui_list([0.03766, 0.121699])).expect("scroll semantics");
+        assert_eq!(further.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        assert_eq!((further.range, further.position), percent(4, 11));
+    }
+
+    #[test]
+    fn a_list_at_its_end_scrolls_back_only() {
+        // The frame's bottom is 83 points past the content, under the tab bar.
+        let swiftui = scroll_of(swiftui_list([0.923942, 1.007981])).expect("scroll semantics");
+        assert_eq!(swiftui.flags, ScrollFlags::BACK);
+        assert_eq!((swiftui.range, swiftui.position), percent(93, 100));
+        let expo = scroll_of(expo_list([0.924792, 1.0])).expect("scroll semantics");
+        assert_eq!(expo.flags, ScrollFlags::BACK);
+        assert_eq!((expo.range, expo.position), percent(92, 100));
+    }
+
+    #[test]
+    fn content_that_fits_its_visible_frame_does_not_scroll() {
+        // An alert's message: 72.33 points of text in 72 points of scroll view.
+        let header = scroller(
+            types::SCROLL_VIEW,
+            "_UIInterfaceActionGroupHeaderScrollView",
+            [41.0, 375.0, 320.0, 72.0],
+            [41.0, 375.0, 320.0, 72.0],
+            [0.0, 0.995392],
+            [0.0, 1.0],
+        );
+        assert_eq!(scroll_of(header), None);
+        let exact = scroller(
+            types::SCROLL_VIEW,
+            "UIScrollView",
+            [41.0, 447.0, 320.0, 80.0],
+            [41.0, 447.0, 320.0, 80.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        );
+        assert_eq!(scroll_of(exact), None);
+        // Three rows of 52 points under the SwiftUI list's insets.
+        let short = swiftui_list([-62.0 / 156.0, 812.0 / 156.0]);
+        assert_eq!(scroll_of(short), None);
+    }
+
+    #[test]
+    fn content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it() {
+        // 800 points of rows: less than the 874-point frame, more than the
+        // 729 points between the bars.
+        let list = swiftui_list([-62.0 / 800.0, 812.0 / 800.0]);
+        let scroll = scroll_of(list).expect("scroll semantics");
+        assert_eq!(scroll.flags, ScrollFlags::FORWARD);
+        assert_eq!((scroll.range, scroll.position), percent(0, 91));
+    }
+
+    #[test]
+    fn a_carousel_scrolls_horizontally() {
+        let carousel = scroller(
+            types::COLLECTION_VIEW,
+            "UICollectionView",
+            [0.0, 100.0, 402.0, 200.0],
+            [0.0, 100.0, 402.0, 200.0],
+            [0.0, 1.0],
+            [0.5, 0.75],
+        );
+        let scroll = scroll_of(carousel).expect("scroll semantics");
+        assert_eq!(scroll.axis, ScrollAxis::HORIZONTAL);
+        assert_eq!(scroll.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        assert_eq!((scroll.range, scroll.position), percent(50, 75));
+    }
+
+    #[test]
+    fn content_that_scrolls_both_ways_names_no_axis() {
+        let map = scroller(
+            types::SCROLL_VIEW,
+            "UIScrollView",
+            [0.0, 0.0, 402.0, 874.0],
+            [0.0, 0.0, 402.0, 874.0],
+            [0.0, 0.5],
+            [0.5, 1.0],
+        );
+        let scroll = scroll_of(map).expect("scroll semantics");
+        assert_eq!(scroll.axis, ScrollAxis::UNKNOWN);
+        assert_eq!(scroll.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        assert_eq!((scroll.range, scroll.position), (None, None));
+    }
+
+    #[test]
+    fn elements_without_a_scroll_area_have_no_scroll_semantics() {
+        // What the runtime reports for an element that is no scroll area.
+        let not_an_area = scroller(
+            types::SCROLL_VIEW,
+            "UIScrollView",
+            [0.0, 0.0, 402.0, 874.0],
+            [0.0, 0.0, 402.0, 874.0],
+            [2147483647.0, 0.0],
+            [2147483647.0, 0.0],
+        );
+        assert_eq!(scroll_of(not_an_area), None);
+        let snapshot = snapshot(&read(login()));
+        assert!(nodes(&snapshot).iter().all(|node| node.scroll.is_none()));
+        // Without a visible frame, the whole frame shows content.
+        let mut bare = expo_list([0.0, 0.075208]);
+        bare.scroll_area.as_mut().unwrap().visible_frame = None;
+        let scroll = scroll_of(bare).expect("scroll semantics");
+        assert_eq!((scroll.range, scroll.position), percent(0, 8));
     }
 
     #[test]
