@@ -2,27 +2,78 @@
 
 use crate::error::{Error, Result};
 use crate::model::{DeviceTypeInfo, RuntimeInfo};
+use crate::version::Version;
 
 /// The index of the device whose UDID is `target` (in any case), or else of
 /// the one device named exactly `target`.
 pub fn device(target: &str, devices: &[(String, String)]) -> Result<usize> {
-    let _ = (target, devices);
-    unimplemented!("task 6.1: device lookup")
+    if let Some(index) = devices
+        .iter()
+        .position(|(udid, _)| udid.eq_ignore_ascii_case(target))
+    {
+        return Ok(index);
+    }
+    let named: Vec<usize> = devices
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, name))| name == target)
+        .map(|(index, _)| index)
+        .collect();
+    match named.as_slice() {
+        [index] => Ok(*index),
+        [] => Err(Error::NotFound {
+            target: target.to_string(),
+        }),
+        several => Err(Error::Ambiguous {
+            target: target.to_string(),
+            matches: several.len(),
+        }),
+    }
 }
 
 /// The index of the runtime whose version, name or identifier is `wanted`,
 /// or, with nothing wanted, of the newest iOS runtime. The error lists the
 /// installed runtimes.
 pub fn runtime(wanted: Option<&str>, runtimes: &[RuntimeInfo]) -> Result<usize> {
-    let _ = (wanted, runtimes);
-    unimplemented!("task 6.1: runtime choice")
+    let found = match wanted {
+        Some(wanted) => runtimes.iter().position(|runtime| {
+            runtime.version == wanted || runtime.name == wanted || runtime.identifier == wanted
+        }),
+        None => runtimes
+            .iter()
+            .enumerate()
+            .filter(|(_, runtime)| runtime.identifier.contains(".SimRuntime.iOS-"))
+            .filter_map(|(index, runtime)| Some((Version::parse(&runtime.version)?, index)))
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, index)| index),
+    };
+    found.ok_or_else(|| {
+        let installed: Vec<&str> = runtimes.iter().map(|r| r.name.as_str()).collect();
+        Error::InvalidArgument(format!(
+            "no installed runtime matches {}; installed: {}",
+            wanted.map_or_else(|| "iOS".to_string(), |w| format!("{w:?}")),
+            if installed.is_empty() {
+                "none".to_string()
+            } else {
+                installed.join(", ")
+            }
+        ))
+    })
 }
 
 /// The index of the device type whose name or identifier is `wanted`. The
 /// error lists the known device types.
 pub fn device_type(wanted: &str, types: &[DeviceTypeInfo]) -> Result<usize> {
-    let _ = (wanted, types);
-    unimplemented!("task 6.1: device type choice")
+    types
+        .iter()
+        .position(|t| t.name == wanted || t.identifier == wanted)
+        .ok_or_else(|| {
+            let known: Vec<&str> = types.iter().map(|t| t.name.as_str()).collect();
+            Error::InvalidArgument(format!(
+                "no device type matches {wanted:?}; known: {}",
+                known.join(", ")
+            ))
+        })
 }
 
 #[cfg(test)]

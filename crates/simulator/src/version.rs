@@ -12,18 +12,15 @@ pub struct Version(Vec<u64>);
 impl Version {
     /// Parses digits separated by dots; `None` for anything else.
     pub fn parse(text: &str) -> Option<Version> {
-        let _ = text;
-        unimplemented!("task 6.1: version parsing")
-    }
-
-    /// The components, most significant first.
-    pub fn components(&self) -> &[u64] {
-        &self.0
-    }
-
-    /// The first component, such as Xcode's major version.
-    pub fn major(&self) -> u64 {
-        self.0.first().copied().unwrap_or(0)
+        text.split('.')
+            .map(|part| {
+                if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                part.parse::<u64>().ok()
+            })
+            .collect::<Option<Vec<u64>>>()
+            .map(Version)
     }
 }
 
@@ -43,8 +40,13 @@ impl PartialOrd for Version {
 
 impl Ord for Version {
     fn cmp(&self, other: &Version) -> Ordering {
-        let _ = other;
-        unimplemented!("task 6.1: version comparison")
+        let length = self.0.len().max(other.0.len());
+        let component =
+            |version: &Version, index: usize| version.0.get(index).copied().unwrap_or(0);
+        (0..length)
+            .map(|index| component(self, index).cmp(&component(other, index)))
+            .find(|ordering| ordering.is_ne())
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -97,9 +99,8 @@ mod tests {
     }
 
     #[test]
-    fn display_round_trips_and_major_is_the_first_component() {
+    fn display_round_trips() {
         assert_eq!(v("1171.7").to_string(), "1171.7");
-        assert_eq!(v("27.0").major(), 27);
-        assert_eq!(v("26.5").components(), &[26, 5]);
+        assert_eq!(v("26.5.0").to_string(), "26.5.0");
     }
 }

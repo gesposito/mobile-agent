@@ -7,9 +7,20 @@
 //! while the device is shut down, so no process is spawned in the guest and
 //! `CoreSimulatorBridge` needs no restart.
 
+use std::fs::{self, OpenOptions};
+use std::io::{ErrorKind, Write as _};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-use crate::error::Result;
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
+use objc2_foundation::{
+    NSData, NSMutableDictionary, NSNumber, NSPropertyListFormat, NSPropertyListMutabilityOptions,
+    NSPropertyListSerialization, NSString,
+};
+
+use crate::error::{Error, Result};
+use crate::macos::objc::{self, guarded, guarded_ns};
 use crate::model::PreferencesOutcome;
 
 /// The preferences file, relative to `-[SimDevice dataPath]`.
@@ -30,8 +41,93 @@ pub fn path(data_path: &Path) -> PathBuf {
 /// Sets the three keys to true in the file under `data_path`, creating it
 /// when missing and keeping every other key. Reports whether it wrote.
 pub fn write(data_path: &Path) -> Result<PreferencesOutcome> {
-    let _ = data_path;
-    unimplemented!("task 6.1: accessibility preferences")
+    let file = path(data_path);
+    let failed = |what: &str, reason: String| Error::Io {
+        what: format!("{what} {}", file.display()),
+        reason,
+    };
+    let existing = match fs::read(&file) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
+        Err(error) => return Err(failed("reading", error.to_string())),
+    };
+    let preferences = match existing {
+        None => NSMutableDictionary::<NSString, AnyObject>::new(),
+        Some(bytes) => {
+            let data = NSData::with_bytes(&bytes);
+            let plist = guarded_ns(
+                "+[NSPropertyListSerialization propertyListWithData:options:format:error:]",
+                // SAFETY: a null format pointer is allowed.
+                || unsafe {
+                    NSPropertyListSerialization::propertyListWithData_options_format_error(
+                        &data,
+                        NSPropertyListMutabilityOptions::MutableContainers,
+                        std::ptr::null_mut(),
+                    )
+                },
+            )?;
+            if !objc::is_kind_of(&plist, c"NSMutableDictionary") {
+                return Err(failed(
+                    "reading",
+                    "the property list is not a dictionary".into(),
+                ));
+            }
+            // SAFETY: a mutable dictionary read from a property list, whose
+            // keys are strings.
+            unsafe { Retained::cast_unchecked::<NSMutableDictionary<NSString, AnyObject>>(plist) }
+        }
+    };
+
+    let keys: Vec<Retained<NSString>> = KEYS.iter().map(|key| NSString::from_str(key)).collect();
+    let set = |key: &NSString| {
+        preferences.objectForKey(key).is_some_and(|value| {
+            objc::is_kind_of(&value, c"NSNumber")
+                // SAFETY: just checked that the value is an NSNumber.
+                && unsafe { &*(Retained::as_ptr(&value).cast::<NSNumber>()) }.as_bool()
+        })
+    };
+    if keys.iter().all(|key| set(key)) {
+        return Ok(PreferencesOutcome::AlreadySet);
+    }
+    let yes = NSNumber::new_bool(true);
+    for key in &keys {
+        preferences.insert(&**key, &*yes);
+    }
+    let bytes = guarded_ns(
+        "+[NSPropertyListSerialization dataWithPropertyList:format:options:error:]",
+        // SAFETY: a dictionary of strings to property list values.
+        || unsafe {
+            NSPropertyListSerialization::dataWithPropertyList_format_options_error(
+                &preferences,
+                NSPropertyListFormat::BinaryFormat_v1_0,
+                0,
+            )
+        },
+    )
+    .and_then(|data| guarded("-[NSData bytes]", || data.to_vec()))?;
+
+    // Written beside the file and renamed over it, so a reader never sees a
+    // partial file; owner-only, as the guest's cfprefsd leaves it.
+    let directory = file.parent().expect("the preferences file has a parent");
+    fs::create_dir_all(directory)
+        .map_err(|e| failed("creating the directory of", e.to_string()))?;
+    let staged = directory.join(format!(
+        ".com.apple.Accessibility.{}.plist",
+        std::process::id()
+    ));
+    let staging = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&staged)
+        .and_then(|mut out| out.write_all(&bytes).and_then(|()| out.sync_all()))
+        .and_then(|()| fs::rename(&staged, &file));
+    if let Err(error) = staging {
+        let _ = fs::remove_file(&staged);
+        return Err(failed("writing", error.to_string()));
+    }
+    Ok(PreferencesOutcome::Written)
 }
 
 #[cfg(test)]
