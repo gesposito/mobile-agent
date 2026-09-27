@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 prost = "0.14.4"
+protocol = { version = "0.1.0", path = "../protocol" }
 tokio = { version = "1.53.1", features = ["time"] }
 tonic = { version = "0.14.6", default-features = false, features = ["channel", "codegen"] }
 tonic-prost = "0.14.6"
@@ -20,4 +21,5 @@ protoc-bin-vendored = "3.2.0"
 tonic-prost-build = "0.14.6"
 
 [dev-dependencies]
+miniz_oxide = "0.9.1"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "time"] }
