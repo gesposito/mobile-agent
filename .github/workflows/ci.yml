@@ -93,6 +93,10 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         if: steps.xcode.outputs.available == 'true'
         run: rustup toolchain install --no-self-update
+      - name: Add the iOS Simulator target for the Simulator driver's tree reader
+        if: steps.xcode.outputs.available == 'true'
+        # crates/simulator/build.rs cross-compiles reader/ for it; see crates/simulator/README.md.
+        run: rustup target add aarch64-apple-ios-sim
       - name: Install just and the OpenSpec CLI
         if: steps.xcode.outputs.available == 'true'
         # TODO: run both through Socket Firewall (sfw cargo install, sfw npm install) like local installs.

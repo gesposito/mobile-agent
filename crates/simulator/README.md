@@ -6,12 +6,12 @@ dtuhidd or the legacy Indigo client, frames from the display surface, and the
 accessibility tree through a reader spawned into the guest. Nothing is built
 or installed in the Simulator.
 
-`SimulatorDriver` implements the driver traits (`Lifecycle`, `Frames` and
-`Input` so far). They carry no Apple types, so the mirror and the daemon can hold any
-backend behind them; they live in this crate until `crates/mirror` defines
-its own.
-On hosts other than macOS the crate still builds: `SimulatorDriver` exists
-there, and `open` fails with `platform_unsupported`.
+`SimulatorDriver` implements the driver traits: `Lifecycle`, `Frames`,
+`Input` and `Tree`. They carry no Apple types, and the tree read returns the
+protocol's snapshot payload (`crates/protocol`) in the form the mirror's
+backend traits expect (`mirror::backend`), so the daemon can put the driver
+behind those traits. On hosts other than macOS the crate still builds:
+`SimulatorDriver` exists there, and `open` fails with `platform_unsupported`.
 
 ## Layout
 
@@ -27,6 +27,7 @@ src/
   keymap.rs        characters and key names to USB HID usages
   select.rs        choosing the input transport from the host's versions
   compat.rs        the Xcode gate and the doctor compatibility table
+  tree.rs          ForegroundTree: owner, alert, covered content, degradations
   lookup.rs        finding a device, runtime or device type from user input
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
@@ -44,7 +45,20 @@ src/
     indigo.rs      the legacy Indigo transport
     host.rs        the host's CoreSimulator and Xcode versions
     pasteboard.rs  writing the device pasteboard through devicectl
+    reader.rs      the embedded reader: caching, spawning, its protocol link
+    translator.rs  the host translator, the tree fallback
     driver.rs      SimulatorDriver
+build.rs           builds reader/ for the Simulator, for embedding
+reader/            simulator-reader, the tree reader spawned into the guest
+  src/
+    elements.rs    the tree both read paths fill, and its snapshot payload
+    guest/
+      objc.rs      image loading and the exception guard, in the guest
+      runtime.rs   XCTAutomationSupport, AXRuntime and AXSettings
+      extract.rs   the runtime's snapshot dictionaries to elements
+      process.rs   a pid's executable, bundle and whether it is system UI
+      server.rs    the device protocol over one connection, reads on a worker
+    main.rs        simulator-reader connect <socket> --token --scale
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
   lifecycle.rs     task 6.1
@@ -52,8 +66,9 @@ tests/
   indigo.rs        task 6.3
   dtuhid.rs        task 6.4
   transport.rs     task 6.5
+  tree.rs          task 6.6
   text.rs          task 6.7
-  containment.rs   task 6.8
+  containment.rs   tasks 6.8 and 6.6
 ```
 
 ## Building
@@ -77,6 +92,30 @@ With both features, jpeg-encoder takes over if turbojpeg cannot start. The
 workspace builds this crate and jpeg-encoder at `opt-level = 3` in the dev
 profile too: unoptimized, the pixel pipeline took 230 ms per 460x1000 frame,
 and even `cargo test` has to hold 30 fps.
+
+### The reader
+
+The tree reader, `reader/` (package `simulator-reader`, a workspace member),
+is built for `aarch64-apple-ios-sim` and embedded in this crate, so nothing
+is compiled on the machine that runs the driver. `build.rs` runs a nested
+`cargo build --release --offline --locked` of it for that target, in
+`target/<profile>/simulator-reader-target/`, which leaves an unchanged
+reader at a fingerprint check; a first build takes about 20 s. It needs the
+target's standard library and the iOS Simulator SDK that Xcode ships:
+
+```sh
+rustup target add aarch64-apple-ios-sim
+```
+
+Without the target, the build prints a warning, embeds nothing, and tree
+reads use the host translator; `doctor` says so. `MOBILE_AGENT_READER`
+names a prebuilt reader to embed instead. A reader that fails to compile
+fails the build. The binary is 0.89 MB, links only Foundation,
+CoreFoundation, libobjc, libSystem and libiconv, and carries only the ad hoc
+signature the linker gives every arm64 binary. The reader's library, the
+conversion into the snapshot payload, also builds for the host, where the
+workspace lints and tests it with the rest of the reader's code; its runtime
+exists only inside a Simulator.
 
 ## Private calls
 
@@ -107,6 +146,96 @@ under the device's `-[SimDevice dataPath]`, keeping every other key; spike S4
 found both tree read paths failing for seconds after a boot without them.
 `create_device` writes them too, so a new device has them before its first
 boot. A booted device's preferences belong to the guest and are left alone.
+
+## Tree
+
+`snapshot` reads the tree of whatever owns the foreground and returns a
+`ForegroundTree`: the payload, who owns the foreground, the alert in front,
+and why the read is degraded.
+
+The reader (spike S4's port of agent-device's snapshot bridge) is spawned
+into each booted Simulator on its first read, through `-[SimDevice
+spawnWithPath:options:terminationQueue:terminationHandler:pid:error:]`,
+never `xcrun simctl spawn`, whose own start costs about 295 ms. The embedded
+binary is written once per content to
+`$HOME/Library/Caches/dev.mobileagent.simulator/`, since the first spawn of
+a newly written file is slower, and runs from there: nothing is installed in
+the Simulator. The host listens on a Unix socket in its temporary directory;
+the reader loads XCTAutomationSupport and AXRuntime from the runtime root,
+then connects and speaks the device protocol as an agent with the `tree`
+capability, its hello carrying the token the host spawned it with. A
+connection therefore means it can read, and readiness is the time from the
+spawn call to its hello, which `status` reports with the reader's pid, path
+and state. Reads run on a worker thread so the connection answers pings
+during a slow one; a request that arrives meanwhile is answered `busy`, and
+a read that hangs for 20 s ends the process (status 70). The reader exits
+when the host shuts it down or its connection ends, so it never outlives the
+driver. Its standard error goes to `simulator-reader-<udid>.log` in the
+same cache directory.
+
+A read asserts automation mode, as agent-device does, asks `+[AXElement
+primaryApp]` who owns the foreground, snapshots that process with one
+`-userTestingSnapshotForElement:options:error:` (64 levels and 10,000 nodes
+by default, retried at half depth when the server rejects the depth), and
+checks the owner again afterwards: a change fails the read with
+`foreground_changed`. A permission alert makes SpringBoard the owner, so the
+read is SpringBoard's tree, whose alert lists its buttons. The payload
+follows the mirror's conventions (`reader/src/elements.rs`):
+
+- one window per read, its id the owner's pid, its kind `system` for system
+  UI (SpringBoard and the other processes of the runtime's CoreServices) and
+  `application` otherwise, with the owner's bundle identifier and name; the
+  keyboard's `UIRemoteKeyboardWindow` becomes an input-method window above it;
+- `class` is the `XCUIElementType` name, or the UIKit class for elements the
+  runtime types as `Other` or `Group`, so the alert controller's
+  `_UIAlertControllerPhoneTVMacView` names itself; a static text with the
+  header trait is a `Heading`;
+- `desc` is the label and `text` the value; an empty field's value, which
+  repeats its placeholder, is dropped and the placeholder becomes its label;
+  a switch's value becomes `checked`;
+- bounds are pixels (points times the screen scale, which the host passes
+  the reader); `visible` means the frame overlaps the screen, `enabled`,
+  `selected` and `clickable` come from the traits, `editable`, `password`
+  and `scrollable` from the type, and `focused` from the private editing
+  trait, which only the field with keyboard focus carries.
+
+An alert is the last visible alert container in the owner's tree; its title
+is the container's label, its message the other static texts, and its
+buttons the outermost ones, since UIKit nests each action's button in
+another with the same label. The payload keeps what an alert covers, as the
+reader returns it, because the mirror cuts that itself and still reports a
+ref to a covered element as covered; `uncovered()` returns the payload with
+only the alert and the containers it sits in. UIKit ignores touches while an
+alert presents, although the alert is in the tree from the start, so a
+client waits for the display to settle before tapping its buttons.
+
+A read is degraded when the translator read it, when a bound cut it, or when
+an application window holds only its root, as a read right after a launch
+does. `no_foreground`, `foreground_changed`, `snapshot_failed` and `busy` are
+retryable: an application answers about 1.5 s (SwiftUI, Debug) to 2 s
+(Expo, Release) after its launch. An Objective-C exception inside the reader
+comes back as the call and the exception, and takes the device out of
+service like any other.
+
+The host translator (`AXPTranslator`, answered through `-[SimDevice
+sendAccessibilityRequestAsync:completionQueue:completionHandler:]`) reads
+instead when the reader cannot run: no reader in this build, a spawn that
+fails, or a reader that exits or never says hello. After two failed spawns
+in a row the device stays on the translator until `reset_target`; a reader
+whose connection ends is replaced once within the read. The translator
+needs nothing in the guest, but makes about seven requests per element,
+flattens containers, drops the tab bar's buttons and React Native's text
+identifiers, and answers with a childless application for seconds after a
+launch (S4), so its reads are marked degraded with the reason the reader was
+not used. It maps AX roles to the same class names. The translator is one
+object per process, so reads of different devices take turns.
+`DriverOptions::tree` can force either backend and `DriverOptions::reader`
+can name another reader binary.
+
+On the spike Simulator the reader was ready 271 to 303 ms after its spawn
+(first spawn of the cached file 302 ms), read the SwiftUI Login screen's 48
+nodes in 13.9 to 14.3 ms and the Big screen's 546 in 126 to 152 ms, the
+nodes XCTest returns.
 
 ## Frames
 
@@ -258,9 +387,9 @@ transport.
 
 `compatibility()` reports Xcode, CoreSimulator, SimulatorKit, the installed
 runtimes, the input transport with the rule that picked it, the `_4sim` XPC
-symbols and the frame encoder, each validated, supported, limited or
-unsupported, followed by every private call the driver makes with the image
-it lives in and where it was validated:
+symbols, the tree reader and translator, and the frame encoder, each
+validated, supported, limited or unsupported, followed by every private call
+the driver makes with the image it lives in and where it was validated:
 
 | Private calls | Image | Validated on |
 |---|---|---|
@@ -270,6 +399,9 @@ it lives in and where it was validated:
 | `-[SimDevice io]`, `-ioPorts`, the display descriptor, `-framebufferSurface`, the SimScreen callbacks | CoreSimDeviceIO, ROCKit proxies | spike S2, `tests/frames.rs` |
 | `-[SimDevice lookup:error:]`, the three `_4sim` libxpc functions | CoreSimulator, libxpc | spike S3, `tests/dtuhid.rs` |
 | `SimDeviceLegacyHIDClient`, `IndigoHIDMessageForMouseNSEvent` (six parameters) | SimulatorKit 1005.2 | spike S3, `tests/indigo.rs` on a fresh boot |
+| `-[SimDevice spawnWithPath:options:terminationQueue:terminationHandler:pid:error:]` | CoreSimulator | spike S4, `tests/tree.rs` |
+| In the guest: `XCTAccessibilityFramework -initForRemoteAccess`, `-userTestingSnapshotForElement:options:error:`, `XCAccessibilityElement`, `XCTDefaultSnapshotParameters`, `XCAXAccessibilityAttributesForStringAttributes`; `+[AXElement primaryApp]`, `AXValueGetValue`; `-[AXSettings setAutomationEnabled:]`, `_AXSAutomationEnabled` | XCTAutomationSupport, AXRuntime, AccessibilityUtilities, libAccessibility of the iOS 26.5 runtime | spike S4, `tests/tree.rs` |
+| `AXPTranslator` and `AXPMacPlatformElement` attributes, `-[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:]` | AccessibilityPlatformTranslation 545.18, CoreSimulator | spike S4, `tests/tree.rs` (fallback) |
 
 ## Tests
 
@@ -285,6 +417,10 @@ both fixtures installed and the Expo fixture on its Login tab:
 MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
 ```
 
+The tree tests use the SwiftUI fixture on the same Simulator and put the
+Expo fixture back on Login when they end. The permission alert test resets
+the fixture's location permission before and after, with `simctl privacy`.
+
 Tests that create devices name them `mobile-agent-simtest-*` and delete them
 when they end, pass or fail; a binary that needs a freshly booted device
 makes one and deletes it on exit, or uses the one `MOBILE_AGENT_SIM_FRESH_UDID`
@@ -298,14 +434,21 @@ about a minute.
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Simulator discovery and lifecycle | Launch with environment | `lifecycle::launch_with_environment`, `lifecycle::every_simulator_is_listed_with_identifier_name_runtime_and_state`, `lifecycle::a_booted_device_is_left_alone`, `lifecycle::an_unknown_device_is_not_found` |
-| Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
+| No test runner and no per-app build | Fresh Simulator | `tree::fresh_simulator` |
+| No test runner and no per-app build | Spawned helper is reported | `tree::target_status_reports_the_reader_and_its_readiness`, `macos::reader::tests::the_build_embedded_a_reader_for_the_simulator` |
+| Foreground tree read | System alert in front | `tree::a_permission_alert_is_reported_as_system_owned`, `tree::tests::a_system_alert_belongs_to_system_ui` |
+| Foreground tree read | Sparse tree flagged | `tree::sparse_tree_flagged`, `tree::tests::an_application_root_alone_is_sparse`, `tree::tests::the_translator_and_truncation_degrade_the_read_with_reasons` |
+| Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
+| Foreground tree read | Covered content cut under alerts, the translator fallback (task 6.6) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
+| Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |
 | Input transport selection | Two runtimes on one host | `transport::two_simulators_get_the_hosts_transport` (both on iOS 26.5, the host's only runtime), `select::tests::the_host_core_simulator_selects_dtuhidd_from_1155_4`, `select::tests::an_unreadable_version_is_taken_as_current`, `select::tests::a_forced_transport_is_the_only_one_tried`, `select::tests::the_fallback_is_opened_only_when_the_first_fails`, `select::tests::a_transport_that_failed_on_the_target_is_skipped` |
 | Input transport selection | Unsupported combination | `select::tests::the_unsupported_combination_names_every_version_and_transport_tried` |
 | Input actions | Warm tap latency | `dtuhid::warm_tap_latency` |
 | Input actions | Taps, keys and buttons over one dtuhidd connection (task 6.4) | `dtuhid::a_tap_lands_on_the_fixture_button`, `dtuhid::one_connection_carries_touch_keys_and_buttons` |
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
+| Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
-| Parallel Simulators | Two sessions | `transport::two_sessions` |
+| Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |
+| Failure containment | Framework call throws | `containment::a_tree_read_that_throws_takes_only_its_target_out_of_service`, `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call`, `macos::driver::tests::reader_failures_become_driver_errors`, and in `reader/`: `guest::objc::tests::an_exception_becomes_a_failure_naming_the_call` |
 | Xcode compatibility statement | Unsupported Xcode | `compat::tests::unsupported_xcode`, `macos::driver::tests::commands_refuse_an_xcode_outside_the_range`, `compat::tests::a_host_without_xcode_is_refused`, `compat::tests::xcode_26_and_27_are_supported`, `compat::tests::the_table_renders_every_row_and_call_site`, `macos::driver::tests::this_host_is_within_the_range_and_the_table_says_why` |
-| Failure containment | Framework call throws | `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call` |

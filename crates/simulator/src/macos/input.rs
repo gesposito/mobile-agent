@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::gate::Submitted;
 use crate::gesture::{Screen, TouchStep};
 use crate::macos::coresim::Device;
+use crate::macos::reader::TreeSlot;
 use crate::model::{Button, Dispatch, Key, TransportKind};
 
 /// The Left Shift, Control, Option and Command usages, held around a key
@@ -56,10 +57,12 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// A booted device the driver has sent requests to: its handle, its screen
-/// geometry and its input session, opened on first use and kept.
+/// geometry, its input session and its tree reader, each opened on first use
+/// and kept.
 pub struct Target {
     pub device: Device,
     pub screen: Screen,
+    pub tree: TreeSlot,
     transport: Mutex<Option<Arc<dyn Transport>>>,
     /// Why the open transport was chosen.
     reason: Mutex<String>,
@@ -78,6 +81,7 @@ impl Target {
         Target {
             device,
             screen,
+            tree: TreeSlot::default(),
             transport: Mutex::new(None),
             reason: Mutex::new(String::new()),
             failures: Mutex::new(Vec::new()),

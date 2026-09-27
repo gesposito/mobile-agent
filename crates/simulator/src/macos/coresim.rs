@@ -2,12 +2,14 @@
 //! the device lifecycle, ported from spike S2. Classes are looked up by name
 //! and every call is a dynamic message send inside the exception guard.
 
+use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use block2::RcBlock;
+use dispatch2::DispatchQueue;
 use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
@@ -573,6 +575,98 @@ impl Device {
             // SAFETY: takes an NSString and an NSError out pointer.
             unsafe { msg_send![&*self.0, terminateApplicationWithID: &*bundle_id, error: _] }
         })
+    }
+
+    /// Starts `program`, built for the Simulator, inside the device with
+    /// `arguments` after its name, and returns its process id once it
+    /// exists: what `xcrun simctl spawn` does, from this process, which has
+    /// CoreSimulator loaded already. Nothing is installed. Its standard error
+    /// goes to `stderr`, a file descriptor of this process, when given, and
+    /// `ended` runs with its termination status when it exits.
+    pub fn spawn(
+        &self,
+        program: &Path,
+        arguments: &[String],
+        stderr: Option<RawFd>,
+        ended: impl Fn(i32) + Send + 'static,
+    ) -> Result<i32> {
+        const CALL: &str =
+            "-[SimDevice spawnWithPath:options:terminationQueue:terminationHandler:pid:error:]";
+        let program = program.to_string_lossy().into_owned();
+        let mut argv = vec![program.clone()];
+        argv.extend_from_slice(arguments);
+        let argv = strings(&argv);
+        let environment = dictionary(&[]);
+        let standalone = NSNumber::new_bool(false);
+        let stderr = stderr.map(NSNumber::new_i32);
+        let mut keys = vec![
+            NSString::from_str("arguments"),
+            NSString::from_str("environment"),
+            NSString::from_str("standalone"),
+        ];
+        let mut values: Vec<&AnyObject> = vec![&argv, &environment, &standalone];
+        if let Some(stderr) = &stderr {
+            keys.push(NSString::from_str("stderr"));
+            values.push(stderr);
+        }
+        let keys: Vec<&NSString> = keys.iter().map(|key| &**key).collect();
+        let options: Retained<NSDictionary<NSString, AnyObject>> =
+            NSDictionary::from_slices(&keys, &values);
+        let handler = RcBlock::new(move |status: libc::c_int| ended(status));
+        let path = NSString::from_str(&program);
+        let mut pid: libc::pid_t = 0;
+        guarded_ns::<()>(CALL, || {
+            // SAFETY: the arguments match the selector, which returns BOOL
+            // with an NSError out pointer; the block's signature is
+            // `void (^)(int)`; `pid` outlives the call.
+            unsafe {
+                msg_send![
+                    &*self.0,
+                    spawnWithPath: &*path,
+                    options: &*options,
+                    terminationQueue: objc::completion_queue(),
+                    terminationHandler: &*handler,
+                    pid: &mut pid,
+                    error: _
+                ]
+            }
+        })?;
+        Ok(pid)
+    }
+
+    /// Sends one request of the host accessibility translator to the device
+    /// and waits for its response, which is `None` when none arrives within
+    /// `timeout`.
+    pub fn send_accessibility_request(
+        &self,
+        request: &AnyObject,
+        queue: &DispatchQueue,
+        timeout: Duration,
+    ) -> Result<Option<Retained<AnyObject>>> {
+        const CALL: &str =
+            "-[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:]";
+        let (tx, rx) = mpsc::sync_channel(1);
+        let handler = RcBlock::new(move |response: *mut AnyObject| {
+            // SAFETY: CoreSimulator passes nil or a live AXPTranslatorResponse.
+            let response = unsafe { Retained::retain(response) };
+            let _ = tx.try_send(SendBox(response));
+        });
+        guarded(CALL, || {
+            // SAFETY: the arguments match the selector; the block's signature
+            // is `void (^)(AXPTranslatorResponse *)`.
+            unsafe {
+                let _: () = msg_send![
+                    &*self.0,
+                    sendAccessibilityRequestAsync: request,
+                    completionQueue: queue,
+                    completionHandler: &*handler
+                ];
+            }
+        })?;
+        Ok(rx
+            .recv_timeout(timeout)
+            .ok()
+            .and_then(|SendBox(response)| response))
     }
 }
 

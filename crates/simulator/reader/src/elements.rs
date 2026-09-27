@@ -25,7 +25,9 @@
 //! method window, which the mirror collapses to one line.
 
 use protocol::message::SnapshotParams;
-use protocol::snapshot::Snapshot;
+use protocol::snapshot::{
+    Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+};
 
 /// UIAccessibilityTraits bits the conversion reads.
 pub mod traits {
@@ -131,8 +133,14 @@ impl Limits {
     /// The request's bounds, the defaults where it sets none, capped at the
     /// depth the protocol decodes.
     pub fn from_params(params: &SnapshotParams) -> Limits {
-        let _ = params;
-        unimplemented!("task 6.6: request bounds")
+        let defaults = Limits::default();
+        Limits {
+            max_depth: params
+                .max_depth
+                .unwrap_or(defaults.max_depth)
+                .min(MAX_NODE_DEPTH as u32),
+            max_nodes: params.max_nodes.unwrap_or(defaults.max_nodes).max(1),
+        }
     }
 }
 
@@ -151,35 +159,362 @@ pub struct Read {
 
 /// Turns a read into the protocol's snapshot payload.
 pub fn snapshot(read: &Read) -> Snapshot {
-    let _ = read;
-    unimplemented!("task 6.6: the snapshot payload")
+    let mut builder = Builder {
+        strings: Vec::new(),
+        next_id: 1,
+        count: 0,
+        truncated: Truncation::EMPTY,
+        limits: read.limits,
+        scale: read.scale,
+        screen: read.root.frame.filter(|f| f[2] > 0.0 && f[3] > 0.0),
+    };
+    if read.depth_cut {
+        builder.truncated |= Truncation::DEPTH;
+    }
+    let package = read
+        .owner
+        .bundle_id
+        .as_deref()
+        .map(|bundle| builder.string(bundle));
+
+    // The keyboard window leaves the application's tree for its own window.
+    let mut app = read.root.clone();
+    let keyboards: Vec<Element> = {
+        let (keyboards, rest) = std::mem::take(&mut app.children)
+            .into_iter()
+            .partition(is_keyboard_window);
+        app.children = rest;
+        keyboards
+    };
+
+    let title = present(&app.label)
+        .map(str::to_owned)
+        .or_else(|| (!read.owner.name.is_empty()).then(|| read.owner.name.clone()));
+    let app_root = builder.node(&app, 0);
+    let mut windows = Vec::new();
+    for keyboard in &keyboards {
+        let root = builder.node(keyboard, 1);
+        windows.push(Window {
+            id: read.owner.pid as u32 | KEYBOARD_WINDOW,
+            kind: WindowType::INPUT_METHOD,
+            layer: 1,
+            package,
+            title: None,
+            bounds: builder.bounds(keyboard.frame),
+            flags: WindowFlags::EMPTY,
+            root,
+        });
+    }
+    windows.push(Window {
+        id: read.owner.pid as u32,
+        kind: if read.owner.system {
+            WindowType::SYSTEM
+        } else {
+            WindowType::APPLICATION
+        },
+        layer: 0,
+        package,
+        title,
+        bounds: builder.bounds(app.frame),
+        flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+        root: app_root,
+    });
+    Snapshot {
+        strings: builder.strings,
+        windows,
+        node_count: builder.count,
+        truncated: builder.truncated,
+        seq: 0,
+    }
+}
+
+fn is_keyboard_window(element: &Element) -> bool {
+    element.class.as_deref() == Some(KEYBOARD_WINDOW_CLASS)
+}
+
+/// The string, unless absent or only whitespace.
+fn present(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|v| !v.trim().is_empty())
+}
+
+struct Builder {
+    strings: Vec<String>,
+    next_id: u32,
+    count: u32,
+    truncated: Truncation,
+    limits: Limits,
+    scale: f64,
+    /// The application element's frame, for visibility.
+    screen: Option<[f64; 4]>,
+}
+
+impl Builder {
+    fn string(&mut self, value: &str) -> u32 {
+        match self.strings.iter().position(|s| s == value) {
+            Some(index) => index as u32,
+            None => {
+                self.strings.push(value.to_owned());
+                (self.strings.len() - 1) as u32
+            }
+        }
+    }
+
+    fn bounds(&self, frame: Option<[f64; 4]>) -> Bounds {
+        let Some([x, y, width, height]) = frame else {
+            return Bounds::default();
+        };
+        let pixels = |points: f64| (points * self.scale).round() as i32;
+        Bounds::new(pixels(x), pixels(y), pixels(x + width), pixels(y + height))
+    }
+
+    fn visible(&self, frame: Option<[f64; 4]>) -> bool {
+        let Some([x, y, width, height]) = frame else {
+            return false;
+        };
+        if width <= 0.0 || height <= 0.0 {
+            return false;
+        }
+        match self.screen {
+            None => true,
+            Some([sx, sy, sw, sh]) => {
+                x < sx + sw && x + width > sx && y < sy + sh && y + height > sy
+            }
+        }
+    }
+
+    /// Converts `element`, `level` levels below the application element,
+    /// with as many descendants as the limits allow.
+    fn node(&mut self, element: &Element, level: u32) -> Option<Node> {
+        if self.count >= self.limits.max_nodes {
+            self.truncated |= Truncation::NODES;
+            return None;
+        }
+        self.count += 1;
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let automation_type = element.automation_type;
+        let text_input = matches!(
+            automation_type,
+            Some(
+                types::TEXT_FIELD
+                    | types::SECURE_TEXT_FIELD
+                    | types::SEARCH_FIELD
+                    | types::TEXT_VIEW
+            )
+        );
+        let switch = matches!(automation_type, Some(types::SWITCH | types::TOGGLE));
+        let placeholder = present(&element.placeholder);
+        let value = present(&element.value);
+        let class = class_name(level, element);
+        let class = self.string(&class);
+
+        let mut flags = NodeFlags::EMPTY;
+        if element.traits & traits::NOT_ENABLED == 0 {
+            flags |= NodeFlags::ENABLED;
+        }
+        if self.visible(element.frame) {
+            flags |= NodeFlags::VISIBLE;
+        }
+        if element.traits & traits::SELECTED != 0 {
+            flags |= NodeFlags::SELECTED;
+        }
+        if element.traits & (traits::BUTTON | traits::LINK) != 0 {
+            flags |= NodeFlags::CLICKABLE;
+        }
+        if text_input {
+            flags |= NodeFlags::EDITABLE | NodeFlags::FOCUSABLE;
+        }
+        if automation_type == Some(types::SECURE_TEXT_FIELD) {
+            flags |= NodeFlags::PASSWORD;
+        }
+        if element.traits & traits::IS_EDITING != 0 {
+            flags |= NodeFlags::FOCUSED;
+        }
+        if switch {
+            flags |= NodeFlags::CHECKABLE;
+            if value == Some("1") {
+                flags |= NodeFlags::CHECKED;
+            }
+        }
+        if matches!(
+            automation_type,
+            Some(types::SCROLL_VIEW | types::TABLE | types::COLLECTION_VIEW)
+        ) {
+            flags |= NodeFlags::SCROLLABLE;
+        }
+
+        let desc = present(&element.label).or(if text_input { placeholder } else { None });
+        let repeats_placeholder = |value: &&str| text_input && Some(*value) == placeholder;
+        let text = value.filter(|value| !switch && !repeats_placeholder(value));
+
+        let delivered = element.children.len() as u64;
+        if element
+            .children_count
+            .is_some_and(|count| count > delivered)
+        {
+            self.truncated |= if level >= self.limits.max_depth {
+                Truncation::DEPTH
+            } else {
+                Truncation::NODES
+            };
+        }
+        let mut children = Vec::new();
+        if !element.children.is_empty() {
+            if level >= self.limits.max_depth {
+                self.truncated |= Truncation::DEPTH;
+            } else {
+                for child in &element.children {
+                    match self.node(child, level + 1) {
+                        Some(child) => children.push(child),
+                        None => break,
+                    }
+                }
+            }
+        }
+        Some(Node {
+            id,
+            class,
+            res_pkg: None,
+            res_id: present(&element.identifier).map(str::to_owned),
+            text: text.map(str::to_owned),
+            desc: desc.map(str::to_owned),
+            bounds: self.bounds(element.frame),
+            flags,
+            children,
+        })
+    }
 }
 
 /// The class name a node gets: see the module documentation.
 pub fn class_name(level: u32, element: &Element) -> String {
-    let _ = (level, element);
-    unimplemented!("task 6.6: class names")
+    let platform = || {
+        element
+            .class
+            .as_deref()
+            .filter(|class| !class.trim().is_empty())
+            .map(str::to_owned)
+    };
+    let name = match (level, element.automation_type) {
+        (0, _) => "Application",
+        (_, Some(types::RUNTIME_WINDOW)) => "Window",
+        (_, None | Some(types::ANY | types::OTHER)) => {
+            return platform().unwrap_or_else(|| format!("{XCUI_PREFIX}Other"));
+        }
+        (_, Some(types::GROUP)) => {
+            return platform().unwrap_or_else(|| format!("{XCUI_PREFIX}Group"));
+        }
+        (_, Some(types::STATIC_TEXT)) if element.traits & traits::HEADER != 0 => "Heading",
+        (_, Some(value)) => xcui_element_type_name(value).unwrap_or("Other"),
+    };
+    format!("{XCUI_PREFIX}{name}")
 }
 
 /// The `XCUIElementType` case name for a value, as XCTest names them
 /// (`XCUIElementTypeButton` is 9).
 pub fn xcui_element_type_name(value: u64) -> Option<&'static str> {
-    let _ = value;
-    unimplemented!("task 6.6: XCUIElementType names")
+    XCUI_ELEMENT_TYPES
+        .get(usize::try_from(value).ok()?)
+        .copied()
 }
 
 /// The value of an `XCUIElementType` case name.
 pub fn xcui_element_type(name: &str) -> Option<u64> {
-    let _ = name;
-    unimplemented!("task 6.6: XCUIElementType names")
+    XCUI_ELEMENT_TYPES
+        .iter()
+        .position(|candidate| *candidate == name)
+        .map(|index| index as u64)
 }
+
+/// `XCUIElementType` from XCTest's `XCUIElementTypes.h`, indexed by value.
+const XCUI_ELEMENT_TYPES: [&str; 83] = [
+    "Any",
+    "Other",
+    "Application",
+    "Group",
+    "Window",
+    "Sheet",
+    "Drawer",
+    "Alert",
+    "Dialog",
+    "Button",
+    "RadioButton",
+    "RadioGroup",
+    "CheckBox",
+    "DisclosureTriangle",
+    "PopUpButton",
+    "ComboBox",
+    "MenuButton",
+    "ToolbarButton",
+    "Popover",
+    "Keyboard",
+    "Key",
+    "NavigationBar",
+    "TabBar",
+    "TabGroup",
+    "Toolbar",
+    "StatusBar",
+    "Table",
+    "TableRow",
+    "TableColumn",
+    "Outline",
+    "OutlineRow",
+    "Browser",
+    "CollectionView",
+    "Slider",
+    "PageIndicator",
+    "ProgressIndicator",
+    "ActivityIndicator",
+    "SegmentedControl",
+    "Picker",
+    "PickerWheel",
+    "Switch",
+    "Toggle",
+    "Link",
+    "Image",
+    "Icon",
+    "SearchField",
+    "ScrollView",
+    "ScrollBar",
+    "StaticText",
+    "TextField",
+    "SecureTextField",
+    "DatePicker",
+    "TextView",
+    "Menu",
+    "MenuItem",
+    "MenuBar",
+    "MenuBarItem",
+    "Map",
+    "WebView",
+    "IncrementArrow",
+    "DecrementArrow",
+    "Timeline",
+    "RatingIndicator",
+    "ValueIndicator",
+    "SplitGroup",
+    "Splitter",
+    "RelevanceIndicator",
+    "ColorWell",
+    "HelpTag",
+    "Matte",
+    "DockItem",
+    "Ruler",
+    "RulerMarker",
+    "Grid",
+    "LevelIndicator",
+    "Cell",
+    "LayoutArea",
+    "LayoutItem",
+    "Handle",
+    "Stepper",
+    "Tab",
+    "TouchBar",
+    "StatusItem",
+];
 
 #[cfg(test)]
 mod tests {
-    use protocol::snapshot::{
-        Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Truncation, WindowFlags, WindowType,
-    };
-
     use super::*;
 
     fn element(automation_type: u64, class: &str) -> Element {

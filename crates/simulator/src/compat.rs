@@ -91,6 +91,9 @@ pub fn call_sites() -> Vec<CallSite> {
         "Xcode 27.0, SimulatorKit 1005.2, iOS 26.5: spike S3 and tests/indigo.rs, on a fresh boot";
     const TEXT: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/text.rs";
     const LIFECYCLE: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/lifecycle.rs";
+    const READER: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S4 and tests/tree.rs";
+    const GUEST: &str = "iOS 26.5 runtime, inside the Simulator: spike S4 and tests/tree.rs, through simulator-reader";
+    const TRANSLATOR: &str = "macOS 26.6, AccessibilityPlatformTranslation 545.18, iOS 26.5: spike S4 and tests/tree.rs (fallback)";
     let site = |call, image, validated_on| CallSite {
         call,
         image,
@@ -153,6 +156,41 @@ pub fn call_sites() -> Vec<CallSite> {
             "IndigoHIDMessageForMouseNSEvent (six parameters; down, dragged and up)",
             "SimulatorKit",
             INDIGO,
+        ),
+        site(
+            "-[SimDevice spawnWithPath:options:terminationQueue:terminationHandler:pid:error:]",
+            "CoreSimulator",
+            READER,
+        ),
+        site(
+            "-[XCTAccessibilityFramework initForRemoteAccess], -userTestingSnapshotForElement:options:error:, +[XCAccessibilityElement elementWithProcessIdentifier:], -AXUIElement, XCTDefaultSnapshotParameters, XCAXAccessibilityAttributesForStringAttributes",
+            "XCTAutomationSupport (in the guest)",
+            GUEST,
+        ),
+        site(
+            "+[AXElement primaryApp], -pid, AXValueGetValue, AXValueGetTypeID",
+            "AXRuntime (in the guest)",
+            GUEST,
+        ),
+        site(
+            "+[AXSettings sharedInstance], -setAutomationEnabled:, _AXSAutomationEnabled",
+            "AccessibilityUtilities, libAccessibility (in the guest)",
+            GUEST,
+        ),
+        site(
+            "+[AXPTranslator sharedInstance], -setBridgeTokenDelegate:, -frontmostApplicationWithDisplayId:bridgeDelegateToken:, -macPlatformElementFromTranslation:, AXPTranslationObject -setBridgeDelegateToken:, -pid",
+            "AccessibilityPlatformTranslation",
+            TRANSLATOR,
+        ),
+        site(
+            "AXPMacPlatformElement -translation, -accessibilityRole, -accessibilitySubrole, -accessibilityLabel, -accessibilityIdentifier, -accessibilityValue, -accessibilityFrame, -accessibilityAttributeValue: AXTraits, -accessibilityChildren",
+            "AccessibilityPlatformTranslation",
+            TRANSLATOR,
+        ),
+        site(
+            "-[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:]",
+            "CoreSimulator",
+            TRANSLATOR,
         ),
     ]
 }

@@ -14,6 +14,8 @@ mod input;
 mod objc;
 mod pasteboard;
 mod prefs;
+mod reader;
+mod translator;
 mod xpc;
 
 pub use driver::SimulatorDriver;

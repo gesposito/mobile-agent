@@ -4,14 +4,21 @@
 //! private XCTAutomationSupport client and serves it to the host over the
 //! device protocol (design D6, spike S4).
 //!
-//! [`elements`] is the tree model both of the driver's read paths fill in,
-//! and its conversion into the protocol's snapshot payload. It is plain
-//! Rust; the driver's host translator uses it too.
+//! - [`elements`] is the tree model both of the driver's read paths fill in,
+//!   and its conversion into the protocol's snapshot payload. It is plain
+//!   Rust; the driver's host translator uses it too.
+//! - `guest` (Apple platforms) is the reader proper: the runtime bindings,
+//!   the snapshot extraction and the protocol server. It builds for macOS as
+//!   well, where its tests run, although the runtime it loads exists only
+//!   inside a Simulator.
 //!
 //! `crates/simulator/README.md` describes how the driver builds, ships and
 //! spawns it.
 
 pub mod elements;
+
+#[cfg(target_vendor = "apple")]
+pub mod guest;
 
 /// The error codes the reader answers a failed read with, besides the
 /// protocol's own (`window_changed` when the foreground changes during the

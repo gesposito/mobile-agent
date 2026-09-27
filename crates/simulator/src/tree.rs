@@ -13,7 +13,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use protocol::snapshot::{Node, Snapshot, Window};
+use protocol::snapshot::{Node, NodeFlags, Snapshot, Truncation, Window, WindowType};
 
 use crate::model::Point;
 
@@ -195,8 +195,50 @@ impl ForegroundTree {
         fallback: Option<String>,
         elapsed: Duration,
     ) -> Option<ForegroundTree> {
-        let _ = (snapshot, scale, backend, fallback, elapsed);
-        unimplemented!("task 6.6: foreground, alert and degradations")
+        let owner = snapshot
+            .windows
+            .iter()
+            .find(|window| window.kind != WindowType::INPUT_METHOD)?;
+        let foreground = Foreground {
+            pid: owner.id as i32,
+            bundle_id: owner
+                .package
+                .and_then(|index| snapshot.strings.get(index as usize).cloned()),
+            name: owner.title.clone().unwrap_or_default(),
+            system: owner.kind == WindowType::SYSTEM,
+        };
+        let mut degraded = Vec::new();
+        if backend.fallback() {
+            degraded.push(Degradation::Fallback {
+                reason: fallback.unwrap_or_else(|| "the driver was asked to use it".into()),
+            });
+        }
+        let truncated = snapshot.truncated;
+        if !truncated.is_empty() {
+            degraded.push(Degradation::Truncated {
+                depth: truncated.contains(Truncation::DEPTH),
+                nodes: truncated.contains(Truncation::NODES),
+            });
+        }
+        for window in &snapshot.windows {
+            let sparse = window
+                .root
+                .as_ref()
+                .is_none_or(|root| root.children.is_empty());
+            if window.kind == WindowType::APPLICATION && sparse {
+                degraded.push(Degradation::Sparse { window: window.id });
+            }
+        }
+        let alert = find_alert(&snapshot, scale);
+        Some(ForegroundTree {
+            snapshot,
+            scale,
+            foreground,
+            backend,
+            degraded,
+            alert,
+            elapsed,
+        })
     }
 
     pub fn is_degraded(&self) -> bool {
@@ -252,7 +294,33 @@ impl ForegroundTree {
     /// window only the alert and the containers it sits in, and no window
     /// below it. Without an alert, the payload as read.
     pub fn uncovered(&self) -> Snapshot {
-        unimplemented!("task 6.6: covered-content cutting")
+        let Some(alert) = &self.alert else {
+            return self.snapshot.clone();
+        };
+        let mut windows = Vec::new();
+        for window in &self.snapshot.windows {
+            if window.id != alert.window {
+                windows.push(window.clone());
+                continue;
+            }
+            let mut kept = window.clone();
+            kept.root = window
+                .root
+                .as_ref()
+                .and_then(|root| keep_path_to(root, alert.node));
+            windows.push(kept);
+            break;
+        }
+        let node_count = windows
+            .iter()
+            .filter_map(|window| window.root.as_ref())
+            .map(count)
+            .sum();
+        Snapshot {
+            windows,
+            node_count,
+            ..self.snapshot.clone()
+        }
     }
 }
 
@@ -261,6 +329,10 @@ fn walk<'a>(node: &'a Node, visit: &mut impl FnMut(&'a Node)) {
     for child in &node.children {
         walk(child, visit);
     }
+}
+
+fn count(node: &Node) -> u32 {
+    1 + node.children.iter().map(count).sum::<u32>()
 }
 
 fn points(bounds: &protocol::snapshot::Bounds, scale: f64) -> [f64; 4] {
@@ -278,9 +350,100 @@ fn center(node: &Node, scale: f64) -> Point {
     Point::new(x + width / 2.0, y + height / 2.0)
 }
 
+/// `node` with only the branch that leads to `target`, and all of `target`.
+fn keep_path_to(node: &Node, target: u32) -> Option<Node> {
+    if node.id == target {
+        return Some(node.clone());
+    }
+    let child = node
+        .children
+        .iter()
+        .find_map(|child| keep_path_to(child, target))?;
+    Some(Node {
+        children: vec![child],
+        ..node.clone()
+    })
+}
+
+/// The top-most visible alert: in the first window, skipping keyboards,
+/// that holds one, the last alert container in pre-order.
+fn find_alert(snapshot: &Snapshot, scale: f64) -> Option<Alert> {
+    let class = |node: &Node| {
+        snapshot
+            .strings
+            .get(node.class as usize)
+            .map_or("", String::as_str)
+    };
+    for window in &snapshot.windows {
+        if window.kind == WindowType::INPUT_METHOD {
+            continue;
+        }
+        let Some(root) = &window.root else {
+            continue;
+        };
+        let mut found = None;
+        walk(root, &mut |node| {
+            if node.flags.contains(NodeFlags::VISIBLE) && ALERT_CLASSES.contains(&class(node)) {
+                found = Some(node);
+            }
+        });
+        let Some(container) = found else {
+            continue;
+        };
+        let mut texts = Vec::new();
+        let mut buttons = Vec::new();
+        collect(container, &class, scale, &mut texts, &mut buttons);
+        let title = container.desc.clone().or_else(|| texts.first().cloned());
+        let message: Vec<String> = texts
+            .into_iter()
+            .filter(|text| Some(text) != title.as_ref())
+            .collect();
+        return Some(Alert {
+            window: window.id,
+            node: container.id,
+            title,
+            message: (!message.is_empty()).then(|| message.join("\n")),
+            buttons,
+        });
+    }
+    None
+}
+
+/// The static texts and the outermost buttons below an alert's container.
+/// UIKit nests each alert action's button in another button with the same
+/// label, which counts once.
+fn collect<'a>(
+    node: &'a Node,
+    class: &impl Fn(&Node) -> &'a str,
+    scale: f64,
+    texts: &mut Vec<String>,
+    buttons: &mut Vec<AlertButton>,
+) {
+    for child in &node.children {
+        let name = class(child);
+        let label = child.desc.clone().or_else(|| child.text.clone());
+        if name == "XCUIElementTypeButton" {
+            if let Some(label) = label {
+                buttons.push(AlertButton {
+                    label,
+                    identifier: child.res_id.clone(),
+                    node: child.id,
+                    center: center(child, scale),
+                });
+            }
+            continue;
+        }
+        if name == "XCUIElementTypeStaticText"
+            && let Some(label) = label
+        {
+            texts.push(label);
+        }
+        collect(child, class, scale, texts, buttons);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use protocol::snapshot::Truncation;
     use simulator_reader::elements::{self, Element, Limits, Owner, Read};
 
     use super::*;

@@ -7,9 +7,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use protocol::message::SnapshotParams;
+use protocol::snapshot::Snapshot;
+use simulator_reader::codes;
+
 use crate::compat::{self, Compatibility, Row, Status};
 use crate::driver::{Frames, Input, Lifecycle, Tree};
-use crate::error::{Error, Failure, Result};
+use crate::error::{Error, Failure, Result, TreeFailure};
 use crate::frames::FrameStream;
 use crate::gesture;
 use crate::lookup;
@@ -18,7 +22,8 @@ use crate::macos::dtuhid::Dtuhid;
 use crate::macos::encode::Encoder;
 use crate::macos::indigo::Indigo;
 use crate::macos::input::{Target, Transport};
-use crate::macos::{frames, host, pasteboard, prefs};
+use crate::macos::reader::{self, Reader, Spawned};
+use crate::macos::{frames, host, pasteboard, prefs, translator};
 use crate::macos::{objc, xpc};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Diagnostics, Dispatch,
@@ -27,7 +32,7 @@ use crate::model::{
     TextEntry, TextMethod, TransportKind,
 };
 use crate::select::{self, HostVersions};
-use crate::tree::{ForegroundTree, TreeOptions};
+use crate::tree::{ForegroundTree, TreeBackend, TreeChoice, TreeOptions};
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
 /// in spike S2, under load; later boots about 11 s.
@@ -280,6 +285,45 @@ impl SimulatorDriver {
             note: "dtuhidd needs them".into(),
         });
 
+        let reader = match &self.options.reader {
+            Some(path) => Ok(path.clone()),
+            None => reader::embedded(),
+        };
+        rows.push(Row {
+            component: "tree reader".into(),
+            detected: match &reader {
+                Ok(path) => format!("{} at {}", simulator_reader::AGENT, path.display()),
+                Err(why) => why.clone(),
+            },
+            expected: "built for aarch64-apple-ios-sim into this binary".into(),
+            status: if reader.is_ok() {
+                Status::Validated
+            } else {
+                Status::Limited
+            },
+            note: if reader.is_ok() {
+                "spawned into each booted Simulator, nothing installed".into()
+            } else {
+                "tree reads use the translator; see Building in the README".into()
+            },
+        });
+
+        let translator = translator::available();
+        rows.push(Row {
+            component: "tree translator".into(),
+            detected: match &translator {
+                Ok(()) => "AccessibilityPlatformTranslation loads".into(),
+                Err(error) => error.to_string(),
+            },
+            expected: "present, for the fallback".into(),
+            status: match (&translator, &reader) {
+                (Ok(()), _) => Status::Validated,
+                (Err(_), Ok(_)) => Status::Limited,
+                (Err(_), Err(_)) => Status::Unsupported,
+            },
+            note: "reads when the reader cannot run; its snapshots are degraded".into(),
+        });
+
         let encoder = Encoder::new(80).map(|encoder| encoder.name());
         rows.push(Row {
             component: "frame encoder".into(),
@@ -488,6 +532,108 @@ impl SimulatorDriver {
     }
 }
 
+/// What the reader made of a read.
+enum ReaderRead {
+    Read(Snapshot),
+    /// No reader can serve the device, and why.
+    Unusable(String),
+}
+
+impl SimulatorDriver {
+    /// Reads the tree through the target's reader, spawning it first when
+    /// none runs. A reader whose connection ended is replaced once.
+    fn read_with_reader(
+        &self,
+        target: &Target,
+        params: &SnapshotParams,
+        timeout: Duration,
+    ) -> Result<ReaderRead> {
+        for _ in 0..2 {
+            let reader = match target.tree.reader(|| self.spawn_reader(target))? {
+                Ok(reader) => reader,
+                Err(why) => return Ok(ReaderRead::Unusable(why)),
+            };
+            match reader.snapshot(params.clone(), timeout) {
+                Ok(snapshot) => return Ok(ReaderRead::Read(snapshot)),
+                Err(error) if error.code == protocol::code::DISCONNECTED => {
+                    target.tree.lost(&reader);
+                }
+                Err(error) => return Err(tree_error(error, timeout)),
+            }
+        }
+        Ok(ReaderRead::Unusable(
+            "the reader's connection ended during two reads in a row".into(),
+        ))
+    }
+
+    /// Spawns a reader into the target: the one given in the driver's
+    /// options, or the one built into this crate.
+    fn spawn_reader(&self, target: &Target) -> Result<Spawned> {
+        let program = match &self.options.reader {
+            Some(program) => program.clone(),
+            None => match reader::embedded() {
+                Ok(program) => program,
+                Err(why) => {
+                    target.tree.give_up(why.clone());
+                    return Ok(Spawned::Unusable(why));
+                }
+            },
+        };
+        let udid = target.device.udid()?;
+        Reader::spawn(
+            &target.device,
+            &program,
+            target.screen.scale,
+            &reader::log_path(&udid),
+        )
+    }
+}
+
+/// The driver error for a failure the reader answered a read with.
+fn tree_error(error: protocol::Error, timeout: Duration) -> Error {
+    let failure = |kind| Error::Tree {
+        kind,
+        message: error.message.clone(),
+    };
+    match error.code.as_str() {
+        codes::PRIVATE_API_EXCEPTION => {
+            let (call, name, reason) = parse_exception(&error.message);
+            Error::Framework {
+                call: format!("{call}, in {}", reader::NAME),
+                failure: Failure::Exception { name, reason },
+            }
+        }
+        codes::NO_FOREGROUND => failure(TreeFailure::NoForeground),
+        codes::SNAPSHOT_FAILED => failure(TreeFailure::SnapshotFailed),
+        protocol::code::WINDOW_CHANGED => failure(TreeFailure::ForegroundChanged),
+        protocol::code::BUSY => failure(TreeFailure::Busy),
+        protocol::code::DEADLINE_EXCEEDED => Error::Timeout {
+            what: "the tree read".into(),
+            after: timeout,
+        },
+        _ => Error::Tree {
+            kind: TreeFailure::Failed,
+            message: error.to_string(),
+        },
+    }
+}
+
+/// The call, exception name and reason of the reader's
+/// `<call> raised <name>: <reason>`.
+fn parse_exception(message: &str) -> (String, String, String) {
+    match message.split_once(" raised ") {
+        Some((call, rest)) => {
+            let (name, reason) = rest.split_once(": ").unwrap_or((rest, ""));
+            (call.to_owned(), name.to_owned(), reason.to_owned())
+        }
+        None => (
+            "a private call".to_owned(),
+            "NSException".to_owned(),
+            message.to_owned(),
+        ),
+    }
+}
+
 /// Fails unless the device is in `wanted`.
 fn needs(target: &str, device: &Device, wanted: DeviceState, needed: &'static str) -> Result<()> {
     let state = device.state()?;
@@ -649,7 +795,7 @@ impl Lifecycle for SimulatorDriver {
                 connections: transport.connections(),
                 reason: known.as_ref().map(|t| t.reason()).unwrap_or_default(),
             }),
-            tree: None,
+            tree: known.as_ref().and_then(|target| target.tree.status()),
             unavailable,
         })
     }
@@ -768,8 +914,54 @@ impl Input for SimulatorDriver {
 
 impl Tree for SimulatorDriver {
     fn snapshot(&self, target: &str, options: &TreeOptions) -> Result<ForegroundTree> {
-        let _ = (target, options);
-        unimplemented!("task 6.6: the foreground tree")
+        self.contain(target, || {
+            let target = self.target(target)?;
+            let start = Instant::now();
+            let params = SnapshotParams {
+                max_depth: Some(options.max_depth),
+                max_nodes: Some(options.max_nodes),
+                idle_ms: None,
+            };
+            let translate = || translator::read(&target.device, target.screen.scale, options);
+            let (snapshot, backend, fallback) = match self.options.tree {
+                TreeChoice::Only(TreeBackend::Translator) => (
+                    translate()?,
+                    TreeBackend::Translator,
+                    Some("the driver was opened to read with the translator only".to_owned()),
+                ),
+                choice => match self.read_with_reader(&target, &params, options.timeout)? {
+                    ReaderRead::Read(snapshot) => (snapshot, TreeBackend::Reader, None),
+                    ReaderRead::Unusable(why) if choice == TreeChoice::Auto => (
+                        translate()?,
+                        TreeBackend::Translator,
+                        Some(format!("the reader cannot run: {why}")),
+                    ),
+                    ReaderRead::Unusable(why) => {
+                        return Err(Error::Tree {
+                            kind: TreeFailure::Failed,
+                            message: format!("the reader cannot run: {why}"),
+                        });
+                    }
+                },
+            };
+            target.tree.used(
+                backend,
+                fallback
+                    .clone()
+                    .unwrap_or_else(|| format!("{} runs in the Simulator", reader::NAME)),
+            );
+            ForegroundTree::new(
+                snapshot,
+                target.screen.scale,
+                backend,
+                fallback,
+                start.elapsed(),
+            )
+            .ok_or_else(|| Error::Tree {
+                kind: TreeFailure::NoForeground,
+                message: "the read named no process in front".into(),
+            })
+        })
     }
 }
 
@@ -846,6 +1038,8 @@ mod tests {
             "SimulatorKit",
             "input transport",
             "XPC symbols",
+            "tree reader",
+            "tree translator",
             "frame encoder",
         ] {
             assert!(
@@ -854,13 +1048,53 @@ mod tests {
             );
         }
         assert!(table.usable(), "{text}");
-        assert!(
-            table
-                .call_sites
-                .iter()
-                .any(|site| site.call.contains("lookup:error:")),
-            "{text}"
+        for call in [
+            "lookup:error:",
+            "spawnWithPath:",
+            "userTestingSnapshotForElement:",
+        ] {
+            assert!(
+                table.call_sites.iter().any(|site| site.call.contains(call)),
+                "{call} is missing from:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn reader_failures_become_driver_errors() {
+        let error = |code: &str, message: &str| protocol::Error {
+            code: code.into(),
+            message: message.into(),
+            retryable: false,
+        };
+        let thrown = tree_error(
+            error(
+                codes::PRIVATE_API_EXCEPTION,
+                "-[XCTAccessibilityFramework userTestingSnapshotForElement:options:error:] raised NSInternalInconsistencyException: no server",
+            ),
+            Duration::from_secs(1),
         );
+        assert_eq!(
+            thrown,
+            Error::Framework {
+                call: "-[XCTAccessibilityFramework userTestingSnapshotForElement:options:error:], in simulator-reader".into(),
+                failure: Failure::Exception {
+                    name: "NSInternalInconsistencyException".into(),
+                    reason: "no server".into(),
+                },
+            }
+        );
+        let early = tree_error(error(codes::NO_FOREGROUND, "starting"), Duration::ZERO);
+        assert_eq!(early.code(), "no_foreground");
+        assert!(early.retryable());
+        let late = tree_error(
+            error(protocol::code::DEADLINE_EXCEEDED, "late"),
+            Duration::from_secs(3),
+        );
+        assert!(matches!(late, Error::Timeout { after, .. } if after == Duration::from_secs(3)));
+        let odd = tree_error(error("something_else", "odd"), Duration::ZERO);
+        assert_eq!(odd.code(), "tree_read_failed");
+        assert!(!odd.retryable());
     }
 
     #[test]
