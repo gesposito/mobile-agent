@@ -1,6 +1,7 @@
 package dev.mobileagent.agent
 
 import android.graphics.Rect
+import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.view.accessibility.AccessibilityWindowInfo
@@ -11,6 +12,7 @@ import dev.mobileagent.agent.codec.ScrollPosition
 import dev.mobileagent.agent.codec.ScrollRange
 import dev.mobileagent.agent.codec.ScrollUnit
 import dev.mobileagent.agent.codec.WindowType
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -137,6 +139,37 @@ object Semantics {
     } catch (e: Exception) {
         null
     }
+
+    /**
+     * Whether window `w`, whose root is `root`, is drawn away from where its layout puts it, as
+     * the platform draws a window while it animates the window in or out: its frame partly off
+     * the display (`display`, the width and height), or its frame or its root on screen at another
+     * size than the root's layout. Its bounds and its nodes' are then those of a frame of that
+     * animation. The frame, not the root's bounds, is what is checked against the display, since a
+     * window panned for the keyboard moves its root and not its frame; and the frame's size is
+     * checked as well as the root's, since a root fetched again can come back unscaled while the
+     * frame and the other nodes still read scaled. The layout's size is the root's bounds in the
+     * window, which the platform reports from Android 14.
+     */
+    fun transformed(w: AccessibilityWindowInfo, root: AccessibilityNodeInfo?, display: IntArray?): Boolean {
+        val frame = Rect()
+        w.getBoundsInScreen(frame)
+        if (frame.isEmpty) return false
+        if (display != null &&
+            (frame.left < 0 || frame.top < 0 || frame.right > display[0] || frame.bottom > display[1])
+        ) {
+            return true
+        }
+        if (root == null || Build.VERSION.SDK_INT < 34) return false
+        val layout = Rect()
+        root.getBoundsInWindow(layout)
+        if (layout.isEmpty) return false
+        val screen = Rect()
+        root.getBoundsInScreen(screen)
+        return sizeDiffers(frame, layout) || sizeDiffers(screen, layout)
+    }
+
+    private fun sizeDiffers(a: Rect, b: Rect) = abs(a.width() - b.width()) > 1 || abs(a.height() - b.height()) > 1
 
     /** Whether `n` scrolls: the platform marks it scrollable or it offers a scroll action. */
     fun scrolls(n: AccessibilityNodeInfo): Boolean {

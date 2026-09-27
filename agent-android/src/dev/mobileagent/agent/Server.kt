@@ -2,6 +2,7 @@ package dev.mobileagent.agent
 
 import android.net.LocalServerSocket
 import android.net.LocalSocket
+import dev.mobileagent.agent.codec.BoundsCall
 import dev.mobileagent.agent.codec.Capability
 import dev.mobileagent.agent.codec.EmptyReply
 import dev.mobileagent.agent.codec.ErrorCode
@@ -74,7 +75,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         null
     }
     private val capabilities = Capability.TREE or Capability.EVENTS or Capability.TEXT_SET or
-        Capability.SCREENSHOT or (if (input != null) Capability.INPUT else 0)
+        Capability.SCREENSHOT or Capability.BOUNDS or (if (input != null) Capability.INPUT else 0)
     /** Screenshots run one at a time, beside tree reads and input. */
     private val captureWorker = Executors.newSingleThreadExecutor(daemonThreads("capture"))
     private lateinit var screenshots: Screenshots
@@ -88,6 +89,8 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
     /** Snapshot and resync requests handed to the tree worker that have not started. */
     private val treeRequests = java.util.concurrent.atomic.AtomicInteger()
+    /** Bounds probes run one at a time, beside tree reads, so a probe never waits behind a walk. */
+    private val boundsWorker = Executors.newSingleThreadExecutor(daemonThreads("bounds"))
     private lateinit var reader: TreeReader
     private lateinit var events: EventHub
     private lateinit var compose: ComposeTracker
@@ -178,6 +181,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             is KeyCall -> inputWorker.execute { act(work) { input!!.key(call.code, call.meta ?: 0) } }
             is TextSetCall -> inputWorker.execute { setText(work, call) }
             is ScreenshotCall -> captureWorker.execute { screenshot(work, call) }
+            is BoundsCall -> boundsWorker.execute { bounds(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -270,6 +274,9 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             if (dirty || call.evictEventLess == true) {
                 for (id in compose.composeWindowsOnScreen()) automation?.evictWindow(id)
             }
+            // Windows whose nodes moved without a change event, as a bounds
+            // probe found: the cache still holds their old bounds.
+            call.evict?.forEach { automation?.evictWindow(it) }
             val seq = work.session.lastSeq(Stream.TREE)
             val result = reader.read(
                 minOf(maxDepth, Int.MAX_VALUE.toLong()).toInt(),
@@ -296,6 +303,29 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
+
+    /** Reads the bounds of nodes of the last snapshot again, past the platform's node cache. */
+    private fun bounds(work: Work, call: BoundsCall) {
+        if (work.cancelled) return
+        val t0 = System.nanoTime()
+        val rt0 = RoundTrips.count()
+        try {
+            val probed = BoundsProbe.read(lastRead, call.nodes) { work.cancelled }
+            val us = (System.nanoTime() - t0) / 1000
+            work.session.respond(work, probed, null)
+            if (options.trace) {
+                val rt = RoundTrips.count()
+                Out.line(
+                    "trace bounds id=${unsigned(work.id)} nodes=${call.nodes.size} found=${probed.nodes.size} " +
+                        "us=$us round_trips=${if (rt0 < 0 || rt < 0) -1 else rt - rt0}",
+                )
+            }
+        } catch (e: Cancelled) {
+            // The deadline was answered already.
+        } catch (t: Throwable) {
+            work.session.respond(work, null, Errors.internal(work.method, t))
+        }
+    }
 
     private fun screenshot(work: Work, call: ScreenshotCall) {
         if (work.cancelled) return

@@ -406,7 +406,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                 packageIndices[i],
                 w.title?.toString(),
                 Bounds(rect.left, rect.top, rect.right, rect.bottom),
-                windowFlags(w),
+                windowFlags(w) or
+                    (if (Semantics.transformed(w, infos.getOrNull(roots[i]), display)) WindowFlag.TRANSFORMED else 0),
                 roots[i].takeIf { it >= 0 }?.let { nodes[it] },
                 emitsEvents = when {
                     compose[i] -> false

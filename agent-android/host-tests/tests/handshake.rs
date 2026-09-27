@@ -271,7 +271,8 @@ fn the_hello_advertises_every_capability_this_build_implements() {
         | Capabilities::INPUT
         | Capabilities::SCREENSHOT
         | Capabilities::EVENTS
-        | Capabilities::TEXT_SET;
+        | Capabilities::TEXT_SET
+        | Capabilities::BOUNDS;
     assert_eq!(
         negotiated.capabilities, expected,
         "{}",

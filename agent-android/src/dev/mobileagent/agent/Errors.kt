@@ -24,6 +24,7 @@ object Errors {
         Method.FRAMES_STOP -> "frames_stop"
         Method.RESYNC -> "resync"
         Method.SHUTDOWN -> "shutdown"
+        Method.BOUNDS -> "bounds"
         else -> method.toString()
     }
 
@@ -46,6 +47,7 @@ object Errors {
         Method.TEXT_SET -> Capability.TEXT_SET
         Method.FRAMES_START, Method.FRAMES_STOP -> Capability.FRAMES
         Method.RESYNC -> Capability.EVENTS
+        Method.BOUNDS -> Capability.BOUNDS
         else -> 0
     }
 
@@ -56,6 +58,7 @@ object Errors {
         Triple(Capability.FRAMES, "frames", "frame streaming"),
         Triple(Capability.EVENTS, "events", "change events"),
         Triple(Capability.TEXT_SET, "text_set", "direct text setting"),
+        Triple(Capability.BOUNDS, "bounds", "bounds probes"),
     )
 
     /** Capability names joined as the host prints a flag set: `tree | input`. */

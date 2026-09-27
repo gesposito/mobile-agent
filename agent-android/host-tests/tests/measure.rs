@@ -9,7 +9,7 @@ use agent_android_host_tests::tree::{self, center, find};
 use agent_android_host_tests::{Agent, Launch, device, fixture, ms, percentile};
 use protocol::event::Stream;
 use protocol::message::{
-    Call, Reply, ResyncParams, SnapshotParams, TapParams, TextMethod, TextParams,
+    BoundsParams, Call, Reply, ResyncParams, SnapshotParams, TapParams, TextMethod, TextParams,
 };
 
 fn summary(label: &str, values: &[f64]) {
@@ -212,4 +212,100 @@ fn measure_text() {
     fixture::force_stop(&dev, fixture::EXPO);
     summary("40 characters, direct", &direct);
     summary("40 characters, keys", &keys);
+}
+
+/// Task 10.11: what a bounds probe costs on a still screen, per request of
+/// 1, 2, 4 and 8 nodes, in the agent and from the host: the Expo Login
+/// screen and the Compose Big screen (500 cells under one parent).
+#[test]
+#[ignore]
+fn measure_bounds_probes() {
+    let Some(dev) = device("measure_bounds_probes") else {
+        return;
+    };
+    let screens: [(&str, &str, [&str; 8]); 2] = [
+        (
+            fixture::EXPO,
+            "login",
+            [
+                "login-username",
+                "tab-system",
+                "login-submit",
+                "tab-login",
+                "login-password",
+                "tab-big",
+                "tab-list",
+                "tab-anim",
+            ],
+        ),
+        (
+            fixture::COMPOSE,
+            "big",
+            [
+                "cell-1",
+                "cell-500",
+                "cell-250",
+                "tab-login",
+                "cell-125",
+                "cell-375",
+                "tab-big",
+                "cell-60",
+            ],
+        ),
+    ];
+    for (package, tab, ids) in screens {
+        fixture::launch(&dev, package, tab);
+        let mut agent = Agent::launch(
+            &dev,
+            Launch::default()
+                .arg("--trace")
+                .arg("--compose-poll-ms")
+                .arg("0"),
+        );
+        let mut client = agent.connect();
+        client.idle(Duration::from_millis(1000));
+        let Ok(Reply::Snapshot(screen)) = client.call(no_wait()) else {
+            panic!("no snapshot");
+        };
+        let nodes: Vec<u32> = ids
+            .iter()
+            .map(|id| {
+                find(&screen, id)
+                    .unwrap_or_else(|| panic!("no {id}"))
+                    .0
+                    .node
+                    .id
+            })
+            .collect();
+        for count in [1, 2, 4, 8] {
+            let (mut host, mut inside) = (Vec::new(), Vec::new());
+            for _ in 0..30 {
+                agent.drain_lines();
+                let t0 = Instant::now();
+                let reply = client.call(Call::Bounds(BoundsParams {
+                    nodes: nodes[..count].to_vec(),
+                }));
+                host.push(ms(t0.elapsed()));
+                assert!(
+                    matches!(&reply, Ok(Reply::Bounds(p)) if p.nodes.len() == count),
+                    "{reply:?}"
+                );
+                let line = agent
+                    .wait_line(Duration::from_secs(2), |l| l.starts_with("trace bounds "))
+                    .expect("trace");
+                inside.push(fields(&line)["us"].parse::<f64>().unwrap() / 1e3);
+            }
+            summary(
+                &format!("{package} {tab}: probe of {count} nodes, in the agent"),
+                &inside,
+            );
+            summary(
+                &format!("{package} {tab}: probe of {count} nodes, host round trip"),
+                &host,
+            );
+        }
+        let _ = client.call(Call::Shutdown);
+        agent.wait_exit(Duration::from_secs(5));
+        fixture::force_stop(&dev, package);
+    }
 }

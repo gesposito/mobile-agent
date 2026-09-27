@@ -127,7 +127,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.2.1 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.3.0 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -155,6 +155,7 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
+| 0.3.0 | From task 10.11 on. They behave as 0.2.1 builds do, and also advertise the `bounds` capability, answer `bounds` probes (their trace line is `trace bounds`) and honor the snapshot request's `evict`, which 0.2.1 and earlier builds skip, reading with their cache. Their snapshots flag a window the platform draws away from where its layout puts it `transformed`, a window flag earlier builds never set. To the driver, an agent reporting 0.2.1 is another version. |
 | 0.2.1 | From the agent of task 10.9 on. Their snapshots carry what 0.2.0 snapshots carry; the difference is in how a read behaves. A read spends at most 100 ms on retries of children whose fetch throws, a walk that finds a child's parent gone or changed starts again from the window roots, and a Compose re-read yields to a snapshot or resync request, so that a tap taking a screen away mid-walk does not hold a snapshot past its deadline, as it can on 0.2.0. The snapshot trace line adds `queued_ms` and `restarts`. To the driver, an agent reporting 0.2.0 is another version. |
 | 0.2.0 | From the agent of task 4.11 to the last one before task 10.9, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. Builds from task 3.7 on honor the snapshot request's `evict_event_less`, which earlier 0.2.0 builds skip, reading with their cache. |
 | 0.1.0 | Every build from the banner-only agent of task 1.5 to the agent of task 4.11, both sides of task 3.6 included: 0.1.0 builds differ in what their snapshots carry, and only the driver's build digest tells them apart. |
@@ -210,12 +211,12 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   (`token_mismatch`).
 - **Handshake.** The agent speaks first: its hello offers versions `[1]`, its
   capabilities, a 16 MiB frame limit and `mobile-agent-android <VERSION>`.
-  It advertises tree reads, input injection, screenshots, change events and
-  direct text setting, but not frame streaming, which the emulator's
-  controller serves (design D7). A hidden member this build cannot find on a
-  device costs its capability rather than the attach: the hello leaves it
-  out and a `warning` lifecycle event names what was lost. After the welcome
-  it sends a `ready` lifecycle event. A welcome refusing
+  It advertises tree reads, input injection, screenshots, change events,
+  direct text setting and bounds probes, but not frame streaming, which the
+  emulator's controller serves (design D7). A hidden member this build
+  cannot find on a device costs its capability rather than the attach: the
+  hello leaves it out and a `warning` lifecycle event names what was lost.
+  After the welcome it sends a `ready` lifecycle event. A welcome refusing
   the connection with `version_mismatch` makes the agent exit, so a host that
   needs another version replaces it; any other refusal only closes that
   connection.
@@ -398,6 +399,39 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   encodes JPEG (default, quality 80) or PNG. `rotation` is the display's
   `Surface.ROTATION_*`, read from the hidden `DisplayManagerGlobal`. Captures
   run on their own thread.
+- **Bounds probes** (task 10.11, `Bounds.kt`). `bounds` reads the nodes it
+  names, by their ids in the last snapshot, again from the app with
+  `AccessibilityNodeInfo.refresh()` on a copy of each node, which bypasses
+  the platform's node cache and prefetches nothing: one round trip to the
+  app's UI thread per node. It answers each node still on screen with its
+  bounds now, in the request's order, and leaves out a node that is gone,
+  whose refresh throws, or that the last snapshot did not hold. Views an
+  app moves without a change event, as a Compose list dragged by input the
+  agent did not inject, keep their old bounds in the cache, and only a
+  probe sees them change; the host probes a few anchor nodes while it
+  waits for the screen to settle without frames. Probes run
+  on their own thread, beside tree reads, so one never waits behind a
+  walk. A snapshot's `evict` names windows whose cached nodes the agent
+  evicts before reading, as it does for the Compose windows after an
+  action, so a read after the probes found the nodes moved shows where they
+  are. With `--trace` each probe prints `trace bounds id=<id> nodes=<n>
+  found=<n> us=<us> round_trips=<n>`.
+- **Transformed windows** (task 10.11, `Semantics.transformed`). From
+  Android 14 the platform reports a window it animates in or out at one
+  frame of that animation, to reads and probes alike, until the animation
+  ends and the window's bounds change at once: on the API 36 emulator the
+  Expo fixture's launch reads scaled to about 95% for about 300 ms over the
+  launcher, and slid partly off the display for about 500 ms over another
+  app, with no event and no move meanwhile. A snapshot flags such a window
+  `transformed`: its frame partly off the display, or its frame or its
+  root's bounds on screen at another size than the root's bounds in the
+  window, the layout's size, which the platform reports from Android 14.
+  The frame, not the root, is checked against the display, since a window
+  panned for the keyboard moves its root and not its frame; the frame's
+  size is checked as well as the root's, since a root fetched again after
+  an eviction can come back unscaled while the frame and the other nodes
+  still read scaled (5 of 129 reads of the app's window in 30 launches over
+  the launcher). Before Android 14 only the first test applies.
 - **Resync.** `resync` answers the last sequence number sent on the stream,
   read and written under the lock events take; for the tree stream the node
   cache is emptied first, so the host's next snapshot is a full read.
@@ -443,9 +477,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
 
 | Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
 | --- | --- | --- |
-| `classes.dex` | 134,864 bytes | 2,441,728 bytes |
-| `mobile-agent-android.jar` (deflated) | 69,035 bytes | 732,314 bytes |
-| Dex contents | 164 classes, 800 method references | 1,231 classes, 13,411 method references |
+| `classes.dex` | 137,972 bytes | 2,447,280 bytes |
+| `mobile-agent-android.jar` (deflated) | 70,708 bytes | 734,022 bytes |
+| Dex contents | 167 classes, 813 method references | 1,237 classes, 13,434 method references |
 | Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
 `test.sh` fails when `classes.dex` is not under 300,000 bytes (task 4.10).
@@ -504,9 +538,10 @@ MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --test measure -- --ignored
 
 It times ten attaches (spawn to ready line, handshake, first snapshot), ten
 cold and twenty warm reads of the Compose and Expo 500-cell screens (a tree
-resync empties the cache before each cold one), 200 taps and twenty direct and
-five typed 40-character texts. On the API 36 emulator, shared with other
-work (host load 5 to 8):
+resync empties the cache before each cold one), 200 taps, twenty direct and
+five typed 40-character texts, and (`measure_bounds_probes`, task 10.11)
+bounds probes of 1, 2, 4 and 8 nodes on the Expo Login and Compose Big
+screens. On the API 36 emulator, shared with other work (host load 5 to 8):
 
 | Measure | p50 | p95 |
 |---|---|---|
@@ -572,6 +607,8 @@ the agent answers by id and its tests exercise it throughout.
 | | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
 | | Compose windows read fresh after an injected action (design D5) | `input::a_tap_on_a_compose_tab_is_in_the_next_snapshot_without_a_poll` |
 | | Compose windows read fresh after input the agent did not inject (task 3.7) | `events::a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject` |
+| Bounds probes and eviction by window (task 10.11) | Nodes that moved without a change event | `bounds::a_probe_answers_the_nodes_of_the_last_snapshot_with_their_bounds`, `bounds::a_probe_sees_rows_a_drag_moved_that_the_last_snapshot_does_not_have`, `bounds::a_snapshot_evicting_a_window_reads_it_again_in_full`, `handshake::the_hello_advertises_every_capability_this_build_implements` |
+| | Windows the platform animates in (task 10.11) | `bounds::a_window_the_platform_scales_in_reads_as_transformed_until_it_comes_to_rest`, `bounds::a_window_the_platform_slides_in_reads_as_transformed_until_it_comes_to_rest` |
 | android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
 | | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
 | | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |
