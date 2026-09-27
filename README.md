@@ -48,7 +48,7 @@ adb start-server
 emulator -avd <name> -grpc 8554 -grpc-use-token      # in a terminal of its own
 ```
 
-Without the control endpoint, taps and screenshots go through the agent and there is no frame stream; `doctor` and `status` say how to enable it on a running emulator: `adb -s emulator-5554 emu grpc 8554`. For the iOS Simulator, boot one in Simulator.app or with `xcrun simctl boot <name or UDID>`.
+Without the control endpoint, taps and screenshots go through the agent and there is no frame stream; `doctor` and `status` say how to enable it on a running emulator: `adb -s emulator-5554 emu grpc 8554`. Emulator 37.1.11 serves the endpoint even when started without `-grpc` (only `-ports` leaves it off), so to take the agent's path on an emulator that serves it, as a physical device does, start the daemon with `--emulator-controller off` or `MOBILE_AGENT_EMULATOR_CONTROLLER=off`; `status` and `doctor` report the setting. For the iOS Simulator, boot one in Simulator.app or with `xcrun simctl boot <name or UDID>`.
 
 Settings ships with every device, so it needs no fixture app. Type, using the refs your own listing prints:
 
