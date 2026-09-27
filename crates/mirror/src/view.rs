@@ -163,9 +163,17 @@ fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
     let actionable = roles::acts(node.flags)
         || node.flags.contains(NodeFlags::CHECKABLE)
         || role.is_interactive();
+    // A labelled container with nothing below it in the read is an element
+    // the platform exposes without traits, whose content it may hide, as a
+    // React Native view marked accessible with a label hides its field on
+    // iOS; it gets a ref, as agent-browser gives one to what it can focus.
+    let labelled_leaf = matches!(role, Role::Generic | Role::Group)
+        && !name.is_empty()
+        && node.children.is_empty()
+        && node.parent.is_some();
     Facts {
         role,
-        bears_ref: actionable || (role.is_content() && !name.is_empty()),
+        bears_ref: actionable || (role.is_content() && !name.is_empty()) || labelled_leaf,
         name,
         value,
         rect,
