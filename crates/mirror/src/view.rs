@@ -17,7 +17,13 @@
 //!    lays out a field marked accessible with a label (Ignite's sign-in
 //!    fields in the React Native smoke test); the container is then not
 //!    listed again;
-//! 6. the top-most modal (a modal window, or an alert or dialog node) cuts
+//! 6. a labelled node without traits whose children, if any, are static
+//!    text gets a ref unless an actionable element holds it: it is a control
+//!    the platform exposes without saying what it does, as React Native
+//!    exposes a view marked accessible without a role, whose content it may
+//!    hide (Ignite's sign-in fields and Bluesky's options and language rows
+//!    in the React Native smoke test);
+//! 7. the top-most modal (a modal window, or an alert or dialog node) cuts
 //!    what lies outside it, since the Simulator's reader still returns the
 //!    screen under an alert (spike S4); keyboard windows are collapsed.
 
@@ -51,7 +57,8 @@ pub(crate) struct Facts {
     pub visible: bool,
     pub actionable: bool,
     pub checked: Option<bool>,
-    /// Whether the element gets a ref: actionable, or named content.
+    /// Whether the element gets a ref: actionable, named content, or a
+    /// labelled control without traits.
     pub bears_ref: bool,
     /// The node's identity without sibling positions: its window, then the
     /// class, identifier and content of every node down to it. Two elements
@@ -131,6 +138,7 @@ fn window_facts(window: &Win, scale: f64) -> Vec<Facts> {
     name_from_descendants(window, &mut out);
     fold_duplicates(window, &mut out);
     lend_container_labels(window, &mut out);
+    untraited_controls(window, &mut out);
     if window.kind == WindowType::INPUT_METHOD {
         for facts in &mut out {
             facts.hidden = Hidden::Keyboard;
@@ -163,17 +171,9 @@ fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
     let actionable = roles::acts(node.flags)
         || node.flags.contains(NodeFlags::CHECKABLE)
         || role.is_interactive();
-    // A labelled container with nothing below it in the read is an element
-    // the platform exposes without traits, whose content it may hide, as a
-    // React Native view marked accessible with a label hides its field on
-    // iOS; it gets a ref, as agent-browser gives one to what it can focus.
-    let labelled_leaf = matches!(role, Role::Generic | Role::Group)
-        && !name.is_empty()
-        && node.children.is_empty()
-        && node.parent.is_some();
     Facts {
         role,
-        bears_ref: actionable || (role.is_content() && !name.is_empty()) || labelled_leaf,
+        bears_ref: actionable || (role.is_content() && !name.is_empty()),
         name,
         value,
         rect,
@@ -355,6 +355,35 @@ fn lend_container_labels(window: &Win, facts: &mut [Facts]) {
                 break;
             }
             up = window.nodes[a].parent;
+        }
+    }
+}
+
+/// Gives a ref to each labelled node without traits whose children, if any,
+/// are static text, other than a window's root and the nodes an actionable
+/// element holds, which are its content or, when it has no label of its
+/// own, its name. The platform exposes such a node as an element without
+/// saying what it does: React Native exposes a view marked accessible
+/// without a role this way, on iOS hiding what the view holds, and
+/// agent-device lists these nodes as `Other` and `Cell`.
+fn untraited_controls(window: &Win, facts: &mut [Facts]) {
+    for i in 0..window.nodes.len() {
+        let node = &window.nodes[i];
+        let f = &facts[i];
+        if !matches!(f.role, Role::Generic | Role::Group)
+            || f.name.is_empty()
+            || f.bears_ref
+            || f.absorbed
+            || node.parent.is_none()
+        {
+            continue;
+        }
+        let static_text =
+            |c: usize| facts[c].role == Role::Text && window.nodes[c].children.is_empty();
+        let held = std::iter::successors(node.parent, |&a| window.nodes[a].parent)
+            .any(|a| facts[a].actionable);
+        if node.children.iter().all(|&c| static_text(c)) && !held {
+            facts[i].bears_ref = true;
         }
     }
 }

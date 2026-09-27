@@ -246,8 +246,8 @@ impl Mirror {
     }
 
     /// A snapshot of the replica, acquiring it first when none exists.
-    /// Listed elements that are actionable, or content with a name, get
-    /// refs.
+    /// Listed elements that are actionable, content with a name, or labelled
+    /// controls without traits get refs.
     pub fn snapshot(&mut self, options: &SnapshotOptions) -> Result<Snapshot, MirrorError> {
         self.pump()?;
         let now = self.now();
