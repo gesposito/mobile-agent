@@ -14,7 +14,9 @@ import dev.mobileagent.agent.codec.TextSetCall
 import dev.mobileagent.agent.codec.ErrorCode
 import dev.mobileagent.agent.codec.Lifecycle
 import dev.mobileagent.agent.codec.LifecycleKind
+import dev.mobileagent.agent.codec.ImageFormat
 import dev.mobileagent.agent.codec.Protocol
+import dev.mobileagent.agent.codec.ScreenshotCall
 import dev.mobileagent.agent.codec.ResyncCall
 import dev.mobileagent.agent.codec.ShutdownCall
 import dev.mobileagent.agent.codec.SnapshotCall
@@ -62,7 +64,11 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT or Capability.TEXT_SET
+    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT or Capability.TEXT_SET or
+        Capability.SCREENSHOT
+    /** Screenshots run one at a time, beside tree reads and input. */
+    private val captureWorker = Executors.newSingleThreadExecutor(daemonThreads("capture"))
+    private lateinit var screenshots: Screenshots
     /** Input runs one action at a time, beside tree reads. */
     private val inputWorker = Executors.newSingleThreadExecutor(daemonThreads("input"))
     private val input = Input()
@@ -88,6 +94,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         automation = a
         reader = TreeReader(a)
         textSetter = TextSetter(a, input)
+        screenshots = Screenshots(a)
         events = EventHub(a)
         events.sink = { payload, timeUs -> current?.emit(payload, timeUs) }
         compose = ComposeTracker(a, reader, { payload -> current?.emit(payload) }, options.trace)
@@ -152,6 +159,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
             }
             is KeyCall -> inputWorker.execute { act(work) { input.key(call.code, call.meta ?: 0) } }
             is TextSetCall -> inputWorker.execute { setText(work, call) }
+            is ScreenshotCall -> captureWorker.execute { screenshot(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -248,6 +256,34 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
+
+    private fun screenshot(work: Work, call: ScreenshotCall) {
+        if (work.cancelled) return
+        val format = call.format ?: ImageFormat.JPEG
+        val quality = call.quality ?: Screenshots.DEFAULT_QUALITY
+        if (format != ImageFormat.PNG && format != ImageFormat.JPEG) {
+            work.session.respond(work, null, Errors.invalidParams("image format $format is neither 0 (png) nor 1 (jpeg)"))
+            return
+        }
+        if (quality !in 1..100) {
+            work.session.respond(work, null, Errors.invalidParams("quality $quality is not between 1 and 100"))
+            return
+        }
+        val t0 = android.os.SystemClock.uptimeMillis()
+        try {
+            val max = call.maxDimension?.let { unsigned(it) }?.let { minOf(it, Int.MAX_VALUE.toLong()).toInt() }
+            val shot = screenshots.capture(format, quality, max)
+            work.session.respond(work, shot, null)
+            if (options.trace) {
+                Out.line(
+                    "trace screenshot width=${shot.width} height=${shot.height} rotation=${shot.rotation} " +
+                        "bytes=${shot.data.size} ms=${android.os.SystemClock.uptimeMillis() - t0}",
+                )
+            }
+        } catch (t: Throwable) {
+            work.session.respond(work, null, Errors.internal(work.method, t))
+        }
+    }
 
     /** Sets text directly or types it, answering with the method used. */
     private fun setText(work: Work, call: TextSetCall) {

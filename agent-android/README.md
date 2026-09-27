@@ -261,6 +261,13 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   cannot type, no focused element or a node id not in the last snapshot are
   answered with `invalid_params` naming the reason. Text counts as an
   injected action for the idle wait and the Compose re-read.
+- **Screenshots.** `screenshot` captures with the public
+  `UiAutomation.takeScreenshot()` only (design D2), which returns the display
+  as the user sees it, upright and in landscape dimensions when the display
+  is turned, scales it when `max_dimension` is below its longer side, and
+  encodes JPEG (default, quality 80) or PNG. `rotation` is the display's
+  `Surface.ROTATION_*`, read from the hidden `DisplayManagerGlobal`. Captures
+  run on their own thread.
 - **Resync.** `resync` answers the last sequence number sent on the stream,
   read and written under the lock events take; for the tree stream the node
   cache is emptied first, so the host's next snapshot is a full read.
@@ -369,6 +376,8 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
 | | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
 | | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |
+| android-driver: Screenshot capture | Landscape screenshot | `screenshot::a_landscape_screenshot_has_landscape_dimensions_and_the_display_orientation` |
+| | Portrait, default format, scaling | `screenshot::a_portrait_screenshot_is_a_jpeg_of_the_display_and_scales_on_request` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |
