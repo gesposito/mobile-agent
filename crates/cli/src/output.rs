@@ -366,6 +366,63 @@ mod tests {
         );
     }
 
+    fn ok(data: Value) -> Reply {
+        Reply {
+            success: true,
+            data,
+            error: None,
+            code: None,
+            warning: None,
+        }
+    }
+
+    #[test]
+    fn devices_list_each_target_with_its_state_and_what_makes_it_usable() {
+        let reply = ok(json!({"devices": [
+            {"id": "7B292E1E", "platform": "ios", "class": "simulator", "name": "mobile-agent-spike",
+             "state": "booted", "claimedBy": null},
+            {"id": "R58M123", "platform": "android", "class": "android-device", "name": "R58M123",
+             "state": "unauthorized", "advice": "accept the prompt on the device", "claimedBy": null},
+        ]}));
+        let (out, err) = human("devices", &reply);
+        assert_eq!(err, "");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 3, "{out}");
+        assert!(
+            lines[0].starts_with("7B292E1E") && lines[0].ends_with("mobile-agent-spike  booted"),
+            "{out}"
+        );
+        assert!(lines[1].ends_with("R58M123  unauthorized"), "{out}");
+        assert_eq!(lines[2], "    accept the prompt on the device");
+    }
+
+    #[test]
+    fn status_prints_what_the_driver_reports_under_each_attached_target() {
+        let reply = ok(json!({
+            "daemon": {"pid": 1, "version": "0.1.0", "socket": "/s", "uptimeMs": 1000, "idleTimeoutMs": null},
+            "targets": [
+                {"id": "emulator-5554", "platform": "android", "name": "sdk_gphone64_arm64",
+                 "state": "device", "attached": true, "app": null, "claimedBy": "default",
+                 "driver": {"input": "agent", "lines": ["input: agent (taps, long presses and swipes)", "screenshots: agent"]}},
+                {"id": "7B292E1E", "platform": "ios", "name": "mobile-agent-spike",
+                 "state": "booted", "attached": false, "app": null, "claimedBy": null},
+            ],
+            "sessions": [],
+        }));
+        let (out, _) = human("status", &reply);
+        let expected = "emulator-5554:\n    input: agent (taps, long presses and swipes)\n    screenshots: agent\n";
+        assert!(out.contains(expected), "{out}");
+        assert!(!out.contains("7B292E1E:"), "{out}");
+        let row = out
+            .lines()
+            .find(|line| line.trim_start().starts_with("emulator-5554 "))
+            .unwrap_or_else(|| panic!("no row in {out}"));
+        assert!(
+            row.ends_with("device, attached, claimed by default"),
+            "{row}"
+        );
+    }
+
     #[test]
     fn human_errors_and_warnings_go_to_stderr() {
         let failed = Reply {
