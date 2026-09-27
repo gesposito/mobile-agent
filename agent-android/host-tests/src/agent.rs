@@ -76,6 +76,19 @@ pub struct Agent {
 impl Agent {
     /// Pushes the jar, starts the agent and waits for its ready line.
     pub fn launch(device: &Device, launch: Launch) -> Agent {
+        let mut agent = Agent::spawn(device, launch);
+        let started = Instant::now();
+        let line = agent
+            .wait_line(Duration::from_secs(20), |l| l.starts_with("ready "))
+            .unwrap_or_else(|| panic!("the agent printed no ready line:\n{}", agent.transcript()));
+        agent.ready_after += started.elapsed();
+        agent.ready = fields(&line);
+        agent.pid = agent.ready["pid"].parse().expect("a numeric pid");
+        agent
+    }
+
+    /// Pushes the jar and starts the agent without waiting for anything.
+    pub fn spawn(device: &Device, launch: Launch) -> Agent {
         let jar = jar_path();
         assert!(
             jar.is_file(),
@@ -129,25 +142,18 @@ impl Agent {
                     .push(format!("err: {}", line.trim_end_matches('\r')));
             }
         });
-        let mut agent = Agent {
+        Agent {
             device: device.clone(),
             socket,
             token: launch.token,
             pid: 0,
             ready: HashMap::new(),
-            ready_after: Duration::ZERO,
+            ready_after: started.elapsed(),
             child,
             output,
             stdout,
             remote_jar,
-        };
-        let line = agent
-            .wait_line(Duration::from_secs(20), |l| l.starts_with("ready "))
-            .unwrap_or_else(|| panic!("the agent printed no ready line:\n{}", agent.transcript()));
-        agent.ready_after = started.elapsed();
-        agent.ready = fields(&line);
-        agent.pid = agent.ready["pid"].parse().expect("a numeric pid");
-        agent
+        }
     }
 
     /// Connects a client and completes the handshake with this agent's token.
@@ -158,6 +164,14 @@ impl Agent {
             .handshake(Duration::from_secs(10))
             .unwrap_or_else(|e| panic!("handshake failed: {e}\n{}", self.transcript()));
         client
+    }
+
+    /// Takes the agent's pid from a line it printed, such as its conflict
+    /// report, so that dropping it can still kill it.
+    pub fn adopt_pid(&mut self, line: &str) {
+        if let Some(pid) = fields(line).get("pid").and_then(|p| p.parse().ok()) {
+            self.pid = pid;
+        }
     }
 
     /// Opens the agent's socket without a handshake.
@@ -219,8 +233,25 @@ impl Agent {
 
 impl Drop for Agent {
     fn drop(&mut self) {
+        // The agent outlives the adb shell that started it, so it is killed by
+        // pid: its own, and any process whose command line names its socket,
+        // which is unique to this launch (the agent and its timeout parent).
+        let mut pids: Vec<u32> = self
+            .device
+            .processes_matching(&self.socket)
+            .iter()
+            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+            .collect();
         if self.pid != 0 && self.is_ours(self.pid) {
-            let _ = self.device.shell_output(&format!("kill -9 {}", self.pid));
+            pids.push(self.pid);
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        if !pids.is_empty() {
+            let list: Vec<String> = pids.iter().map(u32::to_string).collect();
+            let _ = self
+                .device
+                .shell_output(&format!("kill -9 {}", list.join(" ")));
         }
         let _ = self.child.kill();
         let _ = self.child.wait();

@@ -14,6 +14,7 @@ pub mod adb;
 pub mod agent;
 pub mod client;
 pub mod fixture;
+pub mod holder;
 pub mod tree;
 
 use std::sync::{Mutex, MutexGuard};
