@@ -43,6 +43,30 @@ impl fmt::Display for Failure {
     }
 }
 
+/// Why a tree read failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeFailure {
+    /// No process owned the foreground: accessibility was still starting, or
+    /// an application was launching.
+    NoForeground,
+    /// The process that owns the foreground changed during the read.
+    ForegroundChanged,
+    /// The accessibility runtime's snapshot failed, as it does for about a
+    /// second while an application starts.
+    SnapshotFailed,
+    /// The reader was still reading for an earlier request.
+    Busy,
+    /// The reader or the translator failed in a way a retry does not fix.
+    Failed,
+}
+
+impl TreeFailure {
+    /// Whether the same read can succeed a moment later.
+    pub fn retryable(self) -> bool {
+        self != TreeFailure::Failed
+    }
+}
+
 /// Everything the driver can fail with.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -90,6 +114,8 @@ pub enum Error {
         supported: String,
         notes: String,
     },
+    /// A tree read failed; `kind` says whether a retry can help.
+    Tree { kind: TreeFailure, message: String },
     /// No input transport works for this host and runtime.
     NoInputTransport {
         /// The host's CoreSimulator and Xcode versions.
@@ -120,6 +146,23 @@ impl Error {
             Error::NoInputTransport { .. } => "no_input_transport",
             Error::Unavailable { .. } => "target_unavailable",
             Error::UnsupportedXcode { .. } => "unsupported_xcode",
+            Error::Tree { kind, .. } => match kind {
+                TreeFailure::NoForeground => "no_foreground",
+                TreeFailure::ForegroundChanged => "foreground_changed",
+                TreeFailure::SnapshotFailed => "snapshot_failed",
+                TreeFailure::Busy => "busy",
+                TreeFailure::Failed => "tree_read_failed",
+            },
+        }
+    }
+
+    /// Whether repeating the same request can succeed: a tree read that
+    /// failed while an application started, or a wait that ran out.
+    pub fn retryable(&self) -> bool {
+        match self {
+            Error::Tree { kind, .. } => kind.retryable(),
+            Error::Timeout { .. } => true,
+            _ => false,
         }
     }
 }
@@ -193,6 +236,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Error::Tree { message, .. } => write!(f, "the tree read failed: {message}"),
             Error::InputUnavailable { transport, reason } => {
                 write!(
                     f,

@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::compat::{self, Compatibility, Row, Status};
-use crate::driver::{Frames, Input, Lifecycle};
+use crate::driver::{Frames, Input, Lifecycle, Tree};
 use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
 use crate::gesture;
@@ -27,6 +27,7 @@ use crate::model::{
     TextEntry, TextMethod, TransportKind,
 };
 use crate::select::{self, HostVersions};
+use crate::tree::{ForegroundTree, TreeOptions};
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
 /// in spike S2, under load; later boots about 11 s.
@@ -648,6 +649,7 @@ impl Lifecycle for SimulatorDriver {
                 connections: transport.connections(),
                 reason: known.as_ref().map(|t| t.reason()).unwrap_or_default(),
             }),
+            tree: None,
             unavailable,
         })
     }
@@ -761,6 +763,13 @@ impl Input for SimulatorDriver {
                 elapsed: start.elapsed(),
             })
         })
+    }
+}
+
+impl Tree for SimulatorDriver {
+    fn snapshot(&self, target: &str, options: &TreeOptions) -> Result<ForegroundTree> {
+        let _ = (target, options);
+        unimplemented!("task 6.6: the foreground tree")
     }
 }
 

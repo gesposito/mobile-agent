@@ -1,6 +1,7 @@
 //! The driver traits: lifecycle, input, frames and tree. They carry no Apple
-//! types, so the mirror and the daemon can hold any backend behind them; they
-//! live here until `crates/mirror` defines its own.
+//! types, so the daemon can hold the driver behind them and adapt it to the
+//! mirror's backend traits (`mirror::backend`), which it satisfies: the
+//! tree read returns the protocol's snapshot payload.
 //!
 //! Every method names its device with `target`: a UDID, or a name that exactly
 //! one device has.
@@ -14,6 +15,7 @@ use crate::model::{
     BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, Key, LaunchOptions, Launched,
     Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
 };
+use crate::tree::{ForegroundTree, TreeOptions};
 
 /// Lists Simulators and drives their lifecycle (simulator-driver spec,
 /// "Simulator discovery and lifecycle").
@@ -78,4 +80,15 @@ pub trait Input {
 
     /// Enters `text` into the focused field and reports how.
     fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry>;
+}
+
+/// The accessibility tree of whatever owns the foreground (simulator-driver
+/// spec, "Foreground tree read"; design D6).
+pub trait Tree {
+    /// Reads the tree of the process that owns the foreground: the
+    /// application, or system UI such as a permission alert, which the result
+    /// says. The first read of a target spawns the reader into it; when the
+    /// reader cannot run, the host translator reads instead and the result
+    /// is marked degraded.
+    fn snapshot(&self, target: &str, options: &TreeOptions) -> Result<ForegroundTree>;
 }

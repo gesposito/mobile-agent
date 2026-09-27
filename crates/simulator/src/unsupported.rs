@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::driver::{Frames, Input, Lifecycle};
+use crate::driver::{Frames, Input, Lifecycle, Tree};
 use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
@@ -13,6 +13,7 @@ use crate::model::{
     Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
     ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
 };
+use crate::tree::{ForegroundTree, TreeOptions};
 
 /// Drives iOS Simulators; available on macOS only.
 pub enum SimulatorDriver {}
@@ -138,6 +139,12 @@ impl Input for SimulatorDriver {
     }
 
     fn type_text(&self, _target: &str, _text: &str, _method: TextMethod) -> Result<TextEntry> {
+        match *self {}
+    }
+}
+
+impl Tree for SimulatorDriver {
+    fn snapshot(&self, _target: &str, _options: &TreeOptions) -> Result<ForegroundTree> {
         match *self {}
     }
 }

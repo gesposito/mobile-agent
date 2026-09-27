@@ -8,6 +8,13 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The tree payload is the protocol's snapshot; the reader's library holds the
+# conversion into it, which the host translator shares. build.rs builds the
+# reader's binary for the Simulator (README.md, Building).
+[dependencies]
+protocol = { version = "0.1.0", path = "../protocol" }
+simulator-reader = { version = "0.1.0", path = "reader" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 dispatch2 = "0.3.1"

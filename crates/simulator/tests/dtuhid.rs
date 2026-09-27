@@ -16,6 +16,7 @@ use common::{ExpoOnLogin, expo};
 fn dtuhid() -> SimulatorDriver {
     SimulatorDriver::open_with(DriverOptions {
         transport: TransportChoice::Only(TransportKind::Dtuhid),
+        ..DriverOptions::default()
     })
     .expect("the driver opens")
 }

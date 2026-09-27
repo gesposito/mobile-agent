@@ -3,9 +3,11 @@
 //!
 //! The private Apple frameworks are loaded at run time and every call into
 //! them runs inside an exception guard. [`SimulatorDriver`] implements the
-//! driver traits, [`Lifecycle`], [`Frames`] and [`Input`] so far; on hosts other than macOS it
-//! exists but cannot be opened. `README.md` covers the build, the
-//! compatibility table and the map from spec scenarios to tests.
+//! driver traits, [`Lifecycle`], [`Frames`], [`Input`] and [`Tree`]; on
+//! hosts other than macOS it exists but cannot be opened. The tree is read
+//! by a reader spawned into the Simulator (`reader/`, built by `build.rs`).
+//! `README.md` covers the build, the compatibility table and the map from
+//! spec scenarios to tests.
 
 // The platform-neutral helpers are used only by the macOS driver.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -21,6 +23,7 @@ mod lookup;
 mod model;
 mod pipeline;
 mod select;
+mod tree;
 mod version;
 
 #[cfg(target_os = "macos")]
@@ -29,14 +32,19 @@ mod macos;
 mod unsupported;
 
 pub use compat::{CallSite, Compatibility, Row, Status};
-pub use driver::{Frames, Input, Lifecycle};
-pub use error::{Error, Failure, Result};
+pub use driver::{Frames, Input, Lifecycle, Tree};
+pub use error::{Error, Failure, Result, TreeFailure};
 pub use frames::FrameStream;
 pub use model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Diagnostics, Dispatch,
     DriverOptions, Edge, Frame, FrameOptions, FrameStats, Gesture, ImageFormat, InputStatus, Key,
-    LaunchOptions, Launched, Modifiers, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
-    ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod, TransportChoice, TransportKind,
+    LaunchOptions, Launched, Modifiers, Point, PreferencesOutcome, ReaderState, ReaderStatus,
+    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
+    TransportChoice, TransportKind, TreeStatus,
+};
+pub use tree::{
+    ALERT_CLASSES, Alert, AlertButton, Degradation, Foreground, ForegroundTree, TreeBackend,
+    TreeChoice, TreeOptions,
 };
 
 #[cfg(target_os = "macos")]

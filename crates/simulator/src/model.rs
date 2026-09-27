@@ -2,7 +2,10 @@
 //! Apple frameworks, so these types exist on every platform.
 
 use std::fmt;
+use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
+
+use crate::tree::{TreeBackend, TreeChoice};
 
 /// A device's lifecycle state, as `-[SimDevice state]` reports it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -416,9 +419,13 @@ pub enum TransportChoice {
 }
 
 /// How a driver is opened.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DriverOptions {
     pub transport: TransportChoice,
+    pub tree: TreeChoice,
+    /// A reader binary built for the Simulator to spawn instead of the one
+    /// built into the driver, for development and diagnosis.
+    pub reader: Option<PathBuf>,
 }
 
 /// The input session of a device.
@@ -447,12 +454,70 @@ pub struct Diagnostics {
     pub host: String,
 }
 
+/// How a device's tree is read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeStatus {
+    /// The backend reads use.
+    pub backend: TreeBackend,
+    /// Why this backend: the reader runs, or why it could not.
+    pub reason: String,
+    /// The reader spawned into the device, once one was.
+    pub reader: Option<ReaderStatus>,
+}
+
+/// The helper process the driver spawned into a Simulator to read its tree
+/// (simulator-driver spec, "No test runner and no per-app build"). Nothing
+/// is installed: it runs from its path on the host.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReaderStatus {
+    /// Its name and version, as its hello announced them, such as
+    /// `simulator-reader 0.1.0`.
+    pub name: String,
+    /// The binary on the host it was spawned from.
+    pub path: PathBuf,
+    pub pid: i32,
+    pub spawned_at: SystemTime,
+    /// From the spawn call until it could serve: its hello, sent once its
+    /// runtime was loaded. The spec's gate is 500 ms.
+    pub ready_in: Option<Duration>,
+    pub state: ReaderState,
+    /// Readers spawned into this device by this driver so far.
+    pub spawns: u32,
+}
+
+/// Where a reader is in its life.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReaderState {
+    /// Spawned, not connected yet.
+    Starting,
+    /// Serving reads.
+    Ready,
+    /// The process ended, with its exit status when known.
+    Exited(Option<i32>),
+    /// It could not start, or its connection failed.
+    Failed(String),
+}
+
+impl fmt::Display for ReaderState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReaderState::Starting => f.write_str("starting"),
+            ReaderState::Ready => f.write_str("ready"),
+            ReaderState::Exited(Some(status)) => write!(f, "exited with status {status}"),
+            ReaderState::Exited(None) => f.write_str("exited"),
+            ReaderState::Failed(reason) => write!(f, "failed: {reason}"),
+        }
+    }
+}
+
 /// What the driver knows about one device.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TargetStatus {
     pub device: DeviceInfo,
     /// The input session, once input was sent to the device.
     pub input: Option<InputStatus>,
+    /// How its tree is read, once it was.
+    pub tree: Option<TreeStatus>,
     /// Set once a failure in the private framework layer took the device
     /// out of service.
     pub unavailable: Option<Diagnostics>,

@@ -1,0 +1,13 @@
+[package]
+name = "simulator-reader"
+description = "The accessibility tree reader the Simulator driver spawns inside an iOS Simulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+protocol = { version = "0.1.0", path = "../../protocol" }

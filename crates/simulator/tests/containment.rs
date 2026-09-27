@@ -2,7 +2,7 @@
 //! out of service with diagnostics while the other targets keep working
 //! (simulator-driver spec, "Failure containment"). The failure is injected:
 //! the target's next private call raises a real Objective-C exception inside
-//! the driver's guard.
+//! the driver's guard. Task 6.6 adds the scenario's own case, a tree read.
 
 #![cfg(target_os = "macos")]
 
@@ -10,7 +10,9 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use simulator::{Error, Frames, Input, Lifecycle, ScreenshotOptions, SimulatorDriver};
+use simulator::{
+    Error, Frames, Input, Lifecycle, ScreenshotOptions, SimulatorDriver, Tree, TreeOptions,
+};
 
 use common::{ExpoOnLogin, expo};
 
@@ -82,4 +84,45 @@ fn framework_call_throws() {
         .screenshot(&shared, &ScreenshotOptions::default())
         .expect("the shared Simulator works again");
     driver.tap(&shared, expo::BLANK).expect("and takes input");
+}
+
+#[test]
+fn a_tree_read_that_throws_takes_only_its_target_out_of_service() {
+    let Some(shared) =
+        common::gated("a_tree_read_that_throws_takes_only_its_target_out_of_service")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = SimulatorDriver::open().expect("the driver opens");
+    let fresh = common::fresh_device(&driver);
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: shared.clone(),
+    };
+    common::show_expo(&driver, &shared, "login");
+    common::show_expo(&driver, &fresh, "login");
+    let read = |udid: &str| driver.snapshot(udid, &TreeOptions::default());
+    common::snapshot_until(&driver, &shared, Duration::from_secs(10), |_| true);
+    common::snapshot_until(&driver, &fresh, Duration::from_secs(20), |_| true);
+
+    driver.inject_fault(&shared).expect("armed");
+    let error = read(&shared).expect_err("the tree read fails");
+    eprintln!("{error}");
+    let Error::Unavailable { diagnostics, .. } = &error else {
+        panic!("expected an unavailable target, got {error:?}");
+    };
+    assert!(diagnostics.failure.contains("injected"), "{diagnostics:?}");
+    assert!(matches!(read(&shared), Err(Error::Unavailable { .. })));
+    assert_eq!(
+        driver.status(&shared).expect("status").unavailable.as_ref(),
+        Some(diagnostics)
+    );
+
+    // The other Simulator's tree is still read.
+    let other = read(&fresh).expect("the other Simulator's tree");
+    assert!(other.snapshot.node_count > 1);
+
+    driver.reset_target(&shared).expect("reset");
+    common::snapshot_until(&driver, &shared, Duration::from_secs(10), |_| true);
 }

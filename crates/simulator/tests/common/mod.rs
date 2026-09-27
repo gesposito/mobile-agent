@@ -23,8 +23,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use simulator::{
-    Frame, FrameStream, Frames, ImageFormat, LaunchOptions, Lifecycle, ScreenshotOptions,
-    SimulatorDriver,
+    ForegroundTree, Frame, FrameStream, Frames, ImageFormat, LaunchOptions, Lifecycle,
+    ScreenshotOptions, SimulatorDriver, Tree, TreeOptions,
 };
 
 /// The variable that enables the integration tests.
@@ -650,4 +650,94 @@ pub fn field_text(driver: &SimulatorDriver, udid: &str) -> String {
         thread::sleep(Duration::from_millis(300));
     }
     devicectl_pasteboard(udid, &["paste"], None)
+}
+
+/// Relaunches the SwiftUI fixture on `tab` and returns its pid.
+pub fn show_swiftui(driver: &SimulatorDriver, udid: &str, tab: &str) -> i32 {
+    driver
+        .launch(
+            udid,
+            SWIFTUI_BUNDLE,
+            &LaunchOptions::new()
+                .env("FIXTURE_INITIAL_TAB", tab)
+                .terminating_running(),
+        )
+        .expect("the SwiftUI fixture launches")
+        .pid
+}
+
+/// Reads the tree until `ready` accepts it, retrying the failures a launch
+/// causes (no foreground yet, a snapshot the runtime refused), for up to
+/// `timeout`.
+pub fn snapshot_until(
+    driver: &SimulatorDriver,
+    udid: &str,
+    timeout: Duration,
+    mut ready: impl FnMut(&ForegroundTree) -> bool,
+) -> ForegroundTree {
+    let start = Instant::now();
+    loop {
+        match driver.snapshot(udid, &TreeOptions::default()) {
+            Ok(tree) if ready(&tree) => return tree,
+            Ok(tree) if start.elapsed() > timeout => panic!(
+                "no acceptable tree within {timeout:?}; the last one, from {}, held {} nodes: {:?}",
+                tree.backend,
+                tree.snapshot.node_count,
+                identifiers(&tree)
+            ),
+            Err(error) if !error.retryable() || start.elapsed() > timeout => {
+                panic!("the tree read failed: {error}")
+            }
+            _ => thread::sleep(Duration::from_millis(100)),
+        }
+    }
+}
+
+/// Every accessibility identifier in a read, in order.
+pub fn identifiers(tree: &ForegroundTree) -> Vec<String> {
+    tree.nodes()
+        .into_iter()
+        .filter_map(|(_, node)| node.res_id.clone())
+        .collect()
+}
+
+/// Forgets whether `bundle` may use location, so it asks again.
+pub fn reset_location(udid: &str, bundle: &str) {
+    let status = Command::new("xcrun")
+        .args(["simctl", "privacy", udid, "reset", "location", bundle])
+        .status()
+        .expect("simctl runs");
+    assert!(status.success(), "simctl privacy reset location failed");
+}
+
+/// The bundle identifiers installed on a device, as `simctl listapps` lists
+/// them.
+pub fn installed_bundles(udid: &str) -> Vec<String> {
+    let output = Command::new("xcrun")
+        .args(["simctl", "listapps", udid])
+        .output()
+        .expect("simctl runs");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.starts_with("    ") && !line.starts_with("     "))
+        .filter_map(|line| line.trim().split_once(" ="))
+        .map(|(key, _)| key.trim_matches('"').to_string())
+        .collect()
+}
+
+/// Whether `a` and `b`, frames in points, are within `tolerance` points.
+pub fn close(a: [f64; 4], b: [f64; 4], tolerance: f64) -> bool {
+    a.iter().zip(b).all(|(x, y)| (x - y).abs() <= tolerance)
+}
+
+/// How far the brightness of the rows between `rows.0` and `rows.1` points
+/// strays from its mean: about 0 for a blank screen.
+pub fn spread(raw: &Raw, rows: (f64, f64)) -> f64 {
+    let (top, bottom) = (raw.row(rows.0), raw.row(rows.1));
+    let values: Vec<f64> = (top..bottom)
+        .flat_map(|y| (0..raw.width).map(move |x| (x, y)))
+        .map(|(x, y)| raw.luma(x, y))
+        .collect();
+    let mean = values.iter().sum::<f64>() / values.len().max(1) as f64;
+    values.iter().map(|v| (v - mean).abs()).sum::<f64>() / values.len().max(1) as f64
 }

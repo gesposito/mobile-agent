@@ -19,6 +19,7 @@ use common::expo;
 fn indigo() -> SimulatorDriver {
     SimulatorDriver::open_with(DriverOptions {
         transport: TransportChoice::Only(TransportKind::Indigo),
+        ..DriverOptions::default()
     })
     .expect("the driver opens")
 }
