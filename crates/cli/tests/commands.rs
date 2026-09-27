@@ -444,6 +444,30 @@ fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
     assert!(human.stdout.starts_with("✓ "), "{}", human.stdout);
 }
 
+/// Task 8.15: a React Native app shows a launch splash first (Bluesky's
+/// listed only `image [id=SplashScreenLegacy]` for seconds), which is not
+/// the app's screen: `open` waits past it for the app's first screen, so
+/// the snapshot right after it lists the app's elements.
+#[test]
+fn open_waits_past_a_launch_splash_for_the_app_s_first_screen() {
+    for fake in ["android", "ios"] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_SPLASH_MS", "800")]);
+        let reply = env.cli(&["--json", "open", APP]).ok().json();
+        assert_eq!(reply["data"]["settled"], true, "{fake}: {reply}");
+        assert!(
+            reply["data"]["firstTreeMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= 800.0),
+            "{fake}: the app's first screen came after the 800 ms splash: {reply}"
+        );
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        assert!(
+            listing.contains("id=login-submit"),
+            "{fake}: the snapshot right after open shows the app:\n{listing}"
+        );
+    }
+}
+
 /// Task 8.13: an app takes a stroke no longer than its platform's tap
 /// threshold for a tap (`scroll down 2` on the Simulator opened what lay
 /// under the screen's center), so `scroll` refuses one with

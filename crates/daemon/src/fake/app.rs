@@ -247,6 +247,24 @@ impl Device {
         self.fixtures.contains_key(app)
     }
 
+    /// Whether `app` is one of the fixture apps.
+    pub fn is_fixture(&self, app: &str) -> bool {
+        app != self.settings_id() && self.installed().contains(&app)
+    }
+
+    /// The windows the device shows while `app` shows its launch splash:
+    /// the app's window holding one image and nothing else, as Expo's
+    /// static launch splash reads (`image [id=SplashScreenLegacy]`).
+    pub fn splash_windows(&self, app: &str) -> Vec<Win> {
+        let kit = self.kit;
+        let screen = [0.0, 0.0, kit.width(), kit.height()];
+        let splash = kit.image("SplashScreenLegacy", screen);
+        let mut windows = vec![kit.app_window(app, fixture_title(app), vec![splash])];
+        windows.extend(kit.status_bar());
+        windows.sort_by_key(|w| std::cmp::Reverse(w.layer));
+        windows
+    }
+
     pub fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
         if !self.installed().contains(&app) {
             return Err(self.not_installed(app));
@@ -584,12 +602,17 @@ fn key_fixture(fixture: &mut Fixture, key: Key) {
     }
 }
 
-fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win>) {
-    let title = match app {
+/// The title a fixture app's window reports.
+fn fixture_title(app: &str) -> &'static str {
+    match app {
         "dev.mobileagent.fixture.compose" => "FixtureCompose",
         "dev.mobileagent.fixture.swiftui" => "FixtureSwiftUI",
         _ => "FixtureExpo",
-    };
+    }
+}
+
+fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win>) {
+    let title = fixture_title(app);
     let (top, bottom) = kit.content();
     let area = [0.0, top, kit.width(), bottom];
     let mut content = vec![kit.group(area).children(tab_content(kit, fixture))];

@@ -98,6 +98,18 @@ fn the_first_click_after_open_reports_its_first_frame_change() {
     assert!(data["treeDeltaMs"].is_number(), "{data}");
 }
 
+/// Task 8.15: a Simulator's input session activates on its first input
+/// (Bluesky's first click took 957 ms to dispatch while dtuhidd
+/// activated), so `open` starts the session and lets it activate: the
+/// first click after it dispatches at once.
+#[test]
+fn the_first_click_after_open_does_not_wait_for_the_input_session() {
+    let env = TestEnv::start_with("ios", &[("MOBILE_AGENT_FAKE_ACTIVATION_MS", "800")]);
+    env.cli(&["open", APP]).ok();
+    let data = env.cli(&["--json", "click", "#tab-list"]).ok().json()["data"].clone();
+    assert!(ms(&data, "dispatchMs") < 400.0, "{data}");
+}
+
 #[test]
 fn a_tap_that_changes_nothing_reports_neither_span() {
     let env = slow("android");

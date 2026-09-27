@@ -238,6 +238,7 @@ impl Driver for AndroidDevices {
                 build,
             })),
             input_notes: None,
+            input_session: None,
         })
     }
 }

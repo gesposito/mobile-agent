@@ -621,6 +621,13 @@ fn the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator() {
         measured.frame_change.is_some() && measured.tree_delta.is_some(),
         "the first click reports its first frame change and tree delta"
     );
+    // Task 8.15: open activated the input session, so the first click did
+    // not wait for it.
+    assert!(
+        measured.dispatch < 5.0,
+        "the first click dispatched in {} ms",
+        measured.dispatch
+    );
     let status = env.cli(&["--json", "status"]).data();
     let target = status_of(&status, &udid);
     assert_eq!(target["attached"], true, "{target}");
@@ -657,6 +664,41 @@ fn the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator() {
         host_processes(&readers)
     );
     measured.print(&format!("Simulator {udid}"));
+}
+
+/// Task 8.15: right after a launch the Expo fixture's window holds only an
+/// empty React Native root view, its launch splash, for a few hundred ms
+/// (a snapshot then read `(empty screen)`); `open` waits past it, so the
+/// snapshot right after each relaunch lists the Login screen.
+#[test]
+fn the_expo_fixture_shows_its_screen_not_its_splash_right_after_open() {
+    let test = "the_expo_fixture_shows_its_screen_not_its_splash_right_after_open";
+    let Some(udid) = gate(SIM_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let _fixtures = SimulatorFixtures::new(&udid);
+    let mut env = Env::start();
+    for _ in 0..3 {
+        let opened = env
+            .on(
+                &udid,
+                &[
+                    "open",
+                    EXPO,
+                    "--relaunch",
+                    "--env",
+                    "FIXTURE_INITIAL_TAB=login",
+                ],
+            )
+            .data();
+        let listing = listing(&env.on(&udid, &["snapshot", "-i"]).data());
+        assert!(
+            listing.contains("id=login-submit"),
+            "the snapshot right after open ({opened}) shows the Login screen:\n{listing}"
+        );
+    }
+    env.shutdown();
 }
 
 /// On an emulator: `open` launches the Compose fixture by package with the

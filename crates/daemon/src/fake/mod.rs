@@ -12,7 +12,11 @@
 //! has it; a latency (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
-//! the attach, as an emulator's starts once its subscription is up.
+//! the attach, as an emulator's starts once its subscription is up. A
+//! splash (`MOBILE_AGENT_FAKE_SPLASH_MS`) shows a fixture app's launch
+//! splash for that long when its process starts, and an activation
+//! (`MOBILE_AGENT_FAKE_ACTIVATION_MS`) holds input until the input session
+//! has been active that long, as a Simulator's dtuhidd session does.
 
 mod app;
 mod realtime;
@@ -24,12 +28,26 @@ use crate::driver::{
     AttachOptions, Attachment, Driver, DriverError, Platform, TargetClass, TargetInfo,
 };
 
+/// How fake targets take their time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Timing {
+    /// How long a change takes to show, as a slow app or device takes.
+    pub latency: Duration,
+    /// How long after the attach the frame stream starts.
+    pub frame_delay: Duration,
+    /// How long a fixture app shows its launch splash when its process
+    /// starts.
+    pub splash: Duration,
+    /// How long after it starts the input session is active; input before
+    /// then waits for it.
+    pub activation: Duration,
+}
+
 /// Fake targets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FakeDriver {
     targets: Vec<TargetInfo>,
-    latency: Duration,
-    frame_delay: Duration,
+    timing: Timing,
 }
 
 impl FakeDriver {
@@ -92,23 +110,35 @@ impl FakeDriver {
         }
         Ok(FakeDriver {
             targets,
-            latency: Duration::ZERO,
-            frame_delay: Duration::ZERO,
+            timing: Timing::default(),
         })
     }
 
     /// These targets, showing each change `latency` after its cause.
-    pub fn with_latency(self, latency: Duration) -> FakeDriver {
-        FakeDriver { latency, ..self }
+    pub fn with_latency(mut self, latency: Duration) -> FakeDriver {
+        self.timing.latency = latency;
+        self
     }
 
     /// These targets, their frame streams starting `frame_delay` after the
     /// attach.
-    pub fn with_frame_delay(self, frame_delay: Duration) -> FakeDriver {
-        FakeDriver {
-            frame_delay,
-            ..self
-        }
+    pub fn with_frame_delay(mut self, frame_delay: Duration) -> FakeDriver {
+        self.timing.frame_delay = frame_delay;
+        self
+    }
+
+    /// These targets, the fixture apps showing their launch splash for
+    /// `splash` when their process starts.
+    pub fn with_splash(mut self, splash: Duration) -> FakeDriver {
+        self.timing.splash = splash;
+        self
+    }
+
+    /// These targets, their input sessions active `activation` after they
+    /// start.
+    pub fn with_activation(mut self, activation: Duration) -> FakeDriver {
+        self.timing.activation = activation;
+        self
     }
 }
 
@@ -127,12 +157,7 @@ impl Driver for FakeDriver {
         _options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
         let frames = target.class != TargetClass::AndroidDevice;
-        Ok(realtime::attach(
-            target.platform,
-            frames,
-            self.latency,
-            self.frame_delay,
-        ))
+        Ok(realtime::attach(target.platform, frames, self.timing))
     }
 }
 

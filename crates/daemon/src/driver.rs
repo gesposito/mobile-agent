@@ -160,6 +160,19 @@ pub struct Attachment {
     pub report: Option<Arc<dyn Report>>,
     /// What the driver knows about the input it dispatched last.
     pub input_notes: Option<Arc<dyn InputNotes>>,
+    /// The target's input session, for a driver whose first input waits for
+    /// the session to activate.
+    pub input_session: Option<Box<dyn InputSession>>,
+}
+
+/// A target's input session, which activates before input goes in.
+pub trait InputSession: Send {
+    /// Starts the session, unless it has started, without sending any
+    /// input, so that it activates meanwhile.
+    fn start(&mut self) -> Result<(), DriverError>;
+
+    /// Whether the session is active, so input goes in without waiting.
+    fn active(&mut self) -> bool;
 }
 
 /// What a driver knows about the input it dispatched last.
@@ -254,6 +267,10 @@ pub struct Registration<'a> {
     pub fake_latency: Duration,
     /// How long after the attach fake targets' frame streams start.
     pub fake_frame_delay: Duration,
+    /// How long fake targets' fixture apps show their launch splash.
+    pub fake_splash: Duration,
+    /// How long after they start fake targets' input sessions activate.
+    pub fake_activation: Duration,
     /// Device drivers by name, as `MOBILE_AGENT_DRIVERS` lists them; see
     /// [`device_drivers`].
     pub drivers: Option<&'a str>,
@@ -271,8 +288,9 @@ pub struct Registration<'a> {
 /// compatibility table through [`Driver::compatibility`]. Fake targets
 /// stand in for them: when `fake` names any, only the fake driver serves,
 /// showing every change `fake_latency` after its cause, its frames from
-/// `fake_frame_delay` after the attach, unless `drivers` names device
-/// drivers too.
+/// `fake_frame_delay` after the attach, its fixture apps' launch splash for
+/// `fake_splash` and its input `fake_activation` after its session starts,
+/// unless `drivers` names device drivers too.
 pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
     let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
@@ -283,7 +301,9 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
         drivers.push(Arc::new(
             FakeDriver::parse(spec)?
                 .with_latency(registration.fake_latency)
-                .with_frame_delay(registration.fake_frame_delay),
+                .with_frame_delay(registration.fake_frame_delay)
+                .with_splash(registration.fake_splash)
+                .with_activation(registration.fake_activation),
         ));
     }
     Ok(drivers)
@@ -393,6 +413,8 @@ mod tests {
                 fake,
                 fake_latency: Duration::ZERO,
                 fake_frame_delay: Duration::ZERO,
+                fake_splash: Duration::ZERO,
+                fake_activation: Duration::ZERO,
                 drivers,
                 state_dir: &dir,
             })

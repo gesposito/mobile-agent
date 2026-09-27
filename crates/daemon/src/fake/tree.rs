@@ -303,6 +303,15 @@ impl Kit {
         .id(id)
     }
 
+    /// An image with an identifier and no label.
+    pub fn image(self, id: &str, rect: [f64; 4]) -> El {
+        match self.platform {
+            Platform::Android => El::new("android.widget.ImageView", rect),
+            Platform::Ios => El::new("XCUIElementTypeImage", rect),
+        }
+        .id(id)
+    }
+
     pub fn label(self, id: Option<&str>, label: &str, rect: [f64; 4]) -> El {
         let el = match self.platform {
             Platform::Android => El::new("android.widget.TextView", rect).text(label),

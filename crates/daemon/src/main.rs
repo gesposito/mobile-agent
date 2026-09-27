@@ -8,6 +8,7 @@ mobile-agent-daemon: the host daemon behind the mobile-agent CLI
 
 Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
                            [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
+                           [--fake-splash <time>] [--fake-activation <time>]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -27,6 +28,13 @@ Options:
                           Start fake targets' frame streams this long after
                           the attach (or MOBILE_AGENT_FAKE_FRAME_DELAY_MS;
                           default 0)
+  --fake-splash <time>    Show fake targets' fixture apps' launch splash this
+                          long when their process starts
+                          (or MOBILE_AGENT_FAKE_SPLASH_MS; default 0)
+  --fake-activation <time>
+                          Hold fake targets' input until their input session
+                          has been started this long
+                          (or MOBILE_AGENT_FAKE_ACTIVATION_MS; default 0)
   -h, --help              Print this help
   -V, --version           Print the version
 

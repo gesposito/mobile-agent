@@ -11,6 +11,9 @@
 //! The frame stream can start some time after the attach, as an emulator's
 //! does once its subscription is up: frames captured before are never
 //! delivered, and the first one delivered shows the screen as it is then.
+//! A fixture app whose process starts can show a launch splash first, and
+//! input can wait for an input session that activates some time after it
+//! starts, as a Simulator's does.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -26,9 +29,13 @@ use mirror::testing::{FakeTarget, Step};
 use protocol::event::{EventPayload, WindowChange, WindowChangeKind};
 use protocol::message::Rotation;
 
+use super::Timing;
 use super::app::Device;
 use super::tree::{self, Win};
-use crate::driver::{AppControl, Attachment, DriverError, FixedScreen, Launch, Platform, Size};
+use crate::driver::{
+    AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
+    Size,
+};
 
 /// How often the event stream looks for items while it waits.
 const POLL: Duration = Duration::from_millis(2);
@@ -56,6 +63,20 @@ struct Shared {
     latency: Duration,
     /// When the frame stream starts, when it starts after the attach.
     frames_from: Option<Instant>,
+    /// How long a fixture app shows its launch splash when its process
+    /// starts.
+    splash: Duration,
+    /// How long the input session takes to activate once started.
+    activation: Duration,
+    session: Mutex<Session>,
+}
+
+/// The input session: started by the first input, or ahead of it.
+#[derive(Default)]
+struct Session {
+    started: Option<Instant>,
+    /// How long the last input waited for the session to activate.
+    waited: Option<Duration>,
 }
 
 /// What the frames show.
@@ -180,7 +201,12 @@ impl Shared {
 
     /// Shows the device's screen after `delay`.
     fn show_after(&self, device: &Device, change: Change, delay: Duration) {
-        let read = read(&device.windows(), device);
+        self.show_windows(&device.windows(), device, change, delay);
+    }
+
+    /// Shows `windows` on the device after `delay`.
+    fn show_windows(&self, windows: &[Win], device: &Device, change: Change, delay: Duration) {
+        let read = read(windows, device);
         let hash = hash(&read);
         self.target.after(delay, Step::Show(read));
         if device.kit.platform == Platform::Android {
@@ -215,6 +241,22 @@ impl Shared {
         };
         self.target.after(delay, Step::Frame(first));
     }
+
+    /// Starts the input session if it has not started; says how long input
+    /// arriving now waits for it to activate, `None` when not at all.
+    fn enter_session(&self) -> Option<Duration> {
+        if self.activation.is_zero() {
+            return None;
+        }
+        let now = Instant::now();
+        let mut session = lock(&self.session);
+        let started = *session.started.get_or_insert(now);
+        let wait = (started + self.activation)
+            .checked_duration_since(now)
+            .filter(|wait| !wait.is_zero());
+        session.waited = wait;
+        wait
+    }
 }
 
 fn read(windows: &[Win], device: &Device) -> TreeRead {
@@ -227,16 +269,40 @@ fn hash(read: &TreeRead) -> u64 {
     hasher.finish()
 }
 
+/// What the fake input session tells the daemon.
+struct FakeSession(Arc<Shared>);
+
+impl InputSession for FakeSession {
+    fn start(&mut self) -> Result<(), DriverError> {
+        lock(&self.0.session)
+            .started
+            .get_or_insert_with(Instant::now);
+        Ok(())
+    }
+
+    fn active(&mut self) -> bool {
+        let started = lock(&self.0.session).started;
+        started.is_some_and(|started| Instant::now() >= started + self.0.activation)
+    }
+}
+
+impl InputNotes for FakeSession {
+    fn activation_wait(&self) -> Option<Duration> {
+        lock(&self.0.session).waited
+    }
+}
+
 /// A fake device of `platform`, attached: it shows its launcher. It has a
-/// frame source when `frames` is set, whose stream starts `frame_delay`
-/// after the attach, and shows each change `latency` after the input or
-/// launch that caused it.
-pub(crate) fn attach(
-    platform: Platform,
-    frames: bool,
-    latency: Duration,
-    frame_delay: Duration,
-) -> Attachment {
+/// frame source when `frames` is set; `timing` says when its frames start,
+/// how late each change shows after the input or launch that caused it,
+/// how long a launch splash lasts and when its input session activates.
+pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing) -> Attachment {
+    let Timing {
+        latency,
+        frame_delay,
+        splash,
+        activation,
+    } = timing;
     let device = Device::new(platform);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
@@ -253,6 +319,9 @@ pub(crate) fn attach(
         frames,
         latency,
         frames_from: (!frame_delay.is_zero()).then(|| target.clock().now() + frame_delay),
+        splash,
+        activation,
+        session: Mutex::new(Session::default()),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -275,7 +344,10 @@ pub(crate) fn attach(
         config: MirrorConfig::default(),
         capture: None,
         report: None,
-        input_notes: None,
+        input_notes: (!activation.is_zero())
+            .then(|| Arc::new(FakeSession(Arc::clone(&shared))) as Arc<dyn InputNotes>),
+        input_session: (!activation.is_zero())
+            .then(|| Box::new(FakeSession(Arc::clone(&shared))) as Box<dyn InputSession>),
     }
 }
 
@@ -326,6 +398,10 @@ impl FrameSource for Part {
 
 impl InputSink for Part {
     fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError> {
+        // Input waits for the session to activate, as held input does.
+        if let Some(wait) = self.shared.enter_session() {
+            std::thread::sleep(wait);
+        }
         self.shared.sync();
         let mut ack = self.target.perform(input)?;
         let mut device = lock(&self.shared.device);
@@ -370,6 +446,7 @@ impl AppControl for Part {
     fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
         self.shared.sync();
         let mut device = lock(&self.shared.device);
+        let starts = launch.relaunch || !device.runs(app);
         if launch.relaunch && device.runs(app) {
             // The stopped process leaves the screen at once; the new one
             // shows its own after the latency, as a relaunched app does.
@@ -378,7 +455,21 @@ impl AppControl for Part {
                 .show_after(&device, Change::Screen, Duration::ZERO);
         }
         device.launch(app, launch)?;
-        self.shared.show(&device, Change::Screen);
+        let splash = self.shared.splash;
+        if starts && !splash.is_zero() && device.is_fixture(app) {
+            // A process that starts shows its launch splash first.
+            let latency = self.shared.latency;
+            self.shared.show_windows(
+                &device.splash_windows(app),
+                &device,
+                Change::Screen,
+                latency,
+            );
+            self.shared
+                .show_after(&device, Change::Screen, latency + splash);
+        } else {
+            self.shared.show(&device, Change::Screen);
+        }
         Ok(())
     }
 
@@ -413,6 +504,66 @@ mod tests {
         frames
     }
 
+    /// Task 8.15: a fixture app whose process starts shows its launch
+    /// splash, one image, for the splash's length before its first screen.
+    #[test]
+    fn a_launch_shows_the_splash_before_the_first_screen() {
+        let timing = Timing {
+            splash: Duration::from_millis(150),
+            ..Timing::default()
+        };
+        let mut attachment = attach(Platform::Ios, false, timing);
+        let read = |attachment: &mut Attachment| {
+            let request = ReadRequest {
+                windows: None,
+                reason: mirror::backend::ReadReason::Attach,
+            };
+            format!("{:?}", attachment.backend.tree.read(&request).unwrap())
+        };
+        attachment
+            .apps
+            .launch(super::super::app::FIXTURE, &Launch::default())
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        let splash = read(&mut attachment);
+        assert!(splash.contains("SplashScreenLegacy"), "{splash}");
+        assert!(!splash.contains("login-submit"), "{splash}");
+        std::thread::sleep(Duration::from_millis(150));
+        let screen = read(&mut attachment);
+        assert!(screen.contains("login-submit"), "{screen}");
+        assert!(!screen.contains("SplashScreenLegacy"), "{screen}");
+    }
+
+    /// Task 8.15: input waits for the input session to activate, which
+    /// starts with the first input or ahead of it.
+    #[test]
+    fn input_waits_for_the_session_to_activate_unless_it_started_ahead() {
+        let timing = Timing {
+            activation: Duration::from_millis(150),
+            ..Timing::default()
+        };
+        let tap = Input::Tap {
+            at: mirror::Point::new(1.0, 1.0),
+            hold: None,
+        };
+        let mut cold = attach(Platform::Ios, false, timing);
+        let started = Instant::now();
+        cold.backend.input.perform(&tap).unwrap();
+        assert!(started.elapsed() >= Duration::from_millis(150));
+        assert!(cold.input_notes.unwrap().activation_wait().is_some());
+
+        let mut warm = attach(Platform::Ios, false, timing);
+        let session = warm.input_session.as_mut().unwrap();
+        session.start().unwrap();
+        assert!(!session.active());
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(session.active());
+        let started = Instant::now();
+        warm.backend.input.perform(&tap).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(100));
+        assert_eq!(warm.input_notes.unwrap().activation_wait(), None);
+    }
+
     /// Task 8.13: a frame stream that starts after the attach, as an
     /// emulator's does once its subscription is up, delivers nothing before
     /// it starts and then the screen shown when it starts.
@@ -422,8 +573,10 @@ mod tests {
         let mut late = attach(
             Platform::Android,
             true,
-            Duration::ZERO,
-            Duration::from_millis(150),
+            Timing {
+                frame_delay: Duration::from_millis(150),
+                ..Timing::default()
+            },
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -436,7 +589,7 @@ mod tests {
         );
 
         // The same device without a delay shows its launcher's frame at once.
-        let mut prompt = attach(Platform::Android, true, Duration::ZERO, Duration::ZERO);
+        let mut prompt = attach(Platform::Android, true, Timing::default());
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");
         assert_eq!(at_once[0].hash, first[0].hash, "the same launcher");
