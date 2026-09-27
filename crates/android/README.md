@@ -186,3 +186,4 @@ Task 5.1's own checks against the emulator, in `tests/adb_device.rs`:
 `a_service_stream_to_a_missing_socket_fails_with_closed`,
 `a_reverse_adbd_refuses_reports_its_error` and
 `a_missing_serial_fails_with_the_servers_message`.
+\n\n## Vendored emulator proto\n\n`proto/emulator_controller.proto` is a copy of the SDK's `emulator/lib/emulator_controller.proto` from emulator 37.1.11 (SHA-256 `1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f`). The build prefers the installed copy and falls back to this one with a warning, so hosts without the emulator package build. Refresh it when the emulator updates: copy the SDK file over it and record the new SHA here.\n

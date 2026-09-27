@@ -10,9 +10,12 @@
 //! 3. the same under `$ANDROID_SDK_ROOT`;
 //! 4. the same under the SDK's default location: `~/Library/Android/sdk` on
 //!    macOS, `~/Android/Sdk` on Linux and `%LOCALAPPDATA%\Android\Sdk` on
-//!    Windows.
+//!    Windows;
+//! 5. the vendored copy under `crates/android/proto/`, taken from emulator
+//!    37.1.11, with a build warning, so hosts without the SDK (the Linux CI
+//!    job) still build.
 //!
-//! Without a proto the build fails and says how to provide one. `protoc` and
+//! Without any proto the build fails and says how to provide one. `protoc` and
 //! the well-known types come from protoc-bin-vendored, so no system protoc is
 //! needed.
 
@@ -57,6 +60,16 @@ fn locate_proto() -> PathBuf {
     let searched = sdk_candidates();
     if let Some(found) = searched.iter().find(|p| p.is_file()) {
         return found.clone();
+    }
+    let vendored =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("proto/emulator_controller.proto");
+    if vendored.is_file() {
+        println!(
+            "cargo:warning=crates/android: no installed emulator_controller.proto found; \
+             building the controller client from the vendored copy under crates/android/proto \
+             (emulator 37.1.11). Install the SDK's emulator package to build from the installed one."
+        );
+        return vendored;
     }
     let listed: Vec<String> = searched
         .iter()
