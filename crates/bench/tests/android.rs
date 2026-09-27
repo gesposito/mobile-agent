@@ -1,8 +1,9 @@
 //! Task 10.10: the harness measures an Android emulator as it is, with nothing
 //! between the bench and `mobile-agent`. It opens the Android fixtures'
-//! screens through the launch option they read, and records whether the
-//! emulator's controller answered. The tests drive the CLI adapter against
-//! canned replies, and the scripted fake as the tool under test.
+//! screens through the launch option they read, records whether the
+//! emulator's controller answered, and lists tap to frame change as not
+//! measured on a target that gives no frames. The tests drive the CLI adapter
+//! against canned replies, and the scripted fake as the tool under test.
 
 mod common;
 
@@ -13,6 +14,7 @@ use bench::adapter::{Adapter, Detection};
 use bench::cli::{CliAdapter, CliConfig};
 use bench::fake::FakeAdapter;
 use bench::fixture::Fixture;
+use bench::gates::{GateSet, GateStatus};
 use bench::harness::{Harness, RunConfig, Series, Subject};
 use bench::plan;
 use bench::primitive::Primitive;
@@ -149,6 +151,65 @@ fn targets_row(md: &str) -> (String, String) {
         table.cell(row, "Emulator controller").to_owned(),
         table.cell(row, "Frame source").to_owned(),
     )
+}
+
+/// With the controller off the daemon has no frame stream, so a click's reply
+/// carries a tree delta and no frame change: tap to frame change cannot be
+/// measured there, and is listed as not measured with the daemon's reason,
+/// its gate too, rather than failed.
+#[test]
+fn a_tap_on_an_emulator_whose_controller_is_off_has_no_frame_change_and_is_not_measured() {
+    let report = tap_run(
+        "android-controller-off",
+        false,
+        r#"{"success":true,"data":{"accepted":true,"clicked":"id=row-1","dispatchMs":2.25,"ref":null,"treeDeltaMs":226.5,"watchedMs":430.5,"x":204.0,"y":120.0},"error":null}"#,
+    );
+    let json: Value = serde_json::from_str(&report.to_json()).unwrap();
+    let frame = primitive(&json, "tap-to-frame-change");
+    let reason = frame["not_measured"]
+        .as_str()
+        .unwrap_or_else(|| panic!("tap-to-frame-change was not listed as not measured: {frame}"));
+    assert!(
+        reason.starts_with(
+            "emulator-5554 gives mobile-agent no frames, so a tap on it has no frame change to time"
+        ) && reason.contains("-grpc 8554"),
+        "{reason}"
+    );
+    assert_eq!(frame["error"], Value::Null, "{frame}");
+    assert_eq!(frame["reliability"]["failures"], 0, "{frame}");
+    assert_eq!(frame["samples"], json!([]), "{frame}");
+    for (name, us) in [("tap-dispatch", 2_250), ("tap-to-tree-delta", 226_500)] {
+        let m = primitive(&json, name);
+        assert_eq!(m["stats"]["n"], 2, "{name}: {m}");
+        assert_eq!(m["stats"]["p50_us"], us, "{name}: {m}");
+    }
+
+    // The report says the controller was off and the target gave no frames.
+    let target = &json["provenance"]["targets"][0];
+    assert_eq!(
+        (&target["controller"], &target["frame_source"]),
+        (&json!("off"), &json!(false)),
+        "{target}"
+    );
+    let md = report.to_markdown();
+    assert_eq!(targets_row(&md), ("off".to_owned(), "no".to_owned()));
+    assert!(
+        md.contains(&format!(
+            "- mobile-agent on emulator-5554, tap-to-frame-change: {reason}"
+        )),
+        "{md}"
+    );
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
+
+    // The spec's 50 ms gate reads not measured and does not fail the run.
+    let verdict = GateSet::defaults().evaluate(&report);
+    let gate = verdict
+        .rows
+        .iter()
+        .find(|row| row.gate == "android-emulator tap-to-frame-change")
+        .unwrap();
+    assert_eq!(gate.status, GateStatus::NotMeasured, "{}", verdict.table());
+    assert!(verdict.passed, "{}", verdict.table());
 }
 
 /// With the controller on, the same click carries its frame change, which is

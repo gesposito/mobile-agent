@@ -12,7 +12,8 @@
 //! timed by wall clock around the command's process; tap dispatch, tap to
 //! frame change, tap to tree delta and settle detection are read from the
 //! click's and the settle's replies, spans only the daemon observes. A span
-//! the target cannot produce is reported as not measured, with the reason.
+//! the target cannot produce is reported as not measured, with the reason:
+//! tap to frame change on a target that gives no frames, which `status` says.
 //! Snapshots count the refs in their reply as their nodes. The daemon keeps
 //! its agent, and on Android the device's one UI automation role with it,
 //! until it exits, so the adapter's release stops the daemon and waits until
@@ -139,11 +140,14 @@ pub struct CliAdapter {
 
 /// What `status` says about a target the daemon has attached: the target
 /// entry's `frameSource`, and from its driver's report, whether an Android
-/// emulator's controller answered.
+/// emulator's controller answered and why the target gives no frames.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Attached {
     frame_source: Option<bool>,
     controller: Option<Controller>,
+    /// The driver's `warning` and `frameError`, such as the note that the
+    /// emulator's control endpoint did not answer and how to enable it.
+    why_no_frames: Option<String>,
 }
 
 /// A command's reply and when its process ran.
@@ -643,8 +647,10 @@ impl Adapter for CliAdapter {
 
     /// Opens the scenario's screen for the primitives measured on an open
     /// screen, reads `status` for what the daemon says about the target, and
-    /// takes one snapshot before warm snapshots. Tap to frame change on an
-    /// Android device is not measured: it has no frame stream.
+    /// takes one snapshot before warm snapshots. Tap to frame change is not
+    /// measured on a target that gives no frames: an Android device, which
+    /// has no frame stream, or a target whose `status` says it gives none,
+    /// such as an emulator whose controller did not answer.
     fn prepare(
         &mut self,
         target: &Target,
@@ -663,6 +669,15 @@ impl Adapter for CliAdapter {
                 let screen = screen(scenario)?;
                 self.open_screen(target, app(target, scenario)?, screen)?;
                 self.observe(target);
+                if primitive == Primitive::TapToFrameChange
+                    && let Some(attached) = self.attached.get(&target.id)
+                    && attached.frame_source == Some(false)
+                {
+                    return Err(AdapterError::not_measured(no_frames(
+                        target,
+                        attached.why_no_frames.as_deref(),
+                    )));
+                }
                 if primitive == Primitive::WarmSnapshot {
                     self.snapshot(target, screen)?;
                 }
@@ -772,9 +787,9 @@ impl Adapter for CliAdapter {
 
 /// What the data of a `status` reply says about `target`: its entry's
 /// `frameSource`, and from its driver's report, on an Android emulator,
-/// whether the controller answered (an `endpoint`) or not (none). `None` when
-/// the daemon does not list the target or says nothing about it, as for a
-/// target it has not attached.
+/// whether the controller answered (an `endpoint`) or not (none), and the
+/// driver's `warning` and `frameError`. `None` when the daemon does not list
+/// the target or says nothing about it, as for a target it has not attached.
 fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
     let entry = data["targets"]
         .as_array()?
@@ -790,11 +805,34 @@ fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
         ),
         _ => None,
     };
+    let why: Vec<&str> = driver
+        .map(|driver| {
+            ["warning", "frameError"]
+                .into_iter()
+                .filter_map(|key| driver[key].as_str())
+                .filter(|text| !text.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     let attached = Attached {
         frame_source: entry["frameSource"].as_bool(),
         controller,
+        why_no_frames: (!why.is_empty()).then(|| why.join("; ")),
     };
     (attached.frame_source.is_some() || attached.controller.is_some()).then_some(attached)
+}
+
+/// Why a tap on `target`, which gives no frames, has no frame change to
+/// time, with the driver's reason when it gave one.
+fn no_frames(target: &Target, why: Option<&str>) -> String {
+    let reason = format!(
+        "{} gives {TOOL} no frames, so a tap on it has no frame change to time",
+        target.id
+    );
+    match why {
+        Some(why) => format!("{reason}: {why}"),
+        None => reason,
+    }
 }
 
 /// The arguments of one command: JSON mode, then the bench's session and
@@ -1098,6 +1136,7 @@ mod tests {
             Some(Attached {
                 frame_source: Some(true),
                 controller: Some(Controller::On),
+                why_no_frames: None,
             })
         );
         let off = status(
@@ -1111,6 +1150,9 @@ mod tests {
             Some(Attached {
                 frame_source: Some(false),
                 controller: Some(Controller::Off),
+                why_no_frames: Some(
+                    "emulator control endpoint unavailable for emulator-5554".into()
+                ),
             })
         );
         // A target the daemon has not attached, or does not list, says nothing.
@@ -1133,6 +1175,7 @@ mod tests {
             Some(Attached {
                 frame_source: Some(false),
                 controller: None,
+                why_no_frames: None,
             })
         );
         let simulator = Target::new("SIM-1", TargetClass::Simulator);
@@ -1143,7 +1186,13 @@ mod tests {
             Some(Attached {
                 frame_source: Some(false),
                 controller: None,
+                why_no_frames: Some("no display".into()),
             })
+        );
+        assert_eq!(
+            no_frames(&simulator, Some("no display")),
+            "SIM-1 gives mobile-agent no frames, so a tap on it has no frame change to time: no \
+             display"
         );
     }
 
