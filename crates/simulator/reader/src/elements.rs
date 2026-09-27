@@ -203,6 +203,11 @@ pub fn snapshot(read: &Read) -> Snapshot {
             bounds: builder.bounds(keyboard.frame),
             flags: WindowFlags::EMPTY,
             root,
+            // The Simulator sends no change events for any window (spikes S3 and S4); owner
+            // and modal are filled properly by task 6.10.
+            emits_events: Some(false),
+            owner: None,
+            modal: false,
         });
     }
     windows.push(Window {
@@ -218,6 +223,9 @@ pub fn snapshot(read: &Read) -> Snapshot {
         bounds: builder.bounds(app.frame),
         flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
         root: app_root,
+        emits_events: Some(false),
+        owner: None,
+        modal: false,
     });
     Snapshot {
         strings: builder.strings,
@@ -382,6 +390,8 @@ impl Builder {
             bounds: self.bounds(element.frame),
             flags,
             children,
+            // Scroll semantics for Simulator elements arrive with task 6.10.
+            scroll: None,
         })
     }
 }
