@@ -97,6 +97,18 @@ pub const KEYBOARD_WINDOW: u32 = 1 << 31;
 /// its process id.
 pub const ALERT_WINDOW: u32 = 1 << 30;
 
+/// Set in the id of the window a sheet that blocks the screen moves to,
+/// which is otherwise its process id.
+pub const SHEET_WINDOW: u32 = 1 << 29;
+
+/// The class of the view UIKit presents a view controller in, a later
+/// sibling of the one it presents from.
+pub const PRESENTATION_CLASS: &str = "UITransitionView";
+
+/// The class of the view UIKit dims what a sheet covers with. It spans three
+/// screens and, while it takes touches, keeps them from what it covers.
+pub const DIMMING_CLASS: &str = "UIDimmingView";
+
 /// The classes of the containers UIKit draws an alert controller in, which
 /// the runtime types as groups (spike S4), and XCTest's name for an alert.
 pub const ALERT_CLASSES: [&str; 4] = [
@@ -135,6 +147,11 @@ pub struct Element {
     /// Where a scroll view's viewport is in its content, as the runtime
     /// reports it; absent on other elements.
     pub scroll_area: Option<ScrollArea>,
+    /// Whether the element takes touches
+    /// (`XC_kAXXCAttributeIsUserInteractionEnabled`), read for dimming views
+    /// alone: it tells a sheet that blocks the screen from one resting at an
+    /// undimmed detent. Absent when not read.
+    pub user_interaction: Option<bool>,
 }
 
 /// What the runtime reports about a scroll view's viewport: where the edges
@@ -1085,6 +1102,308 @@ mod tests {
             system: true,
         };
         read
+    }
+
+    /// What the runtime reports as each node's child count: everything the
+    /// read delivered.
+    fn counted(mut element: Element) -> Element {
+        element.children = element.children.into_iter().map(counted).collect();
+        element.children_count = Some(element.children.len() as u64);
+        element
+    }
+
+    /// UIKit's dimming view behind a presented sheet: three screens wide and
+    /// tall around the screen, taking touches or not.
+    fn dimming(takes_touches: Option<bool>) -> Element {
+        at(
+            with(element(0, DIMMING_CLASS), |e| {
+                e.user_interaction = takes_touches
+            }),
+            [-402.0, -874.0, 1206.0, 2622.0],
+        )
+    }
+
+    /// A sheet UIKit presents: a transition view holding `dimming` and the
+    /// sheet's drop shadow view at `frame` with `content`.
+    fn sheet(dimming: Element, frame: [f64; 4], content: Vec<Element>) -> Element {
+        let shadow = at(
+            with(element(0, "UIDropShadowView"), |e| e.children = content),
+            frame,
+        );
+        with(element(0, PRESENTATION_CLASS), |e| {
+            e.children = vec![dimming, shadow]
+        })
+    }
+
+    /// The controller a sheet is presented from, in its transition view:
+    /// its drop shadow view holds a dimming view of its own, which takes
+    /// touches, under the content.
+    fn presenting(content: Vec<Element>) -> Element {
+        let mut children = vec![dimming(Some(true))];
+        children.extend(content);
+        with(element(0, PRESENTATION_CLASS), |e| {
+            e.children = vec![with(element(0, "UIDropShadowView"), |e| {
+                e.children = children
+            })]
+        })
+    }
+
+    /// The text effects window UIKit keeps next to an application's own,
+    /// whose gesture view spans the screen.
+    fn text_effects() -> Element {
+        with(element(2, "UITextEffectsWindow"), |e| {
+            e.children = vec![with(element(0, "UITrackingWindowView"), |e| {
+                e.children = vec![element(0, "UIEditingOverlayGestureView")]
+            })]
+        })
+    }
+
+    /// Contacts' New Contact sheet over its list, as the reader read it on
+    /// iOS 26.5, containers trimmed: the list in the presenting transition
+    /// view, the sheet with its grabber and navigation bar in another, the
+    /// text effects window, and the keyboard for the focused first field.
+    /// Every node reports the children it delivered.
+    fn contacts_sheet(takes_touches: Option<bool>) -> Element {
+        let contact = at(
+            with(element(75, "UICollectionViewListCell"), |e| {
+                e.label = Some("John Appleseed".into())
+            }),
+            [2.0, 154.0, 384.0, 60.0],
+        );
+        let grabber = button(
+            "_UIGrabber",
+            None,
+            "Sheet Grabber",
+            [163.0, 57.0, 76.0, 25.0],
+        );
+        let title = at(
+            with(element(48, "UILabel"), |e| {
+                e.label = Some("New Contact".into());
+                e.traits = traits::HEADER;
+            }),
+            [149.0, 90.0, 103.0, 21.0],
+        );
+        let bar = at(
+            with(element(21, "UINavigationBar"), |e| {
+                e.identifier = Some("New Contact".into());
+                e.children = vec![title];
+            }),
+            [0.0, 78.0, 402.0, 54.0],
+        );
+        let window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![
+                presenting(vec![contact]),
+                sheet(
+                    dimming(takes_touches),
+                    [0.0, 62.0, 402.0, 812.0],
+                    vec![grabber, bar],
+                ),
+            ]
+        });
+        counted(with(element(1, "UIApplication"), |e| {
+            e.label = Some("Contacts".into());
+            e.children = vec![window, text_effects(), keyboard()];
+        }))
+    }
+
+    /// Bluesky's hosting-provider sheet over its sign-in form, from the raw
+    /// tree of the Bluesky smoke test (reports/10.4-rn-smoke.md): a sheet at
+    /// the bottom of the screen, whose dimming view, like the presenting
+    /// controller's, reads "dismiss popup" and PopoverDismissRegion.
+    fn bluesky_sheet() -> Element {
+        let dismiss = |e: &mut Element| {
+            e.label = Some("dismiss popup".into());
+            e.identifier = Some("PopoverDismissRegion".into());
+        };
+        let username = at(
+            with(element(49, "RCTUITextField"), |e| {
+                e.identifier = Some("loginUsernameInput".into());
+                e.label = Some("Username or email address".into());
+            }),
+            [56.0, 195.67, 314.0, 44.33],
+        );
+        let form = with(presenting(vec![username]), |e| {
+            let shadow = &mut e.children[0];
+            dismiss(&mut shadow.children[0]);
+        });
+        let automatic = at(
+            with(element(0, "RCTViewComponentView"), |e| {
+                e.identifier = Some("automaticSelectBtn".into());
+                e.label = Some("Automatic".into());
+            }),
+            [34.89, 609.95, 166.11, 38.41],
+        );
+        let done = button(
+            "RCTViewComponentView",
+            Some("doneBtn"),
+            "Done",
+            [31.04, 800.39, 339.91, 42.57],
+        );
+        let window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![
+                form,
+                sheet(
+                    with(dimming(Some(true)), dismiss),
+                    [8.0, 545.29, 386.0, 320.71],
+                    vec![automatic, done],
+                ),
+            ]
+        });
+        counted(with(element(1, "UIApplication"), |e| {
+            e.label = Some("Blue Sky".into());
+            e.children = vec![window, text_effects()];
+        }))
+    }
+
+    fn window_ids(snapshot: &Snapshot) -> Vec<u32> {
+        snapshot.windows.iter().map(|window| window.id).collect()
+    }
+
+    #[test]
+    fn a_read_with_the_keyboard_up_is_not_truncated() {
+        let mut root = login();
+        root.children.push(keyboard());
+        let snapshot = snapshot(&read(counted(root)));
+        assert!(
+            snapshot.truncated.is_empty(),
+            "the keyboard's window moved out; nothing was cut: {:?}",
+            snapshot.truncated
+        );
+        assert_eq!(window_ids(&snapshot), [4242 | KEYBOARD_WINDOW, 4242]);
+        assert!(holds(&snapshot.windows[0], "label:q"));
+    }
+
+    #[test]
+    fn an_alert_moved_to_its_own_window_leaves_the_read_whole() {
+        for root in [swiftui_alert(), expo_alert()] {
+            let snapshot = snapshot(&read(counted(root)));
+            assert!(snapshot.truncated.is_empty(), "{:?}", snapshot.truncated);
+            assert!(snapshot.windows.iter().any(|window| window.modal));
+        }
+    }
+
+    #[test]
+    fn a_sheet_that_takes_touches_moves_to_a_modal_window_above_the_screen() {
+        let snapshot = snapshot(&read(contacts_sheet(Some(true))));
+        assert!(snapshot.truncated.is_empty(), "{:?}", snapshot.truncated);
+        assert_eq!(
+            window_ids(&snapshot),
+            [4242 | KEYBOARD_WINDOW, 4242 | SHEET_WINDOW, 4242]
+        );
+        let [keyboard, sheet, application] = &snapshot.windows[..] else {
+            unreachable!()
+        };
+        assert!(sheet.modal);
+        assert_eq!(sheet.kind, WindowType::APPLICATION);
+        assert_eq!(sheet.title.as_deref(), Some("New Contact"));
+        assert!(
+            sheet
+                .flags
+                .contains(WindowFlags::ACTIVE | WindowFlags::FOCUSED)
+        );
+        assert!(holds(sheet, "label:Sheet Grabber"));
+        assert!(!holds(sheet, "label:John Appleseed"));
+        assert_eq!(
+            class(&snapshot, sheet.root.as_ref().unwrap()),
+            PRESENTATION_CLASS
+        );
+        assert!(!application.modal);
+        assert!(application.flags.is_empty(), "the sheet has the focus");
+        assert!(
+            holds(application, "label:John Appleseed"),
+            "the application keeps what the sheet covers"
+        );
+        assert!(!holds(application, "label:Sheet Grabber"));
+        assert!(keyboard.layer > sheet.layer && sheet.layer > application.layer);
+        assert_eq!(sheet.package, application.package);
+        assert_eq!(sheet.emits_events, Some(false));
+    }
+
+    #[test]
+    fn blueskys_bottom_sheet_is_a_modal_window_and_its_presenter_is_not() {
+        let snapshot = snapshot(&read(bluesky_sheet()));
+        assert!(snapshot.truncated.is_empty(), "{:?}", snapshot.truncated);
+        assert_eq!(window_ids(&snapshot), [4242 | SHEET_WINDOW, 4242]);
+        let [sheet, application] = &snapshot.windows[..] else {
+            unreachable!()
+        };
+        assert!(sheet.modal);
+        assert!(holds(sheet, "automaticSelectBtn") && holds(sheet, "doneBtn"));
+        assert_eq!(
+            sheet.bounds,
+            Bounds::new(0, 0, 1206, 2622),
+            "the window spans the transition view, the screen"
+        );
+        assert!(!application.modal);
+        assert!(holds(application, "loginUsernameInput"));
+    }
+
+    #[test]
+    fn a_sheet_that_lets_touches_through_stays_in_the_application_window() {
+        for takes_touches in [Some(false), None] {
+            let snapshot = snapshot(&read(contacts_sheet(takes_touches)));
+            assert_eq!(
+                window_ids(&snapshot),
+                [4242 | KEYBOARD_WINDOW, 4242],
+                "{takes_touches:?}"
+            );
+            let application = &snapshot.windows[1];
+            assert!(!application.modal);
+            assert!(application.flags.contains(WindowFlags::ACTIVE));
+            assert!(holds(application, "label:Sheet Grabber"));
+        }
+    }
+
+    #[test]
+    fn a_dimming_view_that_does_not_span_the_screen_dims_nothing() {
+        let mut root = contacts_sheet(Some(true));
+        root.children[0].children[1].children[0].frame = Some([0.0, 700.0, 402.0, 174.0]);
+        let snapshot = snapshot(&read(root));
+        assert_eq!(window_ids(&snapshot), [4242 | KEYBOARD_WINDOW, 4242]);
+    }
+
+    #[test]
+    fn an_alert_over_a_sheet_is_the_top_most_modal() {
+        let mut root = contacts_sheet(Some(true));
+        let alert = presentation(alert_container("Discard changes?", "Discard", None));
+        root.children[0].children.push(counted(alert));
+        root.children[0].children_count = Some(3);
+        let snapshot = snapshot(&read(root));
+        assert!(snapshot.truncated.is_empty(), "{:?}", snapshot.truncated);
+        assert_eq!(
+            window_ids(&snapshot),
+            [
+                4242 | KEYBOARD_WINDOW,
+                4242 | ALERT_WINDOW,
+                4242 | SHEET_WINDOW,
+                4242
+            ]
+        );
+        let layers: Vec<i32> = snapshot.windows.iter().map(|window| window.layer).collect();
+        assert!(
+            layers.windows(2).all(|pair| pair[0] > pair[1]),
+            "{layers:?}"
+        );
+        let [_, alert, sheet, application] = &snapshot.windows[..] else {
+            unreachable!()
+        };
+        assert!(alert.modal && sheet.modal && !application.modal);
+        assert!(alert.flags.contains(WindowFlags::FOCUSED));
+        assert!(sheet.flags.is_empty() && application.flags.is_empty());
+    }
+
+    #[test]
+    fn system_ui_keeps_a_sheet_in_its_window() {
+        let mut springboard = springboard_alert();
+        springboard.root.children = vec![with(element(2, "UIWindow"), |e| {
+            e.children = vec![
+                presenting(vec![]),
+                sheet(dimming(Some(true)), [0.0, 62.0, 402.0, 812.0], vec![]),
+            ]
+        })];
+        let snapshot = snapshot(&springboard);
+        assert_eq!(window_ids(&snapshot), [22789]);
+        assert!(!snapshot.windows[0].modal);
     }
 
     #[test]

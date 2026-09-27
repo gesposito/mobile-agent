@@ -363,6 +363,7 @@ impl Walk<'_> {
             children: Vec::new(),
             // AXPTranslator has no attribute for a scroll view's viewport.
             scroll_area: None,
+            user_interaction: None,
         };
         if level >= self.limits.max_depth {
             return Ok(node);

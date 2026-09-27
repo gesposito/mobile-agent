@@ -144,6 +144,7 @@ impl Extractor<'_> {
             children_count: object_for(snapshot, &keys.children_count).and_then(|v| number(&v)),
             children: Vec::new(),
             scroll_area: None,
+            user_interaction: None,
         };
         if level == 0 {
             self.screen = element.frame.filter(|f| f[2] > 0.0 && f[3] > 0.0);

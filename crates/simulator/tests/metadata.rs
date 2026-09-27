@@ -2,7 +2,9 @@
 //! for the mirror (protocol task 3.6; simulator-driver spec, "Foreground tree
 //! read"; ui-mirror spec, "Windows without change events"): which system
 //! process owns a window, which window is a modal, that no window sends
-//! change events, and how a scroll view scrolls.
+//! change events, and how a scroll view scrolls. Task 6.12 adds the
+//! keyboard's window, read whole, and sheets that block the screen, as modal
+//! windows.
 
 #![cfg(target_os = "macos")]
 
@@ -11,9 +13,12 @@ mod common;
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Duration;
 
-use protocol::snapshot::{Node, NodeFlags, ScrollAxis, ScrollFlags, ScrollUnit, Window};
+use protocol::snapshot::{
+    Node, NodeFlags, ScrollAxis, ScrollFlags, ScrollUnit, Window, WindowType,
+};
 use simulator::{
-    ForegroundTree, Input, Lifecycle, Point, SimulatorDriver, Swipe, Tree, TreeOptions,
+    ForegroundTree, Input, LaunchOptions, Lifecycle, Point, SimulatorDriver, Swipe, Tree,
+    TreeOptions,
 };
 
 use common::{EXPO_BUNDLE, ExpoOnLogin, SWIFTUI_BUNDLE};
@@ -413,4 +418,222 @@ fn a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top() {
             .terminate(&udid, fixture.bundle())
             .expect("terminated");
     }
+}
+
+/// Contacts, which every Simulator has: its New Contact sheet blocks the
+/// list it is presented over, and focuses its first field.
+const CONTACTS: &str = "com.apple.MobileAddressBook";
+
+/// Whether a node of `window` has this label.
+fn labelled(window: &Window, label: &str) -> bool {
+    fn walk(node: &Node, label: &str) -> bool {
+        node.desc.as_deref() == Some(label) || node.children.iter().any(|child| walk(child, label))
+    }
+    window.root.as_ref().is_some_and(|root| walk(root, label))
+}
+
+/// The labels of the keyboard's keys in `window`.
+fn keys(tree: &ForegroundTree, window: &Window) -> Vec<String> {
+    fn walk(tree: &ForegroundTree, node: &Node, out: &mut Vec<String>) {
+        if tree.class_of(node) == "XCUIElementTypeKey"
+            && let Some(label) = &node.desc
+        {
+            out.push(label.clone());
+        }
+        for child in &node.children {
+            walk(tree, child, out);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(root) = &window.root {
+        walk(tree, root, &mut out);
+    }
+    out
+}
+
+fn keyboard_of(tree: &ForegroundTree) -> Option<&Window> {
+    tree.snapshot
+        .windows
+        .iter()
+        .find(|window| window.kind == WindowType::INPUT_METHOD)
+}
+
+#[test]
+fn a_read_with_the_keyboard_up_is_whole_and_holds_the_keys() {
+    let Some(udid) = common::gated("a_read_with_the_keyboard_up_is_whole_and_holds_the_keys")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = SimulatorDriver::open().expect("the driver opens");
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    for fixture in Fixture::ALL {
+        let screen = fixture.show(&driver, &udid, "login", "login-username");
+        let field = screen.center(screen.find("login-username").unwrap());
+        // The first tap after a launch can come before the field takes
+        // input, so it is repeated until the keyboard is up.
+        let mut up = None;
+        for _ in 0..3 {
+            driver
+                .tap(&udid, field)
+                .expect("a tap on the username field");
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while up.is_none() && std::time::Instant::now() < deadline {
+                if let Ok(tree) = driver.snapshot(&udid, &TreeOptions::default())
+                    && keyboard_of(&tree).is_some_and(|window| keys(&tree, window).len() >= 26)
+                {
+                    up = Some(tree);
+                }
+            }
+            if up.is_some() {
+                break;
+            }
+            common::settle(&driver, &udid);
+        }
+        let tree = up.unwrap_or_else(|| panic!("{fixture:?}: the keyboard never came up"));
+        let keyboard = keyboard_of(&tree).expect("the keyboard's window");
+        let labels = keys(&tree, keyboard);
+        eprintln!(
+            "{fixture:?}: {} nodes, truncated {:?}, {} keys in the input method window",
+            tree.snapshot.node_count,
+            tree.snapshot.truncated,
+            labels.len()
+        );
+        assert!(
+            tree.snapshot.truncated.is_empty(),
+            "{fixture:?}: a read with the keyboard up was cut: {:?}",
+            tree.snapshot.truncated
+        );
+        assert!(!tree.is_degraded(), "{fixture:?}: {:?}", tree.degraded);
+        assert!(
+            labels.iter().any(|label| label.eq_ignore_ascii_case("q")),
+            "{fixture:?}: {labels:?}"
+        );
+        assert!(
+            tree.find("login-username")
+                .unwrap()
+                .flags
+                .contains(NodeFlags::FOCUSED),
+            "{fixture:?}: the field with the keyboard's focus says so"
+        );
+        driver
+            .terminate(&udid, fixture.bundle())
+            .expect("terminated");
+    }
+}
+
+/// Terminates an application when dropped, so a failing test leaves no
+/// sheet up in it.
+struct Terminate<'a> {
+    driver: &'a SimulatorDriver,
+    udid: &'a str,
+    bundle: &'a str,
+}
+
+impl Drop for Terminate<'_> {
+    fn drop(&mut self) {
+        if let Err(error) = self.driver.terminate(self.udid, self.bundle) {
+            eprintln!("could not terminate {}: {error}", self.bundle);
+        }
+    }
+}
+
+#[test]
+fn a_sheet_over_the_screen_is_a_modal_window() {
+    let Some(udid) = common::gated("a_sheet_over_the_screen_is_a_modal_window") else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = SimulatorDriver::open().expect("the driver opens");
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    driver
+        .launch(&udid, CONTACTS, &LaunchOptions::new().terminating_running())
+        .expect("Contacts launches");
+    let _contacts = Terminate {
+        driver: &driver,
+        udid: &udid,
+        bundle: CONTACTS,
+    };
+    let list = common::snapshot_until(&driver, &udid, Duration::from_secs(15), |tree| {
+        tree.foreground.bundle_id.as_deref() == Some(CONTACTS)
+            && tree.find_label("Add").is_some()
+            && tree.find_label("John Appleseed").is_some()
+    });
+    let add = list.center(list.find_label("Add").unwrap());
+    driver.tap(&udid, add).expect("a tap on Add");
+
+    let covered = common::snapshot_until(&driver, &udid, Duration::from_secs(10), |tree| {
+        tree.find_label("Sheet Grabber").is_some()
+    });
+    let windows: Vec<(u32, bool, Option<&str>)> = covered
+        .snapshot
+        .windows
+        .iter()
+        .map(|window| (window.id, window.modal, window.title.as_deref()))
+        .collect();
+    eprintln!(
+        "New Contact: windows {windows:?}, truncated {:?}",
+        covered.snapshot.truncated
+    );
+    let sheet = covered
+        .snapshot
+        .windows
+        .iter()
+        .find(|window| window.modal)
+        .expect("the sheet's modal window");
+    assert_eq!(sheet.title.as_deref(), Some("New Contact"));
+    assert!(labelled(sheet, "Sheet Grabber"));
+    assert!(!labelled(sheet, "John Appleseed"));
+    let application = covered
+        .snapshot
+        .windows
+        .iter()
+        .find(|window| window.id == covered.foreground.pid as u32)
+        .expect("the application's window");
+    assert!(!application.modal);
+    assert!(
+        labelled(application, "John Appleseed"),
+        "the application's window keeps what the sheet covers, for the mirror"
+    );
+    assert_eq!(covered.foreground.bundle_id.as_deref(), Some(CONTACTS));
+    assert!(
+        covered.snapshot.truncated.is_empty(),
+        "{:?}",
+        covered.snapshot.truncated
+    );
+    assert_event_less(&covered);
+    let uncovered = covered.uncovered();
+    assert!(
+        uncovered
+            .windows
+            .iter()
+            .any(|window| labelled(window, "Sheet Grabber"))
+    );
+    assert!(
+        !uncovered
+            .windows
+            .iter()
+            .any(|window| labelled(window, "John Appleseed")),
+        "what the sheet covers is cut"
+    );
+
+    // Closing the sheet hands the screen back. UIKit ignores touches until
+    // the sheet's presentation ends.
+    common::settle(&driver, &udid);
+    let close = covered.center(
+        covered
+            .find_label("close")
+            .expect("the sheet's close button"),
+    );
+    driver.tap(&udid, close).expect("a tap on close");
+    common::snapshot_until(&driver, &udid, Duration::from_secs(10), |tree| {
+        tree.find_label("Sheet Grabber").is_none()
+            && !tree.snapshot.windows.iter().any(|window| window.modal)
+    });
 }

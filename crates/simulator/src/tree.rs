@@ -642,6 +642,50 @@ mod tests {
     }
 
     #[test]
+    fn a_modal_window_cuts_the_windows_below_it() {
+        let snapshot = payload(in_app_alert(), fixture_owner());
+        let application = snapshot
+            .windows
+            .iter()
+            .find(|window| window.id == 4242)
+            .expect("the application's window")
+            .clone();
+        let sheet = Window {
+            id: 4242 | elements::SHEET_WINDOW,
+            title: Some("New Contact".into()),
+            modal: true,
+            ..application.clone()
+        };
+        let keyboard = Window {
+            id: 4242 | elements::KEYBOARD_WINDOW,
+            kind: WindowType::INPUT_METHOD,
+            ..application.clone()
+        };
+        let read = tree(
+            Snapshot {
+                windows: vec![keyboard.clone(), sheet.clone(), application],
+                ..snapshot
+            },
+            TreeBackend::Reader,
+        );
+        let uncovered = read.uncovered();
+        let ids: Vec<u32> = uncovered.windows.iter().map(|window| window.id).collect();
+        assert_eq!(
+            ids,
+            [keyboard.id, sheet.id],
+            "nothing below the sheet is left"
+        );
+        assert_eq!(
+            uncovered.node_count,
+            [&keyboard, &sheet]
+                .iter()
+                .filter_map(|window| window.root.as_ref())
+                .map(count)
+                .sum::<u32>()
+        );
+    }
+
+    #[test]
     fn an_alert_is_found_with_its_title_message_and_buttons_once_each() {
         let read = tree(
             payload(in_app_alert(), fixture_owner()),
