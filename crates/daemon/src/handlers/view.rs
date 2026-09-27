@@ -75,7 +75,8 @@ pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) 
         data.insert("removedRefs".into(), removed.into());
     }
     data.insert("origin".into(), origin(&snapshot).into());
-    data.insert("revision".into(), snapshot.revision.into());
+    // The mirror's replica revision, apart from the delta's own revision.
+    data.insert("replicaRevision".into(), snapshot.revision.into());
     data.insert("target".into(), target.info.id.clone().into());
     data.insert("verdict".into(), verdict_json(&snapshot.verdict));
     let warning = verdict_warning(&snapshot.verdict);
@@ -131,8 +132,8 @@ pub(super) fn diff_snapshot(target: &mut Attached, session: &str, request: &Requ
         "added": diff.added.iter().map(element_json).collect::<Vec<_>>(),
         "removed": diff.removed.iter().map(element_json).collect::<Vec<_>>(),
         "modified": modified,
-        "baseRevision": baseline.revision,
-        "revision": current.revision,
+        "baseReplicaRevision": baseline.revision,
+        "replicaRevision": current.revision,
         "target": target.info.id,
     });
     remember(target, session, current);

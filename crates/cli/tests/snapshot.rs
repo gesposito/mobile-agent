@@ -55,6 +55,10 @@ fn the_json_snapshot_follows_agent_browser_shape() {
     assert_eq!(data["removedRefs"], serde_json::json!([]));
     assert_eq!(data["origin"], "com.android.launcher3");
     assert_eq!(data["target"], "emulator-5554");
+    assert!(
+        data["replicaRevision"].as_u64().is_some_and(|r| r > 0),
+        "{reply}"
+    );
     assert_eq!(data["verdict"]["degraded"], false);
     assert_eq!(data["verdict"]["backend"], "fake");
 }
