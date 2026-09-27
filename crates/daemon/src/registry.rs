@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::driver::{CompatibilityRow, Driver, Platform, TargetInfo};
+use crate::driver::{CompatibilityRow, Driver, Platform, Report, TargetInfo};
 use crate::wire::{Failure, code};
 use crate::worker::{Handle, Status, Worker};
 
@@ -16,8 +16,9 @@ use crate::worker::{Handle, Status, Worker};
 /// again; `devices` always asks.
 const DISCOVERY_TTL: Duration = Duration::from_secs(2);
 
-/// How long the daemon waits for each worker to detach when it exits.
-const STOP_WAIT: Duration = Duration::from_secs(2);
+/// How long the daemon waits for its workers to detach their targets when
+/// it exits: long enough for the Android agent's `shutdown` and a kill.
+const STOP_WAIT: Duration = Duration::from_secs(5);
 
 /// Which target a command asks for: `--device` and `--platform`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -312,10 +313,21 @@ impl Registry {
         self.workers.get(target).map(Worker::status)
     }
 
-    /// Stops every worker, detaching every target.
+    /// What the driver reports about `target`, while it is attached.
+    pub fn worker_report(&self, target: &str) -> Option<Arc<dyn Report>> {
+        self.workers.get(target).and_then(Worker::report)
+    }
+
+    /// Stops every worker, detaching every target: all at once, then waits
+    /// for them together.
     pub fn stop(&mut self) {
-        for (_, worker) in self.workers.drain() {
-            worker.stop(STOP_WAIT);
+        let workers: Vec<Worker> = self.workers.drain().map(|(_, worker)| worker).collect();
+        for worker in &workers {
+            worker.signal_stop();
+        }
+        let deadline = Instant::now() + STOP_WAIT;
+        for worker in workers {
+            worker.join(deadline);
         }
     }
 }

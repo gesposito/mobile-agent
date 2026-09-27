@@ -10,7 +10,6 @@
 //! Simulator and Android drivers register in [`driver::registered`], and
 //! the fake driver in [`fake`] serves every test that needs no device.
 
-#[allow(dead_code)]
 mod devices;
 pub mod driver;
 pub mod fake;

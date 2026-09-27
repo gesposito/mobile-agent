@@ -1,7 +1,9 @@
 //! Runs the `mobile-agent` binary against a daemon with fake targets on a
 //! private socket directory, with a clean environment: no `MOBILE_AGENT_*`
-//! variables from the developer's shell, `HOME` and the working directory
-//! inside the test directory so no user or project config applies.
+//! variables from the developer's shell, no device driver, so the host's
+//! Simulators and emulators stay out of every listing, and `HOME` and the
+//! working directory inside the test directory so no user or project
+//! config applies.
 
 #![allow(dead_code)]
 
@@ -197,6 +199,7 @@ impl TestEnv {
             .arg("--socket-dir")
             .arg(self.path())
             .env("MOBILE_AGENT_FAKE_TARGETS", &self.fake)
+            .env("MOBILE_AGENT_DRIVERS", "none")
             .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "60000")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -231,6 +234,7 @@ impl TestEnv {
                 "MOBILE_AGENT_FAKE_TARGETS".into(),
                 PathBuf::from(&self.fake),
             ),
+            ("MOBILE_AGENT_DRIVERS".into(), PathBuf::from("none")),
             (
                 "MOBILE_AGENT_IDLE_TIMEOUT_MS".into(),
                 PathBuf::from("60000"),

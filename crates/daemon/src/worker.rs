@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
-use crate::driver::{AppControl, Driver, Size, TargetInfo};
+use crate::driver::{AppControl, Capture, Driver, Report, Size, TargetInfo};
 use crate::signals::Observer;
 use crate::wire::{Failure, Success};
 
@@ -46,6 +46,8 @@ pub(crate) struct Attached {
     pub info: TargetInfo,
     pub mirror: Mirror,
     pub apps: Box<dyn AppControl>,
+    /// Screenshots the driver takes on demand, if it takes them.
+    pub capture: Option<Box<dyn Capture>>,
     /// The screen size in points, for gestures no element anchors.
     pub display: Size,
     /// The change signals the target reported, beside the mirror.
@@ -94,10 +96,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What the driver reports about the attached target, while it is.
+type ReportSlot = Arc<Mutex<Option<Arc<dyn Report>>>>;
+
 /// A target's worker thread.
 pub(crate) struct Worker {
     handle: Handle,
     status: Arc<Mutex<Status>>,
+    report: ReportSlot,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -113,15 +119,25 @@ impl Worker {
     pub fn spawn(info: TargetInfo, driver: Arc<dyn Driver>) -> Worker {
         let (jobs, queue) = mpsc::channel();
         let status = Arc::new(Mutex::new(Status::default()));
-        let shared = Arc::clone(&status);
+        let report: ReportSlot = Arc::new(Mutex::new(None));
+        let (shared_status, shared_report) = (Arc::clone(&status), Arc::clone(&report));
         let name = format!("target {}", info.id);
         let thread = std::thread::Builder::new()
             .name(name)
-            .spawn(move || serve(&info, driver.as_ref(), &queue, &shared))
+            .spawn(move || {
+                serve(
+                    &info,
+                    driver.as_ref(),
+                    &queue,
+                    &shared_status,
+                    &shared_report,
+                );
+            })
             .ok();
         Worker {
             handle: Handle { jobs },
             status,
+            report,
             thread,
         }
     }
@@ -134,11 +150,19 @@ impl Worker {
         lock(&self.status).clone()
     }
 
-    /// Stops the worker, which detaches its target, waiting up to `wait`.
-    pub fn stop(mut self, wait: Duration) {
+    /// What the driver reports about the target, while it is attached.
+    pub fn report(&self) -> Option<Arc<dyn Report>> {
+        lock(&self.report).clone()
+    }
+
+    /// Asks the worker to stop, which detaches its target.
+    pub fn signal_stop(&self) {
         let _ = self.handle.jobs.send(Job::Stop);
+    }
+
+    /// Waits until `deadline` for the worker to finish detaching.
+    pub fn join(mut self, deadline: Instant) {
         if let Some(thread) = self.thread.take() {
-            let deadline = Instant::now() + wait;
             while !thread.is_finished() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(5));
             }
@@ -170,6 +194,7 @@ fn serve(
     driver: &dyn Driver,
     queue: &Receiver<Job>,
     status: &Arc<Mutex<Status>>,
+    report: &ReportSlot,
 ) {
     let mut attached: Option<Attached> = None;
     loop {
@@ -189,6 +214,7 @@ fn serve(
                             current.attached = true;
                             current.error = None;
                             drop(current);
+                            *lock(report) = attachment.report;
                             let observer = Observer::default();
                             let mut backend = attachment.backend;
                             let frames = backend.frames.is_some();
@@ -197,6 +223,7 @@ fn serve(
                                 info: info.clone(),
                                 mirror: Mirror::new(backend, attachment.config),
                                 apps: attachment.apps,
+                                capture: attachment.capture,
                                 display: attachment.display,
                                 observer,
                                 frames,
@@ -218,6 +245,7 @@ fn serve(
                     None => continue,
                 };
                 let outcome = result.unwrap_or_else(|_| {
+                    *lock(report) = None;
                     attached = None;
                     lock(status).attached = false;
                     Err(Failure::internal(format!(
@@ -227,7 +255,13 @@ fn serve(
                 });
                 let _ = reply.send(outcome);
             }
-            Ok(Job::Stop) | Err(RecvTimeoutError::Disconnected) => return,
+            Ok(Job::Stop) | Err(RecvTimeoutError::Disconnected) => {
+                // Dropping the attachment detaches the target.
+                *lock(report) = None;
+                drop(attached);
+                lock(status).attached = false;
+                return;
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(target) = attached.as_mut() {
                     let _ = target.mirror.pump();

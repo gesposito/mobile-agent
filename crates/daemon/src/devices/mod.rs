@@ -31,6 +31,9 @@ pub(crate) const DEFAULT: &[&str] = if cfg!(target_os = "macos") {
 /// The device driver `name` (as [`DEFAULT`] lists them), keeping what
 /// outlives the daemon under `state_dir`.
 pub(crate) fn driver(name: &str, state_dir: &Path) -> Result<Arc<dyn Driver>, String> {
-    let _ = (name, state_dir);
-    todo!("task 8.8")
+    match name {
+        simulator::NAME => Ok(Arc::new(simulator::SimulatorDevices::new())),
+        android::NAME => Ok(Arc::new(android::AndroidDevices::new(state_dir))),
+        other => Err(format!("{other:?} is not a device driver")),
+    }
 }

@@ -6,8 +6,8 @@ use std::process::ExitCode;
 const HELP: &str = "\
 mobile-agent-daemon: the host daemon behind the mobile-agent CLI
 
-Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--fake <targets>]
-                           [--fake-latency <time>]
+Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
+                           [--fake <targets>] [--fake-latency <time>]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -16,6 +16,9 @@ Options:
   --idle-timeout <time>   Exit after this long without requests: ms, or a
                           number with s, m or h; 0 never exits
                           (or MOBILE_AGENT_IDLE_TIMEOUT_MS; default 1h)
+  --drivers <names>       Device drivers to register: simulator (macOS only),
+                          android, or none (or MOBILE_AGENT_DRIVERS; default
+                          every driver this host runs, none with --fake)
   --fake <targets>        Serve fake targets, such as android,ios:FAKE-IOS-1
                           (or MOBILE_AGENT_FAKE_TARGETS)
   --fake-latency <time>   Show every change on fake targets this long after

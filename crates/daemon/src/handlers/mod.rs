@@ -11,7 +11,7 @@ use mirror::backend::Owner;
 use mirror::{Degradation, Snapshot, Verdict};
 use serde_json::{Map, Value, json};
 
-use crate::driver::{Launch, Platform, TargetInfo};
+use crate::driver::{Launch, Platform, TargetInfo, TargetReport};
 use crate::registry::Selection;
 use crate::server::Daemon;
 use crate::wire::{Failure, Request, Success, code};
@@ -191,15 +191,17 @@ fn target_json(target: &TargetInfo) -> Map<String, Value> {
     entry.insert("platform".into(), target.platform.id().into());
     entry.insert("class".into(), target.class.id().into());
     entry.insert("name".into(), target.name.clone().into());
+    entry.insert("state".into(), target.state.clone().into());
     entry
 }
 
 fn status(daemon: &Daemon) -> Outcome {
-    let mut registry = daemon.registry();
-    let targets: Vec<Value> = registry
-        .targets(false)
-        .iter()
-        .map(|target| {
+    let (mut targets, reports, sessions, drivers, warning) = {
+        let mut registry = daemon.registry();
+        let listed = registry.targets(false);
+        let mut targets = Vec::with_capacity(listed.len());
+        let mut reports = Vec::with_capacity(listed.len());
+        for target in &listed {
             let worker = registry.worker_status(&target.id).unwrap_or_default();
             let mut entry = target_json(target);
             entry.insert("attached".into(), worker.attached.into());
@@ -208,20 +210,32 @@ fn status(daemon: &Daemon) -> Outcome {
             if let Some(error) = worker.error {
                 entry.insert("error".into(), error.into());
             }
-            Value::Object(entry)
-        })
-        .collect();
-    let sessions: Vec<Value> = registry
-        .sessions()
-        .iter()
-        .map(|(name, settings)| {
-            json!({
-                "name": name,
-                "targets": registry.held_by(name),
-                "defaultTimeoutMs": settings.default_timeout.map(|t| t.as_millis() as u64),
+            targets.push(entry);
+            reports.push(registry.worker_report(&target.id));
+        }
+        let sessions: Vec<Value> = registry
+            .sessions()
+            .iter()
+            .map(|(name, settings)| {
+                json!({
+                    "name": name,
+                    "targets": registry.held_by(name),
+                    "defaultTimeoutMs": settings.default_timeout.map(|t| t.as_millis() as u64),
+                })
             })
-        })
-        .collect();
+            .collect();
+        let warning = discovery_warning(registry.failures());
+        (targets, reports, sessions, registry.driver_names(), warning)
+    };
+    // Drivers answer without the registry held: a Simulator's status asks
+    // CoreSimulator.
+    for (entry, report) in targets.iter_mut().zip(reports) {
+        if let Some(report) = report {
+            let TargetReport { lines, mut data } = report.report();
+            data.insert("lines".into(), lines.into());
+            entry.insert("driver".into(), Value::Object(data));
+        }
+    }
     let data = json!({
         "daemon": {
             "pid": std::process::id(),
@@ -229,12 +243,12 @@ fn status(daemon: &Daemon) -> Outcome {
             "socket": daemon.paths.socket().to_string_lossy(),
             "uptimeMs": daemon.started.elapsed().as_millis() as u64,
             "idleTimeoutMs": daemon.idle.map(|idle| idle.as_millis() as u64),
-            "drivers": registry.driver_names(),
+            "drivers": drivers,
         },
         "targets": targets,
         "sessions": sessions,
     });
-    Ok(Success::new(data).warn(discovery_warning(registry.failures())))
+    Ok(Success::new(data).warn(warning))
 }
 
 fn discovery_warning(failures: &[String]) -> Option<String> {
@@ -257,6 +271,9 @@ fn devices(daemon: &Daemon, request: &Request) -> Outcome {
             let mut entry = target_json(target);
             entry.insert("model".into(), target.model.clone().into());
             entry.insert("os".into(), target.os.clone().into());
+            if let Some(advice) = &target.advice {
+                entry.insert("advice".into(), advice.clone().into());
+            }
             entry.insert("claimedBy".into(), registry.holder(&target.id).into());
             Value::Object(entry)
         })

@@ -1,75 +1,434 @@
 //! The Android driver (`crates/android`, design D2, D3, D5 and D7) behind
 //! the daemon's driver contract.
+//!
+//! - Discovery lists every target the local adb server knows, in every
+//!   state, with the advice for a state that keeps it from automation; no
+//!   adb server means no Android targets.
+//! - Attaching deploys the agent, reuses the one this daemon or its
+//!   predecessor started, or replaces an incompatible one, with the
+//!   records kept in the daemon's directory; selects the emulator's
+//!   controller when it answers; and starts the agent session, whose
+//!   backend is what the mirror runs on.
+//! - Apps launch by package through their launcher activity, each launch
+//!   environment entry a string extra of the intent under its own name,
+//!   stopped first for a relaunch.
+//! - Screenshots and status come from the session; dropping the
+//!   attachment stops the agent, so no agent outlives a detached target.
 
-use android::adb;
-use android::agent::DeployError;
-use android::session::Status;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
-use crate::driver::{DriverError, Launch, Size, TargetInfo, TargetReport};
+use android::adb::{self, AdbServer, Device};
+use android::agent::{AgentJar, DeployError, DeployOptions, Deployer, Records};
+use android::emulator;
+use android::session::{ControllerChoice, Session, SessionOptions, Status, select_paths};
+use mirror::MirrorConfig;
+use protocol::message::{ImageFormat, ScreenshotParams};
+use serde_json::{Map, Value, json};
+
+use crate::driver::{
+    AppControl, Attachment, Capture, CaptureRequest, Driver, DriverError, Image, Launch, Platform,
+    Report, Size, TargetClass, TargetInfo, TargetReport,
+};
+use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
 /// The driver's name, as `status`, `doctor` and `--drivers` give it.
 pub(crate) const NAME: &str = "android";
 
+/// The adb server or the device failed.
+const ADB_FAILED: &str = "adb_failed";
+/// Another process holds the device's UI automation.
+const AUTOMATION_CONFLICT: &str = "automation_conflict";
+/// The agent could not be started, or its jar read.
+const AGENT_FAILED: &str = "agent_failed";
+/// The agent jar is of another build than this daemon deploys.
+const AGENT_MISMATCH: &str = "agent_mismatch";
+/// The target's state keeps it from automation.
+const TARGET_NOT_READY: &str = "target_not_ready";
+/// `am start` could not open the app.
+const LAUNCH_FAILED: &str = "launch_failed";
+
+/// Where in the daemon's directory the records of the agents it started
+/// are kept, one file per serial.
+const RECORDS: &str = "android-agents";
+
+/// How long a target listing may wait on the adb server: the listing runs
+/// with the registry held, so a device that stops answering must not hold
+/// every other command up for the client's default 10 s.
+const LISTING_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// How long a stopped agent may take to exit before it is killed.
+const STOP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The targets of the local adb server.
+pub(crate) struct AndroidDevices {
+    server: AdbServer,
+    state_dir: PathBuf,
+    /// The agents this daemon started, in the daemon's directory, opened on
+    /// the first attach.
+    records: OnceLock<Records>,
+}
+
+impl AndroidDevices {
+    pub(crate) fn new(state_dir: &Path) -> AndroidDevices {
+        AndroidDevices {
+            server: AdbServer::from_env(),
+            state_dir: state_dir.to_owned(),
+            records: OnceLock::new(),
+        }
+    }
+
+    /// The records, in a file per serial so a restarted daemon reuses the
+    /// agent its predecessor left running; in memory when the directory
+    /// cannot be written.
+    fn records(&self) -> Records {
+        self.records
+            .get_or_init(|| {
+                let dir = self.state_dir.join(RECORDS);
+                Records::in_dir(&dir).unwrap_or_else(|failure| {
+                    eprintln!(
+                        "mobile-agent-daemon: cannot keep the Android agent records in {}: {failure}; they last as long as this daemon",
+                        dir.display()
+                    );
+                    Records::in_memory()
+                })
+            })
+            .clone()
+    }
+}
+
+impl Driver for AndroidDevices {
+    fn name(&self) -> &str {
+        NAME
+    }
+
+    fn discover(&self) -> Result<Vec<TargetInfo>, DriverError> {
+        match self
+            .server
+            .clone()
+            .with_io_timeout(LISTING_TIMEOUT)
+            .targets()
+        {
+            Ok(targets) => Ok(targets.into_iter().map(target_info).collect()),
+            // No adb server runs, so no Android target is connected;
+            // doctor reports the server.
+            Err(adb::Error::ServerUnavailable { .. }) => Ok(Vec::new()),
+            Err(failure) => Err(DriverError::new(ADB_FAILED, failure.to_string())),
+        }
+    }
+
+    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
+        ready(target)?;
+        let device = self.server.device(&target.id);
+        let jar = AgentJar::locate().map_err(|e| DriverError::new(AGENT_FAILED, e.to_string()))?;
+        let emulator = target.class == TargetClass::AndroidEmulator;
+        let selection = select_paths(
+            &target.id,
+            emulator,
+            &ControllerChoice::Auto,
+            emulator::Options::default(),
+        );
+        let attached = Deployer::new(device.clone(), jar, self.records())
+            .attach(&DeployOptions::default())
+            .map_err(deploy_error)?;
+        let session = Session::start_selected(attached, SessionOptions::default(), selection)
+            .map_err(|e| DriverError::new(ADB_FAILED, e.to_string()))?;
+        // Created before anything else can fail, so the agent is stopped
+        // on a failure below as on a detach.
+        let stop = StopAgent(session.clone());
+        let size = device.shell("wm size").map_err(adb_error)?;
+        let display = display_size(&size.stdout_text(), session.scale()).ok_or_else(|| {
+            DriverError::new(
+                ADB_FAILED,
+                format!(
+                    "cannot read the display size of {} from `wm size`: {}",
+                    target.id,
+                    size.stdout_text().trim()
+                ),
+            )
+        })?;
+        Ok(Attachment {
+            backend: session.backend(),
+            apps: Box::new(Apps {
+                device,
+                _stop: stop,
+            }),
+            display,
+            config: MirrorConfig::default(),
+            capture: Some(Box::new(AgentScreenshots(session.clone()))),
+            report: Some(Arc::new(SessionReport(session))),
+        })
+    }
+}
+
+fn adb_error(failure: adb::Error) -> DriverError {
+    DriverError::new(ADB_FAILED, failure.to_string())
+}
+
+/// Stops the agent when dropped: `shutdown`, then a kill past
+/// [`STOP_TIMEOUT`], and its record forgotten.
+struct StopAgent(Session);
+
+impl Drop for StopAgent {
+    fn drop(&mut self) {
+        if let Err(failure) = self.0.stop(STOP_TIMEOUT) {
+            eprintln!(
+                "mobile-agent-daemon: stopping the agent on {}: {failure}",
+                self.0.agent().serial
+            );
+        }
+    }
+}
+
+struct Apps {
+    device: Device,
+    _stop: StopAgent,
+}
+
+impl AppControl for Apps {
+    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+        let resolved = self
+            .device
+            .shell(&format!(
+                "cmd package resolve-activity --brief -a android.intent.action.MAIN \
+                 -c android.intent.category.LAUNCHER {}",
+                quote(app)
+            ))
+            .map_err(adb_error)?;
+        let Some(component) = launcher_activity(&resolved.stdout_text()) else {
+            let installed = self
+                .device
+                .shell(&format!("pm path {}", quote(app)))
+                .map_err(adb_error)?
+                .success();
+            let serial = self.device.serial();
+            return Err(DriverError::new(
+                APP_NOT_FOUND,
+                if installed {
+                    format!("{app} has no launcher activity on {serial} to open")
+                } else {
+                    format!(
+                        "{app} is not installed on {serial}; list the packages with adb shell pm list packages"
+                    )
+                },
+            ));
+        };
+        let started = self
+            .device
+            .shell(&start_command(&component, launch))
+            .map_err(adb_error)?;
+        let output = format!("{}{}", started.stdout_text(), started.stderr_text());
+        match start_failure(&output) {
+            Some(failure) => Err(DriverError::new(
+                LAUNCH_FAILED,
+                format!("am start could not open {app}: {failure}"),
+            )),
+            None => Ok(()),
+        }
+    }
+
+    fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
+        self.device
+            .shell(&format!("am force-stop {}", quote(app)))
+            .map_err(adb_error)?;
+        Ok(())
+    }
+}
+
+/// Screenshots through the agent, which takes them upright in every
+/// display orientation.
+struct AgentScreenshots(Session);
+
+impl Capture for AgentScreenshots {
+    fn screenshot(&mut self, request: &CaptureRequest) -> Result<Image, DriverError> {
+        let shot = self.0.screenshot(ScreenshotParams {
+            format: Some(ImageFormat::JPEG),
+            quality: Some(request.quality),
+            max_dimension: Some(request.max_dimension),
+        })?;
+        Ok(Image {
+            format: if shot.format == ImageFormat::PNG {
+                "png"
+            } else {
+                "jpeg"
+            },
+            width: shot.width,
+            height: shot.height,
+            data: shot.data,
+        })
+    }
+}
+
+struct SessionReport(Session);
+
+impl Report for SessionReport {
+    fn report(&self) -> TargetReport {
+        status_report(&self.0.status())
+    }
+}
+
+/// `text` quoted for the device's shell.
+fn quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 /// An adb target as `devices` lists it, in whatever state the adb server
 /// reports it, with the advice for a state that keeps it from automation.
 pub(crate) fn target_info(target: adb::Target) -> TargetInfo {
-    let _ = target;
-    todo!("task 8.8")
+    let advice = target.advice();
+    TargetInfo {
+        platform: Platform::Android,
+        class: if target.emulator {
+            TargetClass::AndroidEmulator
+        } else {
+            TargetClass::AndroidDevice
+        },
+        name: target
+            .model
+            .clone()
+            .unwrap_or_else(|| target.serial.clone()),
+        os: target.api_level.map(|level| format!("Android API {level}")),
+        state: state_name(&target.state),
+        advice,
+        driver: NAME.to_owned(),
+        model: target.model,
+        id: target.serial,
+    }
 }
 
 /// The adb server's name for a state: `device`, `offline`, `unauthorized`,
 /// `authorizing`, `connecting`, `no permissions`, or the mode it names.
 pub(crate) fn state_name(state: &adb::State) -> String {
-    let _ = state;
-    todo!("task 8.8")
+    match state {
+        adb::State::Device => "device",
+        adb::State::Offline => "offline",
+        adb::State::Unauthorized => "unauthorized",
+        adb::State::Authorizing => "authorizing",
+        adb::State::Connecting => "connecting",
+        adb::State::NoPermissions(_) => "no permissions",
+        adb::State::Other(mode) => mode,
+    }
+    .to_owned()
 }
 
 /// Refuses a target whose state keeps it from automation, with its advice.
 pub(crate) fn ready(target: &TargetInfo) -> Result<(), DriverError> {
-    let _ = target;
-    todo!("task 8.8")
+    if target.state == "device" {
+        return Ok(());
+    }
+    let advice = target
+        .advice
+        .as_deref()
+        .unwrap_or("wait until adb lists it as device");
+    Err(DriverError::new(
+        TARGET_NOT_READY,
+        format!("{} is {}: {advice}", target.id, target.state),
+    ))
 }
 
 /// The screen in points from `wm size`, the override size first, at
 /// `scale` pixels per point.
 pub(crate) fn display_size(wm_size: &str, scale: f64) -> Option<Size> {
-    let _ = (wm_size, scale);
-    todo!("task 8.8")
+    let size = |label: &str| {
+        let text = wm_size
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(label))?;
+        let (width, height) = text.trim().split_once('x')?;
+        Some((
+            width.trim().parse::<f64>().ok()?,
+            height.trim().parse::<f64>().ok()?,
+        ))
+    };
+    let (width, height) = size("Override size:").or_else(|| size("Physical size:"))?;
+    (scale > 0.0).then(|| Size {
+        width: width / scale,
+        height: height / scale,
+    })
 }
 
 /// The launcher activity `cmd package resolve-activity --brief` printed,
 /// as `package/activity`; `None` when it found none.
 pub(crate) fn launcher_activity(resolved: &str) -> Option<String> {
-    let _ = resolved;
-    todo!("task 8.8")
+    let line = resolved
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())?;
+    (line.contains('/') && !line.contains(char::is_whitespace)).then(|| line.to_owned())
 }
 
 /// The `am start` command that launches `component` as the launcher does,
 /// waiting for its first frame: stopped first when `launch.relaunch` is
 /// set, with each environment entry as a string extra of the same name.
 pub(crate) fn start_command(component: &str, launch: &Launch) -> String {
-    let _ = (component, launch);
-    todo!("task 8.8")
+    let mut command = String::from("am start -W");
+    if launch.relaunch {
+        command.push_str(" -S");
+    }
+    command.push_str(" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n ");
+    command.push_str(&quote(component));
+    for (key, value) in &launch.env {
+        command.push_str(&format!(" --es {} {}", quote(key), quote(value)));
+    }
+    command
 }
 
 /// The error `am start` printed, when it failed.
 pub(crate) fn start_failure(output: &str) -> Option<String> {
-    let _ = output;
-    todo!("task 8.8")
+    output
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("Error"))
+        .map(str::to_owned)
 }
 
 /// What `status` shows about an attached Android target: the agent, the
 /// active path of each kind of input and output, and what failed since.
 pub(crate) fn status_report(status: &Status) -> TargetReport {
-    let _ = status;
-    todo!("task 8.8")
+    let paths = &status.paths;
+    let mut data = Map::new();
+    let mut put = |key: &str, value: Value| {
+        data.insert(key.to_owned(), value);
+    };
+    put("agent", status.agent.clone().into());
+    put("protocol", status.protocol.into());
+    put("pid", status.pid.into());
+    put("socket", status.socket.clone().into());
+    put("reused", status.reused.into());
+    put("input", paths.input.to_string().into());
+    put("frames", paths.frames.map(|path| path.to_string()).into());
+    put("screenshots", paths.screenshots.to_string().into());
+    put("keys", paths.keys.to_string().into());
+    put("endpoint", paths.endpoint.clone().into());
+    put("keyboard", paths.keyboard.into());
+    put("warning", paths.warning.clone().into());
+    put(
+        "inputs",
+        json!({"controller": status.inputs.0, "agent": status.inputs.1}),
+    );
+    put("framesReceived", status.frames_received.into());
+    put("controllerError", status.controller_error.clone().into());
+    put("frameError", status.frame_error.clone().into());
+    put("disconnected", status.disconnected.clone().into());
+    TargetReport {
+        lines: status.lines(),
+        data,
+    }
 }
 
 /// A deployment failure with a stable code: another holder of UI
 /// automation, the adb server, the agent, or its record.
 pub(crate) fn deploy_error(error: DeployError) -> DriverError {
-    let _ = error;
-    todo!("task 8.8")
+    let code = match &error {
+        DeployError::Conflict(_) => AUTOMATION_CONFLICT,
+        DeployError::Adb(_) => ADB_FAILED,
+        DeployError::Exited { .. }
+        | DeployError::NoReadyLine { .. }
+        | DeployError::Handshake { .. } => AGENT_FAILED,
+        DeployError::WrongVersion { .. } => AGENT_MISMATCH,
+        DeployError::Records(_) => IO_ERROR,
+    };
+    DriverError::new(code, error.to_string())
 }
 
 #[cfg(test)]

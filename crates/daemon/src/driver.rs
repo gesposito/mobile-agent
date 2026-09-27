@@ -233,6 +233,9 @@ pub struct Registration<'a> {
 pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
     let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
+    for name in device_drivers(registration.drivers, fake.is_some())? {
+        drivers.push(devices::driver(name, registration.state_dir)?);
+    }
     if let Some(spec) = fake {
         drivers.push(Arc::new(
             FakeDriver::parse(spec)?.with_latency(registration.fake_latency),
@@ -246,8 +249,48 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
 /// none), else every device driver this host runs unless fake targets are
 /// named.
 pub fn device_drivers(drivers: Option<&str>, fake: bool) -> Result<Vec<&'static str>, String> {
-    let _ = (drivers, fake, devices::DEFAULT);
-    todo!("task 8.8")
+    let Some(list) = drivers.filter(|list| !list.trim().is_empty()) else {
+        return Ok(if fake {
+            Vec::new()
+        } else {
+            devices::DEFAULT.to_vec()
+        });
+    };
+    let entries: Vec<String> = list
+        .split(',')
+        .map(|entry| entry.trim().to_ascii_lowercase())
+        .filter(|entry| !entry.is_empty())
+        .collect();
+    if entries.iter().any(|entry| entry == "none") {
+        return if entries.len() == 1 {
+            Ok(Vec::new())
+        } else {
+            Err(format!(
+                "drivers {list:?}: none names no driver, so it cannot stand beside others"
+            ))
+        };
+    }
+    let mut names: Vec<&'static str> = Vec::new();
+    for entry in &entries {
+        let name = match entry.as_str() {
+            "simulator" | "ios" => devices::simulator::NAME,
+            "android" => devices::android::NAME,
+            other => {
+                return Err(format!(
+                    "drivers {list:?}: {other:?} is not a device driver; name simulator (or ios), android, or none"
+                ));
+            }
+        };
+        if !devices::DEFAULT.contains(&name) {
+            return Err(format!(
+                "the {name} driver needs macOS, which this host is not"
+            ));
+        }
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 #[cfg(test)]

@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mirror::{
-    Condition, DEFAULT_QUIET_WINDOW, Diff, Element, FrameRequest, Selector, SettleOptions, Signal,
-    Signals, Snapshot, SnapshotOptions,
+    Condition, DEFAULT_MAX_DIMENSION, DEFAULT_QUALITY, DEFAULT_QUIET_WINDOW, Diff, Element,
+    FrameRequest, Selector, SettleOptions, Signal, Signals, Snapshot, SnapshotOptions,
 };
 use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
 use super::{millis, origin, settle_max, timeout, verdict_json, verdict_warning};
+use crate::driver::CaptureRequest;
 use crate::signals::{LastChanges, ended_by};
 use crate::wire::code::{self, IO_ERROR};
 use crate::wire::{Failure, Request, Success};
@@ -277,14 +278,49 @@ fn settle(target: &mut Attached, request: &Request) -> Outcome {
 }
 
 pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
-    let frame = target.mirror.frame(&FrameRequest {
-        max_dimension: request
-            .u64("maxDimension")?
-            .map(|px| u32::try_from(px).unwrap_or(u32::MAX)),
-        quality: request
-            .u64("quality")?
-            .map(|q| u8::try_from(q).unwrap_or(u8::MAX)),
-    })?;
+    let max_dimension = request
+        .u64("maxDimension")?
+        .map(|px| u32::try_from(px).unwrap_or(u32::MAX));
+    let quality = request
+        .u64("quality")?
+        .map(|q| u8::try_from(q).unwrap_or(u8::MAX));
+    // The driver's own screenshot when it takes one, the screen as it is
+    // at any size; else the mirror's latest frame.
+    let shot = match target.capture.as_mut() {
+        Some(capture) => {
+            let quality = quality.unwrap_or(DEFAULT_QUALITY).clamp(1, 100);
+            let image = capture.screenshot(&CaptureRequest {
+                max_dimension: max_dimension.unwrap_or(DEFAULT_MAX_DIMENSION).max(1),
+                quality,
+            })?;
+            Shot {
+                data: image.data,
+                format: image.format,
+                width: image.width,
+                height: image.height,
+                quality,
+                seq: None,
+                age: Duration::ZERO,
+                source: "capture",
+            }
+        }
+        None => {
+            let frame = target.mirror.frame(&FrameRequest {
+                max_dimension,
+                quality,
+            })?;
+            Shot {
+                data: frame.data,
+                format: "jpeg",
+                width: frame.width,
+                height: frame.height,
+                quality: frame.quality,
+                seq: Some(frame.seq),
+                age: frame.age,
+                source: "frame",
+            }
+        }
+    };
     let path = match request.str("path") {
         Some(path) => PathBuf::from(path),
         None => {
@@ -303,10 +339,11 @@ pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Reques
                     }
                 })
                 .collect();
-            std::env::temp_dir().join(format!("mobile-agent-{name}-{stamp}.jpg"))
+            let extension = if shot.format == "png" { "png" } else { "jpg" };
+            std::env::temp_dir().join(format!("mobile-agent-{name}-{stamp}.{extension}"))
         }
     };
-    std::fs::write(&path, &frame.data).map_err(|e| {
+    std::fs::write(&path, &shot.data).map_err(|e| {
         Failure::new(
             IO_ERROR,
             format!("cannot write the screenshot to {}: {e}", path.display()),
@@ -314,11 +351,27 @@ pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Reques
     })?;
     Ok(Success::new(json!({
         "path": path.to_string_lossy(),
-        "format": "jpeg",
-        "width": frame.width,
-        "height": frame.height,
-        "quality": frame.quality,
-        "seq": frame.seq,
-        "ageMs": millis(frame.age),
+        "format": shot.format,
+        "width": shot.width,
+        "height": shot.height,
+        "quality": shot.quality,
+        "seq": shot.seq,
+        "ageMs": millis(shot.age),
+        "source": shot.source,
     })))
+}
+
+/// An encoded screenshot, from the driver or the latest frame.
+struct Shot {
+    data: Vec<u8>,
+    /// `jpeg` or `png`.
+    format: &'static str,
+    width: u32,
+    height: u32,
+    quality: u8,
+    /// The frame's number, for a frame.
+    seq: Option<u64>,
+    age: Duration,
+    /// `capture` or `frame`.
+    source: &'static str,
 }

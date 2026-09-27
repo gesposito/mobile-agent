@@ -67,15 +67,18 @@ pub struct Options {
 
 impl Options {
     /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
-    /// `--fake <targets>` and `--fake-latency <time>`, each falling back to
-    /// its environment variable: `MOBILE_AGENT_SOCKET_DIR` (then the runtime
-    /// directory, see [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
-    /// `MOBILE_AGENT_FAKE_TARGETS` and `MOBILE_AGENT_FAKE_LATENCY_MS`.
+    /// `--fake <targets>`, `--fake-latency <time>` and `--drivers <names>`,
+    /// each falling back to its environment variable:
+    /// `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
+    /// [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
+    /// `MOBILE_AGENT_FAKE_TARGETS`, `MOBILE_AGENT_FAKE_LATENCY_MS` and
+    /// `MOBILE_AGENT_DRIVERS`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
         let mut idle = None;
         let mut fake = None;
         let mut latency = None;
+        let mut drivers = None;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let arg = arg.to_string_lossy().into_owned();
@@ -96,6 +99,7 @@ impl Options {
                 "--idle-timeout" => idle = Some(value()?.to_string_lossy().into_owned()),
                 "--fake" => fake = Some(value()?.to_string_lossy().into_owned()),
                 "--fake-latency" => latency = Some(value()?.to_string_lossy().into_owned()),
+                "--drivers" => drivers = Some(value()?.to_string_lossy().into_owned()),
                 other => return Err(format!("unknown argument {other}; see --help")),
             }
         }
@@ -117,7 +121,7 @@ impl Options {
             idle_timeout: (!idle.is_zero()).then_some(idle),
             fake: fake.or_else(|| env("MOBILE_AGENT_FAKE_TARGETS")),
             fake_latency,
-            drivers: None,
+            drivers: drivers.or_else(|| env("MOBILE_AGENT_DRIVERS")),
         })
     }
 }
