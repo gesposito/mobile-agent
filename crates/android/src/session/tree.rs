@@ -2,22 +2,32 @@
 //! carries each window's metadata (whether its toolkit sends change events,
 //! the system process that owns it, whether it is modal) and each scrolling
 //! node's semantics in the snapshot itself, so the payload passes through as
-//! the agent sent it and the mirror reads them there.
+//! the agent sent it and the mirror reads them there. Bounds probes go to
+//! the agent's `bounds` when it advertises them (task 10.11), and a read for
+//! nodes the probes found moved asks the agent to evict their windows.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use mirror::backend::{BackendError, BackendInfo, ReadReason, ReadRequest, TreeRead, TreeSource};
-use protocol::code;
+use mirror::backend::{
+    BackendError, BackendInfo, NodeHandle, ProbedNode, ReadReason, ReadRequest, TreeRead,
+    TreeSource,
+};
 use protocol::event::Stream;
-use protocol::message::{Call, Reply, SnapshotParams};
+use protocol::message::{BoundsParams, Call, Reply, SnapshotParams};
 use protocol::snapshot::{Node, Snapshot};
+use protocol::{Capabilities, code};
 
 use super::{INPUT_QUIET, Inner, ReadOptions, ReadStats};
 
 /// The backend name the mirror reports for reads from the agent.
 pub const BACKEND: &str = "android-agent";
+
+/// Deadline of a bounds probe: a few round trips to the app's UI thread,
+/// which a busy thread delays; past it the settle wait goes on and probes
+/// again.
+pub const PROBE_DEADLINE: Duration = Duration::from_millis(500);
 
 /// Physical pixels per device point from `wm density` output: the override
 /// density when one is set, else the physical one, over 160.
@@ -50,7 +60,9 @@ pub fn has_event_less_window(snapshot: &Snapshot) -> bool {
 pub fn snapshot_params(reason: ReadReason, options: &ReadOptions) -> SnapshotParams {
     let idle_ms = match reason {
         ReadReason::Attach | ReadReason::Action | ReadReason::Resync => options.settle_idle_ms,
-        ReadReason::Events | ReadReason::Poll | ReadReason::Frames => Some(options.idle_ms),
+        ReadReason::Events | ReadReason::Poll | ReadReason::Frames | ReadReason::Moved => {
+            Some(options.idle_ms)
+        }
     };
     SnapshotParams {
         max_depth: options.max_depth,
@@ -96,6 +108,12 @@ impl TreeSource for AgentTree {
         }
         let mut cleared_cache = false;
         let mut params = snapshot_params(request.reason, &inner.options.read);
+        if request.reason == ReadReason::Moved {
+            // Bounds probes found these windows' nodes moved without a
+            // change event: the agent's cache still holds their old bounds.
+            params.evict = request.windows.clone();
+            cleared_cache = true;
+        }
         let foreign = inner
             .foreign_input
             .lock()
@@ -142,6 +160,41 @@ impl TreeSource for AgentTree {
             backend: BackendInfo::new(BACKEND, false),
             scale: inner.scale,
         })
+    }
+
+    fn can_probe(&self) -> bool {
+        self.inner
+            .connection
+            .negotiated()
+            .is_some_and(|n| n.capabilities.contains(Capabilities::BOUNDS))
+    }
+
+    fn probe(&mut self, nodes: &[NodeHandle]) -> Result<Vec<ProbedNode>, BackendError> {
+        let params = BoundsParams {
+            nodes: nodes.iter().map(|handle| handle.node).collect(),
+        };
+        let Reply::Bounds(probed) = self
+            .inner
+            .connection
+            .call(Call::Bounds(params), PROBE_DEADLINE)?
+        else {
+            return Err(BackendError::new(
+                code::PROTOCOL_ERROR,
+                "the agent answered a bounds probe with another result",
+            ));
+        };
+        // Node ids are unique across the windows of one snapshot.
+        Ok(probed
+            .nodes
+            .into_iter()
+            .filter_map(|found| {
+                let handle = nodes.iter().find(|h| h.node == found.node)?;
+                Some(ProbedNode {
+                    node: *handle,
+                    bounds: found.bounds,
+                })
+            })
+            .collect())
     }
 }
 
@@ -301,7 +354,12 @@ pub(crate) mod tests {
             assert_eq!(params.max_nodes, Some(1000));
             assert_eq!(params.max_depth, Some(40));
         }
-        for reason in [ReadReason::Events, ReadReason::Poll, ReadReason::Frames] {
+        for reason in [
+            ReadReason::Events,
+            ReadReason::Poll,
+            ReadReason::Frames,
+            ReadReason::Moved,
+        ] {
             assert_eq!(
                 snapshot_params(reason, &options).idle_ms,
                 Some(0),

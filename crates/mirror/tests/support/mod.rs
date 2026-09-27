@@ -606,6 +606,7 @@ fn window_flags(v: &Value) -> WindowFlags {
             "focused" => WindowFlags::FOCUSED,
             "accessibility_focused" => WindowFlags::ACCESSIBILITY_FOCUSED,
             "picture_in_picture" => WindowFlags::PICTURE_IN_PICTURE,
+            "transformed" => WindowFlags::TRANSFORMED,
             other => panic!("unknown window flag {other}"),
         };
     }

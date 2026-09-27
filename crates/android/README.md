@@ -144,6 +144,15 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
   metadata (whether each window's toolkit sends change events, `false` for
   Compose content; the system process that owns it; whether it is modal)
   and its scroll semantics are what the mirror reads.
+- **Bounds probes** (task 10.11). The tree source probes when the agent
+  advertises the `bounds` capability (agent 0.3.0 on): a probe is one
+  `bounds` request for the nodes' ids with a 500 ms deadline, and each node
+  the agent answers is mapped back to its window by its id, unique across
+  the windows of one snapshot. A read for `Moved` names the windows whose
+  nodes the probes found moved and asks the agent in its `snapshot` request
+  to evict their cache first (`evict`), without an idle wait. The mirror
+  probes only while a target without frames settles, so the controller's
+  path is unchanged.
 - **Events.** The connection's events reach the stream as they arrive, with
   the host time: protocol events, `OutOfSync` and `Resynced` as themselves,
   and the close as `Disconnected` with the protocol crate's reconnect hint. A
@@ -486,6 +495,7 @@ Requirement **Change events**:
 | Sequence gaps and resynchronization | `session::tests::a_sequence_gap_reaches_the_mirror_and_the_stream_is_resynchronized` |
 | Compose windows, which send none, read again after an action | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent`; `session::tests::a_mirror_on_the_session_reads_a_compose_window_again_after_a_tap`, `session::tests::after_input_the_agent_did_not_inject_a_read_evicts_only_the_event_less_windows`, `session::tests::without_the_events_capability_a_read_after_foreign_input_still_evicts`, `session::tests::without_compose_foreign_input_only_delays_the_read` |
 | A read after a tap that takes a Compose screen away under the agent's own re-read, answered within its deadline (task 10.9) | integration `a_snapshot_after_a_tap_that_tears_the_big_screen_down_under_the_agents_reread_is_answered_in_time`; agent side `teardown::a_snapshot_asked_for_during_a_compose_reread_is_answered_without_waiting_for_it`, `teardown::a_compose_reread_that_meets_a_torn_down_subtree_reads_the_new_screen_and_reports_the_change` |
+| Nodes that move without a change event, without frames (task 10.11) | `session::tests::a_probe_asks_the_agent_for_the_nodes_and_maps_them_back_to_their_windows`, `session::tests::an_agent_without_bounds_probes_is_never_probed`, `session::tests::a_read_for_moved_nodes_asks_the_agent_to_evict_their_windows`, `session::tests::a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted`; against an emulator, the daemon's `devices::open_on_the_agent_path_waits_for_the_expo_screen_to_slide_in` |
 
 Requirement **Input injection**:
 

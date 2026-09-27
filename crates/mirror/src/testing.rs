@@ -3,11 +3,11 @@
 //! exercised without a device and without sleeping.
 //!
 //! Time moves only when the mirror waits on the event stream (the clock jumps
-//! to the next scripted step or to the deadline), when a read or an input
-//! costs time ([`FakeTarget::read_cost`], [`FakeTarget::input_cost`]), or when
-//! a test calls [`FakeTarget::advance`]. A step scheduled at or before the
-//! current time has happened: its tree is what a read returns, its event
-//! waits in the stream.
+//! to the next scripted step or to the deadline), when a read, a probe or an
+//! input costs time ([`FakeTarget::read_cost`], [`FakeTarget::probe_cost`],
+//! [`FakeTarget::input_cost`]), or when a test calls [`FakeTarget::advance`].
+//! A step scheduled at or before the current time has happened: its tree is
+//! what a read returns, its event waits in the stream.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -19,7 +19,8 @@ use protocol::snapshot::{Node, NodeFlags, Window};
 
 use crate::backend::{
     Backend, BackendError, Clock, EncodeRequest, EventStream, FrameMeta, FrameSource, Input,
-    InputAck, InputSink, ReadRequest, StreamItem, Timed, TreeRead, TreeSource,
+    InputAck, InputSink, NodeHandle, ProbedNode, ReadReason, ReadRequest, StreamItem, Timed,
+    TreeRead, TreeSource,
 };
 
 /// Something that happens on the scripted target at a given time.
@@ -27,6 +28,12 @@ use crate::backend::{
 pub enum Step {
     /// From then on the target shows this tree; nothing is reported.
     Show(TreeRead),
+    /// From then on the target shows this tree, whose nodes moved without a
+    /// change event: probes report it, while reads keep returning the tree
+    /// they returned before, as the platform's node cache keeps bounds that
+    /// moved, until a read for [`ReadReason::Moved`] or a later
+    /// [`Step::Show`].
+    Move(TreeRead),
     /// An event with its stream's next sequence number.
     Event(EventPayload),
     /// An event with an explicit sequence number, to script repeats; later
@@ -47,6 +54,14 @@ pub struct ReadRecord {
     /// When the read started, from the start of the script.
     pub at: Duration,
     pub request: ReadRequest,
+}
+
+/// A bounds probe the mirror made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProbeRecord {
+    /// When the probe started, from the start of the script.
+    pub at: Duration,
+    pub nodes: Vec<NodeHandle>,
 }
 
 /// An input the mirror injected.
@@ -75,6 +90,8 @@ struct State {
     start: Instant,
     now: Instant,
     screen: TreeRead,
+    /// The screen as it is after moves no read has seen yet.
+    moved: Option<TreeRead>,
     timeline: Vec<Scheduled>,
     order: u64,
     outbox: VecDeque<Timed<StreamItem>>,
@@ -85,10 +102,13 @@ struct State {
     frames: Vec<FrameMeta>,
     read_cost: Duration,
     input_cost: Duration,
+    probe_cost: Duration,
+    answers_probes: bool,
     delivery_delay: Duration,
     whole_reads: bool,
     read_failures: VecDeque<BackendError>,
     reads: Vec<ReadRecord>,
+    probes: Vec<ProbeRecord>,
     inputs: Vec<InputRecord>,
     encodes: Vec<EncodeRequest>,
     reactions: Vec<(String, Vec<(Duration, Step)>)>,
@@ -103,6 +123,7 @@ impl FakeTarget {
                 start,
                 now: start,
                 screen,
+                moved: None,
                 timeline: Vec::new(),
                 order: 0,
                 outbox: VecDeque::new(),
@@ -113,10 +134,13 @@ impl FakeTarget {
                 frames: Vec::new(),
                 read_cost: Duration::ZERO,
                 input_cost: Duration::ZERO,
+                probe_cost: Duration::ZERO,
+                answers_probes: false,
                 delivery_delay: Duration::ZERO,
                 whole_reads: false,
                 read_failures: VecDeque::new(),
                 reads: Vec::new(),
+                probes: Vec::new(),
                 inputs: Vec::new(),
                 encodes: Vec::new(),
                 reactions: Vec::new(),
@@ -211,6 +235,17 @@ impl FakeTarget {
         self.lock().input_cost = cost;
     }
 
+    /// Whether the target reads nodes' bounds again when probed, as the
+    /// Android agent does from version 0.3.0; it does not unless told.
+    pub fn answer_probes(&self, answer: bool) {
+        self.lock().answers_probes = answer;
+    }
+
+    /// How long each bounds probe takes.
+    pub fn probe_cost(&self, cost: Duration) {
+        self.lock().probe_cost = cost;
+    }
+
     /// How long an item takes from the target to the host: a read made in
     /// between already reflects it, as a snapshot response can overtake the
     /// events queued before it.
@@ -247,6 +282,11 @@ impl FakeTarget {
         self.lock().reads.clone()
     }
 
+    /// Every bounds probe so far, oldest first.
+    pub fn probes(&self) -> Vec<ProbeRecord> {
+        self.lock().probes.clone()
+    }
+
     /// Every input so far, oldest first.
     pub fn inputs(&self) -> Vec<InputRecord> {
         self.lock().inputs.clone()
@@ -278,7 +318,11 @@ impl State {
 
     fn play(&mut self, at: Instant, step: Step) {
         match step {
-            Step::Show(tree) => self.screen = tree,
+            Step::Show(tree) => {
+                self.screen = tree;
+                self.moved = None;
+            }
+            Step::Move(tree) => self.moved = Some(tree),
             Step::Event(payload) => {
                 let stream = payload.stream();
                 let seq = self.take_seq(stream);
@@ -403,6 +447,11 @@ impl TreeSource for FakeTarget {
         if let Some(error) = s.read_failures.pop_front() {
             return Err(error);
         }
+        if request.reason == ReadReason::Moved
+            && let Some(moved) = s.moved.take()
+        {
+            s.screen = moved;
+        }
         let mut read = s.screen.clone();
         read.snapshot.seq = s.sent_tree_seq;
         if let (Some(ids), false) = (&request.windows, s.whole_reads) {
@@ -411,6 +460,51 @@ impl TreeSource for FakeTarget {
         }
         Ok(read)
     }
+
+    fn can_probe(&self) -> bool {
+        self.lock().answers_probes
+    }
+
+    fn probe(&mut self, nodes: &[NodeHandle]) -> Result<Vec<ProbedNode>, BackendError> {
+        let mut s = self.lock();
+        let now = s.now;
+        s.happen(now);
+        let at = now - s.start;
+        s.probes.push(ProbeRecord {
+            at,
+            nodes: nodes.to_vec(),
+        });
+        let cost = s.probe_cost;
+        s.now += cost;
+        let shown = s.moved.as_ref().unwrap_or(&s.screen);
+        Ok(nodes
+            .iter()
+            .filter_map(|&handle| {
+                let window = shown
+                    .snapshot
+                    .windows
+                    .iter()
+                    .find(|w| w.id == handle.window)?;
+                let node = find_node(window.root.as_ref()?, handle.node)?;
+                Some(ProbedNode {
+                    node: handle,
+                    bounds: node.bounds,
+                })
+            })
+            .collect())
+    }
+}
+
+/// The node with id `id` in the tree below `root`.
+fn find_node(root: &Node, id: u32) -> Option<&Node> {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.id == id {
+            return Some(node);
+        }
+        stack.extend(node.children.iter());
+    }
+    None
 }
 
 fn count_window(window: &Window) -> u32 {

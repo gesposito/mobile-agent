@@ -5,13 +5,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mirror::backend::{BackendInfo, Input, NodeHandle, ReadReason, ReadRequest, StreamItem};
-use mirror::{Action, Mirror, MirrorConfig, Point, SnapshotOptions, Target};
+use mirror::backend::{
+    BackendInfo, Input, NodeHandle, ProbedNode, ReadReason, ReadRequest, StreamItem,
+};
+use mirror::{Action, Mirror, MirrorConfig, Point, SettleOptions, SnapshotOptions, Target};
 use protocol::code;
 use protocol::event::{EventPayload, Lifecycle, LifecycleKind, Stream, TreeChange, TreeChangeKind};
 use protocol::message::{
-    Call, ImageFormat, InputAck as AgentAck, Reply, ResyncAck, Rotation, Screenshot,
-    ScreenshotParams, TextAck, TextMethod,
+    BoundsParams, Call, ImageFormat, InputAck as AgentAck, NodeBounds, Probed, Reply, ResyncAck,
+    Rotation, Screenshot, ScreenshotParams, TextAck, TextMethod,
 };
 use protocol::session::HostConfig;
 use protocol::snapshot::{
@@ -558,4 +560,199 @@ fn without_the_events_capability_a_read_after_foreign_input_still_evicts() {
         "{calls:?}"
     );
     assert!(session.last_read().unwrap().cleared_cache);
+}
+
+/// An agent config as a 0.3.0 agent's hello fills it: bounds probes too.
+fn probing() -> protocol::session::AgentConfig {
+    let mut agent_config = config(Some("tok"));
+    agent_config.capabilities |= protocol::Capabilities::BOUNDS;
+    agent_config
+}
+
+/// Task 10.11: a probe asks the agent's `bounds` for the nodes' ids, within
+/// its own short deadline, and maps each node the agent found back to its
+/// window; a node the agent left out is gone.
+#[test]
+fn a_probe_asks_the_agent_for_the_nodes_and_maps_them_back_to_their_windows() {
+    let (agent, session) = session_with(
+        probing(),
+        Box::new(|request| match &request.call {
+            Call::Bounds(_) => Some(Ok(Reply::Bounds(Probed {
+                nodes: vec![
+                    NodeBounds {
+                        node: 4,
+                        bounds: Bounds::new(40, 300, 1040, 420),
+                    },
+                    NodeBounds {
+                        node: 7,
+                        bounds: Bounds::new(0, 0, 1080, 132),
+                    },
+                ],
+            }))),
+            _ => None,
+        }),
+    );
+    let mut backend = session.backend();
+    assert!(backend.tree.can_probe());
+    let field = NodeHandle { window: 1, node: 4 };
+    let clock = NodeHandle { window: 2, node: 7 };
+    let gone = NodeHandle {
+        window: 1,
+        node: 99,
+    };
+    let found = backend.tree.probe(&[field, clock, gone]).unwrap();
+    assert_eq!(
+        found,
+        [
+            ProbedNode {
+                node: field,
+                bounds: Bounds::new(40, 300, 1040, 420),
+            },
+            ProbedNode {
+                node: clock,
+                bounds: Bounds::new(0, 0, 1080, 132),
+            },
+        ]
+    );
+    let log = agent.log();
+    assert_eq!(
+        log.requests[0].call,
+        Call::Bounds(BoundsParams {
+            nodes: vec![4, 7, 99]
+        })
+    );
+    assert_eq!(log.requests[0].deadline_ms, Some(500));
+}
+
+/// An agent from before bounds probes does not advertise them, so the
+/// mirror's settle never asks it.
+#[test]
+fn an_agent_without_bounds_probes_is_never_probed() {
+    let (_agent, session) = session(Box::new(|_| None));
+    let backend = session.backend();
+    assert!(!backend.tree.can_probe());
+}
+
+/// Task 10.11: a read for nodes that bounds probes found moved asks the
+/// agent to evict those windows' cache first, without an idle wait; other
+/// reads evict nothing.
+#[test]
+fn a_read_for_moved_nodes_asks_the_agent_to_evict_their_windows() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    let (_agent, session) = session_with(
+        probing(),
+        Box::new(move |request| {
+            seen.lock().unwrap().push(request.call.clone());
+            match &request.call {
+                Call::Snapshot(_) => Some(Ok(Reply::Snapshot(compose_screen(1)))),
+                _ => None,
+            }
+        }),
+    );
+    let mut backend = session.backend();
+    backend.tree.read(&read(ReadReason::Attach)).unwrap();
+    backend
+        .tree
+        .read(&ReadRequest {
+            windows: Some(vec![1, 3]),
+            reason: ReadReason::Moved,
+        })
+        .unwrap();
+    assert!(session.last_read().unwrap().cleared_cache);
+    backend.tree.read(&read(ReadReason::Events)).unwrap();
+    let calls = requests.lock().unwrap().clone();
+    let evicts: Vec<(Option<Vec<u32>>, Option<u32>)> = calls
+        .iter()
+        .map(|call| match call {
+            Call::Snapshot(p) => (p.evict.clone(), p.idle_ms),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        evicts,
+        [(None, None), (Some(vec![1, 3]), Some(0)), (None, Some(0))]
+    );
+}
+
+/// Task 10.11, the unit-level shape of the emulator test: on a target
+/// without frames, the agent's cache holds a screen where it was before it
+/// slid in, and the agent's probes find it at rest. The mirror's settle
+/// probes the agent, reads the window again with its cache evicted, and
+/// leaves the replica holding the screen at rest.
+#[test]
+fn a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted() {
+    let evicted = Arc::new(AtomicBool::new(false));
+    let screen = Arc::clone(&evicted);
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    let at = |x: i32| {
+        compose_app(vec![tagged(
+            3,
+            4,
+            "tab-big",
+            "Big",
+            Bounds::new(x, 2200, x + 216, 2400),
+            true,
+        )])
+    };
+    let (_agent, session) = session_with(
+        probing(),
+        Box::new(move |request| {
+            seen.lock().unwrap().push(request.call.clone());
+            match &request.call {
+                Call::Snapshot(p) => {
+                    if p.evict.is_some() {
+                        screen.store(true, Ordering::SeqCst);
+                    }
+                    // The cache keeps the tab where it was midway through
+                    // the move until the window is evicted.
+                    let x = if screen.load(Ordering::SeqCst) {
+                        432
+                    } else {
+                        700
+                    };
+                    Some(Ok(Reply::Snapshot(at(x))))
+                }
+                Call::Bounds(p) => Some(Ok(Reply::Bounds(Probed {
+                    nodes: p
+                        .nodes
+                        .iter()
+                        .filter(|&&node| node == 3)
+                        .map(|&node| NodeBounds {
+                            node,
+                            bounds: Bounds::new(432, 2200, 648, 2400),
+                        })
+                        .collect(),
+                }))),
+                _ => None,
+            }
+        }),
+    );
+    let mut mirror = Mirror::new(session.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    mirror.note_window_change();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert!(evicted.load(Ordering::SeqCst), "the window was evicted");
+    let calls = requests.lock().unwrap().clone();
+    assert!(
+        calls
+            .iter()
+            .any(|c| matches!(c, Call::Snapshot(p) if p.evict == Some(vec![1]))),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|c| matches!(c, Call::Bounds(p) if p.nodes == [3])),
+        "{calls:?}"
+    );
+    let snapshot = mirror.snapshot(&SnapshotOptions::full()).unwrap();
+    let tab = snapshot.by_identifier("tab-big").expect("the tab");
+    assert!(
+        (tab.bounds.left - 432.0 / SCALE).abs() < 1e-9,
+        "the replica holds the tab at rest: {:?}",
+        tab.bounds
+    );
 }

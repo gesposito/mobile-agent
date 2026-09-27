@@ -140,7 +140,8 @@ pub(crate) struct Replica {
     /// Grows with every read that changes the replica.
     pub revision: u64,
     pub deltas: Vec<TreeDelta>,
-    /// When a tree event arrived or a read found a delta, whichever is later.
+    /// When a tree event arrived, a read found a delta or a bounds probe
+    /// found nodes moved, whichever is latest.
     pub last_tree_change: Option<Instant>,
     /// When a read last finished.
     pub updated_at: Option<Instant>,
@@ -172,7 +173,8 @@ pub(crate) struct Replica {
     /// The latest read taken in.
     pub last_read: Option<ReadSpan>,
     pub last_action: Option<Instant>,
-    /// Tree and window events applied, plus deltas found by reads.
+    /// Tree and window events applied, plus deltas found by reads and moves
+    /// found by bounds probes.
     pub tree_changes: u64,
     interner: HashMap<String, Arc<str>>,
     /// Where each element is: window and node index.
@@ -379,6 +381,28 @@ impl Replica {
         self.tree_changes += 1;
         self.last_tree_change = self.last_tree_change.max(Some(at));
         self.request_full(ReadReason::Events);
+    }
+
+    /// Records that a bounds probe ending at `at` found nodes moved that
+    /// no event reported: a tree change, since their bounds are part of the
+    /// tree, although the replica holds them where they were until a read
+    /// brings them.
+    pub fn note_moved(&mut self, at: Instant) {
+        self.tree_changes += 1;
+        self.last_tree_change = self.last_tree_change.max(Some(at));
+    }
+
+    /// Whether an application window is drawn away from where its layout
+    /// puts it, as the platform draws a window while it animates the window
+    /// in or out, other than one in picture-in-picture, which is drawn
+    /// scaled at rest. Its nodes' bounds are then those of a frame of that
+    /// animation.
+    pub fn drawn_transformed(&self) -> bool {
+        self.windows.iter().any(|w| {
+            w.kind == WindowType::APPLICATION
+                && w.flags.contains(WindowFlags::TRANSFORMED)
+                && !w.flags.contains(WindowFlags::PICTURE_IN_PICTURE)
+        })
     }
 
     /// Marks the windows that send no change events for a re-read after

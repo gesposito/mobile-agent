@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use protocol::message::TextMethod;
-use protocol::snapshot::{NodeFlags, Truncation, WindowFlags, WindowType};
+use protocol::snapshot::{Bounds, NodeFlags, Truncation, WindowFlags, WindowType};
 
-use crate::backend::{Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadRequest};
+use crate::backend::{
+    Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadReason, ReadRequest,
+};
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
@@ -35,11 +37,26 @@ pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// interval).
 pub const DEFAULT_MIN_REREAD_INTERVAL: Duration = Duration::from_millis(200);
 
+/// How often a settle wait without frames reads its anchor nodes' bounds
+/// again (task 10.11): four probes to a default quiet window, so the wait
+/// ends at most this long after the quiet window that follows the last
+/// move.
+pub const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_millis(50);
+
+/// How many anchor nodes a probe reads, spread over the elements with refs
+/// from the first to the last, so that a move of the whole screen or of the
+/// part holding either end shows.
+pub const DEFAULT_PROBE_ANCHORS: usize = 4;
+
 /// Tuning for one mirror.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MirrorConfig {
     pub poll_interval: Duration,
     pub min_reread_interval: Duration,
+    /// How often a settle wait without frames probes its anchors' bounds.
+    pub probe_interval: Duration,
+    /// How many anchor nodes a probe reads; 0 probes none.
+    pub probe_anchors: usize,
 }
 
 impl Default for MirrorConfig {
@@ -47,7 +64,108 @@ impl Default for MirrorConfig {
         MirrorConfig {
             poll_interval: DEFAULT_POLL_INTERVAL,
             min_reread_interval: DEFAULT_MIN_REREAD_INTERVAL,
+            probe_interval: DEFAULT_PROBE_INTERVAL,
+            probe_anchors: DEFAULT_PROBE_ANCHORS,
         }
+    }
+}
+
+/// A node a settle wait probes: its element, where the latest read has it,
+/// and the bounds that read found.
+#[derive(Clone, Copy, Debug)]
+struct Anchor {
+    element: ElementId,
+    handle: NodeHandle,
+    bounds: Bounds,
+}
+
+/// A settle wait's bounds probes (task 10.11).
+#[derive(Default)]
+struct Probes {
+    /// When the latest probe began.
+    at: Option<Instant>,
+    /// What the latest probe found of each anchor: its bounds, or `None`
+    /// for one that was gone.
+    last: HashMap<ElementId, Option<Bounds>>,
+    /// When the latest probe began that found every anchor where the
+    /// replica has it; `None` while the latest one did not.
+    agreed: Option<Instant>,
+    /// The replica's generation and the end of its latest read when the
+    /// anchors were chosen.
+    chosen_for: Option<(u64, Option<Instant>)>,
+    /// The anchors chosen then.
+    anchors: Vec<Anchor>,
+}
+
+impl Probes {
+    /// The anchors of `replica` as its latest read has them, chosen once
+    /// per read.
+    fn anchors(&mut self, replica: &Replica, count: usize) -> Vec<Anchor> {
+        let key = (replica.generation, replica.updated_at);
+        if self.chosen_for != Some(key) {
+            self.anchors = anchors(replica, count);
+            self.chosen_for = Some(key);
+        }
+        self.anchors.clone()
+    }
+
+    /// Whether a probe that began at or after `change`, the latest change,
+    /// found every anchor where the replica has it.
+    fn agrees_since(&self, change: Option<Instant>) -> bool {
+        self.agreed
+            .is_some_and(|at| change.is_none_or(|change| at >= change))
+    }
+
+    /// When the next probe falls due, once one was made.
+    fn next(&self, every: Duration) -> Option<Instant> {
+        self.at.map(|at| at + every)
+    }
+}
+
+/// Up to `count` nodes to probe: elements with refs that are on screen and
+/// not covered, in application windows, top-most window first, spread
+/// evenly from the first to the last so that both ends of the screen are
+/// among them. While none is on screen, as when a screen sliding in was
+/// read before it entered, those off it stand in.
+fn anchors(replica: &Replica, count: usize) -> Vec<Anchor> {
+    let view = View::build(replica);
+    let (mut shown, mut off) = (Vec::new(), Vec::new());
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind != WindowType::APPLICATION {
+            continue;
+        }
+        for (i, node) in window.nodes.iter().enumerate() {
+            let facts = &view.windows[w][i];
+            if !facts.bears_ref || facts.absorbed || facts.hidden != Hidden::No {
+                continue;
+            }
+            let anchor = Anchor {
+                element: node.element,
+                handle: NodeHandle {
+                    window: window.id,
+                    node: node.node_id,
+                },
+                bounds: node.bounds,
+            };
+            if facts.visible {
+                shown.push(anchor);
+            } else {
+                off.push(anchor);
+            }
+        }
+    }
+    spread(if shown.is_empty() { off } else { shown }, count)
+}
+
+/// `count` of `items`, evenly spread from the first to the last.
+fn spread<T: Copy>(items: Vec<T>, count: usize) -> Vec<T> {
+    match count {
+        0 => Vec::new(),
+        _ if items.len() <= count => items,
+        1 => vec![items[0]],
+        _ => (0..count)
+            .map(|k| items[k * (items.len() - 1) / (count - 1)])
+            .collect(),
     }
 }
 
@@ -555,6 +673,19 @@ impl Mirror {
     /// change events as they arrive and the deltas of re-reads; without
     /// frames to watch, windows that send no change events are re-read every
     /// minimum re-read interval meanwhile.
+    ///
+    /// Without frames, nodes that move without a change event, as views an
+    /// app animates may, change nothing the tree reports (task 10.11). When
+    /// the tree source can read bounds again, a few anchor nodes' bounds are
+    /// probed every probe interval: a move between probes is a tree change,
+    /// anchors that hold still where the replica does not have them bring a
+    /// read of their windows with the cache cleared, and the wait settles
+    /// only once a probe after the last change finds every anchor where the
+    /// replica has it. Nor does it settle, without frames, while the tree
+    /// has an application window drawn away from where its layout puts it,
+    /// as the platform draws a window it animates in or out: reads and
+    /// probes then report one frame of that animation, unchanged until it
+    /// ends, so a maximum that passes meanwhile names the tree.
     pub fn settle(&mut self, options: &SettleOptions) -> Result<Settle, MirrorError> {
         let start = self.now();
         let deadline = start + options.max;
@@ -562,10 +693,22 @@ impl Mirror {
         let frames_before = self.replica.frame_changes;
         let blind = self.backend.frames.is_none();
         let every = self.config.min_reread_interval;
+        let mut probes = (blind
+            && options.signals.tree()
+            && self.config.probe_anchors > 0
+            && self.backend.tree.can_probe())
+        .then(Probes::default);
         self.drain();
         loop {
             if blind {
                 self.reread_quietly(every)?;
+            }
+            if let Some(state) = probes.as_mut()
+                && !self.probe_bounds(state)?
+            {
+                // The target is gone or cannot be probed: what the tree
+                // reports decides.
+                probes = None;
             }
             let now = self.now();
             let tree = options
@@ -583,12 +726,14 @@ impl Mirror {
                 .flatten()
                 .max();
             let quiet_until = last.map(|at| at + options.quiet);
-            let settled = quiet_until.is_none_or(|until| now >= until);
+            let still = probes.as_ref().is_none_or(|state| state.agrees_since(last));
+            let transformed = blind && options.signals.tree() && self.replica.drawn_transformed();
+            let settled = quiet_until.is_none_or(|until| now >= until) && still && !transformed;
             if settled || now >= deadline {
                 let since = now.checked_sub(options.quiet).unwrap_or(start);
                 let mut still_changing = Vec::new();
                 if !settled {
-                    if tree.is_some_and(|at| at > since) {
+                    if transformed || tree.is_some_and(|at| at > since) {
                         still_changing.push(Signal::Tree);
                     }
                     if frames.is_some_and(|at| at > since) {
@@ -603,14 +748,90 @@ impl Mirror {
                     frame_changes: self.replica.frame_changes - frames_before,
                 });
             }
-            let mut wake = quiet_until.map_or(deadline, |until| until.min(deadline));
+            let mut wake = match quiet_until {
+                Some(until) if until > now => until.min(deadline),
+                _ => deadline,
+            };
             if blind && let Some(due) = self.replica.next_reread(every) {
+                wake = wake.min(due);
+            }
+            if let Some(due) = probes
+                .as_ref()
+                .and_then(|state| state.next(self.config.probe_interval))
+            {
                 wake = wake.min(due);
             }
             if let Some(item) = self.backend.events.next(wake.max(now)) {
                 self.replica.apply(item);
             }
         }
+    }
+
+    /// Probes the anchors' bounds when a probe is due (task 10.11). A move
+    /// since the last probe, or a first probe that finds the replica
+    /// stale, is a tree change; anchors that held still since the last
+    /// probe where the replica does not have them bring a read of their
+    /// windows with the cache cleared. Says whether probing goes on: not
+    /// once the target is gone or fails a probe in a way a retry cannot fix.
+    fn probe_bounds(&mut self, probes: &mut Probes) -> Result<bool, MirrorError> {
+        if self.replica.disconnected.is_some() {
+            return Ok(false);
+        }
+        let started = self.now();
+        if self.replica.need_full.is_some()
+            || probes
+                .at
+                .is_some_and(|at| started < at + self.config.probe_interval)
+        {
+            return Ok(true);
+        }
+        probes.at = Some(started);
+        let anchors = probes.anchors(&self.replica, self.config.probe_anchors);
+        if anchors.is_empty() {
+            probes.agreed = Some(started);
+            return Ok(true);
+        }
+        let handles: Vec<NodeHandle> = anchors.iter().map(|a| a.handle).collect();
+        let found = match self.backend.tree.probe(&handles) {
+            Ok(found) => found,
+            Err(error) if error.retryable => return Ok(true),
+            Err(_) => return Ok(false),
+        };
+        let finished = self.now();
+        let probed: HashMap<NodeHandle, Bounds> =
+            found.into_iter().map(|p| (p.node, p.bounds)).collect();
+        let current: HashMap<ElementId, Option<Bounds>> = anchors
+            .iter()
+            .map(|a| (a.element, probed.get(&a.handle).copied()))
+            .collect();
+        let first = probes.last.is_empty();
+        let moved = probes
+            .last
+            .iter()
+            .any(|(element, was)| current.get(element).is_some_and(|now| now != was));
+        let mut stale: Vec<u32> = Vec::new();
+        for anchor in &anchors {
+            let now = current.get(&anchor.element).copied().flatten();
+            if now != Some(anchor.bounds) && !stale.contains(&anchor.handle.window) {
+                stale.push(anchor.handle.window);
+            }
+        }
+        probes.last = current;
+        if stale.is_empty() {
+            probes.agreed = Some(started);
+            return Ok(true);
+        }
+        probes.agreed = None;
+        if first || moved {
+            self.replica.note_moved(finished);
+        } else {
+            let request = ReadRequest {
+                windows: Some(stale),
+                reason: ReadReason::Moved,
+            };
+            self.read(&request, finished)?;
+        }
+        Ok(true)
     }
 
     /// Re-reads the windows that send no change events when they are due

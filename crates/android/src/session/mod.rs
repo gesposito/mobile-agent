@@ -12,6 +12,9 @@
 //! - Input the agent did not inject, the controller's touches, leaves the
 //!   agent's cache of Compose windows stale, so the next read waits until
 //!   the input is a quiet window old and empties that cache first.
+//! - Without a frame source, the mirror's settle probes a few nodes' bounds
+//!   through the agent's `bounds` (task 10.11), when the agent advertises
+//!   it, and reads windows whose nodes moved with their cache evicted.
 //! - The end of the connection or three seconds of silence (the protocol
 //!   crate's liveness) reach the mirror as `Disconnected`.
 
@@ -110,8 +113,9 @@ pub struct ReadStats {
     /// its answer.
     pub took: Duration,
     pub reason: ReadReason,
-    /// Whether the read asked the agent to evict the cache of the windows
-    /// that send no change events first, after input it did not inject.
+    /// Whether the read asked the agent to evict windows' cache first: the
+    /// windows that send no change events, after input it did not inject,
+    /// or the windows whose nodes bounds probes found moved.
     pub cleared_cache: bool,
 }
 

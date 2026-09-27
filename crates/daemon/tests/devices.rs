@@ -995,6 +995,41 @@ fn doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills() {
     );
 }
 
+/// Stops the fixture apps `.1` now and when dropped.
+struct Stopped(android::adb::Device, &'static [&'static str]);
+
+impl Stopped {
+    fn new(device: &android::adb::Device, packages: &'static [&'static str]) -> Stopped {
+        let stopped = Stopped(device.clone(), packages);
+        stopped.stop();
+        stopped
+    }
+
+    fn stop(&self) {
+        for package in self.1 {
+            let _ = self.0.shell(&format!("am force-stop {package}"));
+        }
+    }
+}
+
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Panics with how to install `package` unless it is on the device.
+fn require_installed(device: &android::adb::Device, package: &str) {
+    let installed = device
+        .shell(&format!("pm path {package}"))
+        .is_ok_and(|out| out.stdout_text().contains("package:"));
+    assert!(
+        installed,
+        "{package} is not installed on {}; build it (fixtures/build.sh) and adb install it",
+        device.serial()
+    );
+}
+
 /// The daemon's switch that leaves emulators' controllers unused (task
 /// 10.12), `MOBILE_AGENT_EMULATOR_CONTROLLER=off`, on an emulator that
 /// serves its controller: `status` names the agent's paths, no frame comes
@@ -1050,3 +1085,77 @@ fn the_controller_switch_leaves_a_served_controller_unused() {
     env.shutdown();
 }
 
+/// Task 10.11, on an emulator on the agent path (the controller switch
+/// off): the platform animates the Expo fixture in after a relaunch,
+/// scaling it up over the launcher and sliding it in from the right over
+/// another app, and reports the window at one frame of that animation, the
+/// same to every read, until the animation ends. Without a frame source
+/// `open` used to report the screen settled while the boxes it had were
+/// those of that frame (`reports/10.1-emulator.md`, finding 2: `tab-big`
+/// at x 252 to 512 instead of 164.6, and big-screen failing 46 of 50
+/// iterations). Right after each `open`, over the launcher or over the
+/// Compose fixture, the boxes are where the screen comes to rest, and a
+/// click on the Big tab opens it.
+#[test]
+fn open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest() {
+    let test = "open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    require_installed(&device, EXPO);
+    require_installed(&device, COMPOSE);
+    let _fixtures = Stopped::new(&device, &[EXPO, COMPOSE]);
+    let mut env = Env::start_with(&[("MOBILE_AGENT_EMULATOR_CONTROLLER", "off")]);
+    let box_of = |id: &str| {
+        let data = env.on(&serial, &["get", "box", &format!("#{id}")]).data();
+        (number(&data, "x"), number(&data, "y"))
+    };
+    // Where the screen comes to rest: read well after a launch.
+    env.on(&serial, &["open", EXPO, "--relaunch"]).data();
+    std::thread::sleep(Duration::from_secs(2));
+    let rest = box_of("tab-big");
+    let field_rest = box_of("login-username");
+
+    let mut opens = Vec::new();
+    let mut after = Vec::new();
+    for over_compose in [false, true, false, true, false, true] {
+        if over_compose {
+            env.on(&serial, &["open", COMPOSE]).data();
+        }
+        let run = env.on(&serial, &["open", EXPO, "--relaunch"]);
+        let opened = run.data();
+        assert_eq!(opened["settled"], true, "{opened}");
+        opens.push((over_compose, number(&opened, "elapsedMs")));
+        after.push((over_compose, box_of("tab-big"), box_of("login-username")));
+    }
+    eprintln!(
+        "{serial}, agent path: open (over the Compose fixture?, ms) {opens:?}; tab-big at rest \
+         {rest:?}, login-username at rest {field_rest:?}; right after each open (over the \
+         Compose fixture?, tab-big, login-username): {after:?}"
+    );
+    for (_, tab, field) in &after {
+        assert!(
+            (tab.0 - rest.0).abs() <= 1.0 && (tab.1 - rest.1).abs() <= 1.0,
+            "tab-big right after open was at {tab:?}, not where it comes to rest, {rest:?}: {after:?}"
+        );
+        assert!(
+            (field.0 - field_rest.0).abs() <= 1.0 && (field.1 - field_rest.1).abs() <= 1.0,
+            "login-username right after open was at {field:?}, not {field_rest:?}: {after:?}"
+        );
+    }
+
+    let listing = listing(&env.on(&serial, &["snapshot", "-i"]).data());
+    let big = ref_of(&listing, "tab-big");
+    env.on(&serial, &["click", &big]).data();
+    let found = env
+        .on(&serial, &["wait", "#cell-500", "--timeout", "5000"])
+        .data();
+    assert!(
+        found["element"]["id"] == "cell-500",
+        "the click right after open opened the Big tab: {found}"
+    );
+    env.shutdown();
+}

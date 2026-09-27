@@ -243,7 +243,16 @@ give them. `endedBy` names the signal whose change that was: `tree`,
 the input came later than any change or the quiet window had already passed
 when the wait began; `timeout` when the wait reached its maximum, with
 `stillChanging` naming what changed in the last quiet window. `--tree-only`
-leaves frames out, as it does for the mirror.
+leaves frames out, as it does for the mirror. On a target without frames
+whose tree source can probe, an Android agent from 0.3.0 on, the mirror's
+settle also reads a few anchor nodes' bounds again every 50 ms (task
+10.11, `crates/mirror/README.md`), and does not settle while the tree has
+an application window the platform draws away from where its layout puts
+it (the agent's `transformed` window flag), as it draws a window it
+animates in or out. So `open` and `wait --settle` wait out a screen that
+moves without a change event, and an app's window as the platform scales
+or slides it in, and end with the replica holding where the screen came to
+rest; a move a probe finds is a tree change.
 
 ## Reading the tree after the display changed
 
@@ -622,6 +631,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
 | (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
+| (task 10.11, settle without frames) | (`open` waits out a screen moving without change events and a window the platform animates in) | the mirror's `settle::without_frames_settle_waits_until_probed_bounds_hold_still_and_the_replica_has_them` and `settle::without_frames_settle_waits_while_a_window_is_drawn_transformed`, and the Android session's `session::tests::a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted`; against an emulator on the agent path, `devices::open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest` |
 | (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end

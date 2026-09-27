@@ -5,7 +5,8 @@
 //!
 //! - a [`TreeSource`], which reads the target's windows in full into the
 //!   protocol's snapshot payload, window metadata and scroll semantics
-//!   included, above all whether each window's toolkit sends change events;
+//!   included, above all whether each window's toolkit sends change events,
+//!   and, where it can, reads a few nodes' bounds again past its caches;
 //! - an [`EventStream`] of everything the target reports on its own: protocol
 //!   events with their per-stream sequence numbers, frames with their
 //!   low-resolution hashes, and changes to the stream itself (a gap the
@@ -62,6 +63,7 @@ use std::time::{Duration, Instant};
 
 use protocol::event::{Event, Stream};
 use protocol::message::{Rotation, TextMethod};
+use protocol::snapshot::Bounds;
 use protocol::snapshot::Snapshot as TreePayload;
 
 pub use crate::geometry::Point;
@@ -103,9 +105,38 @@ pub trait TreeSource: Send {
     /// The source may return more windows than requested, but every window
     /// it returns must be current as of the read: a window whose toolkit
     /// sends no change events (Jetpack Compose on Android, every Simulator
-    /// window) is read with the platform's node cache cleared. A requested
+    /// window) is read with the platform's node cache cleared, and so is
+    /// every window a read for [`ReadReason::Moved`] names. A requested
     /// window missing from the result is taken as gone.
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError>;
+
+    /// Whether [`TreeSource::probe`] reads nodes' bounds again from the
+    /// target; `false` unless the source says otherwise.
+    fn can_probe(&self) -> bool {
+        false
+    }
+
+    /// Reads the bounds of `nodes`, nodes of the latest read, again from the
+    /// target, past whatever cache still holds them where that read found
+    /// them. Views an app moves without a change event keep their old
+    /// bounds in a platform's node cache; a settle wait without frames
+    /// probes a few anchor nodes to see them move. Answers each node still on screen with its bounds in
+    /// physical pixels; a node missing from the answer is gone. Called only
+    /// when [`TreeSource::can_probe`] says so.
+    fn probe(&mut self, nodes: &[NodeHandle]) -> Result<Vec<ProbedNode>, BackendError> {
+        let _ = nodes;
+        Err(BackendError::new(
+            protocol::code::CAPABILITY_MISSING,
+            "this tree source cannot read nodes' bounds again",
+        ))
+    }
+}
+
+/// A node's bounds as a probe read them again, in physical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProbedNode {
+    pub node: NodeHandle,
+    pub bounds: Bounds,
 }
 
 /// What the mirror asks a [`TreeSource`] to read.
@@ -124,6 +155,10 @@ pub enum ReadReason {
     Poll,
     /// Frames changed since a window that sends no change events was read.
     Frames,
+    /// Bounds probes found the window's nodes moved without a change event,
+    /// which leaves the platform's node cache holding their old bounds: the
+    /// source reads the window with that cache cleared.
+    Moved,
     /// Change events named the window, or the set of windows changed.
     Events,
     /// The mirror injected input and re-reads the windows that send no
@@ -142,6 +177,7 @@ impl ReadReason {
         match self {
             ReadReason::Poll => "poll",
             ReadReason::Frames => "frames",
+            ReadReason::Moved => "moved",
             ReadReason::Events => "events",
             ReadReason::Action => "action",
             ReadReason::Attach => "attach",

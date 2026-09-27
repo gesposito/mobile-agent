@@ -53,6 +53,8 @@ pub struct Backend {
 
 pub trait TreeSource: Send {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError>;
+    fn can_probe(&self) -> bool { false }        // true: `probe` reads bounds again
+    fn probe(&mut self, nodes: &[NodeHandle]) -> Result<Vec<ProbedNode>, BackendError>;
 }
 pub trait EventStream: Send {
     /// The next item, waiting until `deadline` at most; with a deadline that
@@ -75,7 +77,8 @@ pub trait Clock: Send {
 
 | Type | Fields |
 |---|---|
-| `ReadRequest` | `windows: Option<Vec<u32>>` (`None` reads every window), `reason: ReadReason` (`Attach`, `Events`, `Action`, `Poll`, `Frames`, `Resync`) |
+| `ReadRequest` | `windows: Option<Vec<u32>>` (`None` reads every window), `reason: ReadReason` (`Attach`, `Events`, `Action`, `Poll`, `Frames`, `Moved`, `Resync`) |
+| `ProbedNode` | `node: NodeHandle`, `bounds` (physical pixels): a node's bounds as a probe read them again |
 | `TreeRead` | `snapshot: protocol::snapshot::Snapshot` (windows with their metadata, nodes with their scroll semantics), `backend: BackendInfo`, `scale: f64` |
 | `Owner` | `Target` or `System(name)`, from a window's `owner` |
 | `BackendInfo` | `name: String`, `fallback: bool` |
@@ -93,10 +96,15 @@ Conventions a driver follows:
   Android screen, 3 on an iPhone). Input coordinates come back in points.
 - **Fresh reads.** Every window a read returns is current as of the read:
   windows whose toolkit sends no change events are read with the platform
-  cache cleared. A read may return more windows than requested; a requested
-  window missing from the result is gone. `snapshot.seq` is the last
-  tree-stream event sent before the read, so the mirror skips events the
-  read already reflects.
+  cache cleared, and so are the windows a read for `Moved` names. A read
+  may return more windows than requested; a requested window missing from
+  the result is gone. `snapshot.seq` is the last tree-stream event sent
+  before the read, so the mirror skips events the read already reflects.
+- **Bounds probes** (task 10.11). A source whose `can_probe` says so reads
+  the bounds of the nodes `probe` names, nodes of its latest read, again
+  past its caches, and answers the nodes still on screen; the Android
+  driver asks the agent's `bounds` (agent 0.3.0 on). The mirror probes only
+  while it waits for a target without frames to settle.
 - **Window metadata** (the protocol's window keys 8 to 10, task 3.6).
   `emits_events: Some(false)` puts a window on the re-read path and
   `Some(true)` keeps it off, whatever its classes; the Android agent sets
@@ -137,6 +145,7 @@ Conventions a driver follows:
 | input the mirror injected, for windows without events | those windows, when the tree is next needed | `action` |
 | frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
 | 1 s since such a window's last read began | it | `poll` |
+| while settling without frames, bounds probes found anchors held still where the replica does not have them | their windows, cache cleared | `moved` |
 | sequence gap, driver's out-of-sync report, reconnection, another backend | every window, identities started over | `resync` |
 
 Reads are matched against the previous read of the same window: nodes under
@@ -164,7 +173,7 @@ mirror, not from the backend (task 7.10):
 | `timestamps().last_frame` | the latest frame the mirror took in: capture time, number, hash |
 | `timestamps().last_frame_change` | the capture time of the latest frame whose hash differed from the one before; the first frame is no change |
 | `frame_changes_since(t)` | the capture times of the frame changes at or after `t`, oldest first, among the latest 1024 |
-| `timestamps().last_tree_change` | the latest tree change: a tree or window event's arrival, a noted window change, or the end of a read that found a delta; the first acquisition is no change |
+| `timestamps().last_tree_change` | the latest tree change: a tree or window event's arrival, a noted window change, the end of a read that found a delta, or the end of a bounds probe that found nodes moved; the first acquisition is no change |
 | `timestamps().last_read` | the latest read taken into the replica: `started`, `finished` and `reason` |
 | `timestamps().last_action` | when the mirror last injected input, once the platform accepted it |
 
@@ -255,6 +264,8 @@ the reasons in this order, each with advice:
 | `DEFAULT_SETTLE_MAX` | 3 s | design D8 |
 | `DEFAULT_POLL_INTERVAL` | 1 s | chosen here; spike S1 measured cold Compose reads at 21 to 349 ms |
 | `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval |
+| `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
+| `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
 
@@ -266,6 +277,33 @@ the reasons in this order, each with advice:
   callbacks without pixel changes do not count (spike S2). Without a frame
   source, windows without events are re-read every minimum re-read interval
   while waiting. `Signals::TreeOnly` ignores frames, for video.
+- Without a frame source, a node that moves without a change event, as a
+  view an app animates may, changes nothing the tree reports, so the quiet
+  window could pass while the screen still moved (task 10.11). When the
+  tree source can probe, the wait reads the bounds of up to
+  `probe_anchors` anchors every `probe_interval`: elements with refs on
+  screen and not covered, in application windows, spread from the first to
+  the last (those off screen stand in while none is on it). A move between
+  two probes, or a first probe that finds the replica stale, is a tree
+  change; anchors that held still since the last probe where the replica
+  does not have them bring a `Moved` read of their windows, the cache
+  cleared, whose delta is a tree change too. The wait settles only once a
+  probe that began after the last change found every anchor where the
+  replica has it, so it ends with the replica holding where the screen came
+  to rest. A probe the source fails with a retryable error is tried again
+  at the next interval; any other failure, or a target that is gone, stops
+  the probing and leaves the wait to the tree. With frames nothing is
+  probed.
+- Without a frame source, the wait does not settle either while an
+  application window of the replica is flagged `transformed` and is not in
+  picture-in-picture (task 10.11): from Android 14 the platform reports a
+  window it animates in or out at one frame of that animation, to reads
+  and probes alike, until the animation ends and the window's bounds
+  change at once, so neither the quiet window nor the probes can see it
+  move. The window change the platform then reports brings a read, and the
+  wait settles a quiet window after it. A window that stays flagged holds
+  the wait to the maximum, whose result names the tree. With frames the
+  flag changes nothing.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
@@ -353,7 +391,11 @@ cargo test -p mirror
   and design D5's frame-driven re-reads catch later changes.
 - *Settle predicate*: the quiet window counts from the last observed change
   or injected input. A screen that has been quiet that long settles at once,
-  and a tap that changes nothing settles one window after the tap.
+  and a tap that changes nothing settles one window after the tap. On a
+  target without frames whose tree source can probe, moves the probes find
+  are changes too, and the screen is settled only once a probe after the
+  last change found its anchors where the replica has them (task 10.11): a
+  still screen settles after that one probe.
 - *Snapshot content* asks for bounds, which snapshot lines leave out as
   agent-browser's do; `Element::bounds` carries them in points. The lines add
   `id=` and `focused`, which agent-browser has no counterpart for, and hint
