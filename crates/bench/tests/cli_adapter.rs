@@ -449,7 +449,9 @@ fn cold_attach_stops_the_daemon_then_times_the_open_that_starts_another() {
 
 /// Task 10.10: the daemon keeps its agent, which holds an Android target's UI
 /// automation, until it exits, and answers `shutdown` before it has let go of
-/// its targets. A release returns once the daemon has.
+/// its targets. A release returns once the daemon has, and keeps what
+/// `status` said about the target for the report: the fake emulator gives
+/// frames and its driver reports no controller.
 #[test]
 fn a_release_stops_the_daemon_and_returns_once_it_has_let_go_of_its_targets() {
     let devices = FakeDevices::new("android");
@@ -468,6 +470,12 @@ fn a_release_stops_the_daemon_and_returns_once_it_has_let_go_of_its_targets() {
     assert!(
         !socket.exists(),
         "the release returned before the daemon let go of its targets"
+    );
+    let mut described = target.clone();
+    adapter.describe(&mut described);
+    assert_eq!(
+        (described.controller, described.frame_source),
+        (None, Some(true))
     );
 }
 

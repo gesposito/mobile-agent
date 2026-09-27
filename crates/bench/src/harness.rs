@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::adapter::{Adapter, AdapterError, Detection, Sample, Scenario};
+use crate::adapter::{Adapter, AdapterError, Detection, Role, Sample, Scenario};
 use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
@@ -213,6 +213,16 @@ impl Harness {
             }
         }
         handoffs.finish(&mut self.tools, probe, &targets);
+
+        // What the tools under test found out about each target while driving
+        // it completes its provenance.
+        for target in &mut targets {
+            for (tool, found) in self.tools.iter().zip(&tools) {
+                if found.role == Role::UnderTest && found.status == ToolStatus::Available {
+                    tool.describe(target);
+                }
+            }
+        }
 
         Ok(Report {
             schema_version: SCHEMA_VERSION,

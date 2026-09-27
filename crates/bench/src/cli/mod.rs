@@ -20,6 +20,7 @@
 
 pub mod listing;
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,7 +38,7 @@ use crate::flow::{Direction, Flow, Selector, Step};
 use crate::harness::Subject;
 use crate::primitive::{Primitive, TEXT_ENTRY};
 use crate::process;
-use crate::target::{Target, TargetClass};
+use crate::target::{Controller, Target, TargetClass};
 
 /// The tool's name in reports.
 pub const TOOL: &str = "mobile-agent";
@@ -132,6 +133,17 @@ pub struct CliAdapter {
     config: CliConfig,
     /// The executable, once detected.
     path: Option<PathBuf>,
+    /// What `status` last said about each attached target, by target id.
+    attached: HashMap<String, Attached>,
+}
+
+/// What `status` says about a target the daemon has attached: the target
+/// entry's `frameSource`, and from its driver's report, whether an Android
+/// emulator's controller answered.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Attached {
+    frame_source: Option<bool>,
+    controller: Option<Controller>,
 }
 
 /// A command's reply and when its process ran.
@@ -165,7 +177,11 @@ struct Envelope {
 
 impl CliAdapter {
     pub fn new(config: CliConfig) -> Self {
-        CliAdapter { config, path: None }
+        CliAdapter {
+            config,
+            path: None,
+            attached: HashMap::new(),
+        }
     }
 
     /// The targets `mobile-agent devices` lists, with the model and OS it
@@ -283,10 +299,14 @@ impl CliAdapter {
         )))
     }
 
-    /// The socket of the daemon that serves, as `status` names it; `None`
-    /// when `status` fails or names none.
-    fn daemon_socket(&self) -> Option<PathBuf> {
+    /// Reads `status`, keeps what it says about `target` when the daemon has
+    /// attached it, and returns the daemon's socket. A `status` that fails
+    /// or does not say leaves both unknown.
+    fn observe(&mut self, target: &Target) -> Option<PathBuf> {
         let reply = self.send(None, &["status"]).ok().filter(|r| r.success)?;
+        if let Some(attached) = read_attached(&reply.data, target) {
+            self.attached.insert(target.id.clone(), attached);
+        }
         let socket = PathBuf::from(reply.data["daemon"]["socket"].as_str()?);
         Some(match &self.config.cwd {
             Some(cwd) if socket.is_relative() => cwd.join(socket),
@@ -622,8 +642,9 @@ impl Adapter for CliAdapter {
     }
 
     /// Opens the scenario's screen for the primitives measured on an open
-    /// screen, and takes one snapshot before warm snapshots. Tap to frame
-    /// change on an Android device is not measured: it has no frame stream.
+    /// screen, reads `status` for what the daemon says about the target, and
+    /// takes one snapshot before warm snapshots. Tap to frame change on an
+    /// Android device is not measured: it has no frame stream.
     fn prepare(
         &mut self,
         target: &Target,
@@ -641,6 +662,7 @@ impl Adapter for CliAdapter {
             _ => {
                 let screen = screen(scenario)?;
                 self.open_screen(target, app(target, scenario)?, screen)?;
+                self.observe(target);
                 if primitive == Primitive::WarmSnapshot {
                     self.snapshot(target, screen)?;
                 }
@@ -714,10 +736,10 @@ impl Adapter for CliAdapter {
     /// targets. The daemon answers `shutdown` and stops taking connections
     /// before it detaches its targets, and removes its socket once it has,
     /// so the wait is for the socket `status` named to go. The `status`,
-    /// read first, starts a daemon when none serves, which the shutdown then
-    /// stops.
-    fn release(&mut self, _target: &Target) -> Result<Option<String>, AdapterError> {
-        let socket = self.daemon_socket();
+    /// read first, also keeps what the daemon says about `target`; it starts
+    /// a daemon when none serves, which the shutdown then stops.
+    fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+        let socket = self.observe(target);
         if !self.stop_daemon()? {
             return Ok(Some("no daemon ran".to_owned()));
         }
@@ -737,6 +759,42 @@ impl Adapter for CliAdapter {
         }
         Ok(Some("stopped the daemon".to_owned()))
     }
+
+    /// Whether the emulator's controller answered and whether the target gave
+    /// frames, as `status` last said while the daemon had it attached.
+    fn describe(&self, target: &mut Target) {
+        if let Some(attached) = self.attached.get(&target.id) {
+            target.controller = target.controller.or(attached.controller);
+            target.frame_source = target.frame_source.or(attached.frame_source);
+        }
+    }
+}
+
+/// What the data of a `status` reply says about `target`: its entry's
+/// `frameSource`, and from its driver's report, on an Android emulator,
+/// whether the controller answered (an `endpoint`) or not (none). `None` when
+/// the daemon does not list the target or says nothing about it, as for a
+/// target it has not attached.
+fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
+    let entry = data["targets"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["id"] == target.id.as_str())?;
+    let driver = entry.get("driver").filter(|driver| driver.is_object());
+    let controller = match (target.class, driver) {
+        (TargetClass::AndroidEmulator, Some(driver)) => Some(
+            match driver["endpoint"].as_str().filter(|e| !e.is_empty()) {
+                Some(_) => Controller::On,
+                None => Controller::Off,
+            },
+        ),
+        _ => None,
+    };
+    let attached = Attached {
+        frame_source: entry["frameSource"].as_bool(),
+        controller,
+    };
+    (attached.frame_source.is_some() || attached.controller.is_some()).then_some(attached)
 }
 
 /// The arguments of one command: JSON mode, then the bench's session and
@@ -767,12 +825,11 @@ fn read_devices(data: &Value) -> Result<Vec<Target>, String> {
         .map_err(|e| format!("the devices reply does not list devices: {e}"))?;
     Ok(devices
         .into_iter()
-        .map(|device| Target {
-            id: device.id,
-            class: device.class,
-            model: device.model,
-            os: device.os,
-            api_level: None,
+        .map(|device| {
+            let mut target = Target::new(device.id, device.class);
+            target.model = device.model;
+            target.os = device.os;
+            target
         })
         .collect())
 }
@@ -1011,6 +1068,83 @@ mod tests {
         assert!(millis(&json!(-1.0), "treeDeltaMs").is_err());
         assert!(millis(&json!("12"), "treeDeltaMs").is_err());
         assert!(millis(&Value::Null, "elapsedMs").is_err());
+    }
+
+    /// `status` data as the daemon's README shows it for an emulator started
+    /// with `-grpc 8554`, and for the same emulator without it.
+    fn status(driver: Value, frame_source: Value) -> Value {
+        json!({
+            "daemon": {"pid": 12499, "version": "0.1.0", "socket": "/tmp/ma/daemon.sock"},
+            "targets": [
+                {"id": "emulator-5554", "platform": "android", "class": "android-emulator",
+                 "attached": true, "frameSource": frame_source, "driver": driver},
+                {"id": "emulator-5556", "platform": "android", "class": "android-emulator",
+                 "attached": false, "frameSource": null}
+            ],
+            "sessions": []
+        })
+    }
+
+    #[test]
+    fn status_says_whether_the_emulator_s_controller_answered_and_whether_it_gives_frames() {
+        let emulator = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        let on = status(
+            json!({"input": "emulator controller", "frames": "emulator controller",
+                   "endpoint": "http://127.0.0.1:8554", "warning": null, "frameError": null}),
+            json!(true),
+        );
+        assert_eq!(
+            read_attached(&on, &emulator),
+            Some(Attached {
+                frame_source: Some(true),
+                controller: Some(Controller::On),
+            })
+        );
+        let off = status(
+            json!({"input": "agent", "frames": null, "endpoint": null,
+                   "warning": "emulator control endpoint unavailable for emulator-5554",
+                   "frameError": null}),
+            json!(false),
+        );
+        assert_eq!(
+            read_attached(&off, &emulator),
+            Some(Attached {
+                frame_source: Some(false),
+                controller: Some(Controller::Off),
+            })
+        );
+        // A target the daemon has not attached, or does not list, says nothing.
+        let other = Target::new("emulator-5556", TargetClass::AndroidEmulator);
+        assert_eq!(read_attached(&on, &other), None);
+        let absent = Target::new("emulator-5558", TargetClass::AndroidEmulator);
+        assert_eq!(read_attached(&on, &absent), None);
+        assert_eq!(read_attached(&json!({}), &emulator), None);
+    }
+
+    #[test]
+    fn only_an_emulator_has_a_controller_to_report() {
+        // An Android device and a Simulator give frames or not; neither has
+        // a controller.
+        let device = Target::new("R58M123", TargetClass::AndroidDevice);
+        let data = json!({"targets": [{"id": "R58M123", "attached": true, "frameSource": false,
+                                        "driver": {"input": "agent", "frames": null, "endpoint": null}}]});
+        assert_eq!(
+            read_attached(&data, &device),
+            Some(Attached {
+                frame_source: Some(false),
+                controller: None,
+            })
+        );
+        let simulator = Target::new("SIM-1", TargetClass::Simulator);
+        let data = json!({"targets": [{"id": "SIM-1", "attached": true, "frameSource": false,
+                                        "driver": {"input": "dtuhidd", "frameError": "no display"}}]});
+        assert_eq!(
+            read_attached(&data, &simulator),
+            Some(Attached {
+                frame_source: Some(false),
+                controller: None,
+            })
+        );
     }
 
     #[test]

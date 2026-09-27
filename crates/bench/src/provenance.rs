@@ -1,7 +1,9 @@
 //! What a report records about the environment it ran in: host hardware and
 //! OS, Xcode, each target's model, OS and API level, tool versions and the
 //! commit under test. Everything is read through a [`Probe`], so tests script
-//! the commands' output.
+//! the commands' output; the tool under test adds what it found out about a
+//! target while driving it, such as whether an emulator's controller
+//! answered.
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -361,6 +363,18 @@ impl Provenance {
                 format!("{name}.api_level"),
                 &target.api_level,
                 &theirs.api_level,
+            );
+            differ(
+                &mut found,
+                format!("{name}.controller"),
+                &target.controller,
+                &theirs.controller,
+            );
+            differ(
+                &mut found,
+                format!("{name}.frame_source"),
+                &target.frame_source,
+                &theirs.frame_source,
             );
         }
         for target in &other.targets {

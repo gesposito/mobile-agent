@@ -146,7 +146,15 @@ fn provenance(out: &mut String, p: &Provenance) {
     table.render(out);
 
     out.push_str("### Targets\n\n");
-    let mut targets = Table::new(&["Target", "Class", "Model", "OS", "Android API level"]);
+    let mut targets = Table::new(&[
+        "Target",
+        "Class",
+        "Model",
+        "OS",
+        "Android API level",
+        "Emulator controller",
+        "Frame source",
+    ]);
     for t in &p.targets {
         targets.row(vec![
             t.id.clone(),
@@ -154,6 +162,11 @@ fn provenance(out: &mut String, p: &Provenance) {
             or_dash(t.model.as_deref()),
             or_dash(t.os.as_deref()),
             or_dash(t.api_level),
+            or_dash(t.controller),
+            or_dash(
+                t.frame_source
+                    .map(|frames| if frames { "yes" } else { "no" }),
+            ),
         ]);
     }
     targets.render(out);

@@ -184,4 +184,12 @@ pub trait Adapter {
         let _ = target;
         Ok(None)
     }
+
+    /// Fills in the provenance the tool found out about `target` while
+    /// driving it and `target` lacks, such as whether an emulator's gRPC
+    /// controller answered and whether the target gave frames. The harness
+    /// asks each tool under test once the run is over.
+    fn describe(&self, target: &mut Target) {
+        let _ = target;
+    }
 }

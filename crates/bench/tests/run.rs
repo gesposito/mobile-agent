@@ -162,10 +162,13 @@ fn a_run_measures_mobile_agent_on_a_fake_emulator_and_the_baselines_beside_it() 
     assert!(stdout.contains("gate checks passed"), "{stdout}");
     let report = written(&out);
 
-    let mut target = Target::new("emulator-5590", TargetClass::AndroidEmulator);
-    target.model = Some("fake".into());
-    target.os = Some("Android 16".into());
-    assert_eq!(report.provenance.targets, [target.clone()]);
+    // The fake emulator gives frames; its driver reports no controller.
+    let target: Target = serde_json::from_value(json!({
+        "id": "emulator-5590", "class": "android-emulator", "model": "fake",
+        "os": "Android 16", "api_level": null, "controller": null, "frame_source": true
+    }))
+    .unwrap();
+    assert_eq!(report.provenance.targets, std::slice::from_ref(&target));
     let tool = |name: &str| {
         report
             .provenance
@@ -265,10 +268,12 @@ fn a_run_on_a_fake_simulator_runs_swiftui_and_expo_through_the_cli_beside_the_be
         "stdout: {stdout}\nstderr: {stderr}"
     );
     let report = written(&out);
-    let mut target = Target::new("FAKE-IOS-9", TargetClass::Simulator);
-    target.model = Some("fake".into());
-    target.os = Some("iOS 26.5".into());
-    assert_eq!(report.provenance.targets, [target.clone()]);
+    let target: Target = serde_json::from_value(json!({
+        "id": "FAKE-IOS-9", "class": "simulator", "model": "fake", "os": "iOS 26.5",
+        "api_level": null, "controller": null, "frame_source": true
+    }))
+    .unwrap();
+    assert_eq!(report.provenance.targets, std::slice::from_ref(&target));
     assert_measured_as_planned(&report, &target, &[Fixture::SwiftUi, Fixture::Expo]);
     for name in ["maestro", "maestro-runner", "agent-device"] {
         let tool = report
