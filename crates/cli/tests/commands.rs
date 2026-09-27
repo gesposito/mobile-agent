@@ -444,6 +444,45 @@ fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
     assert!(human.stdout.starts_with("✓ "), "{}", human.stdout);
 }
 
+/// Task 8.13: an app takes a stroke no longer than its platform's tap
+/// threshold for a tap (`scroll down 2` on the Simulator opened what lay
+/// under the screen's center), so `scroll` refuses one with
+/// `stroke_too_short` before it touches the screen: 8 points or less on
+/// Android, whose touch slop is 8 dp, and 10 points or less on iOS.
+#[test]
+fn scroll_refuses_strokes_the_platform_takes_for_a_tap() {
+    for (fake, slop) in [("android", 8), ("ios", 10)] {
+        let env = TestEnv::start(fake);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        for amount in ["2".to_owned(), slop.to_string()] {
+            let refused = env
+                .cli(&["--json", "scroll", "down", &amount])
+                .failed()
+                .json();
+            assert_eq!(
+                refused["code"], "stroke_too_short",
+                "{fake}, {amount} points: {refused}"
+            );
+            let message = refused["error"].as_str().unwrap_or_default();
+            assert!(
+                message.contains(&format!("{slop} points")),
+                "{fake}: the message names the threshold: {message}"
+            );
+        }
+        let until = env
+            .cli(&["--json", "scroll", "down", "5", "--until", "#row-150"])
+            .failed()
+            .json();
+        assert_eq!(until["code"], "stroke_too_short", "{fake}: {until}");
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        assert!(listing.contains("id=row-1,"), "{fake}:\n{listing}");
+        let longer = (slop + 1).to_string();
+        let moved = env.cli(&["--json", "scroll", "down", &longer]).ok().json();
+        assert_eq!(moved["data"]["strokes"], 1, "{fake}: {moved}");
+    }
+}
+
 /// `open --relaunch` reports the screen settled only once the relaunched
 /// app has shown its first tree, so a snapshot right after it sees the app.
 #[test]

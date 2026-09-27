@@ -7,7 +7,7 @@ const HELP: &str = "\
 mobile-agent-daemon: the host daemon behind the mobile-agent CLI
 
 Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
-                           [--fake <targets>] [--fake-latency <time>]
+                           [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -23,6 +23,10 @@ Options:
                           (or MOBILE_AGENT_FAKE_TARGETS)
   --fake-latency <time>   Show every change on fake targets this long after
                           its cause (or MOBILE_AGENT_FAKE_LATENCY_MS; default 0)
+  --fake-frame-delay <time>
+                          Start fake targets' frame streams this long after
+                          the attach (or MOBILE_AGENT_FAKE_FRAME_DELAY_MS;
+                          default 0)
   -h, --help              Print this help
   -V, --version           Print the version
 

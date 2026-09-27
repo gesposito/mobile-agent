@@ -685,6 +685,12 @@ fn the_compose_fixture_is_driven_through_the_cli_on_an_emulator() {
         dir.path(),
     );
 
+    // Task 8.13: open waited for the frame stream's first frame, so the
+    // first click after the attach reports its first frame change.
+    assert!(
+        measured.frame_change.is_some(),
+        "the first click reports its first frame change"
+    );
     let status = env.cli(&["--json", "status"]).data();
     let target = status_of(&status, &serial);
     assert_eq!(target["attached"], true, "{target}");

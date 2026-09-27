@@ -59,6 +59,8 @@ pub struct Options {
     pub fake: Option<String>,
     /// How long fake targets take to show a change.
     pub fake_latency: Duration,
+    /// How long after the attach fake targets' frame streams start.
+    pub fake_frame_delay: Duration,
     /// Device drivers to register, as `MOBILE_AGENT_DRIVERS` lists them;
     /// `None` registers the host's device drivers unless fake targets are
     /// named (see [`driver::device_drivers`]).
@@ -67,17 +69,18 @@ pub struct Options {
 
 impl Options {
     /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
-    /// `--fake <targets>`, `--fake-latency <time>` and `--drivers <names>`,
-    /// each falling back to its environment variable:
-    /// `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
+    /// `--fake <targets>`, `--fake-latency <time>`, `--fake-frame-delay
+    /// <time>` and `--drivers <names>`, each falling back to its environment
+    /// variable: `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
     /// [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
-    /// `MOBILE_AGENT_FAKE_TARGETS`, `MOBILE_AGENT_FAKE_LATENCY_MS` and
-    /// `MOBILE_AGENT_DRIVERS`.
+    /// `MOBILE_AGENT_FAKE_TARGETS`, `MOBILE_AGENT_FAKE_LATENCY_MS`,
+    /// `MOBILE_AGENT_FAKE_FRAME_DELAY_MS` and `MOBILE_AGENT_DRIVERS`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
         let mut idle = None;
         let mut fake = None;
         let mut latency = None;
+        let mut frame_delay = None;
         let mut drivers = None;
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -99,6 +102,9 @@ impl Options {
                 "--idle-timeout" => idle = Some(value()?.to_string_lossy().into_owned()),
                 "--fake" => fake = Some(value()?.to_string_lossy().into_owned()),
                 "--fake-latency" => latency = Some(value()?.to_string_lossy().into_owned()),
+                "--fake-frame-delay" => {
+                    frame_delay = Some(value()?.to_string_lossy().into_owned());
+                }
                 "--drivers" => drivers = Some(value()?.to_string_lossy().into_owned()),
                 other => return Err(format!("unknown argument {other}; see --help")),
             }
@@ -116,11 +122,19 @@ impl Options {
             }
             None => Duration::ZERO,
         };
+        let fake_frame_delay = match frame_delay.or_else(|| env("MOBILE_AGENT_FAKE_FRAME_DELAY_MS"))
+        {
+            Some(text) => {
+                parse_duration(&text).map_err(|e| format!("fake frame delay {text:?}: {e}"))?
+            }
+            None => Duration::ZERO,
+        };
         Ok(Options {
             socket_dir: socket_dir.unwrap_or_else(paths::default_dir),
             idle_timeout: (!idle.is_zero()).then_some(idle),
             fake: fake.or_else(|| env("MOBILE_AGENT_FAKE_TARGETS")),
             fake_latency,
+            fake_frame_delay,
             drivers: drivers.or_else(|| env("MOBILE_AGENT_DRIVERS")),
         })
     }
@@ -219,6 +233,7 @@ pub fn run(options: Options) -> Result<Exit, String> {
     let drivers = driver::registered(&driver::Registration {
         fake: options.fake.as_deref(),
         fake_latency: options.fake_latency,
+        fake_frame_delay: options.fake_frame_delay,
         drivers: options.drivers.as_deref(),
         state_dir: &options.socket_dir,
     })?;
@@ -511,6 +526,8 @@ mod tests {
                 "--idle-timeout=0",
                 "--fake",
                 "ios",
+                "--fake-frame-delay",
+                "2s",
             ]
             .map(OsString::from),
         )
@@ -518,6 +535,7 @@ mod tests {
         assert_eq!(options.socket_dir, PathBuf::from("/tmp/x"));
         assert_eq!(options.idle_timeout, None);
         assert_eq!(options.fake.as_deref(), Some("ios"));
+        assert_eq!(options.fake_frame_delay, Duration::from_secs(2));
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
     }
 

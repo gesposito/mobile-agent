@@ -10,7 +10,9 @@
 //! change; screenshots return placeholder bytes, not an image. Emulators and
 //! Simulators have a frame source and Android devices none, as design D7
 //! has it; a latency (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
-//! so that the time from a tap to its effects can be measured.
+//! so that the time from a tap to its effects can be measured, and a frame
+//! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
+//! the attach, as an emulator's starts once its subscription is up.
 
 mod app;
 mod realtime;
@@ -27,6 +29,7 @@ use crate::driver::{
 pub struct FakeDriver {
     targets: Vec<TargetInfo>,
     latency: Duration,
+    frame_delay: Duration,
 }
 
 impl FakeDriver {
@@ -90,12 +93,22 @@ impl FakeDriver {
         Ok(FakeDriver {
             targets,
             latency: Duration::ZERO,
+            frame_delay: Duration::ZERO,
         })
     }
 
     /// These targets, showing each change `latency` after its cause.
     pub fn with_latency(self, latency: Duration) -> FakeDriver {
         FakeDriver { latency, ..self }
+    }
+
+    /// These targets, their frame streams starting `frame_delay` after the
+    /// attach.
+    pub fn with_frame_delay(self, frame_delay: Duration) -> FakeDriver {
+        FakeDriver {
+            frame_delay,
+            ..self
+        }
     }
 }
 
@@ -114,7 +127,12 @@ impl Driver for FakeDriver {
         _options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
         let frames = target.class != TargetClass::AndroidDevice;
-        Ok(realtime::attach(target.platform, frames, self.latency))
+        Ok(realtime::attach(
+            target.platform,
+            frames,
+            self.latency,
+            self.frame_delay,
+        ))
     }
 }
 

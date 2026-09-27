@@ -84,6 +84,20 @@ fn a_target_without_frames_reports_no_frame_change_rather_than_zero() {
     assert!(ms(&data, "treeDeltaMs") >= LATENCY_MS, "{data}");
 }
 
+/// Task 8.13: an emulator's frame stream delivers its first frame a while
+/// after the attach, and the first frame is no change, so a tap whose
+/// effects came before it would report no frame change. `open` waits for
+/// the first frame on a target with a frame source, so the first click
+/// after it reports its first frame change.
+#[test]
+fn the_first_click_after_open_reports_its_first_frame_change() {
+    let env = TestEnv::start_with("android", &[("MOBILE_AGENT_FAKE_FRAME_DELAY_MS", "1200")]);
+    env.cli(&["open", APP]).ok();
+    let data = env.cli(&["--json", "click", "#tab-list"]).ok().json()["data"].clone();
+    assert!(data["frameChangeMs"].is_number(), "{data}");
+    assert!(data["treeDeltaMs"].is_number(), "{data}");
+}
+
 #[test]
 fn a_tap_that_changes_nothing_reports_neither_span() {
     let env = slow("android");

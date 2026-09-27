@@ -8,6 +8,9 @@
 //! event on Android and, on targets with frames, a frame. A move to another
 //! screen animates: its frames change every 16 ms for 96 ms before the
 //! final one, as a transition does, while the tree changes at its start.
+//! The frame stream can start some time after the attach, as an emulator's
+//! does once its subscription is up: frames captured before are never
+//! delivered, and the first one delivered shows the screen as it is then.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -51,6 +54,8 @@ struct Shared {
     frames: bool,
     /// How long a change takes to show, as a slow app or device takes.
     latency: Duration,
+    /// When the frame stream starts, when it starts after the attach.
+    frames_from: Option<Instant>,
 }
 
 /// What the frames show.
@@ -64,6 +69,9 @@ struct Visual {
     last: Option<Instant>,
     /// Frames produced so far, to give each its own hash.
     count: u64,
+    /// Whether a frame stream that starts after the attach has delivered
+    /// its first frame.
+    started: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -99,8 +107,37 @@ impl Shared {
             self.target.advance(real - fake);
         }
         let now = real.max(fake);
+        self.start_frames(now);
         self.animate(now);
         now
+    }
+
+    /// Delivers the first frame of a frame stream that starts after the
+    /// attach, once it starts: the screen shown then.
+    fn start_frames(&self, now: Instant) {
+        let Some(from) = self.frames_from else {
+            return;
+        };
+        if !self.frames || now < from {
+            return;
+        }
+        let mut visual = lock(&self.visual);
+        if visual.started {
+            return;
+        }
+        visual.started = true;
+        drop(visual);
+        let shown = hash(&self.target.screen());
+        self.target.after(Duration::ZERO, Step::Frame(shown));
+    }
+
+    /// Whether `item` is a frame captured before the frame stream started,
+    /// which the stream never delivers.
+    fn withheld(&self, item: &Timed<StreamItem>) -> bool {
+        match (&item.item, self.frames_from) {
+            (StreamItem::Frame(meta), Some(from)) => meta.at < from,
+            _ => false,
+        }
     }
 
     /// The next frame, once a frame interval has passed: a transition's,
@@ -191,9 +228,15 @@ fn hash(read: &TreeRead) -> u64 {
 }
 
 /// A fake device of `platform`, attached: it shows its launcher. It has a
-/// frame source when `frames` is set, and shows each change `latency`
-/// after the input or launch that caused it.
-pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Attachment {
+/// frame source when `frames` is set, whose stream starts `frame_delay`
+/// after the attach, and shows each change `latency` after the input or
+/// launch that caused it.
+pub(crate) fn attach(
+    platform: Platform,
+    frames: bool,
+    latency: Duration,
+    frame_delay: Duration,
+) -> Attachment {
     let device = Device::new(platform);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
@@ -209,6 +252,7 @@ pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Att
         visual: Mutex::new(Visual::default()),
         frames,
         latency,
+        frames_from: (!frame_delay.is_zero()).then(|| target.clock().now() + frame_delay),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -253,6 +297,9 @@ impl EventStream for Part {
         loop {
             let now = self.shared.sync();
             if let Some(item) = self.target.next(now) {
+                if self.shared.withheld(&item) {
+                    continue;
+                }
                 return Some(item);
             }
             if now >= deadline {
@@ -266,7 +313,10 @@ impl EventStream for Part {
 impl FrameSource for Part {
     fn latest(&self) -> Option<FrameMeta> {
         self.shared.sync();
-        self.target.latest()
+        let from = self.shared.frames_from;
+        self.target
+            .latest()
+            .filter(|meta| from.is_none_or(|from| meta.at >= from))
     }
 
     fn encode(&mut self, request: &EncodeRequest) -> Result<Vec<u8>, BackendError> {
@@ -344,5 +394,51 @@ impl AppControl for Part {
         };
         self.shared.show(&device, change);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The frames an attachment's event stream delivers within `window`.
+    fn frames_within(attachment: &mut Attachment, window: Duration) -> Vec<FrameMeta> {
+        let deadline = Instant::now() + window;
+        let mut frames = Vec::new();
+        while let Some(item) = attachment.backend.events.next(deadline) {
+            if let StreamItem::Frame(meta) = item.item {
+                frames.push(meta);
+            }
+        }
+        frames
+    }
+
+    /// Task 8.13: a frame stream that starts after the attach, as an
+    /// emulator's does once its subscription is up, delivers nothing before
+    /// it starts and then the screen shown when it starts.
+    #[test]
+    fn a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown() {
+        let attached = Instant::now();
+        let mut late = attach(
+            Platform::Android,
+            true,
+            Duration::ZERO,
+            Duration::from_millis(150),
+        );
+        assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
+        assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
+        let first = frames_within(&mut late, Duration::from_millis(150));
+        assert_eq!(first.len(), 1, "{first:?}");
+        assert!(first[0].at >= attached + Duration::from_millis(150));
+        assert_eq!(
+            late.backend.frames.as_ref().unwrap().latest(),
+            Some(first[0])
+        );
+
+        // The same device without a delay shows its launcher's frame at once.
+        let mut prompt = attach(Platform::Android, true, Duration::ZERO, Duration::ZERO);
+        let at_once = frames_within(&mut prompt, Duration::from_millis(50));
+        assert_eq!(at_once.len(), 1, "{at_once:?}");
+        assert_eq!(at_once[0].hash, first[0].hash, "the same launcher");
     }
 }

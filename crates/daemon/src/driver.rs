@@ -252,6 +252,8 @@ pub struct Registration<'a> {
     pub fake: Option<&'a str>,
     /// How long fake targets take to show a change.
     pub fake_latency: Duration,
+    /// How long after the attach fake targets' frame streams start.
+    pub fake_frame_delay: Duration,
     /// Device drivers by name, as `MOBILE_AGENT_DRIVERS` lists them; see
     /// [`device_drivers`].
     pub drivers: Option<&'a str>,
@@ -268,8 +270,9 @@ pub struct Registration<'a> {
 /// [`crate::devices`], the Simulator driver also filling `doctor`'s Xcode
 /// compatibility table through [`Driver::compatibility`]. Fake targets
 /// stand in for them: when `fake` names any, only the fake driver serves,
-/// showing every change `fake_latency` after its cause, unless `drivers`
-/// names device drivers too.
+/// showing every change `fake_latency` after its cause, its frames from
+/// `fake_frame_delay` after the attach, unless `drivers` names device
+/// drivers too.
 pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
     let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
@@ -278,7 +281,9 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
     }
     if let Some(spec) = fake {
         drivers.push(Arc::new(
-            FakeDriver::parse(spec)?.with_latency(registration.fake_latency),
+            FakeDriver::parse(spec)?
+                .with_latency(registration.fake_latency)
+                .with_frame_delay(registration.fake_frame_delay),
         ));
     }
     Ok(drivers)
@@ -387,6 +392,7 @@ mod tests {
             registered(&Registration {
                 fake,
                 fake_latency: Duration::ZERO,
+                fake_frame_delay: Duration::ZERO,
                 drivers,
                 state_dir: &dir,
             })
