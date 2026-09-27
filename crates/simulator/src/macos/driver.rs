@@ -19,7 +19,8 @@ use crate::macos::{frames, host, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
     FrameOptions, Gesture, InputStatus, Key, LaunchOptions, Launched, Point, PreferencesOutcome,
-    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportKind,
+    RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
+    TransportKind,
 };
 use crate::select::{self, HostVersions};
 
@@ -417,6 +418,11 @@ impl Input for SimulatorDriver {
 
     fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
         self.with_input(target, |target, transport| target.key(transport, key))
+    }
+
+    fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry> {
+        let _ = (target, text, method);
+        unimplemented!("task 6.7: text entry")
     }
 }
 

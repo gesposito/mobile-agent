@@ -12,7 +12,7 @@ use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
     BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, Key, LaunchOptions, Launched,
-    Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
+    Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
 };
 
 /// Lists Simulators and drives their lifecycle (simulator-driver spec,
@@ -75,4 +75,7 @@ pub trait Input {
 
     /// A key press, with its modifiers held around it.
     fn key(&self, target: &str, key: Key) -> Result<Dispatch>;
+
+    /// Enters `text` into the focused field and reports how.
+    fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry>;
 }

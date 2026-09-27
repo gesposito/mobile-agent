@@ -34,7 +34,7 @@ pub use model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions, Edge,
     Frame, FrameOptions, FrameStats, Gesture, ImageFormat, InputStatus, Key, LaunchOptions,
     Launched, Modifiers, Point, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
-    Swipe, TargetStatus, TransportChoice, TransportKind,
+    Swipe, TargetStatus, TextEntry, TextMethod, TransportChoice, TransportKind,
 };
 
 #[cfg(target_os = "macos")]

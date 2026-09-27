@@ -11,7 +11,7 @@ use crate::frames::FrameStream;
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceTypeInfo, Dispatch, DriverOptions, FrameOptions, Gesture,
     Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
-    ScreenshotOptions, Swipe, TargetStatus,
+    ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
 };
 
 /// Drives iOS Simulators; available on macOS only.
@@ -121,6 +121,10 @@ impl Input for SimulatorDriver {
     }
 
     fn key(&self, _target: &str, _key: Key) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn type_text(&self, _target: &str, _text: &str, _method: TextMethod) -> Result<TextEntry> {
         match *self {}
     }
 }

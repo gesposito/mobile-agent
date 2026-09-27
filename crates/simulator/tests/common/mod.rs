@@ -600,3 +600,54 @@ pub fn dtuhidd_started(udid: &str) -> bool {
         .filter_map(|line| line.trim().strip_prefix("runs = "))
         .any(|runs| runs.trim() != "0")
 }
+
+/// Runs `devicectl device pasteboard` with `arguments` on the device,
+/// feeding it `input`, and returns what it printed.
+pub fn devicectl_pasteboard(udid: &str, arguments: &[&str], input: Option<&str>) -> String {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let mut child = Command::new("xcrun")
+        .args(["devicectl", "device", "pasteboard"])
+        .args(arguments)
+        .args(["-d", udid])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("devicectl runs");
+    if let Some(input) = input {
+        child
+            .stdin
+            .take()
+            .expect("a stdin")
+            .write_all(input.as_bytes())
+            .expect("devicectl reads its input");
+    }
+    let output = child.wait_with_output().expect("devicectl finishes");
+    assert!(output.status.success(), "devicectl {arguments:?} failed");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// The focused field's text: a sentinel on the device pasteboard, then
+/// Command-A and Command-C in the field, then the pasteboard read back.
+pub fn field_text(driver: &SimulatorDriver, udid: &str) -> String {
+    use simulator::{Input, Key, Modifiers};
+    devicectl_pasteboard(udid, &["copy"], Some("sentinel: nothing was copied"));
+    let command = Modifiers {
+        command: true,
+        ..Modifiers::default()
+    };
+    for usage in [0x04, 0x06] {
+        driver
+            .key(
+                udid,
+                Key {
+                    usage,
+                    modifiers: command,
+                },
+            )
+            .expect("a shortcut");
+        thread::sleep(Duration::from_millis(300));
+    }
+    devicectl_pasteboard(udid, &["paste"], None)
+}

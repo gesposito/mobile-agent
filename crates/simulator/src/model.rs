@@ -443,3 +443,25 @@ pub struct TargetStatus {
     /// The input session, once input was sent to the device.
     pub input: Option<InputStatus>,
 }
+
+/// How text goes into the focused field.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextMethod {
+    /// Keyboard events for a short string a US keyboard can type, the
+    /// pasteboard otherwise.
+    #[default]
+    Auto,
+    /// One key press per character.
+    Keyboard,
+    /// The device pasteboard, then Command-V.
+    Paste,
+}
+
+/// What `type_text` did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextEntry {
+    /// `Keyboard` or `Paste`, never `Auto`.
+    pub method: TextMethod,
+    pub characters: usize,
+    pub elapsed: Duration,
+}
