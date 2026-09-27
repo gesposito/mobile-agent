@@ -61,6 +61,7 @@ pub struct Builder {
     env: Vec<(String, String)>,
     removed: Vec<String>,
     args: Vec<String>,
+    binary: Option<PathBuf>,
 }
 
 impl Builder {
@@ -87,6 +88,13 @@ impl Builder {
         self
     }
 
+    /// Runs the daemon from `binary`, such as a copy installed outside the
+    /// source tree, instead of the build's.
+    pub fn binary(mut self, binary: &Path) -> Builder {
+        self.binary = Some(binary.to_path_buf());
+        self
+    }
+
     /// Serves on `dir` instead of a fresh directory.
     pub fn socket_dir(mut self, dir: &Path) -> Builder {
         self.socket_dir = Some(dir.to_path_buf());
@@ -102,7 +110,7 @@ impl Builder {
                 (temp.path().to_path_buf(), Some(temp))
             }
         };
-        let mut command = Command::new(BIN);
+        let mut command = Command::new(self.binary.as_deref().unwrap_or(Path::new(BIN)));
         clean_env(&mut command);
         command
             .arg("--socket-dir")
@@ -159,6 +167,7 @@ impl Daemon {
             env: Vec::new(),
             removed: Vec::new(),
             args: Vec::new(),
+            binary: None,
         }
     }
 

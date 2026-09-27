@@ -61,6 +61,39 @@ const LISTING_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a stopped agent may take to exit before it is killed.
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// The agent jar built into this daemon; empty when its build skipped it.
+#[allow(dead_code)]
+pub(crate) static EMBEDDED_JAR: &[u8] = &[];
+
+/// The build of [`EMBEDDED_JAR`], as `AgentJar::build` names it.
+#[allow(dead_code)]
+pub(crate) const EMBEDDED_BUILD: &str = "";
+
+/// Where the agent jar a daemon deploys comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum JarSource {
+    /// The file `MOBILE_AGENT_JAR` names, for development.
+    File(PathBuf),
+    /// The jar built into this daemon.
+    Embedded,
+}
+
+/// Where the jar comes from, given `MOBILE_AGENT_JAR`'s value.
+#[allow(dead_code)]
+pub(crate) fn jar_source(variable: Option<&std::ffi::OsStr>) -> JarSource {
+    let _ = variable;
+    todo!("task 8.11")
+}
+
+/// The jar to deploy from `source`: the file, or the embedded jar, refused
+/// with its reason when this daemon was built without one.
+#[allow(dead_code)]
+pub(crate) fn agent_jar(source: &JarSource) -> Result<AgentJar, DriverError> {
+    let _ = source;
+    todo!("task 8.11")
+}
+
 /// The targets of the local adb server.
 pub(crate) struct AndroidDevices {
     server: AdbServer,
@@ -615,6 +648,45 @@ mod tests {
         assert_eq!(data["input"], "agent", "{data}");
         assert_eq!(data["frames"], Value::Null, "{data}");
         assert_eq!(data["warning"], "start with -grpc", "{data}");
+    }
+
+    /// Task 8.11: an installed daemon needs neither the source tree nor
+    /// `MOBILE_AGENT_JAR`: the jar `agent-android/build.sh` builds is in the
+    /// binary, with its digest.
+    #[test]
+    fn the_daemon_embeds_the_agent_jar_with_its_digest() {
+        if EMBEDDED_JAR.is_empty() {
+            // Built with SKIP_AGENT_BUILD=1, as the macOS CI job does.
+            let refused = agent_jar(&JarSource::Embedded).unwrap_err();
+            assert!(refused.message.contains("SKIP_AGENT_BUILD"), "{refused:?}");
+            return;
+        }
+        assert_eq!(&EMBEDDED_JAR[..4], b"PK\x03\x04", "a jar");
+        assert!(
+            EMBEDDED_JAR.windows(11).any(|w| w == b"classes.dex"),
+            "holding classes.dex"
+        );
+        let jar = agent_jar(&JarSource::Embedded).unwrap();
+        assert_eq!(jar.build(), EMBEDDED_BUILD, "the digest the build recorded");
+        assert_eq!(jar.version(), android::agent::AGENT_VERSION);
+        assert_eq!(jar.path(), None, "read from no file");
+    }
+
+    #[test]
+    fn the_jar_comes_from_mobile_agent_jar_else_from_the_binary() {
+        use std::ffi::OsStr;
+        assert_eq!(jar_source(None), JarSource::Embedded);
+        assert_eq!(jar_source(Some(OsStr::new(""))), JarSource::Embedded);
+        assert_eq!(
+            jar_source(Some(OsStr::new("/opt/agent.jar"))),
+            JarSource::File("/opt/agent.jar".into())
+        );
+        let missing = agent_jar(&JarSource::File("/nonexistent/agent.jar".into())).unwrap_err();
+        assert_eq!(missing.code, "agent_failed");
+        assert!(
+            missing.message.contains("/nonexistent/agent.jar"),
+            "{missing:?}"
+        );
     }
 
     #[test]

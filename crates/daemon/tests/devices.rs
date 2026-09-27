@@ -107,6 +107,8 @@ impl Run {
 struct Env {
     daemon: Daemon,
     home: TempDir,
+    /// The daemon executable the CLI starts and compares versions with.
+    binary: PathBuf,
 }
 
 impl Env {
@@ -120,9 +122,30 @@ impl Env {
         let env = Env {
             daemon: builder.start(),
             home: TempDir::new(),
+            binary: PathBuf::from(support::BIN),
         };
         cli_bin();
         env
+    }
+
+    /// A daemon run from a copy of the binary outside the source tree, as an
+    /// installed daemon runs, with no `MOBILE_AGENT_JAR`.
+    fn start_installed() -> Env {
+        let home = TempDir::new();
+        let bin = home.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("a bin directory");
+        let binary = bin.join("mobile-agent-daemon");
+        std::fs::copy(support::BIN, &binary).expect("the daemon is copied");
+        let daemon = Daemon::builder()
+            .binary(&binary)
+            .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "300000")
+            .start();
+        cli_bin();
+        Env {
+            daemon,
+            home,
+            binary,
+        }
     }
 
     fn cli(&self, args: &[&str]) -> Run {
@@ -132,7 +155,7 @@ impl Env {
             .args(args)
             .env("HOME", self.home.path())
             .env("MOBILE_AGENT_SOCKET_DIR", &self.daemon.dir)
-            .env("MOBILE_AGENT_DAEMON_BIN", support::BIN)
+            .env("MOBILE_AGENT_DAEMON_BIN", &self.binary)
             .current_dir(self.home.path())
             .stdin(Stdio::null());
         let started = Instant::now();
@@ -642,7 +665,9 @@ fn the_compose_fixture_is_driven_through_the_cli_on_an_emulator() {
     android_quiet(&device);
     let _fixture = ComposeStopped::new(&device);
     let dir = TempDir::new();
-    let mut env = Env::start();
+    // An installed daemon: its own copy of the binary and the agent built
+    // into it, neither the source tree nor MOBILE_AGENT_JAR (task 8.11).
+    let mut env = Env::start_installed();
     let mut measured = big_then_login(
         &env,
         &serial,
@@ -657,6 +682,10 @@ fn the_compose_fixture_is_driven_through_the_cli_on_an_emulator() {
     assert!(
         ["emulator controller", "agent"].contains(&driver["input"].as_str().unwrap_or_default()),
         "status names the Android input path: {target}"
+    );
+    assert_eq!(
+        driver["agentJar"], "embedded",
+        "the installed daemon deploys the agent built into it: {target}"
     );
     let socket = driver["socket"].as_str().unwrap_or_default().to_owned();
     let pid = driver["pid"].as_u64().unwrap_or_default();
