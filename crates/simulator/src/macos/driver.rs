@@ -18,7 +18,7 @@ use crate::macos::{frames, prefs};
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions,
     FrameOptions, Gesture, Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo,
-    Screenshot, ScreenshotOptions, Swipe, TransportChoice, TransportKind,
+    Screenshot, ScreenshotOptions, Swipe, TargetStatus, TransportChoice, TransportKind,
 };
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
@@ -311,6 +311,11 @@ impl Lifecycle for SimulatorDriver {
             Err(error) if not_running(&error) => Ok(()),
             result => result,
         }
+    }
+
+    fn status(&self, target: &str) -> Result<TargetStatus> {
+        let _ = target;
+        unimplemented!("task 6.4: target status")
     }
 }
 

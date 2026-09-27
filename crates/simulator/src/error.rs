@@ -70,6 +70,11 @@ pub enum Error {
     Frame { reason: String },
     /// The request needs something this transport or host cannot do.
     Unsupported { what: String },
+    /// The input transport could not be opened or went away.
+    InputUnavailable {
+        transport: crate::model::TransportKind,
+        reason: String,
+    },
 }
 
 impl Error {
@@ -87,6 +92,7 @@ impl Error {
             Error::InvalidArgument(_) => "invalid_argument",
             Error::Frame { .. } => "frame_failed",
             Error::Unsupported { .. } => "unsupported",
+            Error::InputUnavailable { .. } => "input_unavailable",
         }
     }
 }
@@ -116,6 +122,12 @@ impl fmt::Display for Error {
             Error::InvalidArgument(reason) => f.write_str(reason),
             Error::Frame { reason } => write!(f, "frame capture failed: {reason}"),
             Error::Unsupported { what } => write!(f, "{what} is not supported"),
+            Error::InputUnavailable { transport, reason } => {
+                write!(
+                    f,
+                    "the {transport} input transport is unavailable: {reason}"
+                )
+            }
         }
     }
 }

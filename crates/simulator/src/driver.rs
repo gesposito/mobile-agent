@@ -12,7 +12,7 @@ use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
     BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, Key, LaunchOptions, Launched,
-    Point, Screenshot, ScreenshotOptions, Swipe,
+    Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
 };
 
 /// Lists Simulators and drives their lifecycle (simulator-driver spec,
@@ -38,6 +38,9 @@ pub trait Lifecycle {
 
     /// Terminates the application; one that is not running is left alone.
     fn terminate(&self, target: &str, bundle_id: &str) -> Result<()>;
+
+    /// The device and what the driver has open on it.
+    fn status(&self, target: &str) -> Result<TargetStatus>;
 }
 
 /// Frames from the display surface and screenshots on demand (simulator-driver

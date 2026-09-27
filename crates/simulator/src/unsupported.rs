@@ -11,7 +11,7 @@ use crate::frames::FrameStream;
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceTypeInfo, Dispatch, DriverOptions, FrameOptions, Gesture,
     Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
-    ScreenshotOptions, Swipe,
+    ScreenshotOptions, Swipe, TargetStatus,
 };
 
 /// Drives iOS Simulators; available on macOS only.
@@ -81,6 +81,10 @@ impl Lifecycle for SimulatorDriver {
     }
 
     fn terminate(&self, _target: &str, _bundle_id: &str) -> Result<()> {
+        match *self {}
+    }
+
+    fn status(&self, _target: &str) -> Result<TargetStatus> {
         match *self {}
     }
 }

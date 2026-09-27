@@ -343,6 +343,35 @@ pub struct Key {
     pub modifiers: Modifiers,
 }
 
+impl Key {
+    /// A usage with no modifiers.
+    pub fn usage(usage: u32) -> Key {
+        Key {
+            usage,
+            modifiers: Modifiers::default(),
+        }
+    }
+
+    /// The key that types `character` on a US layout, with Shift when it
+    /// needs it; `None` for a character no key types.
+    pub fn character(character: char) -> Option<Key> {
+        let (usage, shift) = crate::keymap::usage_for(character)?;
+        Some(Key {
+            usage,
+            modifiers: Modifiers {
+                shift,
+                ..Modifiers::default()
+            },
+        })
+    }
+
+    /// A key that types nothing: return, escape, delete, tab, space, up,
+    /// down, left, right or home.
+    pub fn named(name: &str) -> Option<Key> {
+        crate::keymap::usage_for_name(name).map(Key::usage)
+    }
+}
+
 /// The input transports (design D6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransportKind {
@@ -390,4 +419,24 @@ pub enum TransportChoice {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DriverOptions {
     pub transport: TransportChoice,
+}
+
+/// The input session of a device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InputStatus {
+    pub transport: TransportKind,
+    /// How long the transport took to answer its activation probe; `None`
+    /// until it has, and for a transport without one.
+    pub activation: Option<Duration>,
+    /// Connections opened to the device: one, unless the peer went away and
+    /// the session reconnected.
+    pub connections: u32,
+}
+
+/// What the driver knows about one device.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetStatus {
+    pub device: DeviceInfo,
+    /// The input session, once input was sent to the device.
+    pub input: Option<InputStatus>,
 }

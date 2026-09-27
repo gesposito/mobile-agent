@@ -13,7 +13,9 @@
 mod driver;
 mod error;
 mod frames;
+mod gate;
 mod gesture;
+mod keymap;
 mod lookup;
 mod model;
 mod pipeline;
@@ -29,9 +31,9 @@ pub use error::{Error, Failure, Result};
 pub use frames::FrameStream;
 pub use model::{
     BootReport, Button, DeviceInfo, DeviceState, DeviceTypeInfo, Dispatch, DriverOptions, Edge,
-    Frame, FrameOptions, FrameStats, Gesture, ImageFormat, Key, LaunchOptions, Launched, Modifiers,
-    Point, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TransportChoice,
-    TransportKind,
+    Frame, FrameOptions, FrameStats, Gesture, ImageFormat, InputStatus, Key, LaunchOptions,
+    Launched, Modifiers, Point, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
+    Swipe, TargetStatus, TransportChoice, TransportKind,
 };
 
 #[cfg(target_os = "macos")]
