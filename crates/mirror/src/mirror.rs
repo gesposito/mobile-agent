@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 use protocol::message::TextMethod;
 use protocol::snapshot::{NodeFlags, Truncation, WindowFlags, WindowType};
 
-use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner, ReadRequest};
+use crate::backend::{Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadRequest};
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
-use crate::frame::{FrameImage, FrameRequest};
+use crate::frame::{self, FrameImage, FrameRequest, TreeSkew};
 use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
 use crate::render::{self, Line};
@@ -721,8 +721,38 @@ impl Mirror {
 
     /// The latest frame, encoded no larger than the requested long edge,
     /// upright, with its timestamp and age.
-    pub fn frame(&mut self, _request: &FrameRequest) -> Result<FrameImage, MirrorError> {
-        todo!("task 7.8")
+    ///
+    /// The mirror picks the size and quality; the frame source encodes. The
+    /// capture's age counts from now, its skew from the last tree read.
+    pub fn frame(&mut self, request: &FrameRequest) -> Result<FrameImage, MirrorError> {
+        self.drain();
+        let frames = self.backend.frames.as_mut().ok_or(MirrorError::NoFrame)?;
+        let latest = frames.latest().ok_or(MirrorError::NoFrame)?;
+        let (width, height) = frame::fit(
+            latest.width,
+            latest.height,
+            latest.rotation,
+            request.max_dimension(),
+        );
+        let quality = request.quality();
+        let data = frames.encode(&EncodeRequest {
+            seq: latest.seq,
+            width,
+            height,
+            quality,
+            rotation: latest.rotation,
+        })?;
+        let now = self.now();
+        Ok(FrameImage {
+            seq: latest.seq,
+            data,
+            width,
+            height,
+            quality,
+            captured_at: latest.at,
+            age: now.saturating_duration_since(latest.at),
+            tree_skew: TreeSkew::between(latest.at, self.replica.updated_at),
+        })
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

@@ -5,6 +5,8 @@
 
 use std::time::{Duration, Instant};
 
+use protocol::message::Rotation;
+
 /// The long edge a frame is scaled to when the request names none, the
 /// dimension spike S2 measured the encoders at.
 pub const DEFAULT_MAX_DIMENSION: u32 = 1000;
@@ -49,4 +51,50 @@ pub enum TreeSkew {
     FrameOlder(Duration),
     /// The tree has not been read yet.
     NoTree,
+}
+
+impl TreeSkew {
+    /// A frame captured at `frame` against a tree last read at `tree`.
+    pub(crate) fn between(frame: Instant, tree: Option<Instant>) -> TreeSkew {
+        match tree {
+            None => TreeSkew::NoTree,
+            Some(tree) if frame >= tree => TreeSkew::FrameNewer(frame - tree),
+            Some(tree) => TreeSkew::FrameOlder(tree - frame),
+        }
+    }
+}
+
+/// The upright size of a `width` by `height` capture rotated by
+/// `rotation`, scaled so its long edge is at most `max`, never enlarged.
+pub(crate) fn fit(width: u32, height: u32, rotation: Rotation, max: u32) -> (u32, u32) {
+    let (w, h) = if matches!(rotation, Rotation::R90 | Rotation::R270) {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    let long = w.max(h);
+    if long <= max || long == 0 {
+        return (w.max(1), h.max(1));
+    }
+    let scale = |edge: u32| {
+        let scaled = (f64::from(edge) * f64::from(max) / f64::from(long)).round();
+        (scaled as u32).clamp(1, max)
+    };
+    if w >= h {
+        (max, scale(h))
+    } else {
+        (scale(w), max)
+    }
+}
+
+impl FrameRequest {
+    /// The long edge to fit, at least one pixel.
+    pub(crate) fn max_dimension(&self) -> u32 {
+        self.max_dimension.unwrap_or(DEFAULT_MAX_DIMENSION).max(1)
+    }
+
+    /// The JPEG quality, clamped to 1 to 100.
+    pub(crate) fn quality(&self) -> u8 {
+        self.quality.unwrap_or(DEFAULT_QUALITY).clamp(1, 100)
+    }
 }
