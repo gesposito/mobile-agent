@@ -21,6 +21,7 @@ mod refs;
 mod render;
 mod replica;
 mod roles;
+mod settle;
 mod snapshot;
 pub mod testing;
 mod verdict;
@@ -33,6 +34,9 @@ pub use mirror::{
     MirrorConfig, Target,
 };
 pub use refs::Ref;
+pub use settle::{
+    DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Settle, SettleOptions, Signal, Signals,
+};
 pub use snapshot::{
     Direction, Element, ElementId, HintSource, RefreshMode, Role, ScrollHint, Snapshot,
     SnapshotOptions, TreeDelta, WindowSource, WindowSummary,

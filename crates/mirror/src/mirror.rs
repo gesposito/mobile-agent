@@ -12,6 +12,7 @@ use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
 use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
+use crate::settle::{Settle, SettleOptions};
 use crate::snapshot::{
     Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
     WindowSummary,
@@ -403,6 +404,12 @@ impl Mirror {
             at,
             method: ack.method,
         })
+    }
+
+    /// Waits until neither the tree nor the frames have changed for the
+    /// quiet window, or until the maximum passes.
+    pub fn settle(&mut self, _options: &SettleOptions) -> Result<Settle, MirrorError> {
+        todo!("task 7.4")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.
