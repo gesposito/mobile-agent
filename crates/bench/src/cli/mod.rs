@@ -269,10 +269,11 @@ impl CliAdapter {
         Ok(wall(elapsed, None, None))
     }
 
-    /// Stops the daemon, then times the `open` of `app` that starts another,
-    /// attaches the target and brings the app up.
-    fn cold_attach(&self, target: &Target, app: &str) -> Result<Sample, AdapterError> {
-        self.stop_daemon()?;
+    /// Stops the daemon and waits until it has let go of its targets, then
+    /// times the `open` of `app` that starts another, attaches the target
+    /// and brings the app up.
+    fn cold_attach(&mut self, target: &Target, app: &str) -> Result<Sample, AdapterError> {
+        self.let_go(target)?;
         let reply = self.call(target, &["open", "--", app])?;
         let detail = match (
             reply.data["settled"].as_bool(),
@@ -301,6 +302,35 @@ impl CliAdapter {
         Err(AdapterError::new(format!(
             "a daemon still answered after {SHUTDOWNS} shutdowns"
         )))
+    }
+
+    /// Reads `status`, stops the daemon, and waits until it has let go of its
+    /// targets: the daemon answers `shutdown` and stops taking connections
+    /// before it detaches them, which stops an Android target's agent, and
+    /// removes its socket once it has, so the wait is for the socket `status`
+    /// named to go (task 8.16). The `status` also keeps what the daemon says
+    /// about `target`; it starts a daemon when none serves, which the shutdown
+    /// then stops. Returns whether a daemon was stopped.
+    fn let_go(&mut self, target: &Target) -> Result<bool, AdapterError> {
+        let socket = self.observe(target);
+        if !self.stop_daemon()? {
+            return Ok(false);
+        }
+        if let Some(socket) = socket {
+            let stopped = Instant::now();
+            while socket.exists() {
+                if stopped.elapsed() >= RELEASE_WAIT {
+                    return Err(AdapterError::new(format!(
+                        "{} was still there {} ms after the daemon's shutdown: the daemon had \
+                         not let go of its targets",
+                        socket.display(),
+                        RELEASE_WAIT.as_millis()
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        Ok(true)
     }
 
     /// Reads `status`, keeps what it says about `target` when the daemon has
@@ -694,7 +724,10 @@ impl Adapter for CliAdapter {
     ) -> Result<Sample, AdapterError> {
         match primitive {
             Primitive::CliStart => self.process_start(),
-            Primitive::ColdAttach => self.cold_attach(target, app(target, scenario)?),
+            Primitive::ColdAttach => {
+                let app = app(target, scenario)?;
+                self.cold_attach(target, app)
+            }
             Primitive::FirstSnapshot => {
                 self.first_snapshot(target, app(target, scenario)?, screen(scenario)?)
             }
@@ -748,31 +781,16 @@ impl Adapter for CliAdapter {
 
     /// Stops the daemon, whose agent holds an Android target's UI automation
     /// until the daemon exits, and waits until the daemon has let go of its
-    /// targets. The daemon answers `shutdown` and stops taking connections
-    /// before it detaches its targets, and removes its socket once it has,
-    /// so the wait is for the socket `status` named to go. The `status`,
-    /// read first, also keeps what the daemon says about `target`; it starts
-    /// a daemon when none serves, which the shutdown then stops.
+    /// targets.
     fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
-        let socket = self.observe(target);
-        if !self.stop_daemon()? {
-            return Ok(Some("no daemon ran".to_owned()));
-        }
-        if let Some(socket) = socket {
-            let stopped = Instant::now();
-            while socket.exists() {
-                if stopped.elapsed() >= RELEASE_WAIT {
-                    return Err(AdapterError::new(format!(
-                        "{} was still there {} ms after the daemon's shutdown: the daemon had \
-                         not let go of its targets",
-                        socket.display(),
-                        RELEASE_WAIT.as_millis()
-                    )));
-                }
-                std::thread::sleep(Duration::from_millis(10));
+        Ok(Some(
+            if self.let_go(target)? {
+                "stopped the daemon"
+            } else {
+                "no daemon ran"
             }
-        }
-        Ok(Some("stopped the daemon".to_owned()))
+            .to_owned(),
+        ))
     }
 
     /// Whether the emulator's controller answered and whether the target gave
