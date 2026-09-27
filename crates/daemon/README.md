@@ -373,12 +373,13 @@ traits:
   for an editable node to take the focus and, unless keys were asked for
   (`type`), selects what the field holds with Command-A so the text
   replaces it; a paste reports the method `direct`, typing `keys`. The
-  input session starts during `open` (`InputSession`): typing nothing opens
-  it, which sends dtuhidd its activation probe without a key event, and
-  `open` lets it activate, at most 2 s from its start, so the first click
-  does not wait for dtuhidd (Bluesky's first click took 957 ms to dispatch
-  while it activated). That click is still noted as the session's first,
-  with no activation wait, so its watch waits longer for its effects.
+  input session starts during `open` (`InputSession`): the driver's
+  `open_input` opens it without any input, which sends dtuhidd its
+  activation probe, and `open` lets it activate, at most 2 s from its
+  start, so the first click does not wait for dtuhidd (Bluesky's first
+  click took 957 ms to dispatch while it activated). That click is still
+  noted as the session's first, with no activation wait, so its watch
+  waits longer for its effects.
 - apps: launched with the launch environment (`--env K=V` reaches the app
   as `K`, as `SIMCTL_CHILD_K` does through `simctl`), a running app brought
   to the front unless `--relaunch`; `app_not_found` when `simctl` finds no

@@ -489,8 +489,9 @@ fn find(root: &Node, wanted: impl Fn(&Node) -> bool) -> Option<&Node> {
 }
 
 /// The Simulator's input session, which the driver opens on the first
-/// input and dtuhidd activates a while later (9 ms once dtuhidd runs, 270 to
-/// 330 ms for the first session of a boot, spike S3).
+/// input or ahead of it (`open_input`) and dtuhidd activates a while later
+/// (9 ms once dtuhidd runs, 270 to 330 ms for the first session of a boot,
+/// spike S3).
 struct Session {
     driver: Arc<SimulatorDriver>,
     udid: String,
@@ -498,15 +499,15 @@ struct Session {
 }
 
 impl InputSession for Session {
-    /// Typing nothing opens the session, which sends dtuhidd its
-    /// activation probe, without a key event.
+    /// Opens the session without any input, which sends dtuhidd its
+    /// activation probe, and returns without waiting for the reply.
     fn start(&mut self) -> Result<(), DriverError> {
         let status = self.driver.status(&self.udid).map_err(|e| error(&e))?;
         if status.input.is_some() {
             return Ok(());
         }
         self.driver
-            .type_text(&self.udid, "", TextMethod::Keyboard)
+            .open_input(&self.udid, Duration::ZERO)
             .map_err(|e| error(&e))?;
         self.shared.started_ahead.store(true, Ordering::SeqCst);
         Ok(())
