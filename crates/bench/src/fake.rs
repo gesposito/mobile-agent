@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
+use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
 use crate::harness::{Series, Subject};
@@ -53,6 +54,9 @@ pub struct FakeSeries {
     pub nodes: Option<u32>,
     #[serde(default = "tool_clock")]
     pub clock: Clock,
+    /// The end state a flow series reports; the flow's golden when absent.
+    #[serde(default)]
+    pub end_state: Option<EndState>,
 }
 
 impl FakeSeries {
@@ -73,6 +77,7 @@ impl FakeSeries {
             fail: Vec::new(),
             nodes: None,
             clock: Clock::Tool,
+            end_state: None,
         }
     }
 }

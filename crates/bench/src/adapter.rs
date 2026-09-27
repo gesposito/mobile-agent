@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
 use crate::harness::Subject;
@@ -153,5 +154,23 @@ pub trait Adapter {
             self.name(),
             flow.name
         )))
+    }
+
+    /// The screen `target` shows after a run of `flow`, read through the tool
+    /// and summarized in the terms of the flow's golden.
+    fn end_state(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        let _ = target;
+        Err(AdapterError::new(format!(
+            "{} does not read the end state of flows such as {}",
+            self.name(),
+            flow.name
+        )))
+    }
+
+    /// One untimed run of `flow` and the end state it left. The harness calls
+    /// it before timing a flow that has a golden.
+    fn check_flow(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        self.run_flow(target, flow)?;
+        self.end_state(target, flow)
     }
 }

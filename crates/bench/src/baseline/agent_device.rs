@@ -15,6 +15,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
+use crate::end_state::Reading;
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::{Platform, Target};
 
@@ -155,6 +156,18 @@ pub fn outcome(stdout: &str) -> Result<Option<String>, String> {
     })
 }
 
+/// Arguments for `agent-device snapshot` of the session's screen, as JSON.
+pub fn snapshot_args(target: &Target, session: &str) -> Vec<OsString> {
+    let _ = (target, session);
+    Vec::new()
+}
+
+/// Reads the reply `agent-device snapshot --json` prints.
+pub fn read_snapshot(stdout: &str) -> Result<Reading, String> {
+    let _ = stdout;
+    Err("not written yet".to_owned())
+}
+
 /// The JSON object on stdout: all of it, or else its last line that is one.
 fn reply(stdout: &str) -> Option<Value> {
     let object = |text: &str| {
@@ -292,6 +305,94 @@ mod tests {
             outcome(r#"{"success": false, "error": "daemon unavailable"}"#),
             Err("daemon unavailable".into())
         );
+    }
+
+    #[test]
+    fn a_snapshot_names_the_session_s_target() {
+        let strings = |args: Vec<OsString>| -> Vec<String> {
+            args.into_iter().map(|a| a.into_string().unwrap()).collect()
+        };
+        assert_eq!(
+            strings(snapshot_args(
+                &Target::new("emulator-5554", TargetClass::AndroidEmulator),
+                "mobile-agent-bench"
+            )),
+            [
+                "snapshot",
+                "--json",
+                "--platform",
+                "android",
+                "--serial",
+                "emulator-5554",
+                "--session",
+                "mobile-agent-bench"
+            ]
+        );
+        let ios = strings(snapshot_args(
+            &Target::new("SIM-1", TargetClass::Simulator),
+            "s",
+        ));
+        assert_eq!(&ios[2..6], ["--platform", "ios", "--udid", "SIM-1"]);
+    }
+
+    #[test]
+    fn a_snapshot_gives_identifiers_values_or_labels_and_its_node_count() {
+        let reply = r#"Starting daemon...
+{
+  "success": true,
+  "data": {
+    "nodes": [
+      {"index": 0, "type": "Application", "label": "FixtureExpo", "depth": 0, "ref": "e1"},
+      {"index": 1, "type": "Other", "depth": 1, "parentIndex": 0, "ref": "e2"},
+      {"index": 2, "type": "StaticText", "label": "Welcome, agent", "identifier": "login-status", "depth": 2, "parentIndex": 1, "ref": "e3"},
+      {"index": 3, "type": "TextField", "label": "Username", "value": "agent", "identifier": "login-username", "depth": 2, "parentIndex": 1, "ref": "e4"},
+      {"index": 4, "type": "Button", "label": "A label twenty-four long", "identifier": "an-identifier-this-long-too", "depth": 2, "parentIndex": 1, "ref": "e5"},
+      {"index": 5, "type": "StaticText", "inheritsLabel": true, "inheritsIdentifier": true, "depth": 3, "parentIndex": 4, "ref": "e6"}
+    ],
+    "truncated": false,
+    "appName": "FixtureExpo"
+  }
+}"#;
+        let element =
+            |id: Option<&str>, text: Option<&str>| crate::end_state::Element::new(id, text);
+        assert_eq!(
+            read_snapshot(reply),
+            Ok(Reading {
+                elements: vec![
+                    element(None, Some("FixtureExpo")),
+                    element(None, None),
+                    element(Some("login-status"), Some("Welcome, agent")),
+                    element(Some("login-username"), Some("agent")),
+                    element(
+                        Some("an-identifier-this-long-too"),
+                        Some("A label twenty-four long")
+                    ),
+                    element(
+                        Some("an-identifier-this-long-too"),
+                        Some("A label twenty-four long")
+                    ),
+                ],
+                nodes: 6,
+            })
+        );
+    }
+
+    #[test]
+    fn a_failed_snapshot_is_an_error_with_its_code() {
+        assert_eq!(
+            read_snapshot(
+                r#"{"success": false, "error": {"code": "SESSION_NOT_FOUND", "message": "no session mobile-agent-bench"}}"#
+            ),
+            Err("SESSION_NOT_FOUND: no session mobile-agent-bench".into())
+        );
+        let error = read_snapshot(r#"{"success": true, "data": {}}"#).unwrap_err();
+        assert!(error.contains("nodes"), "{error}");
+        let error = read_snapshot(
+            "daemon unavailable
+",
+        )
+        .unwrap_err();
+        assert!(error.contains("no JSON reply"), "{error}");
     }
 
     #[test]

@@ -343,6 +343,7 @@ fn measure(
         nodes,
         error,
         not_measured,
+        end_state: None,
         samples,
     }
 }

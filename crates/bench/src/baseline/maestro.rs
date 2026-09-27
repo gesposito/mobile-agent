@@ -12,6 +12,7 @@
 use std::ffi::OsString;
 use std::path::Path;
 
+use crate::end_state::Reading;
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::Target;
 
@@ -112,9 +113,35 @@ pub fn runner_args(target: &Target, file: &Path) -> Vec<OsString> {
     ]
 }
 
+/// Arguments for `maestro hierarchy`, which prints the screen's view
+/// hierarchy.
+pub fn maestro_hierarchy_args(target: &Target) -> Vec<OsString> {
+    let _ = target;
+    Vec::new()
+}
+
+/// Arguments for `maestro-runner hierarchy`.
+pub fn runner_hierarchy_args(target: &Target) -> Vec<OsString> {
+    let _ = target;
+    Vec::new()
+}
+
+/// Reads what `maestro hierarchy` prints.
+pub fn read_hierarchy(stdout: &str) -> Result<Reading, String> {
+    let _ = stdout;
+    Err("not written yet".to_owned())
+}
+
+/// Reads what `maestro-runner hierarchy` prints.
+pub fn read_runner_hierarchy(stdout: &str) -> Result<Reading, String> {
+    let _ = stdout;
+    Err("not written yet".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::end_state::Element;
     use crate::fixture::Fixture;
     use crate::flow::{Direction, Selector, Step};
     use crate::target::TargetClass;
@@ -206,6 +233,114 @@ mod tests {
         let yaml = flow_yaml(&flow, "dev.mobileagent.fixture.expo");
         assert!(yaml.contains(r#"    text: "Row 1\\.5""#), "{yaml}");
         assert!(yaml.contains(r#"- inputText: "a.b \"c\"""#), "{yaml}");
+    }
+
+    fn element(id: Option<&str>, text: Option<&str>) -> Element {
+        Element::new(id, text)
+    }
+
+    #[test]
+    fn hierarchy_reads_name_the_device_and_maestro_runner_the_platform_too() {
+        let strings = |args: Vec<OsString>| -> Vec<String> {
+            args.into_iter().map(|a| a.into_string().unwrap()).collect()
+        };
+        let emulator = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        let sim = Target::new("SIM-1", TargetClass::Simulator);
+        assert_eq!(
+            strings(maestro_hierarchy_args(&emulator)),
+            ["--device", "emulator-5554", "hierarchy"]
+        );
+        assert_eq!(
+            strings(runner_hierarchy_args(&sim)),
+            ["--platform", "ios", "--device", "SIM-1", "hierarchy"]
+        );
+    }
+
+    #[test]
+    fn maestro_s_android_hierarchy_gives_resource_ids_texts_and_its_node_count() {
+        let hierarchy = r#"{
+  "attributes" : { },
+  "children" : [ {
+    "attributes" : { "text" : "", "resource-id" : "", "bounds" : "[0,0][1080,2400]", "class" : "android.widget.FrameLayout" },
+    "children" : [ {
+      "attributes" : { "text" : "Welcome, agent", "resource-id" : "login-status", "bounds" : "[42,735][1038,798]", "class" : "android.widget.TextView" },
+      "children" : [ ],
+      "clickable" : false,
+      "enabled" : true
+    }, {
+      "attributes" : { "accessibilityText" : "Sign in", "resource-id" : "dev.mobileagent.fixture.compose:id/login-submit", "class" : "android.view.View" },
+      "clickable" : true
+    } ]
+  } ]
+}"#;
+        assert_eq!(
+            read_hierarchy(hierarchy),
+            Ok(Reading {
+                elements: vec![
+                    element(None, None),
+                    element(None, None),
+                    element(Some("login-status"), Some("Welcome, agent")),
+                    element(Some("login-submit"), Some("Sign in")),
+                ],
+                nodes: 4,
+            })
+        );
+    }
+
+    #[test]
+    fn maestro_s_ios_hierarchy_gives_labels_where_the_text_is_empty() {
+        let hierarchy = r#"Running on SIM-1
+{
+  "attributes" : { "accessibilityText" : "FixtureExpo", "title" : "", "value" : "", "text" : "", "hintText" : "", "resource-id" : "" },
+  "children" : [ {
+    "attributes" : { "accessibilityText" : "Welcome, agent", "title" : "", "value" : "", "text" : "", "hintText" : "", "resource-id" : "login-status" }
+  }, {
+    "attributes" : { "accessibilityText" : "Username", "title" : "", "value" : "agent", "text" : "agent", "hintText" : "Username", "resource-id" : "login-username" }
+  } ]
+}"#;
+        assert_eq!(
+            read_hierarchy(hierarchy),
+            Ok(Reading {
+                elements: vec![
+                    element(None, Some("FixtureExpo")),
+                    element(Some("login-status"), Some("Welcome, agent")),
+                    element(Some("login-username"), Some("agent")),
+                ],
+                nodes: 3,
+            })
+        );
+        let error = read_hierarchy("Error: no device connected\n").unwrap_err();
+        assert!(error.contains("no device connected"), "{error}");
+    }
+
+    #[test]
+    fn maestro_runner_s_hierarchy_gives_its_normalized_ids_and_texts() {
+        let hierarchy = r#"{
+  "type": "Root",
+  "children": [
+    {
+      "type": "FrameLayout",
+      "bounds": {"x": 0, "y": 0, "width": 1080, "height": 2400},
+      "children": [
+        {"type": "TextView", "id": "login-status", "text": "Welcome, agent", "bounds": {"x": 42, "y": 735, "width": 996, "height": 63}},
+        {"type": "View", "id": "dev.mobileagent.fixture.compose:id/login-submit", "text": "Sign in", "enabled": false}
+      ]
+    }
+  ]
+}"#;
+        assert_eq!(
+            read_runner_hierarchy(hierarchy),
+            Ok(Reading {
+                elements: vec![
+                    element(None, None),
+                    element(None, None),
+                    element(Some("login-status"), Some("Welcome, agent")),
+                    element(Some("login-submit"), Some("Sign in")),
+                ],
+                nodes: 4,
+            })
+        );
+        assert!(read_runner_hierarchy("(no elements)").is_err());
     }
 
     #[test]

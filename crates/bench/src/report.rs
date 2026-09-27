@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::Clock;
+use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::gates::GateReport;
 use crate::harness::Subject;
@@ -58,6 +59,10 @@ pub struct Measurement {
     /// then has no samples and is neither failed nor gated.
     #[serde(default)]
     pub not_measured: Option<String>,
+    /// For a flow with a golden, the end state the tool's check run read: the
+    /// golden when it matched, which it must before the flow is timed.
+    #[serde(default)]
+    pub end_state: Option<EndState>,
     /// Every iteration in order, warm-up included and flagged.
     pub samples: Vec<SampleRecord>,
 }
