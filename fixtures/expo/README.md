@@ -4,7 +4,7 @@ React Native reference app for the benchmark harness and the spikes. It uses Exp
 
 - Bundle identifier: `dev.mobileagent.fixture.expo` (Android package too)
 - App name: `FixtureExpo`, URL scheme `fixtureexpo`
-- Runtime dependencies: `expo`, `expo-location`, `react`, `react-native`. No navigation library: the tab bar is five Pressables, only the selected screen is mounted, and screen state lives in the root component.
+- Runtime dependencies: `expo`, `expo-location`, `react`, `react-native` and `react-native-safe-area-context`, which supplies the system insets; see Safe area and orientation. No navigation library: the tab bar is five Pressables, only the selected screen is mounted, and screen state lives in the root component.
 - Content is fixed: nothing is random and nothing touches the network.
 
 ## Build (iOS Simulator)
@@ -146,6 +146,30 @@ Only the selected tab's screen is mounted, so the other tabs' content is not in 
 
 The Big tab has no state to keep.
 
+## Safe area and orientation
+
+The root component wraps the screens and the tab bar in a `SafeAreaView` from `react-native-safe-area-context`, inside that library's `SafeAreaProvider`. The view pads its content by the system insets on every edge:
+
+- **iOS:** the window's safe area, which in portrait is the status bar and the home indicator: the same insets React Native's own `SafeAreaView` applies.
+- **Android:** Expo draws edge to edge (`edgeToEdgeEnabled=true` in the generated `android/gradle.properties`), and React Native's own `SafeAreaView` is a plain View there. The library reads the status bar, navigation bar, display cutout and caption bar insets from the window and pads by them. The measured insets and bounds are under Android below.
+
+The provider gets `initialMetrics={initialWindowMetrics}`, the insets the native module reads at startup. Without them it renders nothing until its first native insets event.
+
+The dependency is `react-native-safe-area-context@~5.7.0`, the range Expo SDK 57 lists for it in `expo/bundledNativeModules.json`, added with `sfw bun add`. It is a native module: autolinking adds its pod on iOS and its Gradle project on Android, both built from `node_modules`.
+
+`app.json` sets `"orientation": "default"`, so the app follows the device. Prebuild writes `android:screenOrientation="unspecified"` on `MainActivity` and lists all four orientations under `UISupportedInterfaceOrientations` in `Info.plist`. Expo's template declares `orientation` and `screenSize` in the activity's `android:configChanges`, so a rotation keeps the process, and the app stays on the selected tab. The Big tab switches to 25 columns in landscape; see the 500-element contract.
+
+To rotate an Android emulator from a shell, note both settings, then turn auto-rotate off and set the rotation:
+
+```sh
+adb shell settings get system accelerometer_rotation
+adb shell settings get system user_rotation
+adb shell settings put system accelerometer_rotation 0   # auto-rotate off
+adb shell settings put system user_rotation 1            # 90 degrees
+```
+
+Restore both afterwards, `accelerometer_rotation` first. On the API 36 emulator, restoring `user_rotation` first, while auto-rotate was still off, left auto-rotate off although it was set back to on straight after. When the display returns to portrait while rotation is locked, SystemUI locks it at portrait again (`RotationButtonController#onRotationWatcherChanged` in the rotation lock history of `adb shell dumpsys window displays`), and that write came after the restored value.
+
 ## 500-element contract
 
 On the Big tab:
@@ -153,13 +177,13 @@ On the Big tab:
 - Exactly 500 accessibility elements carry the identifiers `cell-1` to `cell-500`. Each has role button (the Button trait on iOS) and the label `Cell <n>`. On iOS the number drawn inside a cell belongs to that cell's element and is not a separate node.
 - `big-count` is a separate header text, `500 elements`, and is not one of the 500.
 - All 500 cells mount at once, in a ScrollView flex-wrap grid with no virtualization, so the count does not depend on scroll position.
-- The grid has 20 columns, and cell size follows the window width. On a 402 pt wide iPhone 17 that gives 19 pt cells in a 20 × 25 grid that fits on screen, so tools that drop off-screen nodes still see all 500. On narrower screens the ScrollView scrolls, and all 500 stay mounted.
+- The grid is 20 columns by 25 rows while its ScrollView is taller than it is wide, and 25 columns by 20 rows while it is wider, as in landscape. Cells take the largest whole size at which the whole grid fits in the ScrollView, whose size `onLayout` reports, so the grid is on screen in either orientation and tools that drop off-screen nodes still see all 500. On a 402 pt wide iPhone 17 in portrait that gives 19 pt cells. Until the first `onLayout`, the window's size stands in, which gives the same cells in portrait; in landscape the cells shrink to fit once `onLayout` arrives.
 - The tab bar adds five more buttons (`tab-*`). A snapshot filtered to buttons therefore returns 505 on this tab, and one filtered to the `cell-` prefix returns 500.
-- **Android:** on an API 36 emulator (1080 × 2400, 420 dpi), `adb shell uiautomator dump` of the Big tab has exactly 500 `resource-id="cell-` matches: `cell-1` to `cell-500`, each a clickable `android.widget.Button` with content-desc `Cell <n>`. The grid fits the screen as 50 px (19 dp) cells, so the dump loses none.
+- **Android:** on an API 36 emulator (1080 × 2400, 420 dpi), `adb shell uiautomator dump` of the Big tab has exactly 500 `resource-id="cell-` matches: `cell-1` to `cell-500`, each a clickable `android.widget.Button` with content-desc `Cell <n>`. The grid fits the screen as 50 px (19 dp) cells, so the dump loses none. Rotated to landscape (2400 × 1080), the grid is 25 × 20 with 29 px (11 dp) cells, and the dump again has all 500. There the ScrollView is 672 px, or 256 dp, tall: exactly what 12 dp cells need with the padding. The height `onLayout` reports is a fraction below 256 dp, so the cells are 11 dp.
 
-  That matters, because the dump leaves out nodes outside the screen. A dump of the List tab lists only the 18 rows on screen, `row-1` to `row-18`, although at least 20 are mounted.
+  That matters, because the dump leaves out nodes outside the screen. A dump of the List tab lists only the rows on screen, `row-1` to `row-17` in portrait and `row-1` to `row-7` in landscape, although at least 20 are mounted.
 
-  Unlike iOS, the dump also lists each cell's number as a child `android.widget.TextView` with no id. The Big tab's dump therefore holds 1021 nodes, including 505 Buttons (cells and tabs) and 505 TextViews.
+  Unlike iOS, the dump also lists each cell's number as a child `android.widget.TextView` with no id. The Big tab's dump therefore holds 1022 nodes in either orientation, including 505 Buttons (cells and tabs) and 505 TextViews.
 
 ## Package installs and Socket Firewall
 
@@ -191,11 +215,24 @@ Verified on an API 36 arm64 emulator (`sdk_gphone64_arm64`, 1080 × 2400, 420 dp
 
 - The release APK installs with `adb install -r`.
 - `--es initial_tab big` opens the Big tab.
-- `uiautomator dump` finds all 500 cells; see the 500-element contract.
+- `uiautomator dump` finds all 500 cells in portrait and in landscape; see the 500-element contract.
+- In portrait on every tab, and in landscape on every tab but Anim, the centre of every contract element in the dump lies in the area the system bars leave free. Tapping the centres of `row-1` and then `detail-back` opens and closes the detail view. The Anim tab was checked with the spinner stopped, because `uiautomator dump` waits for a second without accessibility events, which the running spinner never allows.
+- Rotating the emulator rotates the app, and the process and the selected tab survive the rotation.
 
-Known issue: the fixture targets SDK 36, and Expo enables edge-to-edge (`edgeToEdgeEnabled=true` in the generated `android/gradle.properties`). React Native's built-in `SafeAreaView` is a plain View on Android, so content starts under the status bar and the tab bar extends under the navigation bar:
+The system bars on that emulator, from `adb shell dumpsys window` with gesture navigation:
 
-- The `big-count` header's bounds start at y = 0, and its text overlaps the status bar clock.
-- The tab labels sit under the gesture handle.
+| Orientation | Status bar | Navigation bar | Display cutout | Free area |
+|---|---|---|---|---|
+| Portrait | top 132 px | bottom 63 px, from y = 2337 | top 132 px | y from 132 to 2337 |
+| Landscape (`user_rotation` 1) | top 74 px | bottom 63 px, from y = 1017 | left 132 px | x from 132, y from 74 to 1017 |
 
-Every element is still on screen and in the accessibility tree. Fixing the layout needs inset values that core React Native does not expose. `react-native-safe-area-context` provides them, but it would be a new dependency.
+Bounds from `uiautomator dump`:
+
+| Element | Portrait | Landscape |
+|---|---|---|
+| `row-1` | [0,132][1080,258] | [132,74][2400,200] |
+| `detail-back` | [63,195][247,311] | [195,137][379,253] |
+| `tab-login` | [0,2191][216,2337] | [132,871][586,1017] |
+| `big-count` | [0,132][1080,256] | [132,74][2400,198] |
+
+The tab bar ends where the navigation bar starts. Its centres, at y = 2264 in portrait and y = 944 in landscape, therefore also clear the 84 px band at the bottom where the system always takes swipes (`mandatorySystemGestures`, from y = 2316 and y = 996).

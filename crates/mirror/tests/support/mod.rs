@@ -15,9 +15,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mirror::backend::{
-    Axis, BackendInfo, ItemRange, Owner, ScrollInfo, StreamItem, TreeRead, WindowMeta,
-};
+use mirror::backend::{BackendInfo, StreamItem, TreeRead};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{Mirror, MirrorConfig};
 use protocol::event::{
@@ -25,7 +23,8 @@ use protocol::event::{
     WindowChangeKind,
 };
 use protocol::snapshot::{
-    Bounds, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+    Bounds, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange,
+    ScrollUnit, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
 use serde_json::{Map, Value, json};
 
@@ -150,19 +149,6 @@ impl Screen {
                 .iter_mut()
                 .any(|w| insert_before(&mut w["root"], sibling, &nodes));
             assert!(inserted, "no node {sibling} to insert before");
-        } else if let Some(scroll) = op.get("scroll") {
-            let entries = self.0["scroll"]
-                .as_array_mut()
-                .expect("the screen has scroll entries");
-            let entry = entries
-                .iter_mut()
-                .find(|e| e["node"] == *scroll)
-                .expect("a scroll entry for the node");
-            for (key, value) in op.as_object().expect("an object") {
-                if key != "scroll" {
-                    entry[key] = value.clone();
-                }
-            }
         } else if let Some(window) = op.get("add_window") {
             let mut window = window.clone();
             if let Some(root) = window.get_mut("root") {
@@ -464,8 +450,6 @@ fn to_read(screen: &Value) -> TreeRead {
     let mut strings = Strings(Vec::new());
     let mut next_id = 1u32;
     let mut windows = Vec::new();
-    let mut metas = Vec::new();
-    let mut scroll = Vec::new();
     for w in screen["windows"].as_array().expect("windows") {
         let id = w["id"].as_u64().expect("a window id") as u32;
         let root = if w["root"].is_null() {
@@ -482,17 +466,10 @@ fn to_read(screen: &Value) -> TreeRead {
             bounds: pixels(rect(&w["bounds"]), scale),
             flags: window_flags(&w["flags"]),
             root,
+            emits_events: w["events"].as_bool(),
+            owner: w["owner"].as_str().map(|o| strings.index(o)),
+            modal: w["modal"].as_bool().unwrap_or(false),
         });
-        if w.get("events").is_some() || w.get("owner").is_some() || w.get("modal").is_some() {
-            metas.push(WindowMeta {
-                window: id,
-                emits_events: w["events"].as_bool(),
-                owner: w["owner"]
-                    .as_str()
-                    .map_or(Owner::Target, |o| Owner::System(o.to_owned())),
-                modal: w["modal"].as_bool().unwrap_or(false),
-            });
-        }
     }
     let snapshot = Snapshot {
         strings: strings.0,
@@ -501,54 +478,15 @@ fn to_read(screen: &Value) -> TreeRead {
         truncated: truncation(&screen["truncated"]),
         seq: screen["seq"].as_u64().unwrap_or(0),
     };
-    if let Some(entries) = screen["scroll"].as_array() {
-        for entry in entries {
-            let window = entry["window"].as_u64().expect("a scroll window") as u32;
-            let identifier = entry["node"].as_str().expect("a scroll node identifier");
-            let node = snapshot
-                .windows
-                .iter()
-                .find(|w| w.id == window)
-                .and_then(|w| w.root.as_ref())
-                .and_then(|root| node_id_of(root, identifier))
-                .unwrap_or_else(|| panic!("no scroll node {identifier}"));
-            let items = entry["items"].as_array().map(|i| ItemRange {
-                total: i[0].as_u64().expect("total") as u32,
-                first_visible: i[1].as_u64().expect("first") as u32,
-                last_visible: i[2].as_u64().expect("last") as u32,
-            });
-            scroll.push(ScrollInfo {
-                window,
-                node,
-                axis: if entry["axis"].as_str() == Some("horizontal") {
-                    Axis::Horizontal
-                } else {
-                    Axis::Vertical
-                },
-                items,
-                can_scroll_back: entry["back"].as_bool().unwrap_or(false),
-                can_scroll_forward: entry["forward"].as_bool().unwrap_or(false),
-            });
-        }
-    }
     let backend = &screen["backend"];
     TreeRead {
         snapshot,
-        windows: metas,
-        scroll,
         backend: BackendInfo::new(
             backend["name"].as_str().unwrap_or("fixture"),
             backend["fallback"].as_bool().unwrap_or(false),
         ),
         scale,
     }
-}
-
-fn node_id_of(node: &Node, identifier: &str) -> Option<u32> {
-    if node.res_id.as_deref() == Some(identifier) {
-        return Some(node.id);
-    }
-    node.children.iter().find_map(|c| node_id_of(c, identifier))
 }
 
 fn count_window(window: &Window) -> u32 {
@@ -596,7 +534,49 @@ fn to_node(v: &Value, scale: f64, strings: &mut Strings, next_id: &mut u32) -> N
         bounds: pixels(rect(&v["bounds"]), scale),
         flags,
         children,
+        scroll: scroll(&v["scroll"]),
     }
+}
+
+/// A node's scroll semantics: `{"axis": "vertical" | "horizontal", "back",
+/// "forward", "range": [unit, min, max], "position": [first, last]}`, unit
+/// `"items"` or `"percent"`.
+fn scroll(v: &Value) -> Option<Scroll> {
+    if v.is_null() {
+        return None;
+    }
+    let int = |v: &Value| {
+        v.as_i64()
+            .unwrap_or_else(|| panic!("{v} is not an integer")) as i32
+    };
+    let mut flags = ScrollFlags::EMPTY;
+    if v["back"].as_bool() == Some(true) {
+        flags |= ScrollFlags::BACK;
+    }
+    if v["forward"].as_bool() == Some(true) {
+        flags |= ScrollFlags::FORWARD;
+    }
+    Some(Scroll {
+        axis: match v["axis"].as_str() {
+            Some("vertical") => ScrollAxis::VERTICAL,
+            Some("horizontal") => ScrollAxis::HORIZONTAL,
+            _ => ScrollAxis::UNKNOWN,
+        },
+        flags,
+        range: v["range"].as_array().map(|r| ScrollRange {
+            unit: match r[0].as_str() {
+                Some("items") => ScrollUnit::ITEMS,
+                Some("percent") => ScrollUnit::PERCENT,
+                other => panic!("unknown scroll unit {other:?}"),
+            },
+            min: int(&r[1]),
+            max: int(&r[2]),
+        }),
+        position: v["position"].as_array().map(|p| ScrollPosition {
+            first: int(&p[0]),
+            last: int(&p[1]),
+        }),
+    })
 }
 
 fn node_flag(name: &str) -> NodeFlags {

@@ -3,9 +3,10 @@ package dev.mobileagent.agent.codec
 /**
  * Encodes and decodes the protocol's messages in the layout crates/protocol
  * uses, so both sides write the same bytes: messages, snapshots, windows,
- * nodes, parameters, results and errors are maps keyed by field index, keys
- * in ascending order, absent optional fields left out; events and bounds are
- * positional arrays; every length is definite.
+ * nodes, scroll semantics, parameters, results and errors are maps keyed by
+ * field index, keys in ascending order, absent optional fields left out;
+ * events, bounds, scroll ranges and scroll positions are positional arrays;
+ * every length is definite.
  *
  * Decoding skips unknown map keys and array elements past the ones this
  * version defines, reads null as an absent optional field, lets a repeated
@@ -203,7 +204,11 @@ object Codec {
     }
 
     private fun encodeWindow(w: Window, out: CborWriter) {
-        out.map(5 + present(w.packageIndex) + present(w.title) + present(w.root))
+        val modal = if (w.modal) 1 else 0
+        out.map(
+            5 + present(w.packageIndex) + present(w.title) + present(w.root) + present(w.emitsEvents) +
+                present(w.ownerIndex) + modal,
+        )
         out.key(0); out.uint(w.id)
         out.key(1); out.uint(w.type)
         out.key(2); out.sint(w.layer)
@@ -212,11 +217,16 @@ object Codec {
         out.key(5); encodeBounds(w.bounds, out)
         out.key(6); out.uint(w.flags)
         w.root?.let { out.key(7); encodeNode(it, out) }
+        w.emitsEvents?.let { out.key(8); out.bool(it) }
+        optUint(out, 9, w.ownerIndex)
+        if (w.modal) {
+            out.key(10); out.bool(true)
+        }
     }
 
     private fun encodeNode(n: Node, out: CborWriter) {
         val children = if (n.children.isEmpty()) 0 else 1
-        out.map(4 + present(n.resPkg) + present(n.resId) + present(n.text) + present(n.desc) + children)
+        out.map(4 + present(n.resPkg) + present(n.resId) + present(n.text) + present(n.desc) + children + present(n.scroll))
         out.key(0); out.uint(n.id)
         out.key(1); out.uint(n.cls)
         optUint(out, 2, n.resPkg)
@@ -228,6 +238,24 @@ object Codec {
         if (children != 0) {
             out.key(8); out.array(n.children.size)
             for (child in n.children) encodeNode(child, out)
+        }
+        n.scroll?.let { out.key(9); encodeScroll(it, out) }
+    }
+
+    private fun encodeScroll(s: Scroll, out: CborWriter) {
+        out.map(2 + present(s.range) + present(s.position))
+        out.key(0); out.uint(s.axis)
+        out.key(1); out.uint(s.flags)
+        s.range?.let {
+            out.key(2); out.array(3)
+            out.uint(it.unit)
+            out.sint(it.min)
+            out.sint(it.max)
+        }
+        s.position?.let {
+            out.key(3); out.array(2)
+            out.sint(it.first)
+            out.sint(it.last)
         }
     }
 
@@ -656,6 +684,9 @@ object Codec {
         var bounds: Bounds? = null
         var flags: Int? = null
         var root: Node? = null
+        var emitsEvents: Boolean? = null
+        var ownerIndex: Int? = null
+        var modal = false
         repeat(r.map()) {
             when (r.key()) {
                 0L -> id = r.uint32()
@@ -666,6 +697,9 @@ object Codec {
                 5L -> bounds = decodeBounds(r)
                 6L -> flags = r.uint32()
                 7L -> root = if (r.nextIsNull()) { r.pos++; null } else decodeNode(r, 0)
+                8L -> emitsEvents = r.optBool()
+                9L -> ownerIndex = r.optUint32()
+                10L -> modal = r.bool()
                 else -> r.skip()
             }
         }
@@ -678,6 +712,9 @@ object Codec {
             bounds ?: missing("bounds"),
             flags ?: missing("flags"),
             root,
+            emitsEvents,
+            ownerIndex,
+            modal,
         )
     }
 
@@ -692,6 +729,7 @@ object Codec {
         var bounds: Bounds? = null
         var flags: Int? = null
         var children = Node.NO_CHILDREN
+        var scroll: Scroll? = null
         repeat(r.map()) {
             when (r.key()) {
                 0L -> id = r.uint32()
@@ -709,6 +747,7 @@ object Codec {
                     }
                     children = Array(n) { decodeNode(r, depth + 1) }
                 }
+                9L -> scroll = if (r.nextIsNull()) { r.pos++; null } else decodeScroll(r)
                 else -> r.skip()
             }
         }
@@ -722,7 +761,41 @@ object Codec {
             bounds ?: missing("bounds"),
             flags ?: missing("flags"),
             children,
+            scroll,
         )
+    }
+
+    private fun decodeScroll(r: CborReader): Scroll {
+        var axis: Int? = null
+        var flags: Int? = null
+        var range: ScrollRange? = null
+        var position: ScrollPosition? = null
+        repeat(r.map()) {
+            when (r.key()) {
+                0L -> axis = r.uint8()
+                1L -> flags = r.uint32()
+                2L -> range = if (r.nextIsNull()) { r.pos++; null } else decodeScrollRange(r)
+                3L -> position = if (r.nextIsNull()) { r.pos++; null } else decodeScrollPosition(r)
+                else -> r.skip()
+            }
+        }
+        return Scroll(axis ?: missing("axis"), flags ?: missing("flags"), range, position)
+    }
+
+    private fun decodeScrollRange(r: CborReader): ScrollRange {
+        val n = r.array()
+        if (n < 3) throw CodecException("a scroll range of $n elements, expected 3")
+        val range = ScrollRange(r.uint8(), r.int32(), r.int32())
+        repeat(n - 3) { r.skip() }
+        return range
+    }
+
+    private fun decodeScrollPosition(r: CborReader): ScrollPosition {
+        val n = r.array()
+        if (n < 2) throw CodecException("a scroll position of $n elements, expected 2")
+        val position = ScrollPosition(r.int32(), r.int32())
+        repeat(n - 2) { r.skip() }
+        return position
     }
 
     private fun decodeBounds(r: CborReader): Bounds {

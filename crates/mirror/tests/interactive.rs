@@ -2,8 +2,9 @@
 //! elements with refs, as agent-browser's `-i`; an actionable element with no
 //! label of its own is named by its non-actionable descendants; content
 //! scrolled out of view is summarized from off-screen nodes when the read has
-//! them and from scroll semantics when it does not; a modal cuts what it
-//! covers. Lines follow agent-browser: `- role "name" [attrs, ref=eN]`.
+//! them and from the protocol's scroll semantics when it does not (task
+//! 3.6); a modal cuts what it covers. Lines follow agent-browser:
+//! `- role "name" [attrs, ref=eN]`.
 
 mod support;
 
@@ -12,9 +13,9 @@ use mirror::testing::{FakeTarget, Step};
 use mirror::{
     Action, Direction, HintSource, Mirror, MirrorConfig, MirrorError, SnapshotOptions, Target, code,
 };
-use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
+use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChangeKind};
 use serde_json::json;
-use support::{Screen, mirror_on, ms, timeline};
+use support::{Screen, mirror_on, ms, timeline, window_event};
 
 fn full() -> SnapshotOptions {
     SnapshotOptions::full()
@@ -95,7 +96,10 @@ fn scroll_semantics_give_the_hint_when_offscreen_rows_are_absent() {
     assert_eq!(snapshot.hints[0].source, HintSource::ScrollSemantics);
     assert_eq!(snapshot.hints[0].count, Some(184));
 
-    let near_end = screen.patched(json!([{"scroll": "row-list", "items": [200, 181, 196]}]));
+    let near_end = screen.patched(json!([{"find": "row-list", "scroll": {
+        "axis": "vertical", "back": true, "forward": true,
+        "range": ["items", 0, 199], "position": [181, 196]
+    }}]));
     let target = FakeTarget::new(near_end.read());
     let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
     let snapshot = mirror.snapshot(&interactive()).unwrap();
@@ -112,6 +116,46 @@ fn scroll_semantics_give_the_hint_when_offscreen_rows_are_absent() {
         directions,
         [(Direction::Above, Some(181)), (Direction::Below, Some(3))]
     );
+}
+
+/// Mid-list a Compose list names no row index: its range gives no count,
+/// and the ways it can scroll say where more lies. A position the platform
+/// reports as a percentage says it too.
+#[test]
+fn scroll_semantics_without_an_item_position_say_which_ways_more_lies() {
+    let screen = Screen::load("list-compose");
+    let mid = screen.patched(json!([{"find": "row-list", "scroll": {
+        "axis": "vertical", "back": true, "forward": true, "range": ["items", 0, 199]
+    }}]));
+    let target = FakeTarget::new(mid.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected = vec!["(more items above, scroll up to reveal)".to_owned()];
+    expected.extend(rows_text(1, 16, ""));
+    expected.push("(more items below, scroll down to reveal)".to_owned());
+    assert_eq!(snapshot.text, expected.join("\n"));
+    let hints: Vec<_> = snapshot
+        .hints
+        .iter()
+        .map(|h| (h.direction, h.count, h.source))
+        .collect();
+    assert_eq!(
+        hints,
+        [
+            (Direction::Above, None, HintSource::ScrollSemantics),
+            (Direction::Below, None, HintSource::ScrollSemantics)
+        ]
+    );
+
+    let at_end = screen.patched(json!([{"find": "row-list", "scroll": {
+        "axis": "vertical", "range": ["percent", 0, 100], "position": [100, 100]
+    }}]));
+    let target = FakeTarget::new(at_end.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    let mut expected = vec!["(more items above, scroll up to reveal)".to_owned()];
+    expected.extend(rows_text(1, 16, ""));
+    assert_eq!(snapshot.text, expected.join("\n"));
 }
 
 #[test]
@@ -217,6 +261,59 @@ fn an_alert_cuts_the_content_it_covers() {
         "- button \"OK\" [id=inapp-alert-ok, ref=e1]"
     );
     assert_eq!(snapshot.foreground, Owner::Target);
+}
+
+/// A window the snapshot marks modal, an Android dialog here, cuts the
+/// application windows below it, and names itself when an action aims at
+/// what it covers.
+#[test]
+fn a_modal_window_cuts_the_application_windows_below_it() {
+    let screen = Screen::load("login");
+    let dialog = screen.patched(json!([{"add_window": {
+        "id": 7, "kind": "application", "layer": 2, "package": "dev.mobileagent.fixture.expo",
+        "title": "In-app alert", "bounds": [10, 300, 398, 560], "flags": ["active", "focused"],
+        "modal": true,
+        "root": {"class": "android.widget.FrameLayout", "bounds": [10, 300, 398, 560], "children": [
+            {"class": "android.widget.TextView", "text": "This alert is presented by the app.", "bounds": [26, 320, 382, 360]},
+            {"class": "android.widget.Button", "text": "OK", "bounds": [300, 500, 382, 548], "flags": ["clickable", "focusable"]}
+        ]}
+    }}]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(dialog.read()));
+    target.at(ms(100), window_event(WindowChangeKind::ADDED, 7));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let submit = before
+        .by_identifier("login-submit")
+        .unwrap()
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(200))).unwrap();
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert!(snapshot.window(7).unwrap().modal);
+    assert!(!snapshot.window(1).unwrap().modal);
+    assert!(
+        snapshot.text.starts_with("- button \"OK\" [ref="),
+        "{}",
+        snapshot.text
+    );
+    assert!(
+        snapshot.by_identifier("login-submit").is_none(),
+        "the dialog covers the login screen: {}",
+        snapshot.text
+    );
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(submit),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED);
+    assert!(
+        error.to_string().contains("dialog \"In-app alert\""),
+        "{error}"
+    );
 }
 
 #[test]

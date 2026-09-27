@@ -111,6 +111,32 @@ object WindowFlag {
     const val PICTURE_IN_PICTURE = 1 shl 3
 }
 
+/** The direction a node scrolls in. */
+object ScrollAxis {
+    /** The platform names no single direction. */
+    const val UNKNOWN = 0
+    const val VERTICAL = 1
+    const val HORIZONTAL = 2
+}
+
+/** Which ways a node can scroll from where it is. */
+object ScrollFlag {
+    /** Toward the start: up or left. */
+    const val BACK = 1 shl 0
+
+    /** Toward the end: down or right. */
+    const val FORWARD = 1 shl 1
+}
+
+/** What a scroll range counts. */
+object ScrollUnit {
+    /** A collection's items along the axis, numbered from 0. */
+    const val ITEMS = 0
+
+    /** Percent of the scrollable range, 0 to 100. */
+    const val PERCENT = 1
+}
+
 /** Which request bounds cut a snapshot short. */
 object Truncation {
     const val DEPTH = 1 shl 0

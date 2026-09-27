@@ -3,9 +3,11 @@
 #
 # Pushes dist/mobile-agent-android.jar to /data/local/tmp, starts it with
 # app_process as the shell user and checks the banner contract: `--version` and
-# no arguments print exactly one line `mobile-agent-android <VERSION> protocol=0`
-# and exit 0; any other argument prints `unknown argument` to stderr and exits 2.
-# It also checks that no agent process outlives its run.
+# no arguments print exactly one line `mobile-agent-android <VERSION> protocol=<n>`,
+# where <n> is Protocol.VERSION in the codec, and exit 0; any other argument
+# prints `unknown argument` to stderr and exits 2, and `serve` without a socket
+# name prints a usage line and exits 2. It also checks that no agent process
+# outlives its run.
 #
 # Targets the only connected device, or the one named by ANDROID_SERIAL.
 # ANDROID_HOME defaults to $HOME/Library/Android/sdk.
@@ -18,7 +20,8 @@ jar="$here/dist/mobile-agent-android.jar"
 remote_dir=/data/local/tmp
 remote_jar="$remote_dir/mobile-agent-android.jar"
 main_class=dev.mobileagent.agent.Main
-protocol=0
+# The banner's protocol revision is the codec's Protocol.VERSION.
+protocol="$(sed -n 's/^ *const val VERSION = \([0-9][0-9]*\)$/\1/p' "$here/src/dev/mobileagent/agent/codec/Protocol.kt")"
 # Enforced on the device, so a hung agent fails the test instead of stalling it.
 run_timeout_s=30
 
@@ -39,6 +42,15 @@ members="$(unzip -Z1 "$jar")" || fail "cannot list the members of $jar"
   fail "$jar must contain only classes.dex, found: $(tr '\n' ' ' <<<"$members")"
 echo "ok: $(basename "$jar") holds only classes.dex"
 
+# The shipped dex is shrunk (task 4.10): without R8 the Kotlin stdlib alone
+# dexes to about 2.3 MB.
+dex_limit=300000
+dex_bytes="$(unzip -Z -l "$jar" classes.dex | awk '$NF == "classes.dex" { print $4 }')"
+[[ $dex_bytes =~ ^[0-9]+$ ]] || fail "cannot read the size of classes.dex in $jar"
+((dex_bytes < dex_limit)) || fail "classes.dex is $dex_bytes bytes, not under $dex_limit"
+echo "ok: classes.dex is $dex_bytes bytes, under $dex_limit"
+
+[[ $protocol =~ ^[0-9]+$ ]] || fail "cannot read Protocol.VERSION from the codec"
 expected="mobile-agent-android $(<"$here/VERSION") protocol=$protocol"
 
 tmp="$(mktemp -d)"
@@ -95,6 +107,13 @@ grep -q 'unknown argument' "$tmp/err" ||
   fail "unknown argument: stderr lacks 'unknown argument': $(<"$tmp/err")"
 [[ ! -s $tmp/out ]] || fail "unknown argument: stdout should be empty, got: $(<"$tmp/out")"
 echo "ok: an unknown argument prints 'unknown argument' to stderr and exits 2"
+
+status=0
+run_agent serve || status=$?
+[[ $status -eq 2 ]] || fail "serve without --socket: exit status $status, expected 2; stderr: $(<"$tmp/err")"
+grep -q 'usage: ' "$tmp/err" || fail "serve without --socket: stderr lacks a usage line: $(<"$tmp/err")"
+[[ ! -s $tmp/out ]] || fail "serve without --socket: stdout should be empty, got: $(<"$tmp/out")"
+echo "ok: serve without a socket name prints a usage line and exits 2"
 
 procs="$(adb shell ps -A -o PID,ARGS)"
 if leftover="$(grep -F "$main_class" <<<"$procs")"; then

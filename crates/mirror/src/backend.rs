@@ -4,8 +4,8 @@
 //! A driver hands the mirror a [`Backend`]:
 //!
 //! - a [`TreeSource`], which reads the target's windows in full into the
-//!   protocol's snapshot payload, with facts per window the payload does not
-//!   carry, above all whether the window's toolkit sends change events;
+//!   protocol's snapshot payload, window metadata and scroll semantics
+//!   included, above all whether each window's toolkit sends change events;
 //! - an [`EventStream`] of everything the target reports on its own: protocol
 //!   events with their per-stream sequence numbers, frames with their
 //!   low-resolution hashes, and changes to the stream itself (a gap the
@@ -39,9 +39,22 @@
 //!   prefix, Compose's test tag, iOS's accessibility identifier.
 //! - The `visible` flag, as the platform reports it; where it reports none,
 //!   as on iOS, whether the frame overlaps the screen. Nodes outside their
-//!   scroll container's viewport feed scroll hints.
+//!   scroll container's viewport feed scroll hints, and where the platform
+//!   leaves them out, as Compose does, the container's `scroll` semantics.
 //! - The `active` window flag marks the window that owns the foreground; a
-//!   system window's [`WindowMeta::owner`] then says system UI owns it.
+//!   window's `owner` names the system process that owns it, such as
+//!   SpringBoard for a permission alert.
+//!
+//! What the mirror reads from a payload's windows (task 3.6):
+//!
+//! - `emits_events`: `Some(false)` puts the window on the re-read path
+//!   (after each injected action, when frames change and on a poll);
+//!   without it, a window hosting
+//!   `androidx.compose.ui.platform.AndroidComposeView` is taken to send no
+//!   events (spike S1). Simulator drivers set `Some(false)` for every window.
+//! - `owner`: [`Owner::System`] with the name it indexes; absent,
+//!   [`Owner::Target`].
+//! - `modal`: the window cuts the application windows below it.
 
 use std::time::{Duration, Instant};
 
@@ -138,18 +151,12 @@ impl ReadReason {
 /// One read of a target's windows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TreeRead {
-    /// The windows and their nodes, bounds in physical pixels. `seq` is the
-    /// last tree-stream event the target had sent when it read the tree:
-    /// the mirror skips events up to it, since the read already reflects
-    /// them.
+    /// The windows and their nodes, bounds in physical pixels, with each
+    /// window's metadata and each scrolling node's scroll semantics. `seq`
+    /// is the last tree-stream event the target had sent when it read the
+    /// tree: the mirror skips events up to it, since the read already
+    /// reflects them.
     pub snapshot: TreePayload,
-    /// Facts about windows that the payload does not carry. A window without
-    /// an entry gets [`WindowMeta::default_for`].
-    pub windows: Vec<WindowMeta>,
-    /// Scroll semantics of scrollable nodes, where the platform reports them
-    /// (Compose reports only the nodes inside the viewport, so hints about
-    /// scrolled-out content come from these).
-    pub scroll: Vec<ScrollInfo>,
     /// The backend that produced the read. A read from another backend than
     /// the previous one makes the mirror rebuild its replica.
     pub backend: BackendInfo,
@@ -157,37 +164,7 @@ pub struct TreeRead {
     pub scale: f64,
 }
 
-/// Facts about one window that the protocol payload does not carry.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WindowMeta {
-    /// The window's id in the payload.
-    pub window: u32,
-    /// Whether the window's toolkit sends change events. `None` lets the
-    /// mirror infer it: a window hosting Jetpack Compose
-    /// (`androidx.compose.ui.platform.AndroidComposeView`) sends none,
-    /// others do. Simulator drivers set `Some(false)` for every window.
-    pub emits_events: Option<bool>,
-    /// Who owns the window: the target application or system UI.
-    pub owner: Owner,
-    /// The whole window is a modal, such as an Android dialog, that covers
-    /// the windows below it. Modal nodes inside a window (an iOS alert
-    /// controller) are recognized from their class instead.
-    pub modal: bool,
-}
-
-impl WindowMeta {
-    /// The facts assumed for a window without an entry.
-    pub fn default_for(window: u32) -> WindowMeta {
-        WindowMeta {
-            window,
-            emits_events: None,
-            owner: Owner::Target,
-            modal: false,
-        }
-    }
-}
-
-/// Who owns a window.
+/// Who owns a window, from the snapshot's window metadata.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Owner {
     /// The application under automation.
@@ -216,37 +193,6 @@ impl BackendInfo {
             fallback,
         }
     }
-}
-
-/// Scroll semantics of one scrollable node.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScrollInfo {
-    /// The window holding the node.
-    pub window: u32,
-    /// The node's id in the payload.
-    pub node: u32,
-    pub axis: Axis,
-    /// The collection's item count and the visible index range, when known.
-    pub items: Option<ItemRange>,
-    /// Whether the node can scroll back (up or left) and forward (down or
-    /// right).
-    pub can_scroll_back: bool,
-    pub can_scroll_forward: bool,
-}
-
-/// The direction a node scrolls in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Axis {
-    Vertical,
-    Horizontal,
-}
-
-/// A collection's size and the items inside its viewport, 0-based.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ItemRange {
-    pub total: u32,
-    pub first_visible: u32,
-    pub last_visible: u32,
 }
 
 /// Everything a target reports on its own, in arrival order.

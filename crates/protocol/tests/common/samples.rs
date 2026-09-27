@@ -1,7 +1,8 @@
 //! The golden sample set: one message per kind, parameter and result type,
 //! with integers at every CBOR head-length boundary, u32 and u64 values past
 //! 2^31 and 2^63, multi-byte UTF-8, a byte string and an array longer than 23
-//! elements. `agent-android/codec-test/Samples.kt` builds the same values in
+//! elements, window metadata in every state and scroll semantics in every
+//! shape. `agent-android/codec-test/Samples.kt` builds the same values in
 //! Kotlin; the two lists must stay in step, name for name.
 
 use protocol::Error;
@@ -15,7 +16,8 @@ use protocol::message::{
     SnapshotParams, SwipeParams, TapParams, TextAck, TextMethod, TextParams, Welcome,
 };
 use protocol::snapshot::{
-    Bounds, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+    Bounds, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange,
+    ScrollUnit, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
 use protocol::{Capabilities, code};
 
@@ -95,6 +97,7 @@ pub fn snapshot() -> Snapshot {
                             bounds: Bounds::new(48, -7, 860, 53),
                             flags: NodeFlags::ENABLED | NodeFlags::VISIBLE,
                             children: vec![],
+                            scroll: None,
                         },
                         Node {
                             id: 2,
@@ -118,10 +121,16 @@ pub fn snapshot() -> Snapshot {
                                 bounds: Bounds::new(-24, 23, 24, 255),
                                 flags: NodeFlags(1 << 31),
                                 children: vec![],
+                                scroll: None,
                             }],
+                            scroll: None,
                         },
                     ],
+                    scroll: None,
                 }),
+                emits_events: None,
+                owner: None,
+                modal: false,
             },
             Window {
                 id: 13,
@@ -132,11 +141,206 @@ pub fn snapshot() -> Snapshot {
                 bounds: Bounds::new(0, 1600, 1080, 2400),
                 flags: WindowFlags::EMPTY,
                 root: None,
+                emits_events: None,
+                owner: None,
+                modal: false,
             },
         ],
         node_count: 4,
         truncated: Truncation::EMPTY,
         seq: 41,
+    }
+}
+
+/// A node without text, children or scroll semantics.
+fn plain(id: u32, class: u32, bounds: Bounds, flags: NodeFlags) -> Node {
+    Node {
+        id,
+        class,
+        res_pkg: None,
+        res_id: None,
+        text: None,
+        desc: None,
+        bounds,
+        flags,
+        children: vec![],
+        scroll: None,
+    }
+}
+
+/// Window metadata in every state: whether the window sends change events
+/// (yes, no, unknown), a system owner or none, modal or not.
+pub fn window_meta_snapshot() -> Snapshot {
+    let visible = NodeFlags::ENABLED | NodeFlags::VISIBLE;
+    Snapshot {
+        strings: vec![
+            "android.widget.FrameLayout".to_owned(),
+            "com.android.systemui".to_owned(),
+            "com.google.android.permissioncontroller".to_owned(),
+            "dev.placeholder.fixture".to_owned(),
+        ],
+        windows: vec![
+            Window {
+                id: 30,
+                kind: WindowType::SYSTEM,
+                layer: 1,
+                package: Some(1),
+                title: None,
+                bounds: Bounds::new(0, 0, 1080, 132),
+                flags: WindowFlags::EMPTY,
+                root: Some(plain(0, 0, Bounds::new(0, 0, 1080, 132), visible)),
+                emits_events: Some(true),
+                owner: Some(1),
+                modal: false,
+            },
+            Window {
+                id: 31,
+                kind: WindowType::APPLICATION,
+                layer: 0,
+                package: Some(2),
+                title: Some("Allow Fixture to access this device\u{2019}s location?".to_owned()),
+                bounds: Bounds::new(28, 502, 1052, 1966),
+                flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+                root: Some(plain(1, 0, Bounds::new(28, 502, 1052, 1966), visible)),
+                emits_events: None,
+                owner: Some(2),
+                modal: true,
+            },
+            Window {
+                id: 32,
+                kind: WindowType::APPLICATION,
+                layer: -1,
+                package: Some(3),
+                title: Some("Fixture".to_owned()),
+                bounds: Bounds::new(0, 0, 1080, 2400),
+                flags: WindowFlags::EMPTY,
+                root: Some(plain(2, 0, Bounds::new(0, 0, 1080, 2400), visible)),
+                emits_events: Some(false),
+                owner: None,
+                modal: false,
+            },
+        ],
+        node_count: 3,
+        truncated: Truncation::EMPTY,
+        seq: 7,
+    }
+}
+
+/// Scroll semantics in every shape: an item range with the items in view,
+/// a range without a position, scroll actions alone, a percent range, and
+/// values this version does not define with integers at head boundaries.
+pub fn scroll_snapshot() -> Snapshot {
+    let visible = NodeFlags::ENABLED | NodeFlags::VISIBLE;
+    let scrolls = visible | NodeFlags::SCROLLABLE;
+    let scroller = |id: u32, class: u32, scroll: Scroll| Node {
+        scroll: Some(scroll),
+        ..plain(id, class, Bounds::new(0, 132, 1080, 2127), scrolls)
+    };
+    let mut list = scroller(
+        1,
+        0,
+        Scroll {
+            axis: ScrollAxis::VERTICAL,
+            flags: ScrollFlags::FORWARD,
+            range: Some(ScrollRange {
+                unit: ScrollUnit::ITEMS,
+                min: 0,
+                max: 199,
+            }),
+            position: Some(ScrollPosition { first: 0, last: 15 }),
+        },
+    );
+    list.res_id = Some("row-list".to_owned());
+    list.children = vec![Node {
+        text: Some("Row 1".to_owned()),
+        ..plain(2, 3, Bounds::new(0, 132, 1080, 258), visible)
+    }];
+    Snapshot {
+        strings: vec![
+            "android.view.View".to_owned(),
+            "android.widget.ScrollView".to_owned(),
+            "android.widget.HorizontalScrollView".to_owned(),
+            "android.widget.Button".to_owned(),
+        ],
+        windows: vec![Window {
+            id: 40,
+            kind: WindowType::APPLICATION,
+            layer: 0,
+            package: None,
+            title: None,
+            bounds: Bounds::new(0, 0, 1080, 2400),
+            flags: WindowFlags::ACTIVE,
+            root: Some(Node {
+                children: vec![
+                    list,
+                    scroller(
+                        3,
+                        2,
+                        Scroll {
+                            axis: ScrollAxis::HORIZONTAL,
+                            flags: ScrollFlags::BACK | ScrollFlags::FORWARD,
+                            range: Some(ScrollRange {
+                                unit: ScrollUnit::ITEMS,
+                                min: 0,
+                                max: 65535,
+                            }),
+                            position: None,
+                        },
+                    ),
+                    scroller(
+                        4,
+                        1,
+                        Scroll {
+                            axis: ScrollAxis::VERTICAL,
+                            flags: ScrollFlags::BACK,
+                            range: None,
+                            position: None,
+                        },
+                    ),
+                    scroller(
+                        5,
+                        0,
+                        Scroll {
+                            axis: ScrollAxis::UNKNOWN,
+                            flags: ScrollFlags::EMPTY,
+                            range: Some(ScrollRange {
+                                unit: ScrollUnit::PERCENT,
+                                min: 0,
+                                max: 100,
+                            }),
+                            position: Some(ScrollPosition {
+                                first: 37,
+                                last: 37,
+                            }),
+                        },
+                    ),
+                    scroller(
+                        6,
+                        0,
+                        Scroll {
+                            axis: ScrollAxis(200),
+                            flags: ScrollFlags(1 << 31),
+                            range: Some(ScrollRange {
+                                unit: ScrollUnit(24),
+                                min: -24,
+                                max: i32::MAX,
+                            }),
+                            position: Some(ScrollPosition {
+                                first: -25,
+                                last: 256,
+                            }),
+                        },
+                    ),
+                ],
+                ..plain(0, 0, Bounds::new(0, 0, 1080, 2400), visible)
+            }),
+            emits_events: Some(false),
+            owner: None,
+            modal: false,
+        }],
+        node_count: 7,
+        truncated: Truncation::EMPTY,
+        seq: 8,
     }
 }
 
@@ -320,6 +524,14 @@ pub fn samples() -> Vec<(&'static str, Message)> {
                     seq: u64::MAX,
                 }),
             ),
+        ),
+        (
+            "response_snapshot_window_meta",
+            ok(11, Method::SNAPSHOT, Reply::Snapshot(window_meta_snapshot())),
+        ),
+        (
+            "response_snapshot_scroll",
+            ok(12, Method::SNAPSHOT, Reply::Snapshot(scroll_snapshot())),
         ),
         (
             "response_screenshot",

@@ -1,5 +1,5 @@
 {
-  "description": "List tab of the Compose fixture: a LazyColumn of 200 rows reports only the 16 rows inside its viewport, and its scroll semantics give the item count and the visible range. The window hosts AndroidComposeView, so it sends no change events. Device points, scale 2.625.",
+  "description": "List tab of the Compose fixture: a LazyColumn of 200 rows reports only the 16 rows inside its viewport, and the list node's scroll semantics give its range of 200 items and the 16 in view. The window hosts AndroidComposeView, so it sends no change events. Device points, scale 2.625.",
   "backend": {"name": "android-agent", "fallback": false},
   "scale": 2.625,
   "windows": [
@@ -9,7 +9,8 @@
       "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 408, 912], "children": [
         {"class": "androidx.compose.ui.platform.AndroidComposeView", "bounds": [0, 24, 408, 912], "children": [
           {"class": "android.widget.TextView", "text": "List", "bounds": [16, 32, 392, 64]},
-          {"class": "android.view.View", "id": "row-list", "bounds": [0, 72, 408, 840], "flags": ["scrollable"], "children": [
+          {"class": "android.view.View", "id": "row-list", "bounds": [0, 72, 408, 840], "flags": ["scrollable"],
+           "scroll": {"axis": "vertical", "forward": true, "range": ["items", 0, 199], "position": [0, 15]}, "children": [
             {"repeat": [1, 16], "layout": {"rows": {"left": 0, "top": 72, "right": 408, "height": 48}},
              "node": {"class": "android.view.View", "id": "row-{n}", "flags": ["clickable"], "children": [
                {"class": "android.widget.TextView", "text": "Row {n}", "bounds": "fill"}
@@ -18,8 +19,5 @@
         ]}
       ]}
     }
-  ],
-  "scroll": [
-    {"window": 5, "node": "row-list", "axis": "vertical", "items": [200, 0, 15], "back": false, "forward": true}
   ]
 }

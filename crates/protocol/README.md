@@ -12,7 +12,7 @@ frames checked in both directions keep the two in step.
 ```
 src/
   message.rs     envelope: hello, welcome, request, response, ping, pong; methods, parameters, results
-  snapshot.rs    snapshot payload: string table, windows, nodes, bounds, flags
+  snapshot.rs    snapshot payload: string table, windows and their metadata, nodes, bounds, flags, scroll semantics
   event.rs       events and their streams
   error.rs       structured errors and the code table
   capability.rs  the capability set
@@ -56,17 +56,20 @@ sides.
    golden frame is checked for them. The Kotlin decoder rejects them; the Rust
    decoder, like minicbor's derived decoders, accepts them.
 3. **Maps keyed by field index.** Messages (except events), parameters,
-   results, errors, snapshots, windows and nodes are maps whose keys are
-   unsigned integers, written in ascending order, each once.
+   results, errors, snapshots, windows, nodes and scroll semantics are maps
+   whose keys are unsigned integers, written in ascending order, each once.
 4. **Absent optional fields are omitted**, never written as null. Decoders
-   read a null as absent. A node's child list is omitted when empty; every
-   other list is always present, possibly empty.
-5. **Positional arrays have no optional elements.** Events and bounds are
-   arrays with a fixed layout, so their length never shrinks. Receivers skip
-   elements past those they know, so new elements may be appended.
+   read a null as absent. A node's child list is omitted when empty and a
+   window's modal flag when false; every other list is always present,
+   possibly empty.
+5. **Positional arrays have no optional elements.** Events, bounds, scroll
+   ranges and scroll positions are arrays with a fixed layout, so their
+   length never shrinks. Receivers skip elements past those they know, so new
+   elements may be appended.
 6. **Unknown keys are skipped**, and a repeated key's last value wins.
 7. **Types.** Unsigned fields are major type 0, signed ones (coordinates,
-   bounds, window layer) major type 0 or 1, text is UTF-8 (decoders reject
+   bounds, window layer, scroll range and position) major type 0 or 1,
+   booleans are simple values, text is UTF-8 (decoders reject
    invalid UTF-8), image data is a byte string, flags are `u32` bitmasks and
    enums small integers. No floats and no tags.
 8. **Parameters and results are always maps.** A request carries its
@@ -123,11 +126,14 @@ still decodes, its parameters skipped, so it can be answered.
 | Item | Layout |
 |---|---|
 | snapshot | `{0: strings [text], 1: windows [window], 2: node_count u32, 3: truncated u32, 4: seq u64}` |
-| window | `{0: id u32, 1: kind u8, 2: layer i32, ?3: package u32, ?4: title text, 5: bounds, 6: flags u32, ?7: root node}` |
-| node | `{0: id u32, 1: class u32, ?2: res_pkg u32, ?3: res_id text, ?4: text, ?5: desc text, 6: bounds, 7: flags u32, ?8: children [node]}` |
+| window | `{0: id u32, 1: kind u8, 2: layer i32, ?3: package u32, ?4: title text, 5: bounds, 6: flags u32, ?7: root node, ?8: emits_events bool, ?9: owner u32, ?10: modal bool}` |
+| node | `{0: id u32, 1: class u32, ?2: res_pkg u32, ?3: res_id text, ?4: text, ?5: desc text, 6: bounds, 7: flags u32, ?8: children [node], ?9: scroll}` |
 | bounds | `[left i32, top i32, right i32, bottom i32]` |
+| scroll | `{0: axis u8, 1: flags u32, ?2: range, ?3: position}` |
+| range | `[unit u8, min i32, max i32]` |
+| position | `[first i32, last i32]` |
 
-`class`, `res_pkg` and `package` index the per-snapshot string table.
+`class`, `res_pkg`, `package` and `owner` index the per-snapshot string table.
 `truncated` says which request bound cut the walk short (bit 0 depth, 1 nodes,
 2 windows). `seq` is the last tree-stream event the agent had sent when it read
 the tree. Window kinds are `AccessibilityWindowInfo.TYPE_*` values. Node flag
@@ -135,6 +141,35 @@ bits: clickable, long_clickable, focusable, focused, enabled, checkable,
 checked, scrollable, selected, editable, password, visible,
 accessibility_focused (bits 0 to 12). Window flag bits: active, focused,
 accessibility_focused, picture_in_picture.
+
+Keys 8 to 10 of a window are what the agent knows about the window beyond
+the platform's own window states (task 3.6):
+
+- `emits_events` says whether the window's toolkit sends change events for
+  its content. `false` marks a window whose changes are seen only by reading
+  it again: Jetpack Compose sends none to a UI automation client (spike S1),
+  so a consumer re-reads such a window after each action and on a poll.
+  Absent when the agent cannot tell.
+- `owner` names the system process that owns the window, such as
+  `com.android.systemui` for the status bar or the permission controller for
+  a permission prompt. Absent when the application under automation owns it.
+- `modal` marks a window, such as a dialog, that keeps the user from the
+  windows below it until it is dismissed. Omitted when false.
+
+Key 9 of a node is present on nodes that scroll. `axis` is 0 unknown, 1
+vertical, 2 horizontal. Flag bits: back (0), toward the start of the content
+(up, or left in a left-to-right layout), and forward (1), toward its end, each
+set when the node can scroll that way from where it is. `range` is the span of the content in `unit`, both
+ends inclusive: 0 items, a collection's items along the axis numbered from 0
+(`[0, 0, 199]` for 200 rows), or 1 percent of the scrollable range, 0 to 100,
+for a position the platform reports as a value between bounds. `position`,
+present only with a range, is the part of it inside the viewport, both ends
+inclusive: `[0, 15]` while the first 16 rows are in view, `[37, 37]` at 37
+percent. A platform that reports neither leaves them out and the flags say
+what it knows: Compose reports only the rows inside a list's viewport, so a
+consumer tells what lies beyond them from these semantics rather than from
+nodes. Values of `axis`, `unit` and flag bits this version does not define
+survive a round trip.
 
 ### Events and streams
 
@@ -222,10 +257,12 @@ tests drive time themselves.
 
 ## Golden frames and the Kotlin codec
 
-`tests/common/samples.rs` defines 35 samples: one per message kind, parameter
+`tests/common/samples.rs` defines 37 samples: one per message kind, parameter
 and result type, with integers at every head-length boundary, u32 and u64
 values past 2^31 and 2^63, multi-byte UTF-8, a byte string and a 25-element
-array. `golden/<name>.bin` is the frame this crate writes for each.
+array, plus window metadata in every state
+(`response_snapshot_window_meta`) and scroll semantics in every shape
+(`response_snapshot_scroll`). `golden/<name>.bin` is the frame this crate writes for each.
 `agent-android/codec-test/Samples.kt` builds the same values in Kotlin.
 
 ```sh

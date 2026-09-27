@@ -2,7 +2,7 @@
 //! classes each platform's driver reports, turned into the protocol payload
 //! a driver returns, bounds in physical pixels.
 
-use mirror::backend::{BackendInfo, Owner, TreeRead, WindowMeta};
+use mirror::backend::{BackendInfo, Owner, TreeRead};
 use protocol::snapshot::{
     Bounds, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
@@ -150,7 +150,6 @@ pub(crate) fn tree_read(windows: &[Win], scale: f64, backend: BackendInfo) -> Tr
     let mut strings: Vec<String> = Vec::new();
     let mut next = 1u32;
     let mut payload = Vec::with_capacity(windows.len());
-    let mut metas = Vec::with_capacity(windows.len());
     let mut count = 0u32;
     for w in windows {
         let before = next;
@@ -165,11 +164,11 @@ pub(crate) fn tree_read(windows: &[Win], scale: f64, backend: BackendInfo) -> Tr
             bounds: pixels(w.rect, scale),
             flags: w.flags,
             root: Some(root),
-        });
-        metas.push(WindowMeta {
-            window: w.id,
             emits_events: w.events,
-            owner: w.owner.clone(),
+            owner: match &w.owner {
+                Owner::System(name) => Some(intern(&mut strings, name)),
+                Owner::Target => None,
+            },
             modal: w.modal,
         });
     }
@@ -181,8 +180,6 @@ pub(crate) fn tree_read(windows: &[Win], scale: f64, backend: BackendInfo) -> Tr
             truncated: Truncation::EMPTY,
             seq: 0,
         },
-        windows: metas,
-        scroll: Vec::new(),
         backend,
         scale,
     }
@@ -223,6 +220,7 @@ fn node(el: &El, scale: f64, strings: &mut Vec<String>, next: &mut u32) -> Node 
         bounds: pixels(el.rect, scale),
         flags: el.flags,
         children,
+        scroll: None,
     }
 }
 

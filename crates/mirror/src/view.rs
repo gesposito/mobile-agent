@@ -19,9 +19,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use protocol::snapshot::{NodeFlags, WindowType};
+use protocol::snapshot::{NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollUnit, WindowType};
 
-use crate::backend::Axis;
 use crate::geometry::Rect;
 use crate::replica::{RNode, Replica, Win};
 use crate::roles;
@@ -357,7 +356,7 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
             let node = &window.nodes[i];
             node.flags.contains(NodeFlags::SCROLLABLE)
                 || matches!(facts[i].role, Role::List | Role::Grid)
-                || window.scroll.iter().any(|s| s.node == node.node_id)
+                || node.scroll.is_some()
         };
         let mut counts: Vec<[u32; 4]> = vec![[0; 4]; window.nodes.len()];
         for (x, node) in window.nodes.iter().enumerate() {
@@ -405,7 +404,6 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
             if !container(s) || !f.visible || f.hidden != Hidden::No {
                 continue;
             }
-            let semantics = window.scroll.iter().find(|i| i.node == node.node_id);
             for direction in [
                 Direction::Above,
                 Direction::Left,
@@ -416,37 +414,9 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
                 let hint = if nodes > 0 {
                     Some((Some(nodes), HintSource::OffscreenNodes))
                 } else {
-                    semantics.and_then(|info| {
-                        let back = matches!(direction, Direction::Above | Direction::Left);
-                        let axis = if matches!(direction, Direction::Above | Direction::Below) {
-                            Axis::Vertical
-                        } else {
-                            Axis::Horizontal
-                        };
-                        if info.axis != axis {
-                            return None;
-                        }
-                        match info.items {
-                            Some(items) => {
-                                let beyond = if back {
-                                    items.first_visible
-                                } else {
-                                    items
-                                        .total
-                                        .saturating_sub(items.last_visible.saturating_add(1))
-                                };
-                                (beyond > 0).then_some((Some(beyond), HintSource::ScrollSemantics))
-                            }
-                            None => {
-                                let more = if back {
-                                    info.can_scroll_back
-                                } else {
-                                    info.can_scroll_forward
-                                };
-                                more.then_some((None, HintSource::ScrollSemantics))
-                            }
-                        }
-                    })
+                    node.scroll
+                        .and_then(|scroll| beyond(&scroll, direction))
+                        .map(|count| (count, HintSource::ScrollSemantics))
                 };
                 if let Some((count, source)) = hint {
                     out.push((
@@ -465,6 +435,44 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
         }
     }
     out
+}
+
+/// What a node's scroll semantics say lies beyond its viewport in
+/// `direction`: `Some(Some(n))` for `n` items, `Some(None)` for more content
+/// of unknown size, `None` for nothing that way or semantics along the other
+/// axis. A range with a position measures it, in items or only as a
+/// direction in other units; without one, the ways the node can scroll say
+/// where more lies.
+fn beyond(scroll: &Scroll, direction: Direction) -> Option<Option<u32>> {
+    let back = matches!(direction, Direction::Above | Direction::Left);
+    let axis = if matches!(direction, Direction::Above | Direction::Below) {
+        ScrollAxis::VERTICAL
+    } else {
+        ScrollAxis::HORIZONTAL
+    };
+    if scroll.axis != axis {
+        return None;
+    }
+    match (scroll.range, scroll.position) {
+        (Some(range), Some(position)) => {
+            let beyond = if back {
+                i64::from(position.first) - i64::from(range.min)
+            } else {
+                i64::from(range.max) - i64::from(position.last)
+            };
+            (beyond > 0).then(|| {
+                (range.unit == ScrollUnit::ITEMS).then(|| u32::try_from(beyond).unwrap_or(u32::MAX))
+            })
+        }
+        _ => {
+            let way = if back {
+                ScrollFlags::BACK
+            } else {
+                ScrollFlags::FORWARD
+            };
+            scroll.flags.contains(way).then_some(None)
+        }
+    }
 }
 
 fn slot(direction: Direction) -> usize {

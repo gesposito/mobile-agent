@@ -14,7 +14,8 @@ use protocol::message::{
     Welcome,
 };
 use protocol::snapshot::{
-    Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+    Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition,
+    ScrollRange, ScrollUnit, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
 use protocol::{Capabilities, Error, PROTOCOL_VERSION, SUPPORTED_VERSIONS, code};
 
@@ -52,6 +53,7 @@ fn leaf(id: u32, class: u32, text: &str) -> Node {
         bounds: Bounds::new(0, 0, 10, 10),
         flags: NodeFlags::ENABLED,
         children: Vec::new(),
+        scroll: None,
     }
 }
 
@@ -89,7 +91,11 @@ fn sample_snapshot() -> Snapshot {
                         ),
                         leaf(2, 1, ""),
                     ],
+                    scroll: None,
                 }),
+                emits_events: None,
+                owner: None,
+                modal: false,
             },
             Window {
                 id: 13,
@@ -100,6 +106,9 @@ fn sample_snapshot() -> Snapshot {
                 bounds: Bounds::new(0, 1600, 1080, 2400),
                 flags: WindowFlags::EMPTY,
                 root: None,
+                emits_events: None,
+                owner: None,
+                modal: false,
             },
         ],
         node_count: 3,
@@ -483,7 +492,11 @@ fn node_children_are_omitted_when_empty() {
                 bounds: Bounds::new(0, 0, 1, 1),
                 flags: NodeFlags::EMPTY,
                 children: Vec::new(),
+                scroll: None,
             }),
+            emits_events: None,
+            owner: None,
+            modal: false,
         }],
         node_count: 1,
         truncated: Truncation::EMPTY,
@@ -507,6 +520,217 @@ fn node_children_are_omitted_when_empty() {
         "02 01 03 00 04 00"
     ));
     assert_eq!(show(&bytes), show(&expected));
+}
+
+fn snapshot_response(snapshot: Snapshot) -> Message {
+    Message::Response(Response {
+        id: 0,
+        method: Method::SNAPSHOT,
+        result: Ok(Reply::Snapshot(snapshot)),
+    })
+}
+
+/// A list of 200 items with the first 16 in view.
+fn list_scroll() -> Scroll {
+    Scroll {
+        axis: ScrollAxis::VERTICAL,
+        flags: ScrollFlags::FORWARD,
+        range: Some(ScrollRange {
+            unit: ScrollUnit::ITEMS,
+            min: 0,
+            max: 199,
+        }),
+        position: Some(ScrollPosition { first: 0, last: 15 }),
+    }
+}
+
+/// One system window, modal, owned by string 1 and sending no change
+/// events, whose root is a list of 200 items.
+fn tagged_snapshot() -> Snapshot {
+    Snapshot {
+        strings: vec!["V".to_owned(), "sys".to_owned()],
+        windows: vec![Window {
+            id: 1,
+            kind: WindowType::SYSTEM,
+            layer: 0,
+            package: None,
+            title: None,
+            bounds: Bounds::new(0, 0, 1, 1),
+            flags: WindowFlags::EMPTY,
+            root: Some(Node {
+                id: 0,
+                class: 0,
+                res_pkg: None,
+                res_id: None,
+                text: None,
+                desc: None,
+                bounds: Bounds::new(0, 0, 1, 1),
+                flags: NodeFlags::EMPTY,
+                children: Vec::new(),
+                scroll: Some(list_scroll()),
+            }),
+            emits_events: Some(false),
+            owner: Some(1),
+            modal: true,
+        }],
+        node_count: 1,
+        truncated: Truncation::EMPTY,
+        seq: 0,
+    }
+}
+
+/// The frame of [`tagged_snapshot`], with its root's scroll semantics
+/// replaced by `scroll` (hex).
+fn tagged_frame(scroll: &str) -> Vec<u8> {
+    hex(&[
+        // response {0: 3, 1: 0, 2: 1, 3: snapshot}
+        "a4 00 03 01 00 02 01 03",
+        // snapshot {0: ["V", "sys"], 1: [window], ...}
+        "a5 00 82 61 56 63 73 79 73 01 81",
+        // window {0: 1, 1: 3, 2: 0, 5: bounds, 6: 0, 7: node, 8: false, 9: 1, 10: true}
+        "a9 00 01 01 03 02 00 05 84 00 00 01 01 06 00 07",
+        // node {0: 0, 1: 0, 6: bounds, 7: 0, 9: scroll}
+        "a5 00 00 01 00 06 84 00 00 01 01 07 00 09",
+        scroll,
+        "08 f4 09 01 0a f5",
+        // ... 2: 1, 3: 0, 4: 0}
+        "02 01 03 00 04 00",
+    ]
+    .join(" "))
+}
+
+/// Task 3.6: window metadata (change events as a tri-state, a system owner,
+/// the modal flag) and scroll semantics (axis, directions, range and
+/// position) survive a round trip in every state.
+#[test]
+fn window_metadata_and_scroll_semantics_round_trip() {
+    let mut snapshot = sample_snapshot();
+    let app = &mut snapshot.windows[0];
+    app.emits_events = Some(false);
+    let root = app.root.as_mut().unwrap();
+    root.scroll = Some(list_scroll());
+    root.children[0].scroll = Some(Scroll {
+        axis: ScrollAxis::HORIZONTAL,
+        flags: ScrollFlags::BACK | ScrollFlags::FORWARD,
+        range: Some(ScrollRange {
+            unit: ScrollUnit::PERCENT,
+            min: 0,
+            max: 100,
+        }),
+        position: None,
+    });
+    root.children[1].scroll = Some(Scroll {
+        axis: ScrollAxis::UNKNOWN,
+        flags: ScrollFlags::EMPTY,
+        range: None,
+        position: None,
+    });
+    let keyboard = &mut snapshot.windows[1];
+    keyboard.emits_events = Some(true);
+    keyboard.owner = Some(3);
+    keyboard.modal = true;
+    round_trip(snapshot_response(snapshot));
+
+    // Values this version does not define are kept as they are.
+    let mut newer = tagged_snapshot();
+    newer.windows[0].root.as_mut().unwrap().scroll = Some(Scroll {
+        axis: ScrollAxis(9),
+        flags: ScrollFlags(1 << 31),
+        range: Some(ScrollRange {
+            unit: ScrollUnit(7),
+            min: i32::MIN,
+            max: i32::MAX,
+        }),
+        position: Some(ScrollPosition {
+            first: -1,
+            last: 65536,
+        }),
+    });
+    round_trip(snapshot_response(newer));
+}
+
+/// Window metadata takes keys 8 to 10 after the root, scroll semantics key
+/// 9 after the children; ranges and positions are positional arrays.
+#[test]
+fn window_metadata_and_scroll_semantics_follow_the_layout() {
+    let bytes = round_trip(snapshot_response(tagged_snapshot()));
+    // scroll {0: 1, 1: 2, 2: [0, 0, 199], 3: [0, 15]}
+    let expected = tagged_frame("a4 00 01 01 02 02 83 00 00 18 c7 03 82 00 0f");
+    assert_eq!(show(&bytes), show(&expected));
+
+    // Absent semantics take no bytes: no range or position, no metadata.
+    let mut bare = tagged_snapshot();
+    let window = &mut bare.windows[0];
+    window.emits_events = None;
+    window.owner = None;
+    window.modal = false;
+    window.root.as_mut().unwrap().scroll = Some(Scroll {
+        axis: ScrollAxis::VERTICAL,
+        flags: ScrollFlags::BACK,
+        range: None,
+        position: None,
+    });
+    let bytes = round_trip(snapshot_response(bare));
+    let expected = hex(concat!(
+        "a4 00 03 01 00 02 01 03 ",
+        "a5 00 82 61 56 63 73 79 73 01 81 ",
+        "a6 00 01 01 03 02 00 05 84 00 00 01 01 06 00 07 ",
+        "a5 00 00 01 00 06 84 00 00 01 01 07 00 09 a2 00 01 01 01 ",
+        "02 01 03 00 04 00"
+    ));
+    assert_eq!(show(&bytes), show(&expected));
+}
+
+/// Frames from an agent that predates window metadata and scroll semantics
+/// decode with both absent and encode back to the same bytes.
+#[test]
+fn a_snapshot_without_the_metadata_keys_decodes_with_them_absent() {
+    // The layout of `node_children_are_omitted_when_empty`.
+    let old = hex(concat!(
+        "a4 00 03 01 00 02 01 03 ",
+        "a5 00 81 61 56 01 81 ",
+        "a6 00 01 01 01 02 00 05 84 00 00 01 01 06 00 07 ",
+        "a4 00 00 01 00 06 84 00 00 01 01 07 00 ",
+        "02 01 03 00 04 00"
+    ));
+    let Message::Response(Response {
+        result: Ok(Reply::Snapshot(snapshot)),
+        ..
+    }) = Message::decode(&old).unwrap()
+    else {
+        panic!("not a snapshot")
+    };
+    let window = &snapshot.windows[0];
+    assert_eq!(window.emits_events, None);
+    assert_eq!(window.owner, None);
+    assert!(!window.modal);
+    assert_eq!(window.root.as_ref().unwrap().scroll, None);
+    assert_eq!(show(&snapshot_response(snapshot).to_vec()), show(&old));
+}
+
+/// Keys and array elements a later version adds inside scroll semantics
+/// are skipped.
+#[test]
+fn receivers_skip_what_they_do_not_know_in_scroll_semantics() {
+    // scroll {0: 1, 1: 2, 2: [0, 0, 199, "x"], 3: [0, 15, 7], 5: "y"}
+    let frame = tagged_frame("a5 00 01 01 02 02 84 00 00 18 c7 61 78 03 83 00 0f 07 05 61 79");
+    assert_eq!(
+        Message::decode(&frame).unwrap(),
+        snapshot_response(tagged_snapshot())
+    );
+}
+
+#[test]
+fn a_scroll_range_or_position_missing_an_element_is_rejected() {
+    // A range without its maximum.
+    let short_range = tagged_frame("a4 00 01 01 02 02 82 00 00 03 82 00 0f");
+    assert!(Message::decode(&short_range).is_err());
+    // A position without its last item.
+    let short_position = tagged_frame("a4 00 01 01 02 02 83 00 00 18 c7 03 81 00");
+    assert!(Message::decode(&short_position).is_err());
+    // Scroll semantics without their directions.
+    let no_flags = tagged_frame("a1 00 01");
+    assert!(Message::decode(&no_flags).is_err());
 }
 
 /// Walks one CBOR item and fails on any indefinite-length array, map or string.
@@ -689,6 +913,9 @@ fn node_nesting_is_limited() {
                     bounds: Bounds::new(0, 0, 1, 1),
                     flags: WindowFlags::EMPTY,
                     root: Some(chain(depth)),
+                    emits_events: None,
+                    owner: None,
+                    modal: false,
                 }],
                 node_count: depth as u32 + 1,
                 truncated: Truncation::EMPTY,

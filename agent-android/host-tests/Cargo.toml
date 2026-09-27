@@ -1,0 +1,24 @@
+[package]
+name = "agent-android-host-tests"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Host-side tests that drive the Android agent on a device through the protocol crate"
+
+# Its own workspace root, so the repository workspace neither builds nor
+# lints it and it needs no entry in the root manifest.
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -2 }
+correctness = { level = "deny", priority = -1 }
+
+[dependencies]
+protocol = { path = "../../crates/protocol" }
+
+[dev-dependencies]
+png = "0.18.1"

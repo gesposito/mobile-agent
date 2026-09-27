@@ -3,7 +3,9 @@
 #
 #   1. VERSION becomes the constant BuildConfig.VERSION in a generated source.
 #   2. kotlinc compiles src/ and that source against the platform android.jar.
-#   3. d8 dexes the classes together with the Kotlin stdlib into one classes.dex.
+#   3. R8 shrinks the classes together with the Kotlin stdlib into one
+#      classes.dex, keeping what agent.pro names (SHRINK=0 dexes everything
+#      with d8 instead).
 #   4. classes.dex becomes the jar's only member, which app_process accepts on CLASSPATH.
 #
 # Progress goes to stderr. The last two lines on stdout are the jar path and the
@@ -12,7 +14,8 @@
 # ANDROID_HOME  Android SDK root, default $HOME/Library/Android/sdk. Needs
 #               platforms/android-36 and build-tools; d8 comes from the newest build-tools.
 # KOTLIN_HOME   Kotlin compiler home, default the install behind kotlinc on PATH.
-#               Both kotlinc and kotlin-stdlib.jar come from it.
+#               kotlinc, kotlin-stdlib.jar and annotations-13.0.jar come from it.
+# SHRINK        0 skips R8 and dexes the unshrunk classes and stdlib with d8.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,6 +47,9 @@ version="$(<"$here/VERSION")"
 build_tools="$(ls -1 "$android_home/build-tools" | sort -V | tail -n 1)"
 d8="$android_home/build-tools/$build_tools/d8"
 [[ -x $d8 ]] || die "no d8 at $d8"
+# R8 ships in the same jar as d8.
+r8_jar="$android_home/build-tools/$build_tools/lib/d8.jar"
+[[ -f $r8_jar ]] || die "no lib/d8.jar, which holds R8, in build-tools $build_tools"
 
 if [[ -n ${KOTLIN_HOME:-} ]]; then
   kotlin_home="$KOTLIN_HOME"
@@ -59,10 +65,13 @@ else
 fi
 kotlinc="$kotlin_home/bin/kotlinc"
 stdlib="$kotlin_home/lib/kotlin-stdlib.jar"
-[[ -x $kotlinc && -f $stdlib ]] ||
-  die "no bin/kotlinc and lib/kotlin-stdlib.jar under $kotlin_home; set KOTLIN_HOME to a Kotlin compiler home"
+# The stdlib refers to JetBrains annotations, which R8 must see to resolve.
+annotations="$kotlin_home/lib/annotations-13.0.jar"
+[[ -x $kotlinc && -f $stdlib && -f $annotations ]] ||
+  die "no bin/kotlinc, lib/kotlin-stdlib.jar and lib/annotations-13.0.jar under $kotlin_home; set KOTLIN_HOME to a Kotlin compiler home"
 
 jar_tool="$(command -v jar)" || die "jar is not on PATH; install a JDK"
+java_bin="$(command -v java)" || die "java is not on PATH; install a JDK"
 
 rm -rf "$out"
 gen="$out/gen/dev/mobileagent/agent"
@@ -94,11 +103,21 @@ while IFS= read -r -d '' file; do
 done < <(find "$out/classes" -name '*.class' -print0)
 ((${#classes[@]} > 0)) || die "kotlinc produced no class files"
 
-log "d8 (build-tools $build_tools): ${#classes[@]} classes and $(basename "$stdlib"), min-api $min_api"
-if ! "$d8" --release --min-api "$min_api" --lib "$platform_jar" --output "$out/dex" \
-  "${classes[@]}" "$stdlib" >"$out/d8.log" 2>&1; then
-  cat "$out/d8.log" >&2
-  die "d8 failed"
+if [[ ${SHRINK:-1} == 0 ]]; then
+  log "d8 (build-tools $build_tools): ${#classes[@]} classes and $(basename "$stdlib"), min-api $min_api, unshrunk"
+  if ! "$d8" --release --min-api "$min_api" --lib "$platform_jar" --output "$out/dex" \
+    "${classes[@]}" "$stdlib" >"$out/d8.log" 2>&1; then
+    cat "$out/d8.log" >&2
+    die "d8 failed"
+  fi
+else
+  log "R8 (build-tools $build_tools): ${#classes[@]} classes and $(basename "$stdlib"), min-api $min_api, rules agent.pro"
+  if ! "$java_bin" -cp "$r8_jar" com.android.tools.r8.R8 --release --min-api "$min_api" \
+    --lib "$platform_jar" --classpath "$annotations" --pg-conf "$here/agent.pro" \
+    --output "$out/dex" "${classes[@]}" "$stdlib" >"$out/d8.log" 2>&1; then
+    cat "$out/d8.log" >&2
+    die "R8 failed"
+  fi
 fi
 # A D8 released before the Kotlin compiler cannot parse the newer kotlin.Metadata
 # and reports it for every stdlib class. Only kotlin-reflect reads that metadata
