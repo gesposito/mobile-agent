@@ -34,7 +34,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 
 | Command | Does |
 |---|---|
-| `devices` | lists connected targets |
+| `devices` | lists connected targets with their state, and what makes an unusable one usable |
 | `open <app> [--relaunch] [--env K=V]...` | launches an app, claims its target, waits for the screen to settle |
 | `close` | stops the app this session opened and releases the target |
 | `snapshot [-i] [-d N] [--delta [--full]]` | lists elements, one per line with role, name and ref |
@@ -49,7 +49,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `get text\|value\|box <target>` | reads an element |
 | `diff snapshot` | compares the screen with this session's last snapshot |
 | `batch [--bail] [command]...` | runs commands in order |
-| `status` | reports the daemon, its targets and sessions |
+| `status` | reports the daemon, its targets with what each attached target's driver reports, and its sessions |
 | `doctor` | checks toolchains, the adb server, emulators and the daemon |
 | `set timeout <ms>` | sets this session's default timeout |
 | `shutdown` | stops the daemon |
@@ -233,12 +233,13 @@ compatibility table. Only the daemon check fails doctor.
 | `sfw`, `just` | on `PATH`, with the install commands through Socket Firewall |
 | `xcode-compatibility` | the table's rows, which the Simulator driver supplies through `Driver::compatibility` |
 
-On this machine every check reports a status:
+On this machine every check reports a status, and the Simulator driver
+fills the table with the host's components and every private call it
+makes (the 20 call rows are cut here):
 
 ```
-✓ daemon               running, pid 52504, version 0.1.0+47f518.18d90ed4f1375343
-⚠ drivers              no device driver is registered in this build
-    hint: set MOBILE_AGENT_FAKE_TARGETS=android to try the commands on a fake target
+✓ daemon               running, pid 30134, version 0.1.0+1106558.18d9183b130b6d97
+✓ drivers              simulator, android
 ✓ xcode                Xcode 27.0 (27A266a) at /Applications/Xcode.app/Contents/Developer
 ✓ simulator-runtimes   iOS 26.5
 ✓ android-sdk          /Users/<user>/Library/Android/sdk, adb 1.0.41 (37.0.1-15733141)
@@ -246,8 +247,20 @@ On this machine every check reports a status:
 ✓ emulator-control     gRPC control: emulator-5554 on port 8554
 ✓ sfw                  Socket Firewall Free, version 1.15.2
 ✓ just                 just 1.58.0
-- xcode-compatibility  no Simulator driver has supplied the Xcode compatibility table yet
+✓ xcode-compatibility  29 validated combinations, listed below
+
+Xcode compatibility:
+  Xcode 27.0 (27A266a)  Xcode 26.0 up to but not including 28  validated  validated on Xcode 27.0; the CI matrix also builds on Xcode 26
+  CoreSimulator 1171.7  1155.4 or later for dtuhidd  validated  input through dtuhidd
+  input transport dtuhidd, then Indigo  dtuhidd from CoreSimulator 1155.4, Indigo before  validated  CoreSimulator 1171.7 injects dtuhidd, ...
+  tree reader simulator-reader 0.1.0 at ~/Library/Caches/dev.mobileagent.simulator/simulator-reader-f95422e26c0f566b  built for aarch64-apple-ios-sim into this binary  validated  spawned into each booted Simulator, nothing installed
+  ...
+  Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S3 and tests/dtuhid.rs  -[SimDevice lookup:error:] (CoreSimulator)  validated
+  ...
 ```
+
+A daemon that serves only fake targets registers no device driver, so its
+`drivers` check names `fake` and the table stays empty.
 
 ## Help
 
@@ -324,6 +337,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 |---|---|---|
 | Command grammar | Interactive snapshot output | `snapshot::an_interactive_snapshot_lists_a_heading_and_two_buttons_each_ending_with_a_ref`, `snapshot::an_ios_target_lists_the_same_launcher`, `snapshot::a_full_snapshot_also_lists_text_and_system_bars`, `snapshot::depth_limits_the_listing`, and every command in `commands::*` (devices, open and close, click by coordinates, tap, click timing, fill and type, press, scroll and swipe, screenshot, waits, an endless animation, get, diff snapshot, selectors, shutdown) |
 | Ref syntax | Stale ref | `errors::clicking_a_ref_from_before_navigation_fails_with_a_stale_ref_error_and_guidance`, `errors::refs_are_accepted_as_at_ref_equals_and_bare_forms`, `snapshot::removed_refs_name_the_refs_the_previous_snapshot_listed` |
+| Command grammar | (task 8.8: states and driver status) | `output::tests::devices_list_each_target_with_its_state_and_what_makes_it_usable`, `output::tests::status_prints_what_the_driver_reports_under_each_attached_target`; against a real Simulator and emulator in the daemon's `devices::*` |
 | Output formats | JSON error | `errors::a_failed_command_in_json_mode_prints_an_error_object_with_a_code_and_exits_non_zero`, `errors::a_failed_command_in_human_mode_writes_its_error_to_stderr_and_exits_1`, `errors::every_failure_carries_a_snake_case_code`, `errors::an_unreachable_daemon_is_reported_with_a_code`, `errors::a_usage_error_in_human_mode_goes_to_stderr`, `snapshot::the_json_snapshot_follows_agent_browser_shape`, `snapshot::delta_snapshots_start_full_then_report_unchanged_and_changes`, `output::tests::the_json_line_keeps_agent_browser_field_order_and_omits_unset_fields` |
 | Daemon lifecycle | Cold first command | `lifecycle::a_cold_devices_starts_the_daemon_and_the_next_command_reuses_it`, `lifecycle::a_daemon_of_another_version_is_replaced_by_the_next_command`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_the_next_command`, `lifecycle::concurrent_first_commands_share_one_daemon`, `lifecycle::the_idle_timeout_flag_reaches_the_daemon_the_cli_starts`, `lifecycle::a_daemon_that_fails_to_start_is_reported_with_its_error`, `overhead::status_overhead_against_a_running_daemon_is_under_20_ms`, `commands::status_reports_the_daemon_and_its_targets`; idle exit in the daemon's `idle::*` |
 | Target selection | Ambiguous target | `selection::two_targets_without_a_device_flag_fail_listing_both`, `selection::one_connected_target_is_selected_by_default`, `selection::the_device_flag_selects_a_target_by_id_or_name`, `selection::the_platform_flag_selects_the_only_target_of_its_platform`, `selection::a_platform_with_several_targets_is_still_ambiguous_among_them`, `selection::a_device_flag_naming_no_target_fails_listing_the_connected_ones`, `selection::the_device_and_platform_flags_have_environment_twins`, `selection::a_session_that_holds_one_target_keeps_using_it_without_a_flag`, `selection::no_connected_target_is_reported_with_a_code` |
@@ -351,6 +365,10 @@ Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and
 `doctor::doctor_lists_every_check_with_a_status_in_both_outputs` runs the
 command.
+
+The tests start their daemons with fake targets and
+`MOBILE_AGENT_DRIVERS=none`, so a Simulator or emulator running on the
+host never shows up in their listings.
 
 ```sh
 cargo test -p cli     # builds mobile-agent-daemon through cargo when it is missing

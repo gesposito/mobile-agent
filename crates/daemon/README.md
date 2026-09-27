@@ -11,7 +11,9 @@ concurrently.
 
 The binary is `mobile-agent-daemon`; the CLI starts it on its first
 command. The library holds the server, the target registry, the driver
-contract and the fake driver every test runs on.
+contract, the device drivers (the Simulator driver of `crates/simulator`
+and the Android driver of `crates/android` behind the mirror's backend
+traits) and the fake driver every test without a device runs on.
 
 ## Layout
 
@@ -29,21 +31,24 @@ src/
   keys.rs       key names to Android key codes and iOS HID usages
   signals.rs    frame and tree change times read off the event stream; a settle's ending signal
   driver.rs     the Driver factory contract and the registration point
+  devices/      the device drivers: simulator (Simulator driver), android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          claims, idle and lifecycle, over the socket against the binary
+tests/          claims, idle and lifecycle, over the socket against the binary; devices,
+                the CLI against a real Simulator and emulator
 ```
 
 ## Running
 
 ```sh
-mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--fake <targets>]
-                    [--fake-latency <time>]
+mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
+                    [--fake <targets>] [--fake-latency <time>]
 ```
 
 | Flag | Environment | Default |
 |---|---|---|
 | `--socket-dir` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent`, else `mobile-agent` in the temporary directory |
 | `--idle-timeout` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h`; raw milliseconds or a whole number with `s`, `m` or `h`; `0` never exits |
+| `--drivers` | `MOBILE_AGENT_DRIVERS` | every device driver the host runs: `simulator` (macOS only) and `android`; none when fake targets are named. Comma-separated names, `ios` for `simulator`, or `none` |
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
 | `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
 
@@ -61,6 +66,7 @@ that to `daemon.log` and reports its end).
 | `daemon.version` | the release, `+`, then the executable's size and modification time in nanoseconds, in hex: `0.1.0+47f518.18d90f0fdb09d75c` |
 | `daemon.lock` | serializes startups |
 | `daemon.log` | stderr of daemons the CLI started, appended |
+| `android-agents/` | a record per serial of the Android agents this daemon started (socket, pid, token, versions, build), mode 0600, so the next daemon reuses an agent this one left running |
 
 The directory is created with mode 0700. Startups take the lock. Under it
 a new daemon connects to the socket: a daemon whose version file matches
@@ -93,8 +99,8 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 
 | Action | Parameters | Data |
 |---|---|---|
-| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers}`, `targets [{id, platform, class, name, attached, app, claimedBy}]`, `sessions [{name, targets, defaultTimeoutMs}]` |
-| `devices` | `platform` | `devices [{id, platform, class, name, model, os, claimedBy}]` |
+| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers}`, `targets [{id, platform, class, name, state, attached, app, claimedBy, driver}]` (`driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
+| `devices` | `platform` | `devices [{id, platform, class, name, state, model, os, advice, claimedBy}]` (`advice` only for a target its state keeps from automation) |
 | `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` |
 | `close` | | `closed`, `app`, `target`; the claim is released |
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
@@ -105,7 +111,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
 | `scroll` | `direction`, `amount`, `target`, `timeout` | `scrolled`, `direction`, `amount`, `strokes` |
-| `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs` |
+| `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
@@ -144,6 +150,25 @@ was: `tree`, `frame`, or `both` when their last changes came within 20 ms;
 already passed when the wait began; `timeout` when the wait reached its
 maximum, with `stillChanging` naming what changed in the last quiet window.
 `--tree-only` leaves frames out, as it does for the mirror.
+
+## Reading the tree after the display changed
+
+On a window that sends no change events (every Simulator window, Compose
+on Android) the mirror re-reads after input, when frames change and on its
+poll, and a frame-driven re-read comes no sooner than its minimum interval
+(200 ms) after the previous read ended. A click's watch lets the mirror run
+the re-read the tap calls for at once, which on the Simulator caught the
+SwiftUI fixture mid-switch (the Big tab's cells gone, the Login screen not
+there yet); the frames that changed next then call for a read that falls
+due after the click has replied. So `snapshot`, `diff snapshot` and every
+ref or selector argument first bring the replica up to the display
+(`Attached::catch_up`): when a frame changed after the latest tree read
+began, they wait for that re-read, at most the minimum interval plus
+100 ms. Targets without frames, and targets whose windows all send change
+events, never wait; a warm snapshot of a still screen is served from the
+replica. A screen that keeps changing its frames, such as a focused
+field's blinking cursor, can make a tree read wait for one re-read, since
+the worker's own pumps keep re-reading such a screen between commands.
 
 ## Sessions and claims
 
@@ -198,19 +223,130 @@ pub trait Driver: Send + Sync {
 
 pub struct Attachment {
     pub backend: mirror::backend::Backend,
-    pub apps: Box<dyn AppControl>,   // launch and terminate apps
-    pub display: Size,               // points, for gestures no element anchors
+    pub apps: Box<dyn AppControl>,           // launch and terminate apps
+    pub display: Size,                       // points, for gestures no element anchors
     pub config: MirrorConfig,
+    pub capture: Option<Box<dyn Capture>>,   // screenshots the driver takes now
+    pub report: Option<Arc<dyn Report>>,     // what status shows from the driver
 }
 ```
 
-The registry spawns a worker thread per target on its first command; the
-worker attaches, owns the mirror, runs commands in order, pumps the mirror
-between them, and detaches when the daemon stops. `driver::registered` is
-the registration point: the Android driver (task 5.3) and the Simulator
-driver (tasks 6.1 to 6.9) join the list there, the latter also filling
-`doctor`'s Xcode compatibility table through `Driver::compatibility`. Until
-then the list holds the fake driver alone, when fake targets are named.
+A `TargetInfo` carries the target's `state` as its platform names it and,
+for a state that keeps it from automation, `advice`. The registry spawns
+a worker thread per target on its first command; the worker attaches,
+owns the mirror, runs commands in order, pumps the mirror between them,
+and detaches when the daemon stops: dropping the `Attachment` detaches, so
+a driver stops what it started for the target when its parts are dropped.
+`status` asks each attached target's `Report` outside the registry's
+lock; `screenshot` takes the driver's `Capture` when there is one and
+the mirror's latest frame otherwise.
+
+`driver::registered` is the registration point. A daemon registers the
+device drivers this host runs, the Simulator driver on macOS and the
+Android driver everywhere, unless fake targets are named, which stand in
+for them (`--drivers` names drivers to register beside fakes, or `none`).
+Discovery merges every driver's targets, device drivers first; the
+Simulator driver fills `doctor`'s Xcode compatibility table through
+`Driver::compatibility`.
+
+### The Simulator driver
+
+`devices/simulator.rs` opens CoreSimulator on first use (about 330 ms,
+which a daemon that never lists a Simulator does not pay) and lists the
+booted Simulators of the default device set, state `booted`. Attaching
+subscribes to the display, reads the tree once (which spawns the reader and
+gives the screen's size in points) and puts the driver behind the backend
+traits:
+
+- tree: every read covers the foreground, through the reader spawned into
+  the Simulator or the host translator, whose verdict names the fallback;
+  the failures a launching app causes (`no_foreground`, `snapshot_failed`,
+  `foreground_changed`, `busy`) are retried for 5 s. Every window sends no
+  change events, so the mirror re-reads after input, on frames and on its
+  poll.
+- events: the display's frames, their hash the thumbnail below the status
+  bar; a launch or a stop through `open` or `close` is also a window event,
+  so the mirror reads the screen again and `open`'s settle waits for the
+  launched app to draw. The subscription only hashes: encoded frames and
+  screenshots are read from the display at the size asked for.
+- input: taps, long presses and swipes in points through the host's
+  transport (dtuhidd, else Indigo); iOS key codes (`keys.rs`) are keyboard
+  usages with the HID modifier byte, or consumer-page buttons (Home, Power,
+  VolumeUp, VolumeDown, Siri). Text for a field taps it, waits up to 1.5 s
+  for an editable node to take the focus and, unless keys were asked for
+  (`type`), selects what the field holds with Command-A so the text
+  replaces it; a paste reports the method `direct`, typing `keys`.
+- apps: launched with the launch environment (`--env K=V` reaches the app
+  as `K`, as `SIMCTL_CHILD_K` does through `simctl`), a running app brought
+  to the front unless `--relaunch`; `app_not_found` when `simctl` finds no
+  container for the bundle.
+- status: the input transport and why, its activation time and
+  connections, or the host's plan before the first input; the tree backend
+  and the reader with its pid, path, state and readiness time; the frames
+  received.
+
+Dropping the attachment resets the target in the driver, which stops its
+reader and closes its input session; the frame subscription ends with the
+mirror.
+
+`status` for a Simulator after a few taps:
+
+```
+input: dtuhidd (CoreSimulator 1171.7 injects dtuhidd, as every CoreSimulator from 1155.4 does; Indigo stands in only if dtuhidd cannot be reached), activated in 22.9 ms, 1 connection
+tree: simulator-reader: simulator-reader runs in the Simulator
+reader: simulator-reader 0.1.0, pid 26561, ready, ready 283.4 ms after its spawn, 1 spawn, from ~/Library/Caches/dev.mobileagent.simulator/simulator-reader-f95422e26c0f566b
+frames: 194 received from the display
+```
+
+are its lines; the JSON fields beside them are `input`, `inputReason`,
+`activationMs`, `connections`, `inputPlan`, `tree`, `treeReason`, `reader
+{name, pid, path, readyMs, state, spawns}`, `framesReceived`, `frameError`
+and `unavailable {call, failure, host}`.
+
+### The Android driver
+
+`devices/android.rs` lists every target the local adb server knows, in
+every state (`device`, `offline`, `unauthorized`, `no permissions`...),
+with the driver's advice for an unusable one; without an adb server there
+are no Android targets, and doctor reports the server. Attaching refuses a
+target whose state is not `device` (`target_not_ready`, with the advice),
+deploys the agent jar (`MOBILE_AGENT_JAR`, else the one `agent-android/build.sh`
+wrote), reusing the agent this daemon or its predecessor started when it
+is compatible (records in `android-agents/`), replacing an incompatible
+one, and refusing another holder of UI automation (`automation_conflict`);
+selects the emulator's controller when it answers; and starts the agent
+session, whose backend the mirror runs on. The display size comes from
+`wm size`.
+
+- apps: `open` launches by package through its launcher activity, as the
+  launcher does (`am start -W -a MAIN -c LAUNCHER -n <activity>`), each
+  `--env K=V` a string extra `--es K V` of the same name, so `--env
+  initial_tab=big` opens the fixture on its Big tab; `--relaunch` adds
+  `-S`. `app_not_found` for a package that is not installed or has no
+  launcher activity. `close` force-stops it.
+- screenshots come from the agent, upright in every display orientation.
+- status: the session's report, the agent and the path of each kind of
+  input and output.
+
+Dropping the attachment stops the agent (`shutdown`, then a kill past
+2 s) and forgets its record, so `shutdown`, an idle exit and a detach
+after a failed command leave no agent behind. A daemon killed before it
+could stop its agent leaves the record, and its successor reuses the agent
+if it still runs.
+
+`status` data for an emulator started with `-grpc 8554 -grpc-use-token`:
+
+```json
+{"agent": "mobile-agent-android 0.1.0", "controllerError": null, "disconnected": null,
+ "endpoint": "http://127.0.0.1:8554", "frameError": null, "frames": "emulator controller", "framesReceived": 67,
+ "input": "emulator controller", "inputs": {"agent": 0, "controller": 1}, "keyboard": false, "keys": "agent",
+ "lines": ["emulator-5554: mobile-agent-android 0.1.0 over protocol 1, pid 12499, socket mobile-agent-0.1.0-p1-d34aa73c8d57-8de2e87454f6, launched",
+           "input: emulator controller at http://127.0.0.1:8554 (taps, long presses and swipes)",
+           "frames: emulator controller, 67 received", "screenshots: agent",
+           "keys and text: agent; the AVD declares no keyboard, so the controller would drop keys"],
+ "pid": 12499, "protocol": 1, "reused": false, "screenshots": "agent",
+ "socket": "mobile-agent-0.1.0-p1-d34aa73c8d57-8de2e87454f6", "warning": null}
+```
 
 ### The fake driver
 
@@ -233,10 +369,11 @@ settle windows take real time, and a device model:
 Android fakes use widget classes, a status bar, a keyboard window and
 dialog windows, and send window events; iOS fakes use `XCUIElementType`
 classes, alert nodes and SpringBoard's window, and send no events, so the
-mirror re-reads them as it re-reads a Simulator. Emulators and Simulators
-have a frame source; Android devices have none, as design D7 has it, so
-`screenshot` answers them with `no_frame`. Every change shows after
-`--fake-latency`, together with its window event and frame; a move to
+mirror re-reads them as it re-reads a Simulator. Their states are `device`
+and `booted`; they have neither a capture nor a report. Emulators and
+Simulators have a frame source; Android devices have none, as design D7
+has it, so `screenshot` answers them with `no_frame`. Every change shows
+after `--fake-latency`, together with its window event and frame; a move to
 another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
 on the screen's final frame. Frames are produced as the backend is called,
@@ -262,7 +399,19 @@ not on a timer. Screenshots are placeholder bytes, not an image.
 
 The mirror's codes pass through: `stale_ref`, `unknown_ref`,
 `element_covered`, `element_offscreen`, `wait_timeout`, `no_frame`,
-`disconnected`, and drivers' own codes.
+`disconnected`, and drivers' own codes. The Simulator driver's keep its
+names (`unsupported_xcode`, `target_unavailable`, `no_foreground`,
+`no_input_transport`, `framework_error` and the rest in
+`crates/simulator/src/error.rs`); the Android adapter's are:
+
+| Code | When |
+|---|---|
+| `target_not_ready` | the target's state is not `device`; the message carries the advice |
+| `automation_conflict` | another process holds the device's UI automation, likely the one named |
+| `agent_failed` | the agent jar could not be read, or the agent did not start or complete its handshake |
+| `agent_mismatch` | the jar reports another version than this daemon deploys; rebuild it |
+| `adb_failed` | the adb server or the device failed a request |
+| `launch_failed` | `am start` could not open the app |
 
 ## Interpretations of the spec
 
@@ -271,6 +420,10 @@ The mirror's codes pass through: `stale_ref`, `unknown_ref`,
 - *Target selection*: a session that holds one of several connected targets
   keeps addressing it without a flag, as agent-browser's sessions stay on
   their browser; a session that holds none fails listing the candidates.
+  Connected targets are the booted Simulators and every target the adb
+  server lists; a Simulator that is shut down is no target, and an adb
+  target in another state than `device` is listed with its state and
+  refused when a command needs it.
 - *Daemon lifecycle*: the version file names the build as well as the
   release, so a rebuilt daemon is replaced as a new release is.
 - *Configurable timeouts*: settle keeps the 3 s bound of design D8 rather
@@ -290,10 +443,14 @@ Worked around here without changing `crates/mirror`:
 - `Mirror::snapshot` computes `removed_refs` against the last snapshot
   anyone took, and `Mirror::wait` takes one on timeout for its summary, so
   `removedRefs` is per target, not per session.
-- The backend has no app lifecycle, screen size or on-demand screenshot;
-  the driver contract adds `AppControl` and `display`, and targets without
-  a frame source answer `screenshot` with `no_frame` until a driver adds a
-  capture path.
+- The backend has no app lifecycle, screen size, on-demand screenshot or
+  status; the driver contract adds `AppControl`, `display`, `Capture` and
+  `Report`. Fake targets without a frame source answer `screenshot` with
+  `no_frame`.
+- The mirror schedules a frame-driven re-read no sooner than its minimum
+  interval after the previous read, and exposes neither the frames' nor
+  the reads' times, so the worker records when reads began (`signals.rs`)
+  to bring the replica up to the display before a tree read.
 - The mirror records when the tree and the frames last changed and the
   latest frame's hash, but exposes only a settle's change counts, so the
   worker reads frame hashes and event arrivals off the event stream on its
@@ -314,11 +471,35 @@ Worked around here without changing `crates/mirror`:
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
 | Command grammar | Interactive snapshot output | `lifecycle::a_snapshot_of_the_fake_launcher_lists_a_heading_and_two_buttons`, `lifecycle::devices_lists_every_fake_target_with_its_platform_and_class`, `lifecycle::open_launches_an_installed_app_and_refuses_an_unknown_one` |
 | Command grammar | (keys, element arguments) | `keys::tests::*`, `handlers::aim::tests::arguments_are_refs_identifiers_texts_or_roles` |
+| Command grammar | (task 8.8: the device drivers end to end) | `devices::devices_lists_the_simulator_and_the_emulator_with_platform_and_state`, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`, `devices::doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills` |
+| (task 8.8, registration) | (device drivers, fakes) | `driver::tests::every_device_driver_the_host_runs_registers_unless_fake_targets_are_named`, `driver::tests::named_drivers_register_alone_or_beside_fake_targets`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `server::tests::the_drivers_flag_names_the_device_drivers_to_register` |
+| (task 8.8, Simulator adapter) | (listing, keys, errors, doctor table, status, display, text) | `devices::simulator::tests::*` |
+| (task 8.8, Android adapter) | (listing, readiness, display, launch, status, errors) | `devices::android::tests::*` |
+| Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::only_frames_whose_hash_changed_count_as_frame_changes`, `signals::tests::tree_and_window_events_are_tree_changes_and_others_are_not`, `signals::tests::the_tee_records_what_passes_through`, `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
-through this daemon.
+through this daemon, on fake targets with the device drivers off
+(`MOBILE_AGENT_DRIVERS=none`).
 
 ```sh
 cargo test -p daemon
+```
+
+`tests/devices.rs` drives real targets through the built `mobile-agent`
+binary, a daemon of its own per test on a private socket directory, one
+test at a time. The Simulator tests run when `MOBILE_AGENT_SIM_UDID` names
+a booted Simulator with the SwiftUI and Expo fixtures installed, the
+Android test when `MOBILE_AGENT_ANDROID_SERIAL` names an emulator (or
+device) with the Compose fixture installed and the agent jar built; without
+them each test prints why it skipped and passes. The Simulator is left
+with the Expo fixture on its Login tab and the SwiftUI fixture stopped; the
+Compose fixture is stopped, and the Android test first waits up to a minute
+for the shared device to have no agent and nothing holding UI automation.
+Each flow prints what it measured.
+
+```sh
+eval "$(mise env)"   # the Android SDK
+MOBILE_AGENT_SIM_UDID=<udid> MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 \
+  cargo test --release -p daemon --test devices -- --nocapture
 ```
