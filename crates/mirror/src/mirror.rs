@@ -7,6 +7,8 @@ use protocol::message::TextMethod;
 use protocol::snapshot::{NodeFlags, WindowFlags, WindowType};
 
 use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner};
+use crate::delta::DeltaSnapshot;
+use crate::diff::Diff;
 use crate::error::{MirrorError, StaleCause};
 use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
@@ -575,6 +577,21 @@ impl Mirror {
             lines: lines.into_iter().take(SHOWN).collect(),
             verdict: snapshot.verdict,
         })
+    }
+
+    /// A new snapshot with `baseline`'s options, diffed against `baseline`.
+    pub fn diff(&mut self, _baseline: &Snapshot) -> Result<Diff, MirrorError> {
+        todo!("task 7.6")
+    }
+
+    /// A snapshot as agent-browser's `snapshot --delta` returns it; `full`
+    /// forces the whole listing, as `--full` does.
+    pub fn delta_snapshot(
+        &mut self,
+        _options: &SnapshotOptions,
+        _full: bool,
+    ) -> Result<DeltaSnapshot, MirrorError> {
+        todo!("task 7.6")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

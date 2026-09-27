@@ -13,6 +13,8 @@
 //! [`backend`]; [`testing`] provides a scripted fake target.
 
 pub mod backend;
+mod delta;
+mod diff;
 mod error;
 mod geometry;
 mod json;
@@ -28,6 +30,8 @@ mod verdict;
 mod view;
 mod wait;
 
+pub use delta::{DeltaSnapshot, RefChange, RefEntry, RefField, TreeSplice};
+pub use diff::{Change, Diff, Field};
 pub use error::{MirrorError, StaleCause, code};
 pub use geometry::{Point, Rect};
 pub use mirror::{
