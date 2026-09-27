@@ -160,17 +160,17 @@ pub fn scale_bgra(src: &FrameView<'_>, dst_width: usize, dst_height: usize, dst:
     let tallest = y_bounds.windows(2).map(|r| r[1] - r[0]).max().unwrap_or(1);
     dst.resize(dst_width * dst_height * 4, 0);
     // The frames the driver delivers, 2.6 times smaller than the display,
-    // take the fast path: 16-bit column sums, which hold while a span has at
-    // most 257 rows, and 32-bit reciprocals, which hold for counts up to 181.
-    if tallest <= 257 && widest * tallest <= NARROW_COUNTS {
-        match widest {
+    // take the fast path: at most four columns a pixel, 16-bit column sums,
+    // which hold while a span has at most 257 rows, and 32-bit reciprocals,
+    // which hold for counts up to 181.
+    match widest {
+        1..=4 if tallest <= 257 && widest * tallest <= NARROW_COUNTS => match widest {
             1 => fast_rows::<1>(src, &x_bounds, &y_bounds, dst),
             2 => fast_rows::<2>(src, &x_bounds, &y_bounds, dst),
             3 => fast_rows::<3>(src, &x_bounds, &y_bounds, dst),
             _ => fast_rows::<4>(src, &x_bounds, &y_bounds, dst),
-        }
-    } else {
-        general_rows(src, &x_bounds, &y_bounds, dst);
+        },
+        _ => general_rows(src, &x_bounds, &y_bounds, dst),
     }
 }
 
@@ -569,14 +569,16 @@ mod tests {
         };
         let (data, stride) = frame(1206, 2622, 40, texture);
         let src = view(&data, 1206, 2622, stride);
-        for (dw, dh) in [(460, 1000), (603, 1311), (331, 720)] {
+        // Spans of up to 3, 2, 4, 5 and 7 columns: every width the entry
+        // point sends one way or the other.
+        for (dw, dh) in [(460, 1000), (603, 1311), (331, 720), (276, 600), (184, 400)] {
             let x_bounds: Vec<usize> = (0..=dw).map(|x| x * 1206 / dw).collect();
             let y_bounds: Vec<usize> = (0..=dh).map(|y| y * 2622 / dh).collect();
-            let mut fast = vec![0; dw * dh * 4];
             let mut general = vec![0; dw * dh * 4];
-            fast_rows::<4>(&src, &x_bounds, &y_bounds, &mut fast);
             general_rows(&src, &x_bounds, &y_bounds, &mut general);
-            assert!(fast == general, "{dw}x{dh} differs");
+            let mut scaled = Vec::new();
+            scale_bgra(&src, dw, dh, &mut scaled);
+            assert!(scaled == general, "{dw}x{dh} differs");
         }
     }
 
