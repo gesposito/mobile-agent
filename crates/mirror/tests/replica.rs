@@ -4,7 +4,7 @@
 //! when frames change and on a poll, their deltas derived by diffing
 //! consecutive reads and the read's cost and age reported in the snapshot.
 //! Which windows send no change events comes from the snapshot's window
-//! metadata (task 3.6), inferred from Compose's host view only without it.
+//! metadata (task 3.6), inferred from Compose's classes only without it.
 //! Time is the fake target's clock: nothing sleeps.
 
 mod support;
@@ -331,6 +331,69 @@ fn window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path() {
     target.advance(ms(30));
     mirror.snapshot(&full()).unwrap();
     assert_eq!(target.reads().len(), 1, "no re-read after the tap");
+}
+
+/// The Compose Anim screen with its window's root and the node below it,
+/// the Compose host in the fixture, given the classes `root` and `host`, and
+/// the window metadata `events` when given. No other node's class is under
+/// `androidx.compose.`.
+fn compose_anim_with(root: &str, host: &str, events: Option<bool>) -> Screen {
+    let mut screen = Screen::load("compose-anim");
+    let window = &mut screen.0["windows"][0];
+    window["root"]["class"] = json!(root);
+    window["root"]["children"][0]["class"] = json!(host);
+    if let Some(events) = events {
+        window["events"] = json!(events);
+    }
+    screen
+}
+
+/// How the mirror keeps window 5 of `screen` current.
+fn refresh_mode(screen: &Screen) -> RefreshMode {
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    snapshot.window(5).unwrap().source.mode
+}
+
+/// Without window metadata, a window holding a node of any class under
+/// `androidx.compose.` is taken to send no change events: on the API 36
+/// emulator a Compose window shows `androidx.compose.ui.platform.ComposeView`
+/// rather than the `AndroidComposeView` of spike S1. The metadata, when
+/// present, decides whatever the classes.
+#[test]
+fn without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path() {
+    const FRAME: &str = "android.widget.FrameLayout";
+    const VIEW: &str = "android.view.View";
+    for (root, host) in [
+        ("androidx.compose.ui.platform.ComposeView", VIEW),
+        (FRAME, "androidx.compose.ui.platform.ComposeView"),
+        (FRAME, "androidx.compose.ui.window.DialogLayout"),
+        (FRAME, "androidx.compose.ui.platform.AndroidComposeView"),
+    ] {
+        assert_eq!(
+            refresh_mode(&compose_anim_with(root, host, None)),
+            RefreshMode::Reread,
+            "{root} > {host} without window metadata"
+        );
+        assert_eq!(
+            refresh_mode(&compose_anim_with(root, host, Some(true))),
+            RefreshMode::Events,
+            "{root} > {host} marked as sending events"
+        );
+    }
+    for host in [VIEW, "com.example.ui.ComposeView"] {
+        assert_eq!(
+            refresh_mode(&compose_anim_with(FRAME, host, None)),
+            RefreshMode::Events,
+            "{FRAME} > {host}: no class under androidx.compose."
+        );
+        assert_eq!(
+            refresh_mode(&compose_anim_with(FRAME, host, Some(false))),
+            RefreshMode::Reread,
+            "{FRAME} > {host} marked as sending no events"
+        );
+    }
 }
 
 #[test]
