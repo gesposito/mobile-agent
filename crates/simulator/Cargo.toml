@@ -36,13 +36,18 @@ libc = "0.2"
 # `--no-default-features --features jpeg-encoder` on a host without
 # libjpeg-turbo. With both, jpeg-encoder takes over if turbojpeg cannot start.
 [features]
-default = ["turbojpeg"]
+default = ["turbojpeg", "reader"]
 turbojpeg = ["dep:turbojpeg"]
 jpeg-encoder = ["dep:jpeg-encoder"]
+# The tree reader, built for the Simulator by build.rs and embedded (README.md,
+# Building). Without it the crate embeds none and tree reads use the host
+# translator, the degraded fallback.
+reader = []
 # `SimulatorDriver::inject_fault`, which makes a target's next private call
 # raise an Objective-C exception inside the guard. Only this crate's own
-# tests enable it, through the dev-dependency on itself below.
+# tests enable it, through the dev-dependency on itself below, which adds no
+# default feature so that the tests can run without the reader.
 fault-injection = []
 
 [dev-dependencies]
-simulator = { path = ".", features = ["fault-injection"] }
+simulator = { path = ".", default-features = false, features = ["fault-injection"] }

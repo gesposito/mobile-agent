@@ -571,3 +571,64 @@ fn each_simulator_has_its_own_reader() {
         .terminate(&shared, SWIFTUI_BUNDLE)
         .expect("terminated");
 }
+
+/// A build without the reader reads through the translator from its first
+/// read on, within a bounded time: the Bluesky smoke test's daemon, built
+/// without it, hung on that read for good (tasks.md 6.11). Run with
+/// `--no-default-features --features turbojpeg`. The read runs on a thread
+/// of its own, so a read that hangs fails the test instead of hanging it.
+#[cfg(not(feature = "reader"))]
+#[test]
+fn a_build_without_the_reader_reads_through_the_translator() {
+    let Some(udid) = common::gated("a_build_without_the_reader_reads_through_the_translator")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = std::sync::Arc::new(SimulatorDriver::open().expect("the driver opens"));
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    common::show_swiftui(&driver, &udid, "login");
+    let (done, finished) = std::sync::mpsc::channel();
+    {
+        let (driver, udid) = (std::sync::Arc::clone(&driver), udid.clone());
+        thread::spawn(move || {
+            let start = Instant::now();
+            let tree = loop {
+                match driver.snapshot(&udid, &TreeOptions::default()) {
+                    Ok(tree) if has(&tree, "login-username") => break Ok(tree),
+                    Err(error) if !error.retryable() => break Err(error),
+                    _ if start.elapsed() > Duration::from_secs(20) => {
+                        break Err(simulator::Error::Timeout {
+                            what: "a full translator read".into(),
+                            after: start.elapsed(),
+                        });
+                    }
+                    _ => thread::sleep(Duration::from_millis(100)),
+                }
+            };
+            let _ = done.send(tree);
+        });
+    }
+    let tree = finished
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the read returned instead of hanging")
+        .expect("the translator read the screen");
+    assert_eq!(tree.backend, TreeBackend::Translator);
+    let fallback = tree
+        .degraded
+        .iter()
+        .find(|reason| reason.code() == "fallback_backend")
+        .expect("marked as the fallback");
+    eprintln!("{fallback}");
+    assert!(
+        fallback.to_string().contains("`reader` feature"),
+        "{fallback}"
+    );
+    let status = driver.status(&udid).expect("status").tree.expect("tree");
+    assert_eq!(status.backend, TreeBackend::Translator);
+    assert_eq!(status.reader, None, "nothing was spawned");
+    driver.terminate(&udid, SWIFTUI_BUNDLE).expect("terminated");
+}

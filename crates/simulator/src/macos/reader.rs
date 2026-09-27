@@ -595,6 +595,44 @@ pub fn log_path(udid: &str) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// A spawn that has to record a failure on the slot, as one does when
+    /// no reader is built in, must not find the slot locked by the read
+    /// that asked for it: the Bluesky smoke test's daemon, built without the
+    /// reader, hung there for good (tasks.md 6.11).
+    #[test]
+    fn a_spawn_can_record_on_the_slot_while_it_runs() {
+        let slot = Arc::new(TreeSlot::default());
+        let (done, finished) = std::sync::mpsc::channel();
+        let spawning = Arc::clone(&slot);
+        thread::spawn(move || {
+            let outcome = spawning.reader(|| {
+                spawning.give_up("this build has no reader".into());
+                Ok(Spawned::Unusable("this build has no reader".into()))
+            });
+            let _ = done.send(outcome.map(|reader| reader.err()));
+        });
+        let outcome = finished
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the read returned instead of waiting on its own lock");
+        assert_eq!(
+            outcome.expect("no private call failed"),
+            Some("this build has no reader".into())
+        );
+        let again = slot
+            .reader(|| panic!("a reader that cannot run is not spawned again"))
+            .expect("no private call failed");
+        assert_eq!(again.err().as_deref(), Some("this build has no reader"));
+    }
+
+    #[cfg(not(feature = "reader"))]
+    #[test]
+    fn a_build_without_the_reader_feature_embeds_none() {
+        assert!(EMBEDDED.is_empty());
+        let why = embedded().expect_err("there is no reader to install");
+        assert!(why.contains("`reader` feature"), "{why}");
+    }
+
+    #[cfg(feature = "reader")]
     #[test]
     fn the_build_embedded_a_reader_for_the_simulator() {
         assert!(

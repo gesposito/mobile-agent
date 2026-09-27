@@ -6,10 +6,11 @@
 //! The reader is built by a nested cargo in release mode, in a target
 //! directory of its own under the outer one, so an unchanged reader costs a
 //! fingerprint check. `MOBILE_AGENT_READER` names a prebuilt reader to embed
-//! instead. When the host cannot build it (not macOS, or the target's
-//! standard library is missing) the crate embeds nothing, prints a warning,
-//! and tree reads use the host translator, the degraded fallback; a reader
-//! that fails to compile fails the build.
+//! instead. Without the `reader` feature, or when the host cannot build it
+//! (not macOS, or the target's standard library is missing), the crate
+//! embeds nothing and tree reads use the host translator, the degraded
+//! fallback; a host that cannot build it prints a warning. A reader that
+//! fails to compile fails the build.
 
 use std::env;
 use std::fs;
@@ -35,7 +36,13 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MOBILE_AGENT_READER");
 
     let macos = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos");
-    let outcome = if !macos {
+    let wanted = env::var_os("CARGO_FEATURE_READER").is_some();
+    let outcome = if !wanted {
+        Err(
+            "this build leaves out the reader: it was built without the `reader` feature"
+                .to_owned(),
+        )
+    } else if !macos {
         Err("the Simulator driver runs only on macOS".to_owned())
     } else if let Some(prebuilt) = env::var_os("MOBILE_AGENT_READER") {
         Ok(PathBuf::from(prebuilt))
@@ -52,7 +59,7 @@ fn main() {
             fs::write(&missing, "").expect("OUT_DIR is writable");
         }
         Err(why) => {
-            if macos {
+            if macos && wanted {
                 println!(
                     "cargo:warning=the Simulator reader is not built into this binary, so tree reads will use the host translator: {why}"
                 );
