@@ -66,6 +66,8 @@ pub enum Error {
     Io { what: String, reason: String },
     /// An argument is unusable.
     InvalidArgument(String),
+    /// A frame could not be read from the display or encoded.
+    Frame { reason: String },
 }
 
 impl Error {
@@ -81,6 +83,7 @@ impl Error {
             Error::Timeout { .. } => "timeout",
             Error::Io { .. } => "io",
             Error::InvalidArgument(_) => "invalid_argument",
+            Error::Frame { .. } => "frame_failed",
         }
     }
 }
@@ -108,6 +111,7 @@ impl fmt::Display for Error {
             Error::Timeout { what, after } => write!(f, "{what} did not happen within {after:?}"),
             Error::Io { what, reason } => write!(f, "{what}: {reason}"),
             Error::InvalidArgument(reason) => f.write_str(reason),
+            Error::Frame { reason } => write!(f, "frame capture failed: {reason}"),
         }
     }
 }

@@ -271,6 +271,19 @@ impl Device {
         })
     }
 
+    /// `-[SimDevice io]`, the client for the device's IO ports.
+    pub fn io(&self) -> Result<Shared> {
+        const CALL: &str = "-[SimDevice io]";
+        let io: Option<Retained<AnyObject>> = guarded(CALL, || {
+            // SAFETY: `io` returns a SimDeviceIOClient or nil.
+            unsafe { msg_send![&*self.0, io] }
+        })?;
+        io.map(Shared::new).ok_or_else(|| Error::Framework {
+            call: CALL.into(),
+            failure: Failure::Nil,
+        })
+    }
+
     /// The device's data directory on the host, which holds its home,
     /// preferences and installed applications.
     pub fn data_path(&self) -> Result<PathBuf> {

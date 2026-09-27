@@ -6,9 +6,10 @@ dtuhidd or the legacy Indigo client, frames from the display surface, and the
 accessibility tree through a reader spawned into the guest. Nothing is built
 or installed in the Simulator.
 
-`SimulatorDriver` implements the driver traits (`Lifecycle` so far). They
-carry no Apple types, so the mirror and the daemon can hold any backend
-behind them; they live in this crate until `crates/mirror` defines its own.
+`SimulatorDriver` implements the driver traits (`Lifecycle` and `Frames` so
+far). They carry no Apple types, so the mirror and the daemon can hold any
+backend behind them; they live in this crate until `crates/mirror` defines
+its own.
 On hosts other than macOS the crate still builds: `SimulatorDriver` exists
 there, and `open` fails with `platform_unsupported`.
 
@@ -19,18 +20,47 @@ src/
   driver.rs        the driver traits
   model.rs         the values they take and return
   error.rs         errors, each with a stable code
+  frames.rs        FrameStream and its bounded queue
+  pipeline.rs      box downscale, hashes and the read throttle, no Simulator needed
   lookup.rs        finding a device, runtime or device type from user input
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
   macos/
     objc.rs        framework loading, the exception guard, NSError conversion
+    forward.rs     messages to ROCKit forwarding proxies
     coresim.rs     CoreSimulator: service context, device set, devices
     prefs.rs       the accessibility preferences written before a first boot
+    display.rs     the main display, its SimScreen callbacks and IOSurface
+    frames.rs      frame subscriptions and screenshots
+    encode.rs      the JPEG encoders
     driver.rs      SimulatorDriver
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
   lifecycle.rs     task 6.1
+  frames.rs        task 6.2
 ```
+
+## Building
+
+The frame encoder is turbojpeg, the default feature, which spike S2 chose for
+being 2.7 to 3.1 times faster than the alternative. It links libjpeg-turbo
+statically from the host instead of building the copy vendored in
+`turbojpeg-sys`, which needs cmake: the workspace's `.cargo/config.toml` sets
+`TURBOJPEG_SOURCE=explicit`, `TURBOJPEG_STATIC=1` and the Homebrew paths on
+Apple silicon, so `brew install jpeg-turbo` is all a build needs. Variables set
+in the environment take precedence, for another prefix such as `/usr/local`.
+The binary does not load libturbojpeg at run time.
+
+On a host without libjpeg-turbo, build the pure-Rust fallback instead:
+
+```sh
+cargo build -p simulator --no-default-features --features jpeg-encoder
+```
+
+With both features, jpeg-encoder takes over if turbojpeg cannot start. The
+workspace builds this crate and jpeg-encoder at `opt-level = 3` in the dev
+profile too: unoptimized, the pixel pipeline took 230 ms per 460x1000 frame,
+and even `cargo test` has to hold 30 fps.
 
 ## Private calls
 
@@ -47,6 +77,40 @@ under the device's `-[SimDevice dataPath]`, keeping every other key; spike S4
 found both tree read paths failing for seconds after a boot without them.
 `create_device` writes them too, so a new device has them before its first
 boot. A booted device's preferences belong to the guest and are left alone.
+
+## Frames
+
+A subscription registers SimScreen callbacks on the main display
+(`displayClass == 0`), whose descriptor is a ROCKit proxy: calls to it go
+through `forward::send`, and its blocks carry their type signature. The
+present callback only counts the tick and wakes a worker thread at
+user-interactive QoS. The worker reads the IOSurface the surfaces callback
+handed over, box-filters it down to `max_dimension` (1000 by default, 460x1000
+on an iPhone 17) and hashes the result:
+
+- `hash` covers every delivered pixel. A frame is delivered only when it
+  differs from the last one, so presents without a visible change (S2 counted
+  35 per appearance toggle) deliver nothing, and a static display delivers
+  nothing at all.
+- `content_hash` is S2's 32-pixel thumbnail hash of the frame below the status
+  bar, for the settle predicate (D8): a clock tick or a blinking cursor does
+  not change it.
+
+The throttle (`max_fps`, 30 by default) skips presents rather than reading
+late, because the render server does not wait for a reader's lock and late
+reads tear (S2): after a read the worker sleeps through three quarters of the
+interval and reads on the next present. A present that arrived during the
+sleep is read if no fresh one follows, so the last frame of an animation is
+never lost. Frames wait in a queue of 16 that drops the oldest when the
+consumer falls behind. `FrameStats` counts presents, reads, deliveries, torn
+and dropped frames, and the pipeline's CPU time.
+
+On the spike Simulator the Anim tab streamed 30 fps at 460x1000 with the
+pipeline at 10 to 14 percent of one core and the whole test process under 15
+(turbojpeg, dev profile); jpeg-encoder held 30 fps at 15 to 16 percent. The
+downscale costs about 2 ms per frame, with a 16-bit vertical pass and an
+exact reciprocal in place of each division; its output is identical to S2's
+filter.
 
 ## Tests
 
@@ -73,3 +137,4 @@ about a minute.
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Simulator discovery and lifecycle | Launch with environment | `lifecycle::launch_with_environment`, `lifecycle::every_simulator_is_listed_with_identifier_name_runtime_and_state`, `lifecycle::a_booted_device_is_left_alone`, `lifecycle::an_unknown_device_is_not_found` |
+| Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |

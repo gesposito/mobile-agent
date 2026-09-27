@@ -2,8 +2,11 @@
 //! its companion frameworks, loaded at run time and called through objc2.
 
 mod coresim;
+mod display;
 mod driver;
 mod encode;
+mod forward;
+mod frames;
 mod objc;
 mod prefs;
 

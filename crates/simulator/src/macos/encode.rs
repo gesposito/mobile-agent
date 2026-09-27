@@ -1,31 +1,113 @@
-//! The frame JPEG encoders: turbojpeg by default, chosen by spike S2, and the
-//! pure-Rust jpeg-encoder as the fallback feature. Both take packed BGRA and
-//! write baseline JPEG with 4:2:0 chroma and standard Huffman tables.
+//! The frame JPEG encoders: turbojpeg by default, chosen by spike S2 for
+//! being 2.7 to 3.1 times faster, and the pure-Rust jpeg-encoder as the
+//! fallback feature. Both take packed BGRA and write baseline JPEG with 4:2:0
+//! chroma and standard Huffman tables.
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+
+#[cfg(not(any(feature = "turbojpeg", feature = "jpeg-encoder")))]
+compile_error!("crates/simulator needs a JPEG encoder: enable `turbojpeg` or `jpeg-encoder`");
 
 /// A JPEG encoder at a fixed quality.
 pub struct Encoder {
-    _private: (),
+    backend: Backend,
+}
+
+enum Backend {
+    #[cfg(feature = "turbojpeg")]
+    Turbo(turbojpeg::Compressor),
+    #[cfg(feature = "jpeg-encoder")]
+    Pure { quality: u8 },
 }
 
 impl Encoder {
     /// The preferred compiled-in encoder: turbojpeg, then jpeg-encoder when
-    /// turbojpeg is not compiled in or cannot start.
+    /// turbojpeg is not compiled in or cannot start. `quality` is clamped to
+    /// 1 to 100.
     pub fn new(quality: u8) -> Result<Encoder> {
-        let _ = quality;
-        unimplemented!("task 6.2: JPEG encoding")
+        Ok(Encoder {
+            backend: Backend::start(quality.clamp(1, 100))?,
+        })
     }
 
     /// "turbojpeg" or "jpeg-encoder".
     pub fn name(&self) -> &'static str {
-        unimplemented!("task 6.2: JPEG encoding")
+        match self.backend {
+            #[cfg(feature = "turbojpeg")]
+            Backend::Turbo(_) => "turbojpeg",
+            #[cfg(feature = "jpeg-encoder")]
+            Backend::Pure { .. } => "jpeg-encoder",
+        }
     }
 
     /// Encodes packed BGRA `pixels` of `width` x `height`.
     pub fn encode(&mut self, pixels: &[u8], width: usize, height: usize) -> Result<Vec<u8>> {
-        let _ = (pixels, width, height);
-        unimplemented!("task 6.2: JPEG encoding")
+        match &mut self.backend {
+            #[cfg(feature = "turbojpeg")]
+            Backend::Turbo(compressor) => compressor
+                .compress_to_vec(turbojpeg::Image {
+                    pixels,
+                    width,
+                    pitch: width * 4,
+                    height,
+                    format: turbojpeg::PixelFormat::BGRA,
+                })
+                .map_err(|error| failed("turbojpeg", error)),
+            #[cfg(feature = "jpeg-encoder")]
+            Backend::Pure { quality } => {
+                let (Ok(w), Ok(h)) = (u16::try_from(width), u16::try_from(height)) else {
+                    return Err(failed(
+                        "jpeg-encoder",
+                        format!("{width}x{height} exceeds 65535 pixels"),
+                    ));
+                };
+                let mut out = Vec::with_capacity(width * height / 4);
+                let mut encoder = jpeg_encoder::Encoder::new(&mut out, *quality);
+                encoder.set_sampling_factor(jpeg_encoder::SamplingFactor::R_4_2_0);
+                encoder.set_optimized_huffman_tables(false);
+                encoder
+                    .encode(pixels, w, h, jpeg_encoder::ColorType::Bgra)
+                    .map_err(|error| failed("jpeg-encoder", error))?;
+                Ok(out)
+            }
+        }
+    }
+}
+
+impl Backend {
+    #[cfg(all(feature = "turbojpeg", feature = "jpeg-encoder"))]
+    fn start(quality: u8) -> Result<Backend> {
+        Ok(turbo(quality)
+            .map(Backend::Turbo)
+            .unwrap_or(Backend::Pure { quality }))
+    }
+
+    #[cfg(all(feature = "turbojpeg", not(feature = "jpeg-encoder")))]
+    fn start(quality: u8) -> Result<Backend> {
+        turbo(quality).map(Backend::Turbo)
+    }
+
+    #[cfg(all(not(feature = "turbojpeg"), feature = "jpeg-encoder"))]
+    fn start(quality: u8) -> Result<Backend> {
+        Ok(Backend::Pure { quality })
+    }
+}
+
+#[cfg(feature = "turbojpeg")]
+fn turbo(quality: u8) -> Result<turbojpeg::Compressor> {
+    let fail = |error: turbojpeg::Error| failed("turbojpeg", error);
+    let mut compressor = turbojpeg::Compressor::new().map_err(fail)?;
+    compressor.set_quality(i32::from(quality)).map_err(fail)?;
+    compressor
+        .set_subsamp(turbojpeg::Subsamp::Sub2x2)
+        .map_err(fail)?;
+    compressor.set_optimize(false).map_err(fail)?;
+    Ok(compressor)
+}
+
+fn failed(encoder: &str, error: impl std::fmt::Display) -> Error {
+    Error::Frame {
+        reason: format!("{encoder}: {error}"),
     }
 }
 

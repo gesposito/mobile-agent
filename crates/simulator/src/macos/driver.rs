@@ -9,7 +9,7 @@ use crate::error::{Error, Failure, Result};
 use crate::frames::FrameStream;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
-use crate::macos::prefs;
+use crate::macos::{frames, prefs};
 use crate::model::{
     BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, FrameOptions, LaunchOptions, Launched,
     PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
@@ -247,13 +247,14 @@ impl Lifecycle for SimulatorDriver {
 
 impl Frames for SimulatorDriver {
     fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
-        let _ = (target, options);
-        unimplemented!("task 6.2: display surface frames")
+        let device = self.booted(target)?;
+        let subscription = frames::Subscription::start(&device, options)?;
+        Ok(FrameStream::new(Box::new(subscription)))
     }
 
     fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot> {
-        let _ = (target, options);
-        unimplemented!("task 6.2: display surface frames")
+        let device = self.booted(target)?;
+        frames::screenshot(&device, options)
     }
 }
 

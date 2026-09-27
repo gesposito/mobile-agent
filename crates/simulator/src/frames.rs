@@ -1,8 +1,8 @@
 //! The receiving end of a frame subscription, independent of its source.
 
 use std::collections::VecDeque;
-use std::sync::{Condvar, Mutex};
-use std::time::Duration;
+use std::sync::{Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use crate::model::{Frame, FrameStats};
 
@@ -63,29 +63,72 @@ struct QueueState {
 
 impl FrameQueue {
     pub fn new(capacity: usize) -> FrameQueue {
-        let _ = capacity;
-        unimplemented!("task 6.2: frame queue")
+        FrameQueue {
+            state: Mutex::new(QueueState {
+                frames: VecDeque::with_capacity(capacity),
+                dropped: 0,
+                closed: false,
+            }),
+            ready: Condvar::new(),
+            capacity: capacity.max(1),
+        }
+    }
+
+    /// The state; a panic elsewhere cannot leave it inconsistent, so a
+    /// poisoned lock is taken over rather than propagated.
+    fn lock(&self) -> MutexGuard<'_, QueueState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub fn push(&self, frame: Frame) {
-        let _ = frame;
-        unimplemented!("task 6.2: frame queue")
+        let mut state = self.lock();
+        if state.frames.len() == self.capacity {
+            state.frames.pop_front();
+            state.dropped += 1;
+        }
+        state.frames.push_back(frame);
+        drop(state);
+        self.ready.notify_one();
     }
 
     /// The oldest frame, waiting up to `timeout` (forever with `None`).
     /// After `close` it drains what is left and then returns `None`.
     pub fn pop(&self, timeout: Option<Duration>) -> Option<Frame> {
-        let _ = timeout;
-        unimplemented!("task 6.2: frame queue")
+        let deadline = timeout.map(|timeout| Instant::now() + timeout);
+        let mut state = self.lock();
+        loop {
+            if let Some(frame) = state.frames.pop_front() {
+                return Some(frame);
+            }
+            if state.closed {
+                return None;
+            }
+            state = match deadline {
+                None => self
+                    .ready
+                    .wait(state)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                Some(deadline) => {
+                    let remaining = deadline.checked_duration_since(Instant::now())?;
+                    self.ready
+                        .wait_timeout(state, remaining)
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .0
+                }
+            };
+        }
     }
 
     /// Ends the queue and wakes a waiting consumer.
     pub fn close(&self) {
-        unimplemented!("task 6.2: frame queue")
+        self.lock().closed = true;
+        self.ready.notify_all();
     }
 
     pub fn dropped(&self) -> u64 {
-        unimplemented!("task 6.2: frame queue")
+        self.lock().dropped
     }
 }
 

@@ -55,8 +55,26 @@ impl<'a> FrameView<'a> {
         height: usize,
         stride: usize,
     ) -> Result<FrameView<'a>, FrameError> {
-        let _ = (data, width, height, stride);
-        unimplemented!("task 6.2: frame pipeline")
+        if width == 0 || height == 0 {
+            return Err(FrameError::Empty);
+        }
+        let row_bytes = width * 4;
+        if stride < row_bytes {
+            return Err(FrameError::StrideTooSmall { stride, row_bytes });
+        }
+        let needed = stride * (height - 1) + row_bytes;
+        if data.len() < needed {
+            return Err(FrameError::BufferTooShort {
+                len: data.len(),
+                needed,
+            });
+        }
+        Ok(FrameView {
+            data,
+            width,
+            height,
+            stride,
+        })
     }
 
     pub fn width(&self) -> usize {
@@ -67,6 +85,7 @@ impl<'a> FrameView<'a> {
         self.height
     }
 
+    #[cfg(test)]
     pub fn stride(&self) -> usize {
         self.stride
     }
@@ -76,16 +95,35 @@ impl<'a> FrameView<'a> {
     /// # Panics
     /// When `top` leaves no rows.
     pub fn rows_from(&self, top: usize) -> FrameView<'a> {
-        let _ = top;
-        unimplemented!("task 6.2: frame pipeline")
+        assert!(
+            top < self.height,
+            "rows_from({top}) of a {}-row frame",
+            self.height
+        );
+        FrameView {
+            data: &self.data[top * self.stride..],
+            width: self.width,
+            height: self.height - top,
+            stride: self.stride,
+        }
+    }
+
+    /// Row `y` without its padding.
+    fn row(&self, y: usize) -> &'a [u8] {
+        let start = y * self.stride;
+        &self.data[start..start + self.width * 4]
     }
 }
 
 /// The size that fits `width` x `height` inside `max_dim` on the longer side,
 /// keeping the aspect ratio. Never upscales; `max_dim == 0` means native.
 pub fn fit_within(width: usize, height: usize, max_dim: usize) -> (usize, usize) {
-    let _ = (width, height, max_dim);
-    unimplemented!("task 6.2: frame pipeline")
+    let longer = width.max(height);
+    if max_dim == 0 || longer <= max_dim {
+        return (width, height);
+    }
+    let side = |length: usize| ((length * max_dim + longer / 2) / longer).max(1);
+    (side(width), side(height))
 }
 
 /// Box-filters `src` down to `dst_width` x `dst_height` into `dst` as packed
@@ -95,8 +133,201 @@ pub fn fit_within(width: usize, height: usize, max_dim: usize) -> (usize, usize)
 /// # Panics
 /// When the destination is empty or larger than the source in either axis.
 pub fn scale_bgra(src: &FrameView<'_>, dst_width: usize, dst_height: usize, dst: &mut Vec<u8>) {
-    let _ = (src, dst_width, dst_height, dst);
-    unimplemented!("task 6.2: frame pipeline")
+    assert!(
+        (1..=src.width).contains(&dst_width) && (1..=src.height).contains(&dst_height),
+        "scale_bgra only downscales: {}x{} to {dst_width}x{dst_height}",
+        src.width,
+        src.height
+    );
+    dst.clear();
+    dst.reserve(dst_width * dst_height * 4);
+    if dst_width == src.width && dst_height == src.height {
+        for y in 0..src.height {
+            dst.extend_from_slice(src.row(y));
+        }
+        return;
+    }
+    // Output pixel (ox, oy) covers source columns x_bounds[ox]..x_bounds[ox + 1]
+    // and rows y_bounds[oy]..y_bounds[oy + 1], so every source pixel lands in
+    // exactly one output pixel. Each output row first sums its source rows
+    // per column, a widening add the compiler vectorizes; each output pixel
+    // then sums its columns and divides by its pixel count.
+    let x_bounds: Vec<usize> = (0..=dst_width).map(|x| x * src.width / dst_width).collect();
+    let y_bounds: Vec<usize> = (0..=dst_height)
+        .map(|y| y * src.height / dst_height)
+        .collect();
+    let spans: Vec<usize> = y_bounds.windows(2).map(|rows| rows[1] - rows[0]).collect();
+    // A span takes one of two lengths, the floor and the ceiling of the
+    // ratio, so each length's divisors are prepared once.
+    let mut divisors: Vec<(usize, Vec<Divisor>)> = Vec::new();
+    for &rows in &spans {
+        if !divisors.iter().any(|(length, _)| *length == rows) {
+            let row = x_bounds
+                .windows(2)
+                .map(|columns| Divisor::new((columns[1] - columns[0]) * rows))
+                .collect();
+            divisors.push((rows, row));
+        }
+    }
+    // Column sums fit in 16 bits while a span has at most 257 rows, which
+    // halves the vertical pass; the sums per pixel are 32 bits either way.
+    if spans
+        .iter()
+        .all(|&rows| rows <= usize::from(u16::MAX) / 255)
+    {
+        box_filter::<u16>(src, &x_bounds, &y_bounds, &divisors, dst);
+    } else {
+        box_filter::<u32>(src, &x_bounds, &y_bounds, &divisors, dst);
+    }
+}
+
+/// A column sum of the vertical pass.
+trait ColumnSum: Copy + Default {
+    fn add(self, byte: u8) -> Self;
+    fn widen(self) -> u32;
+}
+
+impl ColumnSum for u16 {
+    fn add(self, byte: u8) -> u16 {
+        self.wrapping_add(u16::from(byte))
+    }
+
+    fn widen(self) -> u32 {
+        u32::from(self)
+    }
+}
+
+impl ColumnSum for u32 {
+    fn add(self, byte: u8) -> u32 {
+        self.wrapping_add(u32::from(byte))
+    }
+
+    fn widen(self) -> u32 {
+        self
+    }
+}
+
+fn box_filter<S: ColumnSum>(
+    src: &FrameView<'_>,
+    x_bounds: &[usize],
+    y_bounds: &[usize],
+    divisors: &[(usize, Vec<Divisor>)],
+    dst: &mut Vec<u8>,
+) {
+    let widest = x_bounds
+        .windows(2)
+        .map(|columns| columns[1] - columns[0])
+        .max()
+        .unwrap_or(1);
+    match widest {
+        1 => rows::<S, 1>(src, x_bounds, y_bounds, divisors, dst),
+        2 => rows::<S, 2>(src, x_bounds, y_bounds, divisors, dst),
+        3 => rows::<S, 3>(src, x_bounds, y_bounds, divisors, dst),
+        4 => rows::<S, 4>(src, x_bounds, y_bounds, divisors, dst),
+        _ => rows::<S, 0>(src, x_bounds, y_bounds, divisors, dst),
+    }
+}
+
+/// The two passes for spans of at most `W` columns: every output pixel sums
+/// exactly `W` columns, those past its own span weighted by zero, so the loop
+/// has no branch that the alternating span lengths would mispredict. `W = 0`
+/// sums each span's own length instead, for any width.
+fn rows<S: ColumnSum, const W: usize>(
+    src: &FrameView<'_>,
+    x_bounds: &[usize],
+    y_bounds: &[usize],
+    divisors: &[(usize, Vec<Divisor>)],
+    dst: &mut Vec<u8>,
+) {
+    // Zeros past the last column, so the last pixel's weighted reads stay in
+    // bounds.
+    let mut column_sums = vec![S::default(); (src.width + W) * 4];
+    for rows in y_bounds.windows(2) {
+        let (top, bottom) = (rows[0], rows[1]);
+        for (sum, &byte) in column_sums.iter_mut().zip(src.row(top)) {
+            *sum = S::default().add(byte);
+        }
+        for y in top + 1..bottom {
+            for (sum, &byte) in column_sums.iter_mut().zip(src.row(y)) {
+                *sum = sum.add(byte);
+            }
+        }
+        let row_divisors = &divisors
+            .iter()
+            .find(|(length, _)| *length == bottom - top)
+            .expect("a divisor row for every span length")
+            .1;
+        for (columns, divisor) in x_bounds.windows(2).zip(row_divisors) {
+            let (left, span) = (columns[0], columns[1] - columns[0]);
+            let mut total = [0u32; 4];
+            if W == 0 {
+                for pixel in column_sums[left * 4..(left + span) * 4].chunks_exact(4) {
+                    for (total, &channel) in total.iter_mut().zip(pixel) {
+                        *total = total.wrapping_add(channel.widen());
+                    }
+                }
+            } else {
+                for (index, pixel) in column_sums[left * 4..(left + W) * 4]
+                    .chunks_exact(4)
+                    .enumerate()
+                {
+                    let weight = u32::from(index < span);
+                    for (total, &channel) in total.iter_mut().zip(pixel) {
+                        *total = total.wrapping_add(channel.widen().wrapping_mul(weight));
+                    }
+                }
+            }
+            dst.extend_from_slice(&divisor.rounded(total));
+        }
+    }
+}
+
+/// Division by a pixel count, rounded to nearest with halves up, done as a
+/// multiplication. With `m = floor(2^k / count) + 1`, `(n * m) >> k` equals
+/// `n / count` for every `n` below `256 * count`, as a mean of bytes is,
+/// once `2^k >= 256 * count^2`: the error `n / 2^k` stays below the `1 /
+/// count` that separates two quotients. Counts up to 181 take `k = 23` and
+/// 32-bit products, which vectorize; counts below 2^20 take `k = 48` and
+/// 64-bit products; larger counts divide.
+#[derive(Clone, Copy, Debug)]
+enum Divisor {
+    Narrow { half: u32, multiplier: u32 },
+    Wide { half: u32, multiplier: u64 },
+    Exact { count: u32 },
+}
+
+impl Divisor {
+    fn new(count: usize) -> Divisor {
+        let count = count as u32;
+        let half = count / 2;
+        if count <= 181 {
+            Divisor::Narrow {
+                half,
+                multiplier: (1 << 23) / count + 1,
+            }
+        } else if count < 1 << 20 {
+            Divisor::Wide {
+                half,
+                multiplier: (1 << 48) / u64::from(count) + 1,
+            }
+        } else {
+            Divisor::Exact { count }
+        }
+    }
+
+    fn rounded(self, totals: [u32; 4]) -> [u8; 4] {
+        match self {
+            // The products fit, as the type's comment shows, so the wrapping
+            // operations only spare debug builds their overflow checks.
+            Divisor::Narrow { half, multiplier } => {
+                totals.map(|total| (total.wrapping_add(half).wrapping_mul(multiplier) >> 23) as u8)
+            }
+            Divisor::Wide { half, multiplier } => totals.map(|total| {
+                (u64::from(total.wrapping_add(half)).wrapping_mul(multiplier) >> 48) as u8
+            }),
+            Divisor::Exact { count } => totals.map(|total| ((total + count / 2) / count) as u8),
+        }
+    }
 }
 
 /// 64-bit FNV-1a over the blue, green and red bytes of a box-filtered
@@ -104,28 +335,57 @@ pub fn scale_bgra(src: &FrameView<'_>, dst_width: usize, dst_height: usize, dst:
 /// thumbnail cell's mean by half a level to alter it, so a blinking cursor or
 /// a single glyph does not, which is what settle wants (D8).
 pub fn thumbnail_hash(frame: &FrameView<'_>) -> u64 {
-    let _ = frame;
-    unimplemented!("task 6.2: frame pipeline")
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    let (width, height) = fit_within(frame.width, frame.height, HASH_DIM);
+    let mut thumbnail = Vec::with_capacity(width * height * 4);
+    scale_bgra(frame, width, height, &mut thumbnail);
+    thumbnail
+        .chunks_exact(4)
+        .flat_map(|pixel| &pixel[..3])
+        .fold(FNV_OFFSET, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+        })
 }
 
 /// A hash of every byte of packed pixels, so any change at the delivered
 /// resolution alters it: the test for whether the display updated.
 pub fn pixels_hash(pixels: &[u8]) -> u64 {
-    let _ = pixels;
-    unimplemented!("task 6.2: frame pipeline")
+    // Each word goes through an xor, a multiply and a rotation, which spreads
+    // a change of any bit over the whole state. Four independent lanes keep
+    // the multiplier busy instead of waiting on one chain: about 0.1 ms for a
+    // 460x1000 frame.
+    const MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mix = |state: u64, word: u64| (state ^ word).wrapping_mul(MULTIPLIER).rotate_left(29);
+    let word = |bytes: &[u8]| u64::from_le_bytes(bytes.try_into().expect("eight bytes"));
+    let seed = (pixels.len() as u64).wrapping_mul(MULTIPLIER);
+    let mut lanes = [seed, seed ^ 1, seed ^ 2, seed ^ 3];
+    let mut blocks = pixels.chunks_exact(32);
+    for block in &mut blocks {
+        for (lane, bytes) in lanes.iter_mut().zip(block.chunks_exact(8)) {
+            *lane = mix(*lane, word(bytes));
+        }
+    }
+    let mut hash = lanes.iter().fold(seed, |hash, &lane| mix(hash, lane));
+    for &byte in blocks.remainder() {
+        hash = mix(hash, u64::from(byte));
+    }
+    hash ^ (hash >> 32)
 }
 
 /// The rows the status bar takes at the top of a portrait frame.
 pub fn status_bar_rows(height: usize) -> usize {
-    let _ = height;
-    unimplemented!("task 6.2: frame pipeline")
+    (height as f64 * STATUS_BAR_FRACTION).ceil() as usize
 }
 
 /// The thumbnail hash of the frame below the status bar, whose clock changes
 /// on its own and must not keep a screen from settling (S3).
 pub fn content_hash(frame: &FrameView<'_>) -> u64 {
-    let _ = frame;
-    unimplemented!("task 6.2: frame pipeline")
+    let top = status_bar_rows(frame.height);
+    if top >= frame.height {
+        return thumbnail_hash(frame);
+    }
+    thumbnail_hash(&frame.rows_from(top))
 }
 
 /// When a throttled reader reads. Late reads tear, because the render server
@@ -142,10 +402,12 @@ pub struct Throttle {
 impl Throttle {
     /// At most `max_fps` reads a second; 0 reads every present.
     pub fn new(max_fps: u32) -> Throttle {
-        let _ = max_fps;
-        unimplemented!("task 6.2: frame pipeline")
+        Throttle {
+            interval: (max_fps > 0).then(|| Duration::from_secs_f64(1.0 / f64::from(max_fps))),
+        }
     }
 
+    #[cfg(test)]
     pub fn interval(&self) -> Option<Duration> {
         self.interval
     }
@@ -153,14 +415,17 @@ impl Throttle {
     /// Until when a reader that read at `last` sleeps; presents before then
     /// are stale. `None` when unthrottled.
     pub fn resume_at(&self, last: Instant) -> Option<Instant> {
-        let _ = last;
-        unimplemented!("task 6.2: frame pipeline")
+        self.interval.map(|interval| last + interval.mul_f64(0.75))
     }
 
     /// How long a resumed reader waits for a fresh present before it reads a
     /// stale one.
     pub fn fresh_wait(&self) -> Duration {
-        unimplemented!("task 6.2: frame pipeline")
+        // A quarter of the interval brings the next scheduled read; the margin
+        // covers a present that lands just after it.
+        self.interval.map_or(Duration::ZERO, |interval| {
+            interval / 4 + Duration::from_millis(2)
+        })
     }
 }
 
@@ -279,6 +544,39 @@ mod tests {
         let out = scaled(&data, 1206, 2622, stride, 460, 1000);
         assert_eq!(out.len(), 460 * 1000 * 4);
         assert!(out.chunks_exact(4).all(|p| p == [9, 8, 7, 255]));
+    }
+
+    #[test]
+    fn the_reciprocal_matches_rounded_division_for_every_mean_of_bytes() {
+        for count in (1..=1100).chain([4095, 65_536, (1 << 20) - 1, 1 << 20, 3_162_132]) {
+            let divisor = Divisor::new(count);
+            let count = count as u32;
+            let check = |total: u32| {
+                let expected = ((total + count / 2) / count) as u8;
+                assert_eq!(
+                    divisor.rounded([total; 4]),
+                    [expected; 4],
+                    "{total} / {count}"
+                );
+            };
+            if count <= 1100 {
+                (0..=255 * count).for_each(check);
+            } else {
+                for total in [0, 1, count / 2, count - 1, count, 128 * count, 255 * count] {
+                    check(total);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_tall_span_sums_in_32_bits() {
+        // 600 rows into 1: a column sums 600 bytes, beyond 16 bits.
+        let (data, stride) = frame(2, 600, 0, |_, _| WHITE);
+        assert_eq!(
+            scaled(&data, 2, 600, stride, 1, 1),
+            vec![255, 255, 255, 255]
+        );
     }
 
     #[test]
