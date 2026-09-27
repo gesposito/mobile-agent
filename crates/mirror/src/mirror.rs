@@ -19,7 +19,7 @@ use crate::snapshot::{
 };
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
-use crate::wait::{Condition, Selector, WaitOutcome};
+use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
 /// How often a window that sends no change events is re-read when nothing
 /// else re-reads it.
@@ -487,13 +487,94 @@ impl Mirror {
     /// Waits until an element matching `selector` meets `condition`,
     /// re-evaluating whenever the target reports something or a re-read
     /// falls due, and fails at `timeout` with a summary of the screen.
+    /// Only elements on screen and not covered match.
     pub fn wait(
         &mut self,
-        _selector: &Selector,
-        _condition: Condition,
-        _timeout: Duration,
+        selector: &Selector,
+        condition: Condition,
+        timeout: Duration,
     ) -> Result<WaitOutcome, MirrorError> {
-        todo!("task 7.5")
+        let start = self.now();
+        let deadline = start + timeout;
+        loop {
+            self.pump()?;
+            let now = self.now();
+            let found = self.first_match(selector, condition == Condition::Enabled);
+            let holds = match condition {
+                Condition::Disappear => found.is_none(),
+                Condition::Appear | Condition::Enabled => found.is_some(),
+            };
+            if holds {
+                return Ok(WaitOutcome {
+                    elapsed: now - start,
+                    element: found,
+                });
+            }
+            if now >= deadline {
+                let summary = self.summary()?;
+                return Err(MirrorError::WaitTimeout {
+                    selector: selector.clone(),
+                    condition,
+                    waited: now - start,
+                    summary: Box::new(summary),
+                });
+            }
+            let wake = self
+                .replica
+                .next_due(&self.config)
+                .map_or(deadline, |due| due.min(deadline))
+                .max(now);
+            if let Some(item) = self.backend.events.next(wake) {
+                self.replica.apply(item);
+            }
+        }
+    }
+
+    /// The first element on screen, not covered, that matches `selector`,
+    /// and is enabled when `enabled` says so.
+    fn first_match(&self, selector: &Selector, enabled: bool) -> Option<Element> {
+        let view = View::build(&self.replica);
+        for (w, window) in self.replica.windows.iter().enumerate() {
+            for (i, node) in window.nodes.iter().enumerate() {
+                let facts = &view.windows[w][i];
+                if !facts.visible || facts.hidden != Hidden::No {
+                    continue;
+                }
+                if enabled && !node.flags.contains(NodeFlags::ENABLED) {
+                    continue;
+                }
+                let reference = self.refs.of(node.element);
+                if selector.matches(
+                    &facts.name,
+                    facts.value.as_deref(),
+                    node.identifier.as_deref(),
+                    facts.role,
+                    reference,
+                ) {
+                    return Some(element(window, node, facts, reference));
+                }
+            }
+        }
+        None
+    }
+
+    /// A summary of the screen as an interactive snapshot shows it.
+    fn summary(&mut self) -> Result<SnapshotSummary, MirrorError> {
+        const SHOWN: usize = 20;
+        let snapshot = self.snapshot(&SnapshotOptions::interactive())?;
+        let lines: Vec<String> = snapshot.text.lines().map(str::to_owned).collect();
+        let age = self.replica.updated_at.map_or(Duration::ZERO, |read| {
+            snapshot.taken_at.saturating_duration_since(read)
+        });
+        Ok(SnapshotSummary {
+            revision: snapshot.revision,
+            age,
+            windows: snapshot.windows.len(),
+            elements: snapshot.refs().len(),
+            omitted: lines.len().saturating_sub(SHOWN),
+            lines: lines.into_iter().take(SHOWN).collect(),
+            verdict: snapshot.verdict,
+        })
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

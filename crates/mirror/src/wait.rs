@@ -54,9 +54,47 @@ impl Selector {
 }
 
 impl fmt::Display for Selector {
+    /// Such as `text "Welcome"`, `button with id login-submit` or `@e4`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("task 7.5")
+        let mut parts = Vec::new();
+        if let Some(identifier) = &self.identifier {
+            parts.push(format!("id {identifier}"));
+        }
+        if let Some(text) = &self.text {
+            parts.push(format!("text {text:?}"));
+        }
+        if let Some(reference) = self.reference {
+            parts.push(format!("@{reference}"));
+        }
+        match (self.role, parts.is_empty()) {
+            (Some(role), true) => write!(f, "{role}"),
+            (Some(role), false) => write!(f, "{role} with {}", parts.join(" and ")),
+            (None, true) => f.write_str("any element"),
+            (None, false) => f.write_str(&parts.join(" and ")),
+        }
+    }
+}
+
+impl Selector {
+    /// Whether an element with these facts matches; `element_ref` is the
+    /// element's ref, if it has one.
+    pub(crate) fn matches(
+        &self,
+        name: &str,
+        value: Option<&str>,
+        identifier: Option<&str>,
+        role: Role,
+        element_ref: Option<Ref>,
+    ) -> bool {
+        self.text
+            .as_deref()
+            .is_none_or(|text| name.contains(text) || value.is_some_and(|v| v.contains(text)))
+            && self
+                .identifier
+                .as_deref()
+                .is_none_or(|id| identifier == Some(id))
+            && self.role.is_none_or(|r| r == role)
+            && self.reference.is_none_or(|r| element_ref == Some(r))
     }
 }
 
@@ -108,7 +146,25 @@ pub struct SnapshotSummary {
 
 impl fmt::Display for SnapshotSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = f;
-        todo!("task 7.5")
+        write!(
+            f,
+            "revision {}, {} windows, {} elements with refs, read {} ms ago",
+            self.revision,
+            self.windows,
+            self.elements,
+            self.age.as_millis()
+        )?;
+        if self.verdict.degraded {
+            let reasons: Vec<&str> = self.verdict.reasons.iter().map(|r| r.code()).collect();
+            write!(f, ", degraded ({})", reasons.join(", "))?;
+        }
+        f.write_str(":")?;
+        for line in &self.lines {
+            write!(f, "\n{line}")?;
+        }
+        if self.omitted > 0 {
+            write!(f, "\n({} more lines)", self.omitted)?;
+        }
+        Ok(())
     }
 }

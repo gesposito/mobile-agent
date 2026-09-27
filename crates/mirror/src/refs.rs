@@ -102,6 +102,11 @@ impl RefTable {
         reference
     }
 
+    /// The element's ref, if it has one.
+    pub fn of(&self, element: ElementId) -> Option<Ref> {
+        self.by_element.get(&element).copied()
+    }
+
     pub fn lookup(&self, reference: Ref) -> Lookup<'_> {
         if reference.0 == 0 || reference.0 >= self.next {
             return Lookup::Unknown;
