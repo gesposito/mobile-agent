@@ -4,14 +4,15 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::driver::Lifecycle;
+use crate::driver::{Frames, Lifecycle};
 use crate::error::{Error, Failure, Result};
+use crate::frames::FrameStream;
 use crate::lookup;
 use crate::macos::coresim::{Device, DeviceSet, ServiceContext};
 use crate::macos::prefs;
 use crate::model::{
-    BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, LaunchOptions, Launched,
-    PreferencesOutcome, RuntimeInfo,
+    BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, FrameOptions, LaunchOptions, Launched,
+    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
 };
 
 /// The first boot of a new device took 43 to 146 s to a terminal boot status
@@ -241,6 +242,18 @@ impl Lifecycle for SimulatorDriver {
             Err(error) if not_running(&error) => Ok(()),
             result => result,
         }
+    }
+}
+
+impl Frames for SimulatorDriver {
+    fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
+        let _ = (target, options);
+        unimplemented!("task 6.2: display surface frames")
+    }
+
+    fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot> {
+        let _ = (target, options);
+        unimplemented!("task 6.2: display surface frames")
     }
 }
 

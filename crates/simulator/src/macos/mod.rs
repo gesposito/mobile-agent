@@ -3,6 +3,7 @@
 
 mod coresim;
 mod driver;
+mod encode;
 mod objc;
 mod prefs;
 

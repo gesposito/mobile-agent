@@ -3,7 +3,7 @@
 //!
 //! The private Apple frameworks are loaded at run time and every call into
 //! them runs inside an exception guard. [`SimulatorDriver`] implements the
-//! driver traits, starting with [`Lifecycle`]; on hosts other than macOS it
+//! driver traits, [`Lifecycle`] and [`Frames`] so far; on hosts other than macOS it
 //! exists but cannot be opened. `README.md` covers the build, the
 //! compatibility table and the map from spec scenarios to tests.
 
@@ -12,8 +12,10 @@
 
 mod driver;
 mod error;
+mod frames;
 mod lookup;
 mod model;
+mod pipeline;
 mod version;
 
 #[cfg(target_os = "macos")]
@@ -21,11 +23,12 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 
-pub use driver::Lifecycle;
+pub use driver::{Frames, Lifecycle};
 pub use error::{Error, Failure, Result};
+pub use frames::FrameStream;
 pub use model::{
-    BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, LaunchOptions, Launched,
-    PreferencesOutcome, RuntimeInfo,
+    BootReport, DeviceInfo, DeviceState, DeviceTypeInfo, Frame, FrameOptions, FrameStats,
+    LaunchOptions, Launched, PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
 };
 
 #[cfg(target_os = "macos")]

@@ -2,7 +2,7 @@
 //! Apple frameworks, so these types exist on every platform.
 
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 /// A device's lifecycle state, as `-[SimDevice state]` reports it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -144,4 +144,104 @@ pub struct BootReport {
     /// The accessibility preferences, written before the boot so that tree
     /// reads work from the first one (spike S4).
     pub accessibility: PreferencesOutcome,
+}
+
+/// How a frame subscription reads the display (design D7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameOptions {
+    /// Reads at most this many frames a second, skipping the presents in
+    /// between; 0 reads every present, up to the display's 60 Hz.
+    pub max_fps: u32,
+    /// The longer side of a delivered frame in pixels; 0 keeps the native
+    /// size. 1000 gives 460x1000 on an iPhone 17.
+    pub max_dimension: u32,
+    /// JPEG quality, 1 to 100.
+    pub quality: u8,
+    /// Encodes delivered frames as JPEG. Without it a frame carries only its
+    /// hashes, which is all settle needs.
+    pub encode: bool,
+}
+
+impl Default for FrameOptions {
+    /// 30 fps at 1000 pixels and quality 80: 12 percent of one core in S2.
+    fn default() -> FrameOptions {
+        FrameOptions {
+            max_fps: 30,
+            max_dimension: 1000,
+            quality: 80,
+            encode: true,
+        }
+    }
+}
+
+/// One frame of a subscription.
+#[derive(Clone, Debug)]
+pub struct Frame {
+    /// 1 for the frame read at subscription, then one more per frame.
+    pub sequence: u64,
+    /// When the surface was read.
+    pub captured_at: SystemTime,
+    /// The same moment on the monotonic clock, for measuring latency.
+    pub captured: Instant,
+    pub width: u32,
+    pub height: u32,
+    /// The JPEG, when the subscription encodes.
+    pub jpeg: Option<Vec<u8>>,
+    /// Hash of every delivered pixel: two frames differ exactly when it does.
+    pub hash: u64,
+    /// Hash of a thumbnail of the frame below the status bar, for settle: the
+    /// clock and a blinking cursor do not change it (D8).
+    pub content_hash: u64,
+    /// The render server wrote the surface during the read, so the frame may
+    /// be torn (S2). The present that did it causes a later read.
+    pub torn: bool,
+}
+
+/// Counters of a frame subscription.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameStats {
+    /// Present callbacks from the display, whether or not pixels changed.
+    pub presents: u64,
+    /// Surface reads, which the throttle keeps below the presents.
+    pub reads: u64,
+    /// Frames delivered, the one read at subscription included.
+    pub delivered: u64,
+    /// Delivered frames that may be torn.
+    pub torn: u64,
+    /// Frames dropped because the receiver fell 16 frames behind; the oldest
+    /// go first.
+    pub dropped: u64,
+    /// CPU time of the pipeline: the reading thread and the callbacks.
+    pub cpu: Duration,
+    /// Since the subscription started.
+    pub elapsed: Duration,
+    /// The JPEG encoder in use: "turbojpeg", "jpeg-encoder", or "none".
+    pub encoder: &'static str,
+}
+
+/// How to take a screenshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenshotOptions {
+    /// The longer side in pixels; 0, the default, keeps the native size.
+    pub max_dimension: u32,
+    /// JPEG quality, 1 to 100.
+    pub quality: u8,
+}
+
+impl Default for ScreenshotOptions {
+    fn default() -> ScreenshotOptions {
+        ScreenshotOptions {
+            max_dimension: 0,
+            quality: 90,
+        }
+    }
+}
+
+/// A JPEG of the display, read on demand.
+#[derive(Clone, Debug)]
+pub struct Screenshot {
+    pub captured_at: SystemTime,
+    pub width: u32,
+    pub height: u32,
+    pub jpeg: Vec<u8>,
 }

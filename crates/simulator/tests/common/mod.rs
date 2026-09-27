@@ -22,7 +22,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use simulator::{Lifecycle, SimulatorDriver};
+use simulator::{Frame, FrameStream, LaunchOptions, Lifecycle, SimulatorDriver};
 
 /// The variable that enables the integration tests.
 pub const UDID_VARIABLE: &str = "MOBILE_AGENT_SIM_UDID";
@@ -266,4 +266,112 @@ pub fn wait_for(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool 
         }
         thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Relaunches the Expo fixture on `tab` (`login`, `list`, `big`, `anim` or
+/// `system`) and waits until its first screen has had time to draw.
+pub fn show_expo(driver: &SimulatorDriver, udid: &str, tab: &str) {
+    driver
+        .launch(
+            udid,
+            EXPO_BUNDLE,
+            &LaunchOptions::new()
+                .env("FIXTURE_INITIAL_TAB", tab)
+                .terminating_running(),
+        )
+        .expect("the Expo fixture launches");
+    thread::sleep(Duration::from_millis(1500));
+}
+
+/// Puts the Expo fixture back on its Login tab when dropped, which is where
+/// the shared Simulator must be left.
+pub struct ExpoOnLogin<'a> {
+    pub driver: &'a SimulatorDriver,
+    pub udid: String,
+}
+
+impl Drop for ExpoOnLogin<'_> {
+    fn drop(&mut self) {
+        let restored = self.driver.launch(
+            &self.udid,
+            EXPO_BUNDLE,
+            &LaunchOptions::new()
+                .env("FIXTURE_INITIAL_TAB", "login")
+                .terminating_running(),
+        );
+        if let Err(error) = restored {
+            eprintln!("could not put the Expo fixture back on Login: {error}");
+        }
+    }
+}
+
+/// Every frame the stream delivers within `window`.
+pub fn collect(stream: &FrameStream, window: Duration) -> Vec<Frame> {
+    let deadline = Instant::now() + window;
+    let mut frames = Vec::new();
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        if let Some(frame) = stream.next(remaining) {
+            frames.push(frame);
+        }
+    }
+    frames
+}
+
+/// Reads frames until none arrives for `quiet`, and returns the last one.
+/// Fails when the display keeps changing for `timeout`.
+pub fn drain_until_quiet(
+    stream: &FrameStream,
+    last: Option<Frame>,
+    quiet: Duration,
+    timeout: Duration,
+) -> Frame {
+    let deadline = Instant::now() + timeout;
+    let mut last = last;
+    loop {
+        match stream.next(quiet) {
+            Some(frame) => last = Some(frame),
+            None => {
+                if let Some(frame) = last {
+                    return frame;
+                }
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the display did not settle within {timeout:?}"
+        );
+    }
+}
+
+/// A baseline JPEG's dimensions from its SOF0 segment.
+pub fn jpeg_dimensions(jpeg: &[u8]) -> Option<(u32, u32)> {
+    if jpeg.get(..2) != Some(&[0xFF, 0xD8]) || jpeg.get(jpeg.len() - 2..) != Some(&[0xFF, 0xD9]) {
+        return None;
+    }
+    let mut at = 2;
+    while at + 9 <= jpeg.len() {
+        let marker = jpeg[at + 1];
+        let length = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
+        if marker == 0xC0 {
+            let height = u16::from_be_bytes([jpeg[at + 5], jpeg[at + 6]]);
+            let width = u16::from_be_bytes([jpeg[at + 7], jpeg[at + 8]]);
+            return Some((u32::from(width), u32::from(height)));
+        }
+        at += 2 + length;
+    }
+    None
+}
+
+/// User plus system CPU time of this process so far.
+pub fn process_cpu() -> Duration {
+    // SAFETY: getrusage fills a zeroed rusage for RUSAGE_SELF.
+    let usage = unsafe {
+        let mut usage: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut usage);
+        usage
+    };
+    let time = |t: libc::timeval| {
+        Duration::new(t.tv_sec as u64, 0) + Duration::from_micros(t.tv_usec as u64)
+    };
+    time(usage.ru_utime) + time(usage.ru_stime)
 }

@@ -8,7 +8,10 @@
 use std::path::Path;
 
 use crate::error::Result;
-use crate::model::{BootReport, DeviceInfo, LaunchOptions, Launched};
+use crate::frames::FrameStream;
+use crate::model::{
+    BootReport, DeviceInfo, FrameOptions, LaunchOptions, Launched, Screenshot, ScreenshotOptions,
+};
 
 /// Lists Simulators and drives their lifecycle (simulator-driver spec,
 /// "Simulator discovery and lifecycle").
@@ -33,4 +36,16 @@ pub trait Lifecycle {
 
     /// Terminates the application; one that is not running is left alone.
     fn terminate(&self, target: &str, bundle_id: &str) -> Result<()>;
+}
+
+/// Frames from the display surface and screenshots on demand (simulator-driver
+/// spec, "Frames and screenshots"; design D7).
+pub trait Frames {
+    /// Subscribes to the display: the frame on screen now, then one each time
+    /// the display's pixels change, up to `options.max_fps` a second. Nothing
+    /// arrives while the display is static.
+    fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream>;
+
+    /// A JPEG of the display as it is now.
+    fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot>;
 }

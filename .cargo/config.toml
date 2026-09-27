@@ -1,0 +1,11 @@
+# crates/simulator's turbojpeg feature links libjpeg-turbo statically from the
+# host instead of building the copy vendored in turbojpeg-sys, which needs
+# cmake (spike S2, docs/spikes/s2-simulator-frames.md). These point at
+# Homebrew on Apple silicon (`brew install jpeg-turbo`); a variable set in the
+# environment takes precedence, for example /usr/local on Intel. See
+# crates/simulator/README.md, Building.
+[env]
+TURBOJPEG_SOURCE = "explicit"
+TURBOJPEG_LIB_DIR = "/opt/homebrew/lib"
+TURBOJPEG_INCLUDE_DIR = "/opt/homebrew/include"
+TURBOJPEG_STATIC = "1"

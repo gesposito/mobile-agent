@@ -104,6 +104,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
+        if: steps.xcode.outputs.available == 'true'
+        # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
+        # TODO: Socket Firewall does not wrap Homebrew.
+        run: brew install jpeg-turbo
       - name: Install Socket Firewall
         if: steps.xcode.outputs.available == 'true'
         # sfw is the Socket wrapper itself, so nothing wraps its own install.

@@ -4,11 +4,12 @@
 
 use std::path::Path;
 
-use crate::driver::Lifecycle;
+use crate::driver::{Frames, Lifecycle};
 use crate::error::{Error, Result};
+use crate::frames::FrameStream;
 use crate::model::{
-    BootReport, DeviceInfo, DeviceTypeInfo, LaunchOptions, Launched, PreferencesOutcome,
-    RuntimeInfo,
+    BootReport, DeviceInfo, DeviceTypeInfo, FrameOptions, LaunchOptions, Launched,
+    PreferencesOutcome, RuntimeInfo, Screenshot, ScreenshotOptions,
 };
 
 /// Drives iOS Simulators; available on macOS only.
@@ -73,6 +74,16 @@ impl Lifecycle for SimulatorDriver {
     }
 
     fn terminate(&self, _target: &str, _bundle_id: &str) -> Result<()> {
+        match *self {}
+    }
+}
+
+impl Frames for SimulatorDriver {
+    fn frames(&self, _target: &str, _options: &FrameOptions) -> Result<FrameStream> {
+        match *self {}
+    }
+
+    fn screenshot(&self, _target: &str, _options: &ScreenshotOptions) -> Result<Screenshot> {
         match *self {}
     }
 }

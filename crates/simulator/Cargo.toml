@@ -11,6 +11,24 @@ workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
+jpeg-encoder = { version = "0.7.1", optional = true }
 libc = "0.2"
 objc2 = { version = "0.6.4", features = ["exception"] }
+objc2-core-foundation = "0.3.2"
 objc2-foundation = "0.3.2"
+objc2-io-surface = "0.3.2"
+turbojpeg = { version = "1.5.1", default-features = false, optional = true }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+libc = "0.2"
+
+# The frame JPEG encoder. turbojpeg (libjpeg-turbo, linked statically from the
+# host; see README.md, Building) is the default, chosen by spike S2 for being
+# 2.7 to 3.1 times faster. jpeg-encoder is the dependency-free fallback, also
+# within the 30 fps budget: build with
+# `--no-default-features --features jpeg-encoder` on a host without
+# libjpeg-turbo. With both, jpeg-encoder takes over if turbojpeg cannot start.
+[features]
+default = ["turbojpeg"]
+turbojpeg = ["dep:turbojpeg"]
+jpeg-encoder = ["dep:jpeg-encoder"]
