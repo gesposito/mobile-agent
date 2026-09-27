@@ -278,13 +278,20 @@ impl CliAdapter {
     /// Relaunches `app` on `screen`, then waits until the screen's marker is
     /// visible and the screen has settled.
     fn open_screen(&self, target: &Target, app: &str, screen: Screen) -> Result<(), AdapterError> {
-        let tab = format!("FIXTURE_INITIAL_TAB={}", screen.id());
-        self.call(target, &["open", "--relaunch", "--env", &tab, "--", app])?;
+        self.relaunch(target, app, screen)?;
         self.call(
             target,
             &["wait", "--timeout", WAIT, "--", &id(marker(screen))],
         )?;
         self.call(target, &["wait", "--settle"])?;
+        Ok(())
+    }
+
+    /// Relaunches `app` on `screen`, through the launch option the fixtures
+    /// of `target`'s platform read.
+    fn relaunch(&self, target: &Target, app: &str, screen: Screen) -> Result<(), AdapterError> {
+        let tab = screen.launch_option(target.class.platform());
+        self.call(target, &["open", "--relaunch", "--env", &tab, "--", app])?;
         Ok(())
     }
 
@@ -309,8 +316,7 @@ impl CliAdapter {
         app: &str,
         screen: Screen,
     ) -> Result<Sample, AdapterError> {
-        let tab = format!("FIXTURE_INITIAL_TAB={}", screen.id());
-        self.call(target, &["open", "--relaunch", "--env", &tab, "--", app])?;
+        self.relaunch(target, app, screen)?;
         let mut reply = self.call(target, &["snapshot", "-i"])?;
         let started = reply.started;
         while !lists(&reply, marker(screen)) {

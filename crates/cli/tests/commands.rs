@@ -507,23 +507,46 @@ fn scroll_refuses_strokes_the_platform_takes_for_a_tap() {
     }
 }
 
+/// The fake fixtures read the initial tab where the real ones do
+/// (fixtures/CONTRACT.md, Launch options): an iOS fixture from the launch
+/// environment variable `FIXTURE_INITIAL_TAB`, an Android one from the launch
+/// intent's string extra `initial_tab`, which an `--env` entry becomes there.
+/// Each ignores the other platform's option and opens on its Login tab.
+#[test]
+fn open_passes_the_initial_tab_the_way_each_platform_s_fixtures_read_it() {
+    for (fake, read, ignored) in [
+        ("android", "initial_tab=big", "FIXTURE_INITIAL_TAB=big"),
+        ("ios", "FIXTURE_INITIAL_TAB=big", "initial_tab=big"),
+    ] {
+        let env = TestEnv::start(fake);
+        env.cli(&["open", "--relaunch", "--env", read, APP]).ok();
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        assert!(
+            listing.contains("id=cell-1,") && !listing.contains("id=login-submit"),
+            "{fake}: --env {read} opens the Big tab:\n{listing}"
+        );
+        env.cli(&["open", "--relaunch", "--env", ignored, APP]).ok();
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        assert!(
+            listing.contains("id=login-submit"),
+            "{fake}: --env {ignored} leaves the Login tab:\n{listing}"
+        );
+    }
+}
+
 /// `open --relaunch` reports the screen settled only once the relaunched
 /// app has shown its first tree, so a snapshot right after it sees the app.
 #[test]
 fn open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen() {
-    for fake in ["android", "ios"] {
+    for (fake, list) in [
+        ("android", "initial_tab=list"),
+        ("ios", "FIXTURE_INITIAL_TAB=list"),
+    ] {
         let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_LATENCY_MS", "400")]);
         env.cli(&["open", APP]).ok();
         env.cli(&["wait", "#login-submit"]).ok();
         let reply = env
-            .cli(&[
-                "--json",
-                "open",
-                "--relaunch",
-                "--env",
-                "FIXTURE_INITIAL_TAB=list",
-                APP,
-            ])
+            .cli(&["--json", "open", "--relaunch", "--env", list, APP])
             .ok()
             .json();
         let data = &reply["data"];
@@ -552,7 +575,7 @@ fn open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen()
 fn open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts() {
     let env = TestEnv::start_with("android", &[("MOBILE_AGENT_FAKE_LATENCY_MS", "2900")]);
     let reply = env
-        .cli(&["--json", "open", "--env", "FIXTURE_INITIAL_TAB=list", APP])
+        .cli(&["--json", "open", "--env", "initial_tab=list", APP])
         .ok()
         .json();
     let data = &reply["data"];
@@ -572,7 +595,7 @@ fn open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts() {
             "--timeout",
             "1000",
             "--env",
-            "FIXTURE_INITIAL_TAB=big",
+            "initial_tab=big",
             APP,
         ])
         .ok()

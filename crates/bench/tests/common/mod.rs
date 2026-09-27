@@ -9,6 +9,7 @@ pub mod tools;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -354,4 +355,46 @@ impl Drop for FakeDevices {
             .status();
         let _ = fs::remove_dir_all(&self.dir);
     }
+}
+
+/// A stand-in for `mobile-agent` that logs its arguments and answers from
+/// canned replies: `--version` with 0.2.0, the first of `replies` whose
+/// pattern the command line contains with its exit status, a settle with a
+/// settled screen, and anything else with an empty success.
+pub fn stand_in(dir: &Path, replies: &[(&str, &str, i32)]) -> PathBuf {
+    let mut cases = String::new();
+    for (n, (pattern, reply, status)) in replies.iter().enumerate() {
+        fs::write(dir.join(format!("reply-{n}.json")), reply).unwrap();
+        cases.push_str(&format!(
+            "*\" {pattern} \"*) cat \"$dir/reply-{n}.json\"; exit {status} ;;\n"
+        ));
+    }
+    fs::write(
+        dir.join("settle.json"),
+        r#"{"success":true,"data":{"elapsedMs":212.5,"frameChanges":1,"settled":true,"stillChanging":[],"treeChanges":1,"waited":"settle"},"error":null}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("empty.json"),
+        r#"{"success":true,"data":{},"error":null}"#,
+    )
+    .unwrap();
+    let path = dir.join("mobile-agent");
+    fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\n\
+             dir=\"${{0%/*}}\"\n\
+             echo \"$@\" >> \"$dir/mobile-agent.log\"\n\
+             case \" $* \" in\n\
+             *\" --version \"*) echo 'mobile-agent 0.2.0' ;;\n\
+             {cases}\
+             *\" --settle \"*) cat \"$dir/settle.json\" ;;\n\
+             *) cat \"$dir/empty.json\" ;;\n\
+             esac\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
 }

@@ -8,8 +8,6 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 
 use bench::adapter::{Adapter, Clock, Detection, Role, Scenario};
 use bench::cli::{CliAdapter, CliConfig, SESSION};
@@ -21,7 +19,7 @@ use bench::plan;
 use bench::primitive::{Primitive, TEXT_ENTRY};
 use bench::report::{Measurement, Report};
 use bench::target::{Platform, Target, TargetClass};
-use common::FakeDevices;
+use common::{FakeDevices, stand_in};
 
 const ITERATIONS: u32 = 3;
 const WARMUP: u32 = 1;
@@ -224,48 +222,6 @@ fn a_tap_on_an_android_device_has_no_frame_change_and_is_listed_as_not_measured(
     assert!(verdict.passed, "{}", verdict.table());
 }
 
-/// A stand-in for `mobile-agent` that logs its arguments and answers from
-/// canned replies: `--version` with 0.2.0, the first of `replies` whose
-/// pattern the command line contains with its exit status, a settle with a
-/// settled screen, and anything else with an empty success.
-fn stand_in(dir: &Path, replies: &[(&str, &str, i32)]) -> PathBuf {
-    let mut cases = String::new();
-    for (n, (pattern, reply, status)) in replies.iter().enumerate() {
-        fs::write(dir.join(format!("reply-{n}.json")), reply).unwrap();
-        cases.push_str(&format!(
-            "*\" {pattern} \"*) cat \"$dir/reply-{n}.json\"; exit {status} ;;\n"
-        ));
-    }
-    fs::write(
-        dir.join("settle.json"),
-        r#"{"success":true,"data":{"elapsedMs":212.5,"frameChanges":1,"settled":true,"stillChanging":[],"treeChanges":1,"waited":"settle"},"error":null}"#,
-    )
-    .unwrap();
-    fs::write(
-        dir.join("empty.json"),
-        r#"{"success":true,"data":{},"error":null}"#,
-    )
-    .unwrap();
-    let path = dir.join("mobile-agent");
-    fs::write(
-        &path,
-        format!(
-            "#!/bin/sh\n\
-             dir=\"${{0%/*}}\"\n\
-             echo \"$@\" >> \"$dir/mobile-agent.log\"\n\
-             case \" $* \" in\n\
-             *\" --version \"*) echo 'mobile-agent 0.2.0' ;;\n\
-             {cases}\
-             *\" --settle \"*) cat \"$dir/settle.json\" ;;\n\
-             *) cat \"$dir/empty.json\" ;;\n\
-             esac\n"
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    path
-}
-
 /// A click reply carrying the frame and tree spans task 8.9 adds.
 const CLICK_WITH_SPANS: &str = r#"{"success":true,"data":{"accepted":true,"clicked":"id=row-1","dispatchMs":0.25,"frameChangeMs":14.5,"ref":null,"treeDeltaMs":21.75,"x":204.0,"y":120.0},"error":null}"#;
 
@@ -314,7 +270,7 @@ fn click_replies_that_carry_frame_and_tree_spans_fill_them_in() {
     assert_eq!(lines[0], "--version");
     let session = "--json --session mobile-agent-bench --device emulator-5554";
     for command in [
-        "open --relaunch --env FIXTURE_INITIAL_TAB=list -- dev.mobileagent.fixture.expo",
+        "open --relaunch --env initial_tab=list -- dev.mobileagent.fixture.expo",
         "wait --timeout 10000 -- id=row-1",
         "click --timeout 10000 -- id=row-1",
         "click --timeout 10000 -- id=detail-back",

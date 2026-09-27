@@ -231,10 +231,17 @@ impl Device {
             return Err(self.not_installed(app));
         }
         if launch.relaunch || !self.fixtures.contains_key(app) {
+            // The fixtures' launch option (fixtures/CONTRACT.md): the
+            // environment variable on iOS, the launch intent's string extra,
+            // which is what an `--env` entry becomes, on Android.
+            let option = match self.kit.platform {
+                Platform::Ios => "FIXTURE_INITIAL_TAB",
+                Platform::Android => "initial_tab",
+            };
             let tab = launch
                 .env
                 .iter()
-                .find(|(key, _)| key == "FIXTURE_INITIAL_TAB")
+                .find(|(key, _)| key == option)
                 .map_or(Tab::Login, |(_, value)| Tab::parse(value));
             self.fixtures.insert(app.to_owned(), Fixture::launch(tab));
         }

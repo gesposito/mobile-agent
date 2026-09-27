@@ -472,7 +472,9 @@ settle windows take real time, and a device model:
   and the platform's native id: login (with `hunter2`), a 200-row list with
   details and scrolling, 500 cells, an endless animation that keeps frames
   changing, an in-app alert and a location prompt owned by system UI, with
-  `FIXTURE_INITIAL_TAB` honored at launch;
+  the initial tab honored at launch as each platform's fixtures read it:
+  `--env FIXTURE_INITIAL_TAB=<tab>` on iOS, `--env initial_tab=<tab>` on
+  Android;
 - a settings app with a Wi-Fi switch.
 
 Android fakes use widget classes, a status bar, a keyboard window and

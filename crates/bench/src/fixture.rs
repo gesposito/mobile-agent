@@ -47,7 +47,8 @@ impl fmt::Display for Fixture {
     }
 }
 
-/// A fixture screen, named like its tab and its `FIXTURE_INITIAL_TAB` value.
+/// A fixture screen, named like its tab and the value of the launch option
+/// that opens it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Screen {
@@ -60,7 +61,8 @@ pub enum Screen {
 }
 
 impl Screen {
-    /// Stable identifier, also the `FIXTURE_INITIAL_TAB` value.
+    /// Stable identifier, also the value of the launch option that opens the
+    /// screen.
     pub fn id(self) -> &'static str {
         match self {
             Screen::Login => "login",
@@ -69,6 +71,19 @@ impl Screen {
             Screen::Anim => "anim",
             Screen::System => "system",
         }
+    }
+
+    /// The `KEY=VALUE` launch option that opens a fixture on this screen on
+    /// `platform`, as `mobile-agent open --env` passes it: the environment
+    /// variable `FIXTURE_INITIAL_TAB` on iOS, and on Android the launch
+    /// intent's string extra `initial_tab`, which is what `--env` becomes there
+    /// (`fixtures/CONTRACT.md`, Launch options).
+    pub fn launch_option(self, platform: Platform) -> String {
+        let key = match platform {
+            Platform::Ios => "FIXTURE_INITIAL_TAB",
+            Platform::Android => "initial_tab",
+        };
+        format!("{key}={}", self.id())
     }
 }
 
@@ -98,6 +113,26 @@ mod tests {
             Some("dev.mobileagent.fixture.compose")
         );
         assert_eq!(Fixture::Compose.app_id(Platform::Ios), None);
+    }
+
+    #[test]
+    fn each_platform_opens_a_screen_through_the_launch_option_its_fixtures_read() {
+        assert_eq!(
+            Screen::Big.launch_option(Platform::Android),
+            "initial_tab=big"
+        );
+        assert_eq!(
+            Screen::List.launch_option(Platform::Android),
+            "initial_tab=list"
+        );
+        assert_eq!(
+            Screen::Big.launch_option(Platform::Ios),
+            "FIXTURE_INITIAL_TAB=big"
+        );
+        assert_eq!(
+            Screen::Login.launch_option(Platform::Ios),
+            "FIXTURE_INITIAL_TAB=login"
+        );
     }
 
     #[test]
