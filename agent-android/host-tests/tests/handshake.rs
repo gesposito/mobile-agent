@@ -91,9 +91,21 @@ fn the_agent_pings_a_silent_host_every_second() {
         return;
     };
     let agent = Agent::launch(&dev, Launch::default());
-    let mut client = agent.connect();
-    // The client answers pings but never pings first within this window,
-    // because every ping from the agent is a sign of life.
+    // A host that answers pings but sends none of its own for 10 s.
+    let mut client = agent_android_host_tests::Client::with_config(
+        agent.device(),
+        &agent.socket,
+        HostConfig {
+            token: agent.token.clone(),
+            ping_interval: Duration::from_secs(10),
+            peer_timeout: Duration::from_secs(30),
+            ..HostConfig::default()
+        },
+    )
+    .expect("open the socket");
+    client
+        .handshake(Duration::from_secs(10))
+        .expect("handshake");
     client.idle(Duration::from_millis(2600));
     assert!(
         client.pings >= 2,
@@ -176,35 +188,58 @@ fn a_peer_that_is_not_the_shell_user_gets_no_hello() {
     let Some(dev) = device("a_peer_that_is_not_the_shell_user_gets_no_hello") else {
         return;
     };
-    let app = agent_android_host_tests::fixture::COMPOSE;
-    agent_android_host_tests::fixture::require(&dev, app);
+    // The peer runs as root through su, which userdebug builds have. An app's
+    // uid cannot serve: app_process aborts in an app's SELinux domain.
+    if !dev.shell_output("su 0 true").status.success() {
+        println!(
+            "skipping the peer check: su is not available on {}",
+            dev.serial
+        );
+        return;
+    }
     let mut agent = Agent::launch(&dev, Launch::default());
-    // The debuggable fixture's uid, through run-as, opens the abstract socket.
+    let jar = format!("/data/local/tmp/mobile-agent-peer-check-{}.jar", agent.pid);
+    dev.push(&agent_android_host_tests::agent::jar_path(), &jar);
     let out = dev.shell_output(&format!(
-        "run-as {app} sh -c 'nc -U -w 3 -W 2 @{} </dev/null | wc -c'",
+        "su 0 sh -c 'CLASSPATH={jar} app_process / dev.mobileagent.agent.Main connect-check --socket {}'",
         agent.socket
     ));
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-    let bytes: u64 = text
+    dev.shell(&format!("rm -f {jar}"));
+    let text = String::from_utf8_lossy(&out.stdout).replace('\r', "");
+    let line = text
         .lines()
-        .last()
-        .and_then(|l| l.trim().parse().ok())
-        .unwrap_or(0);
-    assert_eq!(bytes, 0, "a peer of another uid received {bytes} bytes");
-    // Either SELinux refused the connection or the agent refused the peer.
-    let refusal = agent.wait_line(Duration::from_secs(2), |l| l.starts_with("refused "));
-    println!(
-        "app-uid peer: {} ({})",
-        refusal
-            .as_deref()
-            .unwrap_or("connection refused before the agent saw it"),
-        String::from_utf8_lossy(&out.stderr).trim()
+        .find(|l| l.starts_with("connect-check "))
+        .unwrap_or_else(|| panic!("the root peer printed nothing: {text}"));
+    assert!(
+        line.contains("uid=0 bytes=0"),
+        "the root peer received bytes: {line}"
     );
-    if let Some(line) = refusal {
-        assert!(line.contains("uid=10"), "{line}");
-    }
+    let refusal = agent
+        .wait_line(Duration::from_secs(2), |l| l.starts_with("refused "))
+        .unwrap_or_else(|| panic!("the agent logged no refusal:\n{}", agent.transcript()));
+    assert!(refusal.contains("uid=0 "), "{refusal}");
     let mut client = agent.connect();
     assert!(client.call(Call::Unknown(Method(999))).is_err());
+}
+
+#[test]
+fn the_agent_closes_a_connection_whose_host_stops_answering() {
+    let Some(dev) = device("the_agent_closes_a_connection_whose_host_stops_answering") else {
+        return;
+    };
+    let agent = Agent::launch(&dev, Launch::default());
+    let mut client = agent.connect();
+    // Neither read nor answer: the agent's pings go unanswered.
+    std::thread::sleep(Duration::from_millis(4500));
+    client.idle(Duration::from_millis(500));
+    assert!(
+        client.closed().is_some(),
+        "the agent kept a silent host's connection open for 4.5 s"
+    );
+    assert!(
+        agent.alive(),
+        "the agent exited instead of waiting for a host"
+    );
 }
 
 #[test]

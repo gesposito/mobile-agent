@@ -2,20 +2,39 @@
 
 The resident Android agent: a Kotlin program compiled into a single `classes.dex`,
 pushed to `/data/local/tmp` and started with `app_process` as the shell user, so
-nothing is installed on the device (design D2). The entry point prints the version
-banner described below.
+nothing is installed on the device (design D2). It serves the device protocol of
+`crates/protocol` on an abstract Unix socket; the entry point also prints the
+version banner described below.
 
 ## Layout
 
 ```
 agent-android/
-  VERSION                            agent version, compiled into the banner
-  build.sh                           kotlinc + d8 build, no Gradle
-  test.sh                            on-device smoke test
-  src/dev/mobileagent/agent/Main.kt  entry point that app_process calls
-  out/   (git-ignored)               gen/BuildConfig.kt, classes/, dex/classes.dex, d8.log
-  dist/  (git-ignored)               mobile-agent-android.jar
+  VERSION                  agent version, compiled into the banner
+  build.sh                 kotlinc + d8 build, no Gradle
+  test.sh                  on-device smoke test
+  codec-test.sh            golden cross-check of the codec against crates/protocol
+  codec-test/              the Kotlin side of that cross-check
+  host-tests/              Rust tests that drive the agent on a device (own Cargo workspace)
+  src/dev/mobileagent/agent/
+    Main.kt                entry point that app_process calls, options
+    Server.kt              abstract-socket server, peer check, request dispatch
+    Session.kt             one host connection: handshake, requests, deadlines, events, liveness
+    Errors.kt              the structured errors the agent sends
+    codec/                 the protocol codec, byte for byte the same frames as crates/protocol
+      Protocol.kt          versions, limits, kinds, methods, codes, flags
+      Messages.kt          message classes
+      Codec.kt             encoder and decoder of every message
+      CborWriter.kt        CBOR writer (preferred serialization, definite lengths)
+      CborReader.kt        strict CBOR reader
+      Frames.kt            32-bit length-prefixed framing
+  out/   (git-ignored)     gen/BuildConfig.kt, classes/, dex/classes.dex, d8.log
+  dist/  (git-ignored)     mobile-agent-android.jar
 ```
+
+The codec under `codec/` is shared with `codec-test.sh`, which checks that it
+writes and reads the golden frames of `crates/protocol/golden` byte for byte;
+the agent uses it unchanged for every frame it sends and receives.
 
 ## Requirements
 
@@ -100,14 +119,59 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.1.0 protocol=0`. `<version>` is the content of
-  `VERSION`. `<n>` is `Main.PROTOCOL_VERSION`, the revision of the host-agent
-  wire protocol, which is currently 0.
-- Any other argument: prints `unknown argument` to stderr, nothing to stdout,
-  and exits 2.
+  `mobile-agent-android 0.1.0 protocol=1`. `<version>` is the content of
+  `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
+  host-agent wire protocol, currently 1.
+- `serve` without `--socket NAME`, or with an unknown option: prints a usage
+  line to stderr and exits 2.
+- Any other first argument: prints `unknown argument` to stderr, nothing to
+  stdout, and exits 2.
 
 adb's shell protocol v2, available since Android 7, returns stdout, stderr and
 the exit status separately, so the host can check all three.
+
+## Serving the protocol
+
+```sh
+adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-android.jar \
+  app_process / dev.mobileagent.agent.Main serve --socket <name>
+```
+
+- **Socket.** The agent listens on the abstract Unix socket `<name>`, which
+  the host chooses per launch, and never on TCP. The host reaches it as the
+  adb server service `localabstract:<name>` after `host:transport:<serial>`
+  (design D3), so no forward rule exists. Once listening the agent prints
+  `ready socket=<name> pid=<pid> uid=<uid> protocol=1 capabilities=0x<bits>`
+  on stdout, and `ps` lists it as `mobile-agent <name>`.
+- **Peer check.** Every connection's `SO_PEERCRED` uid must be 2000, the uid
+  adbd and `adb shell` run as, or the agent's own uid; any other peer is
+  closed before a byte is sent and logged as `refused peer uid=<uid> pid=<pid>`.
+- **Token.** `MOBILE_AGENT_TOKEN` in the environment is the per-launch token.
+  It stays out of the process listing and travels in the hello, where the
+  host's session refuses a token other than the one it started the agent with
+  (`token_mismatch`).
+- **Handshake.** The agent speaks first: its hello offers versions `[1]`, its
+  capabilities, a 16 MiB frame limit and `mobile-agent-android <VERSION>`.
+  After the welcome it sends a `ready` lifecycle event. A welcome refusing
+  the connection with `version_mismatch` makes the agent exit, so a host that
+  needs another version replaces it; any other refusal only closes that
+  connection.
+- **Requests.** A request id already in flight closes the connection as a
+  protocol error; an unknown method is answered with `unknown_method`, a
+  method whose capability the hello did not advertise with
+  `capability_missing`. A request whose deadline passes is answered with
+  `deadline_exceeded`, its work is cancelled and its late answer dropped. A
+  response over the negotiated frame size is replaced by a `frame_too_large`
+  error naming the limit and the request, as is an oversized request, whose
+  payload is dropped as it arrives.
+- **Liveness.** The agent pings a host it has not heard from for a second and
+  closes the connection after three seconds of silence, as the protocol
+  crate's sessions do.
+- **Reuse.** The agent outlives a connection: a later connection gets a fresh
+  hello with the same token, and a new connection replaces the current one,
+  so a restarted daemon reuses the running agent.
+- **Stop.** `shutdown` is answered with `{}` after a `shutting_down`
+  lifecycle event, and the process exits with status 0.
 
 ## Dex size baseline
 
@@ -139,11 +203,53 @@ to `/data/local/tmp`. It then runs the agent through `app_process` three times:
 with `--version`, with no arguments, and with an unknown argument. Each run has
 a 30-second timeout on the device. The test checks:
 
-- the banner equals `mobile-agent-android <VERSION> protocol=0` exactly;
+- the banner equals `mobile-agent-android <VERSION> protocol=<n>` exactly,
+  where `<n>` is read from the codec's `Protocol.VERSION`;
 - the exit statuses are 0, 0 and 2;
 - the unknown argument produces `unknown argument` on stderr;
+- `serve` without a socket name prints a usage line and exits 2;
 - no process with `dev.mobileagent.agent.Main` in its command line is left
   running.
 
 It removes the pushed jar on exit and stops at the first mismatch with a
 non-zero status and a `FAIL:` message.
+
+## Host tests
+
+`host-tests/` is a Cargo package outside the repository workspace (its
+manifest declares its own `[workspace]`) that depends on `crates/protocol` by
+path. Its tests start the agent the way the daemon will, open its socket as an
+adb server service stream and drive `protocol::session::HostSession`:
+
+```sh
+./build.sh
+cd host-tests
+MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test -- --nocapture
+cargo test                       # without a device: every test prints why it skips
+cargo clippy --all-targets -- -D warnings && cargo fmt --check
+```
+
+The tests run one at a time, since they share the device and its single UI
+automation role. Each one starts its own agent from a jar pushed under a
+unique name, and kills it by pid (after checking that `/proc/<pid>/cmdline`
+still names its socket) and removes the jar when it ends. They need the
+Compose and Expo fixtures installed (`fixtures/`) and put back every device
+setting they change.
+
+## Spec scenarios and their checks
+
+Every agent-side scenario of `specs/android-driver/spec.md`, and the
+agent-side behaviour of `specs/device-protocol/spec.md`, maps to a named check.
+Rust tests are `host-tests/tests/<file>.rs::<name>`.
+
+| Requirement | Scenario | Checks |
+|---|---|---|
+| device-protocol: Version negotiation on connect | Common version selected | `handshake::the_agent_speaks_first_with_a_hello_naming_protocol_1_and_its_token` |
+| | No common version | `handshake::a_host_speaking_only_a_newer_version_is_refused_and_the_agent_exits_for_replacement` |
+| device-protocol: Structured errors | Transient versus permanent failure (unknown method) | `handshake::an_unknown_method_gets_a_permanent_error_and_the_connection_stays_usable` |
+| device-protocol: Liveness detection | Agent side of the pings | `handshake::the_agent_pings_a_silent_host_every_second`, `handshake::every_ping_answer_keeps_a_quiet_session_open_past_the_peer_timeout`, `handshake::the_agent_closes_a_connection_whose_host_stops_answering` |
+| design D3: token and peer check | | `handshake::a_host_expecting_another_token_refuses_the_hello_and_the_agent_keeps_serving`, `handshake::a_peer_that_is_not_the_shell_user_gets_no_hello` |
+| android-driver: Agent deployment without installation | Compatible agent reused | `handshake::a_later_connection_reuses_the_running_agent` |
+| | Incompatible agent replaced | `handshake::a_host_speaking_only_a_newer_version_is_refused_and_the_agent_exits_for_replacement` |
+| android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |
+| Banner and arguments | | `test.sh` |
