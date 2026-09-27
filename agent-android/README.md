@@ -278,7 +278,17 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   hello with the same token, and a new connection replaces the current one,
   so a restarted daemon reuses the running agent.
 - **Stop.** `shutdown` is answered with `{}` after a `shutting_down`
-  lifecycle event, and the process exits with status 0.
+  lifecycle event; the agent releases UI automation (which also restores the
+  rotation state the connection recorded) and exits with status 0, leaving
+  no process. The agent outlives the `adb shell` that started it (it is
+  reparented to init when that shell goes), so a host that leaves without
+  `shutdown` is covered by the idle exit: after `--idle-exit-ms` (default
+  30,000; 0 never) without a connected host, counted from start and from each
+  disconnect, it releases the role and exits. A connected host keeps it
+  however quiet. SIGTERM ends it without shutdown hooks (ART runs none for
+  it), and the platform releases the role on the process's death, as it does
+  for SIGKILL. App restarts and rotation need nothing of the agent: window
+  events announce them and the next read follows.
 
 ## Dex size baseline
 
@@ -380,5 +390,8 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | | Portrait, default format, scaling | `screenshot::a_portrait_screenshot_is_a_jpeg_of_the_display_and_scales_on_request` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
-| android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |
+| android-driver: Agent lifecycle | Daemon shutdown | `lifecycle::after_shutdown_no_agent_process_remains_and_the_role_is_free`, `handshake::shutdown_is_answered_before_the_agent_exits` |
+| | No process left after the host disconnects | `lifecycle::after_the_host_disconnects_the_agent_exits_within_its_idle_bound`, `lifecycle::an_agent_no_host_ever_reaches_exits_within_its_idle_bound` |
+| | App restarted | `lifecycle::the_same_agent_serves_snapshots_after_the_app_is_force_stopped_and_relaunched` |
+| | Rotation | `lifecycle::the_same_agent_serves_snapshots_across_a_rotation` |
 | Banner and arguments | | `test.sh` |

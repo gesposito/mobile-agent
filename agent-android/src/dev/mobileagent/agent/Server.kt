@@ -81,10 +81,12 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     /** A Compose re-read is queued on the tree worker. */
     private val pollQueued = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var nextPoll = 0L
+    /** When the agent last had no host: its start, then each disconnect. */
+    @Volatile private var hostlessSince = android.os.SystemClock.uptimeMillis()
     /** The last tree read, whose node ids requests may name. */
     @Volatile private var lastRead: TreeReader.Result? = null
     @Volatile private var current: Session? = null
-    private var automation: Automation? = null
+    @Volatile private var automation: Automation? = null
     /** The holder --force stopped, as `name:pid`. */
     private var forced: Holders.Holder? = null
 
@@ -100,6 +102,9 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         compose = ComposeTracker(a, reader, { payload -> current?.emit(payload) }, options.trace)
         a.enableInteractiveWindows()
         events.start()
+        if (options.idleExitMs > 0) {
+            timers.scheduleWithFixedDelay({ exitWhenIdle() }, 100, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
         if (options.composePollMs > 0) {
             timers.scheduleWithFixedDelay({ pollCompose() }, options.composePollMs, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
         }
@@ -213,7 +218,10 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
 
     override fun onClosed(session: Session, reason: String, refusal: WireError?) {
         synchronized(this) {
-            if (current === session) current = null
+            if (current === session) {
+                current = null
+                hostlessSince = android.os.SystemClock.uptimeMillis()
+            }
         }
         if (refusal?.code == ErrorCode.VERSION_MISMATCH) {
             // A host that needs another protocol version replaces this agent.
@@ -366,6 +374,18 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         }
     }
 
+    /**
+     * Exits once no host has been connected for --idle-exit-ms, so a daemon
+     * that went away without stopping the agent leaves nothing running,
+     * while one that reconnects within the bound reuses it.
+     */
+    private fun exitWhenIdle() {
+        if (current != null) return
+        if (android.os.SystemClock.uptimeMillis() - hostlessSince < options.idleExitMs) return
+        Out.line("idle no host for ${options.idleExitMs} ms")
+        exit(0)
+    }
+
     private fun shutdown(work: Work) {
         val session = work.session
         session.emit(Lifecycle(LifecycleKind.SHUTTING_DOWN, "the host asked the agent to stop"))
@@ -374,8 +394,10 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         exit(0)
     }
 
+    @Synchronized
     private fun exit(code: Int) {
         automation?.disconnect()
+        automation = null
         Out.line("exiting code=$code")
         System.err.flush()
         exitProcess(code)

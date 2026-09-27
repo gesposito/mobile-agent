@@ -99,10 +99,12 @@ class Options(
     @JvmField val trace: Boolean,
     /** Interval of the re-read poll of windows hosting Compose; 0 turns it off. */
     @JvmField val composePollMs: Long,
+    /** Exit after this long without a connected host; 0 waits forever. */
+    @JvmField val idleExitMs: Long,
 ) {
     companion object {
         const val TOKEN_VARIABLE = "MOBILE_AGENT_TOKEN"
-        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N] [--compose-poll-ms N] [--trace]"
+        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N] [--compose-poll-ms N] [--idle-exit-ms N] [--trace]"
         private val SOCKET_NAME = Regex("[A-Za-z0-9._-]{1,100}")
 
         fun parse(args: Array<String>, token: String?): Options {
@@ -111,6 +113,7 @@ class Options(
             var windowWaitMs = 2_000L
             var trace = false
             var composePollMs = 1_000L
+            var idleExitMs = 30_000L
             var i = 0
             fun value(name: String): String {
                 if (i + 1 >= args.size) throw UsageException("$name needs a value")
@@ -126,13 +129,14 @@ class Options(
                     "--window-wait-ms" -> windowWaitMs = millis(arg)
                     "--trace" -> trace = true
                     "--compose-poll-ms" -> composePollMs = millis(arg)
+                    "--idle-exit-ms" -> idleExitMs = millis(arg)
                     else -> throw UsageException("unknown argument: $arg")
                 }
                 i++
             }
             val name = socket ?: throw UsageException("--socket is required")
             if (!SOCKET_NAME.matches(name)) throw UsageException("--socket takes 1 to 100 of A-Z a-z 0-9 . _ -")
-            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace, composePollMs)
+            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace, composePollMs, idleExitMs)
         }
     }
 }
