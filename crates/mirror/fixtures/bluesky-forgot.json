@@ -1,0 +1,25 @@
+{
+  "description": "Bluesky's forgot-password form, the screen a tap on Forgot password? in bluesky-signin opens: the same hosting provider button, an email field, and a Next button without an identifier where the sign-in form's Forgot password? button sat. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Reset password", "bounds": [24, 80, 378, 116]},
+            {"class": "XCUIElementTypeOther", "bounds": [24, 132, 378, 364], "children": [
+              {"class": "XCUIElementTypeStaticText", "desc": "Hosting provider", "bounds": [24, 132, 378, 152]},
+              {"class": "XCUIElementTypeButton", "id": "selectServiceButton", "desc": "Bluesky Social", "bounds": [24, 160, 378, 208]},
+              {"class": "XCUIElementTypeStaticText", "desc": "Email address", "bounds": [24, 224, 378, 244]},
+              {"class": "XCUIElementTypeTextField", "id": "forgotPasswordEmail", "desc": "Enter your email address", "bounds": [24, 252, 378, 300]},
+              {"class": "XCUIElementTypeButton", "desc": "Next", "bounds": [24, 316, 378, 364]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

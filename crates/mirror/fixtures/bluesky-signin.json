@@ -1,0 +1,26 @@
+{
+  "description": "Bluesky's sign-in form as the Simulator's reader shows it (reports/10.4-rn-smoke.md, second run, finding 6): the hosting provider button, the account fields, and a Forgot password? button that is the form's only button without an identifier, as the Next button of the forgot-password form in bluesky-forgot is. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 62, 402, 874], "children": [
+            {"class": "XCUIElementTypeStaticText", "desc": "Sign in", "bounds": [24, 80, 378, 116]},
+            {"class": "XCUIElementTypeOther", "bounds": [24, 132, 378, 364], "children": [
+              {"class": "XCUIElementTypeStaticText", "desc": "Hosting provider", "bounds": [24, 132, 378, 152]},
+              {"class": "XCUIElementTypeButton", "id": "selectServiceButton", "desc": "Bluesky Social", "bounds": [24, 160, 378, 208]},
+              {"class": "XCUIElementTypeStaticText", "desc": "Account", "bounds": [24, 224, 378, 244]},
+              {"class": "XCUIElementTypeTextField", "id": "loginUsernameInput", "desc": "Username or email address", "bounds": [24, 252, 378, 300]},
+              {"class": "XCUIElementTypeSecureTextField", "id": "loginPasswordInput", "desc": "Password", "bounds": [24, 308, 290, 356], "flags": ["password"]},
+              {"class": "XCUIElementTypeButton", "desc": "Forgot password?", "bounds": [290, 308, 378, 356]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
