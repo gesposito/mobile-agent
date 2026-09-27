@@ -560,6 +560,27 @@ pub fn fresh_device(driver: &SimulatorDriver) -> String {
     device.udid
 }
 
+/// The host's one-minute load average.
+pub fn load_average() -> f64 {
+    let mut loads = [0.0f64; 3];
+    // SAFETY: `loads` has room for the three averages asked for.
+    let count = unsafe { libc::getloadavg(loads.as_mut_ptr(), 3) };
+    if count < 1 { 0.0 } else { loads[0] }
+}
+
+/// Waits up to `timeout` for the one-minute load average to fall below
+/// `limit`, as the spikes did before timed steps, and returns it.
+pub fn wait_for_quiet_host(limit: f64, timeout: Duration) -> f64 {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let load = load_average();
+        if load < limit || Instant::now() > deadline {
+            return load;
+        }
+        thread::sleep(Duration::from_secs(2));
+    }
+}
+
 /// Whether dtuhidd has started on the device's current boot: its launchd
 /// job's run count, read in the guest as spike S3 did.
 pub fn dtuhidd_started(udid: &str) -> bool {

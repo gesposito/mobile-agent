@@ -102,8 +102,9 @@ on an iPhone 17) and hashes the result:
   35 per appearance toggle) deliver nothing, and a static display delivers
   nothing at all.
 - `content_hash` is S2's 32-pixel thumbnail hash of the frame below the status
-  bar, for the settle predicate (D8): a clock tick or a blinking cursor does
-  not change it.
+  bar, for the settle predicate (D8): a tick of the status bar clock does not
+  change it. A focused field's blinking cursor does, and so does the exact
+  `hash`, so a screen with a focused field keeps delivering frames.
 
 The throttle (`max_fps`, 30 by default) skips presents rather than reading
 late, because the render server does not wait for a reader's lock and late
@@ -115,11 +116,15 @@ consumer falls behind. `FrameStats` counts presents, reads, deliveries, torn
 and dropped frames, and the pipeline's CPU time.
 
 On the spike Simulator the Anim tab streamed 30 fps at 460x1000 with the
-pipeline at 10 to 14 percent of one core and the whole test process under 15
-(turbojpeg, dev profile); jpeg-encoder held 30 fps at 15 to 16 percent. The
-downscale costs about 2 ms per frame, with a 16-bit vertical pass and an
-exact reciprocal in place of each division; its output is identical to S2's
-filter.
+pipeline at 7 to 13 percent of one core and the whole test process at 8 to
+14 (turbojpeg, dev profile); jpeg-encoder held 30 fps at 12 to 16 percent.
+The downscale costs about 1.2 ms per frame: for a frame 2.6 times smaller
+than the display it sums rows in 16 bits, sums each pixel's columns without
+a branch, and divides with a 32-bit reciprocal; any other size, such as the
+thumbnails, takes a general path, and both give S2's filter's output byte
+for byte. Measured CPU time rises with the host's load: runs right after a
+rebuild, while the host's endpoint agent scanned the new binaries, read up
+to 24 percent, so the CPU test waits for a quiet host as the spikes did.
 
 ## Input
 

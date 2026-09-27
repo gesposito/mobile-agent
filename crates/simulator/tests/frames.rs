@@ -160,9 +160,11 @@ fn measure(stream: &simulator::FrameStream, length: Duration) -> Window {
 
 /// The Anim tab's spinner changes on every present, so every read the
 /// throttle lets through is a new frame. CPU time is per core-second, and
-/// other processes on a busy host inflate it (the endpoint security software scanning a fresh build
-/// took one run from 12 to 24 percent), so up to three windows are measured
-/// and the gate holds when one of them meets it; every window is printed.
+/// other processes on a busy host inflate it: a scan of the fresh build by
+/// the host's endpoint agent took one run from 12 to 24 percent. So the test
+/// waits up to 90 s for the one-minute load average to fall below 8, as the
+/// spikes did before timed steps, measures up to three windows, and passes
+/// when one of them meets the gate; every window is printed.
 #[test]
 fn frames_sustain_30_fps_under_a_fifth_of_a_core() {
     let Some(udid) = common::gated("frames_sustain_30_fps_under_a_fifth_of_a_core") else {
@@ -182,6 +184,8 @@ fn frames_sustain_30_fps_under_a_fifth_of_a_core() {
         encode: true,
     };
     let stream = driver.frames(&udid, &options).expect("subscribed");
+    let load = common::wait_for_quiet_host(8.0, Duration::from_secs(90));
+    eprintln!("one-minute load average {load:.2}");
     common::collect(&stream, Duration::from_millis(500));
 
     let mut windows = Vec::new();

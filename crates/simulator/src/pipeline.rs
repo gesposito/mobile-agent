@@ -156,128 +156,120 @@ pub fn scale_bgra(src: &FrameView<'_>, dst_width: usize, dst_height: usize, dst:
     let y_bounds: Vec<usize> = (0..=dst_height)
         .map(|y| y * src.height / dst_height)
         .collect();
-    let spans: Vec<usize> = y_bounds.windows(2).map(|rows| rows[1] - rows[0]).collect();
-    // A span takes one of two lengths, the floor and the ceiling of the
-    // ratio, so each length's divisors are prepared once.
-    let mut divisors: Vec<(usize, Vec<Divisor>)> = Vec::new();
-    for &rows in &spans {
-        if !divisors.iter().any(|(length, _)| *length == rows) {
-            let row = x_bounds
-                .windows(2)
-                .map(|columns| Divisor::new((columns[1] - columns[0]) * rows))
-                .collect();
-            divisors.push((rows, row));
+    let widest = x_bounds.windows(2).map(|c| c[1] - c[0]).max().unwrap_or(1);
+    let tallest = y_bounds.windows(2).map(|r| r[1] - r[0]).max().unwrap_or(1);
+    dst.resize(dst_width * dst_height * 4, 0);
+    // The frames the driver delivers, 2.6 times smaller than the display,
+    // take the fast path: 16-bit column sums, which hold while a span has at
+    // most 257 rows, and 32-bit reciprocals, which hold for counts up to 181.
+    if tallest <= 257 && widest * tallest <= NARROW_COUNTS {
+        match widest {
+            1 => fast_rows::<1>(src, &x_bounds, &y_bounds, dst),
+            2 => fast_rows::<2>(src, &x_bounds, &y_bounds, dst),
+            3 => fast_rows::<3>(src, &x_bounds, &y_bounds, dst),
+            _ => fast_rows::<4>(src, &x_bounds, &y_bounds, dst),
         }
-    }
-    // Column sums fit in 16 bits while a span has at most 257 rows, which
-    // halves the vertical pass; the sums per pixel are 32 bits either way.
-    if spans
-        .iter()
-        .all(|&rows| rows <= usize::from(u16::MAX) / 255)
-    {
-        box_filter::<u16>(src, &x_bounds, &y_bounds, &divisors, dst);
     } else {
-        box_filter::<u32>(src, &x_bounds, &y_bounds, &divisors, dst);
+        general_rows(src, &x_bounds, &y_bounds, dst);
     }
 }
 
-/// A column sum of the vertical pass.
-trait ColumnSum: Copy + Default {
-    fn add(self, byte: u8) -> Self;
-    fn widen(self) -> u32;
-}
+/// The largest pixel count whose reciprocal takes 32 bits (see `Divisor`).
+const NARROW_COUNTS: usize = 181;
 
-impl ColumnSum for u16 {
-    fn add(self, byte: u8) -> u16 {
-        self.wrapping_add(u16::from(byte))
-    }
-
-    fn widen(self) -> u32 {
-        u32::from(self)
-    }
-}
-
-impl ColumnSum for u32 {
-    fn add(self, byte: u8) -> u32 {
-        self.wrapping_add(u32::from(byte))
-    }
-
-    fn widen(self) -> u32 {
-        self
-    }
-}
-
-fn box_filter<S: ColumnSum>(
+/// For spans of at most `W` columns and counts of at most 181: every output
+/// pixel sums exactly `W` columns, those past its own span weighted by zero,
+/// so the loop has no branch for the alternating span lengths to
+/// mispredict, and the division is one 32-bit multiply and shift. The
+/// arithmetic wraps explicitly: nothing overflows, and debug builds skip
+/// their overflow checks and vectorize.
+fn fast_rows<const W: usize>(
     src: &FrameView<'_>,
     x_bounds: &[usize],
     y_bounds: &[usize],
-    divisors: &[(usize, Vec<Divisor>)],
-    dst: &mut Vec<u8>,
+    dst: &mut [u8],
 ) {
-    let widest = x_bounds
+    let columns: Vec<(usize, u32)> = x_bounds
         .windows(2)
-        .map(|columns| columns[1] - columns[0])
-        .max()
-        .unwrap_or(1);
-    match widest {
-        1 => rows::<S, 1>(src, x_bounds, y_bounds, divisors, dst),
-        2 => rows::<S, 2>(src, x_bounds, y_bounds, divisors, dst),
-        3 => rows::<S, 3>(src, x_bounds, y_bounds, divisors, dst),
-        4 => rows::<S, 4>(src, x_bounds, y_bounds, divisors, dst),
-        _ => rows::<S, 0>(src, x_bounds, y_bounds, divisors, dst),
-    }
-}
-
-/// The two passes for spans of at most `W` columns: every output pixel sums
-/// exactly `W` columns, those past its own span weighted by zero, so the loop
-/// has no branch that the alternating span lengths would mispredict. `W = 0`
-/// sums each span's own length instead, for any width.
-fn rows<S: ColumnSum, const W: usize>(
-    src: &FrameView<'_>,
-    x_bounds: &[usize],
-    y_bounds: &[usize],
-    divisors: &[(usize, Vec<Divisor>)],
-    dst: &mut Vec<u8>,
-) {
-    // Zeros past the last column, so the last pixel's weighted reads stay in
+        .map(|c| (c[0], (c[1] - c[0]) as u32))
+        .collect();
+    // Zeros past the last column keep the last pixel's weighted reads in
     // bounds.
-    let mut column_sums = vec![S::default(); (src.width + W) * 4];
-    for rows in y_bounds.windows(2) {
+    let mut column_sums = vec![0u16; (src.width + W) * 4];
+    // (half, multiplier) per output pixel, for each row span length met.
+    let mut divisors: Vec<(usize, Vec<(u32, u32)>)> = Vec::new();
+    let row_width = columns.len() * 4;
+    for (rows, out) in y_bounds.windows(2).zip(dst.chunks_exact_mut(row_width)) {
         let (top, bottom) = (rows[0], rows[1]);
         for (sum, &byte) in column_sums.iter_mut().zip(src.row(top)) {
-            *sum = S::default().add(byte);
+            *sum = u16::from(byte);
         }
         for y in top + 1..bottom {
             for (sum, &byte) in column_sums.iter_mut().zip(src.row(y)) {
-                *sum = sum.add(byte);
+                *sum = sum.wrapping_add(u16::from(byte));
             }
+        }
+        let span = bottom - top;
+        if !divisors.iter().any(|(length, _)| *length == span) {
+            let row = columns
+                .iter()
+                .map(|&(_, width)| {
+                    let count = width * span as u32;
+                    (count / 2, (1 << 23) / count + 1)
+                })
+                .collect();
+            divisors.push((span, row));
         }
         let row_divisors = &divisors
             .iter()
-            .find(|(length, _)| *length == bottom - top)
-            .expect("a divisor row for every span length")
+            .find(|(length, _)| *length == span)
+            .expect("the row's divisors were just made")
             .1;
-        for (columns, divisor) in x_bounds.windows(2).zip(row_divisors) {
-            let (left, span) = (columns[0], columns[1] - columns[0]);
+        for ((pixel, &(left, width)), &(half, multiplier)) in
+            out.chunks_exact_mut(4).zip(&columns).zip(row_divisors)
+        {
             let mut total = [0u32; 4];
-            if W == 0 {
-                for pixel in column_sums[left * 4..(left + span) * 4].chunks_exact(4) {
-                    for (total, &channel) in total.iter_mut().zip(pixel) {
-                        *total = total.wrapping_add(channel.widen());
-                    }
-                }
-            } else {
-                for (index, pixel) in column_sums[left * 4..(left + W) * 4]
-                    .chunks_exact(4)
-                    .enumerate()
-                {
-                    let weight = u32::from(index < span);
-                    for (total, &channel) in total.iter_mut().zip(pixel) {
-                        *total = total.wrapping_add(channel.widen().wrapping_mul(weight));
-                    }
+            for (index, sums) in column_sums[left * 4..(left + W) * 4]
+                .chunks_exact(4)
+                .enumerate()
+            {
+                let weight = u32::from((index as u32) < width);
+                for (total, &sum) in total.iter_mut().zip(sums) {
+                    *total = total.wrapping_add(u32::from(sum).wrapping_mul(weight));
                 }
             }
-            dst.extend_from_slice(&divisor.rounded(total));
+            for (out, total) in pixel.iter_mut().zip(total) {
+                *out = (total.wrapping_add(half).wrapping_mul(multiplier) >> 23) as u8;
+            }
+        }
+    }
+}
+
+/// Any other downscale, such as a thumbnail: 32-bit column sums, each span
+/// summed at its own length, and `Divisor` for any count.
+fn general_rows(src: &FrameView<'_>, x_bounds: &[usize], y_bounds: &[usize], dst: &mut [u8]) {
+    let mut column_sums = vec![0u32; src.width * 4];
+    let row_width = (x_bounds.len() - 1) * 4;
+    for (rows, out) in y_bounds.windows(2).zip(dst.chunks_exact_mut(row_width)) {
+        let (top, bottom) = (rows[0], rows[1]);
+        for (sum, &byte) in column_sums.iter_mut().zip(src.row(top)) {
+            *sum = u32::from(byte);
+        }
+        for y in top + 1..bottom {
+            for (sum, &byte) in column_sums.iter_mut().zip(src.row(y)) {
+                *sum = sum.wrapping_add(u32::from(byte));
+            }
+        }
+        let span = bottom - top;
+        for (pixel, columns) in out.chunks_exact_mut(4).zip(x_bounds.windows(2)) {
+            let mut total = [0u32; 4];
+            for sums in column_sums[columns[0] * 4..columns[1] * 4].chunks_exact(4) {
+                for (total, &sum) in total.iter_mut().zip(sums) {
+                    *total = total.wrapping_add(sum);
+                }
+            }
+            let divisor = Divisor::new((columns[1] - columns[0]) * span);
+            pixel.copy_from_slice(&divisor.rounded(total));
         }
     }
 }
@@ -332,8 +324,8 @@ impl Divisor {
 
 /// 64-bit FNV-1a over the blue, green and red bytes of a box-filtered
 /// thumbnail whose longer side is `HASH_DIM`. A change must move some
-/// thumbnail cell's mean by half a level to alter it, so a blinking cursor or
-/// a single glyph does not, which is what settle wants (D8).
+/// thumbnail cell's mean by half a level to alter it, so one typed glyph
+/// usually does not (S3 needed a 512-pixel thumbnail to see typing).
 pub fn thumbnail_hash(frame: &FrameView<'_>) -> u64 {
     const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
     const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -566,6 +558,25 @@ mod tests {
                     check(total);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_fast_path_matches_the_general_one_byte_for_byte() {
+        let texture = |x: usize, y: usize| {
+            let v = (x * 31 + y * 17 + (x * y) % 97) as u8;
+            [v, v.wrapping_mul(3), v ^ 0x5A, 255]
+        };
+        let (data, stride) = frame(1206, 2622, 40, texture);
+        let src = view(&data, 1206, 2622, stride);
+        for (dw, dh) in [(460, 1000), (603, 1311), (331, 720)] {
+            let x_bounds: Vec<usize> = (0..=dw).map(|x| x * 1206 / dw).collect();
+            let y_bounds: Vec<usize> = (0..=dh).map(|y| y * 2622 / dh).collect();
+            let mut fast = vec![0; dw * dh * 4];
+            let mut general = vec![0; dw * dh * 4];
+            fast_rows::<4>(&src, &x_bounds, &y_bounds, &mut fast);
+            general_rows(&src, &x_bounds, &y_bounds, &mut general);
+            assert!(fast == general, "{dw}x{dh} differs");
         }
     }
 

@@ -190,7 +190,7 @@ pub struct Frame {
     /// Hash of every delivered pixel: two frames differ exactly when it does.
     pub hash: u64,
     /// Hash of a thumbnail of the frame below the status bar, for settle: the
-    /// clock and a blinking cursor do not change it (D8).
+    /// status bar clock does not change it (D8).
     pub content_hash: u64,
     /// The render server wrote the surface during the read, so the frame may
     /// be torn (S2). The present that did it causes a later read.
