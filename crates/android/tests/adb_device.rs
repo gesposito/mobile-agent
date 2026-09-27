@@ -16,7 +16,7 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use android::adb::{AdbServer, Device, Error, Rule, State};
+use android::adb::{AdbServer, Device, Error, Rule, ShellPacket, State};
 use common::{pattern, percentile, serial_or_skip, unique_name};
 
 const IO: Duration = Duration::from_secs(5);
@@ -111,6 +111,36 @@ impl Drop for AbstractLoop {
     }
 }
 
+/// A device file removed when the test ends, pass or fail. Removal is retried
+/// for a few seconds because the emulator's adb transport occasionally drops
+/// and reconnects (spike S6 saw it four times in one session).
+struct RemoteFile {
+    device: Device,
+    path: String,
+}
+
+impl RemoteFile {
+    fn new(device: &Device, tag: &str) -> Self {
+        Self {
+            device: device.clone(),
+            path: format!("/data/local/tmp/{}.bin", unique_name(tag)),
+        }
+    }
+}
+
+impl Drop for RemoteFile {
+    fn drop(&mut self) {
+        for _ in 0..5 {
+            let removed = self.device.shell(&format!("rm -f {}", self.path));
+            if removed.is_ok_and(|out| out.success()) {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+        eprintln!("could not remove {} from the device", self.path);
+    }
+}
+
 /// A host file removed when the test ends, pass or fail.
 struct LocalFile(std::path::PathBuf);
 
@@ -199,6 +229,29 @@ fn a_command_reading_stdin_sees_end_of_file() {
 }
 
 #[test]
+fn closing_a_shell_stream_ends_the_command() {
+    let Some(serial) = serial_or_skip("closing_a_shell_stream_ends_the_command") else {
+        return;
+    };
+    let device = device(&serial);
+    let mut stream = device.shell_stream("echo $$; exec sleep 60").unwrap();
+    let pid = match stream.read_packet().unwrap() {
+        Some(ShellPacket::Stdout(line)) => String::from_utf8(line).unwrap().trim().to_owned(),
+        other => panic!("expected the pid, got {other:?}"),
+    };
+    assert!(device.shell(&format!("kill -0 {pid}")).unwrap().success());
+    drop(stream);
+    let deadline = Instant::now() + IO;
+    while device.shell(&format!("kill -0 {pid}")).unwrap().success() {
+        if Instant::now() > deadline {
+            device.shell(&format!("kill {pid}")).unwrap();
+            panic!("pid {pid} outlived its closed shell stream");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
 fn shell_round_trip() {
     let Some(serial) = serial_or_skip("shell_round_trip") else {
         return;
@@ -224,6 +277,8 @@ fn shell_round_trip() {
     assert!(p50 < 50.0, "p50 {p50:.2} ms");
 }
 
+/// adbd copies the owner's permission bits to group and other, so 0o750
+/// arrives as 0777.
 #[test]
 fn push_writes_the_bytes_with_the_mode() {
     let Some(serial) = serial_or_skip("push_writes_the_bytes_with_the_mode") else {
@@ -232,16 +287,16 @@ fn push_writes_the_bytes_with_the_mode() {
     let device = device(&serial);
     // Three full chunks and a partial one.
     let data = pattern(3 * android::adb::SYNC_MAX_CHUNK + 123, 7);
-    let remote = format!("/data/local/tmp/{}.bin", unique_name("push"));
-    let pushed = device.push_bytes(&data, &remote, 0o640);
-    let back = device.shell(&format!("cat {remote}; stat -c %a {remote}"));
-    device.shell(&format!("rm -f {remote}")).unwrap();
-    pushed.unwrap();
-    let back = back.unwrap();
+    let remote = RemoteFile::new(&device, "push");
+    let path = &remote.path;
+    device.push_bytes(&data, path, 0o750).unwrap();
+    let back = device
+        .shell(&format!("cat {path}; stat -c %a {path}"))
+        .unwrap();
     assert!(back.success(), "{}", back.stderr_text());
     let (content, mode) = back.stdout.split_at(data.len());
     assert!(content == data.as_slice(), "the pushed bytes differ");
-    assert_eq!(mode, b"640\n");
+    assert_eq!(mode, b"777\n");
 }
 
 #[test]
@@ -253,12 +308,10 @@ fn push_copies_a_local_file() {
     let data = pattern(100_000, 11);
     let local = LocalFile(std::env::temp_dir().join(unique_name("push-file")));
     std::fs::write(&local.0, &data).unwrap();
-    let remote = format!("/data/local/tmp/{}.bin", unique_name("push-file"));
-    let pushed = device.push(&local.0, &remote, 0o644);
-    let back = device.shell(&format!("cat {remote}"));
-    device.shell(&format!("rm -f {remote}")).unwrap();
-    pushed.unwrap();
-    assert!(back.unwrap().stdout == data, "the pushed bytes differ");
+    let remote = RemoteFile::new(&device, "push-file");
+    device.push(&local.0, &remote.path, 0o644).unwrap();
+    let back = device.shell(&format!("cat {}", remote.path)).unwrap();
+    assert!(back.stdout == data, "the pushed bytes differ");
 }
 
 #[test]

@@ -26,10 +26,13 @@ mod devices;
 mod error;
 mod wire;
 
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{self, ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use wire::{SYNC_MAX_PATH, Status, shell_id};
 
 pub use devices::{DeviceEntry, PROP_QUERY, State, Target, parse_devices};
 pub use error::Error;
@@ -53,8 +56,92 @@ pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(10);
 /// The port in a [`SERVER_PORT_VAR`] value; the default port when the value is
 /// absent, empty or not a port number.
 pub fn server_port(value: Option<&str>) -> u16 {
-    let _ = value;
-    todo!()
+    value
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(DEFAULT_SERVER_PORT)
+}
+
+/// Wraps an I/O error met while serving `request`.
+fn io_error(request: &str) -> impl FnOnce(io::Error) -> Error + '_ {
+    move |source| Error::Io {
+        request: request.to_owned(),
+        source,
+    }
+}
+
+/// The encoded form of `service`, refused when it is too long to send.
+fn encoded(service: &str) -> Result<Vec<u8>> {
+    wire::encode_request(service).ok_or_else(|| Error::Invalid {
+        request: service.chars().take(80).collect(),
+        detail: format!(
+            "{} bytes is longer than the {}-byte limit of a request",
+            service.len(),
+            wire::MAX_REQUEST_LEN
+        ),
+    })
+}
+
+/// Sends one encoded request and reads its first status.
+fn send_request(s: &mut TcpStream, service: &str, bytes: &[u8]) -> Result<()> {
+    s.write_all(bytes).map_err(io_error(service))?;
+    expect_okay(s, service)
+}
+
+/// Reads a status and turns `FAIL` into [`Error::Fail`].
+fn expect_okay(s: &mut TcpStream, request: &str) -> Result<()> {
+    match wire::read_status(s).map_err(io_error(request))? {
+        Status::Okay => Ok(()),
+        Status::Fail(message) => Err(Error::Fail {
+            request: request.to_owned(),
+            message,
+        }),
+    }
+}
+
+/// Everything the peer sends until it closes the connection.
+fn read_rest(s: &mut TcpStream, request: &str) -> Result<Vec<u8>> {
+    let mut rest = Vec::new();
+    s.read_to_end(&mut rest).map_err(io_error(request))?;
+    Ok(rest)
+}
+
+/// The port in the hex block a server sends after binding a TCP listener, or
+/// `None` when nothing followed the statuses.
+fn bound_port(rest: &[u8], request: &str) -> Result<Option<u16>> {
+    if rest.is_empty() {
+        return Ok(None);
+    }
+    let protocol = |detail: String| Error::Protocol {
+        request: request.to_owned(),
+        detail,
+    };
+    let body = wire::read_hex_block(&mut &rest[..])
+        .map_err(|e| protocol(format!("unreadable port after the status: {e}")))?;
+    let text = String::from_utf8_lossy(&body);
+    text.trim()
+        .parse()
+        .map(Some)
+        .map_err(|_| protocol(format!("bound port {text:?} is not a port number")))
+}
+
+/// Fills `buf` from `r` unless the input ends first; returns the bytes read.
+fn read_full(r: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match r.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
+}
+
+/// Where a push reads its bytes from.
+enum Source<'a> {
+    Bytes(&'a [u8]),
+    File(&'a Path, File),
 }
 
 /// An adb server, reached over TCP on the loopback interface.
@@ -90,14 +177,53 @@ impl AdbServer {
 
     /// Every target the server knows, in every state (`host:devices-l`).
     pub fn devices(&self) -> Result<Vec<DeviceEntry>> {
-        todo!()
+        let request = "host:devices-l";
+        let mut s = self.request(request)?;
+        let listing = wire::read_hex_block(&mut s).map_err(io_error(request))?;
+        Ok(parse_devices(&String::from_utf8_lossy(&listing)))
     }
 
     /// [`Self::devices`] with each online target's API level, model and emulator
     /// flag read through one shell command. A target whose properties cannot be
     /// read is still listed, without them.
     pub fn targets(&self) -> Result<Vec<Target>> {
-        todo!()
+        Ok(self
+            .devices()?
+            .into_iter()
+            .map(|entry| {
+                let props = (entry.state == State::Device)
+                    .then(|| self.device(&entry.serial).shell(PROP_QUERY).ok())
+                    .flatten()
+                    .filter(ShellOutput::success)
+                    .map(|out| out.stdout_text());
+                Target::new(entry, props.as_deref())
+            })
+            .collect())
+    }
+
+    /// A new connection with this server's deadlines.
+    fn connect(&self) -> Result<TcpStream> {
+        let s = TcpStream::connect_timeout(&self.addr, CONNECT_TIMEOUT).map_err(|source| {
+            Error::ServerUnavailable {
+                addr: self.addr,
+                source,
+            }
+        })?;
+        let request = "connect";
+        s.set_nodelay(true).map_err(io_error(request))?;
+        s.set_read_timeout(Some(self.io_timeout))
+            .map_err(io_error(request))?;
+        s.set_write_timeout(Some(self.io_timeout))
+            .map_err(io_error(request))?;
+        Ok(s)
+    }
+
+    /// A new connection that has sent `service` and read an `OKAY` for it.
+    fn request(&self, service: &str) -> Result<TcpStream> {
+        let bytes = encoded(service)?;
+        let mut s = self.connect()?;
+        send_request(&mut s, service, &bytes)?;
+        Ok(s)
     }
 
     /// The device with this serial; nothing is sent until a request is made.
@@ -124,52 +250,130 @@ impl Device {
     /// Runs `command` with shell protocol v2 and collects its output. Standard
     /// input is closed at once, so a command that reads it sees end of file.
     pub fn shell(&self, command: &str) -> Result<ShellOutput> {
-        let _ = command;
-        todo!()
+        let mut stream = self.shell_stream(command)?;
+        // A command that already exited may have closed the stream; its output
+        // is still readable, so a failed close is not an error.
+        let _ = stream.close_stdin();
+        stream.finish()
     }
 
     /// Starts `command` with shell protocol v2 and hands back the stream, for
     /// output that must be read as it arrives. Closing the stream makes adbd
     /// send SIGHUP to the command.
     pub fn shell_stream(&self, command: &str) -> Result<ShellStream> {
-        let _ = command;
-        todo!()
+        let request = format!("shell,v2,raw:{command}");
+        let stream = self.service(&request)?;
+        Ok(ShellStream { stream, request })
     }
 
     /// Copies the local file at `local` to `remote` with permission bits `mode`.
+    ///
+    /// adbd copies the owner's bits to group and other, so 0o644 arrives as
+    /// 0666 and 0o755 as 0777; restrict the file afterwards if that matters.
     pub fn push(&self, local: &Path, remote: &str, mode: u32) -> Result<()> {
-        let _ = (local, remote, mode);
-        todo!()
+        let file = File::open(local).map_err(|source| Error::Local {
+            path: local.to_owned(),
+            source,
+        })?;
+        self.send(Source::File(local, file), remote, mode)
     }
 
-    /// Writes `data` to `remote` with permission bits `mode`.
+    /// Writes `data` to `remote` with permission bits `mode`, which adbd widens
+    /// as [`Self::push`] describes.
     pub fn push_bytes(&self, data: &[u8], remote: &str, mode: u32) -> Result<()> {
-        let _ = (data, remote, mode);
-        todo!()
+        self.send(Source::Bytes(data), remote, mode)
+    }
+
+    /// Sync `SEND`: the header goes out with the first chunk, each later
+    /// `DATA` header with its chunk, then `DONE` and adbd's status.
+    fn send(&self, source: Source<'_>, remote: &str, mode: u32) -> Result<()> {
+        let request = format!("push {remote}");
+        if remote.len() > SYNC_MAX_PATH {
+            return Err(Error::Invalid {
+                request,
+                detail: format!("remote paths are at most {SYNC_MAX_PATH} bytes"),
+            });
+        }
+        let mut s = self.service("sync:")?;
+        let mut buf = wire::sync_request(b"SEND", wire::send_arg(remote, mode).as_bytes());
+        let mut send_chunk = |buf: &mut Vec<u8>, chunk: &[u8]| {
+            wire::push_data_chunk(buf, chunk);
+            let sent = write_or_sync_fail(&mut s, buf, &request);
+            buf.clear();
+            sent
+        };
+        match source {
+            Source::Bytes(data) => {
+                for chunk in data.chunks(wire::SYNC_MAX_CHUNK) {
+                    send_chunk(&mut buf, chunk)?;
+                }
+            }
+            Source::File(path, mut file) => {
+                let mut chunk = vec![0; wire::SYNC_MAX_CHUNK];
+                loop {
+                    let n = read_full(&mut file, &mut chunk).map_err(|source| Error::Local {
+                        path: path.to_owned(),
+                        source,
+                    })?;
+                    if n == 0 {
+                        break;
+                    }
+                    send_chunk(&mut buf, &chunk[..n])?;
+                }
+            }
+        }
+        let mtime = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as u32);
+        wire::push_done(&mut buf, mtime);
+        write_or_sync_fail(&mut s, &buf, &request)?;
+        match wire::read_sync_status(&mut s).map_err(io_error(&request))? {
+            Ok(()) => {
+                // The transfer is complete; a failed goodbye changes nothing.
+                let _ = s.write_all(b"QUIT\0\0\0\0");
+                Ok(())
+            }
+            Err(message) => Err(Error::Fail { request, message }),
+        }
     }
 
     /// Installs `adb forward <host> <device>`. Returns the host port when the
     /// host side is a TCP socket; `tcp:0` lets the server pick a free one.
     pub fn forward(&self, host: &str, device: &str) -> Result<Option<u16>> {
-        let _ = (host, device);
-        todo!()
+        let request = self.host_request(&format!("forward:{host};{device}"));
+        let mut s = self.server.request(&request)?;
+        expect_okay(&mut s, &request)?;
+        // After binding a TCP listener the server sends its port.
+        let rest = read_rest(&mut s, &request)?;
+        bound_port(&rest, &request)
     }
 
     /// Forwards a free host TCP port, chosen by the server, to `device`.
     pub fn forward_tcp(&self, device: &str) -> Result<u16> {
-        let _ = device;
-        todo!()
+        let request = self.host_request(&format!("forward:tcp:0;{device}"));
+        self.forward("tcp:0", device)?
+            .ok_or_else(|| Error::Protocol {
+                request,
+                detail: "the server bound no TCP port".into(),
+            })
     }
 
     /// Removes the forward rule whose host side is `host`.
     pub fn remove_forward(&self, host: &str) -> Result<()> {
-        let _ = host;
-        todo!()
+        let request = self.host_request(&format!("killforward:{host}"));
+        let mut s = self.server.request(&request)?;
+        expect_okay(&mut s, &request)
     }
 
     /// This device's forward rules.
     pub fn forwards(&self) -> Result<Vec<Rule>> {
-        todo!()
+        let request = self.host_request("list-forward");
+        let mut s = self.server.request(&request)?;
+        let listing = wire::read_hex_block(&mut s).map_err(io_error(&request))?;
+        Ok(wire::parse_forward_listing(
+            &String::from_utf8_lossy(&listing),
+            &self.serial,
+        ))
     }
 
     /// Installs `adb reverse <device> <host>`: adbd listens on `device` and
@@ -180,19 +384,23 @@ impl Device {
     /// connection arrives for a rule the server has already dropped, the adb
     /// server aborts (spike S6).
     pub fn reverse(&self, device: &str, host: &str) -> Result<()> {
-        let _ = (device, host);
-        todo!()
+        self.adbd_request(&format!("reverse:forward:{device};{host}"))
     }
 
     /// Removes the reverse rule whose device side is `device`.
     pub fn remove_reverse(&self, device: &str) -> Result<()> {
-        let _ = device;
-        todo!()
+        self.adbd_request(&format!("reverse:killforward:{device}"))
     }
 
     /// adbd's reverse rules on this device.
     pub fn reverses(&self) -> Result<Vec<Rule>> {
-        todo!()
+        let request = "reverse:list-forward";
+        // adbd answers with the listing alone, without a status of its own.
+        let mut s = self.service(request)?;
+        let listing = wire::read_hex_block(&mut s).map_err(io_error(request))?;
+        Ok(wire::parse_reverse_listing(&String::from_utf8_lossy(
+            &listing,
+        )))
     }
 
     /// Opens a device service such as `localabstract:<name>` or `tcp:<port>` as
@@ -200,13 +408,56 @@ impl Device {
     /// with [`Error::Fail`] and the message `closed`. The stream is returned
     /// without read or write deadlines; the caller sets its own.
     pub fn open_service(&self, service: &str) -> Result<TcpStream> {
-        let _ = service;
-        todo!()
+        let s = self.service(service)?;
+        s.set_read_timeout(None).map_err(io_error(service))?;
+        s.set_write_timeout(None).map_err(io_error(service))?;
+        Ok(s)
     }
 
     /// [`Self::open_service`] for the abstract Unix socket `name`.
     pub fn open_abstract(&self, name: &str) -> Result<TcpStream> {
         self.open_service(&format!("localabstract:{name}"))
+    }
+
+    /// A host request scoped to this serial, such as `forward:...`.
+    fn host_request(&self, request: &str) -> String {
+        format!("host-serial:{}:{request}", self.serial)
+    }
+
+    /// A connection switched to this device's transport that has opened
+    /// `service`, keeping the server's deadlines. Both requests are encoded
+    /// before connecting, so an oversized one never reaches the server.
+    fn service(&self, service: &str) -> Result<TcpStream> {
+        let transport = format!("host:transport:{}", self.serial);
+        let switch = encoded(&transport)?;
+        let open = encoded(service)?;
+        let mut s = self.server.connect()?;
+        send_request(&mut s, &transport, &switch)?;
+        send_request(&mut s, service, &open)?;
+        Ok(s)
+    }
+
+    /// A request adbd answers with a status of its own after the server's
+    /// `OKAY`, such as `reverse:forward:...`.
+    fn adbd_request(&self, request: &str) -> Result<()> {
+        let mut s = self.service(request)?;
+        expect_okay(&mut s, request)
+    }
+}
+
+/// Writes `bytes` of a sync transfer. adbd reports a file it cannot create with
+/// `FAIL` and closes the connection, so a failed write returns that message
+/// when it can be read.
+fn write_or_sync_fail(s: &mut TcpStream, bytes: &[u8], request: &str) -> Result<()> {
+    let Err(write_error) = s.write_all(bytes) else {
+        return Ok(());
+    };
+    match wire::read_sync_status(s) {
+        Ok(Err(message)) => Err(Error::Fail {
+            request: request.to_owned(),
+            message,
+        }),
+        _ => Err(io_error(request)(write_error)),
     }
 }
 
@@ -220,30 +471,34 @@ pub struct ShellStream {
 impl ShellStream {
     /// The next packet, or `None` once the command has ended and the stream closed.
     pub fn read_packet(&mut self) -> Result<Option<ShellPacket>> {
-        todo!()
+        wire::read_shell_packet(&mut self.stream).map_err(io_error(&self.request))
     }
 
     /// Writes `data` to the command's standard input.
     pub fn write_stdin(&mut self, data: &[u8]) -> Result<()> {
-        let _ = data;
-        todo!()
+        self.stream
+            .write_all(&wire::shell_packet(shell_id::STDIN, data))
+            .map_err(io_error(&self.request))
     }
 
     /// Closes the command's standard input.
     pub fn close_stdin(&mut self) -> Result<()> {
-        todo!()
+        self.stream
+            .write_all(&wire::shell_packet(shell_id::CLOSE_STDIN, b""))
+            .map_err(io_error(&self.request))
     }
 
     /// Replaces the deadline for each read; `None` waits indefinitely.
     pub fn set_read_timeout(&mut self, timeout: Option<Duration>) -> Result<()> {
-        let _ = timeout;
-        todo!()
+        self.stream
+            .set_read_timeout(timeout)
+            .map_err(io_error(&self.request))
     }
 
     /// Reads the remaining packets and returns everything the command wrote
     /// from now on, with its exit status.
-    pub fn finish(self) -> Result<ShellOutput> {
-        todo!()
+    pub fn finish(mut self) -> Result<ShellOutput> {
+        wire::read_shell_output(&mut self.stream).map_err(io_error(&self.request))
     }
 }
 
@@ -740,9 +995,11 @@ mod tests {
     fn a_silent_server_fails_at_the_io_deadline() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let addr = listener.local_addr().unwrap();
+        let (done, wait) = std::sync::mpsc::channel::<()>();
         let holder = thread::spawn(move || {
+            // Accepts, then holds the connection open without answering.
             let (s, _) = listener.accept().unwrap();
-            thread::sleep(Duration::from_secs(2));
+            let _ = wait.recv_timeout(Duration::from_secs(5));
             drop(s);
         });
         let started = Instant::now();
@@ -751,9 +1008,10 @@ mod tests {
             .devices()
             .unwrap_err();
         let elapsed = started.elapsed();
+        done.send(()).unwrap();
+        holder.join().unwrap();
         assert!(err.is_timeout(), "{err:?}");
         assert!(elapsed < Duration::from_secs(1), "took {elapsed:?}");
-        holder.join().unwrap();
     }
 
     #[test]

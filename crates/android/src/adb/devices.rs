@@ -24,7 +24,37 @@ pub enum State {
 impl State {
     /// What the user can do about this state; `None` for [`State::Device`].
     pub fn advice(&self) -> Option<String> {
-        todo!()
+        let text = match self {
+            State::Device => return None,
+            State::Unauthorized => {
+                "USB debugging is not authorized for this computer: unlock the device and \
+                 accept the \"Allow USB debugging?\" prompt on the device, ticking \"Always \
+                 allow from this computer\". If no prompt appears, choose \"Revoke USB \
+                 debugging authorizations\" in Developer options and reconnect the cable."
+                    .to_owned()
+            }
+            State::Offline => "adb has lost contact with the device: reconnect the cable, or \
+                               restart the emulator; `adb reconnect offline` retries without \
+                               unplugging."
+                .to_owned(),
+            State::Authorizing => {
+                "the device is still authorizing this computer; list targets again in a moment."
+                    .to_owned()
+            }
+            State::Connecting => {
+                "adb is still connecting to the device; list targets again in a moment.".to_owned()
+            }
+            State::NoPermissions(detail) => format!(
+                "the adb server may not open this USB device ({detail}): install the udev \
+                 rules for Android devices, add your user to the plugdev group, then reconnect \
+                 the device and restart the adb server."
+            ),
+            State::Other(mode) => format!(
+                "the device is in {mode} mode, not running Android: reboot it into Android to \
+                 automate it."
+            ),
+        };
+        Some(text)
     }
 }
 
@@ -41,12 +71,12 @@ pub struct DeviceEntry {
 impl DeviceEntry {
     /// The server's transport id, present in the long form only.
     pub fn transport_id(&self) -> Option<u32> {
-        todo!()
+        self.props.get("transport_id")?.parse().ok()
     }
 
     /// The model the server reports, with spaces replaced by underscores.
     pub fn model(&self) -> Option<&str> {
-        todo!()
+        self.props.get("model").map(String::as_str)
     }
 }
 
@@ -54,8 +84,52 @@ impl DeviceEntry {
 /// `* daemon ...` lines are skipped, as is any line without a state, so one odd
 /// line never hides the other targets.
 pub fn parse_devices(listing: &str) -> Vec<DeviceEntry> {
-    let _ = listing;
-    todo!()
+    listing.lines().filter_map(parse_line).collect()
+}
+
+/// Keys of the long form's trailing fields. The server appends them after the
+/// state, ending with transport_id, so they are taken from the end of the line.
+const PROP_KEYS: [&str; 5] = ["usb", "product", "model", "device", "transport_id"];
+
+/// What the server prints for a target whose serial is empty.
+const NO_SERIAL: &str = "(no serial number)";
+
+fn parse_line(line: &str) -> Option<DeviceEntry> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with("List of devices") || line.starts_with('*') {
+        return None;
+    }
+    let (serial, rest) = match line.strip_prefix(NO_SERIAL) {
+        Some(rest) => (NO_SERIAL, rest),
+        None => line.split_once(char::is_whitespace)?,
+    };
+    let mut tokens: Vec<&str> = rest.split_whitespace().collect();
+    let mut props = BTreeMap::new();
+    while let Some((key, value)) = tokens.last().and_then(|t| t.split_once(':')) {
+        if !PROP_KEYS.contains(&key) {
+            break;
+        }
+        props.insert(key.to_owned(), value.to_owned());
+        tokens.pop();
+    }
+    if tokens.is_empty() {
+        return None;
+    }
+    // A state may contain spaces: "no permissions (...); see [...]".
+    let state = match tokens.join(" ").as_str() {
+        "device" => State::Device,
+        "offline" => State::Offline,
+        "unauthorized" => State::Unauthorized,
+        "authorizing" => State::Authorizing,
+        "connecting" => State::Connecting,
+        text if text.starts_with("no permissions") => State::NoPermissions(text.to_owned()),
+        text => State::Other(text.to_owned()),
+    };
+    Some(DeviceEntry {
+        serial: serial.to_owned(),
+        state,
+        props,
+    })
 }
 
 /// The shell command [`crate::adb::AdbServer::targets`] runs on each online
@@ -82,8 +156,23 @@ impl Target {
     /// A target from its listing entry and, when it could be read, the output
     /// of [`PROP_QUERY`] on it.
     pub fn new(entry: DeviceEntry, props: Option<&str>) -> Self {
-        let _ = (entry, props);
-        todo!()
+        let lines: Vec<&str> = props
+            .map(|p| p.lines().map(str::trim).collect())
+            .unwrap_or_default();
+        let prop = |i: usize| lines.get(i).copied().filter(|v| !v.is_empty());
+        let api_level = prop(0).and_then(|v| v.parse().ok());
+        let qemu = prop(1) == Some("1") || prop(2) == Some("1");
+        let model = prop(3)
+            .map(str::to_owned)
+            .or_else(|| entry.model().map(str::to_owned));
+        Target {
+            emulator: qemu || entry.serial.starts_with("emulator-"),
+            transport_id: entry.transport_id(),
+            serial: entry.serial,
+            state: entry.state,
+            model,
+            api_level,
+        }
     }
 
     /// What the user can do to make the target usable; `None` when it is.
