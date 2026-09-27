@@ -49,7 +49,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 4.9 Add failing tests that no agent process remains after daemon shutdown and that snapshots work after the app is force-stopped and relaunched, then implement stop, clean exit and survival; verify red-then-green
 - [x] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points (R8 needs the Kotlin distribution's `lib/annotations-13.0.jar` on its classpath; S5's R8 build of a codec plus platform JSON was 42,640 bytes); verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
 - [x] 4.11 Add a failing test that a tree read survives the framework's integrity-check `NullPointerException` from `getChild` on debuggable builds (inject it through a test hook), then retry the child once and otherwise skip it with a truncation flag instead of failing the read; verify red-then-green
-- [ ] 4.12 Add a failing check that `test.sh` reads the agent version from `VERSION` and that the driver's reuse check treats an agent without snapshot metadata as incompatible, then bump `VERSION` to 0.2.0; verify red-then-green
+- [x] 4.12 Add a failing check that `test.sh` reads the agent version from `VERSION` and that the driver's reuse check treats an agent without snapshot metadata as incompatible, then bump `VERSION` to 0.2.0; verify red-then-green
 
 ## 5. Android host driver (`crates/android`)
 
@@ -82,7 +82,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 7.6 Add a failing diff test on the form-submit fixture, then implement the structural diff; verify red-then-green
 - [x] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green
 - [x] 7.8 Add a failing scaled-frame test with age reporting, then implement frame access; verify red-then-green
-- [ ] 7.9 Add a failing test that the mirror's event-less fallback recognises any `androidx.compose.` host class (the agent reports `androidx.compose.ui.platform.ComposeView` on API 36), then broaden the match; verify red-then-green
+- [x] 7.9 Add a failing test that the mirror's event-less fallback recognises any `androidx.compose.` host class (the agent reports `androidx.compose.ui.platform.ComposeView` on API 36), then broaden the match; verify red-then-green
 
 ## 8. Daemon and CLI (`crates/daemon`, `crates/cli`)
 
