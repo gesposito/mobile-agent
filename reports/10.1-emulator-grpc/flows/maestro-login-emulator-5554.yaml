@@ -1,0 +1,14 @@
+appId: dev.mobileagent.fixture.compose
+---
+- launchApp
+- tapOn:
+    id: "login-username"
+- inputText: "agent"
+- tapOn:
+    id: "login-password"
+- inputText: "hunter2"
+- tapOn:
+    id: "login-submit"
+- assertVisible:
+    id: "login-status"
+    text: "Welcome, agent"

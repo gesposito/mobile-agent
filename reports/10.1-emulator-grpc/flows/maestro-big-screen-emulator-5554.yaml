@@ -1,0 +1,7 @@
+appId: dev.mobileagent.fixture.compose
+---
+- launchApp
+- tapOn:
+    id: "tab-big"
+- assertVisible:
+    id: "cell-500"

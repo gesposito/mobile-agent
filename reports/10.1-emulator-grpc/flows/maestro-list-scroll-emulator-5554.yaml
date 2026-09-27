@@ -1,0 +1,14 @@
+appId: dev.mobileagent.fixture.compose
+---
+- launchApp
+- tapOn:
+    id: "tab-list"
+- scrollUntilVisible:
+    element:
+      id: "row-200"
+    direction: DOWN
+- tapOn:
+    id: "row-200"
+- assertVisible:
+    id: "detail-200"
+    text: "Detail 200"
