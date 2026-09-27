@@ -46,6 +46,9 @@ if [ ! -d node_modules ] || [ "$(cat node_modules/.bun-lock-hash 2>/dev/null)" !
   require_sfw
   sfw bun install --frozen-lockfile >&2
   echo "$lock_hash" > node_modules/.bun-lock-hash
+  # Native projects generated against an older dependency set are stale: their autolinking and
+  # pods miss modules added since. Drop the markers so both are regenerated on their next build.
+  rm -f ios/.prebuild-inputs android/.prebuild-inputs
 fi
 
 # The generated native project (ios/ or android/) depends on app.json, the dependencies and the
