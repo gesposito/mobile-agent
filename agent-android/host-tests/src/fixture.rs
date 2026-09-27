@@ -72,15 +72,30 @@ impl<'a> RotationGuard<'a> {
 
 impl Drop for RotationGuard<'_> {
     fn drop(&mut self) {
-        let restore = |key: &str, value: &str| {
-            if value != "null" && !value.is_empty() {
-                let _ = self
-                    .device
-                    .shell_output(&format!("settings put system {key} {value}"));
+        // Releasing UI automation also restores the rotation state the
+        // connection recorded, which can land on another value than the one
+        // recorded here, so each setting is written until it reads back.
+        for attempt in 0..5 {
+            let mut done = true;
+            for (key, value) in [
+                ("user_rotation", &self.user),
+                ("accelerometer_rotation", &self.accelerometer),
+            ] {
+                if value == "null" || value.is_empty() {
+                    continue;
+                }
+                let current = self.device.shell(&format!("settings get system {key}"));
+                if current.trim() != value {
+                    let _ = self
+                        .device
+                        .shell_output(&format!("settings put system {key} {value}"));
+                    done = false;
+                }
             }
-        };
-        restore("user_rotation", &self.user);
-        restore("accelerometer_rotation", &self.accelerometer);
-        std::thread::sleep(Duration::from_millis(1000));
+            if done && attempt > 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
     }
 }
