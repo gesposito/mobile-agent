@@ -370,6 +370,10 @@ fn big_then_login(env: &Env, device: &str, open: &[&str], dir: &Path) -> Measure
     let opened = run.data();
     measured.open = ms(run.elapsed);
     measured.open_settled = opened["settled"].as_bool();
+    assert_eq!(
+        opened["settled"], true,
+        "open settles once the app has shown its first tree: {opened}"
+    );
     let first = env.on(device, &["snapshot", "-i"]).data();
     measured.open_to_first_snapshot = ms(started.elapsed());
     let big = listing(&first);

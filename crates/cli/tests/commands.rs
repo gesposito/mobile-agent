@@ -481,6 +481,46 @@ fn open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen()
     }
 }
 
+/// An app that takes long to show its first tree, as the Compose fixture's
+/// 500-cell screen does on an emulator, still has 3 s to settle once it
+/// shows: the wait for its first tree has a budget of its own, the
+/// session's default timeout.
+#[test]
+fn open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts() {
+    let env = TestEnv::start_with("android", &[("MOBILE_AGENT_FAKE_LATENCY_MS", "2900")]);
+    let reply = env
+        .cli(&["--json", "open", "--env", "FIXTURE_INITIAL_TAB=list", APP])
+        .ok()
+        .json();
+    let data = &reply["data"];
+    assert!(
+        data["firstTreeMs"].as_f64().is_some_and(|ms| ms >= 2900.0),
+        "{reply}"
+    );
+    assert_eq!(
+        data["settled"], true,
+        "settled after its first tree: {reply}"
+    );
+    let quick = env
+        .cli(&[
+            "--json",
+            "open",
+            "--relaunch",
+            "--timeout",
+            "1000",
+            "--env",
+            "FIXTURE_INITIAL_TAB=big",
+            APP,
+        ])
+        .ok()
+        .json();
+    assert_eq!(
+        quick["data"]["settled"], false,
+        "an explicit timeout bounds the whole wait: {quick}"
+    );
+    assert!(quick["warning"].as_str().is_some(), "{quick}");
+}
+
 /// `status` names, for each attached target, whether it has a frame source:
 /// emulators and Simulators do, Android devices do not (design D7).
 #[test]
