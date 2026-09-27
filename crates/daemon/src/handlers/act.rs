@@ -493,3 +493,62 @@ fn scroll_until(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
+    use crate::fake::FakeDriver;
+
+    /// A screen that turns to landscape once `turned` is set.
+    struct Turning(Arc<AtomicBool>);
+
+    impl Screen for Turning {
+        fn size(&mut self) -> Result<Size, DriverError> {
+            Ok(if self.0.load(Ordering::SeqCst) {
+                Size {
+                    width: 800.0,
+                    height: 400.0,
+                }
+            } else {
+                Size {
+                    width: 400.0,
+                    height: 800.0,
+                }
+            })
+        }
+    }
+
+    fn request(line: &str) -> Request {
+        Request::parse(line).unwrap()
+    }
+
+    /// Task 8.11: a gesture no element anchors follows the screen as it is
+    /// when the command runs, so a rotated display is swiped across its
+    /// middle.
+    #[test]
+    fn a_swipe_without_points_follows_the_screen_as_it_is_now() {
+        let driver = FakeDriver::parse("android").unwrap();
+        let info = driver.discover().unwrap().remove(0);
+        let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let turned = Arc::new(AtomicBool::new(false));
+        attachment.display = Box::new(Turning(Arc::clone(&turned)));
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let swipe = request(r#"{"action": "swipe", "direction": "up"}"#);
+        let upright = super::swipe(&mut target, "default", &swipe).unwrap().data;
+        assert_eq!(upright["from"][0], 200.0, "{upright}");
+        turned.store(true, Ordering::SeqCst);
+        let rotated = super::swipe(&mut target, "default", &swipe).unwrap().data;
+        assert_eq!(
+            rotated["from"][0], 400.0,
+            "the middle of the landscape screen: {rotated}"
+        );
+        assert!(
+            rotated["from"][1].as_f64() < Some(400.0),
+            "inside the landscape screen: {rotated}"
+        );
+    }
+}

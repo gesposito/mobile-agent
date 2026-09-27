@@ -125,6 +125,23 @@ pub struct Size {
     pub height: f64,
 }
 
+/// A target's screen, whose size a driver reads as it is now: a display
+/// that rotates swaps its sides.
+pub trait Screen: Send {
+    /// The screen's size in device points now.
+    fn size(&mut self) -> Result<Size, DriverError>;
+}
+
+/// A screen whose size does not change.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FixedScreen(pub Size);
+
+impl Screen for FixedScreen {
+    fn size(&mut self) -> Result<Size, DriverError> {
+        Ok(self.0)
+    }
+}
+
 /// What attaching to a target yields. Dropping it detaches the target: a
 /// driver stops what it started for the target, such as the Android agent
 /// or the Simulator's reader, when its parts are dropped.
@@ -132,8 +149,8 @@ pub struct Attachment {
     /// The backend the target's mirror runs on.
     pub backend: Backend,
     pub apps: Box<dyn AppControl>,
-    /// The screen size, for gestures that no element anchors.
-    pub display: Size,
+    /// The screen, for gestures that no element anchors.
+    pub display: Box<dyn Screen>,
     pub config: MirrorConfig,
     /// Screenshots the driver takes on demand. Without one, `screenshot`
     /// encodes the mirror's latest frame.

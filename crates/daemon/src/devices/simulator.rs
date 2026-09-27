@@ -51,7 +51,8 @@ use simulator::{
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
-    DriverError, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
+    DriverError, FixedScreen, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo,
+    TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, UNKNOWN_KEY};
@@ -278,7 +279,7 @@ fn attach(driver: Arc<SimulatorDriver>, udid: &str) -> Result<Attachment, Driver
             shared: Arc::clone(&shared),
             _detach: detach,
         }),
-        display,
+        display: Box::new(FixedScreen(display)),
         config: MirrorConfig::default(),
         capture: Some(Box::new(Screenshots {
             driver: Arc::clone(&driver),

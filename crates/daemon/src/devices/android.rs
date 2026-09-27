@@ -33,8 +33,8 @@ use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{
-    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError, Image,
-    Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
+    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError,
+    FixedScreen, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo, TargetReport,
 };
 use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
@@ -234,7 +234,7 @@ impl Driver for AndroidDevices {
                 device,
                 _stop: stop,
             }),
-            display,
+            display: Box::new(FixedScreen(display)),
             config: MirrorConfig::default(),
             capture: Some(Box::new(AgentScreenshots(session.clone()))),
             report: Some(Arc::new(SessionReport {
@@ -472,6 +472,15 @@ pub(crate) fn display_size(wm_size: &str, scale: f64) -> Option<Size> {
     })
 }
 
+/// The display's size in points now, from the `cur=WIDTHxHEIGHT` of
+/// `dumpsys window displays`, which follows the current rotation, at
+/// `scale` pixels per point.
+#[allow(dead_code)]
+pub(crate) fn current_display(dumpsys: &str, scale: f64) -> Option<Size> {
+    let _ = (dumpsys, scale);
+    todo!("task 8.11")
+}
+
 /// The launcher activity `cmd package resolve-activity --brief` printed,
 /// as `package/activity`; `None` when it found none.
 pub(crate) fn launcher_activity(resolved: &str) -> Option<String> {
@@ -643,6 +652,24 @@ mod tests {
             display_size("Physical size: 1080x2400\nOverride size: 720x1600\n", 2.0).unwrap();
         assert_eq!((over.width, over.height), (360.0, 800.0));
         assert_eq!(display_size("wm: not found", 2.625), None);
+    }
+
+    /// Task 8.11: the display's size follows the current rotation.
+    #[test]
+    fn the_current_display_is_read_in_the_current_rotation() {
+        let portrait = "  Display: mDisplayId=0 rotation 0\n    init=1080x2400 420dpi \
+                        mMinSizeOfResizeableTaskDp=220 cur=1080x2400 app=1080x2400 \
+                        rng=1080x1080-2400x2400\n";
+        let size = current_display(portrait, 2.625).unwrap();
+        assert!((size.width - 411.428_571).abs() < 1e-3, "{size:?}");
+        assert!((size.height - 914.285_714).abs() < 1e-3, "{size:?}");
+        let landscape =
+            portrait.replace("cur=1080x2400 app=1080x2400", "cur=2400x1080 app=2400x1017");
+        let size = current_display(&landscape, 2.625).unwrap();
+        assert!(size.width > size.height, "{size:?}");
+        assert!((size.width - 914.285_714).abs() < 1e-3, "{size:?}");
+        assert_eq!(current_display("init=1080x2400 420dpi", 2.625), None);
+        assert_eq!(current_display("", 2.625), None);
     }
 
     #[test]

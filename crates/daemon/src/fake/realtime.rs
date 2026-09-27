@@ -25,7 +25,7 @@ use protocol::message::Rotation;
 
 use super::app::Device;
 use super::tree::{self, Win};
-use crate::driver::{AppControl, Attachment, DriverError, Launch, Platform, Size};
+use crate::driver::{AppControl, Attachment, DriverError, FixedScreen, Launch, Platform, Size};
 
 /// How often the event stream looks for items while it waits.
 const POLL: Duration = Duration::from_millis(2);
@@ -224,10 +224,10 @@ pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Att
             clock: Box::new(part()),
         },
         apps: Box::new(part()),
-        display: Size {
+        display: Box::new(FixedScreen(Size {
             width: kit.width(),
             height: kit.height(),
-        },
+        })),
         config: MirrorConfig::default(),
         capture: None,
         report: None,

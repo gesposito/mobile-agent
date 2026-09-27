@@ -773,6 +773,112 @@ fn force_takes_ui_automation_over_from_another_daemons_agent() {
     assert!(agents.is_empty(), "no agent is left: {agents:?}");
 }
 
+/// Puts the device's rotation settings back when dropped.
+struct RotationRestored {
+    device: android::adb::Device,
+    accelerometer: String,
+    user: String,
+}
+
+impl RotationRestored {
+    fn new(device: &android::adb::Device) -> RotationRestored {
+        let get = |key: &str| {
+            device
+                .shell(&format!("settings get system {key}"))
+                .map(|out| out.stdout_text().trim().to_owned())
+                .unwrap_or_default()
+        };
+        RotationRestored {
+            device: device.clone(),
+            accelerometer: get("accelerometer_rotation"),
+            user: get("user_rotation"),
+        }
+    }
+
+    /// Turns the display by `quarter_turns` and waits until it reports the
+    /// size of that rotation.
+    fn turn(&self, quarter_turns: u32) {
+        let _ = self.device.shell(&format!(
+            "settings put system accelerometer_rotation 0; settings put system user_rotation {quarter_turns}"
+        ));
+        let landscape = quarter_turns % 2 == 1;
+        let turned = eventually(Duration::from_secs(5), || {
+            let shown = self
+                .device
+                .shell("dumpsys window displays")
+                .map(|out| out.stdout_text())
+                .unwrap_or_default();
+            let cur = shown
+                .split_whitespace()
+                .find_map(|word| word.strip_prefix("cur="))
+                .and_then(|size| size.split_once('x'))
+                .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
+            cur.is_some_and(|(w, h)| (w > h) == landscape)
+        });
+        assert!(
+            turned,
+            "the display did not turn {quarter_turns} quarter turns"
+        );
+    }
+}
+
+impl Drop for RotationRestored {
+    fn drop(&mut self) {
+        let value = |v: &str, default: &str| {
+            if v.is_empty() || v == "null" {
+                default.to_owned()
+            } else {
+                v.to_owned()
+            }
+        };
+        let _ = self.device.shell(&format!(
+            "settings put system user_rotation {}; settings put system accelerometer_rotation {}",
+            value(&self.user, "0"),
+            value(&self.accelerometer, "0")
+        ));
+    }
+}
+
+/// Task 8.11: the Android display's size follows the current rotation, so
+/// a swipe no element anchors crosses the middle of the rotated screen.
+#[test]
+fn the_android_display_follows_its_rotation() {
+    let test = "the_android_display_follows_its_rotation";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    let _fixture = ComposeStopped::new(&device);
+    let rotation = RotationRestored::new(&device);
+    let mut env = Env::start();
+    env.on(&serial, &["open", COMPOSE, "--env", "initial_tab=login"])
+        .data();
+    let from = |reply: &Value| {
+        let from = reply["from"].as_array().cloned().unwrap_or_default();
+        (
+            from.first().and_then(Value::as_f64).unwrap_or_default(),
+            from.get(1).and_then(Value::as_f64).unwrap_or_default(),
+        )
+    };
+    let upright = env.on(&serial, &["swipe", "up", "10"]).data();
+    let (x, y) = from(&upright);
+    assert!(
+        x < y,
+        "portrait: the middle is lower than it is wide: {upright}"
+    );
+    rotation.turn(1);
+    let turned = env.on(&serial, &["swipe", "up", "10"]).data();
+    let (x, y) = from(&turned);
+    assert!(
+        x > y,
+        "landscape: the swipe crosses the middle of the rotated screen: {turned}"
+    );
+    drop(rotation);
+    env.shutdown();
+}
+
 /// Doctor (task 8.7) with the device drivers: the Xcode compatibility table
 /// holds the rows the Simulator driver supplies.
 #[test]

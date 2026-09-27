@@ -73,7 +73,11 @@ pub(crate) struct Attached {
 impl Attached {
     /// The target `info` as `attachment` attached it, its status shared
     /// with its worker.
-    fn new(info: &TargetInfo, attachment: Attachment, status: &Arc<Mutex<Status>>) -> Attached {
+    pub(crate) fn new(
+        info: &TargetInfo,
+        mut attachment: Attachment,
+        status: &Arc<Mutex<Status>>,
+    ) -> Attached {
         let observer = Observer::default();
         let mut backend = attachment.backend;
         let frames = backend.frames.is_some();
@@ -84,7 +88,10 @@ impl Attached {
             mirror: Mirror::new(backend, attachment.config),
             apps: attachment.apps,
             capture: attachment.capture,
-            display: attachment.display,
+            display: attachment.display.size().unwrap_or(Size {
+                width: 0.0,
+                height: 0.0,
+            }),
             observer,
             frames,
             last_action: None,
