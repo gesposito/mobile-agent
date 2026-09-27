@@ -10,7 +10,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 1.4 Add a CI workflow matrix (macOS per installed Xcode, Linux for Android) that runs the validate recipe; verify the workflow file passes `actionlint`
 - [x] 1.5 Write the Android agent build script using `kotlinc` and `d8` from the SDK to produce a single dex jar in `agent-android/dist`; verify the jar starts under `app_process` on an emulator and prints its version banner
 - [x] 1.6 Scaffold the reference fixtures through Socket: an Expo React Native app via the official init (verify `sfw bun` wraps it, else use `sfw npm`), a Compose app and a SwiftUI app, each with a login screen, a scrolling list and a deterministic 500-node screen; verify each builds and the 500-node screen renders that count in the platform inspector
-- [ ] 1.7 Fix the Expo fixture on Android: apply status-bar and gesture-bar insets (S1 found the centres of `row-1` and `detail-back` under the status bar, so taps by id hit SystemUI) and allow rotation in `app.json`; verify a uiautomator dump shows every contract element's centre inside the app window and the app rotates on the emulator
+- [x] 1.7 Fix the Expo fixture on Android: apply status-bar and gesture-bar insets (S1 found the centres of `row-1` and `detail-back` under the status bar, so taps by id hit SystemUI) and allow rotation in `app.json`; verify a uiautomator dump shows every contract element's centre inside the app window and the app rotates on the emulator
 
 ## 2. Research and de-risking spikes
 
