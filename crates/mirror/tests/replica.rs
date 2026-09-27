@@ -3,6 +3,8 @@
 //! sends no change events are re-read in full after each injected action,
 //! when frames change and on a poll, their deltas derived by diffing
 //! consecutive reads and the read's cost and age reported in the snapshot.
+//! Which windows send no change events comes from the snapshot's window
+//! metadata (task 3.6), inferred from Compose's host view only without it.
 //! Time is the fake target's clock: nothing sleeps.
 
 mod support;
@@ -269,6 +271,66 @@ fn frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_o
         "frame-driven re-reads 200 ms apart, the last after the frames stop; unchanged hashes read nothing"
     );
     assert_eq!(mirror.dump(), cold_dump(&welcome.read()));
+}
+
+/// A window the protocol marks as sending no change events is re-read after
+/// an injected action and on a poll, whatever toolkit its classes suggest.
+#[test]
+fn window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path() {
+    let mut screen = Screen::load("login");
+    for window in screen.0["windows"].as_array_mut().unwrap() {
+        if window["id"] == 1 {
+            window["events"] = json!(false);
+        }
+    }
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&full()).unwrap();
+    assert_eq!(before.window(1).unwrap().source.mode, RefreshMode::Reread);
+    assert_eq!(before.window(2).unwrap().source.mode, RefreshMode::Events);
+    assert_eq!(
+        mirror.next_wakeup(),
+        Some(target.instant(ms(1_000))),
+        "the window is polled"
+    );
+
+    let submit = before.by_identifier("login-submit").unwrap();
+    mirror
+        .act(&Action::Tap {
+            target: Target::Point(submit.bounds.center()),
+            hold: None,
+        })
+        .unwrap();
+    target.advance(ms(30));
+    let after = mirror.snapshot(&full()).unwrap();
+    assert_eq!(after.window(1).unwrap().source.reason, ReadReason::Action);
+    assert_eq!(
+        target.reads().last().unwrap().request,
+        scoped(&[1], ReadReason::Action)
+    );
+}
+
+/// A window the protocol marks as sending change events is kept current
+/// from them, even when it hosts Compose's view class.
+#[test]
+fn window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path() {
+    let mut screen = Screen::load("compose-anim");
+    screen.0["windows"][0]["events"] = json!(true);
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    assert_eq!(snapshot.window(5).unwrap().source.mode, RefreshMode::Events);
+    assert_eq!(mirror.next_wakeup(), None, "nothing to poll");
+    let toggle = snapshot.by_identifier("anim-toggle").unwrap();
+    mirror
+        .act(&Action::Tap {
+            target: Target::Point(toggle.bounds.center()),
+            hold: None,
+        })
+        .unwrap();
+    target.advance(ms(30));
+    mirror.snapshot(&full()).unwrap();
+    assert_eq!(target.reads().len(), 1, "no re-read after the tap");
 }
 
 #[test]
