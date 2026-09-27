@@ -15,8 +15,10 @@
 pub mod backend;
 mod error;
 mod geometry;
+mod json;
 mod mirror;
 mod refs;
+mod render;
 mod replica;
 mod roles;
 mod snapshot;

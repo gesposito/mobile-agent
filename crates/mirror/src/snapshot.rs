@@ -310,7 +310,22 @@ impl ScrollHint {
     /// The hint as snapshots print it, such as
     /// `(3 more actionable items below, scroll down to reveal)`.
     pub fn text(&self) -> String {
-        todo!("task 7.3")
+        let (place, scroll) = match self.direction {
+            Direction::Above => ("above", "up"),
+            Direction::Below => ("below", "down"),
+            Direction::Left => ("to the left", "left"),
+            Direction::Right => ("to the right", "right"),
+        };
+        let items = match (self.count, self.source) {
+            (None, _) => "more items".to_owned(),
+            (Some(n), HintSource::OffscreenNodes) => {
+                format!("{n} more actionable item{}", if n == 1 { "" } else { "s" })
+            }
+            (Some(n), HintSource::ScrollSemantics) => {
+                format!("{n} more item{}", if n == 1 { "" } else { "s" })
+            }
+        };
+        format!("({items} {place}, scroll {scroll} to reveal)")
     }
 }
 

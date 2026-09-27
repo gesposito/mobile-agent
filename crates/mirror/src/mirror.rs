@@ -10,12 +10,14 @@ use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner};
 use crate::error::{MirrorError, StaleCause};
 use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
+use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
 use crate::snapshot::{
-    Element, RefreshMode, Snapshot, SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
+    Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
+    WindowSummary,
 };
 use crate::verdict::{Degradation, Verdict};
-use crate::view::{self, Facts, View};
+use crate::view::{self, Facts, Hidden, View};
 
 /// How often a window that sends no change events is re-read when nothing
 /// else re-reads it.
@@ -94,6 +96,8 @@ pub struct Mirror {
     config: MirrorConfig,
     replica: Replica,
     refs: RefTable,
+    /// Refs the last snapshot listed, for its successor's removed refs.
+    listed: Vec<Ref>,
 }
 
 impl Mirror {
@@ -105,6 +109,7 @@ impl Mirror {
             config,
             replica: Replica::new(),
             refs: RefTable::new(),
+            listed: Vec::new(),
         }
     }
 
@@ -180,26 +185,50 @@ impl Mirror {
         self.pump()?;
         let now = self.now();
         let view = View::build(&self.replica);
+        let found = view::hints(&self.replica, &view);
+        let lines = render::listing(&self.replica, &view, &found, options);
         let mut elements = Vec::new();
+        let mut text = Vec::with_capacity(lines.len());
         let mut listed = Vec::new();
-        for (w, window) in self.replica.windows.iter().enumerate() {
-            for (i, node) in window.nodes.iter().enumerate() {
-                let facts = &view.windows[w][i];
-                if !facts.visible {
-                    continue;
+        for line in lines {
+            match line {
+                Line::Element { w, i, depth } => {
+                    let window = &self.replica.windows[w];
+                    let node = &window.nodes[i];
+                    let facts = &view.windows[w][i];
+                    let reference = facts
+                        .bears_ref
+                        .then(|| self.refs.assign(node.element, facts.role, &facts.name));
+                    if let Some(reference) = reference {
+                        listed.push((facts.signature, reference));
+                    }
+                    let mut listed_element = element(window, node, facts, reference);
+                    listed_element.depth = depth;
+                    text.push(render::element_line(&listed_element));
+                    elements.push(listed_element);
                 }
-                let reference = facts
-                    .bears_ref
-                    .then(|| self.refs.assign(node.element, facts.role, &facts.name));
-                if let Some(reference) = reference {
-                    listed.push((facts.signature, reference));
+                Line::Keyboard { w } => {
+                    let keyboard = keyboard(&self.replica.windows[w], self.replica.scale);
+                    text.push(render::element_line(&keyboard));
+                    elements.push(keyboard);
                 }
-                elements.push(element(window, node, facts, reference));
+                Line::Hint { index, depth } => {
+                    text.push(render::hint_line(&found[index].2, depth));
+                }
             }
         }
         let replica = &self.replica;
         self.refs.prune(|e| replica.locate(e).is_some());
         let reasons = collisions(&listed);
+        let refs: Vec<Ref> = listed.iter().map(|(_, r)| *r).collect();
+        let mut removed_refs: Vec<Ref> = self
+            .listed
+            .iter()
+            .filter(|r| !refs.contains(r))
+            .copied()
+            .collect();
+        removed_refs.sort_unstable();
+        self.listed = refs;
         Ok(Snapshot {
             revision: self.replica.revision,
             taken_at: now,
@@ -217,9 +246,13 @@ impl Mirror {
             },
             windows: self.summaries(now),
             elements,
-            hints: Vec::new(),
-            removed_refs: Vec::new(),
-            text: String::new(),
+            hints: found.into_iter().map(|(_, _, hint)| hint).collect(),
+            removed_refs,
+            text: if text.is_empty() {
+                render::empty(options).to_owned()
+            } else {
+                text.join("\n")
+            },
         })
     }
 
@@ -253,12 +286,27 @@ impl Mirror {
         }
     }
 
-    /// The point an action aims at, in device points.
+    /// The point an action aims at, in device points: a ref's element must
+    /// be on screen and not covered.
     fn aim(&mut self, target: &Target) -> Result<Point, MirrorError> {
-        match target {
-            Target::Point(point) => Ok(*point),
-            Target::Ref(reference) => Ok(self.resolve(*reference)?.bounds.center()),
+        let reference = match target {
+            Target::Point(point) => return Ok(*point),
+            Target::Ref(reference) => *reference,
+        };
+        self.pump()?;
+        let (w, i) = self.locate_ref(reference)?;
+        let view = View::build(&self.replica);
+        let facts = &view.windows[w][i];
+        if facts.hidden == Hidden::Covered {
+            return Err(MirrorError::Covered {
+                reference,
+                by: view.modal.clone().unwrap_or_else(|| "modal".to_owned()),
+            });
         }
+        if !facts.visible {
+            return Err(MirrorError::Offscreen { reference });
+        }
+        Ok(facts.rect.center())
     }
 
     /// Who owns the foreground: the owner of the active window, else of the
@@ -414,4 +462,26 @@ fn collisions(listed: &[(u64, Ref)]) -> Vec<Degradation> {
         .filter(|refs| refs.len() > 1)
         .map(|refs| Degradation::SiblingCollision { refs })
         .collect()
+}
+
+/// A keyboard window as one listed element.
+fn keyboard(window: &Win, scale: f64) -> Element {
+    let root = window.nodes.first();
+    Element {
+        id: root.map_or(ElementId(0), |n| n.element),
+        reference: None,
+        role: Role::Keyboard,
+        name: String::new(),
+        identifier: None,
+        value: None,
+        bounds: Rect::from_pixels(window.bounds, scale),
+        enabled: true,
+        focused: false,
+        selected: false,
+        checked: None,
+        actionable: false,
+        window: window.id,
+        depth: 0,
+        class: root.map_or_else(String::new, |n| n.class.to_string()),
+    }
 }

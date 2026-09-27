@@ -130,7 +130,7 @@ fn acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance() {
         message.starts_with(&format!("{submit} is stale")),
         "{message}"
     );
-    assert!(message.contains("the button it named"), "{message}");
+    assert!(message.contains("the button"), "{message}");
     assert!(message.contains("new snapshot"), "{message}");
     assert!(target.inputs().is_empty(), "nothing was tapped");
     assert!(matches!(

@@ -20,7 +20,8 @@ use protocol::event::{EventPayload, LifecycleKind, Stream};
 use protocol::snapshot::{Bounds, Node, NodeFlags, Truncation, Window, WindowFlags, WindowType};
 
 use crate::backend::{
-    BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, StreamItem, Timed, TreeRead, WindowMeta,
+    BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, ScrollInfo, StreamItem, Timed,
+    TreeRead, WindowMeta,
 };
 use crate::geometry::Rect;
 use crate::mirror::MirrorConfig;
@@ -78,6 +79,8 @@ pub(crate) struct Win {
     pub modal: bool,
     /// Pre-order; the root is at index 0 when the window has one.
     pub nodes: Vec<RNode>,
+    /// Scroll semantics of the window's scrollable nodes, from its last read.
+    pub scroll: Vec<ScrollInfo>,
     /// Change events named the window since its last read.
     pub dirty: bool,
     /// The mirror injected input since the window's last read; only kept
@@ -338,15 +341,19 @@ impl Replica {
         let TreeRead {
             snapshot,
             windows: metas,
+            scroll,
             backend,
             scale,
-            ..
         } = read;
         let full = request.windows.is_none();
         let first = self.revision == 0;
         let fresh = full && (self.fresh || first);
         let mut metas: HashMap<u32, WindowMeta> =
             metas.into_iter().map(|m| (m.window, m)).collect();
+        let mut scroll_by_window: HashMap<u32, Vec<ScrollInfo>> = HashMap::new();
+        for info in scroll {
+            scroll_by_window.entry(info.window).or_default().push(info);
+        }
         let mut old: HashMap<u32, Win> = self.windows.drain(..).map(|w| (w.id, w)).collect();
         let mut next_windows = Vec::with_capacity(snapshot.windows.len());
         let mut changes: Vec<(u32, Changes)> = Vec::new();
@@ -360,6 +367,7 @@ impl Replica {
                 meta,
                 (started, finished, request.reason),
             );
+            win.scroll = scroll_by_window.remove(&wire.id).unwrap_or_default();
             let previous = old.remove(&wire.id);
             match (&previous, fresh) {
                 (Some(previous), false) => {
@@ -481,6 +489,7 @@ impl Replica {
             owner: meta.owner,
             modal: meta.modal,
             nodes,
+            scroll: Vec::new(),
             dirty: false,
             action_pending: false,
             read_started: started,
