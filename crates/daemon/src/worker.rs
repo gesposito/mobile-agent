@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use mirror::{Mirror, Ref, Snapshot};
 
-use crate::driver::{AppControl, Driver, TargetInfo};
+use crate::driver::{AppControl, Driver, Size, TargetInfo};
 use crate::wire::{Failure, Success};
 
 /// The longest the thread waits between pumps when nothing falls due.
@@ -45,6 +45,8 @@ pub(crate) struct Attached {
     pub info: TargetInfo,
     pub mirror: Mirror,
     pub apps: Box<dyn AppControl>,
+    /// The screen size in points, for gestures no element anchors.
+    pub display: Size,
     sessions: HashMap<String, SessionOnTarget>,
     /// The session whose delta snapshots the mirror's delta state follows;
     /// another session's first delta snapshot starts again in full.
@@ -177,6 +179,7 @@ fn serve(
                                 info: info.clone(),
                                 mirror: Mirror::new(attachment.backend, attachment.config),
                                 apps: attachment.apps,
+                                display: attachment.display,
                                 sessions: HashMap::new(),
                                 delta_session: None,
                                 status: Arc::clone(status),

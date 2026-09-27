@@ -116,8 +116,10 @@ pub(crate) fn attach(platform: Platform) -> Attachment {
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
     let target = FakeTarget::new(read(&device.windows(), &device));
-    // The Android agent returns every window with each read.
-    target.whole_reads(platform == Platform::Android);
+    // The Android agent and the Simulator's reader return every window
+    // with each read, so a window that appears, such as SpringBoard's
+    // prompt, arrives with the next read.
+    target.whole_reads(true);
     target.frame_size(pixels(kit.width()), pixels(kit.height()), Rotation::R0);
     let shared = Arc::new(Shared {
         target: target.clone(),

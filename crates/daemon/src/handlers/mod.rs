@@ -1,10 +1,14 @@
 //! What each action does. Target commands resolve their target, claim it
 //! for the request's session, and run on the target's worker.
 
+mod act;
+mod aim;
+mod view;
+
 use std::time::Duration;
 
 use mirror::backend::Owner;
-use mirror::{Degradation, Snapshot, SnapshotOptions, Verdict};
+use mirror::{Degradation, Snapshot, Verdict};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{Launch, TargetInfo};
@@ -12,21 +16,44 @@ use crate::server::Daemon;
 use crate::wire::{Failure, Request, Success, code};
 use crate::worker::{Attached, Outcome};
 
+/// How long waiting commands wait when they name no timeout.
+pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// A command that runs on a target's worker.
 type Command = fn(&mut Attached, &str, &Request) -> Outcome;
 
 pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
-    match request.action.as_str() {
-        "status" => status(daemon),
-        "devices" => devices(daemon),
-        "open" => on_target(daemon, request, open).map(|(success, _)| success),
-        "close" => close(daemon, request),
-        "snapshot" => on_target(daemon, request, snapshot).map(|(success, _)| success),
-        other => Err(Failure::new(
-            code::UNKNOWN_ACTION,
-            format!("unknown action {other:?}; run mobile-agent --help for the commands"),
-        )),
-    }
+    let command: Command = match request.action.as_str() {
+        "status" => return status(daemon),
+        "devices" => return devices(daemon),
+        "close" => return close(daemon, request),
+        "open" => open,
+        "snapshot" => view::snapshot,
+        "diff_snapshot" => view::diff_snapshot,
+        "get" => view::get,
+        "wait" => view::wait,
+        "screenshot" => view::screenshot,
+        "click" => act::click,
+        "fill" => act::fill,
+        "type" => act::type_text,
+        "press" => act::press,
+        "swipe" => act::swipe,
+        "scroll" => act::scroll,
+        other => {
+            return Err(Failure::new(
+                code::UNKNOWN_ACTION,
+                format!("unknown action {other:?}; run mobile-agent --help for the commands"),
+            ));
+        }
+    };
+    on_target(daemon, request, command).map(|(success, _)| success)
+}
+
+/// The timeout of a waiting command.
+pub(crate) fn timeout(request: &Request) -> Result<Duration, Failure> {
+    Ok(request
+        .u64("timeout")?
+        .map_or(DEFAULT_TIMEOUT, Duration::from_millis))
 }
 
 /// Resolves the request's target, claims it for the request's session and
@@ -49,7 +76,7 @@ fn on_target(
     Ok((success, target))
 }
 
-fn millis(duration: Duration) -> f64 {
+pub(crate) fn millis(duration: Duration) -> f64 {
     (duration.as_secs_f64() * 1e6).round() / 1e3
 }
 
@@ -149,7 +176,12 @@ fn open(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     target.apps.launch(&app, &launch)?;
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
-    let settled = target.mirror.settle(&mirror::SettleOptions::default())?;
+    let settled = target.mirror.settle(&mirror::SettleOptions {
+        max: request
+            .u64("timeout")?
+            .map_or(mirror::DEFAULT_SETTLE_MAX, Duration::from_millis),
+        ..mirror::SettleOptions::default()
+    })?;
     Ok(Success::new(json!({
         "opened": app,
         "target": target.info.id,
@@ -175,17 +207,6 @@ fn close_app(target: &mut Attached, session: &str, _request: &Request) -> Outcom
         "app": app,
         "target": target.info.id,
     })))
-}
-
-/// The snapshot options a request asks for.
-fn snapshot_options(request: &Request) -> Result<SnapshotOptions, Failure> {
-    let max_depth = request
-        .u64("maxDepth")?
-        .map(|depth| usize::try_from(depth).unwrap_or(usize::MAX));
-    Ok(SnapshotOptions {
-        interactive: request.flag("interactive"),
-        max_depth,
-    })
 }
 
 /// The app in front, as agent-browser's `origin` names the page: system UI
@@ -229,48 +250,4 @@ pub(crate) fn verdict_warning(verdict: &Verdict) -> Option<String> {
         codes.join(", "),
         verdict.advice().join("; ")
     ))
-}
-
-fn snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let options = snapshot_options(request)?;
-    let snapshot = target.mirror.snapshot(&options)?;
-    let mut data = Map::new();
-    if request.flag("delta") {
-        let full = request.flag("full") || target.delta_session.as_deref() != Some(session);
-        let delta = target.mirror.delta_snapshot(&options, full)?;
-        target.delta_session = Some(session.to_owned());
-        let delta: Value = serde_json::from_str(&delta.to_json())
-            .map_err(|e| Failure::internal(format!("the delta snapshot is not JSON: {e}")))?;
-        data.insert("snapshot".into(), delta);
-    } else {
-        let refs: Map<String, Value> = snapshot
-            .elements
-            .iter()
-            .filter_map(|element| {
-                element.reference.map(|reference| {
-                    (
-                        reference.to_string(),
-                        json!({"name": element.name, "role": element.role.as_str()}),
-                    )
-                })
-            })
-            .collect();
-        let removed: Vec<String> = snapshot
-            .removed_refs
-            .iter()
-            .map(|r| format!("@{r}"))
-            .collect();
-        data.insert("snapshot".into(), snapshot.text.clone().into());
-        data.insert("refs".into(), Value::Object(refs));
-        data.insert("removedRefs".into(), removed.into());
-    }
-    data.insert("origin".into(), origin(&snapshot).into());
-    data.insert("revision".into(), snapshot.revision.into());
-    data.insert("target".into(), target.info.id.clone().into());
-    data.insert("verdict".into(), verdict_json(&snapshot.verdict));
-    let warning = verdict_warning(&snapshot.verdict);
-    let entry = target.session(session);
-    entry.seen.extend(snapshot.refs());
-    entry.last = Some(snapshot);
-    Ok(Success::new(Value::Object(data)).warn(warning))
 }
