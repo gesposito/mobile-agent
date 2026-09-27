@@ -17,11 +17,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use protocol::event::{EventPayload, LifecycleKind, Stream};
-use protocol::snapshot::{Bounds, Node, NodeFlags, Truncation, Window, WindowFlags, WindowType};
+use protocol::snapshot::{
+    Bounds, Node, NodeFlags, Scroll, Truncation, Window, WindowFlags, WindowType,
+};
 
 use crate::backend::{
-    BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, ScrollInfo, StreamItem, Timed,
-    TreeRead, WindowMeta,
+    BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, StreamItem, Timed, TreeRead,
 };
 use crate::error::ResyncCause;
 use crate::geometry::Rect;
@@ -29,7 +30,8 @@ use crate::mirror::MirrorConfig;
 use crate::snapshot::{ElementId, TreeDelta};
 
 /// The view class that hosts Jetpack Compose content, which sends no change
-/// events to a UiAutomation client (spike S1).
+/// events to a UiAutomation client (spike S1). Only a read without window
+/// metadata falls back to looking for it.
 pub(crate) const COMPOSE_HOST: &str = "androidx.compose.ui.platform.AndroidComposeView";
 
 /// How many deltas the replica keeps.
@@ -53,6 +55,8 @@ pub(crate) struct RNode {
     pub desc: Option<String>,
     pub bounds: Bounds,
     pub flags: NodeFlags,
+    /// How the node scrolls, as the read reported it.
+    pub scroll: Option<Scroll>,
     /// A hash of the node's class, identifier, description and, unless it
     /// is editable, text, combined with its children's: equal for subtrees
     /// that read the same, whatever their bounds and states.
@@ -80,8 +84,6 @@ pub(crate) struct Win {
     pub modal: bool,
     /// Pre-order; the root is at index 0 when the window has one.
     pub nodes: Vec<RNode>,
-    /// Scroll semantics of the window's scrollable nodes, from its last read.
-    pub scroll: Vec<ScrollInfo>,
     /// Change events named the window since its last read.
     pub dirty: bool,
     /// The mirror injected input since the window's last read; only kept
@@ -461,34 +463,18 @@ impl Replica {
     ) {
         let TreeRead {
             snapshot,
-            windows: metas,
-            scroll,
             backend,
             scale,
         } = read;
         let full = request.windows.is_none();
         let first = self.revision == 0;
         let fresh = full && (self.fresh || first);
-        let mut metas: HashMap<u32, WindowMeta> =
-            metas.into_iter().map(|m| (m.window, m)).collect();
-        let mut scroll_by_window: HashMap<u32, Vec<ScrollInfo>> = HashMap::new();
-        for info in scroll {
-            scroll_by_window.entry(info.window).or_default().push(info);
-        }
         let mut old: HashMap<u32, Win> = self.windows.drain(..).map(|w| (w.id, w)).collect();
         let mut next_windows = Vec::with_capacity(snapshot.windows.len());
         let mut changes: Vec<(u32, Changes)> = Vec::new();
         for wire in &snapshot.windows {
-            let meta = metas
-                .remove(&wire.id)
-                .unwrap_or_else(|| WindowMeta::default_for(wire.id));
-            let mut win = self.convert(
-                wire,
-                &snapshot.strings,
-                meta,
-                (started, finished, request.reason),
-            );
-            win.scroll = scroll_by_window.remove(&wire.id).unwrap_or_default();
+            let mut win =
+                self.convert(wire, &snapshot.strings, (started, finished, request.reason));
             let previous = old.remove(&wire.id);
             match (&previous, fresh) {
                 (Some(previous), false) => {
@@ -585,20 +571,25 @@ impl Replica {
         interned
     }
 
+    /// A window of a read with its metadata: without `emits_events` a
+    /// window hosting Compose's view is taken to send no change events, and
+    /// without `owner` the target owns it.
     fn convert(
         &mut self,
         wire: &Window,
         strings: &[String],
-        meta: WindowMeta,
         (started, finished, reason): (Instant, Instant, ReadReason),
     ) -> Win {
         let nodes = match &wire.root {
             Some(root) => self.convert_nodes(root, strings),
             None => Vec::new(),
         };
-        let emits_events = meta
+        let emits_events = wire
             .emits_events
             .unwrap_or_else(|| !nodes.iter().any(|n| &*n.class == COMPOSE_HOST));
+        let owner = wire.owner.map_or(Owner::Target, |i| {
+            Owner::System(strings.get(i as usize).cloned().unwrap_or_default())
+        });
         Win {
             id: wire.id,
             kind: wire.kind,
@@ -608,10 +599,9 @@ impl Replica {
             bounds: wire.bounds,
             flags: wire.flags,
             emits_events,
-            owner: meta.owner,
-            modal: meta.modal,
+            owner,
+            modal: wire.modal,
             nodes,
-            scroll: Vec::new(),
             dirty: false,
             action_pending: false,
             read_started: started,
@@ -639,6 +629,7 @@ impl Replica {
                 desc: node.desc.clone(),
                 bounds: node.bounds,
                 flags: node.flags,
+                scroll: node.scroll,
                 content: 0,
             });
             if let Some(parent) = parent {

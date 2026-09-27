@@ -407,8 +407,6 @@ impl TreeSource for FakeTarget {
         read.snapshot.seq = s.sent_tree_seq;
         if let (Some(ids), false) = (&request.windows, s.whole_reads) {
             read.snapshot.windows.retain(|w| ids.contains(&w.id));
-            read.windows.retain(|m| ids.contains(&m.window));
-            read.scroll.retain(|i| ids.contains(&i.window));
             read.snapshot.node_count = read.snapshot.windows.iter().map(count_window).sum();
         }
         Ok(read)

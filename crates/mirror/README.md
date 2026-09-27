@@ -73,9 +73,8 @@ pub trait Clock: Send {
 | Type | Fields |
 |---|---|
 | `ReadRequest` | `windows: Option<Vec<u32>>` (`None` reads every window), `reason: ReadReason` (`Attach`, `Events`, `Action`, `Poll`, `Frames`, `Resync`) |
-| `TreeRead` | `snapshot: protocol::snapshot::Snapshot`, `windows: Vec<WindowMeta>`, `scroll: Vec<ScrollInfo>`, `backend: BackendInfo`, `scale: f64` |
-| `WindowMeta` | `window: u32`, `emits_events: Option<bool>`, `owner: Owner` (`Target` or `System(name)`), `modal: bool` |
-| `ScrollInfo` | `window`, `node` (payload node id), `axis`, `items: Option<ItemRange { total, first_visible, last_visible }>`, `can_scroll_back`, `can_scroll_forward` |
+| `TreeRead` | `snapshot: protocol::snapshot::Snapshot` (windows with their metadata, nodes with their scroll semantics), `backend: BackendInfo`, `scale: f64` |
+| `Owner` | `Target` or `System(name)`, from a window's `owner` |
 | `BackendInfo` | `name: String`, `fallback: bool` |
 | `Timed<StreamItem>` | `at: Instant` (host arrival), `item` |
 | `StreamItem` | `Event(protocol::event::Event)`, `Frame(FrameMeta)`, `OutOfSync { stream, expected, received }`, `Resynced { stream, seq }`, `BackendChanged(BackendInfo)`, `Reconnected`, `Disconnected(String)` |
@@ -95,9 +94,14 @@ Conventions a driver follows:
   window missing from the result is gone. `snapshot.seq` is the last
   tree-stream event sent before the read, so the mirror skips events the
   read already reflects.
-- **Events.** `emits_events: None` lets the mirror infer it: a window hosting
+- **Window metadata** (the protocol's window keys 8 to 10, task 3.6).
+  `emits_events: Some(false)` puts a window on the re-read path, whatever
+  its classes; the Android agent sets it for windows hosting Compose,
+  dialogs included, and Simulator drivers set it for every window. Without
+  it the mirror infers it: a window hosting
   `androidx.compose.ui.platform.AndroidComposeView` sends none (spike S1).
-  Simulator drivers set `Some(false)` for every window.
+  `owner` names the system process that owns a window, `modal` marks a
+  window that cuts the application windows below it.
 - **Classes and labels.** Android passes widget classes. The Simulator driver
   passes `XCUIElementType` names, or the UIKit class for elements typed
   `Other` so that `_UIAlertControllerPhoneTVMacView` is recognized as an
@@ -106,7 +110,9 @@ Conventions a driver follows:
 - **Visibility.** The `visible` flag as the platform reports it; on iOS,
   whether the frame overlaps the screen.
 - **Foreground.** The `active` window owns the foreground; system UI windows,
-  such as SpringBoard's for a permission alert, carry `Owner::System`.
+  such as SpringBoard's or the Android permission controller's for a
+  permission prompt, carry an `owner`, which snapshots report as
+  `Owner::System`.
 - **Stream items.** The Android driver forwards the host session's
   `HostEvent::Event` as `Event`, `OutOfSync` and `Resynced` as themselves,
   and `Closed` as `Disconnected`; a new agent connection is `Reconnected`.
@@ -170,8 +176,11 @@ arrived, perform due reads, never wait) or `run_until(deadline)`, and
   `- keyboard` line. The top-most modal, a modal window or an alert or dialog
   node, cuts everything it covers.
 - Scroll hints come from actionable nodes outside a container's viewport when
-  the read has them, and from `ScrollInfo` otherwise (Compose reports only
-  the nodes in the viewport). Content above or left is hinted before the
+  the read has them, and from the container's scroll semantics otherwise
+  (Compose reports only the nodes in the viewport): a range with a position
+  counts the items beyond it (`(184 more items below, ...)`), and a range in
+  other units or none at all gives the ways the container can scroll
+  (`(more items below, ...)`). Content above or left is hinted before the
   container's children, below or right after them.
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
 - Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow and
@@ -267,10 +276,13 @@ and `off` removes. `{"repeat": [first, last], "layout": {"rows" | "grid":
 ...}, "viewport": [...], "node": ...}` unrolls a template with `{n}`
 substituted and hides what falls outside the viewport; `"bounds": "fill"`
 copies the parent's. A window takes `"events"`, `"owner"` and `"modal"` for
-its `WindowMeta`. A timeline names its `start` fixture and lists steps at
-millisecond offsets, each with a `patch` (`find`, `remove`, `insert`,
-`insert_before`, `scroll`, `add_window`, `remove_window`, `screen`,
-`backend`) and an `event` (with an optional explicit `seq`), `drop`,
+its window metadata, and a node `"scroll": {"axis", "back", "forward",
+"range": [unit, min, max], "position": [first, last]}` for its scroll
+semantics, unit `"items"` or `"percent"`. A timeline names its `start`
+fixture and lists steps at millisecond offsets, each with a `patch`
+(`find`, which sets any field, `remove`, `insert`, `insert_before`,
+`add_window`, `remove_window`, `screen`, `backend`) and an `event` (with an
+optional explicit `seq`), `drop`,
 `frame`, `out_of_sync`, `resynced`, `backend_changed` or `reconnected`.
 
 ```sh
@@ -299,10 +311,11 @@ cargo test -p mirror
   backend without a `BackendChanged` item, and a reconnection.
 - *Frame access* reports the frame's age from now and its offset from the
   last tree read (`TreeSkew`).
-- Scroll semantics and per-window event facts travel in mirror-side types
-  (`ScrollInfo`, `WindowMeta`) because the protocol's snapshot has no field
-  for them; until an agent reports scroll semantics, hints come from
-  off-screen nodes.
+- Scroll semantics and window metadata come from the protocol's snapshot
+  (task 3.6); the mirror keeps only `Owner`, the resolved form of a
+  window's `owner`. A read without `emits_events` falls back to inferring
+  event-less windows from Compose's host view class, which misses Compose
+  dialogs; the Android agent reports it for every window it reads.
 
 ## Spec requirements and their tests
 
@@ -310,9 +323,9 @@ cargo test -p mirror
 |---|---|---|
 | Replica maintained from device events | Warm snapshot is served locally | `replica::a_warm_snapshot_is_served_without_reading_the_device` |
 | | First snapshot after attach | `replica::the_first_snapshot_after_attach_acquires_the_whole_tree_then_applies_events`, `replica::recorded_event_sequences_replay_to_the_trees_a_cold_read_returns`, `replica::a_window_change_reads_every_window` |
-| Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost` |
+| Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path` |
 | | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
-| Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
+| Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |

@@ -481,8 +481,6 @@ fn to_read(screen: &Value) -> TreeRead {
     let backend = &screen["backend"];
     TreeRead {
         snapshot,
-        windows: Vec::new(),
-        scroll: Vec::new(),
         backend: BackendInfo::new(
             backend["name"].as_str().unwrap_or("fixture"),
             backend["fallback"].as_bool().unwrap_or(false),
