@@ -17,8 +17,14 @@ use crate::server::Daemon;
 use crate::wire::{Failure, Request, Success, code};
 use crate::worker::{Attached, Outcome};
 
-/// How long waiting commands wait when they name no timeout.
+/// How long waiting commands wait when neither they, their session nor
+/// the client name a timeout.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The longest timeout a command or session may set. The CLI keeps its
+/// socket open this long plus a margin for a wait that names no timeout,
+/// since it cannot know the session's default.
+pub(crate) const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// A command that runs on a target's worker.
 type Command = fn(&mut Attached, &str, &Request) -> Outcome;
@@ -28,6 +34,7 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
         "status" => return status(daemon),
         "devices" => return devices(daemon, request),
         "close" => return close(daemon, request),
+        "set_timeout" => return set_timeout(daemon, request),
         "open" => open,
         "snapshot" => view::snapshot,
         "diff_snapshot" => view::diff_snapshot,
@@ -50,11 +57,50 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
     on_target(daemon, request, command).map(|(success, _)| success)
 }
 
-/// The timeout of a waiting command.
+/// A timeout in milliseconds, at most [`MAX_TIMEOUT`].
+fn bounded(key: &str, ms: u64) -> Result<Duration, Failure> {
+    let timeout = Duration::from_millis(ms);
+    if timeout > MAX_TIMEOUT {
+        return Err(Failure::new(
+            code::INVALID_ARGUMENT,
+            format!(
+                "{key} of {ms} ms is longer than the {} ms a timeout may be",
+                MAX_TIMEOUT.as_millis()
+            ),
+        ));
+    }
+    Ok(timeout)
+}
+
+/// The timeout of a waiting command: its own `timeout`, else the default
+/// the request carries (the session's, or else the client's), else
+/// [`DEFAULT_TIMEOUT`].
 pub(crate) fn timeout(request: &Request) -> Result<Duration, Failure> {
-    Ok(request
-        .u64("timeout")?
-        .map_or(DEFAULT_TIMEOUT, Duration::from_millis))
+    if let Some(ms) = request.u64("timeout")? {
+        return bounded("timeout", ms);
+    }
+    match request.u64("defaultTimeout")? {
+        Some(ms) => bounded("defaultTimeout", ms),
+        None => Ok(DEFAULT_TIMEOUT),
+    }
+}
+
+/// Sets the session's default timeout for waiting commands.
+fn set_timeout(daemon: &Daemon, request: &Request) -> Outcome {
+    let ms = request.u64("ms")?.ok_or_else(|| {
+        Failure::new(
+            code::INVALID_ARGUMENT,
+            "set timeout needs a number of milliseconds",
+        )
+    })?;
+    let timeout = bounded("the default timeout", ms)?;
+    daemon
+        .registry()
+        .set_default_timeout(&request.session, timeout);
+    Ok(Success::new(json!({
+        "session": request.session,
+        "defaultTimeoutMs": ms,
+    })))
 }
 
 /// The target selection a request makes with `device` and `platform`.
@@ -81,14 +127,19 @@ fn on_target(
     request: &Request,
     command: Command,
 ) -> Result<(Success, TargetInfo), Failure> {
+    let mut request = request.clone();
     let (target, handle) = {
         let mut registry = daemon.registry();
-        let target = registry.resolve(&request.session, &selection(request)?)?;
+        let target = registry.resolve(&request.session, &selection(&request)?)?;
         registry.claim(&target, &request.session, request.flag("force"))?;
+        // The session's default beats the one the client sends.
+        if let Some(default) = registry.default_timeout(&request.session) {
+            let ms = u64::try_from(default.as_millis()).unwrap_or(u64::MAX);
+            request.params.insert("defaultTimeout".into(), ms.into());
+        }
         let handle = registry.handle(&target)?;
         (target, handle)
     };
-    let request = request.clone();
     let success =
         handle.run(move |attached| command(attached, &request.session.clone(), &request))?;
     Ok((success, target))

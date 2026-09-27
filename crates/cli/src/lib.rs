@@ -26,6 +26,9 @@ pub const UNKNOWN_COMMAND: &str = "unknown_command";
 /// A settings file that cannot be read.
 pub const INVALID_CONFIG: &str = "invalid_config";
 
+/// The guide `help agent` prints: under 120 lines, for an agent's prompt.
+pub const AGENT_GUIDE: &str = include_str!("agent-guide.txt");
+
 fn truthy(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
@@ -91,6 +94,38 @@ fn usage_error(error: &clap::Error, json: bool) -> i32 {
     }
 }
 
+/// Prints the guide for `help agent`, the top-level help for `help`, or a
+/// command's help for `help <command>`, as `<command> --help` prints it.
+fn help_topic(topic: &[String], json: bool) -> i32 {
+    use clap::CommandFactory;
+    let text = match topic {
+        [] => args::Cli::command().render_long_help().to_string(),
+        [agent] if agent == "agent" => AGENT_GUIDE.to_owned(),
+        words => {
+            let mut line = vec!["mobile-agent".to_owned()];
+            line.extend(words.iter().cloned());
+            line.push("--help".to_owned());
+            match args::Cli::try_parse_from(line) {
+                Err(error) if error.kind() == ErrorKind::DisplayHelp => error.to_string(),
+                Err(error) => return usage_error(&error, json),
+                Ok(_) => args::Cli::command().render_long_help().to_string(),
+            }
+        }
+    };
+    if json {
+        let reply = Reply {
+            success: true,
+            data: serde_json::json!({"help": text}),
+            error: None,
+            code: None,
+            warning: None,
+        };
+        return finish(true, "help", &reply);
+    }
+    write(&mut std::io::stdout().lock(), &text);
+    0
+}
+
 /// What a command runs with once flags, environment and config are merged.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
@@ -99,6 +134,9 @@ pub struct Settings {
     pub platform: Option<String>,
     pub device: Option<String>,
     pub force: bool,
+    /// The timeout of waiting commands that name none and whose session
+    /// set none, in ms.
+    pub default_timeout: Option<u64>,
     pub endpoint: client::Endpoint,
 }
 
@@ -123,6 +161,9 @@ pub(crate) fn execute(command: &args::Command, settings: &Settings, cwd: &Path) 
     }
     if settings.force {
         request.insert("force".into(), Value::Bool(true));
+    }
+    if let Some(ms) = settings.default_timeout {
+        request.insert("defaultTimeout".into(), ms.into());
     }
     let reply = client::call(&settings.endpoint, &request).unwrap_or_else(Reply::failed);
     (action, reply)
@@ -153,6 +194,7 @@ pub fn run(args: Vec<OsString>) -> i32 {
         platform: global.platform.clone().or(config.platform),
         device: global.device.clone().or(config.device),
         force: global.force,
+        default_timeout: global.default_timeout.or(config.default_timeout),
         endpoint: client::Endpoint {
             dir: client::socket_dir(global.socket_dir.as_deref()),
             daemon: global.daemon_bin.clone(),
@@ -160,8 +202,10 @@ pub fn run(args: Vec<OsString>) -> i32 {
         },
     };
     let cwd = std::env::current_dir().unwrap_or_default();
-    if let args::Command::Batch(batch) = &cli.command {
-        return batch::run(batch, &settings, &cwd);
+    match &cli.command {
+        args::Command::Batch(batch) => return batch::run(batch, &settings, &cwd),
+        args::Command::Help(help) => return help_topic(&help.topic, settings.json),
+        _ => {}
     }
     let (action, reply) = execute(&cli.command, &settings, &cwd);
     finish(settings.json, &action, &reply)

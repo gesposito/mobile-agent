@@ -1,0 +1,80 @@
+mobile-agent: a guide for agents
+
+mobile-agent drives Android devices, emulators and iOS Simulators. A daemon
+keeps a live mirror of each screen, so snapshots answer from memory and refs
+stay stable while their elements stay on screen. The grammar, refs and JSON
+output follow agent-browser.
+
+The loop
+  1. mobile-agent snapshot -i       list actionable elements with their refs
+  2. mobile-agent click @e3         act on a ref from that snapshot
+  3. mobile-agent wait --settle     let the screen settle after the action
+  4. mobile-agent snapshot -i       snapshot again before the next action
+  Act only on refs from your latest snapshot.
+
+Snapshots
+  - button "Sign in" [id=login-submit, ref=e4]
+  One element per line: role, name in quotes, attributes, the ref last.
+  A field's value follows ": ". A line in parentheses, such as
+  "(12 more actionable items below, scroll down to reveal)", means content
+  is scrolled out of view: scroll, then snapshot again.
+  snapshot -i        only elements with refs; start here
+  snapshot           every element, texts and system bars too
+  snapshot -d 2      at most two levels deep
+  snapshot --delta   only what changed since your last delta snapshot
+
+Refs
+  Write a ref as @e4; ref=e4 and e4 work too. A ref names one element for as
+  long as that element stays on screen, and a number is never reused. When
+  the element is gone the command fails with code stale_ref: snapshot again
+  and use the new refs. An element under a dialog fails with
+  element_covered, one scrolled out of view with element_offscreen.
+
+Selectors
+  Where a ref goes, a selector works too: #login-submit (test id),
+  text=Sign in (name or value contains it), role=switch, or bare text.
+  Selectors wait up to the timeout for a match; refs never wait.
+
+Acting
+  click @e4 | click 200 480   tap a ref, a selector, or a point in points
+  tap @e4                     the same as click
+  click @e4 --hold 800        long press
+  fill @e2 agent              replace a field's text
+  type @e2 ' smith'           add key events; without a ref, the focused field
+  press Enter | Back | Home   keys; join modifiers with +, as Control+a
+  scroll down 600             move the content; -s @e7 scrolls inside @e7
+  swipe up | swipe X1 Y1 X2 Y2   move the finger
+  open com.example.app        launch an app; close stops it and frees the target
+
+Waiting
+  wait --settle               no tree or frame change for 200 ms, at most
+                              3000 ms; a never-ending animation returns
+                              settled: false and names what kept changing
+  wait --text Welcome         until an element shows the text
+  wait '#spinner' --state hidden   until it is gone (also visible, enabled)
+  wait 500                    fixed milliseconds, a last resort
+  Waits take --timeout MS. The default is the session's (set timeout 5000),
+  else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000.
+
+Reading
+  get text @e5 | get value @e2 | get box @e4
+  diff snapshot               what changed since your last snapshot
+  screenshot shot.jpg         the latest frame as a JPEG
+
+Output and errors
+  --json prints one object: {"success", "data", "error"}, plus "code" and
+  "warning" when set. A failure exits with status 1 and always has a
+  snake_case code, such as stale_ref, unknown_ref, element_not_found,
+  wait_timeout, target_claimed or ambiguous_target. Without --json, errors
+  go to stderr. A warning, such as a degraded snapshot, says to check the
+  screen before you trust what is missing from it.
+
+Targets and sessions
+  devices lists the targets. With several, pass --device ID or --platform.
+  --session NAME keeps target claims and refs apart. A target that another
+  session holds is refused with target_claimed, unless you pass --force.
+
+Batch
+  mobile-agent batch --bail 'open com.example.app' 'snapshot -i' 'click @e3'
+  runs commands in order and stops at the first failure. With --json it
+  prints one array of {command, success, result, error}.

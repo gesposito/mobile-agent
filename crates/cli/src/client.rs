@@ -38,6 +38,11 @@ const BACKOFF: Duration = Duration::from_millis(200);
 const READ_FLOOR: Duration = Duration::from_secs(30);
 const READ_MARGIN: Duration = Duration::from_secs(10);
 
+/// The longest timeout the daemon accepts. A wait that names no timeout
+/// ends at its session's default, which the CLI cannot know, so the CLI
+/// waits this long for its reply.
+const MAX_TIMEOUT: Duration = Duration::from_secs(600);
+
 /// The daemon could not be reached or started.
 pub const DAEMON_UNAVAILABLE: &str = "daemon_unavailable";
 /// The daemon did not answer in time.
@@ -125,13 +130,33 @@ pub fn request_id() -> String {
     format!("r{micros}")
 }
 
-/// How long to wait for the reply to `request`.
+/// Whether `request` may wait for an element for as long as its session's
+/// default timeout: a wait for an element or text, or an action on a
+/// selector rather than a ref.
+fn waits_by_default(request: &Map<String, Value>) -> bool {
+    let target = request.get("target").and_then(Value::as_str);
+    match request.get("action").and_then(Value::as_str) {
+        Some("wait") => !request.contains_key("settle"),
+        Some("click" | "fill" | "type" | "get" | "scroll") => {
+            target.is_some_and(|target| !crate::request::looks_like_ref(target))
+        }
+        _ => false,
+    }
+}
+
+/// How long to wait for the reply to `request`: its own timeout or wait
+/// plus a margin, at least 30 s.
 fn read_timeout(request: &Map<String, Value>) -> Duration {
     let own = ["timeout", "ms"]
         .iter()
         .filter_map(|key| request.get(*key).and_then(Value::as_u64))
         .max()
-        .map_or(Duration::ZERO, Duration::from_millis);
+        .map(Duration::from_millis);
+    let own = match own {
+        Some(own) => own,
+        None if waits_by_default(request) => MAX_TIMEOUT,
+        None => Duration::ZERO,
+    };
     (own + READ_MARGIN).max(READ_FLOOR)
 }
 
@@ -445,6 +470,20 @@ mod tests {
         assert_eq!(
             read_timeout(&request(json!({"action": "wait", "ms": 2_000}))),
             Duration::from_secs(30)
+        );
+        assert_eq!(
+            read_timeout(&request(json!({"action": "wait", "text": "Welcome"}))),
+            Duration::from_secs(610),
+            "a session default can make the wait long"
+        );
+        assert_eq!(
+            read_timeout(&request(json!({"action": "click", "target": "#submit"}))),
+            Duration::from_secs(610)
+        );
+        assert_eq!(
+            read_timeout(&request(json!({"action": "click", "target": "@e3"}))),
+            Duration::from_secs(30),
+            "a ref never waits"
         );
     }
 

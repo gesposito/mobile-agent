@@ -15,6 +15,8 @@ pub struct Config {
     pub session: Option<String>,
     pub platform: Option<String>,
     pub device: Option<String>,
+    /// The timeout of waiting commands that name none, in ms.
+    pub default_timeout: Option<u64>,
     /// The idle timeout of a daemon the CLI starts, as `--idle-timeout`
     /// takes it; a number is milliseconds.
     pub idle_timeout: Option<String>,
@@ -36,6 +38,7 @@ impl Config {
                 .get("device")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            default_timeout: value.get("defaultTimeout").and_then(Value::as_u64),
             idle_timeout: match value.get("idleTimeout") {
                 Some(Value::String(text)) => Some(text.clone()),
                 Some(Value::Number(ms)) => Some(ms.to_string()),
@@ -51,6 +54,7 @@ impl Config {
             session: top.session.or(self.session),
             platform: top.platform.or(self.platform),
             device: top.device.or(self.device),
+            default_timeout: top.default_timeout.or(self.default_timeout),
             idle_timeout: top.idle_timeout.or(self.idle_timeout),
         }
     }
@@ -113,6 +117,7 @@ mod tests {
                 session: Some("project".into()),
                 platform: None,
                 device: Some("FAKE-IOS-1".into()),
+                default_timeout: None,
                 idle_timeout: Some("5000".into()),
             }
         );

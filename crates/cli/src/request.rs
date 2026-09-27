@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use crate::args::{Command, DiffWhat, GetWhat};
+use crate::args::{Command, DiffWhat, GetWhat, SetWhat};
 use crate::client::Failure;
 
 /// A usage error the parser cannot catch.
@@ -33,8 +33,8 @@ fn number(text: &str) -> Option<f64> {
     text.parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
-/// Whether a lone argument looks like a ref, not text.
-fn looks_like_ref(text: &str) -> bool {
+/// Whether an argument looks like a ref rather than a selector or text.
+pub(crate) fn looks_like_ref(text: &str) -> bool {
     let text = text.trim();
     let rest = text
         .strip_prefix('@')
@@ -52,6 +52,12 @@ pub fn build(command: &Command, cwd: &Path) -> Result<Map<String, Value>, Failur
     let mut request = Map::new();
     let action = match command {
         Command::Batch(_) => return Err(invalid("batch runs its commands one by one")),
+        Command::Help(_) => return Err(invalid("help is answered without the daemon")),
+        Command::Set(set) => {
+            let SetWhat::Timeout { ms } = &set.what;
+            request.insert("ms".into(), (*ms).into());
+            "set_timeout"
+        }
         Command::Devices => "devices",
         Command::Close => "close",
         Command::Status => "status",

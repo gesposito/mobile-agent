@@ -1,17 +1,30 @@
 //! The command grammar: agent-browser's where devices have the concept
 //! (design D9). Global flags work before or after the command, and each has
-//! an environment variable twin.
+//! an environment variable twin. Every command's help ends with examples.
 
 use std::path::PathBuf;
 
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Args, Parser, Subcommand};
 
+const EXAMPLES: &str = "\
+Run 'mobile-agent help agent' for a compact guide to put in an agent's prompt.
+
+Examples:
+  mobile-agent devices
+  mobile-agent open dev.mobileagent.fixture.expo
+  mobile-agent snapshot -i
+  mobile-agent click @e3
+  mobile-agent wait --settle
+  mobile-agent --json snapshot -i";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "mobile-agent",
     version,
-    about = "Drive Android devices, emulators and iOS Simulators through a live UI mirror, with agent-browser's grammar."
+    about = "Drive Android devices, emulators and iOS Simulators through a live UI mirror, with agent-browser's grammar.",
+    disable_help_subcommand = true,
+    after_help = EXAMPLES
 )]
 pub struct Cli {
     #[command(flatten)]
@@ -24,33 +37,62 @@ pub struct Cli {
 #[derive(Args, Debug, Clone, Default)]
 pub struct Global {
     /// Print one JSON object: {success, data, error}, plus code and warning when set
-    #[arg(long, global = true, env = "MOBILE_AGENT_JSON", action = ArgAction::SetTrue, value_parser = BoolishValueParser::new())]
+    #[arg(long, global = true, help_heading = "Global Options", env = "MOBILE_AGENT_JSON", action = ArgAction::SetTrue, value_parser = BoolishValueParser::new())]
     pub json: bool,
 
     /// Session whose target claims and refs the command uses [default: default]
-    #[arg(long, global = true, env = "MOBILE_AGENT_SESSION", value_name = "NAME")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global Options",
+        env = "MOBILE_AGENT_SESSION",
+        value_name = "NAME"
+    )]
     pub session: Option<String>,
 
     /// The target's platform: ios or android
-    #[arg(long, global = true, env = "MOBILE_AGENT_PLATFORM", value_name = "PLATFORM", value_parser = ["ios", "android"], ignore_case = true)]
+    #[arg(long, global = true, help_heading = "Global Options", env = "MOBILE_AGENT_PLATFORM", value_name = "PLATFORM", value_parser = ["ios", "android"], ignore_case = true)]
     pub platform: Option<String>,
 
     /// The target: a Simulator UDID or adb serial as devices lists it, or a target's name
-    #[arg(long, global = true, env = "MOBILE_AGENT_DEVICE", value_name = "ID")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global Options",
+        env = "MOBILE_AGENT_DEVICE",
+        value_name = "ID"
+    )]
     pub device: Option<String>,
 
     /// Take the target over from the session that holds it
-    #[arg(long, global = true, env = "MOBILE_AGENT_FORCE", action = ArgAction::SetTrue, value_parser = BoolishValueParser::new())]
+    #[arg(long, global = true, help_heading = "Global Options", env = "MOBILE_AGENT_FORCE", action = ArgAction::SetTrue, value_parser = BoolishValueParser::new())]
     pub force: bool,
 
+    /// Timeout of waiting commands that name none and whose session set none, in ms [default: 10000]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global Options",
+        env = "MOBILE_AGENT_DEFAULT_TIMEOUT",
+        value_name = "MS"
+    )]
+    pub default_timeout: Option<u64>,
+
     /// Read settings from this file alone, instead of ~/.mobile-agent/config.json overlaid by ./mobile-agent.json
-    #[arg(long, global = true, env = "MOBILE_AGENT_CONFIG", value_name = "PATH")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global Options",
+        env = "MOBILE_AGENT_CONFIG",
+        value_name = "PATH"
+    )]
     pub config: Option<PathBuf>,
 
     /// Stop a daemon this command starts after this long without requests: ms, or a number with s, m or h; 0 never [default: 1h]
     #[arg(
         long,
         global = true,
+        help_heading = "Global Options",
         env = "MOBILE_AGENT_IDLE_TIMEOUT_MS",
         value_name = "TIME"
     )]
@@ -60,6 +102,7 @@ pub struct Global {
     #[arg(
         long,
         global = true,
+        help_heading = "Global Options",
         env = "MOBILE_AGENT_SOCKET_DIR",
         value_name = "DIR"
     )]
@@ -69,6 +112,7 @@ pub struct Global {
     #[arg(
         long,
         global = true,
+        help_heading = "Global Options",
         env = "MOBILE_AGENT_DAEMON_BIN",
         value_name = "PATH",
         hide = true
@@ -79,51 +123,189 @@ pub struct Global {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// List connected devices, emulators and Simulators
+    #[command(after_help = "\
+Examples:
+  mobile-agent devices
+  mobile-agent devices --platform ios
+  mobile-agent --json devices")]
     Devices,
-    /// Launch an app and claim its target for this session
-    Open(OpenArgs),
-    /// Stop the app this session opened and release the target
-    Close,
-    /// List the screen's elements, one per line with role, name and ref
-    Snapshot(SnapshotArgs),
-    /// Tap an element (a ref such as @e3, or a selector) or a point in device points
-    #[command(visible_alias = "tap")]
-    Click(ClickArgs),
-    /// Clear a text field and enter text into it
-    Fill(FillArgs),
-    /// Type text as key events into an element, or into the focused field
-    Type(TypeArgs),
-    /// Press a key such as Enter, Back, Home or Control+a
-    #[command(visible_alias = "key")]
-    Press(PressArgs),
-    /// Swipe the finger in a direction from the screen's center, or between two points
-    Swipe(SwipeArgs),
-    /// Scroll the content up, down, left or right
-    Scroll(ScrollArgs),
-    /// Save the latest frame as a JPEG
-    Screenshot(ScreenshotArgs),
-    /// Wait for an element, for text, for some milliseconds or for the screen to settle
-    Wait(WaitArgs),
-    /// Read an element's text, value or bounds
-    Get(GetArgs),
-    /// Compare the screen with this session's last snapshot
-    Diff(DiffArgs),
-    /// Run several commands in order, from quoted arguments or a JSON array on stdin
-    Batch(BatchArgs),
-    /// Report the daemon, its targets and its sessions
-    Status,
-    /// Stop the daemon; the next command starts a new one
-    Shutdown,
-}
 
-#[derive(Args, Debug)]
-pub struct BatchArgs {
-    /// Stop at the first command that fails
-    #[arg(long)]
-    pub bail: bool,
-    /// Commands as quoted strings, such as "snapshot -i"; without any, a JSON array of argv arrays on stdin
-    #[arg(value_name = "COMMAND")]
-    pub commands: Vec<String>,
+    /// Launch an app and claim its target for this session
+    #[command(after_help = "\
+Waits up to 3000 ms for the app's screen to settle.
+
+Examples:
+  mobile-agent open dev.mobileagent.fixture.expo
+  mobile-agent open com.example.app --relaunch
+  mobile-agent open com.example.app --env FIXTURE_INITIAL_TAB=list
+  mobile-agent --device emulator-5554 open com.example.app")]
+    Open(OpenArgs),
+
+    /// Stop the app this session opened and release the target
+    #[command(after_help = "\
+Examples:
+  mobile-agent close
+  mobile-agent --session alice close")]
+    Close,
+
+    /// List the screen's elements, one per line with role, name and ref
+    #[command(after_help = "\
+Lines read - role \"name\" [attributes, ref=eN]: value. Act on the refs, then
+take a new snapshot: a ref stays valid while its element stays on screen.
+
+Examples:
+  mobile-agent snapshot -i
+  mobile-agent snapshot
+  mobile-agent snapshot -d 2
+  mobile-agent snapshot -i --delta
+  mobile-agent --json snapshot -i")]
+    Snapshot(SnapshotArgs),
+
+    /// Tap an element (a ref such as @e3, or a selector) or a point in device points
+    #[command(
+        visible_alias = "tap",
+        after_help = "\
+Targets: @e3, ref=e3 or e3 from the last snapshot; #id; text=Sign in; role=switch;
+or x y in device points.
+
+Examples:
+  mobile-agent click @e3
+  mobile-agent tap @e3
+  mobile-agent click '#login-submit'
+  mobile-agent click 'text=Sign in'
+  mobile-agent click 204 120
+  mobile-agent click @e7 --hold 800"
+    )]
+    Click(ClickArgs),
+
+    /// Clear a text field and enter text into it
+    #[command(after_help = "\
+Examples:
+  mobile-agent fill @e2 agent
+  mobile-agent fill '#login-password' hunter2
+  mobile-agent fill @e2 ''")]
+    Fill(FillArgs),
+
+    /// Type text as key events into an element, or into the focused field
+    #[command(after_help = "\
+Unlike fill, type keeps the field's text and adds to it.
+
+Examples:
+  mobile-agent type @e2 ' smith'
+  mobile-agent type 'hello world'")]
+    Type(TypeArgs),
+
+    /// Press a key such as Enter, Back, Home or Control+a
+    #[command(
+        visible_alias = "key",
+        after_help = "\
+Keys: Enter, Tab, Escape, Backspace, Delete, Space, ArrowUp, ArrowDown, ArrowLeft,
+ArrowRight, Home, End, PageUp, PageDown, Back, AppSwitch and Menu (Android),
+VolumeUp, VolumeDown, Power, F1 to F12, a letter or digit, modifiers joined with +
+(Shift, Control, Alt, Meta), or a platform key code of two digits or more.
+
+Examples:
+  mobile-agent press Enter
+  mobile-agent press Back
+  mobile-agent key Home
+  mobile-agent press Control+a"
+    )]
+    Press(PressArgs),
+
+    /// Swipe the finger in a direction from the screen's center, or between two points
+    #[command(after_help = "\
+The direction is the finger's: swipe up moves the content up and shows what is below.
+
+Examples:
+  mobile-agent swipe up
+  mobile-agent swipe left 200
+  mobile-agent swipe 200 700 200 200 --duration 500")]
+    Swipe(SwipeArgs),
+
+    /// Scroll the content up, down, left or right
+    #[command(after_help = "\
+The direction is the content's: scroll down shows what is below.
+
+Examples:
+  mobile-agent scroll
+  mobile-agent scroll down 600
+  mobile-agent scroll up 300 -s @e7")]
+    Scroll(ScrollArgs),
+
+    /// Save the latest frame as a JPEG
+    #[command(after_help = "\
+Examples:
+  mobile-agent screenshot
+  mobile-agent screenshot login.jpg
+  mobile-agent screenshot --max-dimension 600 --quality 70")]
+    Screenshot(ScreenshotArgs),
+
+    /// Wait for an element, for text, for some milliseconds or for the screen to settle
+    #[command(after_help = "\
+Element and text waits end at --timeout: the session's default (set timeout),
+else MOBILE_AGENT_DEFAULT_TIMEOUT or the config's defaultTimeout, else 10000 ms.
+wait --settle ends once neither the tree nor the frames change for the quiet
+window, or at --timeout, default 3000 ms, reporting what kept changing.
+
+Examples:
+  mobile-agent wait --settle
+  mobile-agent wait @e5
+  mobile-agent wait '#spinner' --state hidden
+  mobile-agent wait --text 'Welcome' --timeout 5000
+  mobile-agent wait 500")]
+    Wait(WaitArgs),
+
+    /// Read an element's text, value or bounds
+    #[command(after_help = "\
+Examples:
+  mobile-agent get text @e5
+  mobile-agent get value '#login-username'
+  mobile-agent get box @e3")]
+    Get(GetArgs),
+
+    /// Compare the screen with this session's last snapshot
+    #[command(after_help = "\
+Examples:
+  mobile-agent snapshot -i
+  mobile-agent click @e3
+  mobile-agent diff snapshot")]
+    Diff(DiffArgs),
+
+    /// Run several commands in order, from quoted arguments or a JSON array on stdin
+    #[command(after_help = "\
+Examples:
+  mobile-agent batch 'snapshot -i' 'click @e3' 'wait --settle'
+  mobile-agent batch --bail 'open com.example.app' 'fill #user agent' 'press Enter'
+  echo '[[\"snapshot\", \"-i\"], [\"click\", \"@e2\"]]' | mobile-agent --json batch")]
+    Batch(BatchArgs),
+
+    /// Report the daemon, its targets and its sessions
+    #[command(after_help = "\
+Examples:
+  mobile-agent status
+  mobile-agent --json status")]
+    Status,
+
+    /// Change a setting of this session
+    #[command(after_help = "\
+Examples:
+  mobile-agent set timeout 5000
+  mobile-agent --session alice set timeout 20000")]
+    Set(SetArgs),
+
+    /// Stop the daemon; the next command starts a new one
+    #[command(after_help = "\
+Examples:
+  mobile-agent shutdown")]
+    Shutdown,
+
+    /// Print help for a command, or 'help agent' for the guide for agents
+    #[command(after_help = "\
+Examples:
+  mobile-agent help agent
+  mobile-agent help snapshot
+  mobile-agent help get text")]
+    Help(HelpArgs),
 }
 
 #[derive(Args, Debug)]
@@ -136,7 +318,7 @@ pub struct OpenArgs {
     /// A launch environment variable, repeatable; an intent string extra on Android
     #[arg(long = "env", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
-    /// Longest wait for the app's screen to settle, in ms
+    /// Longest wait for the app's screen to settle, in ms [default: 3000]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
 }
@@ -157,6 +339,9 @@ pub struct SnapshotArgs {
     pub full: bool,
 }
 
+/// The help of a selector's timeout.
+const SELECTOR_TIMEOUT: &str = "Longest wait for a selector's element, in ms [default: the session's, else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000]";
+
 #[derive(Args, Debug)]
 pub struct ClickArgs {
     /// A ref (@e3, ref=e3, e3), a selector (#id, text=..., role=...) or x and y in device points
@@ -165,8 +350,7 @@ pub struct ClickArgs {
     /// Hold that long, in ms: a long press
     #[arg(long, value_name = "MS")]
     pub hold: Option<u64>,
-    /// Longest wait for a selector's element, in ms
-    #[arg(long, value_name = "MS")]
+    #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
 
@@ -177,8 +361,7 @@ pub struct FillArgs {
     /// The text that replaces the field's content
     #[arg(allow_hyphen_values = true)]
     pub text: String,
-    /// Longest wait for a selector's element, in ms
-    #[arg(long, value_name = "MS")]
+    #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
 
@@ -187,8 +370,7 @@ pub struct TypeArgs {
     /// [TARGET] TEXT: the field as a ref or selector, then the text; without a field, the focused one
     #[arg(required = true, num_args = 1..=2, allow_hyphen_values = true, value_name = "ARGS")]
     pub args: Vec<String>,
-    /// Longest wait for a selector's element, in ms
-    #[arg(long, value_name = "MS")]
+    #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
 
@@ -200,10 +382,10 @@ pub struct PressArgs {
 
 #[derive(Args, Debug)]
 pub struct SwipeArgs {
-    /// DIRECTION [DISTANCE] (up, down, left or right, then points), or X1 Y1 X2 Y2
+    /// DIRECTION [DISTANCE] (up, down, left or right, then points, default 300), or X1 Y1 X2 Y2
     #[arg(required = true, num_args = 1..=4, value_name = "ARGS")]
     pub args: Vec<String>,
-    /// How long the stroke takes, in ms
+    /// How long the stroke takes, in ms [default: 300]
     #[arg(long, value_name = "MS")]
     pub duration: Option<u64>,
 }
@@ -217,8 +399,7 @@ pub struct ScrollArgs {
     /// Scroll inside this element (a ref or a selector) instead of the screen
     #[arg(short, long, value_name = "TARGET")]
     pub selector: Option<String>,
-    /// Longest wait for a selector's element, in ms
-    #[arg(long, value_name = "MS")]
+    #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
 
@@ -253,7 +434,7 @@ pub struct WaitArgs {
     /// Settle on tree changes alone, ignoring frames (for video)
     #[arg(long, requires = "settle")]
     pub tree_only: bool,
-    /// Longest wait, in ms
+    /// Longest wait, in ms [default: the session's, else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000; with --settle 3000]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
 }
@@ -267,10 +448,20 @@ pub struct GetArgs {
 #[derive(Subcommand, Debug)]
 pub enum GetWhat {
     /// An element's value, else its name
+    #[command(after_help = "\
+Examples:
+  mobile-agent get text @e5
+  mobile-agent get text '#login-status'")]
     Text(ElementArg),
     /// A field's value
+    #[command(after_help = "\
+Examples:
+  mobile-agent get value @e2")]
     Value(ElementArg),
     /// An element's bounds in device points: x, y, width and height
+    #[command(after_help = "\
+Examples:
+  mobile-agent get box @e3")]
     Box(ElementArg),
 }
 
@@ -278,8 +469,7 @@ pub enum GetWhat {
 pub struct ElementArg {
     /// A ref or a selector
     pub target: String,
-    /// Longest wait for a selector's element, in ms
-    #[arg(long, value_name = "MS")]
+    #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]
     pub timeout: Option<u64>,
 }
 
@@ -292,6 +482,10 @@ pub struct DiffArgs {
 #[derive(Subcommand, Debug)]
 pub enum DiffWhat {
     /// Compare the screen with this session's last snapshot, element by element
+    #[command(after_help = "\
+Examples:
+  mobile-agent diff snapshot
+  mobile-agent --json diff snapshot")]
     Snapshot(DiffSnapshotArgs),
 }
 
@@ -303,4 +497,39 @@ pub struct DiffSnapshotArgs {
     /// Without a last snapshot, the deepest nesting level to list
     #[arg(short, long, value_name = "N")]
     pub depth: Option<u64>,
+}
+
+#[derive(Args, Debug)]
+pub struct BatchArgs {
+    /// Stop at the first command that fails
+    #[arg(long)]
+    pub bail: bool,
+    /// Commands as quoted strings, such as "snapshot -i"; without any, a JSON array of argv arrays on stdin
+    #[arg(value_name = "COMMAND")]
+    pub commands: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SetArgs {
+    #[command(subcommand)]
+    pub what: SetWhat,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SetWhat {
+    /// The default timeout of this session's waiting commands, in ms, at most 600000
+    #[command(after_help = "\
+Examples:
+  mobile-agent set timeout 5000")]
+    Timeout {
+        /// Milliseconds
+        ms: u64,
+    },
+}
+
+#[derive(Args, Debug)]
+pub struct HelpArgs {
+    /// agent for the guide, or a command such as snapshot or get text
+    #[arg(value_name = "TOPIC")]
+    pub topic: Vec<String>,
 }

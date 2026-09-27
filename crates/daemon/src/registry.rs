@@ -265,6 +265,19 @@ impl Registry {
         held
     }
 
+    /// Sets `session`'s default timeout for waiting commands.
+    pub fn set_default_timeout(&mut self, session: &str, timeout: Duration) {
+        self.sessions
+            .entry(session.to_owned())
+            .or_default()
+            .default_timeout = Some(timeout);
+    }
+
+    /// `session`'s default timeout, if it set one.
+    pub fn default_timeout(&self, session: &str) -> Option<Duration> {
+        self.sessions.get(session)?.default_timeout
+    }
+
     /// The sessions that hold a target or set something, by name.
     pub fn sessions(&self) -> &BTreeMap<String, SessionSettings> {
         &self.sessions
