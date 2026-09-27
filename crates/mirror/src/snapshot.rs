@@ -7,6 +7,8 @@ use protocol::snapshot::WindowType;
 
 use crate::backend::{Owner, ReadReason};
 use crate::geometry::Rect;
+use crate::refs::Ref;
+use crate::verdict::Verdict;
 
 /// What a snapshot lists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -49,6 +51,8 @@ pub struct Snapshot {
     /// Who owns the foreground: the target, or system UI such as a
     /// permission alert.
     pub foreground: Owner,
+    /// The backend that produced the data and whether it is degraded.
+    pub verdict: Verdict,
     /// The windows, top-most first, with how each is kept current.
     pub windows: Vec<WindowSummary>,
     /// The listed elements in document order.
@@ -72,12 +76,26 @@ impl Snapshot {
     pub fn window(&self, id: u32) -> Option<&WindowSummary> {
         self.windows.iter().find(|w| w.id == id)
     }
+
+    /// The listed element with `reference`.
+    pub fn by_ref(&self, reference: Ref) -> Option<&Element> {
+        self.elements
+            .iter()
+            .find(|e| e.reference == Some(reference))
+    }
+
+    /// The refs listed, in document order.
+    pub fn refs(&self) -> Vec<Ref> {
+        self.elements.iter().filter_map(|e| e.reference).collect()
+    }
 }
 
 /// One listed element.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Element {
     pub id: ElementId,
+    /// The element's ref, for actionable elements and named content.
+    pub reference: Option<Ref>,
     pub role: Role,
     /// The accessible name: the element's own description or text, else
     /// the text of its non-actionable descendants.

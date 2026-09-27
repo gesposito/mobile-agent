@@ -139,6 +139,17 @@ impl Screen {
             for (offset, node) in nodes.drain(..).enumerate() {
                 children.insert(index + offset, node);
             }
+        } else if let Some(sibling) = op.get("insert_before") {
+            let sibling = sibling
+                .as_str()
+                .expect("insert_before names a sibling's identifier");
+            let nodes = expand(&op["node"], None);
+            let inserted = self.0["windows"]
+                .as_array_mut()
+                .expect("windows")
+                .iter_mut()
+                .any(|w| insert_before(&mut w["root"], sibling, &nodes));
+            assert!(inserted, "no node {sibling} to insert before");
         } else if let Some(scroll) = op.get("scroll") {
             let entries = self.0["scroll"]
                 .as_array_mut()
@@ -235,6 +246,24 @@ fn remove_node(node: &mut Value, id: &str) -> bool {
         return true;
     }
     children.iter_mut().any(|c| remove_node(c, id))
+}
+
+fn insert_before(node: &mut Value, sibling: &str, nodes: &[Value]) -> bool {
+    let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    if let Some(index) = children
+        .iter()
+        .position(|c| c["id"].as_str() == Some(sibling))
+    {
+        for (offset, n) in nodes.iter().enumerate() {
+            children.insert(index + offset, n.clone());
+        }
+        return true;
+    }
+    children
+        .iter_mut()
+        .any(|c| insert_before(c, sibling, nodes))
 }
 
 fn path_to(node: &Value, id: &str, path: &mut Vec<u32>) -> bool {

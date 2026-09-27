@@ -16,19 +16,23 @@ pub mod backend;
 mod error;
 mod geometry;
 mod mirror;
+mod refs;
 mod replica;
 mod roles;
 mod snapshot;
 pub mod testing;
+mod verdict;
 mod view;
 
-pub use error::{MirrorError, code};
+pub use error::{MirrorError, StaleCause, code};
 pub use geometry::{Point, Rect};
 pub use mirror::{
     Action, ActionOutcome, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, Mirror,
     MirrorConfig, Target,
 };
+pub use refs::Ref;
 pub use snapshot::{
     Element, ElementId, RefreshMode, Role, Snapshot, SnapshotOptions, TreeDelta, WindowSource,
     WindowSummary,
 };
+pub use verdict::{Degradation, Verdict};

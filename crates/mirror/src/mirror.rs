@@ -5,13 +5,15 @@ use std::time::{Duration, Instant};
 use protocol::message::TextMethod;
 use protocol::snapshot::{NodeFlags, WindowFlags, WindowType};
 
-use crate::backend::{Backend, Input, Owner};
+use crate::backend::{Backend, BackendInfo, Input, Owner};
 use crate::error::MirrorError;
 use crate::geometry::{Point, Rect};
+use crate::refs::Ref;
 use crate::replica::Replica;
 use crate::snapshot::{
     Element, RefreshMode, Snapshot, SnapshotOptions, TreeDelta, WindowSource, WindowSummary,
 };
+use crate::verdict::Verdict;
 use crate::view::View;
 
 /// How often a window that sends no change events is re-read when nothing
@@ -45,6 +47,8 @@ impl Default for MirrorConfig {
 pub enum Target {
     /// A position in device points.
     Point(Point),
+    /// The center of the element a ref names.
+    Ref(Ref),
 }
 
 /// An action the mirror injects through the backend's input sink.
@@ -64,9 +68,10 @@ pub enum Action {
         code: u32,
         meta: Option<u32>,
     },
-    /// Text for the focused field.
+    /// Text for the element `into` names, or for the focused field.
     Text {
         text: String,
+        into: Option<Ref>,
         method: TextMethod,
     },
 }
@@ -179,6 +184,7 @@ impl Mirror {
                 }
                 elements.push(Element {
                     id: node.element,
+                    reference: None,
                     role: facts.role,
                     name: facts.name.clone(),
                     identifier: node.identifier.clone(),
@@ -201,6 +207,15 @@ impl Mirror {
             options: *options,
             scale: self.replica.scale,
             foreground: self.foreground(),
+            verdict: Verdict {
+                backend: self
+                    .replica
+                    .backend
+                    .clone()
+                    .unwrap_or_else(|| BackendInfo::new("none", false)),
+                degraded: false,
+                reasons: Vec::new(),
+            },
             windows: self.summaries(now),
             elements,
         })
@@ -253,6 +268,7 @@ impl Mirror {
             Action::Tap { target, hold } => {
                 let at = match target {
                     Target::Point(point) => *point,
+                    Target::Ref(_) => todo!("task 7.2"),
                 };
                 (Input::Tap { at, hold: *hold }, Some(at))
             }
@@ -271,7 +287,7 @@ impl Mirror {
                 },
                 None,
             ),
-            Action::Text { text, method } => (
+            Action::Text { text, method, .. } => (
                 Input::Text {
                     text: text.clone(),
                     node: None,
@@ -288,6 +304,11 @@ impl Mirror {
             at,
             method: ack.method,
         })
+    }
+
+    /// The element `reference` names, as the replica shows it now.
+    pub fn resolve(&mut self, _reference: Ref) -> Result<Element, MirrorError> {
+        todo!("task 7.2")
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.
