@@ -258,6 +258,43 @@ pub struct CompatibilityRow {
     pub note: Option<String>,
 }
 
+/// Whether taps, swipes and frames on an Android emulator go through the
+/// emulator's gRPC controller: `--emulator-controller` or
+/// `MOBILE_AGENT_EMULATOR_CONTROLLER`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EmulatorController {
+    /// Through the controller whenever the emulator serves it and it
+    /// answers, else through the agent.
+    #[default]
+    Auto,
+    /// Through the agent on every emulator, as on a device, with no frame
+    /// stream. Emulator 37.1.11 serves its token-protected controller even
+    /// when started without `-grpc`, and only `-ports` leaves it off, so
+    /// this is how the agent path is taken on an emulator that serves it.
+    Off,
+}
+
+impl EmulatorController {
+    /// Parses `auto` or `off`, whatever the case.
+    pub fn parse(text: &str) -> Result<EmulatorController, String> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(EmulatorController::Auto),
+            "off" => Ok(EmulatorController::Off),
+            _ => Err(format!(
+                "emulator controller {text:?}: use auto, to take the emulator's gRPC controller when it answers, or off, to leave it unused"
+            )),
+        }
+    }
+
+    /// `auto` or `off`, as the flag takes it and `status` reports it.
+    pub fn name(self) -> &'static str {
+        match self {
+            EmulatorController::Auto => "auto",
+            EmulatorController::Off => "off",
+        }
+    }
+}
+
 /// Which drivers a daemon registers, and where they keep what outlives it.
 #[derive(Clone, Copy, Debug)]
 pub struct Registration<'a> {
@@ -277,6 +314,9 @@ pub struct Registration<'a> {
     /// The daemon's own directory, where drivers keep state for the next
     /// daemon, such as the records of the Android agents it started.
     pub state_dir: &'a Path,
+    /// Whether Android emulators' controllers serve input and frames, for
+    /// the Android driver and fake emulators alike.
+    pub emulator_controller: EmulatorController,
 }
 
 /// The drivers a daemon registers.
@@ -290,12 +330,18 @@ pub struct Registration<'a> {
 /// showing every change `fake_latency` after its cause, its frames from
 /// `fake_frame_delay` after the attach, its fixture apps' launch splash for
 /// `fake_splash` and its input `fake_activation` after its session starts,
-/// unless `drivers` names device drivers too.
+/// unless `drivers` names device drivers too. With `emulator_controller`
+/// off, the Android driver leaves every emulator's controller unused and
+/// fake emulators come without a frame source.
 pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
     let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
     for name in device_drivers(registration.drivers, fake.is_some())? {
-        drivers.push(devices::driver(name, registration.state_dir)?);
+        drivers.push(devices::driver(
+            name,
+            registration.state_dir,
+            registration.emulator_controller,
+        )?);
     }
     if let Some(spec) = fake {
         drivers.push(Arc::new(
@@ -303,7 +349,8 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
                 .with_latency(registration.fake_latency)
                 .with_frame_delay(registration.fake_frame_delay)
                 .with_splash(registration.fake_splash)
-                .with_activation(registration.fake_activation),
+                .with_activation(registration.fake_activation)
+                .with_emulator_controller(registration.emulator_controller),
         ));
     }
     Ok(drivers)
@@ -417,6 +464,7 @@ mod tests {
                 fake_activation: Duration::ZERO,
                 drivers,
                 state_dir: &dir,
+                emulator_controller: EmulatorController::Auto,
             })
             .unwrap()
             .iter()
@@ -428,5 +476,31 @@ mod tests {
         assert_eq!(names(None, Some("none")), Vec::<String>::new());
         assert_eq!(names(Some(" "), Some("android")), ["android"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Task 10.12: the emulator controller setting takes `auto` or `off`
+    /// and names what it takes in its refusal.
+    #[test]
+    fn the_emulator_controller_setting_is_auto_or_off() {
+        assert_eq!(EmulatorController::default(), EmulatorController::Auto);
+        assert_eq!(
+            EmulatorController::parse("off"),
+            Ok(EmulatorController::Off)
+        );
+        assert_eq!(
+            EmulatorController::parse(" OFF "),
+            Ok(EmulatorController::Off)
+        );
+        assert_eq!(
+            EmulatorController::parse("auto"),
+            Ok(EmulatorController::Auto)
+        );
+        let refused = EmulatorController::parse("on").unwrap_err();
+        assert!(
+            refused.contains("\"on\"") && refused.contains("auto") && refused.contains("off"),
+            "{refused}"
+        );
+        assert_eq!(EmulatorController::Off.name(), "off");
+        assert_eq!(EmulatorController::Auto.name(), "auto");
     }
 }

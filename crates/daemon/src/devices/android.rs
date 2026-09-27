@@ -7,8 +7,9 @@
 //! - Attaching deploys the agent, reuses the one this daemon or its
 //!   predecessor started, or replaces an incompatible one, with the
 //!   records kept in the daemon's directory; selects the emulator's
-//!   controller when it answers; and starts the agent session, whose
-//!   backend is what the mirror runs on.
+//!   controller when it answers, unless the daemon's emulator controller
+//!   setting is off; and starts the agent session, whose backend is what
+//!   the mirror runs on.
 //! - Apps launch by package through their launcher activity, each launch
 //!   environment entry a string extra of the intent under its own name,
 //!   stopped first for a relaunch.
@@ -33,8 +34,9 @@ use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
 
 use crate::driver::{
-    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError, Image,
-    Launch, Platform, Report, Screen, Size, TargetClass, TargetInfo, TargetReport,
+    AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError,
+    EmulatorController, Image, Launch, Platform, Report, Screen, Size, TargetClass, TargetInfo,
+    TargetReport,
 };
 use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
@@ -135,14 +137,17 @@ pub(crate) struct AndroidDevices {
     /// The agents this daemon started, in the daemon's directory, opened on
     /// the first attach.
     records: OnceLock<Records>,
+    /// Whether emulators' controllers serve taps, swipes and frames.
+    controller: EmulatorController,
 }
 
 impl AndroidDevices {
-    pub(crate) fn new(state_dir: &Path) -> AndroidDevices {
+    pub(crate) fn new(state_dir: &Path, controller: EmulatorController) -> AndroidDevices {
         AndroidDevices {
             server: AdbServer::from_env(),
             state_dir: state_dir.to_owned(),
             records: OnceLock::new(),
+            controller,
         }
     }
 
@@ -199,7 +204,7 @@ impl Driver for AndroidDevices {
         let selection = select_paths(
             &target.id,
             emulator,
-            &ControllerChoice::Auto,
+            &controller_choice(self.controller),
             emulator::Options::default(),
         );
         // A forced command takes UI automation over from another holder,
@@ -236,6 +241,7 @@ impl Driver for AndroidDevices {
                 session,
                 jar: source.name(),
                 build,
+                controller: self.controller,
             })),
             input_notes: None,
             input_session: None,
@@ -245,6 +251,38 @@ impl Driver for AndroidDevices {
 
 fn adb_error(failure: adb::Error) -> DriverError {
     DriverError::new(ADB_FAILED, failure.to_string())
+}
+
+/// How the session chooses its paths under the daemon's `setting`: `Auto`
+/// resolves an emulator's controller and takes it when it answers, `Off`
+/// never looks for one, so taps, swipes and frames take the agent's path.
+pub(crate) fn controller_choice(setting: EmulatorController) -> ControllerChoice {
+    match setting {
+        EmulatorController::Auto => ControllerChoice::Auto,
+        EmulatorController::Off => ControllerChoice::Off,
+    }
+}
+
+/// Adds the daemon's emulator controller `setting` to the report of an
+/// emulator, with a line saying where input and frames go when it is off.
+pub(crate) fn report_controller(
+    report: &mut TargetReport,
+    setting: EmulatorController,
+    emulator: bool,
+) {
+    if !emulator {
+        return;
+    }
+    report
+        .data
+        .insert("emulatorController".into(), setting.name().into());
+    if setting == EmulatorController::Off {
+        report.lines.push(
+            "emulator controller: off, so taps, swipes and frames take the agent's path, as on a \
+             device (--emulator-controller or MOBILE_AGENT_EMULATOR_CONTROLLER)"
+                .to_owned(),
+        );
+    }
 }
 
 /// Starts the session over `attached` with `start`; when it cannot start,
@@ -372,11 +410,15 @@ struct SessionReport {
     jar: String,
     /// Its build.
     build: String,
+    /// The daemon's emulator controller setting.
+    controller: EmulatorController,
 }
 
 impl Report for SessionReport {
     fn report(&self) -> TargetReport {
-        let mut report = status_report(&self.session.status());
+        let status = self.session.status();
+        let mut report = status_report(&status);
+        report_controller(&mut report, self.controller, status.paths.emulator);
         report
             .data
             .insert("agentJar".into(), self.jar.clone().into());
@@ -815,6 +857,79 @@ mod tests {
         assert_eq!(data["input"], "agent", "{data}");
         assert_eq!(data["frames"], Value::Null, "{data}");
         assert_eq!(data["warning"], "start with -grpc", "{data}");
+    }
+
+    /// Task 10.12: with the daemon's emulator controller setting off, the
+    /// session never resolves an emulator's controller, so taps, swipes and
+    /// frames take the agent's path without the warning an emulator whose
+    /// controller cannot be reached gets; `status` says the setting did it.
+    #[test]
+    fn the_controller_setting_off_puts_an_emulator_on_the_agent_path() {
+        assert_eq!(
+            controller_choice(EmulatorController::Auto),
+            ControllerChoice::Auto
+        );
+        assert_eq!(
+            controller_choice(EmulatorController::Off),
+            ControllerChoice::Off
+        );
+        let quick = emulator::Options {
+            deadline: Duration::from_millis(200),
+            connect_deadline: Duration::from_millis(200),
+        };
+        // No emulator 5998 runs, so resolving its controller fails and the
+        // automatic choice warns; the setting off does not look for it.
+        let serial = "emulator-5998";
+        let auto = select_paths(
+            serial,
+            true,
+            &controller_choice(EmulatorController::Auto),
+            quick,
+        );
+        assert!(auto.link.is_none());
+        assert!(auto.paths.warning.is_some(), "{:?}", auto.paths);
+        let off = select_paths(
+            serial,
+            true,
+            &controller_choice(EmulatorController::Off),
+            quick,
+        );
+        assert!(off.link.is_none());
+        assert_eq!(off.paths, Paths::agent(true, None));
+
+        let mut report = status_report(&status(off.paths.clone()));
+        report_controller(&mut report, EmulatorController::Off, true);
+        let data = Value::Object(report.data.clone());
+        assert_eq!(data["input"], "agent", "{data}");
+        assert_eq!(data["frames"], Value::Null, "{data}");
+        assert_eq!(data["emulatorController"], "off", "{data}");
+        assert!(
+            report
+                .lines
+                .iter()
+                .any(|line| line.starts_with("emulator controller: off")),
+            "{:?}",
+            report.lines
+        );
+
+        let mut automatic = status_report(&status(Paths::agent(true, None)));
+        report_controller(&mut automatic, EmulatorController::Auto, true);
+        assert_eq!(automatic.data["emulatorController"], "auto");
+        assert!(
+            !automatic
+                .lines
+                .iter()
+                .any(|line| line.starts_with("emulator controller")),
+            "{:?}",
+            automatic.lines
+        );
+        let mut device = status_report(&status(Paths::agent(false, None)));
+        report_controller(&mut device, EmulatorController::Off, false);
+        assert!(
+            device.data.get("emulatorController").is_none(),
+            "a device has no emulator controller: {:?}",
+            device.data
+        );
     }
 
     /// Task 8.11: an installed daemon needs neither the source tree nor

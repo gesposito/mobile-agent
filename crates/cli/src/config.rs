@@ -20,6 +20,9 @@ pub struct Config {
     /// The idle timeout of a daemon the CLI starts, as `--idle-timeout`
     /// takes it; a number is milliseconds.
     pub idle_timeout: Option<String>,
+    /// The emulator controller setting of a daemon the CLI starts, `auto`
+    /// or `off`, as `--emulator-controller` takes it.
+    pub emulator_controller: Option<String>,
 }
 
 impl Config {
@@ -44,6 +47,10 @@ impl Config {
                 Some(Value::Number(ms)) => Some(ms.to_string()),
                 _ => None,
             },
+            emulator_controller: value
+                .get("emulatorController")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         }
     }
 
@@ -56,6 +63,7 @@ impl Config {
             device: top.device.or(self.device),
             default_timeout: top.default_timeout.or(self.default_timeout),
             idle_timeout: top.idle_timeout.or(self.idle_timeout),
+            emulator_controller: top.emulator_controller.or(self.emulator_controller),
         }
     }
 }
@@ -106,8 +114,9 @@ mod tests {
 
     #[test]
     fn a_project_file_overrides_the_user_file_key_by_key() {
-        let user =
-            Config::from_json(&json!({"json": true, "session": "user", "idleTimeout": 5000}));
+        let user = Config::from_json(
+            &json!({"json": true, "session": "user", "idleTimeout": 5000, "emulatorController": "off"}),
+        );
         let project =
             Config::from_json(&json!({"session": "project", "device": "FAKE-IOS-1", "extra": 1}));
         assert_eq!(
@@ -119,6 +128,7 @@ mod tests {
                 device: Some("FAKE-IOS-1".into()),
                 default_timeout: None,
                 idle_timeout: Some("5000".into()),
+                emulator_controller: Some("off".into()),
             }
         );
     }

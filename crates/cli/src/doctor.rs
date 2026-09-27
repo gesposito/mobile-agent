@@ -219,7 +219,11 @@ pub fn run_checks(probe: &dyn Probe) -> Report {
     checks.push(sdk);
     let (server, running) = adb_server_check(probe);
     checks.push(server);
-    checks.push(emulator_check(probe, adb.as_deref().filter(|_| running)));
+    checks.push(emulator_check(
+        probe,
+        adb.as_deref().filter(|_| running),
+        &daemon,
+    ));
     checks.push(tool_check(
         probe,
         "sfw",
@@ -485,8 +489,21 @@ fn grpc_port(files: &[(PathBuf, String)], console: u16) -> Option<u16> {
         })
 }
 
-fn emulator_check(probe: &dyn Probe, adb: Option<&Path>) -> Check {
+fn emulator_check(probe: &dyn Probe, adb: Option<&Path>, daemon: &Result<Value, String>) -> Check {
     const NAME: &str = "emulator-control";
+    // A daemon told to leave the controllers unused sends everything
+    // through the agent, whatever the emulators serve.
+    if daemon
+        .as_ref()
+        .is_ok_and(|data| data["emulatorController"] == "off")
+    {
+        return hinted(
+            NAME,
+            Status::Warn,
+            "off in the daemon: taps, swipes and frames on every emulator go through the agent, as on a device, with no frame stream",
+            "to use the gRPC controller again, drop --emulator-controller off, MOBILE_AGENT_EMULATOR_CONTROLLER=off or emulatorController from the config, then restart the daemon with mobile-agent shutdown",
+        );
+    }
     let Some(adb) = adb else {
         return check(
             NAME,

@@ -9,7 +9,10 @@
 //! settings app. Taps, text, keys and swipes change it as the real apps
 //! change; screenshots return placeholder bytes, not an image. Emulators and
 //! Simulators have a frame source and Android devices none, as design D7
-//! has it; a latency (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
+//! has it, and emulators have none either when the daemon's emulator
+//! controller setting is off; `status` names an Android target's input and
+//! frame paths as the Android driver names them. A latency
+//! (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
 //! the attach, as an emulator's starts once its subscription is up. A
@@ -22,10 +25,15 @@ mod app;
 mod realtime;
 mod tree;
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use serde_json::{Map, Value};
+
+use crate::devices::android::report_controller;
 use crate::driver::{
-    AttachOptions, Attachment, Driver, DriverError, Platform, TargetClass, TargetInfo,
+    AttachOptions, Attachment, Driver, DriverError, EmulatorController, Platform, Report,
+    TargetClass, TargetInfo, TargetReport,
 };
 
 /// How fake targets take their time.
@@ -48,6 +56,8 @@ pub(crate) struct Timing {
 pub struct FakeDriver {
     targets: Vec<TargetInfo>,
     timing: Timing,
+    /// Whether fake emulators take the controller's path, with frames.
+    controller: EmulatorController,
 }
 
 impl FakeDriver {
@@ -111,6 +121,7 @@ impl FakeDriver {
         Ok(FakeDriver {
             targets,
             timing: Timing::default(),
+            controller: EmulatorController::Auto,
         })
     }
 
@@ -140,6 +151,36 @@ impl FakeDriver {
         self.timing.activation = activation;
         self
     }
+
+    /// These targets under the daemon's emulator controller setting: off,
+    /// emulators take the agent's path, without a frame source.
+    pub fn with_emulator_controller(mut self, controller: EmulatorController) -> FakeDriver {
+        self.controller = controller;
+        self
+    }
+}
+
+/// What `status` shows about a fake Android emulator the switch keeps off
+/// its controller: its input and frames take the agent's path, named as the
+/// Android driver names them. A fake target on its default paths reports
+/// nothing about them.
+struct AgentPath;
+
+impl Report for AgentPath {
+    fn report(&self) -> TargetReport {
+        let mut data = Map::new();
+        data.insert("input".into(), "agent".into());
+        data.insert("frames".into(), Value::Null);
+        let mut report = TargetReport {
+            lines: vec![
+                "input: agent (taps, long presses and swipes)".to_owned(),
+                "frames: none; screenshots come from the agent on demand".to_owned(),
+            ],
+            data,
+        };
+        report_controller(&mut report, EmulatorController::Off, true);
+        report
+    }
 }
 
 impl Driver for FakeDriver {
@@ -156,8 +197,18 @@ impl Driver for FakeDriver {
         target: &TargetInfo,
         _options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
-        let frames = target.class != TargetClass::AndroidDevice;
-        Ok(realtime::attach(target.platform, frames, self.timing))
+        let frames = match target.class {
+            TargetClass::Simulator => true,
+            TargetClass::AndroidEmulator => self.controller == EmulatorController::Auto,
+            TargetClass::AndroidDevice => false,
+        };
+        let mut attachment = realtime::attach(target.platform, frames, self.timing);
+        if target.class == TargetClass::AndroidEmulator
+            && self.controller == EmulatorController::Off
+        {
+            attachment.report = Some(Arc::new(AgentPath) as Arc<dyn Report>);
+        }
+        Ok(attachment)
     }
 }
 
@@ -184,5 +235,41 @@ mod tests {
         );
         assert!(FakeDriver::parse("windows").is_err());
         assert!(FakeDriver::parse("ios:X,android:X").is_err());
+    }
+
+    /// Task 10.12: with the emulator controller setting off, a fake
+    /// emulator attaches without a frame source and reports the agent's
+    /// paths, as a real emulator does; Simulators keep their frames.
+    #[test]
+    fn the_controller_setting_off_puts_fake_emulators_on_the_agent_path() {
+        let targets = |driver: &FakeDriver| driver.targets.clone();
+        for controller in [EmulatorController::Auto, EmulatorController::Off] {
+            let driver = FakeDriver::parse("android, android:R58M123, ios")
+                .unwrap()
+                .with_emulator_controller(controller);
+            let listed = targets(&driver);
+            let attach = |id: &str| {
+                let target = listed.iter().find(|t| t.id == id).unwrap();
+                driver.attach(target, &AttachOptions::default()).unwrap()
+            };
+            let emulator = attach("emulator-5554");
+            let off = controller == EmulatorController::Off;
+            assert_eq!(emulator.backend.frames.is_some(), !off, "{controller:?}");
+            match emulator.report.as_ref().map(|r| r.report()) {
+                Some(report) => {
+                    assert!(off, "{controller:?}: {:?}", report.data);
+                    assert_eq!(report.data["input"], "agent");
+                    assert!(report.data["frames"].is_null(), "{:?}", report.data);
+                    assert_eq!(report.data["emulatorController"], "off");
+                }
+                None => assert!(!off, "an emulator on the agent's path says so"),
+            }
+            let device = attach("R58M123");
+            assert!(device.backend.frames.is_none());
+            assert!(device.report.is_none(), "{controller:?}");
+            let simulator = attach("FAKE-IOS-1");
+            assert!(simulator.backend.frames.is_some(), "{controller:?}");
+            assert!(simulator.report.is_none());
+        }
     }
 }

@@ -7,6 +7,7 @@ const HELP: &str = "\
 mobile-agent-daemon: the host daemon behind the mobile-agent CLI
 
 Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
+                           [--emulator-controller <auto|off>]
                            [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
                            [--fake-splash <time>] [--fake-activation <time>]
 
@@ -20,6 +21,12 @@ Options:
   --drivers <names>       Device drivers to register: simulator (macOS only),
                           android, or none (or MOBILE_AGENT_DRIVERS; default
                           every driver this host runs, none with --fake)
+  --emulator-controller <auto|off>
+                          Whether taps, swipes and frames on Android
+                          emulators go through the emulator's gRPC
+                          controller when it answers (auto), or through the
+                          agent, as on a device (off)
+                          (or MOBILE_AGENT_EMULATOR_CONTROLLER; default auto)
   --fake <targets>        Serve fake targets, such as android,ios:FAKE-IOS-1
                           (or MOBILE_AGENT_FAKE_TARGETS)
   --fake-latency <time>   Show every change on fake targets this long after

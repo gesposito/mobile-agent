@@ -277,6 +277,8 @@ pub struct Endpoint {
     pub daemon: Option<PathBuf>,
     /// The idle timeout a daemon this CLI starts gets.
     pub idle_timeout: Option<String>,
+    /// The emulator controller setting a daemon this CLI starts gets.
+    pub emulator_controller: Option<String>,
 }
 
 impl Endpoint {
@@ -386,6 +388,9 @@ fn start(endpoint: &Endpoint, exe: &Path, version: &str) -> Result<(), Failure> 
         .process_group(0);
     if let Some(idle) = &endpoint.idle_timeout {
         command.arg("--idle-timeout").arg(idle);
+    }
+    if let Some(controller) = &endpoint.emulator_controller {
+        command.arg("--emulator-controller").arg(controller);
     }
     let mut child = command
         .spawn()

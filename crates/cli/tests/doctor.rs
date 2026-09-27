@@ -315,6 +315,37 @@ fn an_emulator_without_the_control_flag_gets_the_flag_hint() {
     );
 }
 
+/// Task 10.12: a daemon whose emulator controller setting is off sends
+/// everything through the agent, whatever the emulators serve, and the
+/// check says so with how to turn the controller back on.
+#[test]
+fn a_daemon_that_leaves_the_controller_unused_says_so() {
+    let mut host = with_emulators(vec![(
+        PathBuf::from("pid_101.ini"),
+        "port.serial=5554\ngrpc.port=8554\n".to_owned(),
+    )]);
+    if let Ok(data) = host.daemon.as_mut() {
+        data["emulatorController"] = json!("off");
+    }
+    let (status, message, hint) = host.check("emulator-control");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(
+        message.contains("off") && message.contains("agent"),
+        "{message}"
+    );
+    let hint = hint.unwrap_or_default();
+    assert!(
+        hint.contains("MOBILE_AGENT_EMULATOR_CONTROLLER") && hint.contains("shutdown"),
+        "{hint}"
+    );
+    // Without an emulator the setting still shows.
+    let mut idle = Host::healthy();
+    if let Ok(data) = idle.daemon.as_mut() {
+        data["emulatorController"] = json!("off");
+    }
+    assert_eq!(idle.check("emulator-control").0, Status::Warn);
+}
+
 #[test]
 fn no_running_emulator_skips_the_control_check() {
     let (status, message, _) = Host::healthy().check("emulator-control");

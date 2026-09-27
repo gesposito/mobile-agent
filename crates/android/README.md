@@ -216,7 +216,7 @@ given one). The resulting `Selection` goes to `Session::start_selected`.
 |---|---|---|---|---|---|
 | Emulator whose controller connects | controller | controller stream | agent | agent | none |
 | Emulator whose controller does not resolve or answer | agent | none | agent | agent | the launch flag and the console command |
-| Emulator with the controller turned off, or a device | agent | none | agent | agent | none |
+| Emulator with the controller turned off (the daemon's `--emulator-controller off`, task 10.12), or a device | agent | none | agent | agent | none |
 
 - Screenshots go through the agent on both paths: it returns them upright in
   every display orientation, and the controller's frames follow the

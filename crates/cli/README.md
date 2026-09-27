@@ -76,6 +76,7 @@ beat the environment, which beats the settings files.
 | `--default-timeout <ms>` | `MOBILE_AGENT_DEFAULT_TIMEOUT` | 10000 |
 | `--config <path>` | `MOBILE_AGENT_CONFIG` | see below |
 | `--idle-timeout <time>` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h` (for a daemon this command starts) |
+| `--emulator-controller <auto\|off>` | `MOBILE_AGENT_EMULATOR_CONTROLLER` | `auto` (for a daemon this command starts): taps, swipes and frames on an Android emulator go through its gRPC controller when it answers; `off` sends them through the agent, as on a device |
 | `--socket-dir <dir>` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent` |
 | `--daemon-bin <path>` (hidden) | `MOBILE_AGENT_DAEMON_BIN` | `mobile-agent-daemon` beside `mobile-agent`, else on `PATH` |
 
@@ -83,7 +84,18 @@ Boolean variables take `1`, `true`, `yes` or `on`. Settings files are read
 as agent-browser reads its own: `--config` or `MOBILE_AGENT_CONFIG` alone,
 else `~/.mobile-agent/config.json` overlaid key by key by
 `./mobile-agent.json`. Their keys are `json`, `session`, `platform`,
-`device`, `defaultTimeout` and `idleTimeout`; others are ignored.
+`device`, `defaultTimeout`, `idleTimeout` and `emulatorController`; others
+are ignored.
+
+`--emulator-controller off` exists because Emulator 37.1.11 serves its
+token-protected controller even when started without `-grpc`; only
+`-ports` leaves it off, so the setting is how an emulator that serves it
+takes the agent's path, the path every physical device takes. Like the idle
+timeout it applies to a daemon the command starts: a running daemon keeps
+its own, which `status` names on the daemon's line (`emulator controller
+off`) and in each emulator's lines, and `doctor` in its `emulator-control`
+check; `mobile-agent shutdown` lets the next command start one with the new
+setting.
 
 ## Output
 
@@ -245,7 +257,7 @@ compatibility table. Only the daemon check fails doctor.
 | `simulator-runtimes` | the available iOS runtimes in `xcrun simctl list runtimes --json` |
 | `android-sdk` | `ANDROID_HOME`, `ANDROID_SDK_ROOT` or the default location, and `adb version` |
 | `adb-server` | `host:version` on `ANDROID_ADB_SERVER_PORT` or 5037 |
-| `emulator-control` | each running emulator's gRPC control endpoint in its discovery file; the `-grpc`, `-grpc-use-token` and `emu grpc` hint when it has none |
+| `emulator-control` | each running emulator's gRPC control endpoint in its discovery file; the `-grpc`, `-grpc-use-token` and `emu grpc` hint when it has none; a warning, with how to turn it back on, when the daemon's emulator controller setting is off |
 | `sfw`, `just` | on `PATH`, with the install commands through Socket Firewall |
 | `xcode-compatibility` | the table's rows, which the Simulator driver supplies through `Driver::compatibility` |
 
@@ -383,6 +395,11 @@ Task 8.13 adds `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`
 and `spans::the_first_click_after_open_reports_its_first_frame_change`;
 task 8.15 `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`
 and `spans::the_first_click_after_open_does_not_wait_for_the_input_session`.
+Task 10.12's emulator controller setting has
+`lifecycle::the_emulator_controller_setting_reaches_the_daemon_the_cli_starts`,
+`output::tests::status_names_the_emulator_controller_when_it_is_off`,
+`doctor::a_daemon_that_leaves_the_controller_unused_says_so` and
+`config::tests::a_project_file_overrides_the_user_file_key_by_key`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

@@ -44,14 +44,15 @@ src/
   driver.rs     the Driver factory contract and the registration point
   devices/      the device drivers: simulator (Simulator driver), android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          claims, idle and lifecycle, over the socket against the binary; devices,
-                the CLI against a real Simulator and emulator
+tests/          claims, controller, idle and lifecycle, over the socket against the binary;
+                devices, the CLI against a real Simulator and emulator
 ```
 
 ## Running
 
 ```sh
 mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
+                    [--emulator-controller <auto|off>]
                     [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
 ```
 
@@ -60,6 +61,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--socket-dir` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent`, else `mobile-agent` in the temporary directory |
 | `--idle-timeout` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h`; raw milliseconds or a whole number with `s`, `m` or `h`; `0` never exits |
 | `--drivers` | `MOBILE_AGENT_DRIVERS` | every device driver the host runs: `simulator` (macOS only) and `android`; none when fake targets are named. Comma-separated names, `ios` for `simulator`, or `none` |
+| `--emulator-controller` | `MOBILE_AGENT_EMULATOR_CONTROLLER` | `auto`: taps, swipes and frames on an Android emulator go through its gRPC controller when it answers. `off` sends them through the agent on every emulator, as on a device, with no frame stream; fake emulators then have no frame source either. Any other value is a usage error |
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
 | `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
 | `--fake-frame-delay` | `MOBILE_AGENT_FAKE_FRAME_DELAY_MS` | `0`; how long after the attach fake targets' frame streams start, in the same forms |
@@ -123,7 +125,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 
 | Action | Parameters | Data |
 |---|---|---|
-| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers}`, `targets [{id, platform, class, name, state, attached, frameSource, app, claimedBy, driver}]` (`frameSource` whether the attached target has a frame source, null before it is attached; `driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
+| `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers, emulatorController}`, `targets [{id, platform, class, name, state, attached, frameSource, app, claimedBy, driver}]` (`frameSource` whether the attached target has a frame source, null before it is attached; `driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
 | `devices` | `platform` | `devices [{id, platform, class, name, state, model, os, advice, claimedBy}]` (`advice` only for a target its state keeps from automation) |
 | `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` (from the launch request until the screen settled), `firstTreeMs` (until the replica showed the app, null when it did not) |
 | `close` | | `closed`, `app`, `target`; the claim is released |
@@ -139,7 +141,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
-| `doctor` | | `pid`, `version`, `drivers`, `compatibility {rows [{subject, feature, status, note}], note}` |
+| `doctor` | | `pid`, `version`, `drivers`, `emulatorController`, `compatibility {rows [{subject, feature, status, note}], note}` |
 | `shutdown` | | `stopped`; the daemon exits after the reply |
 
 Every target action but `set_timeout` claims its target. Points are device
@@ -419,7 +421,13 @@ wrote), reusing the agent this daemon or its predecessor started when it
 is compatible (records in `android-agents/`), replacing an incompatible
 one, and refusing another holder of UI automation (`automation_conflict`);
 selects the emulator's controller when it answers; and starts the agent
-session, whose backend the mirror runs on. The display's size is read
+session, whose backend the mirror runs on. With `--emulator-controller
+off` it never looks for the controller: taps, swipes and frames take the
+agent's path on every emulator, as on a device (task 10.12). Emulator
+37.1.11 serves its token-protected controller even when started without
+`-grpc`, and only `-ports` leaves it off (`reports/10.1-emulator.md`,
+finding 10), so the setting is how a daemon measures or uses the agent's
+path on an emulator that serves the controller. The display's size is read
 whenever a gesture no element anchors needs it, from the `cur=` size of
 `dumpsys window displays`, which follows the current rotation (`wm size`
 reports the natural orientation's, the fallback).
@@ -433,7 +441,10 @@ reports the natural orientation's, the fallback).
 - screenshots come from the agent, upright in every display orientation.
 - status: the session's report, the agent and the path of each kind of
   input and output, and where the jar came from (`agentJar`: `embedded`, or
-  the path `MOBILE_AGENT_JAR` named) with its build (`agentBuild`).
+  the path `MOBILE_AGENT_JAR` named) with its build (`agentBuild`). An
+  emulator's report carries the daemon's `emulatorController` setting, and
+  when it is off, the line `emulator controller: off, so taps, swipes and
+  frames take the agent's path, as on a device (...)`.
 
 Dropping the attachment stops the agent (`shutdown`, then a kill past
 2 s) and forgets its record, so `shutdown`, an idle exit and a detach
@@ -507,7 +518,11 @@ before its first screen. With `--fake-activation` the target has an input
 session that input waits for until it has been started that long, started
 by the first input or by `open`, and input notes that name the session's
 first input, as a Simulator's. Screenshots are placeholder bytes, not an
-image.
+image. An Android fake reports its paths in `status` as the Android driver
+names them: a fake emulator's input and frames go through the `emulator
+controller`, a fake device's input through the `agent` with no frames.
+With `--emulator-controller off` a fake emulator has no frame source and
+reports the agent's paths, as a real emulator does.
 
 ## Errors
 
@@ -607,6 +622,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
 | (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
+| (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

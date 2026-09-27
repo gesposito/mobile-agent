@@ -113,7 +113,15 @@ struct Env {
 
 impl Env {
     fn start() -> Env {
+        Env::start_with(&[])
+    }
+
+    /// A daemon with `vars` in its environment as well.
+    fn start_with(vars: &[(&str, &str)]) -> Env {
         let mut builder = Daemon::builder().env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "300000");
+        for (key, value) in vars {
+            builder = builder.env(key, value);
+        }
         // The test's environment reaches the daemon without its
         // MOBILE_AGENT_ variables; the agent jar's location is one to keep.
         if let Ok(jar) = std::env::var("MOBILE_AGENT_JAR") {
@@ -986,3 +994,59 @@ fn doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills() {
         human.stdout
     );
 }
+
+/// The daemon's switch that leaves emulators' controllers unused (task
+/// 10.12), `MOBILE_AGENT_EMULATOR_CONTROLLER=off`, on an emulator that
+/// serves its controller: `status` names the agent's paths, no frame comes
+/// from the controller, and a click goes through the agent.
+#[test]
+fn the_controller_switch_leaves_a_served_controller_unused() {
+    let test = "the_controller_switch_leaves_a_served_controller_unused";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    if let Err(unavailable) = android::emulator::resolve(&serial) {
+        eprintln!(
+            "skipped {test}: {serial} serves no controller for the switch to leave unused: {}",
+            unavailable.warning()
+        );
+        return;
+    }
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    let _fixture = ComposeStopped::new(&device);
+    let mut env = Env::start_with(&[("MOBILE_AGENT_EMULATOR_CONTROLLER", "off")]);
+    let opened = env.on(&serial, &["open", COMPOSE]).data();
+    assert_eq!(opened["settled"], true, "{opened}");
+    let login = listing(&env.on(&serial, &["snapshot", "-i"]).data());
+    let tab = ref_of(&login, "tab-big");
+    let clicked = env.on(&serial, &["click", &tab]).data();
+    assert_eq!(clicked["accepted"], true, "{clicked}");
+    assert!(
+        clicked["frameChangeMs"].is_null(),
+        "no frame source, so no frame change: {clicked}"
+    );
+
+    let status = env.cli(&["--json", "status"]).data();
+    assert_eq!(status["daemon"]["emulatorController"], "off", "{status}");
+    let target = status_of(&status, &serial);
+    assert_eq!(target["frameSource"], false, "{target}");
+    let driver = &target["driver"];
+    assert_eq!(driver["input"], "agent", "{target}");
+    assert_eq!(driver["frames"], Value::Null, "{target}");
+    assert_eq!(driver["endpoint"], Value::Null, "{target}");
+    assert_eq!(driver["warning"], Value::Null, "{target}");
+    assert_eq!(driver["emulatorController"], "off", "{target}");
+    assert_eq!(driver["framesReceived"], 0, "{target}");
+    assert_eq!(
+        (
+            driver["inputs"]["controller"].as_u64(),
+            driver["inputs"]["agent"].as_u64()
+        ),
+        (Some(0), Some(1)),
+        "the click went through the agent: {target}"
+    );
+    env.shutdown();
+}
+

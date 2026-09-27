@@ -96,8 +96,9 @@ pub(crate) fn settle_max(request: &Request) -> Result<Duration, Failure> {
     }
 }
 
-/// What `doctor` asks of the daemon: its identity, drivers and the rows
-/// the drivers contribute to the compatibility table.
+/// What `doctor` asks of the daemon: its identity, drivers, emulator
+/// controller setting and the rows the drivers contribute to the
+/// compatibility table.
 fn doctor(daemon: &Daemon) -> Outcome {
     let registry = daemon.registry();
     let rows: Vec<Value> = registry
@@ -119,6 +120,7 @@ fn doctor(daemon: &Daemon) -> Outcome {
         "pid": std::process::id(),
         "version": daemon.version,
         "drivers": registry.driver_names(),
+        "emulatorController": daemon.emulator_controller.name(),
         "compatibility": {"rows": rows, "note": note},
     })))
 }
@@ -251,6 +253,7 @@ fn status(daemon: &Daemon) -> Outcome {
             "uptimeMs": daemon.started.elapsed().as_millis() as u64,
             "idleTimeoutMs": daemon.idle.map(|idle| idle.as_millis() as u64),
             "drivers": drivers,
+            "emulatorController": daemon.emulator_controller.name(),
         },
         "targets": targets,
         "sessions": sessions,

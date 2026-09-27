@@ -124,6 +124,53 @@ fn the_idle_timeout_flag_reaches_the_daemon_the_cli_starts() {
     assert_eq!(status["data"]["daemon"]["idleTimeoutMs"], 2000, "{status}");
 }
 
+/// Task 10.12: the emulator controller setting reaches the daemon the CLI
+/// starts from the flag, the variable or a settings file, and a fake
+/// emulator then attaches without a frame source, its input through the
+/// agent.
+#[test]
+fn the_emulator_controller_setting_reaches_the_daemon_the_cli_starts() {
+    let controller =
+        |status: &serde_json::Value| status["data"]["daemon"]["emulatorController"].clone();
+    let flag = TestEnv::new("android");
+    let status = flag
+        .cli(&["--json", "--emulator-controller", "off", "status"])
+        .ok()
+        .json();
+    assert_eq!(controller(&status), "off", "{status}");
+    flag.cli(&["snapshot"]).ok();
+    let status = flag.cli(&["--json", "status"]).ok().json();
+    let emulator = &status["data"]["targets"][0];
+    assert_eq!(emulator["id"], "emulator-5554", "{status}");
+    assert_eq!(emulator["frameSource"], false, "{status}");
+    assert_eq!(emulator["driver"]["input"], "agent", "{status}");
+    let human = flag.cli(&["status"]).ok().stdout;
+    assert!(human.contains("emulator controller off"), "{human}");
+
+    let variable = TestEnv::new("android");
+    let status = variable
+        .cli_env(
+            &["--json", "status"],
+            &[("MOBILE_AGENT_EMULATOR_CONTROLLER", "off")],
+        )
+        .ok()
+        .json();
+    assert_eq!(controller(&status), "off", "{status}");
+
+    let settings = TestEnv::new("android");
+    std::fs::write(
+        settings.path().join("mobile-agent.json"),
+        r#"{"emulatorController": "off"}"#,
+    )
+    .expect("the settings file is written");
+    let status = settings.cli(&["--json", "status"]).ok().json();
+    assert_eq!(controller(&status), "off", "{status}");
+
+    let default = TestEnv::new("android");
+    let status = default.cli(&["--json", "status"]).ok().json();
+    assert_eq!(controller(&status), "auto", "{status}");
+}
+
 #[test]
 fn a_daemon_that_fails_to_start_is_reported_with_its_error() {
     let env = TestEnv::new("windows");

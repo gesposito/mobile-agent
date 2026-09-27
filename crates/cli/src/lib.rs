@@ -239,6 +239,10 @@ pub fn run(args: Vec<OsString>) -> i32 {
             dir: client::socket_dir(global.socket_dir.as_deref()),
             daemon: global.daemon_bin.clone(),
             idle_timeout: global.idle_timeout.clone().or(config.idle_timeout),
+            emulator_controller: global
+                .emulator_controller
+                .clone()
+                .or(config.emulator_controller),
         },
     };
     let cwd = std::env::current_dir().unwrap_or_default();

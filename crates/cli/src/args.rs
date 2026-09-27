@@ -98,6 +98,10 @@ pub struct Global {
     )]
     pub idle_timeout: Option<String>,
 
+    /// Whether a daemon this command starts sends taps, swipes and frames on Android emulators through the emulator's gRPC controller when it answers (auto) or through the agent, as on a device (off) [default: auto]
+    #[arg(long, global = true, help_heading = "Global Options", env = "MOBILE_AGENT_EMULATOR_CONTROLLER", value_name = "MODE", value_parser = ["auto", "off"], ignore_case = true)]
+    pub emulator_controller: Option<String>,
+
     /// Directory of the daemon's socket [default: $XDG_RUNTIME_DIR/mobile-agent, else ~/.mobile-agent]
     #[arg(
         long,

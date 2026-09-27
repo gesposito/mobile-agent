@@ -9,8 +9,8 @@
 //!   environment, and doctor's Xcode compatibility table.
 //! - [`android`]: adb targets in every state; the resident agent deployed,
 //!   reused or replaced and its session, the emulator's controller when it
-//!   answers, launches by package with string extras, and the agent stopped
-//!   when the target is detached.
+//!   answers and the daemon does not leave it unused, launches by package
+//!   with string extras, and the agent stopped when the target is detached.
 
 pub(crate) mod android;
 pub(crate) mod simulator;
@@ -18,7 +18,7 @@ pub(crate) mod simulator;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::driver::Driver;
+use crate::driver::{Driver, EmulatorController};
 
 /// The device drivers this host runs, in registration order: the Simulator
 /// driver needs macOS.
@@ -29,11 +29,18 @@ pub(crate) const DEFAULT: &[&str] = if cfg!(target_os = "macos") {
 };
 
 /// The device driver `name` (as [`DEFAULT`] lists them), keeping what
-/// outlives the daemon under `state_dir`.
-pub(crate) fn driver(name: &str, state_dir: &Path) -> Result<Arc<dyn Driver>, String> {
+/// outlives the daemon under `state_dir`; `controller` says whether the
+/// Android driver uses emulators' controllers.
+pub(crate) fn driver(
+    name: &str,
+    state_dir: &Path,
+    controller: EmulatorController,
+) -> Result<Arc<dyn Driver>, String> {
     match name {
         simulator::NAME => Ok(Arc::new(simulator::SimulatorDevices::new())),
-        android::NAME => Ok(Arc::new(android::AndroidDevices::new(state_dir))),
+        android::NAME => Ok(Arc::new(android::AndroidDevices::new(
+            state_dir, controller,
+        ))),
         other => Err(format!("{other:?} is not a device driver")),
     }
 }

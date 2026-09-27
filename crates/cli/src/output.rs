@@ -270,9 +270,16 @@ fn status(data: &Value, out: &mut String) {
         Some(ms) => format!("idle timeout {ms} ms"),
         None => "no idle timeout".to_owned(),
     };
+    // The emulator controller setting is named when it leaves the
+    // controller unused.
+    let controller = if daemon["emulatorController"] == "off" {
+        ", emulator controller off"
+    } else {
+        ""
+    };
     let _ = writeln!(
         out,
-        "daemon: running, pid {}, version {}, up {} s, {idle}",
+        "daemon: running, pid {}, version {}, up {} s, {idle}{controller}",
         daemon["pid"],
         str_of(daemon, "version"),
         daemon["uptimeMs"].as_u64().unwrap_or(0) / 1000,
@@ -460,6 +467,30 @@ mod tests {
             row.ends_with("device, attached, claimed by default"),
             "{row}"
         );
+    }
+
+    /// Task 10.12: the daemon line names the emulator controller setting
+    /// when it leaves the controller unused, and only then.
+    #[test]
+    fn status_names_the_emulator_controller_when_it_is_off() {
+        let status = |controller: &str| {
+            let reply = ok(json!({
+                "daemon": {"pid": 1, "version": "0.1.0", "socket": "/s", "uptimeMs": 1000,
+                           "idleTimeoutMs": 60000, "emulatorController": controller},
+                "targets": [],
+                "sessions": [],
+            }));
+            human("status", &reply).0
+        };
+        let off = status("off");
+        assert!(
+            off.lines().next().is_some_and(
+                |line| line.ends_with("idle timeout 60000 ms, emulator controller off")
+            ),
+            "{off}"
+        );
+        let auto = status("auto");
+        assert!(!auto.contains("emulator controller"), "{auto}");
     }
 
     #[test]
