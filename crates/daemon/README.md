@@ -104,7 +104,9 @@ several requests. Lines that start like an HTTP request are refused.
 {"id": "r123457", "success": false, "data": null, "error": "e2 is stale: ...", "code": "stale_ref"}
 ```
 
-`session` defaults to `default`. `force: true` takes a claimed target over.
+`session` defaults to `default`. `force: true` takes a claimed target over,
+and when the command attaches the target, what keeps it from automation:
+another holder of Android's UI automation, which the new agent stops.
 `device` and `platform` select the target. `code` and `warning` appear only
 when set; `data` carries details on some failures (`holder`, `candidates`).
 
@@ -250,7 +252,8 @@ timeout.
 pub trait Driver: Send + Sync {
     fn name(&self) -> &str;
     fn discover(&self) -> Result<Vec<TargetInfo>, DriverError>;
-    fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError>;
+    fn attach(&self, target: &TargetInfo, options: &AttachOptions)
+        -> Result<Attachment, DriverError>;   // options.force: the command's --force
     fn compatibility(&self) -> Vec<CompatibilityRow> { Vec::new() }
 }
 
@@ -450,7 +453,7 @@ names (`unsupported_xcode`, `target_unavailable`, `no_foreground`,
 | Code | When |
 |---|---|
 | `target_not_ready` | the target's state is not `device`; the message carries the advice |
-| `automation_conflict` | another process holds the device's UI automation, likely the one named |
+| `automation_conflict` | another process holds the device's UI automation, likely the one named; the command with `--force` takes it over |
 | `agent_failed` | the agent jar could not be read, or the agent did not start or complete its handshake |
 | `agent_mismatch` | the jar reports another version than this daemon deploys; rebuild it |
 | `adb_failed` | the adb server or the device failed a request |

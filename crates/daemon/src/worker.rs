@@ -275,9 +275,9 @@ fn serve(
                     .clamp(Duration::from_millis(1), IDLE_PUMP)
             });
         match queue.recv_timeout(wait) {
-            Ok(Job::Run(task, _options, reply)) => {
+            Ok(Job::Run(task, options, reply)) => {
                 if attached.is_none() {
-                    match driver.attach(info, &AttachOptions::default()) {
+                    match driver.attach(info, &options) {
                         Ok(attachment) => {
                             let mut current = lock(status);
                             current.attached = true;

@@ -185,7 +185,7 @@ impl Driver for AndroidDevices {
     fn attach(
         &self,
         target: &TargetInfo,
-        _options: &AttachOptions,
+        options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
         ready(target)?;
         let device = self.server.device(&target.id);
@@ -199,8 +199,14 @@ impl Driver for AndroidDevices {
             &ControllerChoice::Auto,
             emulator::Options::default(),
         );
+        // A forced command takes UI automation over from another holder,
+        // which the new agent stops.
+        let deploy = DeployOptions {
+            force: options.force,
+            ..DeployOptions::default()
+        };
         let attached = Deployer::new(device.clone(), jar, self.records())
-            .attach(&DeployOptions::default())
+            .attach(&deploy)
             .map_err(deploy_error)?;
         let session = Session::start_selected(attached, SessionOptions::default(), selection)
             .map_err(|e| DriverError::new(ADB_FAILED, e.to_string()))?;
@@ -509,6 +515,20 @@ pub(crate) fn status_report(status: &Status) -> TargetReport {
 /// A deployment failure with a stable code: another holder of UI
 /// automation, the adb server, the agent, or its record.
 pub(crate) fn deploy_error(error: DeployError) -> DriverError {
+    if let DeployError::Conflict(conflict) = &error {
+        let who = conflict.holder.as_ref().map_or_else(
+            || "a process the device does not name".to_owned(),
+            |h| format!("likely {h}"),
+        );
+        return DriverError::new(
+            AUTOMATION_CONFLICT,
+            format!(
+                "another process holds UI automation, {who}: {}. Run the command again with \
+                 --force to take it over, which stops that holder",
+                conflict.detail
+            ),
+        );
+    }
     let code = match &error {
         DeployError::Conflict(_) => AUTOMATION_CONFLICT,
         DeployError::Adb(_) => ADB_FAILED,
