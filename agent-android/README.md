@@ -11,7 +11,8 @@ version banner described below.
 ```
 agent-android/
   VERSION                  agent version, compiled into the banner
-  build.sh                 kotlinc + d8 build, no Gradle
+  build.sh                 kotlinc + R8 build, no Gradle
+  agent.pro                R8 keep rules
   test.sh                  on-device smoke test
   codec-test.sh            golden cross-check of the codec against crates/protocol
   codec-test/              the Kotlin side of that cross-check
@@ -58,12 +59,19 @@ the agent uses it unchanged for every frame it sends and receives.
    device. `-no-reflect` keeps kotlin-reflect out of scope because the dex does
    not include it. `-Werror` follows the workspace rule that warnings fail
    validation.
-3. **Dex.**
-   `d8 --release --min-api 26 --lib android.jar --output out/dex <each .class file> kotlin-stdlib.jar`.
-   d8 accepts class files and archives but not directories, so each class file
-   is passed on its own. The Kotlin stdlib is dexed in so that the jar needs
-   nothing else on the device's class path. The build fails if d8 splits the
-   output into more than one dex file.
+3. **Shrink and dex.**
+   `java -cp build-tools/<v>/lib/d8.jar com.android.tools.r8.R8 --release --min-api 26 --lib android.jar --classpath annotations-13.0.jar --pg-conf agent.pro --output out/dex <each .class file> kotlin-stdlib.jar`.
+   R8 ships in the same jar as d8. It keeps what `agent.pro` names, the entry
+   point `app_process` calls by reflection, and whatever that reaches; every
+   other reflective call in the agent targets framework members, which live
+   in the library jar and are never renamed or removed. Names are kept
+   (`-dontobfuscate`) so stack traces and `internal` errors stay readable. The
+   stdlib refers to JetBrains annotations, so the Kotlin home's
+   `annotations-13.0.jar` goes on R8's classpath. R8 accepts class files and
+   archives but not directories, so each class file is passed on its own; the
+   stdlib is shrunk in, so the jar needs nothing else on the device's class
+   path. The build fails if the output is more than one dex file. `SHRINK=0
+   ./build.sh` dexes everything unshrunk with `d8 --release` instead.
 4. **Package.** `jar --create --no-manifest` makes `classes.dex` the only member
    of `dist/mobile-agent-android.jar`. `app_process` accepts that jar on
    `CLASSPATH`.
@@ -73,14 +81,14 @@ dex size:
 
 ```
 /…/agent-android/dist/mobile-agent-android.jar
-classes.dex 2281104 (build-tools 36.0.0; 2277628 with build-tools 37.0.0) bytes
+classes.dex 115844 bytes
 ```
 
 Tool resolution:
 
-- **d8.** Taken from the newest `$ANDROID_HOME/build-tools/*`, never from PATH.
-  The SDK's cmdline-tools and Homebrew ship their own d8 releases.
-- **kotlinc and `kotlin-stdlib.jar`.** Both come from one Kotlin home, so the
+- **d8 and R8.** Taken from the newest `$ANDROID_HOME/build-tools/*`, never
+  from PATH. The SDK's cmdline-tools and Homebrew ship their own releases.
+- **kotlinc, `kotlin-stdlib.jar` and `annotations-13.0.jar`.** All come from one Kotlin home, so the
   compiler and the dexed stdlib always match. The home is `KOTLIN_HOME` if set.
   Otherwise it is the install behind `kotlinc` on PATH, with symlinks resolved;
   a mise shim is resolved with `mise which kotlinc`.
@@ -290,23 +298,21 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   for SIGKILL. App restarts and rotation need nothing of the agent: window
   events announce them and the next read follows.
 
-## Dex size baseline
+## Dex size
 
-| Measure | Value |
-| --- | --- |
-| `classes.dex` | 2,281,104 with build-tools 36.0.0, 2,277,628 with build-tools 37.0.0, which also reads Kotlin 2.4 metadata and prints no diagnostics bytes |
-| Agent classes alone (stdlib on the classpath, not dexed) | 2,432 bytes |
-| `mobile-agent-android.jar` (deflated) | 663,748 bytes |
-| Dex contents | 1,083 classes, 12,700 method references |
-| Toolchain | Kotlin 2.4.20 stdlib, D8 8.10.9 (build-tools 36.0.0), `--release --min-api 26` |
+| Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
+| --- | --- | --- |
+| `classes.dex` | 115,844 bytes | 2,416,668 bytes |
+| `mobile-agent-android.jar` (deflated) | 59,168 bytes | 722,658 bytes |
+| Dex contents | 150 classes, 728 method references | 1,216 classes, 13,318 method references |
+| Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
-The Kotlin stdlib, dexed whole and unshrunk, accounts for almost all of the size.
-The build is reproducible: repeated builds produce byte-identical dex files.
-
-This is the baseline for the dex-size gate in spike S5 (design D4): a wire-format
-candidate may add under 100 KB. The size depends on the toolchain, so compare
-builds made with the same Kotlin and D8 versions. For example, D8 9.4.14 gives
-2,277,544 bytes for the same input.
+`test.sh` fails when `classes.dex` is not under 300,000 bytes (task 4.10).
+Unshrunk, the Kotlin stdlib accounts for almost all of the size: the
+banner-only agent of task 1.5 dexed to 2,281,104 bytes with build-tools
+36.0.0. The build is reproducible: repeated builds produce byte-identical dex
+files. Sizes depend on the toolchain, so compare builds made with the same
+Kotlin and R8 versions.
 
 ## Smoke test
 
