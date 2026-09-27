@@ -91,7 +91,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 8.6 Add failing tests that a 2 s wait fails at 2 s and that the agent guide is under 120 lines, then implement timeouts, per-command help and the guide; verify red-then-green
 - [x] 8.7 Add failing tests for each `doctor` check, then implement `doctor` covering toolchains, ADB server, emulator flag hints and the Xcode table; verify red-then-green and the output on this machine lists every check with a status
 - [ ] 8.8 Add failing end-to-end tests that `devices`, `open`, `snapshot -i`, `click @ref` and `wait --settle` work against the Simulator fixture and against the emulator fixture through the real drivers, then register the Simulator and Android drivers in the daemon's target registry behind the mirror's backend traits; verify red-then-green on both targets
-- [ ] 8.9 Add failing tests that `click` and `tap` results carry the tap-to-first-frame-change and tap-to-first-tree-delta spans when the target has frames and events, and that `wait --settle` reports which signal ended the wait, then implement them in the daemon and CLI so the harness can measure those primitives; verify red-then-green
+- [x] 8.9 Add failing tests that `click` and `tap` results carry the tap-to-first-frame-change and tap-to-first-tree-delta spans when the target has frames and events, and that `wait --settle` reports which signal ended the wait, then implement them in the daemon and CLI so the harness can measure those primitives; verify red-then-green
 
 ## 9. Benchmark harness (`crates/bench`)
 
