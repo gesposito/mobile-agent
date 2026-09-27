@@ -521,6 +521,45 @@ fn open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts() {
     assert!(quick["warning"].as_str().is_some(), "{quick}");
 }
 
+/// Task 8.12: `open` and `close` note the launch and the stop to the mirror
+/// as a change of the window in front, whatever the driver, so a settle
+/// counts it even before the app draws. On targets that show every change
+/// 120 ms late, the settle after an `open` of the app already in front
+/// waits for it to draw again, and a settle right after `close` waits for
+/// the launcher.
+#[test]
+fn open_and_close_are_window_changes_that_a_settle_waits_out() {
+    for fake in ["android", "ios"] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_LATENCY_MS", "120")]);
+        env.cli(&["open", APP]).ok();
+        let again = env.cli(&["--json", "open", APP]).ok().json();
+        assert_eq!(again["data"]["settled"], true, "{fake}: {again}");
+        assert!(
+            again["data"]["elapsedMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= 120.0),
+            "{fake}: the app drew again 120 ms after the launch: {again}"
+        );
+        let quiet = env.cli(&["--json", "wait", "--settle"]).ok().json();
+        assert_eq!(
+            quiet["data"]["endedBy"], "none",
+            "{fake}: open waited the app out: {quiet}"
+        );
+
+        let closed = env
+            .cli(&["--json", "batch", "--bail", "close", "wait --settle"])
+            .ok()
+            .json();
+        let settle = &closed[1]["result"];
+        assert!(
+            settle["elapsedMs"].as_f64().is_some_and(|ms| ms >= 120.0),
+            "{fake}: the launcher showed 120 ms after the stop: {closed}"
+        );
+        assert_eq!(settle["settled"], true, "{fake}: {closed}");
+        assert_ne!(settle["endedBy"], "none", "{fake}: {closed}");
+    }
+}
+
 /// `status` names, for each attached target, whether it has a frame source:
 /// emulators and Simulators do, Android devices do not (design D7).
 #[test]
