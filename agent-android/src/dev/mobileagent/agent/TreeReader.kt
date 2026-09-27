@@ -36,7 +36,7 @@ class Cancelled : RuntimeException() {
  * semantics ([Semantics]): a window whose walk meets Compose content sends
  * no change events, one the walk completed without meeting it does.
  */
-class TreeReader(private val automation: Automation) {
+class TreeReader(private val automation: Automation, private val hooks: TestHooks?) {
     companion object {
         /** Nodes serialized when the request names no cap. */
         const val DEFAULT_MAX_NODES = 10_000
@@ -218,7 +218,7 @@ class TreeReader(private val automation: Automation) {
                 val childSerialized = id >= 0 && item.depth + 1 <= depthCap
                 if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
                 for (i in 0 until count) {
-                    val c = child(n, i) ?: continue
+                    val c = fetch(n, i) ?: continue
                     scrolling?.add(c)
                     queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
                 }
@@ -269,6 +269,13 @@ class TreeReader(private val automation: Automation) {
             SystemClock.uptimeMillis() - t0,
             if (rt0 < 0 || rt < 0) -1 else rt - rt0,
         )
+    }
+
+    /** Child `i` of `n` as the platform returns it, shown to the test hooks when they are armed. */
+    private fun fetch(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? {
+        val c = child(n, i)
+        hooks?.onChild(i, c)
+        return c
     }
 }
 

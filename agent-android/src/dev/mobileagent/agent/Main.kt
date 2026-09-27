@@ -40,7 +40,11 @@ object Main {
             return 2
         }
         val options = try {
-            Options.parse(args.copyOfRange(1, args.size), System.getenv(Options.TOKEN_VARIABLE))
+            Options.parse(
+                args.copyOfRange(1, args.size),
+                System.getenv(Options.TOKEN_VARIABLE),
+                System.getenv(TestHooks.GET_CHILD_NPE),
+            )
         } catch (e: UsageException) {
             System.err.println("usage: ${Options.USAGE}")
             System.err.println(e.message)
@@ -84,7 +88,8 @@ class UsageException(message: String) : Exception(message)
 
 /**
  * Options of `serve`. The per-launch token comes from the environment
- * variable [TOKEN_VARIABLE], so it never appears in the process listing.
+ * variable [TOKEN_VARIABLE], so it never appears in the process listing;
+ * the environment arms [TestHooks] only with `--test-hooks`.
  */
 class Options(
     /** Name of the abstract socket to listen on, unique per launch. */
@@ -101,19 +106,24 @@ class Options(
     @JvmField val composePollMs: Long,
     /** Exit after this long without a connected host; 0 waits forever. */
     @JvmField val idleExitMs: Long,
+    /** Faults the host tests inject, armed with `--test-hooks`; null without it. */
+    @JvmField val testHooks: TestHooks?,
 ) {
     companion object {
         const val TOKEN_VARIABLE = "MOBILE_AGENT_TOKEN"
-        const val USAGE = "serve --socket NAME [--force] [--window-wait-ms N] [--compose-poll-ms N] [--idle-exit-ms N] [--trace]"
+        const val USAGE =
+            "serve --socket NAME [--force] [--window-wait-ms N] [--compose-poll-ms N] [--idle-exit-ms N] [--trace] [--test-hooks]"
         private val SOCKET_NAME = Regex("[A-Za-z0-9._-]{1,100}")
 
-        fun parse(args: Array<String>, token: String?): Options {
+        /** Parses the arguments after `serve`; `getChildNpe` is the value of [TestHooks.GET_CHILD_NPE]. */
+        fun parse(args: Array<String>, token: String?, getChildNpe: String?): Options {
             var socket: String? = null
             var force = false
             var windowWaitMs = 2_000L
             var trace = false
             var composePollMs = 1_000L
             var idleExitMs = 30_000L
+            var testHooks = false
             var i = 0
             fun value(name: String): String {
                 if (i + 1 >= args.size) throw UsageException("$name needs a value")
@@ -130,13 +140,15 @@ class Options(
                     "--trace" -> trace = true
                     "--compose-poll-ms" -> composePollMs = millis(arg)
                     "--idle-exit-ms" -> idleExitMs = millis(arg)
+                    "--test-hooks" -> testHooks = true
                     else -> throw UsageException("unknown argument: $arg")
                 }
                 i++
             }
             val name = socket ?: throw UsageException("--socket is required")
             if (!SOCKET_NAME.matches(name)) throw UsageException("--socket takes 1 to 100 of A-Z a-z 0-9 . _ -")
-            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace, composePollMs, idleExitMs)
+            val hooks = if (testHooks) TestHooks.parse(getChildNpe) else null
+            return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace, composePollMs, idleExitMs, hooks)
         }
     }
 }

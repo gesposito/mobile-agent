@@ -333,6 +333,15 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   it), and the platform releases the role on the process's death, as it does
   for SIGKILL. App restarts and rotation need nothing of the agent: window
   events announce them and the next read follows.
+- **Test hooks** (`TestHooks.kt`). `--test-hooks` arms faults for the host
+  tests from the environment; without the flag the environment arms nothing.
+  `MOBILE_AGENT_TEST_GET_CHILD_NPE=<times>:<resource id>` makes `getChild`
+  in a tree read throw, in place of the child with that resource id and
+  `<times>` times in all, the `NullPointerException` that the accessibility
+  client's integrity check throws on a debuggable build. The exception has
+  the platform's message and top frames, and each throw prints
+  `test-hook get_child_npe id=<resource id> index=<child index> left=<n>`.
+  A malformed value is a usage error (exit 2).
 
 ## Dex size
 

@@ -102,7 +102,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         setProcessName("$PROCESS_NAME ${options.socket}")
         val a = takeOwnership() ?: return EXIT_CONFLICT
         automation = a
-        reader = TreeReader(a)
+        reader = TreeReader(a, options.testHooks)
         textSetter = TextSetter(a, input)
         screenshots = Screenshots(a)
         events = EventHub(a)
