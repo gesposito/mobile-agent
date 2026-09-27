@@ -57,6 +57,7 @@ fn tab_flow() -> Flow {
             Step::AssertVisible(Selector::id("row-1")),
         ],
         count_nodes: false,
+        golden: Default::default(),
     }
 }
 

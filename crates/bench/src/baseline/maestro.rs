@@ -146,6 +146,7 @@ mod tests {
                 },
             ],
             count_nodes: false,
+            golden: Default::default(),
         }
     }
 
@@ -200,6 +201,7 @@ mod tests {
                 },
             ],
             count_nodes: false,
+            golden: Default::default(),
         };
         let yaml = flow_yaml(&flow, "dev.mobileagent.fixture.expo");
         assert!(yaml.contains(r#"    text: "Row 1\\.5""#), "{yaml}");

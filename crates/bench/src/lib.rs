@@ -8,6 +8,7 @@
 
 pub mod adapter;
 pub mod baseline;
+pub mod end_state;
 pub mod fake;
 pub mod fixture;
 pub mod flow;

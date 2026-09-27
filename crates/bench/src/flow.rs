@@ -7,7 +7,45 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::end_state::EndState;
 use crate::fixture::Fixture;
+
+/// The name of [`login`].
+pub const LOGIN: &str = "login";
+/// The name of [`list_scroll`].
+pub const LIST_SCROLL: &str = "list-scroll";
+/// The name of [`big_screen`].
+pub const BIG_SCREEN: &str = "big-screen";
+
+/// The benchmark-harness spec's three flows on `fixture`, in report order.
+pub fn reference(fixture: Fixture) -> Vec<Flow> {
+    vec![login(fixture), list_scroll(fixture), big_screen(fixture)]
+}
+
+/// Signs in on the Login screen.
+pub fn login(fixture: Fixture) -> Flow {
+    unwritten(LOGIN, fixture)
+}
+
+/// Scrolls the 200-row list to its last row and opens the row's detail.
+pub fn list_scroll(fixture: Fixture) -> Flow {
+    unwritten(LIST_SCROLL, fixture)
+}
+
+/// Opens the 500-cell screen and records its node count.
+pub fn big_screen(fixture: Fixture) -> Flow {
+    unwritten(BIG_SCREEN, fixture)
+}
+
+fn unwritten(name: &str, fixture: Fixture) -> Flow {
+    Flow {
+        name: name.to_owned(),
+        fixture,
+        steps: Vec::new(),
+        count_nodes: false,
+        golden: EndState::default(),
+    }
+}
 
 /// A flow: one app, a fixed sequence of steps, and whether the node count of
 /// the screen it ends on is recorded.
@@ -23,6 +61,10 @@ pub struct Flow {
     /// as the 500-node flow does.
     #[serde(default)]
     pub count_nodes: bool,
+    /// What the final screen shows when the flow did its work. Empty for a
+    /// flow without a golden.
+    #[serde(default, skip_serializing_if = "EndState::is_empty")]
+    pub golden: EndState,
 }
 
 /// One step. A flow's timing covers all of its steps.
@@ -119,6 +161,7 @@ mod tests {
                     },
                 ],
                 count_nodes: false,
+                golden: EndState::default(),
             }
         );
         let json = serde_json::to_string(&flow).unwrap();

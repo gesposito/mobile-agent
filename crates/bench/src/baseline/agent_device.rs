@@ -196,6 +196,7 @@ mod tests {
                 },
             ],
             count_nodes: false,
+            golden: Default::default(),
         };
         let steps: Value = serde_json::from_str(&steps(
             &flow,
