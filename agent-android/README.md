@@ -387,9 +387,19 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   `MOBILE_AGENT_TEST_GET_CHILD_NPE=<times>:<resource id>` makes `getChild`
   in a tree read throw, in place of the child with that resource id and
   `<times>` times in all, the `NullPointerException` that the accessibility
-  client's integrity check throws on a debuggable build. The exception has
-  the platform's message and top frames, and each throw prints
-  `test-hook get_child_npe id=<resource id> index=<child index> left=<n>`.
+  client's integrity check throws on a debuggable build; a resource id ending
+  in `*`, such as `cell-*`, names every child whose resource id starts with
+  what precedes it. The exception has the platform's message and top frames,
+  and each throw prints `test-hook get_child_npe id=<resource id>
+  index=<child index> left=<n>`.
+  `MOBILE_AGENT_TEST_PAUSE_AT_CHILD=<nth>:<ms>:<resource id>` makes the walk
+  wait `<ms>` ms before it takes the child with that resource id, the
+  `<nth>` time `getChild` returns it, or until the read is abandoned, so a
+  test can change the screen under a walk; it prints `test-hook pause
+  id=<resource id> index=<child index> ms=<ms>` as the wait starts and
+  `test-hook resume id=<resource id> waited_ms=<n> abandoned=<true|false>`
+  as it ends. `MOBILE_AGENT_TEST_GET_CHILD_AS_RELEASE=1` makes `getChild`
+  return null where the platform's call throws, as a release build does.
   A malformed value is a usage error (exit 2).
 
 ## Dex size
@@ -509,11 +519,14 @@ the agent answers by id and its tests exercise it throughout.
 | | Node limit reached | `tree::a_lower_node_cap_truncates_and_still_reports_the_full_count`, `tree::a_lower_depth_cap_truncates_below_it_and_still_reports_the_full_count` |
 | | Attributes of every node, 500-node screens | `tree::the_compose_500_cell_screen_returns_every_cell_with_total_and_visible_counts`, `tree::the_expo_500_cell_screen_returns_every_cell_with_total_and_visible_counts` |
 | | A child the platform fails to return (task 4.11) | `getchild::a_compose_child_whose_fetch_throws_once_is_fetched_again_and_the_read_is_complete`, `getchild::an_expo_child_whose_fetch_throws_once_is_fetched_again_and_the_read_is_complete`, `getchild::a_compose_child_whose_fetch_throws_twice_is_skipped_and_counted_as_omitted_in_a_truncated_read`, `getchild::an_expo_child_whose_fetch_throws_twice_is_skipped_and_counted_as_omitted_in_a_truncated_read` |
+| | Children that keep throwing (task 10.9) | `teardown::a_read_whose_every_cell_throws_retries_within_its_budget_and_skips_the_rest` |
+| | A subtree torn down during a read (task 10.9) | `teardown::a_snapshot_whose_walk_meets_a_torn_down_subtree_reads_the_new_screen_from_the_root`, `teardown::a_snapshot_whose_walk_meets_a_torn_down_subtree_as_a_release_build_reads_the_new_screen` |
 | android-driver: Bounded idle waiting | Continuous animation | `idle::a_snapshot_during_an_endless_animation_returns_within_the_default_bound_plus_read_time` |
 | | No wait at all, a requested bound, a quiet screen | `idle::idle_zero_reads_at_once_during_an_animation`, `idle::a_requested_bound_caps_the_wait`, `idle::a_quiet_screen_is_read_without_waiting_for_the_bound` |
 | android-driver: Change events | Single field changes | `events::editing_one_react_native_field_emits_events_naming_that_field_only` |
 | | Window changes, sequence numbers | `events::a_keyboard_appearing_is_reported_on_the_window_stream` (and the numbering check in every events test) |
 | | Compose windows re-read on a poll (design D5) | `events::a_compose_window_is_reread_on_a_poll_and_its_change_reported` |
+| | A Compose re-read that meets a torn-down subtree (task 10.9) | `teardown::a_compose_reread_that_meets_a_torn_down_subtree_reads_the_new_screen_and_reports_the_change` |
 | device-protocol: Event channel with sequence numbers | Agent side of a resync | `events::a_tree_resync_answers_the_last_sequence_and_the_next_read_is_full` |
 | android-driver: Input injection | Tap acknowledged | `input::a_tap_is_acknowledged_as_accepted_within_50_ms`, `input::a_tap_the_platform_refuses_is_acknowledged_as_not_accepted` |
 | | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
@@ -526,6 +539,7 @@ the agent answers by id and its tests exercise it throughout.
 | | Portrait, default format, scaling | `screenshot::a_portrait_screenshot_is_a_jpeg_of_the_display_and_scales_on_request` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
+| | A snapshot asked for during a Compose re-read (task 10.9) | `teardown::a_snapshot_asked_for_during_a_compose_reread_is_answered_without_waiting_for_it` |
 | ui-mirror: Windows without change events (agent side, task 3.6) | Compose windows marked, dialogs included | `metadata::a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_change_events`, `metadata::an_in_app_alert_is_a_modal_window_of_the_app_that_sends_no_change_events`, `metadata::an_expo_list_is_a_vertical_scroll_view_in_a_window_that_sends_change_events` |
 | ui-mirror: Snapshot content (agent side, task 3.6) | Scroll semantics for rows out of view | `metadata::a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_change_events`, `metadata::an_expo_list_is_a_vertical_scroll_view_in_a_window_that_sends_change_events` |
 | Window owner and modal flag (task 3.6) | Permission prompt, in-app alert | `metadata::a_permission_prompt_is_a_modal_window_owned_by_the_permission_controller`, `metadata::an_in_app_alert_is_a_modal_window_of_the_app_that_sends_no_change_events` |

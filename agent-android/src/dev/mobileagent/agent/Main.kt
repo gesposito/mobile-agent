@@ -40,11 +40,7 @@ object Main {
             return 2
         }
         val options = try {
-            Options.parse(
-                args.copyOfRange(1, args.size),
-                System.getenv(Options.TOKEN_VARIABLE),
-                System.getenv(TestHooks.GET_CHILD_NPE),
-            )
+            Options.parse(args.copyOfRange(1, args.size), System.getenv(Options.TOKEN_VARIABLE), System::getenv)
         } catch (e: UsageException) {
             System.err.println("usage: ${Options.USAGE}")
             System.err.println(e.message)
@@ -115,8 +111,8 @@ class Options(
             "serve --socket NAME [--force] [--window-wait-ms N] [--compose-poll-ms N] [--idle-exit-ms N] [--trace] [--test-hooks]"
         private val SOCKET_NAME = Regex("[A-Za-z0-9._-]{1,100}")
 
-        /** Parses the arguments after `serve`; `getChildNpe` is the value of [TestHooks.GET_CHILD_NPE]. */
-        fun parse(args: Array<String>, token: String?, getChildNpe: String?): Options {
+        /** Parses the arguments after `serve`; `env` looks up the environment variables of [TestHooks]. */
+        fun parse(args: Array<String>, token: String?, env: (String) -> String?): Options {
             var socket: String? = null
             var force = false
             var windowWaitMs = 2_000L
@@ -147,7 +143,7 @@ class Options(
             }
             val name = socket ?: throw UsageException("--socket is required")
             if (!SOCKET_NAME.matches(name)) throw UsageException("--socket takes 1 to 100 of A-Z a-z 0-9 . _ -")
-            val hooks = if (testHooks) TestHooks.parse(getChildNpe) else null
+            val hooks = if (testHooks) TestHooks.parse(env) else null
             return Options(name, token?.takeIf { it.isNotEmpty() }, force, windowWaitMs, trace, composePollMs, idleExitMs, hooks)
         }
     }

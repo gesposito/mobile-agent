@@ -18,6 +18,9 @@ use crate::random_hex;
 /// The class `app_process` starts.
 pub const MAIN_CLASS: &str = "dev.mobileagent.agent.Main";
 
+/// The tag of the agent's lines in logcat.
+pub const LOG_TAG: &str = "mobile-agent";
+
 /// How long the device keeps an agent a test started before killing it, so a
 /// test that dies cannot leave it holding UI automation.
 const DEVICE_TIMEOUT_S: u32 = 600;
@@ -250,6 +253,28 @@ impl Agent {
 
     pub fn device(&self) -> &Device {
         &self.device
+    }
+
+    /// The agent's debug lines in logcat, once one of them contains
+    /// `needle`; panics when none does within 3 s.
+    pub fn debug_lines(&self, needle: &str) -> Vec<String> {
+        let tagged = format!(" D {LOG_TAG}: ");
+        crate::poll(Duration::from_secs(3), Duration::from_millis(100), || {
+            let lines: Vec<String> = self
+                .device
+                .shell(&format!("logcat -d --pid={} -s {LOG_TAG}:D", self.pid))
+                .lines()
+                .filter(|l| l.contains(&tagged))
+                .map(str::to_owned)
+                .collect();
+            lines.iter().any(|l| l.contains(needle)).then_some(lines)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "no debug line of pid {} in logcat contains {needle:?}",
+                self.pid
+            )
+        })
     }
 }
 

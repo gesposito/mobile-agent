@@ -305,14 +305,18 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
      */
     private fun childOrRetry(n: AccessibilityNodeInfo, i: Int, window: Int, cancelled: () -> Boolean): AccessibilityNodeInfo? {
         try {
-            return fetch(n, i)
+            return fetch(n, i, cancelled)
+        } catch (e: Cancelled) {
+            throw e
         } catch (e: RuntimeException) {
             Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw; fetching it again in $RETRY_MS ms", e)
         }
         if (cancelled()) throw Cancelled()
         Thread.sleep(RETRY_MS)
         val c = try {
-            fetch(n, i)
+            fetch(n, i, cancelled)
+        } catch (e: Cancelled) {
+            throw e
         } catch (e: RuntimeException) {
             Log.d(LOG_TAG, "child $i of ${describe(n, window)} threw again; skipped: $e")
             throw Unreadable(e)
@@ -321,10 +325,19 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         return c
     }
 
-    /** Child `i` of `n` as the platform returns it, shown to the test hooks when they are armed. */
-    private fun fetch(n: AccessibilityNodeInfo, i: Int): AccessibilityNodeInfo? {
-        val c = child(n, i)
-        hooks?.onChild(i, c)
+    /**
+     * Child `i` of `n` as the platform returns it, shown to the test hooks
+     * when they are armed: they can make the read wait, until `cancelled`, or
+     * answer null where the platform's call throws, as a release build does.
+     */
+    private fun fetch(n: AccessibilityNodeInfo, i: Int, cancelled: () -> Boolean): AccessibilityNodeInfo? {
+        val c = try {
+            child(n, i)
+        } catch (e: RuntimeException) {
+            if (hooks?.getChildAsRelease != true) throw e
+            null
+        }
+        hooks?.onChild(i, c, cancelled)
         return c
     }
 

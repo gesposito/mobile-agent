@@ -15,7 +15,7 @@ use std::time::Duration;
 use agent_android_host_tests::agent::fields;
 use agent_android_host_tests::client::Client;
 use agent_android_host_tests::tree::{self, find, find_all, nodes};
-use agent_android_host_tests::{Agent, Device, Launch, device, fixture, poll};
+use agent_android_host_tests::{Agent, Device, Launch, device, fixture};
 use protocol::message::{Call, Reply, SnapshotParams};
 use protocol::snapshot::{Node, Snapshot, Truncation};
 
@@ -24,9 +24,6 @@ const TARGET: &str = "cell-7";
 
 /// The environment variable that arms the hook.
 const HOOK_VAR: &str = "MOBILE_AGENT_TEST_GET_CHILD_NPE";
-
-/// The tag of the agent's lines in logcat.
-const LOG_TAG: &str = "mobile-agent";
 
 fn snapshot(client: &mut Client) -> Snapshot {
     match client.call(Call::Snapshot(SnapshotParams {
@@ -69,21 +66,6 @@ fn hook_lines(agent: &mut Agent, expected: usize) -> Vec<String> {
     let extra = agent.wait_line(Duration::from_millis(300), hook);
     assert_eq!(extra, None, "the hook fired more than {expected} times");
     lines
-}
-
-/// The agent's debug lines in logcat, once one of them contains `needle`.
-fn debug_lines(dev: &Device, pid: u32, needle: &str) -> Vec<String> {
-    let tagged = format!(" D {LOG_TAG}: ");
-    poll(Duration::from_secs(3), Duration::from_millis(100), || {
-        let lines: Vec<String> = dev
-            .shell(&format!("logcat -d --pid={pid} -s {LOG_TAG}:D"))
-            .lines()
-            .filter(|l| l.contains(&tagged))
-            .map(str::to_owned)
-            .collect();
-        lines.iter().any(|l| l.contains(needle)).then_some(lines)
-    })
-    .unwrap_or_else(|| panic!("no debug line of pid {pid} in logcat contains {needle:?}"))
 }
 
 /// The resource ids of the Big screen's cells in `s`.
@@ -133,7 +115,7 @@ fn fetched_again(package: &str) {
     assert_eq!(s.truncated, Truncation::EMPTY, "{}", s.truncated);
     assert_eq!(s.node_count as usize, tree::count(&s), "nodes omitted");
     assert_eq!(cells(&s), all_cells());
-    let log = debug_lines(&dev, agent.pid, "on the second attempt");
+    let log = agent.debug_lines("on the second attempt");
     assert!(
         log.iter().any(|l| l.contains("fetching it again")),
         "{log:#?}"
@@ -189,7 +171,7 @@ fn skipped(package: &str) {
         _ => None,
     };
     assert_eq!(emits_events(&partial, window), expected);
-    let log = debug_lines(&dev, agent.pid, "skipped");
+    let log = agent.debug_lines("skipped");
     assert!(
         log.iter().any(|l| l.contains("fetching it again")),
         "{log:#?}"
