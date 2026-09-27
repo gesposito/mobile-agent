@@ -23,6 +23,8 @@ use crate::model::{DeviceInfo, DeviceState, DeviceTypeInfo, RuntimeInfo};
 /// How long CoreSimulator gets to run a completion handler for calls that
 /// normally answer in under a second.
 const COMPLETION: Duration = Duration::from_secs(120);
+/// How long a deleted device may stay in the device set's list.
+const LISTING: Duration = Duration::from_secs(30);
 
 /// `DEVELOPER_DIR` when set, otherwise the `xcode-select` choice.
 pub fn developer_dir() -> PathBuf {
@@ -148,8 +150,12 @@ impl DeviceSet {
         Ok(Device(Shared::new(device.0)))
     }
 
+    /// Deletes `device` and returns once the set no longer lists it: the
+    /// set's list follows the service's notification, which on a loaded host
+    /// arrives after the deletion's completion.
     pub fn delete(&self, device: &Device) -> Result<()> {
         const CALL: &str = "-[SimDeviceSet deleteDeviceAsync:completionQueue:completionHandler:]";
+        let udid = device.udid()?;
         let (tx, rx) = mpsc::channel();
         let handler = RcBlock::new(move |error: *mut NSError| {
             // SAFETY: CoreSimulator passes nil or a live NSError.
@@ -166,7 +172,25 @@ impl DeviceSet {
                 ];
             }
         })?;
-        objc::wait(rx, CALL, COMPLETION)?
+        objc::wait(rx, CALL, COMPLETION)??;
+        let deadline = Instant::now() + LISTING;
+        loop {
+            let listed = self
+                .devices()?
+                .iter()
+                .map(Device::udid)
+                .collect::<Result<Vec<String>>>()?;
+            if !listed.contains(&udid) {
+                return Ok(());
+            }
+            if Instant::now() > deadline {
+                return Err(Error::Timeout {
+                    what: format!("device {udid} leaving the device set's list after its deletion"),
+                    after: LISTING,
+                });
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 
