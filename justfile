@@ -34,6 +34,10 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# Check that no tracked file names a machine-local path, such as a home or scratch directory
+check-paths:
+    scripts/check-local-paths.sh
+
 # Build the Android agent, skipping when agent-android/build.sh is absent
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
@@ -55,5 +59,5 @@ bench *args:
 openspec-validate:
     openspec validate mobile-automation-foundation --strict
 
-# Run build, lint, fmt-check, test, agent-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check test agent-build codec-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-paths, test, agent-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-paths test agent-build codec-test fixtures-build openspec-validate
