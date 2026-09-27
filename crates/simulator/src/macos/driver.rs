@@ -819,6 +819,11 @@ impl Frames for SimulatorDriver {
 }
 
 impl Input for SimulatorDriver {
+    fn open_input(&self, target: &str, wait: Duration) -> Result<InputStatus> {
+        let _ = (target, wait);
+        unimplemented!("task 6.13: open the input session without input")
+    }
+
     fn tap(&self, target: &str, point: Point) -> Result<Dispatch> {
         self.press(target, point, Duration::ZERO)
     }

@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use simulator::{
     Button, DriverOptions, Input, Key, Lifecycle, SimulatorDriver, TransportChoice, TransportKind,
@@ -235,4 +235,86 @@ fn one_connection_carries_touch_keys_and_buttons() {
     let input = driver.status(&udid).expect("status").input.expect("input");
     assert_eq!(input.transport, TransportKind::Dtuhid);
     assert_eq!(input.connections, 1, "one connection carried all of it");
+}
+
+/// Task 6.13: the input session opens and dtuhidd activates without any
+/// input, so that the daemon's `open` can activate it while the app
+/// launches and the first click waits for nothing.
+#[test]
+fn the_input_session_opens_and_activates_without_input() {
+    let Some(udid) = common::gated("the_input_session_opens_and_activates_without_input") else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = dtuhid();
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    common::show_expo(&driver, &udid, "login");
+    let (stream, settled) = common::settle(&driver, &udid);
+    assert_eq!(
+        driver.status(&udid).expect("status").input,
+        None,
+        "a new driver has no session yet"
+    );
+
+    let start = Instant::now();
+    let status = driver
+        .open_input(&udid, Duration::from_secs(5))
+        .expect("the input session opens");
+    let took = start.elapsed();
+    eprintln!("the input session opened and activated in {took:?}: {status:?}");
+    assert_eq!(status.transport, TransportKind::Dtuhid);
+    let activation = status.activation.expect("dtuhidd answered within the wait");
+    assert!(activation <= took);
+    assert_eq!(status.connections, 1);
+    assert_eq!(
+        driver.status(&udid).expect("status").input,
+        Some(status.clone())
+    );
+    assert!(
+        common::wait_for_change(&stream, &settled, Duration::from_secs(1)).is_none(),
+        "opening the session sent no input"
+    );
+
+    // Opening it again keeps the session and does not wait.
+    let start = Instant::now();
+    let again = driver
+        .open_input(&udid, Duration::from_secs(5))
+        .expect("the open session is kept");
+    assert!(start.elapsed() < Duration::from_millis(50));
+    assert_eq!(again, status);
+
+    // The first input waits for nothing.
+    let tap = driver.tap(&udid, expo::BLANK).expect("a tap");
+    eprintln!("the first tap after it dispatched in {:?}", tap.dispatched);
+    assert_eq!(tap.activation_wait, None, "the session was already active");
+    assert!(tap.dispatched < Duration::from_millis(20), "{tap:?}");
+}
+
+/// A session opened without a wait returns at once and activates on its
+/// own, as the daemon's `open` uses it.
+#[test]
+fn an_input_session_opened_without_waiting_activates_on_its_own() {
+    let Some(udid) = common::gated("an_input_session_opened_without_waiting_activates_on_its_own")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = dtuhid();
+    let start = Instant::now();
+    let status = driver
+        .open_input(&udid, Duration::ZERO)
+        .expect("the input session opens");
+    let returned = start.elapsed();
+    eprintln!("open_input without a wait returned in {returned:?}: {status:?}");
+    assert_eq!(status.transport, TransportKind::Dtuhid);
+    assert!(returned < Duration::from_millis(500), "{returned:?}");
+    let active = common::wait_for(Duration::from_secs(5), || {
+        driver
+            .status(&udid)
+            .is_ok_and(|status| status.input.is_some_and(|input| input.activation.is_some()))
+    });
+    assert!(active, "dtuhidd answered the probe on its own");
 }

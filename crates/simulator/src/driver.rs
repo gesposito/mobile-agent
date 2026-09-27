@@ -12,8 +12,9 @@ use std::time::Duration;
 use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
-    BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, Key, LaunchOptions, Launched,
-    Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
+    BootReport, Button, DeviceInfo, Dispatch, FrameOptions, Gesture, InputStatus, Key,
+    LaunchOptions, Launched, Point, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry,
+    TextMethod,
 };
 use crate::tree::{ForegroundTree, TreeOptions};
 
@@ -80,6 +81,15 @@ pub trait Input {
 
     /// Enters `text` into the focused field and reports how.
     fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry>;
+
+    /// Opens the device's input session, as its first input would, without
+    /// sending any input: dtuhidd gets its activation probe (spike S3), and
+    /// input sent once it answers waits for nothing. Waits up to `wait` for
+    /// the transport to activate and reports the session, whose
+    /// `activation` is still `None` when the wait ran out first; the
+    /// activation then completes on its own. A session already open is
+    /// kept, and Indigo needs no activation.
+    fn open_input(&self, target: &str, wait: Duration) -> Result<InputStatus>;
 }
 
 /// The accessibility tree of whatever owns the foreground (simulator-driver

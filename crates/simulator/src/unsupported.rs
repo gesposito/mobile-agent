@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
     BootReport, Button, DeviceInfo, DeviceTypeInfo, Dispatch, DriverOptions, FrameOptions, Gesture,
-    Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
+    InputStatus, Key, LaunchOptions, Launched, Point, PreferencesOutcome, RuntimeInfo, Screenshot,
     ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
 };
 use crate::tree::{ForegroundTree, TreeOptions};
@@ -139,6 +139,10 @@ impl Input for SimulatorDriver {
     }
 
     fn type_text(&self, _target: &str, _text: &str, _method: TextMethod) -> Result<TextEntry> {
+        match *self {}
+    }
+
+    fn open_input(&self, _target: &str, _wait: Duration) -> Result<InputStatus> {
         match *self {}
     }
 }
