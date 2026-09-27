@@ -10,7 +10,18 @@ claims inside it rather than daemons of their own (research note
 concurrently.
 
 The binary is `mobile-agent-daemon`; the CLI starts it on its first
-command. The library holds the server, the target registry, the driver
+command. It carries the Android agent: `build.rs` runs
+`agent-android/build.sh` on a copy of `agent-android` in its `OUT_DIR`
+(so builds of other profiles never share the script's `out/` and `dist/`,
+and the source tree is left alone), embeds the jar and records its digest,
+the build `AgentJar::build` names, so an installed daemon deploys the agent
+with neither the source tree nor `MOBILE_AGENT_JAR`. The build fails, with
+the script's output, when the jar cannot be built; `MOBILE_AGENT_JAR` at
+build time embeds a prebuilt jar instead, and `SKIP_AGENT_BUILD=1` embeds
+none (the CI jobs without the Android SDK set it), leaving a daemon that
+deploys an agent only from the jar `MOBILE_AGENT_JAR` names at run time.
+`MOBILE_AGENT_JAR` at run time takes precedence over the embedded jar, for
+development. The library holds the server, the target registry, the driver
 contract, the device drivers (the Simulator driver of `crates/simulator`
 and the Android driver of `crates/android` behind the mirror's backend
 traits) and the fake driver every test without a device runs on.
@@ -348,7 +359,8 @@ session, whose backend the mirror runs on. The display size comes from
   launcher activity. `close` force-stops it.
 - screenshots come from the agent, upright in every display orientation.
 - status: the session's report, the agent and the path of each kind of
-  input and output.
+  input and output, and where the jar came from (`agentJar`: `embedded`, or
+  the path `MOBILE_AGENT_JAR` named) with its build (`agentBuild`).
 
 Dropping the attachment stops the agent (`shutdown`, then a kill past
 2 s) and forgets its record, so `shutdown`, an idle exit and a detach

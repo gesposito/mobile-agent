@@ -171,6 +171,7 @@ dependencies = [
  "protocol",
  "serde_json",
  "simulator",
+ "xxhash-rust",
 ]
 
 [[package]]

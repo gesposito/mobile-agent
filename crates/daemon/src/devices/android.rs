@@ -20,7 +20,9 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use android::adb::{self, AdbServer, Device};
-use android::agent::{AgentJar, DeployError, DeployOptions, Deployer, Records};
+use android::agent::{
+    AGENT_VERSION, AgentJar, DeployError, DeployOptions, Deployer, JAR_VAR, Records,
+};
 use android::emulator;
 use android::session::{ControllerChoice, Session, SessionOptions, Status, select_paths};
 use mirror::MirrorConfig;
@@ -61,17 +63,17 @@ const LISTING_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a stopped agent may take to exit before it is killed.
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// The agent jar built into this daemon; empty when its build skipped it.
-#[allow(dead_code)]
-pub(crate) static EMBEDDED_JAR: &[u8] = &[];
+/// The agent jar `build.rs` built with `agent-android/build.sh` and this
+/// daemon embeds; empty when the build was told to skip it
+/// (`SKIP_AGENT_BUILD=1`).
+pub(crate) static EMBEDDED_JAR: &[u8] = include_bytes!(env!("MOBILE_AGENT_EMBEDDED_JAR"));
 
-/// The build of [`EMBEDDED_JAR`], as `AgentJar::build` names it.
-#[allow(dead_code)]
-pub(crate) const EMBEDDED_BUILD: &str = "";
+/// The build of [`EMBEDDED_JAR`], as `AgentJar::build` names it, recorded
+/// by `build.rs`.
+pub(crate) const EMBEDDED_BUILD: &str = env!("MOBILE_AGENT_EMBEDDED_JAR_BUILD");
 
 /// Where the agent jar a daemon deploys comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum JarSource {
     /// The file `MOBILE_AGENT_JAR` names, for development.
     File(PathBuf),
@@ -80,18 +82,47 @@ pub(crate) enum JarSource {
 }
 
 /// Where the jar comes from, given `MOBILE_AGENT_JAR`'s value.
-#[allow(dead_code)]
 pub(crate) fn jar_source(variable: Option<&std::ffi::OsStr>) -> JarSource {
-    let _ = variable;
-    todo!("task 8.11")
+    match variable.filter(|value| !value.is_empty()) {
+        Some(path) => JarSource::File(PathBuf::from(path)),
+        None => JarSource::Embedded,
+    }
 }
 
 /// The jar to deploy from `source`: the file, or the embedded jar, refused
 /// with its reason when this daemon was built without one.
-#[allow(dead_code)]
 pub(crate) fn agent_jar(source: &JarSource) -> Result<AgentJar, DriverError> {
-    let _ = source;
-    todo!("task 8.11")
+    match source {
+        JarSource::File(path) => {
+            AgentJar::from_path(path).map_err(|e| DriverError::new(AGENT_FAILED, e.to_string()))
+        }
+        JarSource::Embedded if EMBEDDED_JAR.is_empty() => Err(DriverError::new(
+            AGENT_FAILED,
+            "this daemon was built with SKIP_AGENT_BUILD=1 and embeds no Android agent; set \
+             MOBILE_AGENT_JAR to a jar agent-android/build.sh wrote, or rebuild the daemon \
+             without SKIP_AGENT_BUILD",
+        )),
+        JarSource::Embedded => Ok(AgentJar::from_bytes(EMBEDDED_JAR, AGENT_VERSION)),
+    }
+}
+
+impl JarSource {
+    /// The source as `status` names it: `embedded`, or the file's path.
+    fn name(&self) -> String {
+        match self {
+            JarSource::File(path) => path.display().to_string(),
+            JarSource::Embedded => "embedded".to_owned(),
+        }
+    }
+
+    /// The build of `jar`, which came from this source: for the embedded
+    /// jar, the digest its build recorded.
+    fn build(&self, jar: &AgentJar) -> String {
+        match self {
+            JarSource::File(_) => jar.build(),
+            JarSource::Embedded => EMBEDDED_BUILD.to_owned(),
+        }
+    }
 }
 
 /// The targets of the local adb server.
@@ -154,7 +185,9 @@ impl Driver for AndroidDevices {
     fn attach(&self, target: &TargetInfo) -> Result<Attachment, DriverError> {
         ready(target)?;
         let device = self.server.device(&target.id);
-        let jar = AgentJar::locate().map_err(|e| DriverError::new(AGENT_FAILED, e.to_string()))?;
+        let source = jar_source(std::env::var_os(JAR_VAR).as_deref());
+        let jar = agent_jar(&source)?;
+        let build = source.build(&jar);
         let emulator = target.class == TargetClass::AndroidEmulator;
         let selection = select_paths(
             &target.id,
@@ -190,7 +223,11 @@ impl Driver for AndroidDevices {
             display,
             config: MirrorConfig::default(),
             capture: Some(Box::new(AgentScreenshots(session.clone()))),
-            report: Some(Arc::new(SessionReport(session))),
+            report: Some(Arc::new(SessionReport {
+                session,
+                jar: source.name(),
+                build,
+            })),
         })
     }
 }
@@ -293,11 +330,27 @@ impl Capture for AgentScreenshots {
     }
 }
 
-struct SessionReport(Session);
+struct SessionReport {
+    session: Session,
+    /// Where the deployed jar came from: `embedded`, or a path.
+    jar: String,
+    /// Its build.
+    build: String,
+}
 
 impl Report for SessionReport {
     fn report(&self) -> TargetReport {
-        status_report(&self.0.status())
+        let mut report = status_report(&self.session.status());
+        report
+            .data
+            .insert("agentJar".into(), self.jar.clone().into());
+        report
+            .data
+            .insert("agentBuild".into(), self.build.clone().into());
+        report
+            .lines
+            .push(format!("agent jar: {}, build {}", self.jar, self.build));
+        report
     }
 }
 
