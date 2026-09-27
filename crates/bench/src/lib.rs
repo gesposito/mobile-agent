@@ -9,6 +9,7 @@
 pub mod adapter;
 pub mod fake;
 pub mod fixture;
+pub mod gates;
 pub mod harness;
 pub mod markdown;
 pub mod primitive;

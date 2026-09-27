@@ -26,6 +26,11 @@ pub fn render(report: &Report) -> String {
     provenance(&mut out, p);
     measurements(&mut out, &report.measurements);
     comparison(&mut out, report);
+    if let Some(gates) = &report.gates {
+        out.push_str("## Gates\n\n");
+        out.push_str(&gates.table());
+        out.push('\n');
+    }
     out
 }
 

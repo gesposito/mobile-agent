@@ -168,6 +168,7 @@ impl Harness {
                 tools,
             },
             measurements,
+            gates: None,
         })
     }
 }

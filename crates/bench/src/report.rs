@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapter::Clock;
 use crate::fixture::{Fixture, Screen};
+use crate::gates::GateReport;
 use crate::harness::Subject;
 use crate::provenance::Provenance;
 use crate::stats::Summary;
@@ -23,6 +24,10 @@ pub struct Report {
     pub schema_version: u32,
     pub provenance: Provenance,
     pub measurements: Vec<Measurement>,
+    /// The gate verdicts, once [`crate::gates::GateSet::evaluate`] has judged
+    /// the run.
+    #[serde(default)]
+    pub gates: Option<GateReport>,
 }
 
 /// One series as measured by one tool.
