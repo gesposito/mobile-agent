@@ -237,6 +237,7 @@ impl Driver for AndroidDevices {
                 jar: source.name(),
                 build,
             })),
+            input_notes: None,
         })
     }
 }

@@ -291,6 +291,7 @@ fn attach(driver: Arc<SimulatorDriver>, udid: &str) -> Result<Attachment, Driver
             shared,
             plan: OnceLock::new(),
         })),
+        input_notes: None,
     })
 }
 

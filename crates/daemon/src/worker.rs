@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use mirror::{Action, ActionOutcome, Mirror, MirrorError, Ref, Snapshot};
 
 use crate::driver::{
-    AppControl, AttachOptions, Attachment, Capture, Driver, Report, Screen, TargetInfo,
+    AppControl, AttachOptions, Attachment, Capture, Driver, InputNotes, Report, Screen, TargetInfo,
 };
 use crate::signals::Observer;
 use crate::wire::{Failure, Success};
@@ -55,6 +55,9 @@ pub(crate) struct Attached {
     pub apps: Box<dyn AppControl>,
     /// Screenshots the driver takes on demand, if it takes them.
     pub capture: Option<Box<dyn Capture>>,
+    /// What the driver knows about the input it dispatched last.
+    #[allow(dead_code)]
+    pub input_notes: Option<Arc<dyn InputNotes>>,
     /// The screen, for gestures no element anchors; read as it is when a
     /// command needs it.
     pub display: Box<dyn Screen>,
@@ -89,6 +92,7 @@ impl Attached {
             mirror: Mirror::new(backend, attachment.config),
             apps: attachment.apps,
             capture: attachment.capture,
+            input_notes: attachment.input_notes,
             display: attachment.display,
             observer,
             frames,

@@ -611,6 +611,12 @@ fn the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator() {
         dir.path(),
     );
 
+    // The click was the first input of the Simulator's input session: its
+    // watch waited for the late effects a fresh activation brings (8.11).
+    assert!(
+        measured.frame_change.is_some() && measured.tree_delta.is_some(),
+        "the first click reports its first frame change and tree delta"
+    );
     let status = env.cli(&["--json", "status"]).data();
     let target = status_of(&status, &udid);
     assert_eq!(target["attached"], true, "{target}");

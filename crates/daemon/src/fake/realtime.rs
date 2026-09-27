@@ -231,6 +231,7 @@ pub(crate) fn attach(platform: Platform, frames: bool, latency: Duration) -> Att
         config: MirrorConfig::default(),
         capture: None,
         report: None,
+        input_notes: None,
     }
 }
 

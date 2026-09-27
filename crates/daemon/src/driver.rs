@@ -158,6 +158,16 @@ pub struct Attachment {
     /// What `status` reports about the target from the driver: its input
     /// path or transport, helpers and failures.
     pub report: Option<Arc<dyn Report>>,
+    /// What the driver knows about the input it dispatched last.
+    pub input_notes: Option<Arc<dyn InputNotes>>,
+}
+
+/// What a driver knows about the input it dispatched last.
+pub trait InputNotes: Send + Sync {
+    /// How long the last input waited for its input transport to activate:
+    /// `Some` for the first input of a new input session, whose effects can
+    /// come later than a warm session's.
+    fn activation_wait(&self) -> Option<Duration>;
 }
 
 /// Launches and stops apps: what the mirror's backend has no place for.

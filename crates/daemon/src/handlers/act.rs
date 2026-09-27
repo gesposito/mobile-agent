@@ -528,6 +528,67 @@ mod tests {
         Request::parse(line).unwrap()
     }
 
+    /// Notes that every input waited for its transport to activate.
+    struct Fresh;
+
+    impl crate::driver::InputNotes for Fresh {
+        fn activation_wait(&self) -> Option<Duration> {
+            Some(Duration::from_millis(12))
+        }
+    }
+
+    /// A fake Simulator that shows every change 400 ms after its cause,
+    /// with the input notes `notes`, its launcher snapshotted.
+    fn slow_ios(notes: Option<Arc<dyn crate::driver::InputNotes>>) -> (Attached, String) {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_latency(Duration::from_millis(400));
+        let info = driver.discover().unwrap().remove(0);
+        let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        attachment.input_notes = notes;
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let listing = super::super::view::snapshot(
+            &mut target,
+            "default",
+            &request(r#"{"action": "snapshot", "interactive": true}"#),
+        )
+        .unwrap()
+        .data;
+        let fixture = listing["refs"]
+            .as_object()
+            .and_then(|refs| {
+                refs.iter()
+                    .find(|(_, entry)| entry["name"] == "Fixture")
+                    .map(|(reference, _)| format!("@{reference}"))
+            })
+            .expect("the launcher's Fixture button");
+        (target, fixture)
+    }
+
+    /// Task 8.11: after a fresh input-transport activation a tap's effects
+    /// can come later than a warm tap's, so the click's watch waits longer
+    /// for the first of them.
+    #[test]
+    fn a_click_after_a_fresh_activation_watches_long_enough_for_its_late_effects() {
+        let (mut warm, fixture) = slow_ios(None);
+        let click = request(&format!(r#"{{"action": "click", "target": "{fixture}"}}"#));
+        let data = super::click(&mut warm, "default", &click).unwrap().data;
+        assert!(
+            data.get("frameChangeMs").is_none(),
+            "a warm watch ends 200 ms after a tap that changed nothing yet: {data}"
+        );
+
+        let (mut fresh, fixture) = slow_ios(Some(Arc::new(Fresh)));
+        let click = request(&format!(r#"{{"action": "click", "target": "{fixture}"}}"#));
+        let data = super::click(&mut fresh, "default", &click).unwrap().data;
+        for span in ["frameChangeMs", "treeDeltaMs"] {
+            assert!(
+                data[span].as_f64().is_some_and(|ms| ms >= 400.0),
+                "{span} after a fresh activation: {data}"
+            );
+        }
+    }
+
     /// Task 8.11: a gesture no element anchors follows the screen as it is
     /// when the command runs, so a rotated display is swiped across its
     /// middle.
