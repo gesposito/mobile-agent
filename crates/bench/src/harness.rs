@@ -132,11 +132,12 @@ impl Harness {
     /// Detects every tool, runs every series through each available tool that
     /// supports it, and returns the report. Before a tool drives a target
     /// another tool drove last, and once every series has run, the other tool
-    /// lets go of the target (see [`crate::handoff`]). Fails, before anything
-    /// runs, on two flows with one name on one fixture, on a series naming a
-    /// target the run lacks or a fixture its target's platform lacks, and on a
-    /// flow series naming a flow the run lacks on the series' fixture, or a
-    /// screen.
+    /// lets go of the target (see [`crate::handoff`]); a tool whose golden
+    /// check of a flow failed does not drive the target for that flow. Fails,
+    /// before anything runs, on two flows with one name on one fixture, on a
+    /// series naming a target the run lacks or a fixture its target's platform
+    /// lacks, and on a flow series naming a flow the run lacks on the series'
+    /// fixture, or a screen.
     pub fn run(&mut self) -> Result<Report, String> {
         for (i, flow) in self.flows.iter().enumerate() {
             if find_flow(&self.flows[..i], &flow.name, Some(flow.fixture)).is_some() {
@@ -200,14 +201,19 @@ impl Harness {
                 if found.status == ToolStatus::Available
                     && self.tools[t].supports(target, &scenario, &series.subject)
                 {
-                    handoffs.take(&mut self.tools, probe, target, t);
+                    // A tool whose golden check failed does not time the flow,
+                    // so it does not drive the target for this series.
+                    let check = checks.remove(&(s, t));
+                    if check.as_ref().is_none_or(|c| c.error.is_none()) {
+                        handoffs.take(&mut self.tools, probe, target, t);
+                    }
                     measurements.push(measure(
                         self.tools[t].as_mut(),
                         target,
                         series,
                         &self.flows,
                         self.config,
-                        checks.remove(&(s, t)),
+                        check,
                     ));
                 }
             }

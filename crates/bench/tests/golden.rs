@@ -272,6 +272,59 @@ fn a_tool_whose_end_state_differs_from_the_golden_is_not_timed() {
     assert_eq!(comparison.cell(row, "maestro"), "no samples");
 }
 
+/// Task 10.10: a tool whose golden check failed does not time the flow, so
+/// it does not drive the target for that series and is not handed it: on
+/// the emulator, agent-device's failed list-scroll checks cost a hand-off to
+/// it and a release of a session it no longer had, each time.
+#[test]
+fn a_tool_that_does_not_time_a_flow_is_not_handed_the_target_for_it() {
+    let tools = Tools::new("golden-no-hand-off", Platform::Android, |flow| {
+        let mut screen = end_screen(flow);
+        if flow == "login" {
+            for (id, text) in &mut screen {
+                if id.as_deref() == Some("login-status") {
+                    *text = "Invalid credentials".to_owned();
+                }
+            }
+        }
+        screen
+    });
+    let report = run(
+        fake_under_test(&emulator(), None),
+        Some(&tools),
+        RunConfig {
+            iterations: ITERATIONS,
+            warmup: WARMUP,
+            retries: 0,
+        },
+    );
+    // Every tool checks every flow; then login is timed through the tool
+    // under test alone, the other flows through every tool.
+    let baselines = ["maestro", "maestro-runner", "agent-device"];
+    let mut order = Vec::new();
+    for _ in 0..3 {
+        order.push("mobile-agent");
+        order.extend(baselines);
+    }
+    order.push("mobile-agent");
+    for _ in 0..2 {
+        order.push("mobile-agent");
+        order.extend(baselines);
+    }
+    let mut expected: Vec<(&str, Option<&str>)> = order
+        .windows(2)
+        .filter(|pair| pair[0] != pair[1])
+        .map(|pair| (pair[0], Some(pair[1])))
+        .collect();
+    expected.push((order[order.len() - 1], None));
+    let handed: Vec<(&str, Option<&str>)> = report
+        .handoffs
+        .iter()
+        .map(|h| (h.from.as_str(), h.to.as_deref()))
+        .collect();
+    assert_eq!(handed, expected);
+}
+
 #[test]
 fn the_tool_under_test_is_held_to_the_golden_too() {
     let absent = EndState {
