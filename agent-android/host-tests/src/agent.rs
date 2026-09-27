@@ -99,6 +99,11 @@ impl Agent {
             jar.display()
         );
         let id = random_hex(6);
+        // A jar left by a run whose adb transport dropped before it cleaned
+        // up, once no agent runs that could still use it.
+        if device.processes_matching("mobile-agent ").is_empty() {
+            let _ = device.shell_output("rm -f /data/local/tmp/mobile-agent-host-tests-*.jar");
+        }
         let remote_jar = format!("/data/local/tmp/mobile-agent-host-tests-{id}.jar");
         device.push(&jar, &remote_jar);
         let socket = format!("mobile-agent-{id}");
@@ -112,6 +117,11 @@ impl Agent {
         command.push_str(&format!(
             "CLASSPATH={remote_jar} exec timeout -s KILL {DEVICE_TIMEOUT_S} app_process / {MAIN_CLASS} serve --socket {socket}"
         ));
+        // An agent a test lost track of, when the adb transport drops, exits
+        // on its own soon after; tests that care pass their own bound.
+        if !launch.args.iter().any(|a| a == "--idle-exit-ms") {
+            command.push_str(" --idle-exit-ms 10000");
+        }
         for arg in &launch.args {
             command.push(' ');
             command.push_str(arg);
