@@ -34,6 +34,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 3.4 Add a failing test that an event sequence gap raises a resync signal, then implement per-stream sequence tracking; verify red-then-green
 - [x] 3.5 Add golden byte fixtures produced by the Rust crate and failing Kotlin tests that decode them, then hand-write the Kotlin encoder and decoder for the same message set in `agent-android`, starting from the S5 codec and deciding definite versus indefinite-length arrays first (the S5 decoder rejects indefinite ones); verify Kotlin output also decodes in Rust and both directions are red-then-green
 - [x] 3.6 Add failing round-trip and golden tests for per-window metadata (emits change events, owner, modal) and scroll semantics (range and position) in the protocol snapshot, then extend the Rust schema and the Kotlin codec, regenerate the goldens and have the mirror consume the new fields instead of its own side types; verify red-then-green on both sides and `codec-test.sh` green
+- [ ] 3.7 Add failing tests for a snapshot option that clears only event-less windows' platform cache (or an input-happened notice) so controller-path input need not resync the whole tree, and for `HostSession` retrying a failed automatic resync instead of dropping the stream's events; then implement both on the protocol and agent sides; verify red-then-green
 
 ## 4. Android agent (Kotlin, `agent-android`)
 
@@ -47,16 +48,16 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 4.8 Add a failing landscape screenshot test using the Compose fixture (the Expo fixture locks portrait until task 1.7 lands), then implement screenshot capture with orientation; verify red-then-green
 - [x] 4.9 Add failing tests that no agent process remains after daemon shutdown and that snapshots work after the app is force-stopped and relaunched, then implement stop, clean exit and survival; verify red-then-green
 - [x] 4.10 Add a failing test that the agent dex is under 300 KB, then shrink it with R8 keeping the reflection entry points (R8 needs the Kotlin distribution's `lib/annotations-13.0.jar` on its classpath; S5's R8 build of a codec plus platform JSON was 42,640 bytes); verify red-then-green and that test.sh still passes (baseline without shrinking: 2,281,104 bytes, almost all Kotlin stdlib)
-- [ ] 4.11 Add a failing test that a tree read survives the framework's integrity-check `NullPointerException` from `getChild` on debuggable builds (inject it through a test hook), then retry the child once and otherwise skip it with a truncation flag instead of failing the read; verify red-then-green
+- [x] 4.11 Add a failing test that a tree read survives the framework's integrity-check `NullPointerException` from `getChild` on debuggable builds (inject it through a test hook), then retry the child once and otherwise skip it with a truncation flag instead of failing the read; verify red-then-green
 - [ ] 4.12 Add a failing check that `test.sh` reads the agent version from `VERSION` and that the driver's reuse check treats an agent without snapshot metadata as incompatible, then bump `VERSION` to 0.2.0; verify red-then-green
 
 ## 5. Android host driver (`crates/android`)
 
 - [x] 5.1 Add failing integration tests for device listing with unauthorized and offline states, push, shell and forward against an emulator, then implement the ADB transport chosen by S6; verify red-then-green
-- [ ] 5.2 Add failing tests for first attach, compatible reuse and incompatible replacement, then implement agent deploy, reuse and replace with version checks; verify red-then-green
-- [ ] 5.3 Add a failing full-stack snapshot test, then implement the agent session driving handshake, requests and events into the mirror; verify red-then-green
+- [x] 5.2 Add failing tests for first attach, compatible reuse and incompatible replacement, then implement agent deploy, reuse and replace with version checks; verify red-then-green
+- [x] 5.3 Add a failing full-stack snapshot test, then implement the agent session driving handshake, requests and events into the mirror; verify red-then-green
 - [x] 5.4 Add failing tests that frames arrive and taps land with the control flag and that a warning is emitted without it, then implement the emulator gRPC client from the emulator's own installed proto with token discovery, a second connection for input, RGB888 scaled streaming, deadlines on every call and the quirks listed in the S7 report; verify red-then-green
-- [ ] 5.5 Add failing tests that `status` names the active path in both emulator configurations, then implement path selection and status reporting; verify red-then-green
+- [x] 5.5 Add failing tests that `status` names the active path in both emulator configurations, then implement path selection and status reporting; verify red-then-green
 
 ## 6. Simulator driver (`crates/simulator`)
 
@@ -81,6 +82,7 @@ Rules that bind every task below (see design.md, Delivery process): a research n
 - [x] 7.6 Add a failing diff test on the form-submit fixture, then implement the structural diff; verify red-then-green
 - [x] 7.7 Add failing tests that refs from before a resync are stale and the verdict names the fallback backend, then implement quality verdicts and resync; verify red-then-green
 - [x] 7.8 Add a failing scaled-frame test with age reporting, then implement frame access; verify red-then-green
+- [ ] 7.9 Add a failing test that the mirror's event-less fallback recognises any `androidx.compose.` host class (the agent reports `androidx.compose.ui.platform.ComposeView` on API 36), then broaden the match; verify red-then-green
 
 ## 8. Daemon and CLI (`crates/daemon`, `crates/cli`)
 
