@@ -133,40 +133,57 @@ impl Mirror {
     /// Applies what the target reported so far and performs the reads that
     /// are due, without waiting.
     pub fn pump(&mut self) -> Result<(), MirrorError> {
-        self.take_pending();
+        self.drain();
         self.refresh()
     }
 
     /// Applies what the target reported so far without reading the tree,
-    /// even when a read is due, and says how many items it applied.
+    /// even when a read is due, and says how many items it applied. The
+    /// reads the items call for happen at the next `pump`, snapshot, wait
+    /// or ref.
     pub fn drain(&mut self) -> usize {
-        todo!("task 7.10")
-    }
-
-    /// Applies every item already queued.
-    fn take_pending(&mut self) {
         let now = self.now();
+        let mut applied = 0;
         while let Some(item) = self.backend.events.next(now) {
             self.replica.apply(item);
+            applied += 1;
         }
+        applied
     }
 
     /// Records that the window in front changed outside the mirror's input,
-    /// as launching or stopping an app does.
+    /// as launching or stopping an app does, so that the mirror treats it as
+    /// a window event arriving now: every window is read again when the
+    /// tree is next needed, and settle counts it as a tree change, so a
+    /// settle that starts right after a launch waits for the launched app
+    /// even when its first signals arrive later.
     pub fn note_window_change(&mut self) {
-        todo!("task 7.10")
+        let now = self.now();
+        self.replica.note_window_change(now);
     }
 
     /// When the latest frame, frame change, tree change, read and input
-    /// happened.
+    /// happened, as the mirror saw them; items still queued in the event
+    /// stream count once drained.
     pub fn timestamps(&self) -> Timestamps {
-        todo!("task 7.10")
+        Timestamps {
+            last_frame: self.replica.frame,
+            last_frame_change: self.replica.last_frame_change,
+            last_tree_change: self.replica.last_tree_change,
+            last_read: self.replica.last_read,
+            last_action: self.replica.last_action,
+        }
     }
 
     /// The capture times of the frame changes at or after `since`, oldest
-    /// first.
-    pub fn frame_changes_since(&self, _since: Instant) -> Vec<Instant> {
-        todo!("task 7.10")
+    /// first, among the latest 1024 the mirror keeps.
+    pub fn frame_changes_since(&self, since: Instant) -> Vec<Instant> {
+        self.replica
+            .frame_change_log
+            .iter()
+            .copied()
+            .filter(|&at| at >= since)
+            .collect()
     }
 
     /// Performs the reads that are due. A read from another backend than
@@ -460,7 +477,7 @@ impl Mirror {
     /// for a re-read, which happens when the tree is next needed or at the
     /// next poll.
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
-        self.take_pending();
+        self.drain();
         if let Some(reason) = &self.replica.disconnected {
             return Err(MirrorError::Disconnected(reason.clone()));
         }
@@ -531,7 +548,7 @@ impl Mirror {
         let frames_before = self.replica.frame_changes;
         let blind = self.backend.frames.is_none();
         let every = self.config.min_reread_interval;
-        self.take_pending();
+        self.drain();
         loop {
             if blind {
                 self.reread_quietly(every)?;
@@ -750,7 +767,7 @@ impl Mirror {
     /// The mirror picks the size and quality; the frame source encodes. The
     /// capture's age counts from now, its skew from the last tree read.
     pub fn frame(&mut self, request: &FrameRequest) -> Result<FrameImage, MirrorError> {
-        self.take_pending();
+        self.drain();
         let frames = self.backend.frames.as_mut().ok_or(MirrorError::NoFrame)?;
         let latest = frames.latest().ok_or(MirrorError::NoFrame)?;
         let (width, height) = frame::fit(

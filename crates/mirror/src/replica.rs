@@ -28,6 +28,7 @@ use crate::error::ResyncCause;
 use crate::geometry::Rect;
 use crate::mirror::MirrorConfig;
 use crate::snapshot::{ElementId, TreeDelta};
+use crate::timestamps::ReadSpan;
 
 /// The package of Jetpack Compose's classes. Compose content sends no change
 /// events to a UiAutomation client (spike S1), and a window hosting it holds
@@ -39,6 +40,10 @@ pub(crate) const COMPOSE_PACKAGE: &str = "androidx.compose.";
 
 /// How many deltas the replica keeps.
 const DELTA_LOG: usize = 256;
+
+/// How many frame changes the replica keeps: about 17 s of a 60 fps
+/// animation.
+const FRAME_CHANGE_LOG: usize = 1024;
 
 /// Not yet matched to a previous read.
 const UNASSIGNED: ElementId = ElementId(0);
@@ -162,6 +167,10 @@ pub(crate) struct Replica {
     pub frame: Option<FrameMeta>,
     pub last_frame_change: Option<Instant>,
     pub frame_changes: u64,
+    /// Capture times of the latest frame changes, oldest first.
+    pub frame_change_log: VecDeque<Instant>,
+    /// The latest read taken in.
+    pub last_read: Option<ReadSpan>,
     pub last_action: Option<Instant>,
     /// Tree and window events applied, plus deltas found by reads.
     pub tree_changes: u64,
@@ -192,6 +201,8 @@ impl Replica {
             frame: None,
             last_frame_change: None,
             frame_changes: 0,
+            frame_change_log: VecDeque::new(),
+            last_read: None,
             last_action: None,
             tree_changes: 0,
             interner: HashMap::new(),
@@ -349,12 +360,25 @@ impl Replica {
         {
             self.last_frame_change = self.last_frame_change.max(Some(meta.at));
             self.frame_changes += 1;
+            if self.frame_change_log.len() == FRAME_CHANGE_LOG {
+                self.frame_change_log.pop_front();
+            }
+            self.frame_change_log.push_back(meta.at);
         }
         self.frame = Some(meta);
     }
 
     fn frames_changed_since(&self, t: Instant) -> bool {
         self.last_frame_change.is_some_and(|c| c > t)
+    }
+
+    /// Records that the window in front changed at `at` outside the
+    /// mirror's input, as a window event arriving then would: a tree change,
+    /// and a read of every window when the tree is next needed.
+    pub fn note_window_change(&mut self, at: Instant) {
+        self.tree_changes += 1;
+        self.last_tree_change = self.last_tree_change.max(Some(at));
+        self.request_full(ReadReason::Events);
     }
 
     /// Marks the windows that send no change events for a re-read after
@@ -531,6 +555,11 @@ impl Replica {
         self.backend = Some(backend);
         self.truncated = snapshot.truncated;
         self.updated_at = Some(finished);
+        self.last_read = Some(ReadSpan {
+            started,
+            finished,
+            reason: request.reason,
+        });
         if full {
             self.need_full = None;
             self.fresh = false;
