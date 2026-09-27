@@ -50,6 +50,8 @@ pub(crate) struct Issued {
     pub element: ElementId,
     pub role: Role,
     pub name: String,
+    /// The replica generation the ref was issued in.
+    pub generation: u64,
 }
 
 /// What the table knows about a ref.
@@ -78,7 +80,7 @@ impl RefTable {
     }
 
     /// The element's ref, issuing the next number when it has none.
-    pub fn assign(&mut self, element: ElementId, role: Role, name: &str) -> Ref {
+    pub fn assign(&mut self, element: ElementId, role: Role, name: &str, generation: u64) -> Ref {
         if let Some(&reference) = self.by_element.get(&element) {
             if let Some(issued) = self.issued.get_mut(&reference) {
                 issued.role = role;
@@ -97,6 +99,7 @@ impl RefTable {
                 element,
                 role,
                 name: name.to_owned(),
+                generation,
             },
         );
         reference

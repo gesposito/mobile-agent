@@ -4,12 +4,12 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use protocol::message::TextMethod;
-use protocol::snapshot::{NodeFlags, WindowFlags, WindowType};
+use protocol::snapshot::{NodeFlags, Truncation, WindowFlags, WindowType};
 
-use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner};
+use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner, ReadRequest};
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
-use crate::error::{MirrorError, StaleCause};
+use crate::error::{MirrorError, ResyncCause, StaleCause};
 use crate::geometry::{Point, Rect};
 use crate::refs::{Lookup, Ref, RefTable};
 use crate::render::{self, Line};
@@ -143,8 +143,12 @@ impl Mirror {
         }
     }
 
-    /// Performs the reads that are due.
+    /// Performs the reads that are due. A read from another backend than
+    /// the replica's is set aside and the replica rebuilt from a full read.
     fn refresh(&mut self) -> Result<(), MirrorError> {
+        if self.replica.disconnected.is_some() {
+            return Ok(());
+        }
         // A read can make another one due at once, such as a full read
         // after a scoped one found another backend; a few rounds suffice.
         for _ in 0..4 {
@@ -152,10 +156,23 @@ impl Mirror {
             let Some(request) = self.replica.due_read(started, &self.config) else {
                 return Ok(());
             };
-            let read = self.backend.tree.read(&request)?;
-            let finished = self.now();
-            self.replica.integrate(read, &request, started, finished);
+            self.read(&request, started)?;
         }
+        Ok(())
+    }
+
+    /// Performs `request`, started at `started`, and takes it into the
+    /// replica unless it comes from another backend, which starts the
+    /// replica over instead.
+    fn read(&mut self, request: &ReadRequest, started: Instant) -> Result<(), MirrorError> {
+        let read = self.backend.tree.read(request)?;
+        let finished = self.now();
+        if !self.replica.fresh && self.replica.backend_differs(&read.backend) {
+            self.replica
+                .resync(ResyncCause::Backend(read.backend.clone()));
+            return Ok(());
+        }
+        self.replica.integrate(read, request, started, finished);
         Ok(())
     }
 
@@ -203,9 +220,11 @@ impl Mirror {
                     let window = &self.replica.windows[w];
                     let node = &window.nodes[i];
                     let facts = &view.windows[w][i];
-                    let reference = facts
-                        .bears_ref
-                        .then(|| self.refs.assign(node.element, facts.role, &facts.name));
+                    let generation = self.replica.generation;
+                    let reference = facts.bears_ref.then(|| {
+                        self.refs
+                            .assign(node.element, facts.role, &facts.name, generation)
+                    });
                     if let Some(reference) = reference {
                         listed.push((facts.signature, reference));
                     }
@@ -226,7 +245,7 @@ impl Mirror {
         }
         let replica = &self.replica;
         self.refs.prune(|e| replica.locate(e).is_some());
-        let reasons = collisions(&listed);
+        let reasons = self.degradations(&listed);
         let refs: Vec<Ref> = listed.iter().map(|(_, r)| *r).collect();
         let mut removed_refs: Vec<Ref> = self
             .listed
@@ -263,6 +282,47 @@ impl Mirror {
         })
     }
 
+    /// Why the replica's data is degraded, in a fixed order: the backend,
+    /// truncation, sparse application windows, sibling collisions among
+    /// the `listed` refs, agent warnings, disconnection.
+    fn degradations(&self, listed: &[(u64, Ref)]) -> Vec<Degradation> {
+        let replica = &self.replica;
+        let mut reasons = Vec::new();
+        if let Some(backend) = replica.backend.as_ref().filter(|b| b.fallback) {
+            reasons.push(Degradation::FallbackBackend {
+                name: backend.name.clone(),
+            });
+        }
+        let truncated = replica.truncated;
+        if !truncated.is_empty() {
+            reasons.push(Degradation::Truncated {
+                depth: truncated.contains(Truncation::DEPTH),
+                nodes: truncated.contains(Truncation::NODES),
+                windows: truncated.contains(Truncation::WINDOWS),
+            });
+        }
+        for window in &replica.windows {
+            if window.kind == WindowType::APPLICATION
+                && window.owner == Owner::Target
+                && window.nodes.len() <= 1
+            {
+                reasons.push(Degradation::SparseTree { window: window.id });
+            }
+        }
+        reasons.extend(collisions(listed));
+        reasons.extend(
+            replica
+                .warnings
+                .iter()
+                .cloned()
+                .map(Degradation::AgentWarning),
+        );
+        if let Some(reason) = &replica.disconnected {
+            reasons.push(Degradation::Disconnected(reason.clone()));
+        }
+        reasons
+    }
+
     /// The element `reference` names, as the replica shows it now.
     pub fn resolve(&mut self, reference: Ref) -> Result<Element, MirrorError> {
         self.pump()?;
@@ -282,12 +342,27 @@ impl Mirror {
                 was: None,
             }),
             Lookup::Issued(issued) => {
+                let was = Some((issued.role, issued.name.clone()));
+                if issued.generation < self.replica.generation {
+                    let index = usize::try_from(issued.generation).unwrap_or(usize::MAX);
+                    let cause = self
+                        .replica
+                        .resyncs
+                        .get(index)
+                        .cloned()
+                        .unwrap_or(ResyncCause::Reconnected);
+                    return Err(MirrorError::StaleRef {
+                        reference,
+                        cause: StaleCause::Resync(cause),
+                        was,
+                    });
+                }
                 self.replica
                     .locate(issued.element)
-                    .ok_or_else(|| MirrorError::StaleRef {
+                    .ok_or(MirrorError::StaleRef {
                         reference,
                         cause: StaleCause::Removed,
-                        was: Some((issued.role, issued.name.clone())),
+                        was,
                     })
             }
         }
@@ -359,6 +434,10 @@ impl Mirror {
     /// for a re-read, which happens when the tree is next needed or at the
     /// next poll.
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
+        self.drain();
+        if let Some(reason) = &self.replica.disconnected {
+            return Err(MirrorError::Disconnected(reason.clone()));
+        }
         let (input, at) = match action {
             Action::Tap { target, hold } => {
                 let at = self.aim(target)?;
@@ -480,11 +559,15 @@ impl Mirror {
     /// Re-reads the windows that send no change events when they are due
     /// every `every`, leaving other windows alone.
     fn reread_quietly(&mut self, every: Duration) -> Result<(), MirrorError> {
+        if self.replica.disconnected.is_some() {
+            return Ok(());
+        }
         let started = self.now();
+        if self.replica.need_full.is_some() {
+            return self.refresh();
+        }
         if let Some(request) = self.replica.due_reread(started, every) {
-            let read = self.backend.tree.read(&request)?;
-            let finished = self.now();
-            self.replica.integrate(read, &request, started, finished);
+            self.read(&request, started)?;
         }
         Ok(())
     }

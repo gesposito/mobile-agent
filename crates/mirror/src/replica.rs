@@ -23,6 +23,7 @@ use crate::backend::{
     BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, ScrollInfo, StreamItem, Timed,
     TreeRead, WindowMeta,
 };
+use crate::error::ResyncCause;
 use crate::geometry::Rect;
 use crate::mirror::MirrorConfig;
 use crate::snapshot::{ElementId, TreeDelta};
@@ -117,8 +118,10 @@ enum Seq {
     Apply,
     /// Already reflected by a read, or a repeat.
     Skip,
-    /// A lossless stream skipped numbers.
-    Gap,
+    /// A lossless stream skipped numbers: the next one was `expected`.
+    Gap {
+        expected: u64,
+    },
 }
 
 /// One target's replica.
@@ -141,6 +144,13 @@ pub(crate) struct Replica {
     /// How many times the replica was started over; refs from an earlier
     /// generation are stale.
     pub generation: u64,
+    /// Why each generation after the first started: `resyncs[g - 1]` for
+    /// generation `g`.
+    pub resyncs: Vec<ResyncCause>,
+    /// What the agent reported about its reduced ability.
+    pub warnings: Vec<String>,
+    /// Why the target is gone, once it is.
+    pub disconnected: Option<String>,
     next_element: u64,
     /// The last sequence number accounted for, per lossless stream.
     seqs: HashMap<Stream, u64>,
@@ -169,6 +179,9 @@ impl Replica {
             need_full: Some(ReadReason::Attach),
             fresh: true,
             generation: 0,
+            resyncs: Vec::new(),
+            warnings: Vec::new(),
+            disconnected: None,
             next_element: 0,
             seqs: HashMap::new(),
             frame: None,
@@ -208,13 +221,62 @@ impl Replica {
     pub fn apply(&mut self, timed: Timed<StreamItem>) {
         let Timed { at, item } = timed;
         match item {
-            StreamItem::Event(event) => match self.check_seq(event.stream(), event.seq) {
-                Seq::Skip => {}
-                Seq::Apply | Seq::Gap => self.apply_event(at, &event.payload),
-            },
+            StreamItem::Event(event) => {
+                let stream = event.stream();
+                match self.check_seq(stream, event.seq) {
+                    Seq::Skip => {}
+                    Seq::Apply => self.apply_event(at, &event.payload),
+                    Seq::Gap { expected } => {
+                        self.resync(ResyncCause::Gap {
+                            stream,
+                            expected,
+                            received: event.seq,
+                        });
+                        self.apply_event(at, &event.payload);
+                    }
+                }
+            }
             StreamItem::Frame(meta) => self.apply_frame(meta),
-            _ => {}
+            StreamItem::OutOfSync {
+                stream,
+                expected,
+                received,
+            } => self.resync(ResyncCause::Gap {
+                stream,
+                expected,
+                received,
+            }),
+            StreamItem::Resynced { stream, seq } => {
+                self.seqs.insert(stream, seq);
+            }
+            StreamItem::BackendChanged(backend) => {
+                if self.backend.as_ref().is_some_and(|b| *b != backend) {
+                    self.resync(ResyncCause::Backend(backend));
+                }
+            }
+            StreamItem::Reconnected => {
+                self.seqs.clear();
+                self.warnings.clear();
+                self.disconnected = None;
+                self.resync(ResyncCause::Reconnected);
+            }
+            StreamItem::Disconnected(reason) => self.disconnected = Some(reason),
         }
+    }
+
+    /// Starts the replica over: the next read is a full one that carries no
+    /// identity, and refs issued so far are stale.
+    pub fn resync(&mut self, cause: ResyncCause) {
+        self.need_full = Some(ReadReason::Resync);
+        self.fresh = true;
+        self.generation += 1;
+        self.resyncs.push(cause);
+    }
+
+    /// Whether a read from `backend` comes from another backend than the
+    /// replica's.
+    pub fn backend_differs(&self, backend: &BackendInfo) -> bool {
+        self.backend.as_ref().is_some_and(|b| b != backend)
     }
 
     fn check_seq(&mut self, stream: Stream, seq: u64) -> Seq {
@@ -228,8 +290,9 @@ impl Replica {
             *last = seq;
             Seq::Apply
         } else {
+            let expected = *last + 1;
             *last = seq;
-            Seq::Gap
+            Seq::Gap { expected }
         }
     }
 
@@ -248,9 +311,23 @@ impl Replica {
                 self.last_tree_change = self.last_tree_change.max(Some(at));
                 self.request_full(ReadReason::Events);
             }
-            EventPayload::Lifecycle(lifecycle) if lifecycle.change == LifecycleKind::READY => {
-                self.request_full(ReadReason::Events);
-            }
+            EventPayload::Lifecycle(lifecycle) => match lifecycle.change {
+                LifecycleKind::READY => self.request_full(ReadReason::Events),
+                LifecycleKind::WARNING => self.warnings.push(lifecycle.message.clone()),
+                LifecycleKind::OWNERSHIP_LOST => self.warnings.push(format!(
+                    "another process took the UI automation connection: {}",
+                    lifecycle.message
+                )),
+                LifecycleKind::SHUTTING_DOWN => {
+                    let reason = if lifecycle.message.is_empty() {
+                        "the agent is shutting down".to_owned()
+                    } else {
+                        lifecycle.message.clone()
+                    };
+                    self.disconnected = Some(reason);
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
