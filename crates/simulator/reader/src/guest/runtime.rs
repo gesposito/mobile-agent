@@ -3,7 +3,8 @@
 //! spike S4 ported it.
 //!
 //! - XCTAutomationSupport: `XCTAccessibilityFramework -initForRemoteAccess`
-//!   and `-userTestingSnapshotForElement:options:error:`,
+//!   and `-userTestingSnapshotForElement:options:error:`, for the tree and
+//!   for each scroll view's scroll area,
 //!   `XCAccessibilityElement +elementWithProcessIdentifier:` and
 //!   `-AXUIElement`, and the C functions `XCTDefaultSnapshotParameters` and
 //!   `XCAXAccessibilityAttributesForStringAttributes`.
@@ -45,6 +46,18 @@ pub const ATTRIBUTE_NAMES: [&str; 10] = [
     "XC_kAXXCAttributeAutomationType",
     "XC_kAXXCAttributeTraits",
     "XC_kAXXCAttributeChildren",
+];
+
+/// The attributes asked of each scroll view on screen, in a snapshot of
+/// its own element: where its frame's edges fall in its content along each
+/// axis, and the part of its frame that shows content. Asked of every node,
+/// they cost the SwiftUI Big screen's 546 nodes 40 ms a read; asked of the
+/// SwiftUI list's one scroll view, 3.6 ms. A runtime that does not number
+/// them is read without scroll semantics.
+pub const SCROLL_ATTRIBUTE_NAMES: [&str; 3] = [
+    "XC_kAXXCAttributeVisibleVerticalScrollArea",
+    "XC_kAXXCAttributeVisibleHorizontalScrollArea",
+    "XC_kAXXCAttributeVisibleFrame",
 ];
 
 /// `kAXErrorIllegalArgument` from the AX server, which rejects a snapshot
@@ -115,6 +128,17 @@ pub struct Attributes {
     pub frame: Option<Retained<NSNumber>>,
     pub automation_type: Option<Retained<NSNumber>>,
     pub traits: Option<Retained<NSNumber>>,
+    /// The scroll attributes, when the runtime numbers them.
+    pub scroll: Option<ScrollAttributes>,
+}
+
+/// The keys of [`SCROLL_ATTRIBUTE_NAMES`] and the request that asks for
+/// them.
+pub struct ScrollAttributes {
+    pub request: Retained<NSArray<NSNumber>>,
+    pub vertical: Retained<NSNumber>,
+    pub horizontal: Retained<NSNumber>,
+    pub visible_frame: Retained<NSNumber>,
 }
 
 /// The keys of a snapshot node dictionary.
@@ -122,6 +146,8 @@ pub struct SnapshotKeys {
     pub attributes: Retained<NSString>,
     pub children: Retained<NSString>,
     pub children_count: Retained<NSString>,
+    /// The node's own `AXUIElementRef`.
+    pub element: Retained<NSString>,
 }
 
 pub struct Runtime {
@@ -226,6 +252,7 @@ impl Runtime {
                 attributes: NSString::from_str("UIAccessibilitySnapshotKeyAttributes"),
                 children: NSString::from_str("UIAccessibilitySnapshotKeyChildren"),
                 children_count: NSString::from_str("UIAccessibilitySnapshotKeyChildrenCount"),
+                element: NSString::from_str("UIAccessibilitySnapshotKeyElement"),
             },
         })
     }
@@ -288,10 +315,12 @@ impl Runtime {
         Ok((element, raw))
     }
 
-    /// One `userTestingSnapshotForElement:options:error:` call.
+    /// One `userTestingSnapshotForElement:options:error:` call for
+    /// `attributes`.
     fn snapshot_call(
         &self,
         element: AXUIElementRef,
+        attributes: &NSArray<NSNumber>,
         max_depth: u32,
         max_nodes: u32,
     ) -> Result<Result<Retained<AnyObject>, Retained<NSError>>, Failure> {
@@ -311,7 +340,7 @@ impl Runtime {
                     let key = NSString::from_str(key);
                     let _: () = msg_send![&*options, setObject: value, forKey: &*key];
                 };
-                set("attributes", &self.attributes.request);
+                set("attributes", attributes);
                 set("maxDepth", &NSNumber::new_u32(max_depth));
                 set("maxChildren", &NSNumber::new_u32(max_nodes));
                 set("maxArrayCount", &NSNumber::new_u32(max_nodes));
@@ -330,6 +359,19 @@ impl Runtime {
                 }
             },
         )
+    }
+
+    /// A snapshot of `element` alone with the scroll attributes; `None`
+    /// when the runtime numbers no scroll attributes or the call fails, as
+    /// it does once the element is gone.
+    pub(crate) fn scroll_snapshot(
+        &self,
+        element: AXUIElementRef,
+    ) -> Result<Option<Retained<AnyObject>>, Failure> {
+        let Some(scroll) = &self.attributes.scroll else {
+            return Ok(None);
+        };
+        Ok(self.snapshot_call(element, &scroll.request, 0, 1)?.ok())
     }
 
     /// Reads the tree of the process that owns the foreground: an
@@ -353,7 +395,7 @@ impl Runtime {
         let mut depth = wanted;
         let mut rejected = 0;
         let snapshot = loop {
-            match self.snapshot_call(raw, depth, limits.max_nodes)? {
+            match self.snapshot_call(raw, &self.attributes.request, depth, limits.max_nodes)? {
                 Ok(tree) => break tree,
                 Err(error) => {
                     let (domain, code, ax_error) = describe_error(&error);
@@ -439,6 +481,15 @@ fn resolve_attributes(attributes_for_names: AttributesForNamesFn) -> Result<Attr
             .map(|index| NSNumber::new_u64(numbers[index]))
     };
     let request: Vec<Retained<NSNumber>> = numbers.iter().map(|n| NSNumber::new_u64(*n)).collect();
+    let scroll = numbers_for(&SCROLL_ATTRIBUTE_NAMES)?.map(|numbers| {
+        let keys: Vec<Retained<NSNumber>> = numbers.iter().map(|n| NSNumber::new_u64(*n)).collect();
+        ScrollAttributes {
+            vertical: keys[0].clone(),
+            horizontal: keys[1].clone(),
+            visible_frame: keys[2].clone(),
+            request: NSArray::from_retained_slice(&keys),
+        }
+    });
     Ok(Attributes {
         element_type: key("XC_kAXXCAttributeElementType"),
         base_type: key("XC_kAXXCAttributeElementBaseType"),
@@ -449,6 +500,7 @@ fn resolve_attributes(attributes_for_names: AttributesForNamesFn) -> Result<Attr
         frame: key("XC_kAXXCAttributeFrame"),
         automation_type: key("XC_kAXXCAttributeAutomationType"),
         traits: key("XC_kAXXCAttributeTraits"),
+        scroll,
         request: NSArray::from_retained_slice(&request),
         names,
         numbers,

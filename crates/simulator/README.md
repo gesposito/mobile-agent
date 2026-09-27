@@ -179,7 +179,8 @@ primaryApp]` who owns the foreground, snapshots that process with one
 `-userTestingSnapshotForElement:options:error:` (64 levels and 10,000 nodes
 by default, retried at half depth when the server rejects the depth), and
 checks the owner again afterwards: a change fails the read with
-`foreground_changed`. A permission alert makes SpringBoard the owner, so the
+`foreground_changed`; each scroll view on screen then takes one more call,
+for its scroll area. A permission alert makes SpringBoard the owner, so the
 read is SpringBoard's tree, whose alert lists its buttons. The payload
 follows the mirror's conventions (`reader/src/elements.rs`):
 
@@ -217,7 +218,27 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   the reader); `visible` means the frame overlaps the screen, `enabled`,
   `selected` and `clickable` come from the traits, `editable`, `password`
   and `scrollable` from the type, and `focused` from the private editing
-  trait, which only the field with keyboard focus carries.
+  trait, which only the field with keyboard focus carries;
+- a scroll view on screen (a `ScrollView`, `Table` or `CollectionView`, at
+  most 32 a read) carries `scroll`, from a snapshot of its own element with
+  three more attributes: where its frame's edges fall in its content along
+  each axis, as fractions of the content
+  (`XC_kAXXCAttributeVisibleVerticalScrollArea` and its horizontal twin),
+  and the part of the frame that shows content
+  (`XC_kAXXCAttributeVisibleFrame`), which leaves out the insets UIKit keeps
+  under bars (62 and 83 points on the SwiftUI list, none on the Expo one).
+  Along an axis with more than a point of content beyond the visible frame,
+  `back` and `forward` say on which side, and the range is percent of the
+  content, 0 to 100, with the visible frame's part as the position,
+  rounded, but 0 only at the start and 100 only at the end: 0 to 7 for the
+  SwiftUI list at its top, 4 to 11 after a 300-point drag. A scroll view
+  that scrolls along both axes names no axis and no range, and one whose
+  content fits has no `scroll`. The runtime reports no item counts or
+  indices (its `ScrollStatus` is VoiceOver's localized "page 1 of 15"), so
+  no range counts items. Asking every node for the three attributes cost
+  the Big screen's 546 nodes 40 ms a read; asking each scroll view costs
+  3.6 ms on the SwiftUI list and 0.6 ms on the Expo one. The translator
+  reports no scroll semantics.
 
 An alert is the last visible alert container in the first window that holds
 one: the alert's own window for an application's alert, SpringBoard's for a
@@ -466,6 +487,7 @@ about a minute.
 | Foreground tree read | Sparse tree flagged | `tree::sparse_tree_flagged`, `tree::tests::an_application_root_alone_is_sparse`, `tree::tests::the_translator_and_truncation_degrade_the_read_with_reasons` |
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
 | Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
+| Foreground tree read | Scroll semantics of scroll views (task 6.10) | `metadata::a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top`, and in `reader/`: `elements::tests::a_list_at_its_top_scrolls_forward_only`, `elements::tests::a_list_scrolled_down_scrolls_both_ways`, `elements::tests::a_list_at_its_end_scrolls_back_only`, `elements::tests::content_that_fits_its_visible_frame_does_not_scroll`, `elements::tests::content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it`, `elements::tests::a_carousel_scrolls_horizontally`, `elements::tests::content_that_scrolls_both_ways_names_no_axis`, `elements::tests::elements_without_a_scroll_area_have_no_scroll_semantics` |
 | Foreground tree read | Covered content cut under alerts, the translator fallback (task 6.6) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
 | Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |
 | Input transport selection | Input before activation | `dtuhid::input_before_activation`, `dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` |

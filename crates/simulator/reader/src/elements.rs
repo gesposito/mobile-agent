@@ -18,6 +18,10 @@
 //! - Bounds are physical pixels: frames in points times the screen scale.
 //! - Flags come from the type and the UIAccessibilityTraits bits; iOS reports
 //!   no visibility, so `visible` means the frame overlaps the screen.
+//! - `scroll` comes from a scroll view's [`ScrollArea`]: whether content lies
+//!   beyond the visible frame toward the start and the end of each axis,
+//!   and which part of the content the visible frame shows, in percent. The
+//!   runtime reports no items, so no range counts them.
 //!
 //! One read is one process, the one that owns the foreground: its
 //! application element becomes a window whose id is the process id, and the
@@ -44,7 +48,8 @@
 
 use protocol::message::SnapshotParams;
 use protocol::snapshot::{
-    Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+    Bounds, MAX_NODE_DEPTH, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition,
+    ScrollRange, ScrollUnit, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
 
 /// UIAccessibilityTraits bits the conversion reads.
@@ -381,9 +386,138 @@ fn take_alert(app: &mut Element, screen: Option<[f64; 4]>) -> Option<Presentatio
     })
 }
 
+/// Whether an element of this automation type is a scroll view: a scroll
+/// view, table or collection view, which the reader marks `scrollable` and
+/// asks for its scroll area.
+pub fn is_scroll_view(automation_type: Option<u64>) -> bool {
+    matches!(
+        automation_type,
+        Some(types::SCROLL_VIEW | types::TABLE | types::COLLECTION_VIEW)
+    )
+}
+
+/// Less content than this beyond the viewport, in points, does not count:
+/// UIKit gives an alert's message 72.33 points of text in a 72-point scroll
+/// view.
+const SCROLL_SLACK: f64 = 1.0;
+
+/// The scroll semantics of a scroll view at `frame`, in points, whose
+/// runtime scroll area is `area`. One that scrolls along one axis names it,
+/// the ways it can scroll, and the part of its content the visible frame
+/// shows as a percent range; one that scrolls along both names no axis and
+/// no range; one whose content fits its visible frame has none.
+pub fn scroll(frame: [f64; 4], area: &ScrollArea) -> Option<Scroll> {
+    let [x, y, width, height] = frame;
+    let [shown_x, shown_y, shown_width, shown_height] = area.visible_frame.unwrap_or(frame);
+    let vertical = area
+        .vertical
+        .and_then(|ends| Reach::along(y, height, shown_y, shown_height, ends));
+    let horizontal = area
+        .horizontal
+        .and_then(|ends| Reach::along(x, width, shown_x, shown_width, ends));
+    match (vertical, horizontal) {
+        (None, None) => None,
+        (Some(reach), None) => Some(reach.semantics(ScrollAxis::VERTICAL)),
+        (None, Some(reach)) => Some(reach.semantics(ScrollAxis::HORIZONTAL)),
+        (Some(vertical), Some(horizontal)) => Some(Scroll {
+            axis: ScrollAxis::UNKNOWN,
+            flags: vertical.flags() | horizontal.flags(),
+            range: None,
+            position: None,
+        }),
+    }
+}
+
+/// How a scroll view's viewport sits in its content along one axis.
+struct Reach {
+    /// Content lies before the viewport.
+    back: bool,
+    /// Content lies after it.
+    forward: bool,
+    /// The first and last percent of the content the viewport shows.
+    first: f64,
+    last: f64,
+}
+
+impl Reach {
+    /// Along an axis where the frame starts at `start` and is `length`
+    /// long, the visible frame starts at `shown_start` and is `shown_length`
+    /// long, and the frame's ends fall at `from` and `to` of the content, as
+    /// fractions of its length; `None` when nothing lies beyond the
+    /// viewport. The frame's ends include the insets UIKit keeps under bars
+    /// (62 and 83 points on the SwiftUI list), so the viewport is the visible
+    /// frame.
+    fn along(
+        start: f64,
+        length: f64,
+        shown_start: f64,
+        shown_length: f64,
+        [from, to]: [f64; 2],
+    ) -> Option<Reach> {
+        let span = to - from;
+        if !(length > 0.0 && span > 0.0 && from.is_finite() && span.is_finite()) {
+            return None;
+        }
+        let content = length / span;
+        let before = (shown_start - start).clamp(0.0, length);
+        let after = (start + length - (shown_start + shown_length)).clamp(0.0, length);
+        let first = from * content + before;
+        let last = to * content - after;
+        let back = first > SCROLL_SLACK;
+        let forward = content - last > SCROLL_SLACK;
+        (back || forward).then(|| Reach {
+            back,
+            forward,
+            first: first * 100.0 / content,
+            last: last * 100.0 / content,
+        })
+    }
+
+    fn flags(&self) -> ScrollFlags {
+        let mut flags = ScrollFlags::EMPTY;
+        if self.back {
+            flags |= ScrollFlags::BACK;
+        }
+        if self.forward {
+            flags |= ScrollFlags::FORWARD;
+        }
+        flags
+    }
+
+    /// The semantics along `axis`. The position is rounded to whole
+    /// percent, but it is 0 only while the viewport shows the start and 100
+    /// only while it shows the end, as the flags say.
+    fn semantics(&self, axis: ScrollAxis) -> Scroll {
+        let first = if self.back {
+            let most = if self.forward { 99.0 } else { 100.0 };
+            self.first.round().clamp(1.0, most)
+        } else {
+            0.0
+        };
+        let last = if self.forward {
+            self.last.round().clamp(first, 99.0)
+        } else {
+            100.0
+        };
+        Scroll {
+            axis,
+            flags: self.flags(),
+            range: Some(ScrollRange {
+                unit: ScrollUnit::PERCENT,
+                min: 0,
+                max: 100,
+            }),
+            position: Some(ScrollPosition {
+                first: first as i32,
+                last: last as i32,
+            }),
+        }
+    }
+}
+
 /// Whether a frame, in points, has an area and overlaps the screen, the
 /// application element's frame when it has one.
-fn on_screen(frame: Option<[f64; 4]>, screen: Option<[f64; 4]>) -> bool {
+pub(crate) fn on_screen(frame: Option<[f64; 4]>, screen: Option<[f64; 4]>) -> bool {
     let Some([x, y, width, height]) = frame else {
         return false;
     };
@@ -490,10 +624,7 @@ impl Builder {
                 flags |= NodeFlags::CHECKED;
             }
         }
-        if matches!(
-            automation_type,
-            Some(types::SCROLL_VIEW | types::TABLE | types::COLLECTION_VIEW)
-        ) {
+        if is_scroll_view(automation_type) {
             flags |= NodeFlags::SCROLLABLE;
         }
 
@@ -535,8 +666,11 @@ impl Builder {
             bounds: self.bounds(element.frame),
             flags,
             children,
-            // Scroll semantics for Simulator elements arrive with task 6.10.
-            scroll: None,
+            scroll: element
+                .scroll_area
+                .as_ref()
+                .zip(element.frame)
+                .and_then(|(area, frame)| scroll(frame, area)),
         })
     }
 }
@@ -670,10 +804,6 @@ const XCUI_ELEMENT_TYPES: [&str; 83] = [
 
 #[cfg(test)]
 mod tests {
-    use protocol::snapshot::{
-        Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit,
-    };
-
     use super::*;
 
     fn element(automation_type: u64, class: &str) -> Element {
