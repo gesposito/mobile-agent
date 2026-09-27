@@ -9,10 +9,10 @@ use std::sync::{Arc, PoisonError};
 use std::time::Instant;
 
 use mirror::backend::{BackendError, BackendInfo, ReadReason, ReadRequest, TreeRead, TreeSource};
+use protocol::code;
 use protocol::event::Stream;
-use protocol::message::{Call, Reply, ResyncParams, SnapshotParams};
+use protocol::message::{Call, Reply, SnapshotParams};
 use protocol::snapshot::{Node, Snapshot};
-use protocol::{Capabilities, code};
 
 use super::{INPUT_QUIET, Inner, ReadOptions, ReadStats};
 
@@ -95,6 +95,7 @@ impl TreeSource for AgentTree {
             let _ = inner.connection.resync(stream);
         }
         let mut cleared_cache = false;
+        let mut params = snapshot_params(request.reason, &inner.options.read);
         let foreign = inner
             .foreign_input
             .lock()
@@ -102,25 +103,18 @@ impl TreeSource for AgentTree {
             .take();
         if let Some(input) = foreign {
             // The agent's idle wait knows nothing of this input, and its cache
-            // of windows without events is stale after it.
+            // of windows without events is stale after it: the read asks the
+            // agent to evict those windows alone, leaving the tree stream and
+            // the other windows' cache, which their events keep current.
             let quiet = input + INPUT_QUIET;
             if let Some(wait) = quiet.checked_duration_since(Instant::now()) {
                 std::thread::sleep(wait);
             }
-            // Resync is what empties the cache, and needs the events
-            // capability; without it the read goes on with the cache.
-            let can_resync = inner.agent.capabilities.contains(Capabilities::EVENTS);
-            if can_resync && inner.event_less.load(Ordering::SeqCst) {
-                inner.connection.call(
-                    Call::Resync(ResyncParams {
-                        stream: Stream::TREE,
-                    }),
-                    deadline,
-                )?;
+            if inner.event_less.load(Ordering::SeqCst) {
+                params.evict_event_less = Some(true);
                 cleared_cache = true;
             }
         }
-        let params = snapshot_params(request.reason, &inner.options.read);
         let Reply::Snapshot(snapshot) = inner.connection.call(Call::Snapshot(params), deadline)?
         else {
             return Err(BackendError::new(

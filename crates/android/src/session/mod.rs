@@ -110,8 +110,8 @@ pub struct ReadStats {
     /// its answer.
     pub took: Duration,
     pub reason: ReadReason,
-    /// Whether the agent's node cache was emptied first, after input it did
-    /// not inject.
+    /// Whether the read asked the agent to evict the cache of the windows
+    /// that send no change events first, after input it did not inject.
     pub cleared_cache: bool,
 }
 

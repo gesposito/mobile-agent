@@ -101,10 +101,11 @@ object Codec {
     private fun encodeCall(c: Call, out: CborWriter) {
         when (c) {
             is SnapshotCall -> {
-                out.map(present(c.maxDepth) + present(c.maxNodes) + present(c.idleMs))
+                out.map(present(c.maxDepth) + present(c.maxNodes) + present(c.idleMs) + present(c.evictEventLess))
                 optUint(out, 0, c.maxDepth)
                 optUint(out, 1, c.maxNodes)
                 optUint(out, 2, c.idleMs)
+                c.evictEventLess?.let { out.key(3); out.bool(it) }
             }
             is ScreenshotCall -> {
                 out.map(present(c.format) + present(c.quality) + present(c.maxDimension))
@@ -428,15 +429,17 @@ object Codec {
             var maxDepth: Int? = null
             var maxNodes: Int? = null
             var idleMs: Int? = null
+            var evictEventLess: Boolean? = null
             repeat(r.map()) {
                 when (r.key()) {
                     0L -> maxDepth = r.optUint32()
                     1L -> maxNodes = r.optUint32()
                     2L -> idleMs = r.optUint32()
+                    3L -> evictEventLess = r.optBool()
                     else -> r.skip()
                 }
             }
-            SnapshotCall(maxDepth, maxNodes, idleMs)
+            SnapshotCall(maxDepth, maxNodes, idleMs, evictEventLess)
         }
         Method.SCREENSHOT -> {
             var format: Int? = null

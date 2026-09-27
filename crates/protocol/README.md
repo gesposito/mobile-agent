@@ -107,7 +107,7 @@ decoder reports an unknown kind as such, and the sessions skip it.
 
 | Method | Value | Needs | Parameters | Result |
 |---|---:|---|---|---|
-| snapshot | 1 | tree | `{?0: max_depth u32, ?1: max_nodes u32, ?2: idle_ms u32}` | snapshot |
+| snapshot | 1 | tree | `{?0: max_depth u32, ?1: max_nodes u32, ?2: idle_ms u32, ?3: evict_event_less bool}` | snapshot |
 | screenshot | 2 | screenshot | `{?0: format u8, ?1: quality u8, ?2: max_dimension u32}` | `{0: format u8, 1: width u32, 2: height u32, 3: rotation u8, 4: data bytes}` |
 | tap | 3 | input | `{0: x i32, 1: y i32, ?2: duration_ms u32}` (a long press with a duration) | `{0: accepted bool}` |
 | swipe | 4 | input | `{0: x1 i32, 1: y1 i32, 2: x2 i32, 3: y2 i32, 4: duration_ms u32}` | `{0: accepted bool}` |
@@ -120,6 +120,15 @@ decoder reports an unknown kind as such, and the sessions skip it.
 
 An agent answers a method it does not know with `unknown_method`; the request
 still decodes, its parameters skipped, so it can be answered.
+
+A snapshot's `evict_event_less` (task 3.7), when true, asks the agent to evict
+its platform cache of the windows that send no change events (`emits_events`
+false, below) before reading them. Input the agent did not inject, such as the
+emulator controller's, leaves only those windows' cache stale, since every
+other window's events keep its cache current; the eviction refreshes them
+without the `resync` of the whole tree stream, which also needs the events
+capability. An agent that does not know the key skips it and reads with its
+cache.
 
 ### Snapshot
 
@@ -183,7 +192,14 @@ survive a round trip.
 Every stream numbers its events from 1 on each connection. On a lossless
 stream each event is one more than the last; any other number marks the
 stream out of sync, the host drops its events and asks the agent to `resync`
-it, and the stream is in sync again from the `seq` the answer names. A lossy
+it, and the stream is in sync again from the `seq` the answer names. When
+the agent fails that automatic resync with a retryable error, such as `busy`,
+the host sends it again after `session::RESYNC_BACKOFF`, a wait that doubles
+with every failure in a row up to `session::RESYNC_BACKOFF_MAX`, until the
+stream is in sync, its events dropped meanwhile (task 3.7). A failure no
+retry fixes, and any failure of a resync asked for with `HostSession::resync`,
+is reported as `HostEvent::ResyncFailed`, and the stream stays out of sync. A
+lossy
 stream only increases; the numbers it skips are counted as dropped frames. An
 agent that drops an event from a full queue skips its number
 (`AgentSession::skip_event`) so the host sees the gap. Unknown streams are
@@ -252,17 +268,19 @@ tests drive time themselves.
 | `session::PING_INTERVAL` | 1 s |
 | `session::PEER_TIMEOUT` | 3 s, within the spec's 5 s bound for a killed agent |
 | `session::DEADLINE_GRACE` | 500 ms |
+| `session::RESYNC_BACKOFF`, `session::RESYNC_BACKOFF_MAX` | 100 ms, doubling with each failure in a row up to 2 s |
 | `snapshot::MAX_NODE_DEPTH` | 256 |
 | oversized-frame peek | 32 bytes |
 
 ## Golden frames and the Kotlin codec
 
-`tests/common/samples.rs` defines 37 samples: one per message kind, parameter
+`tests/common/samples.rs` defines 38 samples: one per message kind, parameter
 and result type, with integers at every head-length boundary, u32 and u64
 values past 2^31 and 2^63, multi-byte UTF-8, a byte string and a 25-element
 array, plus window metadata in every state
-(`response_snapshot_window_meta`) and scroll semantics in every shape
-(`response_snapshot_scroll`). `golden/<name>.bin` is the frame this crate writes for each.
+(`response_snapshot_window_meta`), scroll semantics in every shape
+(`response_snapshot_scroll`) and a snapshot request evicting event-less
+windows (`request_snapshot_evict`). `golden/<name>.bin` is the frame this crate writes for each.
 `agent-android/codec-test/Samples.kt` builds the same values in Kotlin.
 
 ```sh
@@ -303,7 +321,8 @@ the same messages.
 | | No common version | `handshake::no_common_version_closes_the_connection_listing_both_sets` |
 | Capability advertisement | Command needs an unadvertised capability | `handshake::an_unadvertised_capability_is_refused_naming_it`, `handshake::agent_session_rejects_requests_without_the_advertised_capability`, `schema::capability_set_covers_every_required_capability` |
 | Request multiplexing | Overlapping requests | `handshake::overlapping_requests_are_matched_by_id`, `handshake::request_ids_are_unique_and_never_zero` |
-| Event channel with sequence numbers | Sequence gap detected | `events::a_sequence_gap_requests_a_resync_from_the_agent`, `events::a_gap_marks_the_stream_out_of_sync`, `events::a_repeated_or_earlier_number_also_marks_the_stream_out_of_sync`, `events::streams_are_tracked_independently`, `events::a_lossy_stream_counts_drops_without_a_resync` |
+| Event channel with sequence numbers | Sequence gap detected | `events::a_sequence_gap_requests_a_resync_from_the_agent`, `events::a_gap_marks_the_stream_out_of_sync`, `events::a_repeated_or_earlier_number_also_marks_the_stream_out_of_sync`, `events::streams_are_tracked_independently`, `events::a_lossy_stream_counts_drops_without_a_resync`, `events::a_failed_automatic_resync_is_retried_until_the_stream_is_in_sync`, `events::an_automatic_resync_the_agent_cannot_serve_is_reported_and_not_retried` |
+| | Numbering from one, a resync on demand, a failed resync | `events::sequences_start_at_one`, `events::the_agent_numbers_each_stream_from_one`, `events::frame_events_skip_numbers_without_a_resync`, `events::a_resync_can_be_requested_on_demand`, `events::a_failed_resync_is_reported` |
 | Structured errors | Transient versus permanent failure | `schema::transient_errors_are_retryable_and_permanent_ones_are_not`, `schema::response_with_an_error_keeps_code_message_and_retryable_flag`, `handshake::the_agent_answers_an_unknown_method_with_a_permanent_error` |
 | Deadlines and cancellation | Snapshot exceeds its deadline | `handshake::a_passed_deadline_is_answered_and_the_connection_stays_usable`, `handshake::the_host_reports_a_deadline_itself_when_the_agent_stays_silent` |
 | Liveness detection | Agent process killed | `liveness::a_killed_agent_is_reported_disconnected_within_five_seconds`, `handshake::the_end_of_the_stream_fails_pending_requests_with_a_reconnect_hint`, `liveness::a_ping_goes_out_after_a_second_of_silence`, `liveness::a_hello_that_never_comes_times_out`, `liveness::bytes_of_a_discarded_frame_do_not_count_as_signs_of_life` |

@@ -404,8 +404,9 @@ pub struct SnapshotParams {
     /// Evict the platform's node cache of the windows that send no change
     /// events before reading: input the agent did not inject, such as the
     /// emulator controller's, left them stale. The tree stream and every
-    /// other window's cache are left alone, unlike a resync.
-    #[cbor(skip)]
+    /// other window's cache are left alone, unlike a resync. An agent that
+    /// does not know the key skips it and reads with its cache.
+    #[n(3)]
     pub evict_event_less: Option<bool>,
 }
 

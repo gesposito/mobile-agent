@@ -155,7 +155,7 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
-| 0.2.0 | From the agent of task 4.11 on, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. |
+| 0.2.0 | From the agent of task 4.11 on, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. Builds from task 3.7 on honor the snapshot request's `evict_event_less`, which earlier 0.2.0 builds skip, reading with their cache. |
 | 0.1.0 | Every build from the banner-only agent of task 1.5 to the agent of task 4.11, both sides of task 3.6 included: 0.1.0 builds differ in what their snapshots carry, and only the driver's build digest tells them apart. |
 
 ## Serving the protocol
@@ -338,6 +338,11 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   action the idle wait counts from it, the next snapshot evicts the Compose
   windows' cache before reading them (they report nothing the action
   changed), and the Compose poll comes forward to 200 ms after the action.
+  Input the agent did not inject, such as the emulator controller's, starts
+  none of this: the host asks for the eviction with the snapshot's
+  `evict_event_less` (task 3.7), which evicts the Compose windows' cache
+  before the read as an injected action does, and leaves the tree stream and
+  every other window's cache alone.
 - **Text.** `text_set` targets the node the request names from the last
   snapshot, or else the node with input focus (`findFocus(FOCUS_INPUT)`),
   refreshed first. When it is editable and offers `ACTION_SET_TEXT`, the text
@@ -391,8 +396,8 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
 
 | Measure | Shrunk (R8, shipped) | Unshrunk (`SHRINK=0`, d8) |
 | --- | --- | --- |
-| `classes.dex` | 126,288 bytes | 2,433,088 bytes |
-| `mobile-agent-android.jar` (deflated) | 64,633 bytes | 729,385 bytes |
+| `classes.dex` | 126,448 bytes | 2,433,604 bytes |
+| `mobile-agent-android.jar` (deflated) | 64,751 bytes | 729,489 bytes |
 | Dex contents | 156 classes, 770 method references | 1,227 classes, 13,384 method references |
 | Toolchain | Kotlin 2.4.20, R8 and D8 from build-tools 37.0.0, `--release --min-api 26` | the same |
 
@@ -513,6 +518,7 @@ the agent answers by id and its tests exercise it throughout.
 | android-driver: Input injection | Tap acknowledged | `input::a_tap_is_acknowledged_as_accepted_within_50_ms`, `input::a_tap_the_platform_refuses_is_acknowledged_as_not_accepted` |
 | | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
 | | Compose windows read fresh after an injected action (design D5) | `input::a_tap_on_a_compose_tab_is_in_the_next_snapshot_without_a_poll` |
+| | Compose windows read fresh after input the agent did not inject (task 3.7) | `events::a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject` |
 | android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
 | | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
 | | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |

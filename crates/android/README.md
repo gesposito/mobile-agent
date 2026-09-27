@@ -148,8 +148,10 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
   the host time: protocol events, `OutOfSync` and `Resynced` as themselves,
   and the close as `Disconnected` with the protocol crate's reconnect hint. A
   killed agent closes its socket, so the stream ends at once; a silent one is
-  declared dead after 3 s by the protocol crate's liveness. A resync the host
-  session could not complete is retried on the next read.
+  declared dead after 3 s by the protocol crate's liveness. The host session
+  sends a resync the agent failed with a retryable error again after a
+  backoff, until the stream is in sync (task 3.7); one it reports failed is
+  sent again on the next read.
 - **Input.** Taps (a long press with a hold), swipes, keys and text go to the
   agent in physical pixels with a 5 s deadline plus the gesture's duration;
   text names the node of the latest read, and `auto` leaves the method to
@@ -158,9 +160,11 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
   stay with the agent. Input the agent did not inject leaves its cache of
   Compose windows stale and does not start its idle wait, so the next read
   waits until the input is 200 ms old and, when the last read showed a window
-  that sends no change events, first sends a tree `resync`, which empties
-  the agent's node cache (an agent without the events capability cannot
-  resync, and the read goes on with its cache). A controller that fails
+  that sends no change events, asks the agent in its `snapshot` request to
+  evict those windows' cache first (`evict_event_less`, task 3.7). The tree
+  stream and the other windows' cache, which their events keep current, stay
+  as they are, and no `resync` is sent, so an agent without the events
+  capability gets the eviction too. A controller that fails
   before a touch lands hands that input to the agent; after that, all input
   goes through the agent.
 - **Frames**, with a controller only. A task on the link's runtime subscribes
@@ -480,7 +484,7 @@ Requirement **Change events**:
 |---|---|
 | Scenario "Single field changes" | agent side `events::editing_one_react_native_field_emits_events_naming_that_field_only`; driver `session::tests::events_reach_the_backends_stream_in_order`, `session::events::tests::protocol_events_and_sequence_notices_pass_through` (the event reaches the mirror, which reads only that window) |
 | Sequence gaps and resynchronization | `session::tests::a_sequence_gap_reaches_the_mirror_and_the_stream_is_resynchronized` |
-| Compose windows, which send none, read again after an action | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent`; `session::tests::a_mirror_on_the_session_reads_a_compose_window_again_after_a_tap`, `session::tests::after_input_the_agent_did_not_inject_a_compose_read_empties_its_cache_first`, `session::tests::without_compose_foreign_input_only_delays_the_read` |
+| Compose windows, which send none, read again after an action | integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent`; `session::tests::a_mirror_on_the_session_reads_a_compose_window_again_after_a_tap`, `session::tests::after_input_the_agent_did_not_inject_a_read_evicts_only_the_event_less_windows`, `session::tests::without_the_events_capability_a_read_after_foreign_input_still_evicts`, `session::tests::without_compose_foreign_input_only_delays_the_read` |
 
 Requirement **Input injection**:
 

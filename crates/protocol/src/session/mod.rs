@@ -36,6 +36,13 @@ pub const PEER_TIMEOUT: Duration = Duration::from_secs(3);
 /// deadline error before reporting one itself.
 pub const DEADLINE_GRACE: Duration = Duration::from_millis(500);
 
+/// How long the host waits before it sends a failed automatic resync again;
+/// the wait doubles with every failure in a row, up to [`RESYNC_BACKOFF_MAX`].
+pub const RESYNC_BACKOFF: Duration = Duration::from_millis(100);
+
+/// The longest wait between two tries of an automatic resync.
+pub const RESYNC_BACKOFF_MAX: Duration = Duration::from_secs(2);
+
 /// The highest version in both lists, whatever their order.
 pub fn select_version(ours: &[u16], theirs: &[u16]) -> Option<u16> {
     ours.iter().filter(|v| theirs.contains(v)).max().copied()

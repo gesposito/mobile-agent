@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use super::{
     DEADLINE_GRACE, DisconnectReason, HandshakeError, Negotiated, PEER_TIMEOUT, PING_INTERVAL,
-    Phase, select_version,
+    Phase, RESYNC_BACKOFF, RESYNC_BACKOFF_MAX, select_version,
 };
 use crate::capability::Capabilities;
 use crate::error::{Error, code};
@@ -69,7 +69,11 @@ pub enum HostEvent {
     /// The stream is in sync again: `seq` is the last number the agent sent
     /// on it before its state was reset.
     Resynced { stream: Stream, seq: u64 },
-    /// The agent could not resynchronize the stream, which stays out of sync.
+    /// The agent could not resynchronize the stream, which stays out of
+    /// sync: a resync asked for on demand failed, or an automatic one failed
+    /// in a way no retry fixes. An automatic resync that fails in a way a
+    /// retry can fix, such as a busy agent, is sent again after a backoff
+    /// instead, until the stream is in sync.
     ResyncFailed { stream: Stream, error: Error },
     /// A frame over the limit that answered no pending request.
     FrameTooLarge(Oversized),
@@ -92,9 +96,26 @@ struct Pending {
     /// When the host stops waiting for the agent's answer: the deadline plus
     /// the grace period.
     expires: Option<Instant>,
-    /// Set for the resync requests the session sends itself; their outcome
-    /// is reported as a resync, not as a response.
-    resync: Option<Stream>,
+    /// Set for resync requests; their outcome is reported as a resync, not
+    /// as a response.
+    resync: Option<ResyncOf>,
+}
+
+/// A resync request's stream, and whether the session sent it on its own
+/// after a sequence gap, in which case it is retried.
+#[derive(Clone, Copy, Debug)]
+struct ResyncOf {
+    stream: Stream,
+    automatic: bool,
+}
+
+/// An automatic resync that failed and is to be sent again.
+#[derive(Clone, Copy, Debug)]
+struct Retry {
+    /// Tries that failed in a row.
+    failures: u32,
+    /// When it is due; `None` until the session next learns the time.
+    at: Option<Instant>,
 }
 
 /// The daemon's end of a device connection.
@@ -110,6 +131,11 @@ pub struct HostSession {
     liveness: Liveness,
     next_nonce: u64,
     streams: StreamTracker,
+    /// Failed automatic resyncs to send again, by stream.
+    retries: HashMap<Stream, Retry>,
+    /// Failures in a row of the automatic resync in flight, by stream, so a
+    /// retry that fails again backs off longer.
+    in_flight: HashMap<Stream, u32>,
 }
 
 impl HostSession {
@@ -127,6 +153,8 @@ impl HostSession {
             next_id: 1,
             next_nonce: 0,
             streams: StreamTracker::new(),
+            retries: HashMap::new(),
+            in_flight: HashMap::new(),
         }
     }
 
@@ -157,6 +185,7 @@ impl HostSession {
         if alive {
             self.liveness.heard(now);
         }
+        self.schedule_retries(now);
     }
 
     /// The connection reached its end.
@@ -185,6 +214,8 @@ impl HostSession {
                 Error::deadline_exceeded(pending.method, id, pending.deadline_ms.unwrap_or(0));
             self.resolve(id, pending, Err(error));
         }
+        self.schedule_retries(now);
+        self.send_due_retries(now);
         match self.liveness.check(now, self.phase() == Phase::Ready) {
             Alive::Yes => {}
             Alive::Ping => {
@@ -203,7 +234,13 @@ impl HostSession {
         }
         let liveness = self.liveness.next_check(self.phase() == Phase::Ready);
         let deadline = self.pending.values().filter_map(|p| p.expires).min();
-        Some(deadline.map_or(liveness, |d| d.min(liveness)))
+        let retry = self.retries.values().filter_map(|r| r.at).min();
+        Some(
+            [deadline, retry]
+                .into_iter()
+                .flatten()
+                .fold(liveness, Instant::min),
+        )
     }
 
     /// Sends a request, returning its id. Fails at once, sending nothing, when
@@ -226,8 +263,66 @@ impl HostSession {
             Call::Resync(ResyncParams { stream }),
             None,
             now,
-            Some(stream),
+            Some(ResyncOf {
+                stream,
+                automatic: false,
+            }),
         )
+    }
+
+    /// Sends the resync the session asks for on its own after a gap on
+    /// `stream`, the `failures`-th try; a failure to send it is reported at
+    /// once, since no retry sends it either.
+    fn resync_automatically(&mut self, stream: Stream, failures: u32, now: Instant) {
+        let sent = self.send(
+            Call::Resync(ResyncParams { stream }),
+            None,
+            now,
+            Some(ResyncOf {
+                stream,
+                automatic: true,
+            }),
+        );
+        match sent {
+            Ok(_) => {
+                self.in_flight.insert(stream, failures);
+            }
+            Err(error) => self
+                .events
+                .push_back(HostEvent::ResyncFailed { stream, error }),
+        }
+    }
+
+    /// Gives each failed automatic resync without a time the time it is
+    /// due: the backoff after its latest failure.
+    fn schedule_retries(&mut self, now: Instant) {
+        for retry in self.retries.values_mut() {
+            if retry.at.is_none() {
+                let doublings = retry.failures.saturating_sub(1).min(16);
+                let wait = RESYNC_BACKOFF
+                    .saturating_mul(1 << doublings)
+                    .min(RESYNC_BACKOFF_MAX);
+                retry.at = Some(now + wait);
+            }
+        }
+    }
+
+    /// Sends the automatic resyncs due at `now` again.
+    fn send_due_retries(&mut self, now: Instant) {
+        if self.phase() != Phase::Ready {
+            return;
+        }
+        let mut due: Vec<(Stream, u32)> = self
+            .retries
+            .iter()
+            .filter(|(_, retry)| retry.at.is_some_and(|at| at <= now))
+            .map(|(stream, retry)| (*stream, retry.failures))
+            .collect();
+        due.sort_unstable_by_key(|(stream, _)| stream.0);
+        for (stream, failures) in due {
+            self.retries.remove(&stream);
+            self.resync_automatically(stream, failures, now);
+        }
     }
 
     /// Sequence state of the event streams.
@@ -240,7 +335,7 @@ impl HostSession {
         call: Call,
         deadline: Option<Duration>,
         now: Instant,
-        resync: Option<Stream>,
+        resync: Option<ResyncOf>,
     ) -> Result<u32, Error> {
         let (capabilities, limit) = match &self.state {
             State::Ready(n) => (n.capabilities, n.max_frame),
@@ -422,16 +517,23 @@ impl HostSession {
         self.resolve(response.id, pending, result);
     }
 
-    /// Reports the outcome of a request: as a response, or for the session's
-    /// own resync requests as the stream's new state.
+    /// Reports the outcome of a request: as a response, or for resync
+    /// requests as the stream's new state. An automatic resync that failed
+    /// in a way a retry can fix is queued to be sent again instead, while
+    /// the session lives.
     fn resolve(&mut self, id: u32, pending: Pending, result: Result<Reply, Error>) {
-        let Some(stream) = pending.resync else {
+        let Some(ResyncOf { stream, automatic }) = pending.resync else {
             self.events.push_back(HostEvent::Response {
                 id,
                 method: pending.method,
                 result,
             });
             return;
+        };
+        let failures = if automatic {
+            self.in_flight.remove(&stream).unwrap_or(0)
+        } else {
+            0
         };
         match result {
             Ok(Reply::Resync(ack)) if ack.stream == stream => {
@@ -448,6 +550,15 @@ impl HostSession {
                     format!("the resync of the {stream} stream was answered with {other:?}"),
                 ),
             }),
+            Err(error) if automatic && error.retryable && !self.is_closed() => {
+                self.retries.insert(
+                    stream,
+                    Retry {
+                        failures: failures + 1,
+                        at: None,
+                    },
+                );
+            }
             Err(error) => self
                 .events
                 .push_back(HostEvent::ResyncFailed { stream, error }),
@@ -464,10 +575,8 @@ impl HostSession {
                     expected,
                     received,
                 });
-                if let Err(error) = self.resync(stream, now) {
-                    self.events
-                        .push_back(HostEvent::ResyncFailed { stream, error });
-                }
+                self.retries.remove(&stream);
+                self.resync_automatically(stream, 0, now);
             }
             SeqCheck::Discard => {}
         }
@@ -507,6 +616,7 @@ impl HostSession {
     }
 
     fn close_with(&mut self, reason: DisconnectReason) {
+        self.retries.clear();
         let mut ids: Vec<u32> = self.pending.keys().copied().collect();
         ids.sort_unstable();
         for id in ids {

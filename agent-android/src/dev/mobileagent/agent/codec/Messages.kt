@@ -68,6 +68,8 @@ class SnapshotCall(
     @JvmField val maxDepth: Int? = null,
     @JvmField val maxNodes: Int? = null,
     @JvmField val idleMs: Int? = null,
+    /** Evict the cache of the windows that send no change events first: input the agent did not inject left them stale. */
+    @JvmField val evictEventLess: Boolean? = null,
 ) : Call(Method.SNAPSHOT)
 
 class ScreenshotCall(

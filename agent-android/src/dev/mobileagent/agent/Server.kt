@@ -248,8 +248,13 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         val bound = call.idleMs?.let { unsigned(it) } ?: EventHub.DEFAULT_IDLE_MS
         try {
             val idle = events.waitIdle(bound) { work.cancelled }
-            // After an injected action the Compose windows' cache is stale.
-            if (compose.takeDirty()) for (id in compose.composeWindowsOnScreen()) automation?.evictWindow(id)
+            // After an injected action the Compose windows' cache is stale, and
+            // so it is after input the agent did not inject, which the host
+            // says with evictEventLess. Other windows keep theirs.
+            val dirty = compose.takeDirty()
+            if (dirty || call.evictEventLess == true) {
+                for (id in compose.composeWindowsOnScreen()) automation?.evictWindow(id)
+            }
             val seq = work.session.lastSeq(Stream.TREE)
             val result = reader.read(
                 minOf(maxDepth, Int.MAX_VALUE.toLong()).toInt(),
