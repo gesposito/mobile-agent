@@ -183,20 +183,22 @@ fn a_node_named_from_the_last_snapshot_is_set_directly() {
 }
 
 #[test]
-fn text_without_a_focused_field_or_a_known_node_is_refused() {
-    let Some(dev) = device("text_without_a_focused_field_or_a_known_node_is_refused") else {
+fn direct_text_for_a_node_without_it_or_an_unknown_node_is_refused() {
+    let Some(dev) = device("direct_text_for_a_node_without_it_or_an_unknown_node_is_refused")
+    else {
         return;
     };
     fixture::launch(&dev, fixture::COMPOSE, "login");
     let agent = Agent::launch(&dev, Launch::default());
     let mut client = agent.connect();
-    let _ = snapshot(&mut client);
-    for node in [None, Some(99_999)] {
+    let s = snapshot(&mut client);
+    let (status, _) = find(&s, "login-status").expect("login-status");
+    for (node, mode) in [(status.node.id, Some(TextMethod::DIRECT)), (99_999, None)] {
         let error = client
             .call(Call::TextSet(TextParams {
                 text: "x".to_owned(),
-                node,
-                mode: None,
+                node: Some(node),
+                mode,
             }))
             .expect_err("text_set succeeded with nothing to set");
         assert_eq!(error.code, code::INVALID_PARAMS, "{error}");

@@ -8,6 +8,9 @@ import dev.mobileagent.agent.codec.InputAck
 import dev.mobileagent.agent.codec.KeyCall
 import dev.mobileagent.agent.codec.SwipeCall
 import dev.mobileagent.agent.codec.TapCall
+import dev.mobileagent.agent.codec.TextAck
+import dev.mobileagent.agent.codec.TextMethod
+import dev.mobileagent.agent.codec.TextSetCall
 import dev.mobileagent.agent.codec.ErrorCode
 import dev.mobileagent.agent.codec.Lifecycle
 import dev.mobileagent.agent.codec.LifecycleKind
@@ -59,10 +62,11 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private val timers: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemonThreads("timers"))
-    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT
+    private val capabilities = Capability.TREE or Capability.EVENTS or Capability.INPUT or Capability.TEXT_SET
     /** Input runs one action at a time, beside tree reads. */
     private val inputWorker = Executors.newSingleThreadExecutor(daemonThreads("input"))
     private val input = Input()
+    private lateinit var textSetter: TextSetter
     /** Tree reads run one at a time, in arrival order. */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
     private lateinit var reader: TreeReader
@@ -83,6 +87,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         val a = takeOwnership() ?: return EXIT_CONFLICT
         automation = a
         reader = TreeReader(a)
+        textSetter = TextSetter(a, input)
         events = EventHub(a)
         events.sink = { payload, timeUs -> current?.emit(payload, timeUs) }
         compose = ComposeTracker(a, reader, { payload -> current?.emit(payload) }, options.trace)
@@ -146,6 +151,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 act(work) { input.swipe(call.x1, call.y1, call.x2, call.y2, unsigned(call.durationMs)) { work.cancelled } }
             }
             is KeyCall -> inputWorker.execute { act(work) { input.key(call.code, call.meta ?: 0) } }
+            is TextSetCall -> inputWorker.execute { setText(work, call) }
             ShutdownCall -> shutdown(work)
             else -> work.session.respond(work, null, Errors.unknownMethod(work.method))
         }
@@ -242,6 +248,31 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     }
 
     private fun unsigned(v: Int) = v.toLong() and 0xFFFFFFFFL
+
+    /** Sets text directly or types it, answering with the method used. */
+    private fun setText(work: Work, call: TextSetCall) {
+        if (work.cancelled) return
+        val t0 = android.os.SystemClock.uptimeMillis()
+        try {
+            val node = call.node?.let { id ->
+                lastRead?.nodes?.getOrNull(id)
+                    ?: throw TextRefused("node ${unsigned(id)} is not in the last snapshot; read the tree again")
+            }
+            val method = textSetter.set(call.text, node, call.mode ?: TextMethod.AUTO)
+            events.noteAction()
+            compose.markDirty()
+            nextPoll = minOf(nextPoll, android.os.SystemClock.uptimeMillis() + EventHub.QUIET_MS)
+            work.session.respond(work, TextAck(method), null)
+            if (options.trace) {
+                val name = if (method == TextMethod.DIRECT) "direct" else "keys"
+                Out.line("trace text method=$name chars=${call.text.length} ms=${android.os.SystemClock.uptimeMillis() - t0}")
+            }
+        } catch (e: TextRefused) {
+            work.session.respond(work, null, Errors.invalidParams(e.message ?: "text refused"))
+        } catch (t: Throwable) {
+            work.session.respond(work, null, Errors.internal(work.method, t))
+        }
+    }
 
     /**
      * Runs an injection and answers with the platform's verdict. Afterwards

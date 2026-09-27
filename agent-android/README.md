@@ -250,6 +250,17 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   action the idle wait counts from it, the next snapshot evicts the Compose
   windows' cache before reading them (they report nothing the action
   changed), and the Compose poll comes forward to 200 ms after the action.
+- **Text.** `text_set` targets the node the request names from the last
+  snapshot, or else the node with input focus (`findFocus(FOCUS_INPUT)`),
+  refreshed first. When it is editable and offers `ACTION_SET_TEXT`, the text
+  is set in one action and the answer names `direct`; otherwise, or when
+  `mode` asks for keys, the text is typed as key events from the virtual
+  keyboard's character map, after the node gets input focus and, if it
+  holds text, Ctrl+A so the keys replace it, and the answer names `keys`.
+  `mode` direct on a node without the action, a character the key map
+  cannot type, no focused element or a node id not in the last snapshot are
+  answered with `invalid_params` naming the reason. Text counts as an
+  injected action for the idle wait and the Compose re-read.
 - **Resync.** `resync` answers the last sequence number sent on the stream,
   read and written under the lock events take; for the tree stream the node
   cache is emptied first, so the host's next snapshot is a full read.
@@ -355,6 +366,9 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | android-driver: Input injection | Tap acknowledged | `input::a_tap_is_acknowledged_as_accepted_within_50_ms`, `input::a_tap_the_platform_refuses_is_acknowledged_as_not_accepted` |
 | | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
 | | Compose windows read fresh after an injected action (design D5) | `input::a_tap_on_a_compose_tab_is_in_the_next_snapshot_without_a_poll` |
+| android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
+| | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
+| | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |
