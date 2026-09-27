@@ -42,6 +42,14 @@ members="$(unzip -Z1 "$jar")" || fail "cannot list the members of $jar"
   fail "$jar must contain only classes.dex, found: $(tr '\n' ' ' <<<"$members")"
 echo "ok: $(basename "$jar") holds only classes.dex"
 
+# The shipped dex is shrunk (task 4.10): without R8 the Kotlin stdlib alone
+# dexes to about 2.3 MB.
+dex_limit=300000
+dex_bytes="$(unzip -Z -l "$jar" classes.dex | awk '$NF == "classes.dex" { print $4 }')"
+[[ $dex_bytes =~ ^[0-9]+$ ]] || fail "cannot read the size of classes.dex in $jar"
+((dex_bytes < dex_limit)) || fail "classes.dex is $dex_bytes bytes, not under $dex_limit"
+echo "ok: classes.dex is $dex_bytes bytes, under $dex_limit"
+
 [[ $protocol =~ ^[0-9]+$ ]] || fail "cannot read Protocol.VERSION from the codec"
 expected="mobile-agent-android $(<"$here/VERSION") protocol=$protocol"
 
