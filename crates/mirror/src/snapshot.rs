@@ -126,7 +126,8 @@ pub struct Element {
     pub actionable: bool,
     /// The window holding the element.
     pub window: u32,
-    /// Nesting level in the listing.
+    /// Nesting level in the listing; for an element a wait found or a ref
+    /// resolved, its depth in its window's tree.
     pub depth: usize,
     /// The platform class.
     pub class: String,

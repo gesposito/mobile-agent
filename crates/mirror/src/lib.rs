@@ -50,3 +50,9 @@ pub use snapshot::{
 };
 pub use verdict::{Degradation, Verdict};
 pub use wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
+
+// A daemon moves each target's mirror to the thread that serves it.
+const _: fn() = || {
+    fn send<T: Send>() {}
+    send::<Mirror>();
+};

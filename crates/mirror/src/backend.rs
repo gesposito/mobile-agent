@@ -23,6 +23,25 @@
 //! defines them, and [`TreeRead::scale`] says how many pixels make a device
 //! point. Everything the mirror hands back to the driver, input coordinates
 //! included, is in device points.
+//!
+//! What the mirror reads from a payload's nodes:
+//!
+//! - `class`: Android's widget class, as the agent reports it (Compose
+//!   reports the class of the role a node was given). The Simulator driver
+//!   passes the `XCUIElementType` name (`XCUIElementTypeButton`), or the
+//!   UIKit class for elements typed `Other`, so that an alert controller
+//!   (`_UIAlertControllerPhoneTVMacView`) is recognized and cuts what it
+//!   covers.
+//! - `desc` is the label and `text` the value: Android's content description
+//!   and text (the agent can pass a field's hint as its description), iOS's
+//!   label and value.
+//! - `res_id` is the test identifier: the resource id after its package
+//!   prefix, Compose's test tag, iOS's accessibility identifier.
+//! - The `visible` flag, as the platform reports it; where it reports none,
+//!   as on iOS, whether the frame overlaps the screen. Nodes outside their
+//!   scroll container's viewport feed scroll hints.
+//! - The `active` window flag marks the window that owns the foreground; a
+//!   system window's [`WindowMeta::owner`] then says system UI owns it.
 
 use std::time::{Duration, Instant};
 
