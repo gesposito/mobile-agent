@@ -269,7 +269,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 Out.line(
                     "trace snapshot id=${unsigned(work.id)} windows=${s.windows.size} nodes=${s.nodeCount} " +
                         "visible=${result.visible} serialized=${result.nodes.size} truncated=0x${Integer.toHexString(s.truncated)} " +
-                        "idle_ms=$idle read_ms=${result.readMs} round_trips=${result.roundTrips}",
+                        "idle_ms=$idle read_ms=${result.readMs} round_trips=${result.roundTrips} restarts=${result.restarts}",
                 )
             }
         } catch (e: Cancelled) {

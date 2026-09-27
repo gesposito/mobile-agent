@@ -151,7 +151,7 @@ class ComposeTracker(
         if (trace) {
             Out.line(
                 "trace compose windows=${targets.joinToString(",")} nodes=${s.nodeCount} read_ms=$lastRereadMs " +
-                    "round_trips=${result.roundTrips} changed=${changed.joinToString(",").ifEmpty { "-" }}",
+                    "round_trips=${result.roundTrips} restarts=${result.restarts} changed=${changed.joinToString(",").ifEmpty { "-" }}",
             )
         }
     }

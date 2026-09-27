@@ -248,8 +248,9 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   read whose deadline passes stops at the next node.
   With `--trace` the agent prints `trace snapshot id=<id> windows=<n>
   nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
-  round_trips=<n>`, the round trips read from the accessibility client's
-  interaction counter.
+  round_trips=<n> restarts=<n>`, the round trips read from the accessibility
+  client's interaction counter, the restarts counting walks the tree changed
+  under (below).
 - **Children that cannot be read** (task 4.11). On a debuggable build, such
   as the emulator's `userdebug` image (`ro.debuggable=1`), `getChild` can
   throw instead of returning a child. The walk fetches children with
@@ -265,12 +266,12 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   missing list: a `NullPointerException` from
   `AccessibilityInteractionClient.checkFindAccessibilityNodeInfoResultIntegrity`.
   A release build returns no child there instead, which the walk takes for a
-  child that went away. The agent fetches a child whose fetch throws once
-  more after 50 ms, while the read has waited less than 100 ms for such
-  retries in all (task 10.9): a read whose children keep throwing spends two
-  retries and skips the rest without waiting, rather than waiting 50 ms for
-  each. When the retry throws too, or the read's retries are spent, the
-  child is skipped: it counts in `node_count`, so the omitted count includes
+  child that went away. Under a parent that did not change (below), the
+  agent fetches a child whose fetch throws once more after 50 ms, while the
+  read has waited less than 100 ms for such retries in all (task 10.9): a
+  read whose children keep throwing spends two retries and skips the rest
+  without waiting, rather than waiting 50 ms for each. When the retry throws
+  too, or the read's retries are spent, the child is skipped: it counts in `node_count`, so the omitted count includes
   it, but neither it nor its subtree is serialized; `truncated` gets bit 2;
   its window's `emits_events` is absent unless the walk met Compose; and a
   collection that lost it reports no items in view. The read itself does
@@ -278,6 +279,26 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   outcome are logged at debug level under the logcat tag `mobile-agent`,
   and so, once per read, is the first child skipped because the retries
   are spent.
+- **A tree that changes under a walk** (task 10.9). A child that goes away
+  while a walk is under way cannot be fetched either: the app answers the
+  walk's uninterruptible request for a node it no longer has with a list
+  holding only null, so on a debuggable build the integrity check throws a
+  `NullPointerException` (from `ArrayDeque.add(null)` in
+  `checkFindAccessibilityNodeInfoResultIntegrity`), and a release build
+  returns no child. A tap that takes a screen away mid-walk, such as the
+  Compose fixture's 500 cells, leaves hundreds of such children; at 50 ms
+  and two round trips each, one walk would take seconds. So a child the
+  walk cannot fetch, thrown or null, sends it to look at the parent once,
+  afresh: a copy of the parent is refreshed, one round trip without
+  prefetch, which bypasses the cache without filling it and meets no
+  integrity check. A parent that is gone or has other children than the
+  walk saw (their ids, by the hidden `getChildId`) means the tree changed:
+  the walk is abandoned, the window's cached nodes are evicted, and the
+  read starts again from the window roots, at most twice per read; past
+  that the walk keeps what it saw and `truncated` gets bit 2. The change
+  and the exception that revealed it are logged at debug level. Under a
+  parent that did not change, a null child went away and is left out,
+  and a thrown one is fetched again as above.
 - **Window metadata** (task 3.6, `Semantics.kt`). Each window says whether
   its content sends change events: `false` when the walk met Compose content
   (a class under `androidx.compose.`, or a node advertising Compose's
@@ -328,7 +349,7 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   sends a tree event naming the deepest subtree holding every difference.
   Only windows a snapshot has shown the host are re-read. With `--trace` each
   re-read prints `trace compose windows=<ids> nodes=<n> read_ms=<ms>
-  round_trips=<n> changed=<window:path or ->`.
+  round_trips=<n> restarts=<n> changed=<window:path or ->`.
 - **Input.** `tap`, `swipe` and `key` go through the hidden
   `InputManagerGlobal.injectInputEvent(event, WAIT_FOR_RESULT)` (design D2),
   never the `UiAutomation` overloads, and each is answered with

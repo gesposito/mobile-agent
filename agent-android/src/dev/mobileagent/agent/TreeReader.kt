@@ -37,13 +37,20 @@ class Cancelled : RuntimeException() {
  * semantics ([Semantics]): a window whose walk meets Compose content sends
  * no change events, one the walk completed without meeting it does.
  *
- * A child whose fetch throws, as the platform's integrity check does on a
- * debuggable build (see the README), is fetched once more after
- * [RETRY_MS], while the read's [RETRY_BUDGET_MS] of such waits lasts. When
- * that throws too, or the budget is spent, the child is skipped: counted,
- * so the omitted count includes it, but neither it nor its subtree
- * serialized, and the snapshot is marked [Truncation.WINDOWS]. The read
- * goes on either way.
+ * A child the walk cannot fetch, because the fetch throws, as the
+ * platform's integrity check does on a debuggable build (see the README), or
+ * because it comes back null, sends the walk to look at its parent once,
+ * afresh. A parent that is gone or has other children than the walk saw
+ * means the tree changed under the walk: the walk is abandoned, the
+ * window's cache evicted, and the read starts again from the window roots,
+ * at most [MAX_RESTARTS] times; past that the walk keeps what it saw and
+ * marks the snapshot [Truncation.WINDOWS]. Under a parent that did not
+ * change, a child that came back null went away and is left out, and one
+ * whose fetch threw is fetched once more after [RETRY_MS], while the read's
+ * [RETRY_BUDGET_MS] of such waits lasts. When that throws too, or the
+ * budget is spent, the child is skipped: counted, so the omitted count
+ * includes it, but neither it nor its subtree serialized, and the snapshot
+ * is marked [Truncation.WINDOWS]. The read goes on either way.
  */
 class TreeReader(private val automation: Automation, private val hooks: TestHooks?) {
     companion object {
@@ -63,6 +70,13 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
          */
         const val RETRY_BUDGET_MS = 2 * RETRY_MS
 
+        /**
+         * Walks one read abandons at most for a tree that changed under
+         * them: a tap that swaps a screen needs one, and a second covers a
+         * change landing during the walk that follows.
+         */
+        const val MAX_RESTARTS = 2
+
         /** The logcat tag of the agent's debug lines. */
         const val LOG_TAG = "mobile-agent"
 
@@ -71,6 +85,18 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
             AccessibilityNodeInfo.FLAG_PREFETCH_UNINTERRUPTIBLE
 
         private val PREFETCH_API = Build.VERSION.SDK_INT >= 33
+
+        /** The hidden `AccessibilityNodeInfo.getChildId`, present from API 21 to 37; null where missing. */
+        private val CHILD_ID: java.lang.reflect.Method? = try {
+            AccessibilityNodeInfo::class.java.getDeclaredMethod("getChildId", Int::class.javaPrimitiveType)
+        } catch (e: ReflectiveOperationException) {
+            null
+        }
+
+        /** A copy of `n`, to refresh without changing `n`. */
+        @Suppress("DEPRECATION")
+        private fun copy(n: AccessibilityNodeInfo): AccessibilityNodeInfo =
+            if (Build.VERSION.SDK_INT >= 30) AccessibilityNodeInfo(n) else AccessibilityNodeInfo.obtain(n)
 
         fun root(w: AccessibilityWindowInfo): AccessibilityNodeInfo? =
             if (PREFETCH_API) w.getRoot(PREFETCH) else w.root
@@ -126,6 +152,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         @JvmField val readMs: Long,
         /** Remote requests the walk made, or -1 when they cannot be counted. */
         @JvmField val roundTrips: Int,
+        /** Times the read started again from the window roots, the tree having changed under a walk. */
+        @JvmField val restarts: Int,
     )
 
     /** A node waiting in the breadth-first queue. */
@@ -141,13 +169,29 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
     /** A child whose fetch threw twice, or once when the read's retry budget was spent. */
     private class Unreadable(cause: RuntimeException) : Exception(cause)
 
-    /** What one read may still spend on children whose fetch threw. */
+    /** What one read may still spend on children it cannot fetch, across its walks. */
     private class Budget {
         /** Ms left to wait for retries. */
         @JvmField var retryMs = RETRY_BUDGET_MS
 
         /** Whether the read logged that its retries are spent. */
         @JvmField var spentLogged = false
+
+        /** Walks abandoned for a tree that changed under them. */
+        @JvmField var restarts = 0
+    }
+
+    /**
+     * The tree changed under a walk in window `window`, which is abandoned;
+     * `cause` is what the child's fetch threw, if it threw. Carries no stack
+     * trace of its own.
+     */
+    private class TreeChanged(
+        @JvmField val window: Int,
+        reason: String,
+        cause: RuntimeException?,
+    ) : Exception(reason, cause) {
+        override fun fillInStackTrace(): Throwable = this
     }
 
     /** A serialized node before the tree is assembled. */
@@ -178,11 +222,44 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
      * Reads every interactive window, or those whose id is in `only`.
      * `maxDepth` levels below each root and `maxNodes` nodes are serialized;
      * `seq` is the last tree event sent. Throws [Cancelled] as soon as
-     * `cancelled` turns true.
+     * `cancelled` turns true. A walk the tree changed under is abandoned and
+     * the read starts again from the window roots, at most [MAX_RESTARTS]
+     * times.
      */
     fun read(maxDepth: Int, maxNodes: Int, seq: Long, only: Set<Int>? = null, cancelled: () -> Boolean): Result {
         val t0 = SystemClock.uptimeMillis()
         val rt0 = RoundTrips.count()
+        val budget = Budget()
+        while (true) {
+            try {
+                return walk(maxDepth, maxNodes, seq, only, cancelled, budget, t0, rt0)
+            } catch (e: TreeChanged) {
+                budget.restarts++
+                Log.d(
+                    LOG_TAG,
+                    "${e.message}; reading from the window roots again, restart ${budget.restarts} of $MAX_RESTARTS",
+                    e.cause,
+                )
+                // The abandoned walk cached nodes of the window as they were before the change.
+                automation.evictWindow(e.window)
+            }
+        }
+    }
+
+    /**
+     * One walk of [read], which began at `t0` with `rt0` round trips counted
+     * and spends `budget` across its walks.
+     */
+    private fun walk(
+        maxDepth: Int,
+        maxNodes: Int,
+        seq: Long,
+        only: Set<Int>?,
+        cancelled: () -> Boolean,
+        budget: Budget,
+        t0: Long,
+        rt0: Int,
+    ): Result {
         val depthCap = minOf(maxDepth, Protocol.MAX_NODE_DEPTH)
         val strings = LinkedHashMap<String, Int>()
         fun intern(s: String): Int = strings.getOrPut(s) { strings.size }
@@ -210,7 +287,6 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         }
         val packageIndices = Array(windows.size) { i -> packages[i]?.let { intern(it) } }
 
-        val budget = Budget()
         val built = ArrayList<Built>()
         val infos = ArrayList<AccessibilityNodeInfo>()
         val nodeWindows = ArrayList<Int>()
@@ -255,18 +331,51 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
             if (count > 0) {
                 val childSerialized = id >= 0 && item.depth + 1 <= depthCap
                 if (id >= 0 && !childSerialized) truncated = truncated or Truncation.DEPTH
+                val window = windows[item.window].id
+                // How `n` changed under the walk, looked up once a child cannot be fetched.
+                var looked = false
+                var parentChange: String? = null
                 for (i in 0 until count) {
-                    val c = try {
-                        childOrRetry(n, i, windows[item.window].id, cancelled, budget)
-                    } catch (e: Unreadable) {
-                        total++
-                        truncated = truncated or Truncation.WINDOWS
-                        partial[item.window] = true
-                        skipped = true
-                        continue
-                    } ?: continue
+                    var thrown: RuntimeException? = null
+                    var c = try {
+                        fetch(n, i, cancelled)
+                    } catch (e: Cancelled) {
+                        throw e
+                    } catch (e: RuntimeException) {
+                        thrown = e
+                        null
+                    }
+                    if (c == null) {
+                        if (!looked) {
+                            looked = true
+                            val how = changeOf(n)
+                            parentChange = how
+                            if (how != null) {
+                                val what = "child $i of ${describe(n, window)} ${if (thrown == null) "is gone" else "threw"}, " +
+                                    "and the parent $how"
+                                if (budget.restarts < MAX_RESTARTS) throw TreeChanged(window, what, thrown)
+                                Log.d(LOG_TAG, "$what; the read's restarts are spent, so the walk keeps what it saw", thrown)
+                            }
+                        }
+                        val first = thrown ?: continue
+                        c = try {
+                            retry(n, i, window, first, parentChange, cancelled, budget)
+                        } catch (e: Unreadable) {
+                            total++
+                            truncated = truncated or Truncation.WINDOWS
+                            partial[item.window] = true
+                            skipped = true
+                            continue
+                        } ?: continue
+                    }
                     scrolling?.add(c)
                     queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
+                }
+                if (parentChange != null) {
+                    // The read's restarts are spent: what the walk kept of this parent is out of date.
+                    truncated = truncated or Truncation.WINDOWS
+                    partial[item.window] = true
+                    skipped = true
                 }
             }
             if (scrolling != null) built[id].scroll = Semantics.scroll(n, scrolling, !skipped)
@@ -314,29 +423,28 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
             visible,
             SystemClock.uptimeMillis() - t0,
             if (rt0 < 0 || rt < 0) -1 else rt - rt0,
+            budget.restarts,
         )
     }
 
     /**
-     * Child `i` of `n`, a node of window `window`, fetched once more after
-     * [RETRY_MS] when the fetch throws, if the read's `budget` still holds
-     * that wait. Throws [Unreadable] when the retry throws too or the budget
-     * is spent, and [Cancelled] when the read is abandoned before the wait.
+     * Child `i` of `n`, a node of window `window`, whose fetch threw `first`:
+     * fetched once more after [RETRY_MS] if `n` did not change under the
+     * walk (`change` is null) and the read's `budget` still holds that wait.
+     * Null when the child is gone by then. Throws [Unreadable] when the retry
+     * throws too, the parent changed or the budget is spent, and [Cancelled]
+     * when the read is abandoned before the wait.
      */
-    private fun childOrRetry(
+    private fun retry(
         n: AccessibilityNodeInfo,
         i: Int,
         window: Int,
+        first: RuntimeException,
+        change: String?,
         cancelled: () -> Boolean,
         budget: Budget,
     ): AccessibilityNodeInfo? {
-        val first = try {
-            return fetch(n, i, cancelled)
-        } catch (e: Cancelled) {
-            throw e
-        } catch (e: RuntimeException) {
-            e
-        }
+        if (change != null) throw Unreadable(first)
         if (budget.retryMs < RETRY_MS) {
             if (!budget.spentLogged) {
                 budget.spentLogged = true
@@ -362,6 +470,32 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         }
         Log.d(LOG_TAG, "child $i of ${describe(n, window)} ${if (c != null) "read" else "gone"} on the second attempt")
         return c
+    }
+
+    /**
+     * How `n` changed since the walk fetched it: gone, or with other
+     * children; null when it did not, or when that cannot be told. `n` is
+     * looked up afresh in a copy, so it keeps what the walk saw: one round
+     * trip without prefetch, which bypasses the cache without filling it and
+     * meets no integrity check.
+     */
+    private fun changeOf(n: AccessibilityNodeInfo): String? {
+        val fresh = copy(n)
+        val present = try {
+            fresh.refresh()
+        } catch (e: RuntimeException) {
+            return null
+        }
+        if (!present) return "is gone"
+        val count = n.childCount
+        if (fresh.childCount != count) return "has ${fresh.childCount} children, not $count"
+        val childId = CHILD_ID ?: return null
+        return try {
+            if ((0 until count).any { childId.invoke(fresh, it) != childId.invoke(n, it) }) "has other children" else null
+        } catch (e: Exception) {
+            // The hidden getter failed: whether the children changed cannot be told.
+            null
+        }
     }
 
     /**
