@@ -63,6 +63,22 @@ pub struct Window {
     /// The root node; absent when the platform returned none.
     #[n(7)]
     pub root: Option<Node>,
+    /// Whether the window's toolkit sends change events for its content.
+    /// `Some(false)` marks a window whose changes are only seen by reading
+    /// it again (Jetpack Compose sends no events to a UI automation client);
+    /// `None` when the agent cannot tell.
+    #[cbor(skip)]
+    pub emits_events: Option<bool>,
+    /// String-table index of the system process that owns the window, such
+    /// as `com.android.systemui` for the status bar or the permission
+    /// controller for a permission prompt; absent when the application under
+    /// automation owns it.
+    #[cbor(skip)]
+    pub owner: Option<u32>,
+    /// The window is a modal, such as a dialog, that keeps the user from the
+    /// windows below it until it is dismissed; the wire omits it when false.
+    #[cbor(skip)]
+    pub modal: bool,
 }
 
 /// One accessibility node.
@@ -96,6 +112,54 @@ pub struct Node {
     /// Child nodes in platform order; the wire omits an empty list.
     #[cbor(n(8), skip_if = "Vec::is_empty")]
     pub children: Vec<Node>,
+    /// How the node scrolls; present on nodes that scroll.
+    #[cbor(skip)]
+    pub scroll: Option<Scroll>,
+}
+
+/// Scroll semantics of a node that scrolls: the axis, whether it can scroll
+/// back (up or left) and forward (down or right) from where it is, and,
+/// where the platform reports them, the range its content spans and the
+/// part of that range inside its viewport, both in the range's unit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(map)]
+pub struct Scroll {
+    #[n(0)]
+    pub axis: ScrollAxis,
+    #[n(1)]
+    pub flags: ScrollFlags,
+    /// The range the content spans, when the platform reports one.
+    #[n(2)]
+    pub range: Option<ScrollRange>,
+    /// The part of `range` inside the viewport, when known; never present
+    /// without a range.
+    #[n(3)]
+    pub position: Option<ScrollPosition>,
+}
+
+/// The range a scrolling node's content spans, on the wire `[unit, min, max]`,
+/// both ends inclusive: `[items, 0, 199]` for a list of 200 items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(array)]
+pub struct ScrollRange {
+    #[n(0)]
+    pub unit: ScrollUnit,
+    #[n(1)]
+    pub min: i32,
+    #[n(2)]
+    pub max: i32,
+}
+
+/// The part of a [`ScrollRange`] inside the viewport, on the wire
+/// `[first, last]`, both inclusive: `[0, 15]` while the first 16 items of a
+/// list are in view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(array)]
+pub struct ScrollPosition {
+    #[n(0)]
+    pub first: i32,
+    #[n(1)]
+    pub last: i32,
 }
 
 /// A node whose map is being decoded: the fields read so far and, while
@@ -169,6 +233,7 @@ impl OpenNode {
                 .ok_or_else(|| cbor::missing(6, "bounds").at(at))?,
             flags: self.flags.ok_or_else(|| cbor::missing(7, "flags").at(at))?,
             children: self.child_nodes,
+            scroll: None,
         })
     }
 }
@@ -277,6 +342,35 @@ wire_flags! {
     FOCUSED = 1, "focused";
     ACCESSIBILITY_FOCUSED = 2, "accessibility_focused";
     PICTURE_IN_PICTURE = 3, "picture_in_picture";
+}
+
+wire_enum! {
+    /// The direction a node scrolls in.
+    pub struct ScrollAxis(u8);
+    /// The platform names no single direction.
+    UNKNOWN = 0, "unknown";
+    VERTICAL = 1, "vertical";
+    HORIZONTAL = 2, "horizontal";
+}
+
+wire_enum! {
+    /// What a [`ScrollRange`] counts.
+    pub struct ScrollUnit(u8);
+    /// A collection's items along the axis (Android's collection rows or
+    /// columns), numbered from 0.
+    ITEMS = 0, "items";
+    /// Percent of the scrollable range, 0 to 100, for a position the platform
+    /// reports as a value between bounds (Android's `RangeInfo`).
+    PERCENT = 1, "percent";
+}
+
+wire_flags! {
+    /// Which ways a node can scroll from where it is.
+    pub struct ScrollFlags;
+    /// Back, toward the start: up or left.
+    BACK = 0, "back";
+    /// Forward, toward the end: down or right.
+    FORWARD = 1, "forward";
 }
 
 wire_flags! {

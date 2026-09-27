@@ -482,6 +482,9 @@ fn to_read(screen: &Value) -> TreeRead {
             bounds: pixels(rect(&w["bounds"]), scale),
             flags: window_flags(&w["flags"]),
             root,
+            emits_events: None,
+            owner: None,
+            modal: false,
         });
         if w.get("events").is_some() || w.get("owner").is_some() || w.get("modal").is_some() {
             metas.push(WindowMeta {
@@ -596,6 +599,7 @@ fn to_node(v: &Value, scale: f64, strings: &mut Strings, next_id: &mut u32) -> N
         bounds: pixels(rect(&v["bounds"]), scale),
         flags,
         children,
+        scroll: None,
     }
 }
 
