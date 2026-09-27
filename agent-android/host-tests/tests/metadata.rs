@@ -265,21 +265,36 @@ fn a_permission_prompt_is_a_modal_window_owned_by_the_permission_controller() {
     let s = snapshot(&mut client);
     let (button, _) = find(&s, "system-permission").expect("system-permission");
     tap(&mut client, center(button.node.bounds));
+    // The prompt slides in from below the display, and until it stops the
+    // platform still lists the app's window under it, so a read then finds
+    // it neither inset nor alone; each read is judged, the last one named
+    // if none finds it modal.
+    let mut seen = String::from("no read");
     let prompt = poll(Duration::from_secs(5), Duration::from_millis(200), || {
         let s = snapshot(&mut client);
+        seen = s
+            .windows
+            .iter()
+            .map(|w| {
+                let package = w.package.and_then(|i| s.strings.get(i as usize));
+                format!("{package:?} {:?} modal={}", w.bounds, w.modal)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
         let w = s.windows.iter().find(|w| {
             w.package
                 .and_then(|i| s.strings.get(i as usize))
                 .is_some_and(|p| p.ends_with("permissioncontroller"))
         })?;
         let package = s.strings[w.package? as usize].clone();
-        Some((package, owner(&s, w).map(str::to_owned), w.modal, w.kind))
-    })
-    .expect("the permission prompt did not appear");
+        w.modal
+            .then(|| (package, owner(&s, w).map(str::to_owned), w.kind))
+    });
     dev.shell("input keyevent KEYCODE_BACK");
     fixture::force_stop(&dev, fixture::COMPOSE);
-    let (package, owned_by, modal, kind) = prompt;
+    // The prompt keeps the user from the app once it has come to rest.
+    let (package, owned_by, kind) = prompt
+        .unwrap_or_else(|| panic!("no modal permission prompt within 5 s; the last read: {seen}"));
     assert_eq!(kind, WindowType::APPLICATION);
     assert_eq!(owned_by.as_deref(), Some(package.as_str()));
-    assert!(modal, "the prompt keeps the user from the app");
 }
