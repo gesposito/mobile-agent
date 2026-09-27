@@ -61,8 +61,11 @@ fi
 
 if [ "$platform" = ios ]; then
   # pod install runs unwrapped: Socket Firewall cannot wrap CocoaPods (see README).
-  if [ ! -d ios/Pods ]; then
+  # pod install must follow the JavaScript dependencies: a pod set installed before a new
+  # native module was added leaves that module unimplemented at runtime.
+  if [ ! -d ios/Pods ] || [ "$(cat ios/Pods/.bun-lock-hash 2>/dev/null)" != "$lock_hash" ]; then
     (cd ios && pod install) >&2
+    echo "$lock_hash" > ios/Pods/.bun-lock-hash
   fi
 
   xcodebuild \
