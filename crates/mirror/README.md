@@ -180,7 +180,8 @@ arrived, perform due reads, never wait) or `run_until(deadline)`, and
   (Compose reports only the nodes in the viewport): a range with a position
   counts the items beyond it (`(184 more items below, ...)`), and a range in
   other units or none at all gives the ways the container can scroll
-  (`(more items below, ...)`). Content above or left is hinted before the
+  (`(more items below, ...)`); back reads as above or left, as in a
+  left-to-right layout. Content above or left is hinted before the
   container's children, below or right after them.
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
 - Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow and
@@ -314,8 +315,11 @@ cargo test -p mirror
 - Scroll semantics and window metadata come from the protocol's snapshot
   (task 3.6); the mirror keeps only `Owner`, the resolved form of a
   window's `owner`. A read without `emits_events` falls back to inferring
-  event-less windows from Compose's host view class, which misses Compose
-  dialogs; the Android agent reports it for every window it reads.
+  event-less windows from `androidx.compose.ui.platform.AndroidComposeView`,
+  the class the fixtures name. On the API 36 emulator a Compose window shows
+  `androidx.compose.ui.platform.ComposeView` instead and a Compose dialog no
+  Compose class at all, so the Android agent reports `emits_events` for
+  every window it reads rather than leaving it to this inference.
 
 ## Spec requirements and their tests
 
