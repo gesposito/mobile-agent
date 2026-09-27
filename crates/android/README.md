@@ -151,9 +151,10 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
   Compose windows stale and does not start its idle wait, so the next read
   waits until the input is 200 ms old and, when the last read showed a window
   that sends no change events, first sends a tree `resync`, which empties
-  the agent's node cache. A controller
-  that fails before a touch lands hands that input to the agent; after that,
-  all input goes through the agent.
+  the agent's node cache (an agent without the events capability cannot
+  resync, and the read goes on with its cache). A controller that fails
+  before a touch lands hands that input to the agent; after that, all input
+  goes through the agent.
 - **Frames**, with a controller only. A task on the link's runtime subscribes
   to 540-pixel-wide RGB888 frames and puts each on the event stream as a
   `Frame` whose hash leaves the top 6 % of rows out (the status bar, spike

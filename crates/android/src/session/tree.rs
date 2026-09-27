@@ -9,10 +9,10 @@ use std::sync::{Arc, PoisonError};
 use std::time::Instant;
 
 use mirror::backend::{BackendError, BackendInfo, ReadReason, ReadRequest, TreeRead, TreeSource};
-use protocol::code;
 use protocol::event::Stream;
 use protocol::message::{Call, Reply, ResyncParams, SnapshotParams};
 use protocol::snapshot::{Node, Snapshot};
+use protocol::{Capabilities, code};
 
 use super::{INPUT_QUIET, Inner, ReadOptions, ReadStats};
 
@@ -106,7 +106,10 @@ impl TreeSource for AgentTree {
             if let Some(wait) = quiet.checked_duration_since(Instant::now()) {
                 std::thread::sleep(wait);
             }
-            if inner.event_less.load(Ordering::SeqCst) {
+            // Resync is what empties the cache, and needs the events
+            // capability; without it the read goes on with the cache.
+            let can_resync = inner.agent.capabilities.contains(Capabilities::EVENTS);
+            if can_resync && inner.event_less.load(Ordering::SeqCst) {
                 inner.connection.call(
                     Call::Resync(ResyncParams {
                         stream: Stream::TREE,
