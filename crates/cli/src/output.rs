@@ -244,6 +244,7 @@ fn devices(data: &Value, out: &mut String) {
                 str_of(d, "platform").to_owned(),
                 str_of(d, "class").to_owned(),
                 str_of(d, "name").to_owned(),
+                str_of(d, "state").to_owned(),
             ];
             if let Some(holder) = d.get("claimedBy").and_then(Value::as_str) {
                 row.push(format!("claimed by {holder}"));
@@ -251,7 +252,16 @@ fn devices(data: &Value, out: &mut String) {
             row
         })
         .collect();
-    table(&rows, out);
+    let mut listing = String::new();
+    table(&rows, &mut listing);
+    // A target whose state keeps it from automation says what to do below
+    // its line.
+    for (line, device) in listing.lines().zip(&devices) {
+        let _ = writeln!(out, "{line}");
+        if let Some(advice) = device.get("advice").and_then(Value::as_str) {
+            let _ = writeln!(out, "    {advice}");
+        }
+    }
 }
 
 fn status(data: &Value, out: &mut String) {
@@ -276,11 +286,17 @@ fn status(data: &Value, out: &mut String) {
         let rows: Vec<Vec<String>> = targets
             .iter()
             .map(|t| {
-                let mut state = vec![if t["attached"] == Value::Bool(true) {
+                let mut state: Vec<String> = t
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .into_iter()
+                    .collect();
+                state.push(if t["attached"] == Value::Bool(true) {
                     "attached".to_owned()
                 } else {
                     "not attached".to_owned()
-                }];
+                });
                 if let Some(holder) = t.get("claimedBy").and_then(Value::as_str) {
                     state.push(format!("claimed by {holder}"));
                 }
@@ -296,6 +312,21 @@ fn status(data: &Value, out: &mut String) {
             })
             .collect();
         table(&rows, out);
+        // What each attached target's driver reports: its paths, helpers
+        // and failures.
+        for target in &targets {
+            let lines = target["driver"]["lines"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if lines.is_empty() {
+                continue;
+            }
+            let _ = writeln!(out, "{}:", str_of(target, "id"));
+            for line in lines.iter().filter_map(Value::as_str) {
+                let _ = writeln!(out, "    {line}");
+            }
+        }
     }
     if let Some(sessions) = data["sessions"].as_array().filter(|s| !s.is_empty()) {
         let _ = writeln!(out, "sessions:");
@@ -392,7 +423,10 @@ mod tests {
             lines[0].starts_with("7B292E1E") && lines[0].ends_with("mobile-agent-spike  booted"),
             "{out}"
         );
-        assert!(lines[1].ends_with("R58M123  unauthorized"), "{out}");
+        assert!(
+            lines[1].starts_with("R58M123 ") && lines[1].ends_with("  unauthorized"),
+            "{out}"
+        );
         assert_eq!(lines[2], "    accept the prompt on the device");
     }
 
