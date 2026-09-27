@@ -198,7 +198,12 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   `FLAG_PREFETCH_DESCENDANTS_BREADTH_FIRST | FLAG_PREFETCH_UNINTERRUPTIBLE`
   (spike S1's cheapest strategy), and serializes class, resource id (its
   `pkg:id/` prefix in the string table), text, content description, screen
-  bounds and the node flags, visibility to the user included. Node ids follow
+  bounds and the node flags, visibility to the user included. Before reading
+  it waits for the screen to go idle, meaning no accessibility event for
+  200 ms (design D8's quiet window), for at most `idle_ms`: 500 ms when the
+  request names none, no wait at all for 0. An endless animation keeps
+  sending events, so the wait then lasts exactly the bound; the platform's
+  own `waitForIdle` is never called. Node ids follow
   the walk. `max_depth` (levels below each root, default and ceiling 256) and
   `max_nodes` (default 10,000) bound what is serialized, not what is counted:
   past either cap the walk goes on counting, up to 100,000 nodes, so
@@ -208,7 +213,7 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   the nodes whose `visible` flag is set. `seq` is the last tree event sent
   before the walk began. A read whose deadline passes stops at the next node.
   With `--trace` the agent prints `trace snapshot id=<id> windows=<n>
-  nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> read_ms=<ms>
+  nodes=<total> visible=<n> serialized=<n> truncated=0x<bits> idle_ms=<ms> read_ms=<ms>
   round_trips=<n>`, the round trips read from the accessibility client's
   interaction counter.
 - **Liveness.** The agent pings a host it has not heard from for a second and
@@ -304,6 +309,8 @@ Rust tests are `host-tests/tests/<file>.rs::<name>`.
 | android-driver: Tree acquisition across windows | Keyboard is included | `tree::the_keyboard_window_appears_with_its_keys_when_a_field_is_focused` |
 | | Node limit reached | `tree::a_lower_node_cap_truncates_and_still_reports_the_full_count`, `tree::a_lower_depth_cap_truncates_below_it_and_still_reports_the_full_count` |
 | | Attributes of every node, 500-node screens | `tree::the_compose_500_cell_screen_returns_every_cell_with_total_and_visible_counts`, `tree::the_expo_500_cell_screen_returns_every_cell_with_total_and_visible_counts` |
+| android-driver: Bounded idle waiting | Continuous animation | `idle::a_snapshot_during_an_endless_animation_returns_within_the_default_bound_plus_read_time` |
+| | No wait at all, a requested bound, a quiet screen | `idle::idle_zero_reads_at_once_during_an_animation`, `idle::a_requested_bound_caps_the_wait`, `idle::a_quiet_screen_is_read_without_waiting_for_the_bound` |
 | device-protocol: Framed self-describing messages | Oversized frame is rejected explicitly (agent side) | `tree::a_snapshot_over_the_negotiated_frame_size_is_refused_naming_the_limit_and_request` |
 | device-protocol: Deadlines and cancellation | Snapshot exceeds its deadline | `tree::a_snapshot_past_its_deadline_gets_a_deadline_error_and_the_next_request_is_served` |
 | android-driver: Agent lifecycle | Explicit stop | `handshake::shutdown_is_answered_before_the_agent_exits` |

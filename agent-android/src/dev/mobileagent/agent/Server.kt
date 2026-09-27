@@ -58,6 +58,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
     /** Tree reads run one at a time, in arrival order. */
     private val treeWorker = Executors.newSingleThreadExecutor(daemonThreads("tree"))
     private lateinit var reader: TreeReader
+    private lateinit var events: EventHub
     /** The last tree read, whose node ids requests may name. */
     @Volatile private var lastRead: TreeReader.Result? = null
     @Volatile private var current: Session? = null
@@ -70,7 +71,9 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         val a = takeOwnership() ?: return EXIT_CONFLICT
         automation = a
         reader = TreeReader(a)
+        events = EventHub(a)
         a.enableInteractiveWindows()
+        events.start()
         val windowWait = a.awaitActiveWindow(options.windowWaitMs)
         val windows = a.uia.windows
         val active = windows.firstOrNull { it.isActive }?.root?.packageName ?: "-"
@@ -184,7 +187,9 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
         if (work.cancelled) return
         val maxDepth = call.maxDepth?.let { unsigned(it) } ?: Long.MAX_VALUE
         val maxNodes = call.maxNodes?.let { unsigned(it) } ?: TreeReader.DEFAULT_MAX_NODES.toLong()
+        val bound = call.idleMs?.let { unsigned(it) } ?: EventHub.DEFAULT_IDLE_MS
         try {
+            val idle = events.waitIdle(bound) { work.cancelled }
             val seq = work.session.lastSeq(Stream.TREE)
             val result = reader.read(
                 minOf(maxDepth, Int.MAX_VALUE.toLong()).toInt(),
@@ -198,7 +203,7 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 Out.line(
                     "trace snapshot id=${unsigned(work.id)} windows=${s.windows.size} nodes=${s.nodeCount} " +
                         "visible=${result.visible} serialized=${result.nodes.size} truncated=0x${Integer.toHexString(s.truncated)} " +
-                        "read_ms=${result.readMs} round_trips=${result.roundTrips}",
+                        "idle_ms=$idle read_ms=${result.readMs} round_trips=${result.roundTrips}",
                 )
             }
         } catch (e: Cancelled) {
