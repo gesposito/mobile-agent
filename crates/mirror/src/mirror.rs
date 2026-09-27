@@ -7,7 +7,7 @@ use protocol::message::TextMethod;
 use protocol::snapshot::{NodeFlags, WindowFlags, WindowType};
 
 use crate::backend::{Backend, BackendInfo, Input, NodeHandle, Owner};
-use crate::delta::DeltaSnapshot;
+use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
 use crate::error::{MirrorError, StaleCause};
 use crate::geometry::{Point, Rect};
@@ -102,6 +102,8 @@ pub struct Mirror {
     refs: RefTable,
     /// Refs the last snapshot listed, for its successor's removed refs.
     listed: Vec<Ref>,
+    /// The last delta snapshot's listing.
+    delta: Option<DeltaState>,
 }
 
 impl Mirror {
@@ -114,6 +116,7 @@ impl Mirror {
             replica: Replica::new(),
             refs: RefTable::new(),
             listed: Vec::new(),
+            delta: None,
         }
     }
 
@@ -580,18 +583,56 @@ impl Mirror {
     }
 
     /// A new snapshot with `baseline`'s options, diffed against `baseline`.
-    pub fn diff(&mut self, _baseline: &Snapshot) -> Result<Diff, MirrorError> {
-        todo!("task 7.6")
+    pub fn diff(&mut self, baseline: &Snapshot) -> Result<Diff, MirrorError> {
+        let current = self.snapshot(&baseline.options)?;
+        Ok(Diff::between(baseline, &current))
     }
 
     /// A snapshot as agent-browser's `snapshot --delta` returns it; `full`
-    /// forces the whole listing, as `--full` does.
+    /// forces the whole listing, as `--full` does. The listing is compared
+    /// with the previous delta snapshot's when the options, the replica's
+    /// generation and the foreground owner are the same.
     pub fn delta_snapshot(
         &mut self,
-        _options: &SnapshotOptions,
-        _full: bool,
+        options: &SnapshotOptions,
+        full: bool,
     ) -> Result<DeltaSnapshot, MirrorError> {
-        todo!("task 7.6")
+        let snapshot = self.snapshot(options)?;
+        let mut refs: Vec<RefEntry> = snapshot
+            .elements
+            .iter()
+            .filter_map(|e| {
+                e.reference.map(|reference| RefEntry {
+                    reference,
+                    role: e.role,
+                    name: e.name.clone(),
+                })
+            })
+            .collect();
+        refs.sort_by_key(|entry| entry.reference);
+        let context = DeltaContext {
+            options: *options,
+            generation: self.replica.generation,
+            foreground: snapshot.foreground.clone(),
+        };
+        let revision = self.delta.as_ref().map_or(1, |d| d.revision + 1);
+        let result = match &self.delta {
+            Some(previous) if !full && previous.context == context => {
+                delta::against(previous, revision, &snapshot.text, &refs)
+            }
+            _ => DeltaSnapshot::Full {
+                revision,
+                tree: snapshot.text.clone(),
+                refs: refs.clone(),
+            },
+        };
+        self.delta = Some(DeltaState {
+            revision,
+            context,
+            tree: snapshot.text,
+            refs,
+        });
+        Ok(result)
     }
 
     /// The replica's revision: it grows whenever a read changes the replica.

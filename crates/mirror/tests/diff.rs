@@ -252,6 +252,11 @@ fn a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full() {
     assert_eq!(*revision, 2);
     assert!(tree.contains("\"Prompts tab\""));
     let json: Value = serde_json::from_str(&next.to_json()).unwrap();
+    assert_eq!(
+        serde_json::to_string(&json).unwrap(),
+        next.to_json(),
+        "the bytes agent-browser's serde_json writes, sorted keys included"
+    );
     assert_eq!(json["kind"], "full");
     assert_eq!(
         json["refs"]["e8"],
@@ -286,6 +291,7 @@ fn delta_ref_changes_follow_agent_browser_ops() {
     assert_eq!(added.reference, Ref(506));
     assert_eq!(added.name, "New cell");
     let json: Value = serde_json::from_str(&delta.to_json()).unwrap();
+    assert_eq!(serde_json::to_string(&json).unwrap(), delta.to_json());
     assert_eq!(json["changes"][0], json!({"op": "remove", "ref": "@e3"}));
     assert_eq!(
         json["changes"][1],

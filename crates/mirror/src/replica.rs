@@ -138,6 +138,9 @@ pub(crate) struct Replica {
     pub need_full: Option<ReadReason>,
     /// The next full read starts the replica over: no identity carries.
     pub fresh: bool,
+    /// How many times the replica was started over; refs from an earlier
+    /// generation are stale.
+    pub generation: u64,
     next_element: u64,
     /// The last sequence number accounted for, per lossless stream.
     seqs: HashMap<Stream, u64>,
@@ -165,6 +168,7 @@ impl Replica {
             truncated: Truncation::EMPTY,
             need_full: Some(ReadReason::Attach),
             fresh: true,
+            generation: 0,
             next_element: 0,
             seqs: HashMap::new(),
             frame: None,
