@@ -2,8 +2,9 @@
 //!
 //! Class names, package names and resource-id prefixes live once in the
 //! snapshot's string table and nodes refer to them by index; enums are
-//! integers and node states a bitmask (design D4). Snapshots, windows and
-//! nodes are maps keyed by field index; bounds are a four-element array.
+//! integers and node states a bitmask (design D4). Snapshots, windows, nodes
+//! and scroll semantics are maps keyed by field index; bounds, scroll ranges
+//! and scroll positions are positional arrays.
 
 use minicbor::decode::{Decoder, Error};
 use minicbor::{Decode, Encode};
@@ -67,17 +68,17 @@ pub struct Window {
     /// `Some(false)` marks a window whose changes are only seen by reading
     /// it again (Jetpack Compose sends no events to a UI automation client);
     /// `None` when the agent cannot tell.
-    #[cbor(skip)]
+    #[n(8)]
     pub emits_events: Option<bool>,
     /// String-table index of the system process that owns the window, such
     /// as `com.android.systemui` for the status bar or the permission
     /// controller for a permission prompt; absent when the application under
     /// automation owns it.
-    #[cbor(skip)]
+    #[n(9)]
     pub owner: Option<u32>,
     /// The window is a modal, such as a dialog, that keeps the user from the
     /// windows below it until it is dismissed; the wire omits it when false.
-    #[cbor(skip)]
+    #[cbor(n(10), skip_if = "is_false")]
     pub modal: bool,
 }
 
@@ -113,7 +114,7 @@ pub struct Node {
     #[cbor(n(8), skip_if = "Vec::is_empty")]
     pub children: Vec<Node>,
     /// How the node scrolls; present on nodes that scroll.
-    #[cbor(skip)]
+    #[n(9)]
     pub scroll: Option<Scroll>,
 }
 
@@ -177,6 +178,7 @@ struct OpenNode {
     bounds: Option<Bounds>,
     flags: Option<NodeFlags>,
     child_nodes: Vec<Node>,
+    scroll: Option<Scroll>,
 }
 
 impl OpenNode {
@@ -194,6 +196,7 @@ impl OpenNode {
             bounds: None,
             flags: None,
             child_nodes: Vec::new(),
+            scroll: None,
         })
     }
 
@@ -214,6 +217,7 @@ impl OpenNode {
                 self.child_nodes = Vec::with_capacity(cbor::reserve(children.len(), d));
                 self.children = Some(children);
             }
+            9 => self.scroll = Option::<Scroll>::decode(d, ctx)?,
             _ => d.skip()?,
         }
         Ok(())
@@ -233,7 +237,7 @@ impl OpenNode {
                 .ok_or_else(|| cbor::missing(6, "bounds").at(at))?,
             flags: self.flags.ok_or_else(|| cbor::missing(7, "flags").at(at))?,
             children: self.child_nodes,
-            scroll: None,
+            scroll: self.scroll,
         })
     }
 }
@@ -276,6 +280,10 @@ impl<'b, C> Decode<'b, C> for Node {
             }
         }
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// A screen rectangle in pixels, on the wire `[left, top, right, bottom]`.
