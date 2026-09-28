@@ -25,6 +25,7 @@ use crate::snapshot::{
 use crate::timestamps::Timestamps;
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
+use crate::visibility::{self, Visibility};
 use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
 /// How often a window that sends no change events is re-read when nothing
@@ -517,6 +518,16 @@ impl Mirror {
         let window = &self.replica.windows[w];
         let facts = view::facts_of(&self.replica, w, i);
         Ok(element(window, &window.nodes[i], &facts, Some(reference)))
+    }
+
+    /// How much of `element` is in view as the replica has it now, without
+    /// reading the target: the share of its bounds inside the visible bounds
+    /// of what holds it, and the edge its bounds may have been clipped at.
+    /// `None` when the replica no longer holds the element.
+    pub fn visibility(&self, element: ElementId) -> Option<Visibility> {
+        let (w, i) = self.replica.locate(element)?;
+        let view = View::build(&self.replica);
+        Some(visibility::of(&self.replica, &view, w, i))
     }
 
     /// Where the element `reference` names is in the replica. The element

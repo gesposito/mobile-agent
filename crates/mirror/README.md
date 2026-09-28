@@ -14,10 +14,11 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change
+                timestamps, note_window_change, visibility
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, modal cutting, scroll hints
+  visibility.rs how much of an element is in view: its visible bounds, share and cut edge
   roles.rs      roles from Android widget classes, XCUIElementType names and UIKit classes
   render.rs     listings and agent-browser's snapshot lines
   refs.rs       eN refs: parsing, issuing, stale detection
@@ -32,7 +33,7 @@ src/
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
-                timestamps, editables, controls
+                timestamps, editables, controls, visibility
 tests/support/  the fixture loader
 ```
 
@@ -320,6 +321,23 @@ the reasons in this order, each with advice:
   and the app in front has not changed; a maximum that passes during it
   names the tree. With frames, which show the stretch, the hold changes
   nothing.
+- `visibility` tells, from the replica as it is and without reading the
+  target, how much of an element is in view (task 10.15). Its visible
+  bounds are its window's, clipped by every scroll container around it (a
+  node that says it scrolls, a list or grid, or one with scroll
+  semantics), less the bars drawn over them: system and keyboard windows
+  above its window, and tab bars and toolbars of its window that neither
+  hold it nor scroll with it. A bar cuts the bounds where it spans them
+  from one side to the other and reaches an edge, and one over all of
+  them leaves nothing. `fraction` is the share of the element's bounds
+  inside them. Android reports bounds clipped to every ancestor, so an
+  element its list cuts off reads as the part that shows (a row of 48
+  points read as 1.2 points tall at the Expo list's edge on the API 36
+  emulator), while iOS reports whole frames: an element whose bounds end,
+  within a pixel, at an edge of its scroll containers' bounds where one of
+  them can scroll further, as its scroll semantics say, is `cut` there,
+  and how much of it lies beyond is unknown. A container without scroll
+  semantics cannot tell, and cuts nothing.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
@@ -484,3 +502,4 @@ cargo test -p mirror
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
 | Replica maintained from device events | (task 7.10: timing and draining for the daemon) | `timestamps::nothing_has_happened_before_the_first_read_and_the_first_read_gives_its_span`, `timestamps::the_last_frame_and_frame_change_come_from_the_frames_the_mirror_took_in`, `timestamps::only_the_latest_1024_frame_changes_are_kept`, `timestamps::the_last_tree_change_is_an_event_arrival_or_the_end_of_a_read_that_found_a_delta`, `timestamps::the_last_action_is_when_the_mirror_injected_input`, `timestamps::drain_takes_in_what_arrived_without_reading_the_tree` |
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
+| (task 10.15, how much of an element is in view) | (the share in view, the cut edge, the bars) | `visibility::a_row_inside_its_list_is_wholly_in_view_within_the_list_s_bounds`, `visibility::a_row_android_clips_at_the_bottom_edge_of_a_list_that_scrolls_on_is_cut_there`, `visibility::a_row_android_clips_at_the_top_edge_of_a_list_that_scrolls_back_is_cut_there`, `visibility::a_row_at_the_edge_of_a_list_that_cannot_scroll_that_way_is_whole`, `visibility::without_scroll_semantics_an_edge_is_no_cut`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds`, `visibility::an_element_outside_any_scroll_container_is_measured_against_its_window`, and the unit tests `visibility::tests::*` |

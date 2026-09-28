@@ -442,6 +442,14 @@ fn cover_below(replica: &Replica, facts: &mut [Vec<Facts>], w: usize) {
     }
 }
 
+/// Whether a node scrolls its content: it says it scrolls, it is a list or
+/// a grid, or it has scroll semantics.
+pub(crate) fn scrolls(node: &RNode, facts: &Facts) -> bool {
+    node.flags.contains(NodeFlags::SCROLLABLE)
+        || matches!(facts.role, Role::List | Role::Grid)
+        || node.scroll.is_some()
+}
+
 /// Scroll hints per container: `(window index, node index, hint)`, in
 /// pre-order of containers and, per container, above, left, below, right.
 pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, ScrollHint)> {
@@ -449,12 +457,7 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
     for (w, window) in replica.windows.iter().enumerate() {
         let facts = &view.windows[w];
         let area = Rect::from_pixels(window.bounds, replica.scale);
-        let container = |i: usize| {
-            let node = &window.nodes[i];
-            node.flags.contains(NodeFlags::SCROLLABLE)
-                || matches!(facts[i].role, Role::List | Role::Grid)
-                || node.scroll.is_some()
-        };
+        let container = |i: usize| scrolls(&window.nodes[i], &facts[i]);
         let mut counts: Vec<[u32; 4]> = vec![[0; 4]; window.nodes.len()];
         for (x, node) in window.nodes.iter().enumerate() {
             let f = &facts[x];
