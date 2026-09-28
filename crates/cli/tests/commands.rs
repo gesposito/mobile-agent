@@ -484,6 +484,7 @@ fn scroll_until_stops_only_once_the_element_is_mostly_in_view() {
             data["strokes"], 2,
             "{fake}: a stroke of {amount} points, then one that brings the row in: {reply}"
         );
+        assert_eq!(data["visible"], 1.0, "{fake}: all of it in view: {reply}");
         env.cli(&["click", "#row-20"]).ok();
         env.cli(&["wait", "text==Detail 20", "--timeout", "2000"])
             .ok();
@@ -513,6 +514,10 @@ fn scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in() {
             "{fake}: {message}"
         );
         assert_eq!(failed["data"]["strokes"], 0, "{fake}: {failed}");
+        // Android reports the row's bounds cut to the two points that show,
+        // all of them in view; iOS reports its whole frame.
+        let visible = if fake == "android" { 1.0 } else { 0.04 };
+        assert_eq!(failed["data"]["visible"], visible, "{fake}: {failed}");
     }
 }
 

@@ -232,14 +232,19 @@ Examples:
   mobile-agent swipe 200 700 200 200 --duration 500")]
     Swipe(SwipeArgs),
 
-    /// Scroll the content up, down, left or right, or until an element is on screen
+    /// Scroll the content up, down, left or right, or until an element is in view
     #[command(after_help = "\
 The direction is the content's: scroll down shows what is below. A stroke must
 be longer than a tap, more than 8 points on Android and 10 on iOS, or the
 scroll fails with stroke_too_short. With --until, AMOUNT is each stroke's, the
-screen settles after each stroke, and the scroll stops once the element is on
-screen, fails with element_not_found once the content stops moving, and waits
-at most --timeout.
+screen settles after each stroke, and the scroll stops once the element is
+mostly in view: its centre and at least half of it inside what its list shows,
+less the bars over it. Once the element is on screen, the next stroke brings it
+in, whichever way that takes, rather than going on by AMOUNT. The reply's
+visible is the share of the element's bounds in view, from 0 to 1 (Android
+reports an element its list cuts off as the part that shows). The scroll fails
+with element_not_found once the content stops moving or no stroke along its
+axis brings more of the element in, and waits at most --timeout.
 
 Examples:
   mobile-agent scroll
@@ -427,7 +432,7 @@ pub struct ScrollArgs {
     /// Scroll inside this element (a ref or a selector) instead of the screen
     #[arg(short, long, value_name = "TARGET")]
     pub selector: Option<String>,
-    /// Keep scrolling until this element (a ref or a selector) is on screen
+    /// Keep scrolling until this element (a ref or a selector) is mostly in view
     #[arg(long, value_name = "TARGET")]
     pub until: Option<String>,
     #[arg(long, value_name = "MS", help = SELECTOR_TIMEOUT)]

@@ -137,7 +137,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
-| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`; with `until`, `until` and `element` |
+| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`; with `until`, `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` |
 | `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
@@ -173,9 +173,32 @@ scrolled from 9 and 11 points.
 `scroll` with `until` scrolls in strokes of `amount` points (at most 80% of
 the scrolled area) and lets the screen settle after each, at most 1.5 s, so
 a check never races a moving list; it stops once the element is on screen,
-not covered and not scrolled away, and fails with `element_not_found` when
-two strokes in a row change nothing (the content stopped moving), after 50
-strokes, or at its timeout.
+not covered and mostly in view, and fails with `element_not_found` when two
+strokes in a row change nothing (the content stopped moving), when no
+stroke along its axis brings more of an element on screen in, after 50
+strokes, or at its timeout. Mostly in view means its centre inside the
+visible bounds the mirror gives it (`Mirror::visibility`: its window,
+clipped by the scroll containers around it, less the system and keyboard
+windows above it and the tab bars and toolbars drawn over them) and at
+least half of its bounds inside them, its bounds cut off at no edge where
+a container around it can still scroll, as its scroll semantics say, since
+Android reports an element its list cuts off as the part that shows (task
+10.15: a frame-path run of the harness's list-scroll flow stopped with
+`row-200` 1.2 points tall at the Expo list's bottom edge, all of the row
+Android reported); an element longer than the visible bounds along the
+axis, or cut off along it, is mostly in view once it fills them. Once the
+element is on screen but not mostly in view, a stroke of the step could
+carry it past the far edge, so the next stroke only brings it in, whichever
+way that takes: one that sticks out of the visible bounds just far enough
+to carry it 8 points inside, and one cut off at an edge, whose length is
+unknown, or longer than the visible bounds, far enough to carry the middle
+of its bounds to theirs; the platform's tap threshold is added, since the
+content moves only once the finger has gone that far, the stroke is at
+most `amount` long, and the finger moves at most 400 points a second, so
+the fling after it lifts stays short. `visible` rounds the share to a
+hundredth, and an `element_not_found` for an element on screen carries it
+as `data.visible`; for an element Android cut off it is the share of what
+Android reports, which can be 1.
 
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
@@ -582,7 +605,7 @@ reports the agent's paths, as a real emulator does.
 | `target_not_found` | `device` names no connected target; `data.candidates` |
 | `target_claimed` | another session holds the target; `data.holder` |
 | `app_not_found` | the target has no such app |
-| `element_not_found` | no element matched a selector within the timeout |
+| `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, and `data.visible` for an element on screen |
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
 | `unknown_key` | the platform has no code for the key |
@@ -673,6 +696,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.16, shutdown waits for the targets) | (`shutdown` answers once the targets have stopped and the files are gone, bounded by 5 s) | `lifecycle::shutdown_answers_once_the_targets_have_stopped_and_the_socket_is_gone`, `lifecycle::a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply`, `registry::tests::stopping_names_the_targets_still_detaching_when_the_wait_is_over`, `registry::tests::a_stopped_registry_starts_no_worker`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the CLI's `lifecycle::shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket` and `lifecycle::a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket` |
 | (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
 | (task 10.14, overscroll without frames) | (a click right after the settle that follows a stroke to the end of a list opens the row) | the mirror's `settle::without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change` and their controls; against an emulator on the agent path, `devices::the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path` |
+| (task 10.15, `scroll --until` stops once the element is mostly in view) | (a sliver of the element on screen does not stop the scroll; `visible` in the reply) | `handlers::act::tests::a_scroll_that_looks_for_an_element_stops_once_it_is_mostly_in_view`, `handlers::act::tests::a_partly_shown_element_is_brought_in_by_one_stroke_no_longer_than_the_step`, `handlers::act::tests::no_stroke_brings_in_an_element_the_scroll_s_axis_does_not_cut_off`, `handlers::act::tests::a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second`; the mirror's `visibility::*`; the CLI's `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view` and `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

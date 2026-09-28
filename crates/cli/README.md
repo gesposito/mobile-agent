@@ -43,7 +43,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is on screen |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is mostly in view, `visible` giving the share of it in view |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |
@@ -54,6 +54,24 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `set timeout <ms>` | sets this session's default timeout |
 | `shutdown` | stops the daemon, returning once it has let go of its targets |
 | `help [agent \| <command>]` | prints help, a command's help, or the agent guide |
+
+`scroll --until` stops once the element is mostly in view: its centre and
+at least half of it inside the visible bounds of what holds it (its window,
+clipped by the scroll containers around it, less the system bars, keyboard,
+tab bars and toolbars drawn over them). Android reports an element its list
+cuts off as the part that shows, so one whose bounds end at the edge of a
+list that scrolls on counts as partly in view whatever share its bounds
+give, and an element longer than the list stops the scroll once it fills
+the list. Once the element is on screen, the next stroke brings it in
+rather than going on by the amount: one just long enough to carry an
+element whose bounds stick out 8 points inside, and one that carries the
+middle of an element cut off at the edge, or longer than the list, to the
+list's middle, in either case at most the amount and with the finger
+moving at most 400 points a second, so the content's fling after the
+finger lifts stays short. The reply's `visible` is the share of the
+element's bounds in view, from 0 to 1, rounded to a hundredth; an
+`element_not_found` for an element on screen but not mostly in view
+carries it too, as `data.visible`.
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
 or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
@@ -407,6 +425,8 @@ Task 10.12's emulator controller setting has
 `output::tests::status_names_the_emulator_controller_when_it_is_off`,
 `doctor::a_daemon_that_leaves_the_controller_unused_says_so` and
 `config::tests::a_project_file_overrides_the_user_file_key_by_key`.
+Task 10.15 adds `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`
+and `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

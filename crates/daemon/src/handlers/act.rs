@@ -638,6 +638,11 @@ fn bring_in_duration(length: f64) -> Duration {
     SWIPE_DURATION.max(Duration::from_secs_f64(length / BRING_IN_SPEED))
 }
 
+/// A share from 0 to 1 as replies give it: to a hundredth.
+fn share(fraction: f64) -> f64 {
+    (fraction * 100.0).round() / 100.0
+}
+
 /// How much of an element is in view, in words: the edge its bounds are
 /// cut off at while more of it may lie beyond, else its share in view.
 fn in_view(seen: &Visibility) -> String {
@@ -663,7 +668,8 @@ fn in_view(seen: &Visibility) -> String {
 /// further stroke brings it in rather than going on by the step (see
 /// [`decide`]). Fails with `element_not_found` once the content stops moving
 /// or no stroke along the axis brings more of the element in, after
-/// [`UNTIL_STROKES`] strokes, or at the command's timeout.
+/// [`UNTIL_STROKES`] strokes, or at the command's timeout; an element on
+/// screen then gives its share in view as `data.visible`.
 fn scroll_until(
     target: &mut Attached,
     session: &str,
@@ -684,7 +690,7 @@ fn scroll_until(
             .as_ref()
             .and_then(|element| target.mirror.visibility(element.id));
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
-        if let (Some(Next::Stop), Some(element)) = (next, &found) {
+        if let (Some(Next::Stop), Some(element), Some(seen)) = (next, &found, &seen) {
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
             }
@@ -694,6 +700,7 @@ fn scroll_until(
                 "amount": step,
                 "strokes": strokes,
                 "until": until,
+                "visible": share(seen.fraction),
                 "element": element_json(element),
             })));
         }
@@ -727,7 +734,7 @@ fn scroll_until(
                         in_view(&seen),
                         direction.name()
                     ),
-                    json!({"strokes": strokes, "until": until}),
+                    json!({"strokes": strokes, "until": until, "visible": share(seen.fraction)}),
                 ),
                 None => (
                     format!(
