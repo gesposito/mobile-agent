@@ -14,7 +14,7 @@ mod support;
 
 use std::time::Duration;
 
-use mirror::backend::{NodeHandle, ReadReason, TreeRead};
+use mirror::backend::{Input, NodeHandle, ReadReason, Release, TreeRead};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
     Action, DEFAULT_OVERSCROLL, DEFAULT_PROBE_ANCHORS, DEFAULT_PROBE_INTERVAL,
@@ -777,10 +777,33 @@ fn stroke(target: &FakeTarget, mirror: &mut Mirror, from: Point, to: Point) -> D
             from,
             to,
             duration: ms(300),
+            release: Release::Moving,
         })
         .unwrap();
     target.input_cost(Duration::ZERO);
     target.elapsed()
+}
+
+/// Task 10.16: a stroke reaches the target with the release the action
+/// gives it, so a driver can let its finger come to rest before it lifts.
+#[test]
+fn a_stroke_reaches_the_target_released_as_the_action_says() {
+    let (target, mut mirror) = list_on_the_agent_path(list(false, true, 0.0));
+    for release in [Release::Moving, Release::Resting] {
+        mirror
+            .act(&Action::Swipe {
+                from: Point::new(204.0, 700.0),
+                to: Point::new(204.0, 100.0),
+                duration: ms(300),
+                release,
+            })
+            .unwrap();
+        let last = target.inputs().pop().expect("the stroke");
+        assert!(
+            matches!(last.input, Input::Swipe { release: r, .. } if r == release),
+            "{last:?}"
+        );
+    }
 }
 
 /// A stroke up the middle of the list, which scrolls it down, as the

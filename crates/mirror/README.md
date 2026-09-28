@@ -88,7 +88,8 @@ pub trait Clock: Send {
 | `StreamItem` | `Event(protocol::event::Event)`, `Frame(FrameMeta)`, `OutOfSync { stream, expected, received }`, `Resynced { stream, seq }`, `BackendChanged(BackendInfo)`, `Reconnected`, `Disconnected(String)` |
 | `FrameMeta` | `seq`, `at: Instant` (capture), `hash: u64`, `width`, `height`, `rotation` (clockwise turn that makes the pixels upright) |
 | `EncodeRequest` | `seq`, `width`, `height` (upright output), `quality`, `rotation` |
-| `Input` | `Tap { at, hold }`, `Swipe { from, to, duration }`, `Key { code, meta }`, `Text { text, node: Option<NodeHandle>, method }` |
+| `Input` | `Tap { at, hold }`, `Swipe { from, to, duration, release }`, `Key { code, meta }`, `Text { text, node: Option<NodeHandle>, method }` |
+| `Release` | `Moving` (the finger lifts at the end of its path, still moving, and the platform flings the content on), `Resting` (the finger comes to rest before it lifts, and the content stops where it left it; how the platform is made to see it stop is the driver's) |
 | `InputAck` | `accepted: bool`, `method: Option<TextMethod>` |
 
 Conventions a driver follows:

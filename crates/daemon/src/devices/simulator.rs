@@ -34,8 +34,8 @@ use std::time::{Duration, Instant};
 
 use mirror::backend::{
     Backend, BackendError, BackendInfo, EncodeRequest, EventStream, FrameMeta, FrameSource, Input,
-    InputAck, InputSink, NodeHandle, ReadRequest, StreamItem, SystemClock, Timed, TreeRead,
-    TreeSource,
+    InputAck, InputSink, NodeHandle, ReadRequest, Release, StreamItem, SystemClock, Timed,
+    TreeRead, TreeSource,
 };
 use mirror::{MirrorConfig, Point};
 use protocol::message::{Rotation, TextMethod as WireMethod};
@@ -69,6 +69,26 @@ const READ_RETRY: Duration = Duration::from_millis(100);
 
 /// How long text waits for the field it tapped to take the focus.
 const FOCUS_WAIT: Duration = Duration::from_millis(1500);
+
+/// How long the finger of a swipe released resting rests at the end of its
+/// path before it creeps on and lifts (task 10.16; the creep is the
+/// Simulator driver's, see `simulator::gesture::swipe`). On the iOS 26.5
+/// Simulator, 600-point swipes over 300 ms released this way moved the
+/// fixtures' lists 541 to 571 points, where swipes that lifted moving moved
+/// them 1,522 to 1,608.
+const REST: Duration = Duration::from_millis(60);
+
+/// The Simulator driver's swipe from `from` to `to` over `duration`,
+/// released as `release` says.
+fn swipe(from: Point, to: Point, duration: Duration, release: Release) -> Swipe {
+    Swipe {
+        rest: match release {
+            Release::Moving => None,
+            Release::Resting => Some(REST),
+        },
+        ..Swipe::new(point(from), point(to), duration)
+    }
+}
 
 /// The usage of the `a` key, which selects everything with Command held.
 const USAGE_A: u32 = 0x04;
@@ -397,9 +417,12 @@ impl InputSink for HostInput {
                 at,
                 hold: Some(hold),
             } => self.accepted(driver.press(udid, point(*at), *hold)),
-            Input::Swipe { from, to, duration } => {
-                self.accepted(driver.swipe(udid, &Swipe::new(point(*from), point(*to), *duration)))
-            }
+            Input::Swipe {
+                from,
+                to,
+                duration,
+                release,
+            } => self.accepted(driver.swipe(udid, &swipe(*from, *to, *duration, *release))),
             Input::Key { code, meta } => match ios_key(*code, *meta)? {
                 IosKey::Key(key) => self.accepted(driver.key(udid, key)),
                 IosKey::Button(button) => self.accepted(driver.button(udid, button)),
@@ -962,6 +985,21 @@ mod tests {
                 identifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17".into(),
             }),
         }
+    }
+
+    /// Task 10.16: a swipe released resting rests 60 ms at its end, which
+    /// the Simulator driver follows with its creep; one released moving
+    /// lifts at once.
+    #[test]
+    fn a_swipe_released_resting_rests_60_ms_before_the_finger_lifts() {
+        let (from, to) = (Point::new(201.0, 700.0), Point::new(201.0, 150.0));
+        let duration = Duration::from_millis(300);
+        let moving = swipe(from, to, duration, Release::Moving);
+        assert_eq!(moving.rest, None);
+        assert_eq!(moving.duration, duration);
+        let resting = swipe(from, to, duration, Release::Resting);
+        assert_eq!(resting.rest, Some(Duration::from_millis(60)));
+        assert_eq!((resting.from.y, resting.to.y), (700.0, 150.0));
     }
 
     #[test]

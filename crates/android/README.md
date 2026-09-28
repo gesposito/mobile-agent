@@ -166,7 +166,15 @@ one is set). `Session::backend` hands a `mirror::Backend` over, once:
   text names the node of the latest read, and `auto` leaves the method to
   the agent. With a controller, taps and swipes go through it instead (a
   swipe moves every 8 ms along its line, as the agent's does); keys and text
-  stay with the agent. Input the agent did not inject leaves its cache of
+  stay with the agent. A swipe released resting (task 10.16) rests 60 ms at
+  the end of its line, then moves one pixel on and lifts there, through the
+  agent's `rest_ms` or as the controller's last touches: Android's velocity
+  tracker takes a pointer that has not moved for 40 ms as stopped when its
+  next event comes, so the content stops where the pointer left it (a
+  600-point swipe over 300 ms moved the Expo fixture's list 555 to 584
+  points on the API 36 emulator's controller path, and 1,176 to 1,319 when
+  it lifted moving). A touch that repeats the last position changes nothing
+  the platform sees, hence the pixel. Input the agent did not inject leaves its cache of
   Compose windows stale and does not start its idle wait, so the next read
   waits until the input is 200 ms old and, when the last read showed a window
   that sends no change events, asks the agent in its `snapshot` request to
@@ -503,6 +511,7 @@ Requirement **Input injection**:
 |---|---|
 | Scenario "Tap acknowledged" | agent side `input::a_tap_is_acknowledged_as_accepted_within_50_ms`; integration `the_mirror_serves_compose_big_follows_a_tap_and_reports_a_killed_agent` (accepted through the mirror in 7.8 to 11.3 ms); `session::tests::input_goes_to_the_agent_in_pixels_and_returns_its_verdict`, `session::input::tests::acknowledgements_carry_the_platforms_verdict_and_the_text_method` |
 | Taps, long presses, swipes with duration, keys, in pixels | `session::input::tests::taps_and_long_presses_go_out_in_pixels`, `session::input::tests::swipes_keep_their_duration_and_keys_their_code`, and on the controller `session::input::tests::a_swipe_on_the_controller_is_down_moves_and_up_along_the_line`, `session::input::tests::a_swipe_without_duration_still_moves_once` |
+| Swipes released resting (task 10.16) | `session::input::tests::a_swipe_released_resting_asks_the_agent_to_rest_60_ms`, `session::input::tests::a_swipe_released_resting_on_the_controller_rests_then_moves_a_pixel_on_and_lifts`; the agent's `input::a_swipe_that_rests_before_the_lift_moves_the_list_as_far_as_the_pointer` |
 
 Requirement **Direct text setting with fallback**:
 

@@ -326,15 +326,33 @@ pub trait InputSink: Send {
     fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError>;
 }
 
+/// How the finger of a swipe leaves the screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Release {
+    /// It lifts at the end of its path, still moving, as after a flick: the
+    /// platform flings the content on at the finger's speed.
+    #[default]
+    Moving,
+    /// It comes to rest at the end of its path before it lifts, so the
+    /// content stops where the finger left it (task 10.16). How a driver
+    /// makes its platform see the finger stop is its own: Android's velocity
+    /// tracker takes a pointer that has not moved for 40 ms as stopped,
+    /// while UIKit takes a drag's velocity from its last moves.
+    Resting,
+}
+
 /// One input action, coordinates in device points.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     /// A tap, or a long press when `hold` is present.
     Tap { at: Point, hold: Option<Duration> },
+    /// A stroke from `from` to `to` over `duration`, its finger leaving the
+    /// screen as `release` says.
     Swipe {
         from: Point,
         to: Point,
         duration: Duration,
+        release: Release,
     },
     /// A platform key code, such as Android's `KEYCODE_ENTER` (66).
     Key { code: u32, meta: Option<u32> },

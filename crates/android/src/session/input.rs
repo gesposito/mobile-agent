@@ -6,7 +6,7 @@ use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
 use mirror::Point;
-use mirror::backend::{BackendError, Input, InputAck, InputSink};
+use mirror::backend::{BackendError, Input, InputAck, InputSink, Release};
 use protocol::code;
 use protocol::message::{Call, KeyParams, Reply, SwipeParams, TapParams, TextMethod, TextParams};
 
@@ -17,8 +17,27 @@ use crate::emulator::{self, TouchPoint};
 /// swipe does.
 const SWIPE_STEP: Duration = Duration::from_millis(8);
 
+/// How long the pointer of a swipe released resting rests at the end of
+/// its path before it moves one pixel on and lifts (task 10.16). Android's
+/// velocity tracker takes a pointer that has not moved for 40 ms
+/// (`ASSUME_POINTER_STOPPED_TIME`) as stopped when its next event comes; 20
+/// ms more leave room for the events' timing. On the API 36 emulator a
+/// 600-point swipe over 300 ms released this way moved the Expo fixture's
+/// list 555 to 584 points and the Compose fixture's 592, where one that
+/// lifted moving moved them 1,103 to 1,319.
+pub const REST: Duration = Duration::from_millis(60);
+
 fn millis(d: Duration) -> u32 {
     u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
+}
+
+/// How long the pointer of a swipe released as `release` rests before it
+/// lifts.
+fn rest(release: Release) -> Option<Duration> {
+    match release {
+        Release::Moving => None,
+        Release::Resting => Some(REST),
+    }
 }
 
 /// The agent request for `input`, at `scale` physical pixels per point.
@@ -32,7 +51,12 @@ pub fn agent_call(input: &Input, scale: f64) -> Call {
                 duration_ms: hold.map(millis),
             })
         }
-        Input::Swipe { from, to, duration } => {
+        Input::Swipe {
+            from,
+            to,
+            duration,
+            release,
+        } => {
             let (x1, y1) = from.to_pixels(scale);
             let (x2, y2) = to.to_pixels(scale);
             Call::Swipe(SwipeParams {
@@ -41,7 +65,7 @@ pub fn agent_call(input: &Input, scale: f64) -> Call {
                 x2,
                 y2,
                 duration_ms: millis(*duration),
-                rest_ms: None,
+                rest_ms: rest(*release).map(millis),
             })
         }
         Input::Key { code, meta } => Call::Key(KeyParams {
@@ -53,6 +77,17 @@ pub fn agent_call(input: &Input, scale: f64) -> Call {
             node: node.map(|handle| handle.node),
             mode: (*method != TextMethod::AUTO).then_some(*method),
         }),
+    }
+}
+
+/// How long the agent takes to perform `input` before it answers.
+fn gesture_time(input: &Input) -> Duration {
+    match input {
+        Input::Tap { hold, .. } => hold.unwrap_or(Duration::ZERO),
+        Input::Swipe {
+            duration, release, ..
+        } => *duration + rest(*release).unwrap_or_default(),
+        Input::Key { .. } | Input::Text { .. } => Duration::ZERO,
     }
 }
 
@@ -77,12 +112,16 @@ pub fn input_ack(reply: Reply) -> Result<InputAck, protocol::Error> {
 /// The controller touches of a swipe from `from` to `to` over `duration`,
 /// each with its offset from the start: contact 0 down at the start, a move
 /// every `step` along the line, and up at the end, as the agent's swipe
-/// does.
+/// does. With a `rest`, the contact rests at the end that long, then moves
+/// one pixel on along the line and goes up there, as the agent's swipe does
+/// with `rest_ms`: a touch that repeats the last position changes nothing
+/// the platform sees.
 pub fn swipe_touches(
     from: (i32, i32),
     to: (i32, i32),
     duration: Duration,
     step: Duration,
+    rest: Option<Duration>,
 ) -> Vec<(Duration, TouchPoint)> {
     let steps = if step.is_zero() {
         1
@@ -93,7 +132,7 @@ pub fn swipe_touches(
     let along = |from: i32, to: i32, i: u32| {
         from + ((f64::from(to - from) * f64::from(i)) / f64::from(steps)).round() as i32
     };
-    let mut touches = Vec::with_capacity(steps as usize + 2);
+    let mut touches = Vec::with_capacity(steps as usize + 3);
     touches.push((Duration::ZERO, TouchPoint::down(from.0, from.1)));
     for i in 1..=steps {
         touches.push((
@@ -101,7 +140,18 @@ pub fn swipe_touches(
             TouchPoint::down(along(from.0, to.0, i), along(from.1, to.1, i)),
         ));
     }
-    touches.push((duration, TouchPoint::up(to.0, to.1)));
+    let (at, end) = match rest {
+        Some(rest) => {
+            let on = (
+                to.0 + (to.0 - from.0).signum(),
+                to.1 + (to.1 - from.1).signum(),
+            );
+            touches.push((duration + rest, TouchPoint::down(on.0, on.1)));
+            (duration + rest, on)
+        }
+        None => (duration, to),
+    };
+    touches.push((at, TouchPoint::up(end.0, end.1)));
     touches
 }
 
@@ -141,9 +191,18 @@ impl SessionInput {
                     (hold, TouchPoint::up(x, y)),
                 ]
             }
-            Input::Swipe { from, to, duration } => {
-                swipe_touches(pixels(from), pixels(to), *duration, SWIPE_STEP)
-            }
+            Input::Swipe {
+                from,
+                to,
+                duration,
+                release,
+            } => swipe_touches(
+                pixels(from),
+                pixels(to),
+                *duration,
+                SWIPE_STEP,
+                rest(*release),
+            ),
             Input::Key { .. } | Input::Text { .. } => return None,
         };
         let controller = link.controller().clone();
@@ -199,14 +258,9 @@ impl InputSink for SessionInput {
             None => {}
         }
         let inner = &*self.inner;
-        let gesture = match input {
-            Input::Tap { hold, .. } => hold.unwrap_or(Duration::ZERO),
-            Input::Swipe { duration, .. } => *duration,
-            Input::Key { .. } | Input::Text { .. } => Duration::ZERO,
-        };
         let reply = inner.connection.call(
             agent_call(input, inner.scale),
-            inner.options.input_deadline + gesture,
+            inner.options.input_deadline + gesture_time(input),
         )?;
         inner.agent_inputs.fetch_add(1, Ordering::SeqCst);
         input_ack(reply)
@@ -259,6 +313,7 @@ mod tests {
             from: Point::new(200.0, 800.0),
             to: Point::new(200.0, 200.0),
             duration: Duration::from_millis(300),
+            release: Release::Moving,
         };
         assert_eq!(
             agent_call(&swipe, SCALE),
@@ -341,6 +396,74 @@ mod tests {
         assert_eq!(error.code, code::PROTOCOL_ERROR);
     }
 
+    /// Task 10.16: a swipe released resting asks the agent to rest its
+    /// pointer 60 ms at the end before it moves one pixel on and lifts, and
+    /// waits that much longer for the agent's answer.
+    #[test]
+    fn a_swipe_released_resting_asks_the_agent_to_rest_60_ms() {
+        let swipe = Input::Swipe {
+            from: Point::new(200.0, 800.0),
+            to: Point::new(200.0, 200.0),
+            duration: Duration::from_millis(300),
+            release: Release::Resting,
+        };
+        assert_eq!(
+            agent_call(&swipe, SCALE),
+            Call::Swipe(SwipeParams {
+                x1: 525,
+                y1: 2100,
+                x2: 525,
+                y2: 525,
+                duration_ms: 300,
+                rest_ms: Some(60)
+            })
+        );
+        assert_eq!(gesture_time(&swipe), Duration::from_millis(360));
+    }
+
+    /// Task 10.16: on the controller, a swipe released resting reaches its
+    /// end at its duration, rests, then moves one pixel on along its line
+    /// and lifts there. Touches that repeat the last position change
+    /// nothing the platform sees, so the move must go somewhere: the
+    /// velocity tracker takes a pointer that has not moved for 40 ms as
+    /// stopped when its next event comes, and a View-based list, such as the
+    /// Expo fixture's, takes its velocity from the moves before the up.
+    #[test]
+    fn a_swipe_released_resting_on_the_controller_rests_then_moves_a_pixel_on_and_lifts() {
+        let touches = swipe_touches(
+            (100, 1000),
+            (100, 200),
+            Duration::from_millis(40),
+            Duration::from_millis(8),
+            Some(Duration::from_millis(60)),
+        );
+        let n = touches.len();
+        assert_eq!(n, 8, "{touches:?}");
+        assert_eq!(
+            touches[n - 3],
+            (Duration::from_millis(40), TouchPoint::down(100, 200))
+        );
+        assert_eq!(
+            touches[n - 2],
+            (Duration::from_millis(100), TouchPoint::down(100, 199))
+        );
+        assert_eq!(
+            touches[n - 1],
+            (Duration::from_millis(100), TouchPoint::up(100, 199))
+        );
+        let across = swipe_touches(
+            (1000, 500),
+            (200, 500),
+            Duration::from_millis(40),
+            Duration::from_millis(8),
+            Some(Duration::from_millis(60)),
+        );
+        assert_eq!(
+            across.last(),
+            Some(&(Duration::from_millis(100), TouchPoint::up(199, 500)))
+        );
+    }
+
     #[test]
     fn a_swipe_on_the_controller_is_down_moves_and_up_along_the_line() {
         let touches = swipe_touches(
@@ -348,6 +471,7 @@ mod tests {
             (100, 200),
             Duration::from_millis(40),
             Duration::from_millis(8),
+            None,
         );
         let first = touches.first().unwrap();
         assert_eq!(first, &(Duration::ZERO, TouchPoint::down(100, 1000)));
@@ -366,7 +490,13 @@ mod tests {
 
     #[test]
     fn a_swipe_without_duration_still_moves_once() {
-        let touches = swipe_touches((0, 0), (50, 0), Duration::ZERO, Duration::from_millis(8));
+        let touches = swipe_touches(
+            (0, 0),
+            (50, 0),
+            Duration::ZERO,
+            Duration::from_millis(8),
+            None,
+        );
         assert_eq!(
             touches,
             vec![

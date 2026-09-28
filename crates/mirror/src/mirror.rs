@@ -7,7 +7,7 @@ use protocol::message::TextMethod;
 use protocol::snapshot::{Bounds, NodeFlags, Truncation, WindowFlags, WindowType};
 
 use crate::backend::{
-    Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadReason, ReadRequest,
+    Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadReason, ReadRequest, Release,
 };
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
@@ -208,10 +208,13 @@ pub enum Action {
         target: Target,
         hold: Option<Duration>,
     },
+    /// A stroke from `from` to `to` over `duration`, its finger leaving the
+    /// screen as `release` says.
     Swipe {
         from: Point,
         to: Point,
         duration: Duration,
+        release: Release,
     },
     Key {
         code: u32,
@@ -662,11 +665,17 @@ impl Mirror {
                 let at = self.aim(target)?;
                 (Input::Tap { at, hold: *hold }, Some(at))
             }
-            Action::Swipe { from, to, duration } => (
+            Action::Swipe {
+                from,
+                to,
+                duration,
+                release,
+            } => (
                 Input::Swipe {
                     from: *from,
                     to: *to,
                     duration: *duration,
+                    release: *release,
                 },
                 None,
             ),

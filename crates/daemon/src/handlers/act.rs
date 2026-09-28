@@ -3,6 +3,7 @@
 
 use std::time::{Duration, Instant};
 
+use mirror::backend::Release;
 use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, SettleOptions, Target, Visibility};
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
@@ -509,7 +510,12 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
             (from, to, direction.name().into())
         }
     };
-    let outcome = target.mirror.act(&Action::Swipe { from, to, duration })?;
+    let outcome = target.mirror.act(&Action::Swipe {
+        from,
+        to,
+        duration,
+        release: Release::Moving,
+    })?;
     if !outcome.accepted {
         return Err(rejected("swipe"));
     }
@@ -552,6 +558,7 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
             from,
             to,
             duration: SWIPE_DURATION,
+            release: Release::Moving,
         })?;
         if !outcome.accepted {
             return Err(rejected("scroll"));
@@ -781,7 +788,12 @@ fn scroll_until(
         };
         let revision = target.mirror.revision();
         let (from, to) = stroke(area, finger, length);
-        let outcome = target.mirror.act(&Action::Swipe { from, to, duration })?;
+        let outcome = target.mirror.act(&Action::Swipe {
+            from,
+            to,
+            duration,
+            release: Release::Moving,
+        })?;
         if !outcome.accepted {
             return Err(rejected("scroll"));
         }
