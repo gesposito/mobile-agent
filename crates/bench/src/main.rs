@@ -13,6 +13,7 @@ use bench::baseline::{BaselineConfig, baselines};
 use bench::cli::{self, CliAdapter, CliConfig};
 use bench::fake::FakeAdapter;
 use bench::fixture::Fixture;
+use bench::flow;
 use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
 use bench::plan;
@@ -58,6 +59,10 @@ struct RunArgs {
     /// A fixture app to run on every target: swiftui, expo or compose; repeatable [default: each target's platform's, swiftui and expo on a Simulator, expo and compose on Android]
     #[arg(long = "fixture", value_name = "FIXTURE", value_parser = ["swiftui", "expo", "compose"], conflicts_with = "fake")]
     fixtures: Vec<String>,
+
+    /// A reference flow to run alone on every target's fixtures, after its golden check and without the primitives: login, list-scroll or big-screen; repeatable [default: every primitive and flow]
+    #[arg(long = "flow", value_name = "FLOW", value_parser = [flow::LOGIN, flow::LIST_SCROLL, flow::BIG_SCREEN], conflicts_with = "fake")]
+    flows: Vec<String>,
 
     /// The tool under test
     #[arg(long, value_name = "TOOL", value_parser = ["mobile-agent"], default_value = "mobile-agent")]
@@ -201,7 +206,7 @@ fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness
     let mut series = Vec::new();
     let mut fixtures: Vec<Fixture> = Vec::new();
     for (target, runs) in plan::select(&connected, &args.targets, &chosen)? {
-        series.extend(plan::series(&target, &runs));
+        series.extend(plan::only_flows(plan::series(&target, &runs), &args.flows));
         for fixture in runs {
             if !fixtures.contains(&fixture) {
                 fixtures.push(fixture);

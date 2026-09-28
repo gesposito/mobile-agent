@@ -287,6 +287,73 @@ fn a_run_on_a_fake_simulator_runs_swiftui_and_expo_through_the_cli_beside_the_be
     assert!(report.measurements.iter().all(|m| m.tool == "mobile-agent"));
 }
 
+/// `--flow` measures one reference flow again without the rest of a run: only
+/// the named flow, on each of the target's fixtures, after its golden check,
+/// and no primitive. A name that is no reference flow is refused, as is
+/// `--flow` with a fake script, whose series make up its run.
+#[test]
+fn a_run_with_flow_times_only_that_flow_on_each_fixture() {
+    let devices = FakeDevices::new("ios:FAKE-IOS-9");
+    let dir = common::scratch("run-one-flow");
+    let bin = dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let cli = common::mobile_agent();
+    let out = dir.join("report");
+    let output = bench_run(
+        &devices,
+        &hermetic_path(&bin),
+        &[
+            "--target",
+            "FAKE-IOS-9",
+            "--flow",
+            "list-scroll",
+            "--cli",
+            cli.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--iterations",
+            "1",
+            "--warmup",
+            "0",
+            "--retries",
+            "0",
+        ],
+    );
+    let (stdout, stderr) = (text(&output.stdout), text(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    let report = written(&out);
+    let measured: Vec<(&str, Option<Fixture>, String)> = report
+        .measurements
+        .iter()
+        .map(|m| (m.tool.as_str(), m.fixture, m.subject.to_string()))
+        .collect();
+    let list = |fixture| ("mobile-agent", Some(fixture), "flow list-scroll".to_owned());
+    assert_eq!(measured, [list(Fixture::SwiftUi), list(Fixture::Expo)]);
+    let golden = flow::list_scroll(Fixture::Expo).golden;
+    for m in &report.measurements {
+        assert_eq!(m.error, None, "{:?}", m.fixture);
+        assert_eq!(
+            m.stats.map(|s| s.n),
+            Some(1),
+            "{:?}: {:?}",
+            m.fixture,
+            m.samples
+        );
+        assert_eq!(m.end_state.as_ref(), Some(&golden), "{:?}", m.fixture);
+    }
+
+    let (code, stderr) = refused(&devices, &["--target", "FAKE-IOS-9", "--flow", "checkout"]);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("invalid value 'checkout'"), "{stderr}");
+    let (code, stderr) = refused(&devices, &["--fake", "script.json", "--flow", "login"]);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+}
+
 /// The input method the run finds on the emulator: the image's stock keyboard.
 const STOCK_IME: &str = "com.android.inputmethod.latin/.LatinIME";
 

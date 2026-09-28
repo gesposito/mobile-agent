@@ -73,6 +73,18 @@ pub fn series(target: &Target, fixtures: &[Fixture]) -> Vec<Series> {
     planned
 }
 
+/// The series of `planned` that time one of the flows `names` lists, in plan
+/// order; every series of `planned` when `names` is empty.
+pub fn only_flows(planned: Vec<Series>, names: &[String]) -> Vec<Series> {
+    if names.is_empty() {
+        return planned;
+    }
+    planned
+        .into_iter()
+        .filter(|series| matches!(&series.subject, Subject::Flow(name) if names.contains(name)))
+        .collect()
+}
+
 /// The targets `ids` names among `connected`, in the order named and each
 /// once, with the fixtures each runs: `chosen` when given, else every fixture
 /// of its platform (SwiftUI and Expo on a Simulator, Expo and Compose on
@@ -213,6 +225,37 @@ mod tests {
             "no connected target is SIM-1; mobile-agent devices lists none"
         );
         assert!(select(&connected(), &[], &[]).is_err());
+    }
+
+    #[test]
+    fn named_flows_keep_only_their_series_in_plan_order() {
+        let target = Target::new("SIM-1", TargetClass::Simulator);
+        let planned = series(&target, &[Fixture::SwiftUi, Fixture::Expo]);
+        let kept = |names: &[&str]| -> Vec<(Option<Fixture>, String)> {
+            let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+            only_flows(planned.clone(), &names)
+                .iter()
+                .map(|s| (s.fixture, s.subject.to_string()))
+                .collect()
+        };
+        let on = |fixture, name: &str| (Some(fixture), format!("flow {name}"));
+        assert_eq!(
+            kept(&[flow::LIST_SCROLL]),
+            [
+                on(Fixture::SwiftUi, "list-scroll"),
+                on(Fixture::Expo, "list-scroll")
+            ]
+        );
+        assert_eq!(
+            kept(&[flow::BIG_SCREEN, flow::LOGIN]),
+            [
+                on(Fixture::SwiftUi, "login"),
+                on(Fixture::SwiftUi, "big-screen"),
+                on(Fixture::Expo, "login"),
+                on(Fixture::Expo, "big-screen"),
+            ]
+        );
+        assert_eq!(only_flows(planned.clone(), &[]), planned);
     }
 
     #[test]
