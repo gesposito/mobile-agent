@@ -373,7 +373,16 @@ to 24 percent, so the CPU test waits for a quiet host as the spikes did.
 touch steps at set times, with points converted to ratios of the native
 portrait framebuffer (`point * scale / pixels`, as idb and S3 do). A swipe
 sends its positions at even intervals and repeats the last before lifting,
-which keeps an arm64 guest from adding inertia. `input.rs` sends the steps
+which keeps an arm64 guest from adding inertia; the finger still lifts
+moving, and UIKit glides the content on at the drag's speed (a 600-point
+swipe over 300 ms moved the Expo fixture's list 1,522 to 1,608 points on
+the iOS 26.5 Simulator). A swipe with a `rest` (task 10.16) comes to rest
+instead: the finger is at the end at the swipe's duration, sends nothing for
+the rest, creeps on three moves of a point 16 ms apart and lifts at the
+last. UIKit takes a drag's velocity from its last moves, so the content
+stops where the finger left it. A rest without moves after it, or with one
+move of a pixel to 3 points, still ended in the drag's full momentum, and three
+moves of a pixel did at one start point in sixteen. `input.rs` sends the steps
 through the target's transport, one request at a time per target, and
 reports a `Dispatch`: the transport, the wait for its activation, and the
 times from the request to the first event and to the last.
@@ -555,6 +564,7 @@ about a minute.
 | Input actions | Warm tap latency | `dtuhid::warm_tap_latency` |
 | Input actions | Taps, keys and buttons over one dtuhidd connection (task 6.4) | `dtuhid::a_tap_lands_on_the_fixture_button`, `dtuhid::one_connection_carries_touch_keys_and_buttons` |
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
+| Input actions | A swipe that comes to rest before the finger lifts (task 10.16) | `gesture::tests::a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts`; on the Simulator through the daemon, `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
 | Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |

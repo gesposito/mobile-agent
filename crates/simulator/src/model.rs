@@ -291,15 +291,21 @@ pub enum Edge {
 pub struct Swipe {
     pub from: Point,
     pub to: Point,
-    /// From touch-down to lift-off; with the distance it sets the velocity.
+    /// From touch-down to the end of the path; with the distance it sets
+    /// the velocity. Without a rest the finger lifts there, moving, and the
+    /// content glides on.
     pub duration: Duration,
     /// Positions sent between the two ends.
     pub steps: u32,
     pub edge: Edge,
+    /// How long the finger rests at `to` before it creeps on and lifts, so
+    /// the content stops where the finger left it (task 10.16); see
+    /// [`crate::gesture::swipe`].
+    pub rest: Option<Duration>,
 }
 
 impl Swipe {
-    /// 20 steps and no edge, as in spike S3.
+    /// 20 steps, no edge and no rest, as in spike S3.
     pub fn new(from: Point, to: Point, duration: Duration) -> Swipe {
         Swipe {
             from,
@@ -307,6 +313,7 @@ impl Swipe {
             duration,
             steps: 20,
             edge: Edge::None,
+            rest: None,
         }
     }
 }

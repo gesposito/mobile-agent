@@ -81,18 +81,71 @@ pub fn press(screen: &Screen, point: Point, hold: Duration) -> Result<Vec<TouchS
     ])
 }
 
+/// How many moves a finger that rests creeps on before it lifts.
+const CREEP_MOVES: u32 = 3;
+
+/// How far each of those moves goes, in points: on the Simulator, moves of
+/// a pixel left the drag its momentum at one start point in sixteen, and
+/// moves of a point at none.
+const CREEP_STEP: f64 = 1.0;
+
+/// How far apart those moves come, about one per display frame at 60 Hz.
+const CREEP_EVERY: Duration = Duration::from_millis(16);
+
 /// Touch down at the start, `steps` positions spread evenly until
-/// `duration`, the last position once more, and up at `duration`. Repeating
-/// the last position keeps an arm64 guest from adding inertia to the drag's
-/// end, as idb does.
+/// `duration`, the last position once more, and up at `duration`.
+/// Repeating the last position keeps an arm64 guest from adding inertia to
+/// the drag's end, as idb does; the finger still lifts moving, and UIKit
+/// glides the content on at the drag's speed.
+///
+/// With a `rest`, the finger comes to rest instead (task 10.16): it is at
+/// the end at `duration`, sends nothing for the rest, then creeps on along
+/// its line, [`CREEP_MOVES`] moves of [`CREEP_STEP`] points
+/// [`CREEP_EVERY`] apart, and lifts at the last. UIKit takes a drag's
+/// velocity from its last moves, which then crawl, so the content stops
+/// where the finger left it; a rest with no move after it, or with one move
+/// of up to 3 points, still ended in the drag's full momentum on the
+/// Simulator.
 pub fn swipe(screen: &Screen, swipe: &Swipe) -> Result<Vec<TouchStep>> {
-    walk(
+    let mut plan = walk(
         screen,
         &[vec![swipe.from, swipe.to]],
         swipe.duration,
         swipe.steps,
         swipe.edge,
-    )
+    )?;
+    let Some(rest) = swipe.rest else {
+        return Ok(plan);
+    };
+    plan.pop();
+    let end = screen.ratio(swipe.to)?;
+    let step = |at, phase, contact| TouchStep {
+        at,
+        phase,
+        contacts: vec![contact],
+        edge: swipe.edge,
+    };
+    plan.push(step(swipe.duration, Phase::Move, end));
+    let (dx, dy) = (swipe.to.x - swipe.from.x, swipe.to.y - swipe.from.y);
+    let length = dx.hypot(dy);
+    let (width, height) = screen.points();
+    let mut last = (swipe.duration, end);
+    for k in 1..=CREEP_MOVES {
+        let crept = if length > 0.0 {
+            let on = CREEP_STEP * f64::from(k) / length;
+            Point::new(
+                (swipe.to.x + dx * on).clamp(0.0, width),
+                (swipe.to.y + dy * on).clamp(0.0, height),
+            )
+        } else {
+            swipe.to
+        };
+        let at = swipe.duration + rest + CREEP_EVERY * (k - 1);
+        last = (at, screen.ratio(crept)?);
+        plan.push(step(last.0, Phase::Move, last.1));
+    }
+    plan.push(step(last.0, Phase::Up, last.1));
+    Ok(plan)
 }
 
 /// Every finger's path walked at an even pace, by length, over the same
@@ -272,6 +325,51 @@ mod tests {
         assert!(steps.iter().all(|event| event.edge == Edge::Bottom));
         let ys: Vec<f64> = steps.iter().map(|event| event.contacts[0].y).collect();
         assert!(ys.windows(2).all(|pair| pair[1] <= pair[0]), "{ys:?}");
+    }
+
+    /// Task 10.16: a swipe that rests before the finger lifts reaches its
+    /// end at its duration, sends nothing for the rest, then creeps a point
+    /// at a time on along its line, three moves 16 ms apart, and lifts at
+    /// the last, so UIKit, which takes a drag's velocity from its last
+    /// moves, ends the drag without momentum.
+    #[test]
+    fn a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts() {
+        let mut spec = Swipe::new(
+            Point::new(201.0, 700.0),
+            Point::new(201.0, 250.0),
+            Duration::from_millis(420),
+        );
+        spec.rest = Some(Duration::from_millis(60));
+        let steps = swipe(&IPHONE_17, &spec).expect("a swipe");
+        // Down, 20 positions, the last again, the end at the duration, three
+        // creeping moves, up.
+        assert_eq!(steps.len(), 27, "{steps:?}");
+        let end = (0.5, 250.0 / 874.0);
+        assert_eq!(
+            (steps[22].phase, steps[22].at),
+            (Phase::Move, Duration::from_millis(420))
+        );
+        assert!(close(steps[22].contacts[0], end));
+        for (k, event) in steps[23..26].iter().enumerate() {
+            let k = k as u32;
+            assert_eq!(event.phase, Phase::Move);
+            assert_eq!(event.at, Duration::from_millis(480 + 16 * u64::from(k)));
+            let y = 250.0 - f64::from(k + 1);
+            assert!(close(event.contacts[0], (0.5, y / 874.0)), "{event:?}");
+        }
+        let up = &steps[26];
+        assert_eq!((up.phase, up.at), (Phase::Up, Duration::from_millis(512)));
+        assert_eq!(up.contacts, steps[25].contacts);
+
+        // At the screen's edge the creep stops there.
+        let mut edge = Swipe::new(
+            Point::new(201.0, 400.0),
+            Point::new(201.0, 1.0),
+            Duration::from_millis(300),
+        );
+        edge.rest = Some(Duration::from_millis(60));
+        let steps = swipe(&IPHONE_17, &edge).expect("a swipe to the edge");
+        assert!(close(steps.last().unwrap().contacts[0], (0.5, 0.0)));
     }
 
     #[test]
