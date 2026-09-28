@@ -94,7 +94,7 @@ Defaults, from the spec as amended:
 | android-emulator | cli-start | | 20 ms |
 | android-emulator | cold-attach | | 1500 ms |
 | android-emulator | warm-snapshot | any fixture, big | 100 ms |
-| android-emulator | tap-to-frame-change | | 50 ms |
+| android-emulator | tap-to-frame-change | | 67 ms |
 | android-device | cli-start | | 20 ms |
 | android-device | cold-attach | | 1500 ms |
 
@@ -103,7 +103,8 @@ Every default reads p95. The spec states p95 for the snapshot, dispatch and tap-
 - Gates judge only the tool under test, never a baseline.
 - Only gates whose target class has a target in the run are listed.
 - A gate with no matching measurement, or whose measurement the tool could not make, is listed as not measured and does not fail the run; a matching series in which no iteration succeeded fails.
-- A gate file replaces the defaults: `{"gates": [{"class": "android-emulator", "primitive": "tap-to-frame-change", "limit_ms": 160}]}`, with optional `fixture`, `screen` and `statistic` (default `p95`). Limits must be positive. This is how a gate is restated per GPU mode, as design.md foresees for the emulator's tap-to-frame gate.
+- A gate file replaces the defaults: `{"gates": [{"class": "android-emulator", "primitive": "tap-to-frame-change", "limit_ms": 160}]}`, with optional `fixture`, `screen` and `statistic` (default `p95`). Limits must be positive.
+- The emulator's tap-to-frame default, four frames of the AVD's 60 Hz display, holds for a guest rendering on the host GPU (`-gpu host`), whose own frame pipeline takes about three at p95 (`docs/research/emulator-frames.md`). The spec does not gate the span under software rendering; the harness cannot tell the GPU mode, so such a run takes a gate file without that gate.
 
 ## Adapter interface
 

@@ -201,7 +201,7 @@ fn a_tap_on_an_emulator_whose_controller_is_off_has_no_frame_change_and_is_not_m
     );
     common::assert_every_markdown_number_is_in_the_json(&md, &json);
 
-    // The spec's 50 ms gate reads not measured and does not fail the run.
+    // The spec's tap-to-frame gate reads not measured and does not fail the run.
     let verdict = GateSet::defaults().evaluate(&report);
     let gate = verdict
         .rows

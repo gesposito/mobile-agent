@@ -168,7 +168,7 @@ fn the_defaults_are_the_spec_gates() {
             Gate::new(AndroidEmulator, CliStart, 20.0),
             Gate::new(AndroidEmulator, ColdAttach, 1500.0),
             Gate::new(AndroidEmulator, WarmSnapshot, 100.0).on(None, Screen::Big),
-            Gate::new(AndroidEmulator, TapToFrameChange, 50.0),
+            Gate::new(AndroidEmulator, TapToFrameChange, 67.0),
             Gate::new(AndroidDevice, CliStart, 20.0),
             Gate::new(AndroidDevice, ColdAttach, 1500.0),
         ]
@@ -284,6 +284,39 @@ fn software_rendered_emulator() -> FakeScript {
     script
 }
 
+/// The script with the emulator's tap-to-frame p95 at `p95` ms.
+fn emulator_tap_p95(p95: f64) -> FakeScript {
+    let mut script = script(140.0);
+    let tap = script
+        .series
+        .iter_mut()
+        .find(|s| s.subject == Subject::Primitive(Primitive::TapToFrameChange))
+        .unwrap();
+    tap.ms = with_p95(45.0, p95);
+    script
+}
+
+/// Task 10.13: with the guest rendering on the host GPU, the guest's own
+/// pipeline puts tap-to-frame-change's p95 near three frames of the AVD's
+/// 60 Hz display (docs/research/emulator-frames.md), so the default gate
+/// allows four: 59.1 ms, the Compose fixture's p95 through the daemon,
+/// passes, and 67 ms does not.
+#[test]
+fn the_emulator_tap_to_frame_gate_allows_four_display_frames() {
+    let row = |p95| {
+        GateSet::defaults()
+            .evaluate(&run(emulator_tap_p95(p95)))
+            .rows
+            .into_iter()
+            .find(|r| r.gate == "android-emulator tap-to-frame-change")
+            .unwrap()
+    };
+    let within = row(59.1);
+    assert_eq!(within.status, GateStatus::Pass);
+    assert_eq!(within.limit_us, 67_000);
+    assert_eq!(row(67.0).status, GateStatus::Fail, "under is strict");
+}
+
 /// The defaults with the emulator's tap-to-frame gate restated at 160 ms, as
 /// design.md allows per GPU mode.
 fn restated_gates() -> GateSet {
@@ -335,7 +368,7 @@ fn the_gates_command_judges_an_existing_report() {
         table.cell(row, "Gate"),
         "android-emulator tap-to-frame-change"
     );
-    assert_eq!(table.cell(row, "Limit ms"), "50.000");
+    assert_eq!(table.cell(row, "Limit ms"), "67.000");
     assert_eq!(table.cell(row, "Measured ms"), "147.000");
 
     let restated = bench(&["gates", "--gates"], &[&gate_file, &report]);

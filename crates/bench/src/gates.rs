@@ -134,7 +134,11 @@ impl GateSet {
                 Gate::new(AndroidEmulator, CliStart, 20.0),
                 Gate::new(AndroidEmulator, ColdAttach, 1500.0),
                 Gate::new(AndroidEmulator, WarmSnapshot, 100.0).on(None, Screen::Big),
-                Gate::new(AndroidEmulator, TapToFrameChange, 50.0),
+                // Four frames of the AVD's 60 Hz display, for a guest rendering
+                // on the host GPU: its own pipeline takes about three at p95
+                // (docs/research/emulator-frames.md). Software rendering is
+                // not gated.
+                Gate::new(AndroidEmulator, TapToFrameChange, 67.0),
                 Gate::new(AndroidDevice, CliStart, 20.0),
                 Gate::new(AndroidDevice, ColdAttach, 1500.0),
             ],
