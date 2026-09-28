@@ -41,6 +41,7 @@ pub fn agent_call(input: &Input, scale: f64) -> Call {
                 x2,
                 y2,
                 duration_ms: millis(*duration),
+                rest_ms: None,
             })
         }
         Input::Key { code, meta } => Call::Key(KeyParams {
@@ -266,7 +267,8 @@ mod tests {
                 y1: 2100,
                 x2: 525,
                 y2: 525,
-                duration_ms: 300
+                duration_ms: 300,
+                rest_ms: None
             })
         );
         let key = Input::Key {

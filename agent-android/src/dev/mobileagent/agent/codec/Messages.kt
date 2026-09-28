@@ -87,12 +87,17 @@ class TapCall(
     @JvmField val durationMs: Int? = null,
 ) : Call(Method.TAP)
 
+/**
+ * A swipe from (`x1`, `y1`) to (`x2`, `y2`) over `durationMs`; with `restMs`, the pointer
+ * rests at the end that long, moves one pixel on and lifts there, so the content does not fling.
+ */
 class SwipeCall(
     @JvmField val x1: Int,
     @JvmField val y1: Int,
     @JvmField val x2: Int,
     @JvmField val y2: Int,
     @JvmField val durationMs: Int,
+    @JvmField val restMs: Int? = null,
 ) : Call(Method.SWIPE)
 
 class KeyCall(@JvmField val code: Int, @JvmField val meta: Int? = null) : Call(Method.KEY)

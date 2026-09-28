@@ -247,6 +247,15 @@ fn request_round_trips_for_every_method() {
             x2: 100,
             y2: 300,
             duration_ms: 300,
+            rest_ms: None,
+        }),
+        Call::Swipe(SwipeParams {
+            x1: 100,
+            y1: 2000,
+            x2: 100,
+            y2: 300,
+            duration_ms: 300,
+            rest_ms: Some(60),
         }),
         Call::Key(KeyParams {
             code: 66,

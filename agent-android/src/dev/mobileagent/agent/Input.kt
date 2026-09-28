@@ -100,21 +100,41 @@ class Input {
 
     /**
      * A straight swipe lasting `durationMs`: down at the start, a move every
-     * [STEP_MS] along the line, the last one at the end, then up there.
+     * [STEP_MS] along the line, the last one at the end, then up there, the
+     * pointer still moving, so the content flings on. With `restMs` above 0
+     * the pointer rests at the end that long, moves one pixel on along the
+     * line and goes up there: the platform's velocity tracker takes a pointer
+     * that has not moved for 40 ms as stopped when its next event comes, and
+     * a View-based list takes its velocity from the moves before the up, so
+     * the content stops where the pointer left it.
      */
-    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, cancelled: () -> Boolean): Boolean {
+    fun swipe(
+        x1: Int,
+        y1: Int,
+        x2: Int,
+        y2: Int,
+        durationMs: Long,
+        restMs: Long,
+        cancelled: () -> Boolean,
+    ): Boolean {
         val steps = maxOf(1, (durationMs / STEP_MS).toInt())
-        val xs = FloatArray(steps + 2)
-        val ys = FloatArray(steps + 2)
-        val ts = LongArray(steps + 2)
+        val rest = if (restMs > 0) 1 else 0
+        val xs = FloatArray(steps + 2 + rest)
+        val ys = FloatArray(steps + 2 + rest)
+        val ts = LongArray(steps + 2 + rest)
         for (k in 0..steps) {
             xs[k] = x1 + (x2 - x1) * k.toFloat() / steps
             ys[k] = y1 + (y2 - y1) * k.toFloat() / steps
             ts[k] = durationMs * k / steps
         }
-        xs[steps + 1] = x2.toFloat()
-        ys[steps + 1] = y2.toFloat()
-        ts[steps + 1] = durationMs
+        if (rest == 1) {
+            xs[steps + 1] = (x2 + Integer.signum(x2 - x1)).toFloat()
+            ys[steps + 1] = (y2 + Integer.signum(y2 - y1)).toFloat()
+            ts[steps + 1] = durationMs + restMs
+        }
+        xs[steps + 1 + rest] = xs[steps + rest]
+        ys[steps + 1 + rest] = ys[steps + rest]
+        ts[steps + 1 + rest] = ts[steps + rest]
         return gesture(xs, ys, ts, cancelled)
     }
 

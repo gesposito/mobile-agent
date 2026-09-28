@@ -451,7 +451,9 @@ pub struct TapParams {
     pub duration_ms: Option<u32>,
 }
 
-/// Parameters of `swipe`.
+/// Parameters of `swipe`: the pointer goes down at `(x1, y1)`, moves along
+/// the line to `(x2, y2)` over `duration_ms` and lifts there, moving, so
+/// the content flings on.
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
 #[cbor(map)]
 pub struct SwipeParams {
@@ -465,6 +467,13 @@ pub struct SwipeParams {
     pub y2: i32,
     #[n(4)]
     pub duration_ms: u32,
+    /// How long the pointer rests at `(x2, y2)` before it lifts, after
+    /// which it moves one pixel on along the line and lifts there (task
+    /// 10.16). Android's velocity tracker takes a pointer that has not
+    /// moved for 40 ms as stopped when its next event comes, so the content
+    /// stops with the pointer instead of flinging.
+    #[n(5)]
+    pub rest_ms: Option<u32>,
 }
 
 /// Parameters of `key`.

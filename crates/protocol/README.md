@@ -110,7 +110,7 @@ decoder reports an unknown kind as such, and the sessions skip it.
 | snapshot | 1 | tree | `{?0: max_depth u32, ?1: max_nodes u32, ?2: idle_ms u32, ?3: evict_event_less bool, ?4: evict [u32]}` | snapshot |
 | screenshot | 2 | screenshot | `{?0: format u8, ?1: quality u8, ?2: max_dimension u32}` | `{0: format u8, 1: width u32, 2: height u32, 3: rotation u8, 4: data bytes}` |
 | tap | 3 | input | `{0: x i32, 1: y i32, ?2: duration_ms u32}` (a long press with a duration) | `{0: accepted bool}` |
-| swipe | 4 | input | `{0: x1 i32, 1: y1 i32, 2: x2 i32, 3: y2 i32, 4: duration_ms u32}` | `{0: accepted bool}` |
+| swipe | 4 | input | `{0: x1 i32, 1: y1 i32, 2: x2 i32, 3: y2 i32, 4: duration_ms u32, ?5: rest_ms u32}` (with a rest, the pointer rests at the end, moves one pixel on and lifts there) | `{0: accepted bool}` |
 | key | 5 | input | `{0: code u32, ?1: meta u32}` | `{0: accepted bool}` |
 | text_set | 6 | text_set | `{0: text, ?1: node u32, ?2: mode u8}` | `{0: method u8}` |
 | frames_start | 7 | frames | `{?0: max_fps u32, ?1: max_dimension u32}` | `{}` |
@@ -144,6 +144,16 @@ in the request's order; a node that is gone, or that the last snapshot did
 not hold, is left out. A host without frames to watch probes a few anchor
 nodes while it waits for the screen to settle (design D8). The method needs
 the `bounds` capability, so an agent from before it is never asked.
+
+A swipe's `rest_ms` (task 10.16) asks the agent to stop the pointer before
+it lifts: the pointer rests at `(x2, y2)` that long, moves one pixel on
+along the line and lifts there. Android's velocity tracker takes a pointer
+that has not moved for 40 ms as stopped when its next event comes, so the
+content stops where the pointer left it instead of flinging on at the
+pointer's speed; `scroll --until` strokes this way, so that each stroke
+carries the content only as far as the pointer went. An agent that does
+not know the key skips it and lifts the pointer moving; the daemon deploys
+the agent built beside it, which knows it.
 
 ### Snapshot
 

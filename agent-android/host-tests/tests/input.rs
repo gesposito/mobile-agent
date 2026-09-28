@@ -181,6 +181,7 @@ fn a_swipe_with_duration_scrolls_the_list() {
             x2: 540,
             y2: 600,
             duration_ms: 300,
+            rest_ms: None,
         }),
     );
     assert!(accepted);
@@ -223,6 +224,7 @@ fn a_slow_multi_step_drag_moves_the_list_along_its_path() {
             x2: 540,
             y2: 1700 - distance,
             duration_ms: 1500,
+            rest_ms: None,
         }),
     );
     assert!(accepted);
@@ -236,6 +238,74 @@ fn a_slow_multi_step_drag_moves_the_list_along_its_path() {
         (moved - distance).abs() <= 80,
         "the list moved {moved} px for a {distance} px drag"
     );
+}
+
+/// Task 10.16: a swipe that rests at its end before the pointer lifts
+/// leaves the list where the pointer left it, however fast the pointer
+/// went, where a swipe that lifts moving flings it on (2,187 px for this
+/// 1,200 px swipe on the Expo list, API 36 emulator, with an agent that
+/// did not rest). A View-based list (the Expo fixture's React Native scroll
+/// view) takes its velocity when the pointer lifts, from moves only, so the
+/// rest ends with a move; Compose drops the velocity itself when the lift
+/// comes more than 40 ms after the last move.
+#[test]
+fn a_swipe_that_rests_before_the_lift_moves_the_list_as_far_as_the_pointer() {
+    let Some(dev) =
+        device("a_swipe_that_rests_before_the_lift_moves_the_list_as_far_as_the_pointer")
+    else {
+        return;
+    };
+    for app in [fixture::EXPO, fixture::COMPOSE] {
+        fixture::launch(&dev, app, "list");
+        let agent = Agent::launch(&dev, Launch::default());
+        let mut client = agent.connect();
+        // The list starts at its top: how far it has scrolled is where a
+        // row on screen is against where it started, rows a pitch apart.
+        let before = snapshot(&mut client);
+        let top_of = |s: &Snapshot, n: u32| {
+            find(s, &format!("row-{n}")).map(|(found, _)| found.node.bounds.top)
+        };
+        let first = top_of(&before, 1).unwrap_or_else(|| panic!("{app}: row-1 on screen"));
+        let pitch = top_of(&before, 2).unwrap_or_else(|| panic!("{app}: row-2 on screen")) - first;
+        let distance = 1200;
+        let (accepted, took) = inject(
+            &mut client,
+            Call::Swipe(SwipeParams {
+                x1: 540,
+                y1: 2000,
+                x2: 540,
+                y2: 2000 - distance,
+                duration_ms: 300,
+                rest_ms: Some(60),
+            }),
+        );
+        assert!(accepted);
+        std::thread::sleep(Duration::from_millis(1500));
+        let after = snapshot(&mut client);
+        // The second row on screen: the list may cut the first one off, and
+        // Android reports what shows of it.
+        let (first_shown, _) = first_row(&after);
+        let n = first_shown + 1;
+        let top = top_of(&after, n).unwrap_or_else(|| panic!("{app}: row-{n} on screen"));
+        let n = i32::try_from(n).expect("a row number");
+        let moved = (n - 1) * pitch + first - top;
+        println!(
+            "{app}: a {distance} px swipe over 300 ms that rests 60 ms moved the list {moved} px, \
+             acknowledged after {:.1} ms",
+            ms(took)
+        );
+        assert!(
+            (moved - distance).abs() <= 80,
+            "{app}: the list moved {moved} px for a {distance} px swipe"
+        );
+        assert!(
+            took >= Duration::from_millis(360) && took < Duration::from_millis(410),
+            "{app}: {took:?}"
+        );
+        drop(client);
+        drop(agent);
+        fixture::force_stop(&dev, app);
+    }
 }
 
 #[test]

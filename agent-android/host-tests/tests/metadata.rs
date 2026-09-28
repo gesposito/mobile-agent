@@ -139,6 +139,7 @@ fn a_compose_list_reports_its_item_range_and_rows_in_view_in_a_window_without_ch
         x2: x,
         y2: b.top + 300,
         duration_ms: 300,
+        rest_ms: None,
     }));
     assert!(matches!(reply, Ok(Reply::Input(_))), "swipe: {reply:?}");
     let mid = poll(Duration::from_secs(5), Duration::from_millis(200), || {

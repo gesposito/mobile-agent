@@ -124,12 +124,13 @@ object Codec {
                 optUint(out, 2, c.durationMs)
             }
             is SwipeCall -> {
-                out.map(5)
+                out.map(5 + present(c.restMs))
                 out.key(0); out.sint(c.x1)
                 out.key(1); out.sint(c.y1)
                 out.key(2); out.sint(c.x2)
                 out.key(3); out.sint(c.y2)
                 out.key(4); out.uint(c.durationMs)
+                optUint(out, 5, c.restMs)
             }
             is KeyCall -> {
                 out.map(1 + present(c.meta))
@@ -496,6 +497,7 @@ object Codec {
             var x2: Int? = null
             var y2: Int? = null
             var durationMs: Int? = null
+            var restMs: Int? = null
             repeat(r.map()) {
                 when (r.key()) {
                     0L -> x1 = r.int32()
@@ -503,6 +505,7 @@ object Codec {
                     2L -> x2 = r.int32()
                     3L -> y2 = r.int32()
                     4L -> durationMs = r.uint32()
+                    5L -> restMs = r.optUint32()
                     else -> r.skip()
                 }
             }
@@ -512,6 +515,7 @@ object Codec {
                 x2 ?: missing("x2"),
                 y2 ?: missing("y2"),
                 durationMs ?: missing("duration_ms"),
+                restMs,
             )
         }
         Method.KEY -> {

@@ -526,6 +526,22 @@ pub fn samples() -> Vec<(&'static str, Message)> {
                     x2: i32::MIN,
                     y2: i32::MAX,
                     duration_ms: 300,
+                    rest_ms: None,
+                }),
+            ),
+        ),
+        (
+            "request_swipe_resting",
+            request(
+                25,
+                Some(1360),
+                Call::Swipe(SwipeParams {
+                    x1: 540,
+                    y1: 2000,
+                    x2: 540,
+                    y2: 425,
+                    duration_ms: 300,
+                    rest_ms: Some(60),
                 }),
             ),
         ),

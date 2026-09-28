@@ -176,7 +176,16 @@ class Server(private val options: Options) : RequestHandler, SessionListener {
                 act(work) { input!!.tap(call.x, call.y, call.durationMs?.let { unsigned(it) } ?: 0L) { work.cancelled } }
             }
             is SwipeCall -> inputWorker.execute {
-                act(work) { input!!.swipe(call.x1, call.y1, call.x2, call.y2, unsigned(call.durationMs)) { work.cancelled } }
+                act(work) {
+                    input!!.swipe(
+                        call.x1,
+                        call.y1,
+                        call.x2,
+                        call.y2,
+                        unsigned(call.durationMs),
+                        call.restMs?.let { unsigned(it) } ?: 0L,
+                    ) { work.cancelled }
+                }
             }
             is KeyCall -> inputWorker.execute { act(work) { input!!.key(call.code, call.meta ?: 0) } }
             is TextSetCall -> inputWorker.execute { setText(work, call) }

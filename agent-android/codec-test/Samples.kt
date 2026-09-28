@@ -285,6 +285,7 @@ object Samples {
         "request_tap" to Request(3, 1000, TapCall(540, 1200)),
         "request_long_press" to Request(23, null, TapCall(0, -1, durationMs = 600)),
         "request_swipe" to Request(24, null, SwipeCall(-24, -25, Int.MIN_VALUE, Int.MAX_VALUE, 300)),
+        "request_swipe_resting" to Request(25, 1360, SwipeCall(540, 2000, 540, 425, 300, restMs = 60)),
         "request_key" to Request(255, null, KeyCall(66, meta = 0x1000)),
         "request_text_set" to Request(
             256,

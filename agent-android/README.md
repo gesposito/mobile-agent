@@ -127,7 +127,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.3.0 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.4.0 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -155,7 +155,8 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
-| 0.3.0 | From task 10.11 on. They behave as 0.2.1 builds do, and also advertise the `bounds` capability, answer `bounds` probes (their trace line is `trace bounds`) and honor the snapshot request's `evict`, which 0.2.1 and earlier builds skip, reading with their cache. Their snapshots flag a window the platform draws away from where its layout puts it `transformed`, a window flag earlier builds never set. To the driver, an agent reporting 0.2.1 is another version. |
+| 0.4.0 | From task 10.16 on. They behave as 0.3.0 builds do, and also honor the swipe request's `rest_ms`, resting the pointer at the end of the swipe and moving it one pixel on before it lifts, which 0.3.0 and earlier builds skip, lifting the pointer moving. To the driver, an agent reporting 0.3.0 is another version. |
+| 0.3.0 | From task 10.11 to the last one before task 10.16. They behave as 0.2.1 builds do, and also advertise the `bounds` capability, answer `bounds` probes (their trace line is `trace bounds`) and honor the snapshot request's `evict`, which 0.2.1 and earlier builds skip, reading with their cache. Their snapshots flag a window the platform draws away from where its layout puts it `transformed`, a window flag earlier builds never set. To the driver, an agent reporting 0.2.1 is another version. |
 | 0.2.1 | From the agent of task 10.9 on. Their snapshots carry what 0.2.0 snapshots carry; the difference is in how a read behaves. A read spends at most 100 ms on retries of children whose fetch throws, a walk that finds a child's parent gone or changed starts again from the window roots, and a Compose re-read yields to a snapshot or resync request, so that a tap taking a screen away mid-walk does not hold a snapshot past its deadline, as it can on 0.2.0. The snapshot trace line adds `queued_ms` and `restarts`. To the driver, an agent reporting 0.2.0 is another version. |
 | 0.2.0 | From the agent of task 4.11 to the last one before task 10.9, numbered anew so that the version alone says that their snapshots carry the window metadata of task 3.6 (`emits_events`, `owner`, `modal`) and the nodes' scroll semantics. To the driver, an agent reporting 0.1.0 is another version. Builds from task 3.7 on honor the snapshot request's `evict_event_less`, which earlier 0.2.0 builds skip, reading with their cache. |
 | 0.1.0 | Every build from the banner-only agent of task 1.5 to the agent of task 4.11, both sides of task 3.6 included: 0.1.0 builds differ in what their snapshots carry, and only the driver's build digest tells them apart. |
@@ -369,7 +370,15 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   DOWN and UP with a finger at one point; with `duration_ms` it is a long
   press held that long. A swipe is a multi-step gesture: DOWN at the start,
   a MOVE every 8 ms along the line on the real clock, so the app sees the
-  velocity the duration implies, and UP at the end. A key is DOWN and UP
+  velocity the duration implies, and UP at the end, where the content
+  flings on at that velocity. With `rest_ms` (task 10.16) the pointer rests
+  at the end that long, then a MOVE one pixel on along the line and the UP
+  there end the gesture: the platform's velocity tracker takes a pointer
+  that has not moved for 40 ms as stopped when its next event comes, and a
+  View-based list, such as React Native's scroll view, takes its velocity
+  from the MOVEs before the UP, so the content stops where the pointer left
+  it (Compose drops the velocity itself when the UP comes more than 40 ms
+  after the last MOVE). A key is DOWN and UP
   from the virtual keyboard with the given meta state. A gesture whose
   deadline passes is cancelled with ACTION_CANCEL, never left down. Input
   runs on its own thread, so a tap never waits behind a tree read. After an
@@ -605,6 +614,7 @@ the agent answers by id and its tests exercise it throughout.
 | device-protocol: Event channel with sequence numbers | Agent side of a resync | `events::a_tree_resync_answers_the_last_sequence_and_the_next_read_is_full` |
 | android-driver: Input injection | Tap acknowledged | `input::a_tap_is_acknowledged_as_accepted_within_50_ms`, `input::a_tap_the_platform_refuses_is_acknowledged_as_not_accepted` |
 | | Long press, swipe with duration, multi-step gesture, keys | `input::a_long_press_holds_for_its_duration`, `input::a_swipe_with_duration_scrolls_the_list`, `input::a_slow_multi_step_drag_moves_the_list_along_its_path`, `input::key_presses_are_acknowledged_and_typed_into_the_focused_field` |
+| | A swipe that rests before the pointer lifts (task 10.16) | `input::a_swipe_that_rests_before_the_lift_moves_the_list_as_far_as_the_pointer` |
 | | Compose windows read fresh after an injected action (design D5) | `input::a_tap_on_a_compose_tab_is_in_the_next_snapshot_without_a_poll` |
 | | Compose windows read fresh after input the agent did not inject (task 3.7) | `events::a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject` |
 | Bounds probes and eviction by window (task 10.11) | Nodes that moved without a change event | `bounds::a_probe_answers_the_nodes_of_the_last_snapshot_with_their_bounds`, `bounds::a_probe_sees_rows_a_drag_moved_that_the_last_snapshot_does_not_have`, `bounds::a_snapshot_evicting_a_window_reads_it_again_in_full`, `handshake::the_hello_advertises_every_capability_this_build_implements` |
