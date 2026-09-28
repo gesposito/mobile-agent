@@ -44,7 +44,8 @@ Acting
   type @e2 ' smith'           add key events; without a ref, the focused field
   press Enter | Back | Home   keys; join modifiers with +, as Control+a
   scroll down 600             move the content; -s @e7 scrolls inside @e7
-  scroll down --until '#row-150'   scroll until the element is mostly in view
+  scroll down --until '#row-150'   scroll until the element is mostly in view;
+                              no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
   open com.example.app        launch an app; close stops it and frees the target
 

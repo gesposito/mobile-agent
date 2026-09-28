@@ -43,7 +43,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is mostly in view, `visible` giving the share of it in view |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |
@@ -55,24 +55,39 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `shutdown` | stops the daemon, returning once it has let go of its targets |
 | `help [agent \| <command>]` | prints help, a command's help, or the agent guide |
 
-`scroll --until` stops once the element is mostly in view: its centre and
-at least half of it inside the visible bounds of what holds it (its window,
-clipped by the scroll containers around it, less the system bars, keyboard,
-tab bars and toolbars drawn over them). Android reports an element its list
-cuts off as the part that shows, so one whose bounds end at the edge of a
-list that scrolls on counts as partly in view whatever share its bounds
-give, and an element longer than the list stops the scroll once it fills
-the list. Once the element is on screen, the next stroke brings it in
-rather than going on by the amount: one just long enough to carry an
-element whose bounds stick out 8 points inside, and one that carries the
-middle of an element cut off at the edge, or longer than the list, to the
-list's middle, in either case at most the amount and with the finger
-moving at most 400 points a second, so the content's fling after the
-finger lifts stays short. The reply's `visible` is the share of the
-element's bounds in view, from 0 to 1, rounded to a hundredth; an
-`element_not_found` for an element on screen but not mostly in view
-carries it too, as `data.visible`. A `click` on an element that is not
-mostly in view still taps the centre of its bounds, and warns.
+`scroll --until` looks for the element between strokes, so no stroke may
+carry the element through its list unseen: a stroke whose finger lifts
+moving flings the list on, and a 600-point stroke over 300 ms carried the
+fixtures' lists 1,103 to 1,319 points on the API 36 emulator, where they
+show about 780, and the Expo fixture's 1,522 to 1,608 on the iOS 26.5
+Simulator, where it shows about 730. Each stroke comes to rest before the
+finger lifts, so the list moves only as far as the finger, and one that
+looks for the element is the amount long, or shorter: at most three
+quarters of what the scroll container under the stroke shows along the
+scroll's axis, plus the tap threshold, since the list moves only once the
+finger has gone that far. At one look at least the element then shows
+whole, or a quarter of what the list shows of it when it is longer. The
+reply's `amount` is that stroke's length.
+
+It stops once the element is mostly in view: its centre and at least half
+of it inside the visible bounds of what holds it (its window, clipped by
+the scroll containers around it, less the system bars, keyboard, tab bars
+and toolbars drawn over them). Android reports an element its list cuts
+off as the part that shows, so one whose bounds end at the edge of a list
+that scrolls on counts as partly in view whatever share its bounds give,
+and an element longer than the list stops the scroll once it fills the
+list. Once the element is on screen, the next stroke brings it in rather
+than going on by the amount: one just long enough to carry an element
+whose bounds stick out 8 points inside, and one that carries the middle of
+an element cut off at the edge, or longer than the list, to the list's
+middle, in either case at most the amount, coming to rest before the
+finger lifts and with the finger moving at most 400 points a second, so
+that a fling, were the platform still to take the finger as moving, stays
+short. The reply's `visible` is the share of the element's bounds in view,
+from 0 to 1, rounded to a hundredth; an `element_not_found` for an element
+on screen but not mostly in view carries it too, as `data.visible`. A
+`click` on an element that is not mostly in view still taps the centre of
+its bounds, and warns.
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
 or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
@@ -429,6 +444,9 @@ Task 10.12's emulator controller setting has
 Task 10.15 adds `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`,
 `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in`
 and `commands::a_click_on_an_element_mostly_out_of_view_warns`.
+Task 10.16 adds `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list`
+and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`,
+on fakes whose lists fling (`MOBILE_AGENT_FAKE_FLING`).
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

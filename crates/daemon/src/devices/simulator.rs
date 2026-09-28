@@ -74,8 +74,8 @@ const FOCUS_WAIT: Duration = Duration::from_millis(1500);
 /// path before it creeps on and lifts (task 10.16; the creep is the
 /// Simulator driver's, see `simulator::gesture::swipe`). On the iOS 26.5
 /// Simulator, 600-point swipes over 300 ms released this way moved the
-/// fixtures' lists 541 to 571 points, where swipes that lifted moving moved
-/// them 1,522 to 1,608.
+/// fixtures' lists 543 to 573 points, where swipes that lifted moving moved
+/// the Expo fixture's 1,522 to 1,608.
 const REST: Duration = Duration::from_millis(60);
 
 /// The Simulator driver's swipe from `from` to `to` over `duration`,

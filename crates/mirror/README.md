@@ -345,9 +345,9 @@ the reasons in this order, each with advice:
   node on screen and not covered that scrolls along the stroke's axis, or
   along an axis its platform does not name, and holds the point, in the
   top-most window that has one, with the visible bounds an element inside
-  it gets. The daemon bounds each stroke of `scroll --until` by their
-  extent along the axis, so that no element passes through them between
-  two looks.
+  it gets. The daemon bounds each stroke of `scroll --until` that looks
+  for its element to three quarters of their extent along the axis, so
+  that no element passes through them between two looks.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
