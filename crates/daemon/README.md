@@ -68,6 +68,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--fake-splash` | `MOBILE_AGENT_FAKE_SPLASH_MS` | `0`; how long fake targets' fixture apps show their launch splash when their process starts |
 | `--fake-activation` | `MOBILE_AGENT_FAKE_ACTIVATION_MS` | `0`; how long after it starts a fake target's input session activates |
 | `--fake-stop` | `MOBILE_AGENT_FAKE_STOP_MS` | `0`; how long detaching a fake target takes, as stopping the Android agent takes |
+| `--fake-fling` | `MOBILE_AGENT_FAKE_FLING` (`1`, `true`, `yes` or `on`) | off; fake targets' lists glide on after a stroke whose finger lifts moving, as far as their platform's fling carries them |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -590,12 +591,20 @@ session that input waits for until it has been started that long, started
 by the first input or by `open`, and input notes that name the session's
 first input, as a Simulator's. With `--fake-stop` detaching a target takes
 that long on its worker, as stopping the Android agent does, so `shutdown`
-waits that long for it. Screenshots are placeholder bytes, not an
-image. An Android fake reports its paths in `status` as the Android driver
-names them: a fake emulator's input and frames go through the `emulator
-controller`, a fake device's input through the `agent` with no frames.
-With `--emulator-controller off` a fake emulator has no frame source and
-reports the agent's paths, as a real emulator does.
+waits that long for it. With `--fake-fling` a fixture's list glides on
+after a stroke whose finger lifts moving, as far as its platform's fling
+carries it at the finger's speed: Android's `OverScroller` spline with
+`ViewConfiguration`'s scroll friction, from 50 points a second, and UIKit's
+normal deceleration rate; a 600-point stroke over 300 ms glides 647 points
+on Android and 998 on iOS, which puts the lists where the emulator's and
+the Simulator's went (1,103 to 1,319 and 1,522 to 1,608 points). A stroke
+that comes to rest before the finger lifts, and every stroke without the
+flag, moves the list as far as the finger. Screenshots are placeholder
+bytes, not an image. An Android fake reports its paths in `status` as the
+Android driver names them: a fake emulator's input and frames go through
+the `emulator controller`, a fake device's input through the `agent` with
+no frames. With `--emulator-controller off` a fake emulator has no frame
+source and reports the agent's paths, as a real emulator does.
 
 ## Errors
 

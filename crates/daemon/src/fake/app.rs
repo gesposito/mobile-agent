@@ -413,8 +413,10 @@ impl Device {
         }
     }
 
-    /// A swipe from `from` to `to` in points; whether the screen changed.
-    pub fn swipe(&mut self, from: (f64, f64), to: (f64, f64)) -> bool {
+    /// A swipe from `from` to `to` in points, after which the list glides
+    /// on `glide` points the way the finger went, as far as it scrolls;
+    /// whether the screen changed.
+    pub fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
         let before = self.clone();
         let max = max_offset(self.kit);
         if let Some(fixture) = self.front_fixture()
@@ -422,7 +424,9 @@ impl Device {
             && fixture.detail.is_none()
             && !fixture.modal()
         {
-            fixture.offset = (fixture.offset + from.1 - to.1).clamp(0.0, max);
+            let moved = from.1 - to.1;
+            let way = if moved == 0.0 { 0.0 } else { moved.signum() };
+            fixture.offset = (fixture.offset + moved + glide * way).clamp(0.0, max);
         }
         *self != before
     }
@@ -853,6 +857,42 @@ fn tab_content(kit: Kit, fixture: &Fixture) -> Vec<El> {
     }
 }
 
+/// The slowest finger, in points a second, after which an Android list
+/// flings (`ViewConfiguration`'s minimum fling velocity, 50 dp a second).
+const MIN_FLING: f64 = 50.0;
+
+/// The fastest fling, in points a second (`ViewConfiguration`'s maximum,
+/// 8000 dp a second); UIKit's lists are held to it too.
+const MAX_FLING: f64 = 8000.0;
+
+/// How far `platform`'s lists glide on after a finger lifts moving at
+/// `speed` points a second, as the platforms' scroll views fling them:
+/// Android's `OverScroller` spline with `ViewConfiguration`'s scroll
+/// friction, in points, which are its density-independent pixels; UIKit's
+/// normal deceleration rate, the speed kept 0.998 of each millisecond.
+pub(crate) fn glide(platform: Platform, speed: f64) -> f64 {
+    let speed = speed.min(MAX_FLING);
+    match platform {
+        Platform::Android => {
+            if speed < MIN_FLING {
+                return 0.0;
+            }
+            // SplineOverScroller.getSplineFlingDistance: gravity times inches
+            // a metre times dots an inch at 160 dpi times 0.84.
+            const FRICTION: f64 = 0.015;
+            const INFLEXION: f64 = 0.35;
+            let physical = 9.80665 * 39.37 * 160.0 * 0.84;
+            let deceleration = 0.78f64.ln() / 0.9f64.ln();
+            let spline = (INFLEXION * speed / (FRICTION * physical)).ln();
+            FRICTION * physical * (deceleration / (deceleration - 1.0) * spline).exp()
+        }
+        Platform::Ios => {
+            const RATE: f64 = 0.998;
+            speed * RATE / (1.0 - RATE) / 1000.0
+        }
+    }
+}
+
 /// How far the fixture's list scrolls, in points.
 fn max_offset(kit: Kit) -> f64 {
     let (top, bottom) = kit.content();
@@ -901,4 +941,48 @@ fn hide_unless(el: El, visible: bool) -> El {
         .map(|child| hide_unless(child, false))
         .collect();
     el
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Task 10.16: a stroke that lifts moving carries a platform's list on
+    /// as far as its fling does: Android's spline, which took the Expo list
+    /// about 650 points further than a 600-point stroke over 300 ms on the
+    /// emulator, from 50 points a second on; UIKit's deceleration, about
+    /// half a second at the finger's speed.
+    #[test]
+    fn a_list_glides_on_as_far_as_its_platform_flings_it() {
+        let close = |actual: f64, expected: f64| (actual - expected).abs() < 1.0;
+        assert!(close(glide(Platform::Android, 2000.0), 647.4));
+        assert!(close(glide(Platform::Android, 1000.0), 194.3));
+        assert_eq!(glide(Platform::Android, 49.0), 0.0);
+        assert!(close(glide(Platform::Ios, 2000.0), 998.0));
+        assert!(close(glide(Platform::Ios, 400.0), 199.6));
+        assert_eq!(
+            glide(Platform::Android, f64::INFINITY),
+            glide(Platform::Android, 8000.0),
+            "the platform's fastest fling"
+        );
+    }
+
+    /// Task 10.16: a swipe moves the list by the finger's travel and then
+    /// by the glide, the way the finger went, within the list's range.
+    #[test]
+    fn a_swipe_moves_the_list_by_the_finger_and_the_glide() {
+        let mut device = Device::new(Platform::Android);
+        let launch = Launch {
+            relaunch: false,
+            env: vec![("initial_tab".into(), "list".into())],
+        };
+        device.launch(FIXTURE, &launch).unwrap();
+        let offset = |device: &Device| device.fixtures[FIXTURE].offset;
+        assert!(device.swipe((204.0, 700.0), (204.0, 100.0), 650.0));
+        assert_eq!(offset(&device), 1250.0);
+        assert!(device.swipe((204.0, 100.0), (204.0, 400.0), 100.0));
+        assert_eq!(offset(&device), 850.0);
+        assert!(device.swipe((204.0, 100.0), (204.0, 700.0), 5000.0));
+        assert_eq!(offset(&device), 0.0);
+    }
 }

@@ -10,6 +10,7 @@ Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drive
                            [--emulator-controller <auto|off>]
                            [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
                            [--fake-splash <time>] [--fake-activation <time>] [--fake-stop <time>]
+                           [--fake-fling]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -45,6 +46,10 @@ Options:
   --fake-stop <time>      Take this long to detach each fake target, as
                           stopping the Android agent takes
                           (or MOBILE_AGENT_FAKE_STOP_MS; default 0)
+  --fake-fling            Let fake targets' lists glide on after a stroke
+                          whose finger lifts moving, as far as the
+                          platform's fling carries them
+                          (or MOBILE_AGENT_FAKE_FLING=1; default off)
   -h, --help              Print this help
   -V, --version           Print the version
 

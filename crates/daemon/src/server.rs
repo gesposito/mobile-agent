@@ -83,6 +83,9 @@ pub struct Options {
     pub fake_activation: Duration,
     /// How long detaching a fake target takes.
     pub fake_stop: Duration,
+    /// Whether fake targets' lists glide on after a stroke whose finger
+    /// lifts moving.
+    pub fake_fling: bool,
     /// Device drivers to register, as `MOBILE_AGENT_DRIVERS` lists them;
     /// `None` registers the host's device drivers unless fake targets are
     /// named (see [`driver::device_drivers`]).
@@ -95,13 +98,14 @@ impl Options {
     /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
     /// `--fake <targets>`, `--fake-latency <time>`, `--fake-frame-delay
     /// <time>`, `--fake-splash <time>`, `--fake-activation <time>`,
-    /// `--fake-stop <time>`, `--drivers <names>` and `--emulator-controller
-    /// <auto|off>`, each falling back to its environment variable:
-    /// `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
-    /// [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
+    /// `--fake-stop <time>`, `--fake-fling`, `--drivers <names>` and
+    /// `--emulator-controller <auto|off>`, each falling back to its
+    /// environment variable: `MOBILE_AGENT_SOCKET_DIR` (then the runtime
+    /// directory, see [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
     /// `MOBILE_AGENT_FAKE_TARGETS`, `MOBILE_AGENT_FAKE_LATENCY_MS`,
     /// `MOBILE_AGENT_FAKE_FRAME_DELAY_MS`, `MOBILE_AGENT_FAKE_SPLASH_MS`,
     /// `MOBILE_AGENT_FAKE_ACTIVATION_MS`, `MOBILE_AGENT_FAKE_STOP_MS`,
+    /// `MOBILE_AGENT_FAKE_FLING` (`1`, `true`, `yes` or `on`),
     /// `MOBILE_AGENT_DRIVERS` and `MOBILE_AGENT_EMULATOR_CONTROLLER`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
@@ -112,6 +116,7 @@ impl Options {
         let mut splash = None;
         let mut activation = None;
         let mut stop = None;
+        let mut fling = false;
         let mut drivers = None;
         let mut controller = None;
         let mut args = args.into_iter();
@@ -142,6 +147,7 @@ impl Options {
                     activation = Some(value()?.to_string_lossy().into_owned());
                 }
                 "--fake-stop" => stop = Some(value()?.to_string_lossy().into_owned()),
+                "--fake-fling" if inline.is_none() => fling = true,
                 "--drivers" => drivers = Some(value()?.to_string_lossy().into_owned()),
                 "--emulator-controller" => {
                     controller = Some(value()?.to_string_lossy().into_owned());
@@ -179,6 +185,13 @@ impl Options {
             "fake activation",
         )?;
         let fake_stop = fake_time(stop, "MOBILE_AGENT_FAKE_STOP_MS", "fake stop")?;
+        let fake_fling = fling
+            || env("MOBILE_AGENT_FAKE_FLING").is_some_and(|text| {
+                matches!(
+                    text.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            });
         let emulator_controller =
             match controller.or_else(|| env("MOBILE_AGENT_EMULATOR_CONTROLLER")) {
                 Some(text) => EmulatorController::parse(&text)?,
@@ -193,6 +206,7 @@ impl Options {
             fake_splash,
             fake_activation,
             fake_stop,
+            fake_fling,
             drivers: drivers.or_else(|| env("MOBILE_AGENT_DRIVERS")),
             emulator_controller,
         })
@@ -357,6 +371,7 @@ pub fn run(options: Options) -> Result<Exit, String> {
         fake_splash: options.fake_splash,
         fake_activation: options.fake_activation,
         fake_stop: options.fake_stop,
+        fake_fling: options.fake_fling,
         drivers: options.drivers.as_deref(),
         state_dir: &options.socket_dir,
         emulator_controller: options.emulator_controller,
@@ -787,6 +802,7 @@ mod tests {
                 "--fake-activation",
                 "1s",
                 "--fake-stop=600",
+                "--fake-fling",
             ]
             .map(OsString::from),
         )
@@ -798,6 +814,7 @@ mod tests {
         assert_eq!(options.fake_splash, Duration::from_millis(800));
         assert_eq!(options.fake_activation, Duration::from_secs(1));
         assert_eq!(options.fake_stop, Duration::from_millis(600));
+        assert!(options.fake_fling);
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
     }
 

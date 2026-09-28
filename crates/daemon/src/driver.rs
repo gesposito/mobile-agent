@@ -310,6 +310,9 @@ pub struct Registration<'a> {
     pub fake_activation: Duration,
     /// How long detaching a fake target takes.
     pub fake_stop: Duration,
+    /// Whether fake targets' lists glide on after a stroke whose finger
+    /// lifts moving.
+    pub fake_fling: bool,
     /// Device drivers by name, as `MOBILE_AGENT_DRIVERS` lists them; see
     /// [`device_drivers`].
     pub drivers: Option<&'a str>,
@@ -331,8 +334,10 @@ pub struct Registration<'a> {
 /// stand in for them: when `fake` names any, only the fake driver serves,
 /// showing every change `fake_latency` after its cause, its frames from
 /// `fake_frame_delay` after the attach, its fixture apps' launch splash for
-/// `fake_splash`, its input `fake_activation` after its session starts and
-/// taking `fake_stop` to detach, unless `drivers` names device drivers too.
+/// `fake_splash`, its input `fake_activation` after its session starts,
+/// taking `fake_stop` to detach and, with `fake_fling`, its list gliding on
+/// after a stroke that lifts moving, unless `drivers` names device drivers
+/// too.
 /// With `emulator_controller` off, the Android driver leaves every
 /// emulator's controller unused and fake emulators come without a frame
 /// source.
@@ -354,6 +359,7 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
                 .with_splash(registration.fake_splash)
                 .with_activation(registration.fake_activation)
                 .with_stop(registration.fake_stop)
+                .with_fling(registration.fake_fling)
                 .with_emulator_controller(registration.emulator_controller),
         ));
     }
@@ -467,6 +473,7 @@ mod tests {
                 fake_splash: Duration::ZERO,
                 fake_activation: Duration::ZERO,
                 fake_stop: Duration::ZERO,
+                fake_fling: false,
                 drivers,
                 state_dir: &dir,
                 emulator_controller: EmulatorController::Auto,

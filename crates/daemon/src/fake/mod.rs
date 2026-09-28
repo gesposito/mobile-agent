@@ -21,7 +21,11 @@
 //! (`MOBILE_AGENT_FAKE_ACTIVATION_MS`) holds input until the input session
 //! has been active that long, as a Simulator's dtuhidd session does, and a
 //! stop (`MOBILE_AGENT_FAKE_STOP_MS`) makes detaching a target take that
-//! long, as stopping the Android agent does.
+//! long, as stopping the Android agent does. A fling
+//! (`MOBILE_AGENT_FAKE_FLING`) makes the fixture's list glide on after a
+//! stroke whose finger lifts moving, as far as the platform's fling carries
+//! it; without it, and after a stroke whose finger comes to rest, the list
+//! moves as far as the finger.
 
 mod app;
 mod realtime;
@@ -63,6 +67,8 @@ pub struct FakeDriver {
     timing: Timing,
     /// Whether fake emulators take the controller's path, with frames.
     controller: EmulatorController,
+    /// Whether a stroke whose finger lifts moving glides the list on.
+    fling: bool,
 }
 
 impl FakeDriver {
@@ -127,6 +133,7 @@ impl FakeDriver {
             targets,
             timing: Timing::default(),
             controller: EmulatorController::Auto,
+            fling: false,
         })
     }
 
@@ -167,6 +174,14 @@ impl FakeDriver {
     /// emulators take the agent's path, without a frame source.
     pub fn with_emulator_controller(mut self, controller: EmulatorController) -> FakeDriver {
         self.controller = controller;
+        self
+    }
+
+    /// These targets, their fixture's list gliding on after a stroke whose
+    /// finger lifts moving when `fling` is set, as far as the platform's
+    /// fling carries it.
+    pub fn with_fling(mut self, fling: bool) -> FakeDriver {
+        self.fling = fling;
         self
     }
 }
@@ -213,7 +228,7 @@ impl Driver for FakeDriver {
             TargetClass::AndroidEmulator => self.controller == EmulatorController::Auto,
             TargetClass::AndroidDevice => false,
         };
-        let mut attachment = realtime::attach(target.platform, frames, self.timing);
+        let mut attachment = realtime::attach(target.platform, frames, self.timing, self.fling);
         if target.class == TargetClass::AndroidEmulator
             && self.controller == EmulatorController::Off
         {

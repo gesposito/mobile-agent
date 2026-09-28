@@ -14,7 +14,9 @@
 //! A fixture app whose process starts can show a launch splash first,
 //! input can wait for an input session that activates some time after it
 //! starts, as a Simulator's does, and detaching can take time, as stopping
-//! the Android agent does: the last part dropped waits it out.
+//! the Android agent does: the last part dropped waits it out. The fixture's
+//! list can glide on after a stroke whose finger lifts moving, as far as the
+//! platform's fling carries it, the finger's speed its release velocity.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -24,14 +26,14 @@ use std::time::{Duration, Instant};
 use mirror::MirrorConfig;
 use mirror::backend::{
     Backend, BackendError, Clock, EncodeRequest, EventStream, FrameMeta, FrameSource, Input,
-    InputAck, InputSink, ReadRequest, StreamItem, Timed, TreeRead, TreeSource,
+    InputAck, InputSink, ReadRequest, Release, StreamItem, Timed, TreeRead, TreeSource,
 };
 use mirror::testing::{FakeTarget, Step};
 use protocol::event::{EventPayload, WindowChange, WindowChangeKind};
 use protocol::message::Rotation;
 
 use super::Timing;
-use super::app::Device;
+use super::app::{self, Device};
 use super::tree::{self, Win};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
@@ -72,6 +74,8 @@ struct Shared {
     session: Mutex<Session>,
     /// How long detaching takes.
     stop: Duration,
+    /// Whether a stroke that lifts moving glides the list on.
+    fling: bool,
 }
 
 impl Drop for Shared {
@@ -317,8 +321,9 @@ impl InputNotes for FakeSession {
 /// frame source when `frames` is set; `timing` says when its frames start,
 /// how late each change shows after the input or launch that caused it,
 /// how long a launch splash lasts, when its input session activates and
-/// how long detaching it takes.
-pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing) -> Attachment {
+/// how long detaching it takes. With `fling`, a stroke whose finger lifts
+/// moving glides the list on.
+pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing, fling: bool) -> Attachment {
     let Timing {
         latency,
         frame_delay,
@@ -346,6 +351,7 @@ pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing) -> Attach
         activation,
         session: Mutex::new(Session::default()),
         stop,
+        fling,
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -435,7 +441,22 @@ impl InputSink for Part {
                 let hit = tree::hit(&device.windows(), at.x, at.y);
                 device.tap(hit.as_deref())
             }
-            Input::Swipe { from, to, .. } => device.swipe((from.x, from.y), (to.x, to.y)),
+            Input::Swipe {
+                from,
+                to,
+                duration,
+                release,
+            } => {
+                // The list scrolls up and down, so the finger's speed along
+                // that axis is its release velocity.
+                let glide = if self.shared.fling && *release == Release::Moving {
+                    let speed = (from.y - to.y).abs() / duration.as_secs_f64();
+                    app::glide(device.kit.platform, speed)
+                } else {
+                    0.0
+                };
+                device.swipe((from.x, from.y), (to.x, to.y), glide)
+            }
             Input::Key { code, meta } => device.key(*code, *meta),
             Input::Text { text, node, method } => {
                 let field = node.map(|n| tree::identifier_of(&device.windows(), n.window, n.node));
@@ -536,7 +557,7 @@ mod tests {
             splash: Duration::from_millis(150),
             ..Timing::default()
         };
-        let mut attachment = attach(Platform::Ios, false, timing);
+        let mut attachment = attach(Platform::Ios, false, timing, false);
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
                 windows: None,
@@ -570,13 +591,13 @@ mod tests {
             at: mirror::Point::new(1.0, 1.0),
             hold: None,
         };
-        let mut cold = attach(Platform::Ios, false, timing);
+        let mut cold = attach(Platform::Ios, false, timing, false);
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert!(cold.input_notes.unwrap().activation_wait().is_some());
 
-        let mut warm = attach(Platform::Ios, false, timing);
+        let mut warm = attach(Platform::Ios, false, timing, false);
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
         assert!(!session.active());
@@ -605,6 +626,7 @@ mod tests {
                 frame_delay: Duration::from_millis(150),
                 ..Timing::default()
             },
+            false,
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -617,7 +639,7 @@ mod tests {
         );
 
         // The same device without a delay shows its launcher's frame at once.
-        let mut prompt = attach(Platform::Android, true, Timing::default());
+        let mut prompt = attach(Platform::Android, true, Timing::default(), false);
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");
         assert_eq!(at_once[0].hash, first[0].hash, "the same launcher");
