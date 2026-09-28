@@ -31,7 +31,7 @@ traits) and the fake driver every test without a device runs on.
 ```
 src/
   main.rs       the mobile-agent-daemon binary: flags, environment, exit status
-  server.rs     startup and replacement, sidecar files, connections, idle exit
+  server.rs     startup and replacement, sidecar files, connections, shutdown, idle exit
   paths.rs      the socket directory, its files, the build's version string
   wire.rs       the request and reply envelope, the error codes
   registry.rs   discovery, target selection, claims, session settings, workers
@@ -67,6 +67,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--fake-frame-delay` | `MOBILE_AGENT_FAKE_FRAME_DELAY_MS` | `0`; how long after the attach fake targets' frame streams start, in the same forms |
 | `--fake-splash` | `MOBILE_AGENT_FAKE_SPLASH_MS` | `0`; how long fake targets' fixture apps show their launch splash when their process starts |
 | `--fake-activation` | `MOBILE_AGENT_FAKE_ACTIVATION_MS` | `0`; how long after it starts a fake target's input session activates |
+| `--fake-stop` | `MOBILE_AGENT_FAKE_STOP_MS` | `0`; how long detaching a fake target takes, as stopping the Android agent takes |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -96,12 +97,12 @@ the version and pid files only if the pid file still names it, so a
 successor's files survive; then the lock file, unless a startup holds the
 lock, and the directory when nothing else is left in it, so a daemon on a
 directory of its own, such as a test's under the temporary directory,
-leaves nothing behind. A startup that locked a lock file an exiting daemon
-then removed takes the lock again on the file at the path, so no two
-startups hold locks on different files. Shutting down and the idle exit
-wake the accept loop through a pipe it waits on beside the socket, not by
-connecting to the socket's path, so a daemon whose socket file was removed
-still stops.
+leaves nothing behind (Shutdown gives the order). A startup that locked a
+lock file an exiting daemon then removed takes the lock again on the file
+at the path, so no two startups hold locks on different files. Shutting
+down and the idle exit wake the accept loop through a pipe it waits on
+beside the socket, not by connecting to the socket's path, so a daemon
+whose socket file was removed still stops.
 
 Because the version names the build, the CLI replaces a daemon started from
 an older build of the same release, not only from another release.
@@ -142,7 +143,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
 | `doctor` | | `pid`, `version`, `drivers`, `emulatorController`, `compatibility {rows [{subject, feature, status, note}], note}` |
-| `shutdown` | | `stopped`; the daemon exits after the reply |
+| `shutdown` | | `stopped`; `notStopped` when a target had not stopped within 5 s. The reply comes once the daemon has stopped its targets and removed its files (see Shutdown), and the daemon exits after it |
 
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
@@ -319,6 +320,31 @@ tree up to the waiting default. Timeouts are at most 600000 ms.
 The idle timer runs from the end of the last request and stands still
 while any request is in flight, so a long wait outlasts a short idle
 timeout.
+
+## Shutdown
+
+`shutdown` answers once the daemon has let go of everything it held. The
+daemon accepts no more connections, stops every target it attached, all at
+once, which stops an Android target's agent and a Simulator's reader, and
+waits for them up to 5 s; then it removes its socket, closes the listener,
+removes its version, pid and lock files, and only then replies and exits.
+A client that has the reply finds neither the daemon's socket nor its
+agents, so the next command starts a fresh daemon, whose attach finds the
+device's UI automation free. While the targets stop, the listener stays
+open without accepting: a client that connects meanwhile waits, then is
+turned away once the socket is gone, rather than finding no daemon and
+starting another beside targets still held. A target command that reaches
+the target registry once the targets are stopped is refused with
+`daemon_stopping`, so the daemon attaches nothing on its way out. The idle
+exit stops in the same order, with no reply to send.
+
+A target still stopping after 5 s is left to finish on its own: the daemon
+exits all the same, logs it, and the reply names it in `notStopped` and in
+a warning (`notStopped` is absent when every target stopped):
+
+```json
+{"id":"r1","success":true,"data":{"notStopped":["emulator-5554"],"stopped":true},"error":null,"warning":"emulator-5554 had not stopped within 5 s, and the daemon stopped waiting; an agent it started there may still run"}
+```
 
 ## Drivers
 
@@ -532,7 +558,9 @@ launch splash, one image `SplashScreenLegacy` in its window, that long
 before its first screen. With `--fake-activation` the target has an input
 session that input waits for until it has been started that long, started
 by the first input or by `open`, and input notes that name the session's
-first input, as a Simulator's. Screenshots are placeholder bytes, not an
+first input, as a Simulator's. With `--fake-stop` detaching a target takes
+that long on its worker, as stopping the Android agent does, so `shutdown`
+waits that long for it. Screenshots are placeholder bytes, not an
 image. An Android fake reports its paths in `status` as the Android driver
 names them: a fake emulator's input and frames go through the `emulator
 controller`, a fake device's input through the `agent` with no frames.
@@ -556,6 +584,7 @@ reports the agent's paths, as a real emulator does.
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
+| `daemon_stopping` | the daemon is shutting down, and a target command reached it after it stopped its targets; run the command again to start a new daemon |
 | `internal` | a command failed unexpectedly; the worker detaches the target |
 
 The mirror's codes pass through: `stale_ref`, `unknown_ref`,
@@ -638,6 +667,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 | (task 10.11, settle without frames) | (`open` waits out a screen moving without change events and a window the platform animates in) | the mirror's `settle::without_frames_settle_waits_until_probed_bounds_hold_still_and_the_replica_has_them` and `settle::without_frames_settle_waits_while_a_window_is_drawn_transformed`, and the Android session's `session::tests::a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted`; against an emulator on the agent path, `devices::open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest` |
+| (task 8.16, shutdown waits for the targets) | (`shutdown` answers once the targets have stopped and the files are gone, bounded by 5 s) | `lifecycle::shutdown_answers_once_the_targets_have_stopped_and_the_socket_is_gone`, `lifecycle::a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply`, `registry::tests::stopping_names_the_targets_still_detaching_when_the_wait_is_over`, `registry::tests::a_stopped_registry_starts_no_worker`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the CLI's `lifecycle::shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket` and `lifecycle::a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket` |
 | (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
 | (task 10.14, overscroll without frames) | (a click right after the settle that follows a stroke to the end of a list opens the row) | the mirror's `settle::without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change` and their controls; against an emulator on the agent path, `devices::the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path` |
 

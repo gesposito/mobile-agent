@@ -52,7 +52,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `status` | reports the daemon, its targets with what each attached target's driver reports, and its sessions |
 | `doctor` | checks toolchains, the adb server, emulators and the daemon |
 | `set timeout <ms>` | sets this session's default timeout |
-| `shutdown` | stops the daemon |
+| `shutdown` | stops the daemon, returning once it has let go of its targets |
 | `help [agent \| <command>]` | prints help, a command's help, or the agent guide |
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
@@ -211,11 +211,18 @@ daemon answers, it starts that executable in its own process group, in
 daemon of that version serves the socket; the new daemon replaces one of
 another build, and concurrent first commands share one daemon. A daemon
 that fails to start is reported with the end of its log. `shutdown` never
-starts one. Requests are retried up to five times on transient errors, 200
-ms times the attempt apart, and the reply is awaited for the command's own
-timeout plus 10 s, at least 30 s; a wait that names no timeout may run to
-its session's default, which the CLI cannot know, so it is awaited up to
-the 600 s ceiling.
+starts one. It returns once the daemon has stopped its targets, an Android
+target's agent included, and removed its socket and other files, which it
+waits up to 5 s for (`crates/daemon/README.md`, Shutdown), so the next
+command starts a fresh daemon that never meets the old one's agent; a
+target that had not stopped within the 5 s is named in `data.notStopped`
+and in a warning. With no daemon running, `shutdown` succeeds with
+`{"stopped": false}` and the warning `no daemon was running`. Requests are
+retried up to five times on transient errors, 200 ms times the attempt
+apart, and the reply is awaited for the command's own timeout plus 10 s,
+at least 30 s; a wait that names no timeout may run to its session's
+default, which the CLI cannot know, so it is awaited up to the 600 s
+ceiling.
 
 ## Timeouts
 
@@ -367,7 +374,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Ref syntax | Stale ref | `errors::clicking_a_ref_from_before_navigation_fails_with_a_stale_ref_error_and_guidance`, `errors::refs_are_accepted_as_at_ref_equals_and_bare_forms`, `snapshot::removed_refs_name_the_refs_the_previous_snapshot_listed` |
 | Command grammar | (task 8.8: states and driver status) | `output::tests::devices_list_each_target_with_its_state_and_what_makes_it_usable`, `output::tests::status_prints_what_the_driver_reports_under_each_attached_target`; against a real Simulator and emulator in the daemon's `devices::*` |
 | Output formats | JSON error | `errors::a_failed_command_in_json_mode_prints_an_error_object_with_a_code_and_exits_non_zero`, `errors::a_failed_command_in_human_mode_writes_its_error_to_stderr_and_exits_1`, `errors::every_failure_carries_a_snake_case_code`, `errors::an_unreachable_daemon_is_reported_with_a_code`, `errors::a_usage_error_in_human_mode_goes_to_stderr`, `snapshot::the_json_snapshot_follows_agent_browser_shape`, `snapshot::delta_snapshots_start_full_then_report_unchanged_and_changes`, `output::tests::the_json_line_keeps_agent_browser_field_order_and_omits_unset_fields` |
-| Daemon lifecycle | Cold first command | `lifecycle::a_cold_devices_starts_the_daemon_and_the_next_command_reuses_it`, `lifecycle::a_daemon_of_another_version_is_replaced_by_the_next_command`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_the_next_command`, `lifecycle::concurrent_first_commands_share_one_daemon`, `lifecycle::the_idle_timeout_flag_reaches_the_daemon_the_cli_starts`, `lifecycle::a_daemon_that_fails_to_start_is_reported_with_its_error`, `overhead::status_overhead_against_a_running_daemon_is_under_20_ms`, `commands::status_reports_the_daemon_and_its_targets`; idle exit in the daemon's `idle::*` |
+| Daemon lifecycle | Cold first command | `lifecycle::a_cold_devices_starts_the_daemon_and_the_next_command_reuses_it`, `lifecycle::a_daemon_of_another_version_is_replaced_by_the_next_command`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_the_next_command`, `lifecycle::concurrent_first_commands_share_one_daemon`, `lifecycle::the_idle_timeout_flag_reaches_the_daemon_the_cli_starts`, `lifecycle::a_daemon_that_fails_to_start_is_reported_with_its_error`, `overhead::status_overhead_against_a_running_daemon_is_under_20_ms`, `commands::status_reports_the_daemon_and_its_targets`; idle exit in the daemon's `idle::*`; task 8.16: `lifecycle::shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket`, `lifecycle::a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket` |
 | Target selection | Ambiguous target | `selection::two_targets_without_a_device_flag_fail_listing_both`, `selection::one_connected_target_is_selected_by_default`, `selection::the_device_flag_selects_a_target_by_id_or_name`, `selection::the_platform_flag_selects_the_only_target_of_its_platform`, `selection::a_platform_with_several_targets_is_still_ambiguous_among_them`, `selection::a_device_flag_naming_no_target_fails_listing_the_connected_ones`, `selection::the_device_and_platform_flags_have_environment_twins`, `selection::a_session_that_holds_one_target_keeps_using_it_without_a_flag`, `selection::no_connected_target_is_reported_with_a_code` |
 | Sessions | Claimed target | `sessions::a_claimed_target_refuses_another_session_naming_the_holder_until_forced`, `sessions::refs_are_isolated_between_sessions`, `sessions::the_session_and_json_flags_have_environment_twins`, `selection::claims_are_per_target`; the daemon's `claims::*` |
 | Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
