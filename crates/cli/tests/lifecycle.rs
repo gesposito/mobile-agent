@@ -1,11 +1,13 @@
 //! Daemon lifecycle from the CLI (spec `agent-cli`: Daemon lifecycle): the
-//! first command starts the daemon, later ones reuse it, and a daemon of
-//! another build is replaced.
+//! first command starts the daemon, later ones reuse it, a daemon of
+//! another build is replaced, and `shutdown` returns once the daemon has
+//! let go of its targets.
 
 mod support;
 
 use std::time::{Duration, Instant};
 
+use serde_json::json;
 use support::TestEnv;
 
 fn alive(pid: u32) -> bool {
@@ -169,6 +171,90 @@ fn the_emulator_controller_setting_reaches_the_daemon_the_cli_starts() {
     let default = TestEnv::new("android");
     let status = default.cli(&["--json", "status"]).ok().json();
     assert_eq!(controller(&status), "auto", "{status}");
+}
+
+/// A fake target that takes 600 ms to stop, as stopping the Android agent
+/// takes its time: the environment of the command that starts the daemon.
+const SLOW_STOP: [(&str, &str); 1] = [("MOBILE_AGENT_FAKE_STOP_MS", "600")];
+
+/// Task 8.16: `shutdown` returns once the daemon has stopped its targets
+/// and removed its socket and sidecar files, so it takes as long as the
+/// target's stop, and nothing of the daemon is left when it returns. A
+/// second `shutdown` finds no daemon running.
+#[test]
+fn shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket() {
+    let env = TestEnv::new("android");
+    env.cli_env(&["snapshot"], &SLOW_STOP).ok();
+    let pid = env
+        .daemon_pid()
+        .expect("the first command started a daemon");
+    let run = env.cli(&["--json", "shutdown"]).ok();
+    let left: Vec<&str> = ["daemon.sock", "daemon.pid", "daemon.version"]
+        .into_iter()
+        .filter(|file| env.path().join(file).exists())
+        .collect();
+    assert_eq!(
+        run.json(),
+        json!({"success": true, "data": {"stopped": true}, "error": null})
+    );
+    assert!(
+        run.elapsed >= Duration::from_millis(600),
+        "shutdown returned after {:?}, before the target's 600 ms stop ended",
+        run.elapsed
+    );
+    assert!(
+        left.is_empty(),
+        "shutdown returned with {left:?} still there"
+    );
+    wait_dead(pid);
+
+    let again = env.cli(&["--json", "shutdown"]).ok().json();
+    assert_eq!(
+        again,
+        json!({
+            "success": true,
+            "data": {"stopped": false},
+            "error": null,
+            "warning": "no daemon was running"
+        })
+    );
+    let human = env.cli(&["shutdown"]).ok();
+    assert_eq!(
+        (human.stdout.as_str(), human.stderr.as_str()),
+        ("✓ Daemon stopped\n", "⚠ no daemon was running\n")
+    );
+}
+
+/// Task 8.16: a command right after `shutdown` starts a fresh daemon. The
+/// old daemon's socket is gone once `shutdown` returns, so the command
+/// neither reaches the old daemon nor finds its socket to remove as stale
+/// while the old daemon still stops its targets, and it attaches its
+/// target anew.
+#[test]
+fn a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket() {
+    let env = TestEnv::new("android");
+    env.cli_env(&["snapshot"], &SLOW_STOP).ok();
+    let old = env
+        .daemon_pid()
+        .expect("the first command started a daemon");
+    env.cli(&["shutdown"]).ok();
+    assert!(
+        !env.socket().exists(),
+        "the old daemon's socket was still there when shutdown returned"
+    );
+    let status = env.cli(&["--json", "status"]).ok().json();
+    let new = status["data"]["daemon"]["pid"]
+        .as_u64()
+        .expect("a fresh daemon's pid");
+    assert_ne!(new, u64::from(old), "the old daemon answered: {status}");
+    assert_eq!(env.daemon_pid(), u32::try_from(new).ok());
+    assert_eq!(
+        status["data"]["targets"][0]["attached"], false,
+        "the fresh daemon has not attached the target yet: {status}"
+    );
+    let snapshot = env.cli(&["--json", "snapshot"]).ok().json();
+    assert_eq!(snapshot["data"]["target"], "emulator-5554", "{snapshot}");
+    wait_dead(old);
 }
 
 #[test]
