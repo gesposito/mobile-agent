@@ -135,10 +135,26 @@ const MOSTLY: f64 = 0.5;
 const MARGIN: f64 = 8.0;
 
 /// The fastest a stroke that brings a partly shown element in moves the
-/// finger, in points a second. A stroke's content goes on moving after the
-/// finger lifts, the farther the faster the finger moved, and a fling that
-/// carried the element out of view again would undo the stroke.
+/// finger, in points a second. The stroke comes to rest before the finger
+/// lifts, as every stroke of a scroll that looks for an element does; were
+/// the platform still to take the finger as moving when it lifts, the
+/// content would glide on the farther the faster the finger moved, and a
+/// glide that carried the element out of view again would undo the stroke.
 const BRING_IN_SPEED: f64 = 400.0;
+
+/// The most of what the scroll container shows along the scroll's axis
+/// that a stroke looking for an element carries the content. Between two
+/// looks the content moves at most three quarters of what the container
+/// shows, so at one look at least the element shows whole, or at least as
+/// much of it as a quarter of what the container shows; the next stroke
+/// then brings it in (see [`decide`]). A stroke whose
+/// finger lifts moving carried the fixtures' lists farther than they show:
+/// a 600-point stroke over 300 ms, 1,103 to 1,319 points on the API 36
+/// emulator, where they show about 780, and the Expo fixture's 1,522 to
+/// 1,608 on the iOS 26.5 Simulator, where it shows about 730. So every
+/// stroke comes to rest before the finger lifts, and the content goes no
+/// farther than the finger.
+const REACH: f64 = 0.75;
 
 /// Edges within half a point of each other meet.
 const EDGE: f64 = 0.5;
@@ -667,6 +683,25 @@ fn decide(seen: &Visibility, vertical: bool, step: f64, slop: f64) -> Next {
     }
 }
 
+/// How long a stroke that looks for an element is, in a scroll along the
+/// vertical axis, or the horizontal one, of `area` in strokes of at most
+/// `step` points on a platform that takes strokes of `slop` points or less
+/// for taps: the step, and at most [`REACH`] of the extent along the axis of
+/// `viewport`, the visible bounds of the scroll container the stroke moves,
+/// or of `area` when there is none or it shows nothing, with the slop added,
+/// since the content moves only once the finger has gone that far.
+fn search_stroke(step: f64, viewport: Option<Rect>, area: Rect, vertical: bool, slop: f64) -> f64 {
+    let extent = |rect: &Rect| {
+        let (start, end) = along(rect, vertical);
+        end - start
+    };
+    let shown = viewport
+        .map(|viewport| extent(&viewport))
+        .filter(|&shown| shown > 0.0)
+        .unwrap_or_else(|| extent(&area));
+    (REACH * shown + slop).min(step)
+}
+
 /// How long a stroke of `length` points that brings an element in takes:
 /// as long as a swipe, or longer, so the finger moves at most
 /// [`BRING_IN_SPEED`].
@@ -697,15 +732,20 @@ fn in_view(seen: &Visibility) -> String {
     }
 }
 
-/// Scrolls `direction` inside `area` in strokes of `step` points until the
-/// element `until` names is on screen, not covered and mostly in view (see
-/// [`mostly_in_view`]), letting the screen settle after each stroke so a
-/// check never races a moving list. Once the element is on screen, each
-/// further stroke brings it in rather than going on by the step (see
-/// [`decide`]). Fails with `element_not_found` once the content stops moving
-/// or no stroke along the axis brings more of the element in, after
-/// [`UNTIL_STROKES`] strokes, or at the command's timeout; an element on
-/// screen then gives its share in view as `data.visible`.
+/// Scrolls `direction` inside `area` in strokes of at most `step` points
+/// until the element `until` names is on screen, not covered and mostly in
+/// view (see [`mostly_in_view`]), letting the screen settle after each
+/// stroke so a check never races a moving list. Every stroke comes to rest
+/// before the finger lifts, so the content goes no farther than the finger,
+/// and a stroke that looks for the element carries the content at most
+/// [`REACH`] of what the scroll container it moves shows (see
+/// [`search_stroke`]), so the element cannot pass through the container
+/// between two looks. Once the element is on screen, each further stroke
+/// brings it in rather than going on by the step (see [`decide`]). Fails
+/// with `element_not_found` once the content stops moving or no stroke
+/// along the axis brings more of the element in, after [`UNTIL_STROKES`]
+/// strokes, or at the command's timeout; an element on screen then gives
+/// its share in view as `data.visible`.
 fn scroll_until(
     target: &mut Attached,
     session: &str,
@@ -726,6 +766,13 @@ fn scroll_until(
             .as_ref()
             .and_then(|element| target.mirror.visibility(element.id));
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
+        let reach = search_stroke(
+            step,
+            target.mirror.scroll_viewport(area.center(), vertical),
+            area,
+            vertical,
+            slop,
+        );
         if let (Some(Next::Stop), Some(element), Some(seen)) = (next, &found, &seen) {
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
@@ -733,7 +780,7 @@ fn scroll_until(
             return Ok(Success::new(json!({
                 "scrolled": strokes > 0,
                 "direction": direction.name(),
-                "amount": step,
+                "amount": reach,
                 "strokes": strokes,
                 "until": until,
                 "visible": share(seen.fraction),
@@ -766,15 +813,17 @@ fn scroll_until(
             let (message, data) = match seen {
                 Some(seen) => (
                     format!(
-                        "{until} was on screen but not mostly in view ({}) after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
+                        "{until} was on screen but not mostly in view ({}) after {strokes} strokes of {} points {}: {reason}; take a snapshot to see where the content is",
                         in_view(&seen),
+                        points(reach),
                         direction.name()
                     ),
                     json!({"strokes": strokes, "until": until, "visible": share(seen.fraction)}),
                 ),
                 None => (
                     format!(
-                        "{until} was not on screen after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
+                        "{until} was not on screen after {strokes} strokes of {} points {}: {reason}; take a snapshot to see where the content is",
+                        points(reach),
                         direction.name()
                     ),
                     json!({"strokes": strokes, "until": until}),
@@ -784,7 +833,7 @@ fn scroll_until(
         }
         let (finger, length, duration) = match next {
             Some(Next::Stroke { finger, length }) => (finger, length, bring_in_duration(length)),
-            _ => (direction.opposite(), step, SWIPE_DURATION),
+            _ => (direction.opposite(), reach, SWIPE_DURATION),
         };
         let revision = target.mirror.revision();
         let (from, to) = stroke(area, finger, length);
@@ -792,7 +841,7 @@ fn scroll_until(
             from,
             to,
             duration,
-            release: Release::Moving,
+            release: Release::Resting,
         })?;
         if !outcome.accepted {
             return Err(rejected("scroll"));
@@ -1091,6 +1140,35 @@ mod tests {
         );
         let under_a_bar = seen([0.0, 400.0, 408.0, 448.0], [0.0, 400.0, 408.0, 400.0], None);
         assert_eq!(decide(&under_a_bar, true, 300.0, 8.0), Next::Stuck);
+    }
+
+    /// Task 10.16: a stroke that looks for an element carries the content at
+    /// most three quarters of what the scroll container it moves shows along
+    /// the scroll's axis, so no element passes through the container between
+    /// two looks; the tap threshold is added, since the content moves only
+    /// once the finger has gone that far, and the stroke is at most the step.
+    #[test]
+    fn a_stroke_that_looks_for_an_element_goes_at_most_three_quarters_of_what_its_list_shows() {
+        let screen = Rect::new(0.0, 0.0, 408.0, 912.0);
+        let list = Some(Rect::new(LIST[0], LIST[1], LIST[2], LIST[3]));
+        assert_eq!(search_stroke(600.0, list, screen, true, 8.0), 584.0);
+        assert_eq!(
+            search_stroke(300.0, list, screen, true, 8.0),
+            300.0,
+            "the step"
+        );
+        let under_the_keyboard = Some(Rect::new(0.0, 72.0, 408.0, 472.0));
+        assert_eq!(
+            search_stroke(600.0, under_the_keyboard, screen, true, 8.0),
+            308.0
+        );
+        let carousel = Some(Rect::new(0.0, 200.0, 408.0, 400.0));
+        assert_eq!(search_stroke(600.0, carousel, screen, false, 10.0), 316.0);
+        // Without a scroll container under the stroke, or with one that shows
+        // nothing, the scrolled area stands for it.
+        assert_eq!(search_stroke(700.0, None, screen, true, 8.0), 692.0);
+        let hidden = Some(Rect::new(0.0, 400.0, 408.0, 400.0));
+        assert_eq!(search_stroke(700.0, hidden, screen, true, 8.0), 692.0);
     }
 
     #[test]

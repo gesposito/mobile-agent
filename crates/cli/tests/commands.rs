@@ -521,6 +521,73 @@ fn scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in() {
     }
 }
 
+/// Task 10.16: `scroll --until` looks for its element between strokes, so a
+/// stroke that carries the content farther than the list shows can carry a
+/// row through the list unseen: on the emulator a 600-point stroke over
+/// 300 ms whose finger lifted moving carried the fixtures' lists 1,103 to
+/// 1,319 points, where they show about 780, and on the Simulator the Expo
+/// list 1,522 to 1,608, where it shows about 730. With `MOBILE_AGENT_FAKE_FLING` the fakes' lists glide on as
+/// their platforms' do, 1,247 points on Android and 1,598 on iOS for that
+/// stroke, so rows 18 to 25 of the Android list and 17 to 33 of the iOS one
+/// never show at a look. Each stroke that looks for the element comes to
+/// rest before the finger lifts and carries the list at most three quarters
+/// of what it shows, plus the tap threshold: 600 points of the Android
+/// list's 816 (at most 620), 556.75 of the iOS list's 729. One stroke then
+/// brings row 22 into view whole.
+#[test]
+fn scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list() {
+    for (fake, step, top) in [("android", 600.0, 432.0), ("ios", 556.75, 513.25)] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_FLING", "1")]);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        let reply = env
+            .cli(&["--json", "scroll", "down", "600", "--until", "#row-22"])
+            .ok()
+            .json();
+        let data = &reply["data"];
+        assert_eq!(data["strokes"], 1, "{fake}: {reply}");
+        assert_eq!(data["amount"], step, "{fake}: the stroke's length: {reply}");
+        let [_, row_top, _, row_bottom] = bounds_of(data);
+        assert!(
+            (row_top - top).abs() < 0.5 && (row_bottom - row_top - 48.0).abs() < 0.5,
+            "{fake}: row 22 {step} points up, whole: {reply}"
+        );
+        assert_eq!(data["visible"], 1.0, "{fake}: {reply}");
+    }
+}
+
+/// Task 10.16: every stroke of `scroll --until` comes to rest before the
+/// finger lifts, the one that brings a partly shown element in too, so the
+/// content stops where the stroke aimed even on lists that fling. On the
+/// fakes' lists with `MOBILE_AGENT_FAKE_FLING`, which move as far as the
+/// finger, the tap threshold included: a stroke of 98 points (Android) or
+/// 185 (iOS) leaves row 20 two points into the list, and a second stroke of
+/// 98 points (the step; Android cuts the row's bounds to what shows, so the
+/// stroke aims its middle at the list's) or 64 (the 46 points it sticks out,
+/// 8 more and the threshold) brings it in, its top at 740 or 725. Strokes
+/// that lifted moving would glide on 28 points each on Android, leaving the
+/// row at 684, and 308 on iOS after the first, bringing the row in at 481.
+#[test]
+fn scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim() {
+    for (fake, amount, top) in [("android", "98", 740.0), ("ios", "185", 725.0)] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_FLING", "1")]);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        let reply = env
+            .cli(&["--json", "scroll", "down", amount, "--until", "#row-20"])
+            .ok()
+            .json();
+        let data = &reply["data"];
+        let [_, row_top, _, row_bottom] = bounds_of(data);
+        assert!(
+            data["strokes"] == 2
+                && (row_top - top).abs() < 0.5
+                && (row_bottom - row_top - 48.0).abs() < 0.5,
+            "{fake}: two strokes, row 20 whole at {top}: {reply}"
+        );
+    }
+}
+
 /// Task 10.15: a click on an element mostly out of view goes to the centre
 /// of its bounds, which may not be on what shows of it: on the iOS fake,
 /// row 20 two points into the list has its centre under the tab bar. The
