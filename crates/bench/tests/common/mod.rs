@@ -244,6 +244,9 @@ pub struct FakeDevices {
     /// How long the fake targets take to show a change
     /// (`MOBILE_AGENT_FAKE_LATENCY_MS`), so tap spans are not near zero.
     pub latency_ms: u32,
+    /// How long detaching a fake target takes (`MOBILE_AGENT_FAKE_STOP_MS`),
+    /// as stopping the Android agent takes its time.
+    pub stop_ms: u32,
 }
 
 impl FakeDevices {
@@ -269,7 +272,14 @@ impl FakeDevices {
             dir,
             fake: fake.to_owned(),
             latency_ms,
+            stop_ms: 0,
         }
+    }
+
+    /// These fake targets, each taking `stop_ms` to detach.
+    pub fn stopping(mut self, stop_ms: u32) -> Self {
+        self.stop_ms = stop_ms;
+        self
     }
 
     /// The environment every command gets: the developer's `MOBILE_AGENT_*`
@@ -293,6 +303,7 @@ impl FakeDevices {
             "MOBILE_AGENT_FAKE_LATENCY_MS",
             self.latency_ms.to_string().into(),
         );
+        set("MOBILE_AGENT_FAKE_STOP_MS", self.stop_ms.to_string().into());
         env
     }
 

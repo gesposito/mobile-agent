@@ -423,75 +423,62 @@ fn the_reference_flows_run_through_the_cli_adapter_on_a_fake_simulator() {
     flows_run_on("ios", simulator(), "cli-flows-ios");
 }
 
-/// A stand-in for `mobile-agent` whose daemon lets go of its targets 300 ms
-/// after it answers `shutdown`, as the daemon does (task 8.16): it answers,
-/// stops taking connections, then stops its agents and removes its socket.
-/// An `open` while the old daemon still holds the target fails as the agent's
-/// attach does, and an `open` that succeeds starts a new daemon.
-fn slow_to_let_go(dir: &std::path::Path) -> std::path::PathBuf {
+/// A wrapper around the real `mobile-agent` that refuses an `open` while a
+/// daemon's socket is in `devices`' directory, as the agent's attach refuses
+/// while the old daemon's agent still holds UI automation.
+fn refusing_open_beside_a_daemon(
+    devices: &FakeDevices,
+    dir: &std::path::Path,
+) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
-    let socket = dir.join("daemon.sock");
-    fs::write(&socket, "").unwrap();
-    fs::write(
-        dir.join("status.json"),
-        serde_json::json!({"success": true, "error": null, "data": {
-            "daemon": {"pid": 4242, "version": "0.2.0", "socket": socket},
-            "targets": [], "sessions": []}})
-        .to_string(),
-    )
-    .unwrap();
     let path = dir.join("mobile-agent");
     fs::write(
         &path,
-        r#"#!/bin/sh
-dir="${0%/*}"
-echo "$@" >> "$dir/mobile-agent.log"
+        format!(
+            r#"#!/bin/sh
 case " $* " in
-*" --version "*) echo 'mobile-agent 0.2.0' ;;
-*" status "*) cat "$dir/status.json" ;;
-*" shutdown "*)
-  if [ -e "$dir/daemon.sock" ] && [ ! -e "$dir/stopping" ]; then
-    touch "$dir/stopping"
-    (sleep 0.3; rm -f "$dir/stopping" "$dir/daemon.sock") >/dev/null 2>&1 &
-    echo '{"success":true,"data":{"stopped":true},"error":null}'
-  else
-    echo '{"success":true,"data":{"stopped":false},"error":null}'
-  fi ;;
 *" open "*)
-  if [ -e "$dir/stopping" ]; then
-    echo '{"success":false,"data":null,"error":"another process holds UI automation, likely mobile-agent-daemon","code":"automation_conflict"}'
+  if [ -S '{socket}' ]; then
+    echo '{{"success":false,"data":null,"error":"another process holds UI automation, likely mobile-agent-daemon","code":"automation_conflict"}}'
     exit 1
-  fi
-  touch "$dir/daemon.sock"
-  echo '{"success":true,"data":{"settled":true,"elapsedMs":10.5},"error":null}' ;;
-*) echo '{"success":true,"data":{},"error":null}' ;;
+  fi ;;
 esac
+exec '{cli}' "$@"
 "#,
+            socket = devices.dir.join("daemon.sock").display(),
+            cli = common::mobile_agent().display()
+        ),
     )
     .unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     path
 }
 
-/// Task 8.16's workaround: the daemon answers `shutdown` before it has
-/// stopped its agents, so a cold attach that opened at once could meet the
-/// old agent still holding the target. It waits, outside its span, until
-/// the old daemon has let go.
+/// Task 8.16: the daemon answers `shutdown` only once it has stopped its
+/// targets and removed its socket, so the `open` a cold attach sends right
+/// after the shutdown never meets the old daemon still holding the target,
+/// even when the target takes 300 ms to stop. The `open` is refused, as the
+/// agent's attach is, while a daemon's socket is still there.
 #[test]
 fn a_cold_attach_opens_only_once_the_old_daemon_has_let_go_of_its_targets() {
+    let devices = FakeDevices::new("android").stopping(300);
+    let target = emulator();
+    devices.cli(&in_session(&target, &["snapshot"]));
     let dir = common::scratch("cli-cold-attach-waits");
-    let mut settings = CliConfig::new(dir.join("work"));
-    settings.program = slow_to_let_go(&dir);
+    let mut settings = devices.config(&dir.join("work"));
+    settings.program = refusing_open_beside_a_daemon(&devices, &dir);
     let mut adapter = CliAdapter::new(settings);
     assert!(matches!(adapter.detect(), Detection::Available { .. }));
     let scenario = plan::scenario(Primitive::ColdAttach, Fixture::Expo);
     for _ in 0..2 {
         let sample = adapter
-            .measure(&emulator(), &scenario, Primitive::ColdAttach)
+            .measure(&target, &scenario, Primitive::ColdAttach)
             .unwrap();
-        assert_eq!(
-            sample.detail.as_deref(),
-            Some("open settled in 10.5 ms"),
+        assert!(
+            sample
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.starts_with("open settled in ")),
             "{sample:?}"
         );
     }
@@ -522,13 +509,14 @@ fn cold_attach_stops_the_daemon_then_times_the_open_that_starts_another() {
 }
 
 /// Task 10.10: the daemon keeps its agent, which holds an Android target's UI
-/// automation, until it exits, and answers `shutdown` before it has let go of
-/// its targets. A release returns once the daemon has, and keeps what
-/// `status` said about the target for the report: the fake emulator gives
-/// frames and its driver reports no controller.
+/// automation, until it exits. A release returns once the daemon has let go
+/// of its targets, which its `shutdown` answers only after (task 8.16), even
+/// when the target takes 300 ms to stop, and keeps what `status` said about
+/// the target for the report: the fake emulator gives frames and its driver
+/// reports no controller.
 #[test]
 fn a_release_stops_the_daemon_and_returns_once_it_has_let_go_of_its_targets() {
-    let devices = FakeDevices::new("android");
+    let devices = FakeDevices::new("android").stopping(300);
     let target = emulator();
     let mut adapter = CliAdapter::new(devices.config(&common::scratch("cli-release")));
     adapter.detect();

@@ -16,8 +16,8 @@
 //! tap to frame change on a target that gives no frames, which `status` says.
 //! Snapshots count the refs in their reply as their nodes. The daemon keeps
 //! its agent, and on Android the device's one UI automation role with it,
-//! until it exits, so the adapter's release stops the daemon and waits until
-//! it has let go of its targets.
+//! until it exits, so the adapter's release stops the daemon, whose
+//! `shutdown` answers once it has let go of its targets.
 
 pub mod listing;
 
@@ -77,11 +77,6 @@ const SHUTDOWNS: u32 = 100;
 /// Why a tap on an Android device has no frame change to time.
 const NO_FRAME_STREAM: &str = "Android devices have no frame stream, only screenshots on demand \
     (design D7), so a tap on one has no frame change to time";
-
-/// How long a release waits for the daemon to let go of its targets after
-/// `shutdown`: the daemon waits up to 5 s for its targets to detach, which
-/// stops an Android target's agent.
-const RELEASE_WAIT: Duration = Duration::from_secs(10);
 
 /// Where the CLI adapter finds `mobile-agent`, what environment its commands
 /// get, and where it writes files.
@@ -269,11 +264,10 @@ impl CliAdapter {
         Ok(wall(elapsed, None, None))
     }
 
-    /// Stops the daemon and waits until it has let go of its targets, then
-    /// times the `open` of `app` that starts another, attaches the target
-    /// and brings the app up.
-    fn cold_attach(&mut self, target: &Target, app: &str) -> Result<Sample, AdapterError> {
-        self.let_go(target)?;
+    /// Stops the daemon, then times the `open` of `app` that starts another,
+    /// attaches the target and brings the app up.
+    fn cold_attach(&self, target: &Target, app: &str) -> Result<Sample, AdapterError> {
+        self.stop_daemon()?;
         let reply = self.call(target, &["open", "--", app])?;
         let detail = match (
             reply.data["settled"].as_bool(),
@@ -287,7 +281,10 @@ impl CliAdapter {
     }
 
     /// Sends `shutdown` until it finds no daemon to stop, so the next command
-    /// starts a new one. Returns whether it stopped one.
+    /// starts a new one. The daemon answers only once it has stopped its
+    /// targets, an Android target's agent with them, and removed its socket
+    /// (task 8.16), so the next command never meets them. Returns whether it
+    /// stopped one.
     fn stop_daemon(&self) -> Result<bool, AdapterError> {
         for sent in 0..SHUTDOWNS {
             let reply = self.send(None, &["shutdown"])?;
@@ -304,48 +301,16 @@ impl CliAdapter {
         )))
     }
 
-    /// Reads `status`, stops the daemon, and waits until it has let go of its
-    /// targets: the daemon answers `shutdown` and stops taking connections
-    /// before it detaches them, which stops an Android target's agent, and
-    /// removes its socket once it has, so the wait is for the socket `status`
-    /// named to go (task 8.16). The `status` also keeps what the daemon says
-    /// about `target`; it starts a daemon when none serves, which the shutdown
-    /// then stops. Returns whether a daemon was stopped.
-    fn let_go(&mut self, target: &Target) -> Result<bool, AdapterError> {
-        let socket = self.observe(target);
-        if !self.stop_daemon()? {
-            return Ok(false);
-        }
-        if let Some(socket) = socket {
-            let stopped = Instant::now();
-            while socket.exists() {
-                if stopped.elapsed() >= RELEASE_WAIT {
-                    return Err(AdapterError::new(format!(
-                        "{} was still there {} ms after the daemon's shutdown: the daemon had \
-                         not let go of its targets",
-                        socket.display(),
-                        RELEASE_WAIT.as_millis()
-                    )));
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-        Ok(true)
-    }
-
-    /// Reads `status`, keeps what it says about `target` when the daemon has
-    /// attached it, and returns the daemon's socket. A `status` that fails
-    /// or does not say leaves both unknown.
-    fn observe(&mut self, target: &Target) -> Option<PathBuf> {
-        let reply = self.send(None, &["status"]).ok().filter(|r| r.success)?;
+    /// Reads `status` and keeps what it says about `target` when the daemon
+    /// has attached it. A `status` that fails or does not say leaves it
+    /// unknown.
+    fn observe(&mut self, target: &Target) {
+        let Some(reply) = self.send(None, &["status"]).ok().filter(|r| r.success) else {
+            return;
+        };
         if let Some(attached) = read_attached(&reply.data, target) {
             self.attached.insert(target.id.clone(), attached);
         }
-        let socket = PathBuf::from(reply.data["daemon"]["socket"].as_str()?);
-        Some(match &self.config.cwd {
-            Some(cwd) if socket.is_relative() => cwd.join(socket),
-            _ => socket,
-        })
     }
 
     /// Relaunches `app` on `screen`, then waits until the screen's marker is
@@ -724,10 +689,7 @@ impl Adapter for CliAdapter {
     ) -> Result<Sample, AdapterError> {
         match primitive {
             Primitive::CliStart => self.process_start(),
-            Primitive::ColdAttach => {
-                let app = app(target, scenario)?;
-                self.cold_attach(target, app)
-            }
+            Primitive::ColdAttach => self.cold_attach(target, app(target, scenario)?),
             Primitive::FirstSnapshot => {
                 self.first_snapshot(target, app(target, scenario)?, screen(scenario)?)
             }
@@ -779,12 +741,15 @@ impl Adapter for CliAdapter {
         Ok(wall(elapsed, nodes, detail))
     }
 
-    /// Stops the daemon, whose agent holds an Android target's UI automation
-    /// until the daemon exits, and waits until the daemon has let go of its
-    /// targets.
+    /// Reads `status`, which keeps what the daemon says about `target`, then
+    /// stops the daemon, whose agent holds an Android target's UI automation
+    /// until the daemon exits; the `status` starts a daemon when none serves,
+    /// which the shutdown then stops. Returns once the daemon has let go of
+    /// its targets.
     fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+        self.observe(target);
         Ok(Some(
-            if self.let_go(target)? {
+            if self.stop_daemon()? {
                 "stopped the daemon"
             } else {
                 "no daemon ran"

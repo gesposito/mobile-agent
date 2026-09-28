@@ -406,9 +406,11 @@ fn drivers(target: &Target, fixtures: &[Fixture], baselines: &[&str]) -> Vec<Str
 /// emulator from each tool to the next between series, and once it is over:
 /// the daemon is stopped and gone before a baseline starts, agent-device's
 /// session is closed, and the input method the run found is selected again.
+/// The fake emulator takes 200 ms to stop, as the agent does, which the
+/// daemon's `shutdown` waits for before it answers (task 8.16).
 #[test]
 fn a_run_hands_the_emulator_from_one_tool_to_the_next_between_series() {
-    let devices = FakeDevices::new("android:emulator-5590");
+    let devices = FakeDevices::new("android:emulator-5590").stopping(200);
     let tools = Tools::new("run-hand-off", Platform::Android, end_screen);
     let wrapper = shared_device(
         &tools,
