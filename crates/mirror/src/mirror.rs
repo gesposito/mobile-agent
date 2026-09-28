@@ -48,6 +48,22 @@ pub const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_millis(50);
 /// part holding either end shows.
 pub const DEFAULT_PROBE_ANCHORS: usize = 4;
 
+/// How long a settle wait without frames holds after a stroke that leaves
+/// the content under it at an end of its range (task 10.14), counted from
+/// the stroke or the tree's last change since, whichever is later. From
+/// Android 12 a scroll view that a stroke pushes against an end, or that a
+/// fling carries into one, draws a stretch that springs back on its own
+/// (`EdgeEffect`: natural frequency 24.657, damping ratio 0.98, a release
+/// or fling velocity taken in at 13 times). The stretch moves no view and
+/// sends no event, so without frames nothing shows it, and until it rests
+/// `ScrollView` takes a touch that comes down as the start of a drag that
+/// catches the stretch: a tap on a row then opens nothing. On the API 36
+/// emulator the Expo fixture's list, pulled against its end by a 600-point
+/// stroke, drew the stretch for 333 to 383 ms after the frame that took
+/// the finger's lift, and a tap within about 350 ms of the stroke's end
+/// opened nothing; the hold leaves 117 ms beyond the longest stretch.
+pub const DEFAULT_OVERSCROLL: Duration = Duration::from_millis(500);
+
 /// Tuning for one mirror.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MirrorConfig {
@@ -57,6 +73,10 @@ pub struct MirrorConfig {
     pub probe_interval: Duration,
     /// How many anchor nodes a probe reads; 0 probes none.
     pub probe_anchors: usize,
+    /// How long a settle wait without frames holds after a stroke that
+    /// leaves the content under it at an end of its range, for the
+    /// overscroll effect the platform draws there; zero holds none.
+    pub overscroll: Duration,
 }
 
 impl Default for MirrorConfig {
@@ -66,6 +86,7 @@ impl Default for MirrorConfig {
             min_reread_interval: DEFAULT_MIN_REREAD_INTERVAL,
             probe_interval: DEFAULT_PROBE_INTERVAL,
             probe_anchors: DEFAULT_PROBE_ANCHORS,
+            overscroll: DEFAULT_OVERSCROLL,
         }
     }
 }
@@ -658,7 +679,11 @@ impl Mirror {
         };
         let ack = self.backend.input.perform(&input)?;
         let now = self.now();
-        self.replica.note_action(now);
+        let stroke = match action {
+            Action::Swipe { from, to, .. } => Some((*from, *to)),
+            _ => None,
+        };
+        self.replica.note_action(now, stroke);
         Ok(ActionOutcome {
             accepted: ack.accepted,
             at,
@@ -685,7 +710,12 @@ impl Mirror {
     /// has an application window drawn away from where its layout puts it,
     /// as the platform draws a window it animates in or out: reads and
     /// probes then report one frame of that animation, unchanged until it
-    /// ends, so a maximum that passes meanwhile names the tree.
+    /// ends, so a maximum that passes meanwhile names the tree. After a
+    /// stroke that leaves the content under it at an end of its range, it
+    /// does not settle, without frames, until the overscroll hold has
+    /// passed since the stroke and since the tree's last change (task
+    /// 10.14): the platform's overscroll effect there shows in no read and
+    /// no probe, so a maximum that passes meanwhile names the tree too.
     pub fn settle(&mut self, options: &SettleOptions) -> Result<Settle, MirrorError> {
         let start = self.now();
         let deadline = start + options.max;
@@ -728,12 +758,21 @@ impl Mirror {
             let quiet_until = last.map(|at| at + options.quiet);
             let still = probes.as_ref().is_none_or(|state| state.agrees_since(last));
             let transformed = blind && options.signals.tree() && self.replica.drawn_transformed();
-            let settled = quiet_until.is_none_or(|until| now >= until) && still && !transformed;
+            let overscroll = if blind && options.signals.tree() {
+                self.overscroll_ends()
+            } else {
+                None
+            };
+            let overscrolling = overscroll.is_some_and(|until| now < until);
+            let settled = quiet_until.is_none_or(|until| now >= until)
+                && still
+                && !transformed
+                && !overscrolling;
             if settled || now >= deadline {
                 let since = now.checked_sub(options.quiet).unwrap_or(start);
                 let mut still_changing = Vec::new();
                 if !settled {
-                    if transformed || tree.is_some_and(|at| at > since) {
+                    if transformed || overscrolling || tree.is_some_and(|at| at > since) {
                         still_changing.push(Signal::Tree);
                     }
                     if frames.is_some_and(|at| at > since) {
@@ -760,6 +799,9 @@ impl Mirror {
                 .and_then(|state| state.next(self.config.probe_interval))
             {
                 wake = wake.min(due);
+            }
+            if let Some(until) = overscroll.filter(|&until| until > now) {
+                wake = wake.min(until);
             }
             if let Some(item) = self.backend.events.next(wake.max(now)) {
                 self.replica.apply(item);
@@ -832,6 +874,26 @@ impl Mirror {
             self.read(&request, finished)?;
         }
         Ok(true)
+    }
+
+    /// When the overscroll effect the latest input may have left has come
+    /// to rest, at the latest (task 10.14): the overscroll hold after that
+    /// input or after the tree's last change since, whichever is later,
+    /// when the input was a stroke and content under it sits at an end of
+    /// its range as the replica has it. The tree's last change stands for a
+    /// fling that carried the content into that end after the finger
+    /// lifted: the scroll event that reports the fling's last move comes no
+    /// sooner than the move.
+    fn overscroll_ends(&self) -> Option<Instant> {
+        let stroke = self.replica.last_stroke?;
+        if self.config.overscroll.is_zero() || !self.replica.stroke_reached_an_end(&stroke) {
+            return None;
+        }
+        let from = self
+            .replica
+            .last_tree_change
+            .map_or(stroke.at, |change| change.max(stroke.at));
+        Some(from + self.config.overscroll)
     }
 
     /// Re-reads the windows that send no change events when they are due

@@ -6,7 +6,9 @@
 //! when there are no frames to watch, and nodes that move without a change
 //! event get theirs from bounds probes (task 10.11), while a window the
 //! platform animates in holds the wait as long as it is flagged
-//! transformed.
+//! transformed, and a stroke that leaves a list at an end of its range
+//! holds it for the overscroll effect the platform draws there (task
+//! 10.14).
 
 mod support;
 
@@ -15,9 +17,9 @@ use std::time::Duration;
 use mirror::backend::{NodeHandle, ReadReason, TreeRead};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, DEFAULT_PROBE_ANCHORS, DEFAULT_PROBE_INTERVAL, DEFAULT_QUIET_WINDOW,
-    DEFAULT_SETTLE_MAX, Mirror, MirrorConfig, Rect, SettleOptions, Signal, Signals,
-    SnapshotOptions, Target,
+    Action, DEFAULT_OVERSCROLL, DEFAULT_PROBE_ANCHORS, DEFAULT_PROBE_INTERVAL,
+    DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Mirror, MirrorConfig, Point, Rect, SettleOptions,
+    Signal, Signals, SnapshotOptions, Target,
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChange, WindowChangeKind};
 use protocol::snapshot::{Bounds, Node, WindowFlags};
@@ -705,4 +707,317 @@ fn with_frames_a_window_drawn_transformed_does_not_hold_the_wait() {
     let settle = mirror.settle(&SettleOptions::default()).unwrap();
     assert!(settle.settled, "{settle:?}");
     assert!(settle.elapsed < DEFAULT_QUIET_WINDOW, "{settle:?}");
+}
+
+/// The Expo fixture's list on Android, its scroll view able to scroll back
+/// (up) when `back` and forward (down) when `forward`, with everything
+/// inside it moved up `points` device points, as scrolling the list that
+/// far down shows it.
+fn list(back: bool, forward: bool, points: f64) -> TreeRead {
+    fn lift(node: &mut Node, dy: i32) {
+        node.bounds.top -= dy;
+        node.bounds.bottom -= dy;
+        for child in &mut node.children {
+            lift(child, dy);
+        }
+    }
+    fn scroll_view(node: &mut Node) -> Option<&mut Node> {
+        if node.res_id.as_deref() == Some("list-scroll") {
+            return Some(node);
+        }
+        node.children.iter_mut().find_map(scroll_view)
+    }
+    let screen = Screen::load("list").patched(json!([{
+        "find": "list-scroll",
+        "scroll": {"axis": "vertical", "back": back, "forward": forward}
+    }]));
+    let mut read = screen.read();
+    let dy = (points * read.scale).round() as i32;
+    for window in &mut read.snapshot.windows {
+        if let Some(view) = window.root.as_mut().and_then(scroll_view) {
+            for child in &mut view.children {
+                lift(child, dy);
+            }
+        }
+    }
+    read
+}
+
+/// The scroll event the list's scroll view sends after it scrolled.
+fn list_scrolled() -> Step {
+    support::tree_event(
+        &Screen::load("list"),
+        1,
+        TreeChangeKind::SCROLL,
+        "list-scroll",
+    )
+}
+
+/// A target without frames that answers probes, showing `read`, and a
+/// mirror that has read it a second ago, as the agent path has a list
+/// between strokes.
+fn list_on_the_agent_path(read: TreeRead) -> (FakeTarget, Mirror) {
+    let target = FakeTarget::new(read);
+    target.read_cost(ms(10));
+    target.probe_cost(ms(2));
+    target.answer_probes(true);
+    let mut mirror = Mirror::new(target.backend_without_frames(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(ms(1_000));
+    (target, mirror)
+}
+
+/// A 300 ms stroke from `from` to `to`, acknowledged once the finger has
+/// lifted, as the Android agent's swipes are; returns when the platform
+/// acknowledged it, from the start of the script.
+fn stroke(target: &FakeTarget, mirror: &mut Mirror, from: Point, to: Point) -> Duration {
+    target.input_cost(ms(300));
+    mirror
+        .act(&Action::Swipe {
+            from,
+            to,
+            duration: ms(300),
+        })
+        .unwrap();
+    target.input_cost(Duration::ZERO);
+    target.elapsed()
+}
+
+/// A stroke up the middle of the list, which scrolls it down, as the
+/// daemon's `scroll down 600` makes one.
+fn scroll_down(target: &FakeTarget, mirror: &mut Mirror) -> Duration {
+    stroke(
+        target,
+        mirror,
+        Point::new(204.0, 700.0),
+        Point::new(204.0, 100.0),
+    )
+}
+
+/// Task 10.14: from Android 12 a list that a stroke pushes against its end
+/// draws a stretch that springs back after the finger lifts, for 333 to
+/// 383 ms on the API 36 emulator's Expo fixture. The stretch moves no view
+/// and sends no event, and until it rests
+/// the list takes a touch that comes down as the start of a drag that
+/// catches it, so a tap on a row opens nothing: the harness's list-scroll
+/// flow on the agent path clicked `row-200` right after the settle that
+/// followed its last stroke, and the row never opened
+/// (`reports/10.11-agent-path/report.md`). A stroke that pulls on a list
+/// already at its end moves nothing, and without frames nothing shows the
+/// stretch; the wait holds for the overscroll hold after the stroke.
+#[test]
+fn without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll() {
+    assert_eq!(DEFAULT_OVERSCROLL, ms(500));
+    assert_eq!(MirrorConfig::default().overscroll, DEFAULT_OVERSCROLL);
+    let (target, mut mirror) = list_on_the_agent_path(list(true, false, 0.0));
+    scroll_down(&target, &mut mirror);
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert!(
+        settle.elapsed >= DEFAULT_OVERSCROLL,
+        "settled {:?} after the stroke lifted, while the stretch it pulled on the list's end \
+         could still be springing back",
+        settle.elapsed
+    );
+    assert!(
+        settle.elapsed <= DEFAULT_OVERSCROLL + DEFAULT_PROBE_INTERVAL,
+        "the hold, then no longer: {settle:?}"
+    );
+    assert_eq!(
+        settle.tree_changes, 0,
+        "nothing the tree reports: {settle:?}"
+    );
+}
+
+/// Task 10.14: the last stroke of a scroll down a long list carries it the
+/// last points to its end and pulls on the end for the rest: the probes see
+/// the rows move and read the list again, at its end, and the wait holds
+/// for the overscroll hold after that read.
+#[test]
+fn without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll() {
+    let (target, mut mirror) = list_on_the_agent_path(list(true, true, 0.0));
+    // The stroke carries the list the last 50 points to its end in its
+    // first 30 ms; the scroll view reports the scroll 100 ms later.
+    target.after(ms(30), Step::Show(list(true, false, 50.0)));
+    target.after(ms(130), list_scrolled());
+    let released = scroll_down(&target, &mut mirror);
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    let moved: Vec<Duration> = target
+        .reads()
+        .into_iter()
+        .filter(|r| r.request.reason == ReadReason::Moved)
+        .map(|r| r.at)
+        .collect();
+    assert_eq!(moved.len(), 1, "one read of the list at its end: {moved:?}");
+    let read_end = moved[0] + ms(10) - released;
+    assert!(
+        settle.elapsed >= read_end + DEFAULT_OVERSCROLL,
+        "settled {:?} after the stroke lifted, the list read at its end {read_end:?} after it, \
+         while its stretch could still be springing back",
+        settle.elapsed
+    );
+    assert!(
+        settle.elapsed <= read_end + DEFAULT_OVERSCROLL + DEFAULT_PROBE_INTERVAL,
+        "the hold after that read, then no longer: {settle:?}"
+    );
+    let rows = mirror.snapshot(&SnapshotOptions::full()).unwrap();
+    assert!(
+        rows.by_identifier("row-1")
+            .is_some_and(|row| row.bounds.top < 72.0),
+        "the replica holds the list where it came to rest:\n{}",
+        rows.text
+    );
+}
+
+/// Task 10.14: a fling that carries the list into its end after the finger
+/// lifted starts the stretch when it gets there: the hold counts from the
+/// tree's last change, the read that found the list at its end.
+#[test]
+fn without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change() {
+    let (target, mut mirror) = list_on_the_agent_path(list(true, true, 0.0));
+    target.after(ms(150), Step::Show(list(true, true, 20.0)));
+    target.after(ms(150), list_scrolled());
+    // The fling moves the list 10 more points every 100 ms after the finger
+    // lifts, as its end nears, the sixth move reaching the end 600 ms after
+    // the finger lifted.
+    for k in 1..=6u32 {
+        let at = ms(300 + 100 * u64::from(k));
+        let points = 20.0 + 10.0 * f64::from(k);
+        target.after(at, Step::Show(list(true, k < 6, points)));
+        target.after(at, list_scrolled());
+    }
+    let released = scroll_down(&target, &mut mirror);
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    let last_move = ms(600);
+    assert!(
+        settle.elapsed >= last_move + DEFAULT_OVERSCROLL,
+        "settled {:?} after the stroke lifted, the fling having reached the list's end \
+         {last_move:?} after it, while its stretch could still be springing back",
+        settle.elapsed
+    );
+    let reads = target.reads();
+    let last_read = reads.last().map(|r| r.at + ms(10) - released).unwrap();
+    assert!(
+        settle.elapsed <= last_read + DEFAULT_OVERSCROLL + DEFAULT_PROBE_INTERVAL,
+        "the hold after the read that found the list at its end ({last_read:?}), then no \
+         longer: {settle:?}"
+    );
+}
+
+/// Every stroke but the last of a scroll down a long list leaves it between
+/// its ends, where the platform draws no stretch: the wait settles a quiet
+/// window after the read that found the list there, as before.
+#[test]
+fn without_frames_a_stroke_that_leaves_a_list_between_its_ends_settles_after_the_quiet_window() {
+    let (target, mut mirror) = list_on_the_agent_path(list(true, true, 0.0));
+    target.after(ms(30), Step::Show(list(true, true, 50.0)));
+    target.after(ms(130), list_scrolled());
+    scroll_down(&target, &mut mirror);
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert!(settle.elapsed >= DEFAULT_QUIET_WINDOW, "{settle:?}");
+    assert!(
+        settle.elapsed < DEFAULT_OVERSCROLL,
+        "no hold for a list between its ends: {settle:?}"
+    );
+}
+
+/// Only what lies under the point where a stroke comes down, and scrolls
+/// along the stroke, scrolls: a stroke from the tab bar, or across a list
+/// that scrolls up and down, leaves the wait as it was, wherever the list
+/// sits, and so does a mirror whose overscroll hold is zero.
+#[test]
+fn without_frames_a_stroke_that_scrolls_nothing_at_an_end_settles_after_the_quiet_window() {
+    for (from, to) in [
+        (Point::new(204.0, 880.0), Point::new(204.0, 280.0)),
+        (Point::new(380.0, 400.0), Point::new(80.0, 380.0)),
+    ] {
+        let (target, mut mirror) = list_on_the_agent_path(list(true, false, 0.0));
+        stroke(&target, &mut mirror, from, to);
+        let settle = mirror.settle(&SettleOptions::default()).unwrap();
+        assert!(settle.settled, "{settle:?}");
+        assert!(
+            settle.elapsed < DEFAULT_OVERSCROLL,
+            "a stroke from {from} to {to}: {settle:?}"
+        );
+    }
+
+    let target = FakeTarget::new(list(true, false, 0.0));
+    target.answer_probes(true);
+    let config = MirrorConfig {
+        overscroll: Duration::ZERO,
+        ..MirrorConfig::default()
+    };
+    let mut mirror = Mirror::new(target.backend_without_frames(), config);
+    mirror.pump().unwrap();
+    target.advance(ms(1_000));
+    scroll_down(&target, &mut mirror);
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert_eq!(
+        settle.elapsed, DEFAULT_QUIET_WINDOW,
+        "a hold of zero: {settle:?}"
+    );
+}
+
+/// The hold follows the latest input only while it is a stroke on the app
+/// still in front: a tap after it, or a launch, ends the hold.
+#[test]
+fn without_frames_a_tap_or_a_launch_after_the_stroke_ends_the_overscroll_hold() {
+    for launch in [false, true] {
+        let (target, mut mirror) = list_on_the_agent_path(list(true, false, 0.0));
+        scroll_down(&target, &mut mirror);
+        if launch {
+            mirror.note_window_change();
+        } else {
+            tap_on(&mut mirror, "tab-list");
+        }
+        let settle = mirror.settle(&SettleOptions::default()).unwrap();
+        assert!(settle.settled, "launch {launch}: {settle:?}");
+        assert!(
+            settle.elapsed < DEFAULT_OVERSCROLL,
+            "launch {launch}: no hold after the stroke gave way: {settle:?}"
+        );
+    }
+}
+
+/// A maximum that passes during the hold names the tree, as the platform's
+/// stretch is drawn from the tree's content.
+#[test]
+fn without_frames_a_maximum_that_passes_during_the_overscroll_hold_names_the_tree() {
+    let (target, mut mirror) = list_on_the_agent_path(list(true, false, 0.0));
+    scroll_down(&target, &mut mirror);
+    let settle = mirror
+        .settle(&SettleOptions {
+            max: ms(300),
+            ..SettleOptions::default()
+        })
+        .unwrap();
+    assert!(!settle.settled, "{settle:?}");
+    assert_eq!(settle.still_changing, vec![Signal::Tree], "{settle:?}");
+}
+
+/// The frame-source path is unchanged: with frames, which show the
+/// stretch, a stroke that leaves a list at its end leaves the wait to them.
+#[test]
+fn with_frames_a_stroke_to_a_list_s_end_leaves_the_wait_to_the_frames() {
+    let target = FakeTarget::new(list(true, true, 0.0));
+    target.read_cost(ms(10));
+    target.at(ms(0), Step::Frame(0));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(ms(1_000));
+    target.after(ms(30), Step::Show(list(true, false, 50.0)));
+    target.after(ms(130), list_scrolled());
+    scroll_down(&target, &mut mirror);
+    // The replica has the list at its end.
+    mirror.pump().unwrap();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert_eq!(
+        settle.elapsed, DEFAULT_QUIET_WINDOW,
+        "a quiet window after the read, no frame having changed: {settle:?}"
+    );
 }

@@ -18,14 +18,15 @@ use std::time::{Duration, Instant};
 
 use protocol::event::{EventPayload, LifecycleKind, Stream};
 use protocol::snapshot::{
-    Bounds, Node, NodeFlags, Scroll, Truncation, Window, WindowFlags, WindowType,
+    Bounds, Node, NodeFlags, Scroll, ScrollAxis, ScrollFlags, Truncation, Window, WindowFlags,
+    WindowType,
 };
 
 use crate::backend::{
     BackendInfo, FrameMeta, Owner, ReadReason, ReadRequest, StreamItem, Timed, TreeRead,
 };
 use crate::error::ResyncCause;
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 use crate::mirror::MirrorConfig;
 use crate::snapshot::{ElementId, TreeDelta};
 use crate::timestamps::ReadSpan;
@@ -110,6 +111,16 @@ impl Win {
     }
 }
 
+/// A stroke the mirror injected: where the finger came down and where it
+/// lifted, in device points, and when the platform acknowledged the stroke,
+/// which is once the finger has lifted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Stroke {
+    pub from: Point,
+    pub to: Point,
+    pub at: Instant,
+}
+
 #[derive(Default)]
 struct Changes {
     added: Vec<ElementId>,
@@ -173,6 +184,9 @@ pub(crate) struct Replica {
     /// The latest read taken in.
     pub last_read: Option<ReadSpan>,
     pub last_action: Option<Instant>,
+    /// The latest input the mirror injected, when it was a stroke and the
+    /// app in front has not changed since.
+    pub last_stroke: Option<Stroke>,
     /// Tree and window events applied, plus deltas found by reads and moves
     /// found by bounds probes.
     pub tree_changes: u64,
@@ -206,6 +220,7 @@ impl Replica {
             frame_change_log: VecDeque::new(),
             last_read: None,
             last_action: None,
+            last_stroke: None,
             tree_changes: 0,
             interner: HashMap::new(),
             index: HashMap::new(),
@@ -376,10 +391,12 @@ impl Replica {
 
     /// Records that the window in front changed at `at` outside the
     /// mirror's input, as a window event arriving then would: a tree change,
-    /// and a read of every window when the tree is next needed.
+    /// and a read of every window when the tree is next needed. The last
+    /// stroke is forgotten: it scrolled content that is no longer in front.
     pub fn note_window_change(&mut self, at: Instant) {
         self.tree_changes += 1;
         self.last_tree_change = self.last_tree_change.max(Some(at));
+        self.last_stroke = None;
         self.request_full(ReadReason::Events);
     }
 
@@ -406,14 +423,42 @@ impl Replica {
     }
 
     /// Marks the windows that send no change events for a re-read after
-    /// input the mirror injected at `at`.
-    pub fn note_action(&mut self, at: Instant) {
+    /// input the mirror injected at `at`, a stroke from the first point to
+    /// the second when `stroke` gives them.
+    pub fn note_action(&mut self, at: Instant, stroke: Option<(Point, Point)>) {
         self.last_action = self.last_action.max(Some(at));
+        self.last_stroke = stroke.map(|(from, to)| Stroke { from, to, at });
         for window in &mut self.windows {
             if window.reread() {
                 window.action_pending = true;
             }
         }
+    }
+
+    /// Whether content that `stroke` scrolled sits at an end of its range:
+    /// a visible node that scrolls along the stroke's axis, or along an
+    /// axis its platform does not name, lies under the point the stroke
+    /// came down at, and can scroll one way from where it is but not the
+    /// other. Content that can scroll neither way does not scroll at all.
+    pub fn stroke_reached_an_end(&self, stroke: &Stroke) -> bool {
+        let (dx, dy) = (stroke.to.x - stroke.from.x, stroke.to.y - stroke.from.y);
+        let axis = if dy.abs() >= dx.abs() {
+            ScrollAxis::VERTICAL
+        } else {
+            ScrollAxis::HORIZONTAL
+        };
+        self.windows.iter().any(|window| {
+            window.nodes.iter().any(|node| {
+                let Some(scroll) = node.scroll else {
+                    return false;
+                };
+                node.flags.contains(NodeFlags::VISIBLE)
+                    && (scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN)
+                    && scroll.flags.contains(ScrollFlags::BACK)
+                        != scroll.flags.contains(ScrollFlags::FORWARD)
+                    && Rect::from_pixels(node.bounds, self.scale).contains(stroke.from)
+            })
+        })
     }
 
     /// The read due at `now`, if any.

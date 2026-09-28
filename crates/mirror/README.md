@@ -266,6 +266,7 @@ the reasons in this order, each with advice:
 | `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval |
 | `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
 | `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
+| `DEFAULT_OVERSCROLL` | 500 ms | task 10.14: on the API 36 emulator the Expo list pulled against its end drew its stretch for 333 to 383 ms after the finger lifted; 117 ms beyond the longest |
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
 
@@ -304,6 +305,21 @@ the reasons in this order, each with advice:
   wait settles a quiet window after it. A window that stays flagged holds
   the wait to the maximum, whose result names the tree. With frames the
   flag changes nothing.
+- Without a frame source, after a stroke that leaves the content under it
+  at an end of its range, the wait does not settle either until the
+  `overscroll` hold has passed since the stroke and since the tree's last
+  change (task 10.14). The content is a visible node under the point where
+  the stroke came down, scrolling along the stroke's axis (or along an axis
+  its platform does not name), that can scroll one way from where it is but
+  not the other, as the replica has it. From Android 12 a scroll view that
+  a stroke pushes against an end, or that a fling carries into one, draws a
+  stretch that springs back on its own; it moves no view and sends no
+  event, and until it rests the scroll view takes a touch that comes down
+  as the start of a drag that catches the stretch, so a tap on a row opens
+  nothing. The hold follows the latest input only while it is that stroke
+  and the app in front has not changed; a maximum that passes during it
+  names the tree. With frames, which show the stretch, the hold changes
+  nothing.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
@@ -395,7 +411,10 @@ cargo test -p mirror
   target without frames whose tree source can probe, moves the probes find
   are changes too, and the screen is settled only once a probe after the
   last change found its anchors where the replica has them (task 10.11): a
-  still screen settles after that one probe.
+  still screen settles after that one probe. Nor is it settled, without
+  frames, until the overscroll hold has passed since a stroke that left a
+  list at an end of its range and since the tree's last change (task
+  10.14).
 - *Snapshot content* asks for bounds, which snapshot lines leave out as
   agent-browser's do; `Element::bounds` carries them in points. The lines add
   `id=` and `focused`, which agent-browser has no counterpart for, and hint
