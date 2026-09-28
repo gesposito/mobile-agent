@@ -32,7 +32,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
-use crate::baseline::{exit_failure, find_executable, is_executable, search_path, version_from};
+use crate::baseline::{
+    exit_failure, find_executable, is_executable, maestro, search_path, version_from,
+};
 use crate::end_state::{Element, EndState};
 use crate::fixture::Screen;
 use crate::flow::{Direction, Flow, Selector, Step};
@@ -52,13 +54,15 @@ pub const SESSION: &str = "mobile-agent-bench";
 const WAIT_MS: u64 = 10_000;
 const WAIT: &str = "10000";
 
-/// How far one step of a scroll-to moves the content, in points: less than a
-/// phone screen's content, so no element passes through the view between two
-/// checks.
+/// The AMOUNT a scroll-to passes to `scroll --until`: the length of each of
+/// its strokes, in points, less than a phone screen's height.
 pub const SCROLL_STEP: u32 = 600;
 
-/// The most steps a scroll-to takes before it fails.
-pub const MAX_SCROLLS: u32 = 50;
+/// How long a scroll-to's `scroll --until` may scroll, in milliseconds: as
+/// long as the Maestro flow's `scrollUntilVisible` may
+/// ([`maestro::SCROLL_TIMEOUT_MS`]), within the 120 s a command gets by
+/// default.
+const SCROLL_TIMEOUT_MS: u64 = maestro::SCROLL_TIMEOUT_MS;
 
 /// The element the tap primitives and settle detection tap: the List
 /// screen's first row, which opens its detail.
@@ -473,9 +477,13 @@ impl CliAdapter {
     }
 
     /// Runs `flow`'s steps, each as its command; returns the wall time from
-    /// the first command's start to the last one's end, and how many scroll
-    /// steps the flow took.
-    fn run_steps(&self, target: &Target, flow: &Flow) -> Result<(Duration, u32), AdapterError> {
+    /// the first command's start to the last one's end, and a note of each
+    /// scroll-to (see [`CliAdapter::scroll_to`]).
+    fn run_steps(
+        &self,
+        target: &Target,
+        flow: &Flow,
+    ) -> Result<(Duration, Vec<String>), AdapterError> {
         let app = flow
             .fixture
             .app_id(target.class.platform())
@@ -486,7 +494,7 @@ impl CliAdapter {
                 ))
             })?;
         let started = Instant::now();
-        let mut scrolls = 0;
+        let mut scrolls = Vec::new();
         for step in &flow.steps {
             match step {
                 Step::Launch => {
@@ -510,7 +518,7 @@ impl CliAdapter {
                 Step::ScrollTo {
                     target: element,
                     direction,
-                } => scrolls += self.scroll_to(target, element, *direction)?,
+                } => scrolls.push(self.scroll_to(target, element, *direction)?),
                 Step::AssertVisible(element) => {
                     self.call(
                         target,
@@ -523,40 +531,38 @@ impl CliAdapter {
         Ok((started.elapsed(), scrolls))
     }
 
-    /// Scrolls `direction` in steps of [`SCROLL_STEP`] points until `element`
-    /// is visible. The screen settles before each check, so a check never
-    /// races a moving list, and the check is a wait with no time to wait.
-    /// Returns the number of steps.
+    /// Scrolls `direction` until `element` is on screen as an agent does, with
+    /// one `scroll --until`: the daemon strokes [`SCROLL_STEP`] points at a
+    /// time, lets the screen settle after each stroke and stops once the
+    /// element is on screen by its own rule. Returns the scroll's note (see
+    /// [`scrolled`]).
     fn scroll_to(
         &self,
         target: &Target,
         element: &Selector,
         direction: Direction,
-    ) -> Result<u32, AdapterError> {
-        let element = selector(element);
+    ) -> Result<String, AdapterError> {
+        let until = selector(element);
         let direction = match direction {
             Direction::Down => "down",
             Direction::Up => "up",
         };
+        let timeout = SCROLL_TIMEOUT_MS.to_string();
         let step = SCROLL_STEP.to_string();
-        for steps in 0..=MAX_SCROLLS {
-            self.call(target, &["wait", "--settle"])?;
-            let check = ["wait", "--timeout", "0", "--", element.as_str()];
-            let reply = self.send(Some(target), &check)?;
-            if reply.success {
-                return Ok(steps);
-            }
-            if reply.code.as_deref() != Some("wait_timeout") {
-                return Err(failure(&check, &reply));
-            }
-            if steps < MAX_SCROLLS {
-                self.call(target, &["scroll", "--", direction, &step])?;
-            }
-        }
-        Err(AdapterError::new(format!(
-            "{element} was not visible after {MAX_SCROLLS} scroll steps of {SCROLL_STEP} points \
-             {direction}"
-        )))
+        let reply = self.call(
+            target,
+            &[
+                "scroll",
+                "--timeout",
+                &timeout,
+                "--until",
+                &until,
+                "--",
+                direction,
+                &step,
+            ],
+        )?;
+        Ok(scrolled(&reply.data))
     }
 
     /// Waits until an element shows `text`, then checks that the element
@@ -729,7 +735,8 @@ impl Adapter for CliAdapter {
     }
 
     /// Runs the flow's steps, timed by wall clock, then counts the refs of the
-    /// final screen when the flow records its node count.
+    /// final screen when the flow records its node count. The sample's detail
+    /// holds the note of each scroll-to, if the flow has one.
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
         let (elapsed, scrolls) = self.run_steps(target, flow)?;
         let nodes = if flow.count_nodes {
@@ -737,7 +744,7 @@ impl Adapter for CliAdapter {
         } else {
             None
         };
-        let detail = (scrolls > 0).then(|| format!("{scrolls} scroll steps"));
+        let detail = (!scrolls.is_empty()).then(|| scrolls.join("; "));
         Ok(wall(elapsed, nodes, detail))
     }
 
@@ -950,6 +957,21 @@ fn millis(value: &Value, field: &str) -> Result<Duration, AdapterError> {
         .ok_or_else(|| {
             AdapterError::new(format!("{field} is not a number of milliseconds: {value}"))
         })
+}
+
+/// The note of a scroll-to, from the data of its `scroll --until` reply: the
+/// strokes the scroll took, then the share of the element in view when the
+/// reply gives it (`visible`, a number from 0 to 1), such as `7 strokes,
+/// visible 0.62`.
+fn scrolled(data: &Value) -> String {
+    let strokes = match data["strokes"].as_u64() {
+        Some(strokes) => format!("{strokes} strokes"),
+        None => "strokes unknown".to_owned(),
+    };
+    match &data["visible"] {
+        Value::Number(visible) => format!("{strokes}, visible {visible}"),
+        _ => strokes,
+    }
 }
 
 fn wall(elapsed: Duration, nodes: Option<u32>, detail: Option<String>) -> Sample {

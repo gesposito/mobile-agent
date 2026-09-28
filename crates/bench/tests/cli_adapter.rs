@@ -20,6 +20,7 @@ use bench::primitive::{Primitive, TEXT_ENTRY};
 use bench::report::{Measurement, Report};
 use bench::target::{Platform, Target, TargetClass};
 use common::{FakeDevices, stand_in};
+use serde_json::json;
 
 const ITERATIONS: u32 = 3;
 const WARMUP: u32 = 1;
@@ -397,13 +398,13 @@ fn flows_run_on(fake: &str, target: Target, name: &str) {
 
     let sample = adapter.run_flow(&target, &list).unwrap();
     assert_eq!((sample.clock, sample.nodes), (Clock::Wall, None));
-    assert!(
-        sample
-            .detail
-            .as_deref()
-            .is_some_and(|d| d.ends_with(" scroll steps")),
-        "{sample:?}"
-    );
+    // The daemon's `scroll --until` took strokes to bring row-200 on screen.
+    let strokes = sample
+        .detail
+        .as_deref()
+        .and_then(|d| d.split_once(" strokes"))
+        .and_then(|(n, _)| n.parse::<u32>().ok());
+    assert!(strokes.is_some_and(|n| n > 0), "{sample:?}");
     let detail = devices.cli(&in_session(&target, &["get", "text", "id=detail-200"]));
     assert_eq!(detail["text"], "Detail 200");
 
@@ -416,6 +417,92 @@ fn flows_run_on(fake: &str, target: Target, name: &str) {
 #[test]
 fn the_reference_flows_run_through_the_cli_adapter_on_a_fake_emulator() {
     flows_run_on("android", emulator(), "cli-flows-android");
+}
+
+/// A `scroll --until` reply that found `row-200` after 7 strokes, with the
+/// share of it in view that task 10.15's daemon reports, when given.
+fn scroll_until_reply(visible: Option<f64>) -> String {
+    let mut data = json!({
+        "amount": 600.0,
+        "direction": "down",
+        "element": {
+            "bounds": [0.0, 846.5, 411.0, 914.0],
+            "enabled": true,
+            "id": "row-200",
+            "name": "Row 200",
+            "ref": "@e31",
+            "role": "button",
+            "value": null
+        },
+        "scrolled": true,
+        "strokes": 7,
+        "until": "id=row-200"
+    });
+    if let Some(visible) = visible {
+        data["visible"] = json!(visible);
+    }
+    json!({"success": true, "data": data, "error": null}).to_string()
+}
+
+/// Task 10.17: the list-scroll flow scrolls to its row as an agent does, with
+/// one `scroll --until` whose stop condition is the daemon's, and none of
+/// the harness's own settles, zero-time checks and plain strokes around it.
+/// The sample notes the strokes the reply counts and, from a daemon that
+/// reports it, the share of the row in view.
+#[test]
+fn a_scroll_to_is_one_scroll_until_as_an_agent_runs_it() {
+    let session = "--json --session mobile-agent-bench --device emulator-5554";
+    let expected: Vec<String> = [
+        "open --relaunch -- dev.mobileagent.fixture.expo",
+        "click --timeout 10000 -- id=tab-list",
+        "scroll --timeout 90000 --until id=row-200 -- down 600",
+        "click --timeout 10000 -- id=row-200",
+        "wait --timeout 10000 --text=Detail 200",
+        "get text --timeout 10000 -- id=detail-200",
+    ]
+    .iter()
+    .map(|command| format!("{session} {command}"))
+    .collect();
+    for (name, visible, detail) in [
+        (
+            "cli-scroll-until-visible",
+            Some(0.62),
+            "7 strokes, visible 0.62",
+        ),
+        ("cli-scroll-until", None, "7 strokes"),
+    ] {
+        let dir = common::scratch(name);
+        let mut settings = CliConfig::new(dir.join("work"));
+        let scroll = scroll_until_reply(visible);
+        settings.program = stand_in(
+            &dir,
+            &[
+                ("scroll", scroll.as_str(), 0),
+                (
+                    "text",
+                    r#"{"success":true,"data":{"text":"Detail 200"},"error":null}"#,
+                    0,
+                ),
+            ],
+        );
+        let mut adapter = CliAdapter::new(settings);
+        assert!(matches!(adapter.detect(), Detection::Available { .. }));
+        let sample = adapter
+            .run_flow(&emulator(), &flow::list_scroll(Fixture::Expo))
+            .unwrap();
+        let log = fs::read_to_string(dir.join("mobile-agent.log")).unwrap();
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(lines[0], "--version");
+        assert_eq!(lines[1..], expected, "{name}");
+        for old in ["wait --settle", "wait --timeout 0 ", "scroll -- "] {
+            assert!(!log.contains(old), "{name}: {old:?} in:\n{log}");
+        }
+        assert_eq!(
+            (sample.clock, sample.nodes, sample.detail.as_deref()),
+            (Clock::Wall, None, Some(detail)),
+            "{name}"
+        );
+    }
 }
 
 #[test]
