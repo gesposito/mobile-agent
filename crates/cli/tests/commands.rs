@@ -444,6 +444,78 @@ fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
     assert!(human.stdout.starts_with("✓ "), "{}", human.stdout);
 }
 
+/// The bounds of the element a reply's data carries.
+fn bounds_of(data: &Value) -> [f64; 4] {
+    let bounds = data["element"]["bounds"]
+        .as_array()
+        .unwrap_or_else(|| panic!("an element with bounds: {data}"));
+    let at = |i: usize| bounds[i].as_f64().expect("a coordinate");
+    [at(0), at(1), at(2), at(3)]
+}
+
+/// Task 10.15: `scroll --until` stops only once the element is mostly in
+/// view, not as soon as a sliver of it shows: in a frame-path run of the
+/// harness's list-scroll flow it stopped with `row-200` 1.2 points tall at
+/// the list's edge. On the fakes' lists, rows 48 points tall between 24 and
+/// 840 (Android, which reports a row the list cuts off as the part that
+/// shows) or 62 and 791 (iOS, whole frames), one stroke of 98 or 185 points
+/// leaves row 20 two points into the list; one more, shorter stroke brings
+/// it in, and the click on it opens its detail.
+#[test]
+fn scroll_until_stops_only_once_the_element_is_mostly_in_view() {
+    for (fake, amount, (top, bottom)) in [
+        ("android", "98", (24.0, 840.0)),
+        ("ios", "185", (62.0, 791.0)),
+    ] {
+        let env = TestEnv::start(fake);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        let reply = env
+            .cli(&["--json", "scroll", "down", amount, "--until", "#row-20"])
+            .ok()
+            .json();
+        let data = &reply["data"];
+        let [_, row_top, _, row_bottom] = bounds_of(data);
+        assert!(
+            row_top >= top && row_bottom <= bottom && (row_bottom - row_top - 48.0).abs() < 0.5,
+            "{fake}: the whole row inside the list: {reply}"
+        );
+        assert_eq!(
+            data["strokes"], 2,
+            "{fake}: a stroke of {amount} points, then one that brings the row in: {reply}"
+        );
+        env.cli(&["click", "#row-20"]).ok();
+        env.cli(&["wait", "text==Detail 20", "--timeout", "2000"])
+            .ok();
+    }
+}
+
+/// Task 10.15: an element on screen but not mostly in view, which no stroke
+/// along the scroll's axis brings in, fails the scroll with
+/// `element_not_found` rather than stopping there.
+#[test]
+fn scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in() {
+    for (fake, amount) in [("android", "98"), ("ios", "185")] {
+        let env = TestEnv::start(fake);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        env.cli(&["scroll", "down", amount]).ok();
+        env.cli(&["wait", "#row-20", "--timeout", "0"]).ok();
+        let failed = env
+            .cli(&["--json", "scroll", "left", "--until", "#row-20"])
+            .failed()
+            .json();
+        assert_eq!(failed["code"], "element_not_found", "{fake}: {failed}");
+        let message = failed["error"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("not mostly in view")
+                && message.contains("scrolling left or right does not bring more of it in"),
+            "{fake}: {message}"
+        );
+        assert_eq!(failed["data"]["strokes"], 0, "{fake}: {failed}");
+    }
+}
+
 /// Task 8.15: a React Native app shows a launch splash first (Bluesky's
 /// listed only `image [id=SplashScreenLegacy]` for seconds), which is not
 /// the app's screen: `open` waits past it for the app's first screen, so

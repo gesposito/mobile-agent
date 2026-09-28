@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, SettleOptions, Target};
+use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, SettleOptions, Target, Visibility};
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
 
@@ -124,6 +124,23 @@ const UNTIL_SETTLE: Duration = Duration::from_millis(1500);
 /// Strokes in a row that change nothing before a scroll that looks for an
 /// element gives up: the content has stopped moving.
 const STILL_STROKES: u32 = 2;
+
+/// The least share of an element in view, its centre in view too, at which
+/// a scroll that looks for it stops.
+const MOSTLY: f64 = 0.5;
+
+/// How far past the edge it came over a stroke that brings a partly shown
+/// element in carries it, in points.
+const MARGIN: f64 = 8.0;
+
+/// The fastest a stroke that brings a partly shown element in moves the
+/// finger, in points a second. A stroke's content goes on moving after the
+/// finger lifts, the farther the faster the finger moved, and a fling that
+/// carried the element out of view again would undo the stroke.
+const BRING_IN_SPEED: f64 = 400.0;
+
+/// Edges within half a point of each other meet.
+const EDGE: f64 = 0.5;
 
 /// What a tap set off, from the moment of its dispatch.
 struct Spans {
@@ -520,11 +537,133 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
     })))
 }
 
+/// A rectangle's start and end along the vertical axis, or the horizontal
+/// one.
+fn along(rect: &Rect, vertical: bool) -> (f64, f64) {
+    if vertical {
+        (rect.top, rect.bottom)
+    } else {
+        (rect.left, rect.right)
+    }
+}
+
+/// Whether the edge an element's bounds are cut off at lies across the
+/// vertical axis, or the horizontal one.
+fn cut_along(seen: &Visibility, vertical: bool) -> bool {
+    seen.cut.is_some_and(|edge| {
+        matches!(edge, mirror::Direction::Above | mirror::Direction::Below) == vertical
+    })
+}
+
+/// Whether an element is mostly in view for a scroll along the vertical
+/// axis, or the horizontal one: its centre inside the visible bounds, and
+/// at least [`MOSTLY`] of it inside them with its bounds cut off at no edge
+/// where more of it may lie beyond (see [`Visibility::cut`]); or, longer
+/// than the visible bounds along the axis, or cut off along it, filling
+/// them along the axis, so that no more of it can show.
+fn mostly_in_view(seen: &Visibility, vertical: bool) -> bool {
+    if !seen.viewport.contains(seen.bounds.center()) {
+        return false;
+    }
+    let (start, end) = along(&seen.bounds, vertical);
+    let (view_start, view_end) = along(&seen.viewport, vertical);
+    let (shown_start, shown_end) = along(&seen.bounds.intersect(&seen.viewport), vertical);
+    let fills = shown_start <= view_start + EDGE && shown_end >= view_end - EDGE;
+    let longer = end - start > view_end - view_start + EDGE || cut_along(seen, vertical);
+    (fills && longer) || (seen.cut.is_none() && seen.fraction >= MOSTLY)
+}
+
+/// What a scroll that looks for an element does once the element is on
+/// screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Next {
+    /// The element is mostly in view: the scroll stops.
+    Stop,
+    /// A finger stroke of `length` points toward `finger` brings the element
+    /// in.
+    Stroke { finger: Direction, length: f64 },
+    /// No stroke along the scroll's axis brings more of the element in.
+    Stuck,
+}
+
+/// What a scroll along the vertical axis, or the horizontal one, does about
+/// an element on screen that is in view as `seen` says, in strokes of at
+/// most `step` points on a platform that takes strokes of `slop` points or
+/// less for taps. An element not mostly in view is brought in by one
+/// stroke, whichever way that takes, no longer than the step: one that
+/// sticks out of the visible bounds just far enough to carry it [`MARGIN`]
+/// points inside, and one whose bounds end at an edge where more of it may
+/// lie beyond (Android's clipped bounds), or that is longer than the
+/// visible bounds, far enough to carry its middle to theirs. The slop is
+/// added, since the content moves only once the finger has gone that far.
+fn decide(seen: &Visibility, vertical: bool, step: f64, slop: f64) -> Next {
+    if mostly_in_view(seen, vertical) {
+        return Next::Stop;
+    }
+    let (start, end) = along(&seen.bounds, vertical);
+    let (view_start, view_end) = along(&seen.viewport, vertical);
+    if view_end - view_start <= 0.0 {
+        return Next::Stuck;
+    }
+    // How far the content must move toward the axis's start, up or left;
+    // negative toward its end.
+    let shift = if cut_along(seen, vertical) || end - start > view_end - view_start - 2.0 * MARGIN {
+        (start + end) / 2.0 - (view_start + view_end) / 2.0
+    } else if end > view_end {
+        end - view_end + MARGIN
+    } else if start < view_start {
+        start - view_start - MARGIN
+    } else {
+        0.0
+    };
+    if shift.abs() < 1.0 {
+        return Next::Stuck;
+    }
+    let finger = match (vertical, shift > 0.0) {
+        (true, true) => Direction::Up,
+        (true, false) => Direction::Down,
+        (false, true) => Direction::Left,
+        (false, false) => Direction::Right,
+    };
+    Next::Stroke {
+        finger,
+        length: (shift.abs() + slop).min(step),
+    }
+}
+
+/// How long a stroke of `length` points that brings an element in takes:
+/// as long as a swipe, or longer, so the finger moves at most
+/// [`BRING_IN_SPEED`].
+fn bring_in_duration(length: f64) -> Duration {
+    SWIPE_DURATION.max(Duration::from_secs_f64(length / BRING_IN_SPEED))
+}
+
+/// How much of an element is in view, in words: the edge its bounds are
+/// cut off at while more of it may lie beyond, else its share in view.
+fn in_view(seen: &Visibility) -> String {
+    let edge = |edge: mirror::Direction| match edge {
+        mirror::Direction::Above => "top",
+        mirror::Direction::Below => "bottom",
+        mirror::Direction::Left => "left",
+        mirror::Direction::Right => "right",
+    };
+    match seen.cut {
+        Some(cut) => format!(
+            "cut off at the {} edge of its scroll container, which scrolls on",
+            edge(cut)
+        ),
+        None => format!("{}% of it in view", (seen.fraction * 100.0).round()),
+    }
+}
+
 /// Scrolls `direction` inside `area` in strokes of `step` points until the
-/// element `until` names is on screen, not covered and not scrolled away,
-/// letting the screen settle after each stroke so a check never races a
-/// moving list. Fails with `element_not_found` once the content stops
-/// moving, after [`UNTIL_STROKES`] strokes, or at the command's timeout.
+/// element `until` names is on screen, not covered and mostly in view (see
+/// [`mostly_in_view`]), letting the screen settle after each stroke so a
+/// check never races a moving list. Once the element is on screen, each
+/// further stroke brings it in rather than going on by the step (see
+/// [`decide`]). Fails with `element_not_found` once the content stops moving
+/// or no stroke along the axis brings more of the element in, after
+/// [`UNTIL_STROKES`] strokes, or at the command's timeout.
 fn scroll_until(
     target: &mut Attached,
     session: &str,
@@ -534,11 +673,18 @@ fn scroll_until(
 ) -> Outcome {
     let aim = Aim::parse(until)?;
     let deadline = Instant::now() + timeout(request)?;
+    let vertical = direction.vertical();
+    let slop = tap_slop(target.info.platform);
     let mut strokes = 0u32;
     let mut still = 0u32;
     loop {
         target.catch_up()?;
-        if let Some(element) = aim::on_screen(target, session, &aim)? {
+        let found = aim::on_screen(target, session, &aim)?;
+        let seen = found
+            .as_ref()
+            .and_then(|element| target.mirror.visibility(element.id));
+        let next = seen.map(|seen| decide(&seen, vertical, step, slop));
+        if let (Some(Next::Stop), Some(element)) = (next, &found) {
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
             }
@@ -548,11 +694,20 @@ fn scroll_until(
                 "amount": step,
                 "strokes": strokes,
                 "until": until,
-                "element": element_json(&element),
+                "element": element_json(element),
             })));
         }
         let now = Instant::now();
-        let reason = if still >= STILL_STROKES {
+        let reason = if next == Some(Next::Stuck) {
+            Some(format!(
+                "scrolling {} does not bring more of it in",
+                if vertical {
+                    "up or down"
+                } else {
+                    "left or right"
+                }
+            ))
+        } else if still >= STILL_STROKES {
             Some("the content stopped moving".to_owned())
         } else if strokes >= UNTIL_STROKES {
             Some(format!("{UNTIL_STROKES} strokes are the most it takes"))
@@ -565,22 +720,32 @@ fn scroll_until(
             None
         };
         if let Some(reason) = reason {
-            return Err(Failure::new(
-                code::ELEMENT_NOT_FOUND,
-                format!(
-                    "{until} was not on screen after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
-                    direction.name()
+            let (message, data) = match seen {
+                Some(seen) => (
+                    format!(
+                        "{until} was on screen but not mostly in view ({}) after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
+                        in_view(&seen),
+                        direction.name()
+                    ),
+                    json!({"strokes": strokes, "until": until}),
                 ),
-            )
-            .with_data(json!({"strokes": strokes, "until": until})));
+                None => (
+                    format!(
+                        "{until} was not on screen after {strokes} strokes of {step} points {}: {reason}; take a snapshot to see where the content is",
+                        direction.name()
+                    ),
+                    json!({"strokes": strokes, "until": until}),
+                ),
+            };
+            return Err(Failure::new(code::ELEMENT_NOT_FOUND, message).with_data(data));
         }
+        let (finger, length, duration) = match next {
+            Some(Next::Stroke { finger, length }) => (finger, length, bring_in_duration(length)),
+            _ => (direction.opposite(), step, SWIPE_DURATION),
+        };
         let revision = target.mirror.revision();
-        let (from, to) = stroke(area, direction.opposite(), step);
-        let outcome = target.mirror.act(&Action::Swipe {
-            from,
-            to,
-            duration: SWIPE_DURATION,
-        })?;
+        let (from, to) = stroke(area, finger, length);
+        let outcome = target.mirror.act(&Action::Swipe { from, to, duration })?;
         if !outcome.accepted {
             return Err(rejected("scroll"));
         }
@@ -757,5 +922,132 @@ mod tests {
             rotated["from"][1].as_f64() < Some(400.0),
             "inside the landscape screen: {rotated}"
         );
+    }
+
+    /// What the mirror tells of an element at `bounds` inside `viewport`,
+    /// its bounds cut off at `cut`.
+    fn seen(bounds: [f64; 4], viewport: [f64; 4], cut: Option<mirror::Direction>) -> Visibility {
+        let bounds = Rect::new(bounds[0], bounds[1], bounds[2], bounds[3]);
+        let viewport = Rect::new(viewport[0], viewport[1], viewport[2], viewport[3]);
+        let shown = bounds.intersect(&viewport);
+        Visibility {
+            bounds,
+            viewport,
+            fraction: shown.width() * shown.height() / (bounds.width() * bounds.height()),
+            cut,
+        }
+    }
+
+    /// The Expo fixture's list on the emulator, in points.
+    const LIST: [f64; 4] = [0.0, 72.0, 408.0, 840.0];
+
+    /// Whether `next` is a stroke toward `finger` of `length` points.
+    fn is_stroke(next: Next, finger: Direction, length: f64) -> bool {
+        matches!(next, Next::Stroke { finger: f, length: l } if f == finger && (l - length).abs() < 1e-9)
+    }
+
+    /// Task 10.15: a scroll that looks for an element stops once the
+    /// element's centre and at least half of it are in view, not while a
+    /// sliver of it shows: the frame-path run of the harness's list-scroll
+    /// flow stopped with `row-200` 1.2 points tall at the list's edge.
+    #[test]
+    fn a_scroll_that_looks_for_an_element_stops_once_it_is_mostly_in_view() {
+        let stops = |bounds, cut| decide(&seen(bounds, LIST, cut), true, 600.0, 8.0) == Next::Stop;
+        assert!(stops([0.0, 400.0, 408.0, 448.0], None), "wholly in view");
+        assert!(
+            stops([0.0, 811.2, 408.0, 859.2], None),
+            "60% in view, its centre too"
+        );
+        assert!(
+            !stops([0.0, 816.0, 408.0, 864.0], None),
+            "half in view, its centre on the edge"
+        );
+        assert!(!stops([0.0, 824.0, 408.0, 872.0], None), "a third in view");
+        assert!(
+            !stops([0.0, 838.8, 408.0, 840.0], Some(mirror::Direction::Below)),
+            "a sliver Android cut off where the list scrolls on"
+        );
+        assert!(
+            stops([0.0, 792.0, 408.0, 840.0], None),
+            "a row at the end of a list that scrolls no further"
+        );
+        assert!(
+            stops([0.0, 72.0, 408.0, 840.0], Some(mirror::Direction::Below)),
+            "an element cut off at the list's edge that fills the list"
+        );
+        assert!(
+            stops([0.0, -500.0, 408.0, 1412.0], None),
+            "a frame longer than the list that fills it, its centre in view"
+        );
+        assert!(
+            !stops([0.0, 300.0, 408.0, 2000.0], None),
+            "a frame longer than the list, its centre out of view"
+        );
+    }
+
+    /// Task 10.15: once the element is on screen, a stroke of the step
+    /// could carry it past the far edge, so the next stroke only brings it
+    /// in, whichever way that takes.
+    #[test]
+    fn a_partly_shown_element_is_brought_in_by_one_stroke_no_longer_than_the_step() {
+        let next = |bounds, cut, step| decide(&seen(bounds, LIST, cut), true, step, 8.0);
+        // 28 of its 48 points lie below the list: the content moves them and
+        // 8 more up, the finger 8 more than the content.
+        assert!(is_stroke(
+            next([0.0, 820.0, 408.0, 868.0], None, 600.0),
+            Direction::Up,
+            44.0
+        ));
+        // 32 lie above it: down.
+        assert!(is_stroke(
+            next([0.0, 40.0, 408.0, 88.0], None, 600.0),
+            Direction::Down,
+            48.0
+        ));
+        // A sliver cut off at the bottom, of unknown length: its middle to
+        // the list's, 383.4 points up.
+        let sliver = [0.0, 838.8, 408.0, 840.0];
+        let below = Some(mirror::Direction::Below);
+        assert!(is_stroke(next(sliver, below, 600.0), Direction::Up, 391.4));
+        assert!(is_stroke(next(sliver, below, 300.0), Direction::Up, 300.0));
+        let above = Some(mirror::Direction::Above);
+        assert!(is_stroke(
+            next([0.0, 72.0, 408.0, 80.0], above, 600.0),
+            Direction::Down,
+            388.0
+        ));
+        // Across a horizontal list, an item sticking out on the right.
+        let carousel = [0.0, 100.0, 408.0, 300.0];
+        let item = seen([350.0, 100.0, 550.0, 300.0], carousel, None);
+        assert!(is_stroke(
+            decide(&item, false, 300.0, 8.0),
+            Direction::Left,
+            158.0
+        ));
+    }
+
+    /// Task 10.15: what the scroll's axis does not cut off, no stroke along
+    /// it brings in.
+    #[test]
+    fn no_stroke_brings_in_an_element_the_scroll_s_axis_does_not_cut_off() {
+        let sliver = seen(
+            [0.0, 838.8, 408.0, 840.0],
+            LIST,
+            Some(mirror::Direction::Below),
+        );
+        assert_eq!(decide(&sliver, false, 300.0, 8.0), Next::Stuck);
+        let beyond_the_right_edge = seen([300.0, 400.0, 516.0, 448.0], LIST, None);
+        assert_eq!(
+            decide(&beyond_the_right_edge, true, 300.0, 8.0),
+            Next::Stuck
+        );
+        let under_a_bar = seen([0.0, 400.0, 408.0, 448.0], [0.0, 400.0, 408.0, 400.0], None);
+        assert_eq!(decide(&under_a_bar, true, 300.0, 8.0), Next::Stuck);
+    }
+
+    #[test]
+    fn a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second() {
+        assert_eq!(bring_in_duration(44.0), SWIPE_DURATION);
+        assert_eq!(bring_in_duration(400.0), Duration::from_secs(1));
     }
 }
