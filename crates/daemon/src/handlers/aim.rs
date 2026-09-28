@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use mirror::{
-    Condition, Element, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
+    Condition, Element, ElementId, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
     SnapshotSummary, Target, WaitOutcome,
 };
 
@@ -179,18 +179,18 @@ pub(crate) fn element(
 
 /// Where an action on an argument lands: a ref, which the mirror checks
 /// for being stale, covered or scrolled away, or for a selector the center
-/// of the element it matched.
+/// of the element it matched; with the element a selector matched.
 pub(crate) fn action_target(
     target: &mut Attached,
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<(Target, Option<Ref>), Failure> {
+) -> Result<(Target, Option<Ref>, Option<ElementId>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
-            Ok((Target::Ref(*reference), Some(*reference)))
+            Ok((Target::Ref(*reference), Some(*reference), None))
         }
         Aim::Select(selector) => Ok(aimed_at(find(target, selector, timeout)?)),
         Aim::Exact(text) => Ok(aimed_at(find_exact(target, text, timeout)?)),
@@ -198,11 +198,12 @@ pub(crate) fn action_target(
 }
 
 /// Where an action on a found element lands: its ref, which the mirror
-/// checks, else its center.
-fn aimed_at(element: Element) -> (Target, Option<Ref>) {
+/// checks, else its center; with the element.
+fn aimed_at(element: Element) -> (Target, Option<Ref>, Option<ElementId>) {
+    let found = Some(element.id);
     match element.reference {
-        Some(reference) => (Target::Ref(reference), Some(reference)),
-        None => (Target::Point(element.bounds.center()), None),
+        Some(reference) => (Target::Ref(reference), Some(reference), found),
+        None => (Target::Point(element.bounds.center()), None, found),
     }
 }
 

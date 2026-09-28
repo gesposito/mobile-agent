@@ -521,6 +521,29 @@ fn scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in() {
     }
 }
 
+/// Task 10.15: a click on an element mostly out of view goes to the centre
+/// of its bounds, which may not be on what shows of it: on the iOS fake,
+/// row 20 two points into the list has its centre under the tab bar. The
+/// click warns, and says how to bring the element in; a click on an element
+/// in view does not.
+#[test]
+fn a_click_on_an_element_mostly_out_of_view_warns() {
+    for (fake, amount) in [("android", "98"), ("ios", "185")] {
+        let env = TestEnv::start(fake);
+        env.cli(&["open", APP]).ok();
+        let in_view = env.cli(&["--json", "click", "#tab-list"]).ok().json();
+        assert_eq!(in_view["warning"], Value::Null, "{fake}: {in_view}");
+        env.cli(&["scroll", "down", amount]).ok();
+        let reply = env.cli(&["--json", "click", "#row-20"]).ok().json();
+        let warning = reply["warning"].as_str().unwrap_or_default();
+        assert!(
+            warning.contains("#row-20 was not mostly in view")
+                && warning.contains("scroll --until #row-20"),
+            "{fake}: {reply}"
+        );
+    }
+}
+
 /// Task 8.15: a React Native app shows a launch splash first (Bluesky's
 /// listed only `image [id=SplashScreenLegacy]` for seconds), which is not
 /// the app's screen: `open` waits past it for the app's first screen, so

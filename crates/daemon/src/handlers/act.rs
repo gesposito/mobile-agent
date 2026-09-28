@@ -245,18 +245,33 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
 
 pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let hold = request.u64("hold")?.map(Duration::from_millis);
-    let (aimed, reference, clicked) = match (request.f64("x")?, request.f64("y")?) {
-        (Some(x), Some(y)) => (Target::Point(Point::new(x, y)), None, format!("{x} {y}")),
+    let (aimed, reference, clicked, found) = match (request.f64("x")?, request.f64("y")?) {
+        (Some(x), Some(y)) => (
+            Target::Point(Point::new(x, y)),
+            None,
+            format!("{x} {y}"),
+            None,
+        ),
         _ => {
             let given = request.required_str("target")?;
             let aim = Aim::parse(given)?;
-            let (aimed, reference) = aim::action_target(target, session, &aim, timeout(request)?)?;
-            (aimed, reference, given.to_owned())
+            let (aimed, reference, found) =
+                aim::action_target(target, session, &aim, timeout(request)?)?;
+            (aimed, reference, given.to_owned(), found)
         }
     };
     // The replica first takes in what arrived before the tap, so nothing
     // the tap did not cause is counted as its effect.
     target.mirror.pump()?;
+    // How much of the element is in view where the tap goes in; a ref the
+    // mirror cannot resolve fails the tap below.
+    let seen = found
+        .or_else(|| {
+            reference
+                .and_then(|reference| target.mirror.resolve(reference).ok())
+                .map(|element| element.id)
+        })
+        .and_then(|element| target.mirror.visibility(element));
     let revision = target.mirror.revision();
     let started = Instant::now();
     let outcome = target.mirror.act(&Action::Tap {
@@ -275,7 +290,7 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     let spans = watch(target, started, revision, dispatch, fresh);
     let point = outcome.at.unwrap_or_default();
     let mut data = Map::new();
-    data.insert("clicked".into(), clicked.into());
+    data.insert("clicked".into(), clicked.as_str().into());
     data.insert("ref".into(), reference_json(reference));
     data.insert("x".into(), point.x.into());
     data.insert("y".into(), point.y.into());
@@ -289,9 +304,23 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
         data.insert("treeDeltaMs".into(), millis(tree).into());
     }
     data.insert("watchedMs".into(), millis(spans.watched).into());
-    let warning = spans
-        .problem
-        .map(|problem| format!("the tap went in, but watching its effects failed: {problem}"));
+    let mut warnings = Vec::new();
+    if let Some(seen) = seen {
+        // A cut edge names the axis; otherwise lists scroll up and down.
+        let vertical = !cut_along(&seen, false);
+        if !mostly_in_view(&seen, vertical) {
+            warnings.push(format!(
+                "{clicked} was not mostly in view ({}), so the tap at {point} may have missed it; scroll --until {clicked} brings it into view first",
+                in_view(&seen)
+            ));
+        }
+    }
+    if let Some(problem) = spans.problem {
+        warnings.push(format!(
+            "the tap went in, but watching its effects failed: {problem}"
+        ));
+    }
+    let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
     Ok(Success::new(Value::Object(data)).warn(warning))
 }
 

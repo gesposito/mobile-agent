@@ -71,7 +71,8 @@ moving at most 400 points a second, so the content's fling after the
 finger lifts stays short. The reply's `visible` is the share of the
 element's bounds in view, from 0 to 1, rounded to a hundredth; an
 `element_not_found` for an element on screen but not mostly in view
-carries it too, as `data.visible`.
+carries it too, as `data.visible`. A `click` on an element that is not
+mostly in view still taps the centre of its bounds, and warns.
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
 or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
@@ -425,8 +426,9 @@ Task 10.12's emulator controller setting has
 `output::tests::status_names_the_emulator_controller_when_it_is_off`,
 `doctor::a_daemon_that_leaves_the_controller_unused_says_so` and
 `config::tests::a_project_file_overrides_the_user_file_key_by_key`.
-Task 10.15 adds `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`
-and `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in`.
+Task 10.15 adds `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`,
+`commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in`
+and `commands::a_click_on_an_element_mostly_out_of_view_warns`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and
