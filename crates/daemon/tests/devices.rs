@@ -11,7 +11,8 @@
 //! and passes. The tests take the devices one at a time, each with a daemon
 //! of its own on a private socket directory, and print what they measured.
 //! The Simulator is left with the Expo fixture on its Login tab and the
-//! SwiftUI fixture stopped; the Compose fixture is stopped on the emulator.
+//! SwiftUI fixture stopped, or both stopped after the mid-list scroll test;
+//! the fixtures are stopped on the emulator.
 
 mod support;
 
@@ -1431,4 +1432,180 @@ fn scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator() {
         );
         env.shutdown();
     }
+}
+
+/// Runs of `scroll --until` on a row from each fixture's first screen.
+const MID_LIST_RUNS: u32 = 4;
+
+/// One run of `scroll down 600 --until` on a row, from the top of a
+/// fixture's List tab.
+#[derive(Debug)]
+struct UntilRun {
+    app: &'static str,
+    row: u32,
+    /// The reply's `data`, or its `code` and `error` when it failed.
+    reply: Value,
+    ok: bool,
+    elapsed: f64,
+}
+
+/// [`MID_LIST_RUNS`] runs on each of `rows` for each of `apps` on `device`,
+/// each after relaunching the app and clicking its List tab, as the
+/// harness's list-scroll flow starts.
+fn scroll_until_runs(
+    env: &Env,
+    device: &str,
+    apps: &[&'static str],
+    rows: &[u32],
+) -> Vec<UntilRun> {
+    let mut runs = Vec::new();
+    for &app in apps {
+        for &row in rows {
+            for _ in 0..MID_LIST_RUNS {
+                env.on(device, &["open", "--relaunch", "--", app]).data();
+                env.on(
+                    device,
+                    &["click", "--timeout", "10000", "--", "id=tab-list"],
+                )
+                .data();
+                let until = format!("id=row-{row}");
+                let run = env.on(
+                    device,
+                    &[
+                        "scroll",
+                        "down",
+                        "600",
+                        "--until",
+                        &until,
+                        "--timeout",
+                        "60000",
+                    ],
+                );
+                let reply: Value = serde_json::from_str(run.stdout.trim_end())
+                    .unwrap_or_else(|e| panic!("{app} row-{row}: no JSON ({e}): {run:?}"));
+                let ok = run.code == Some(0) && reply["success"] == true;
+                runs.push(UntilRun {
+                    app,
+                    row,
+                    reply: if ok {
+                        reply["data"].clone()
+                    } else {
+                        json!({"code": reply["code"], "error": reply["error"], "data": reply["data"]})
+                    },
+                    ok,
+                    elapsed: ms(run.elapsed),
+                });
+            }
+        }
+    }
+    runs
+}
+
+/// Prints every run, per app and row: whether it found the row, its
+/// strokes, its time, the share of the row in view and the stroke's length;
+/// then asserts that every run found the row mostly in view.
+fn report_until_runs(device: &str, runs: &[UntilRun]) {
+    for run in runs {
+        let data = &run.reply;
+        eprintln!(
+            "{device} {} row-{}: {} strokes {} in {:.0} ms, visible {}, amount {}{}",
+            run.app,
+            run.row,
+            if run.ok { "found" } else { "FAILED" },
+            if run.ok {
+                &data["strokes"]
+            } else {
+                &data["data"]["strokes"]
+            },
+            run.elapsed,
+            data["visible"],
+            data["amount"],
+            if run.ok {
+                String::new()
+            } else {
+                format!(": {} {}", data["code"], data["error"])
+            },
+        );
+    }
+    let failed: Vec<&UntilRun> = runs
+        .iter()
+        .filter(|run| !run.ok || run.reply["visible"].as_f64().is_none_or(|v| v < 0.5))
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "{} of {} runs did not stop with the row mostly in view: {failed:#?}",
+        failed.len(),
+        runs.len()
+    );
+}
+
+/// Task 10.16, on an emulator (the controller's path) with the Expo and
+/// Compose fixtures: `scroll --until` must find a row in the middle of the
+/// list. It looks for the row between strokes, and a 600-point stroke over
+/// 300 ms whose finger lifted moving carried the lists 1,103 to 1,319
+/// points, more than the roughly 780 they show, so the row could pass
+/// through the list between two looks and the scroll failed at the list's
+/// end with `element_not_found`. Each run relaunches the fixture, clicks
+/// its List tab and scrolls down 600 points at a time until `row-100`, or
+/// `row-200` at the list's end, is mostly in view; every run must find its
+/// row. The test prints each run's strokes and time.
+#[test]
+fn scroll_until_finds_a_mid_list_row_on_an_emulator() {
+    let test = "scroll_until_finds_a_mid_list_row_on_an_emulator";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    require_installed(&device, EXPO);
+    require_installed(&device, COMPOSE);
+    let _fixtures = Stopped::new(&device, &[EXPO, COMPOSE]);
+    let mut env = Env::start();
+    let runs = scroll_until_runs(&env, &serial, &[EXPO, COMPOSE], &[100, 200]);
+    env.shutdown();
+    report_until_runs(&serial, &runs);
+}
+
+/// Terminates the Simulator's fixtures now and when dropped, leaving it
+/// with neither running.
+struct SimulatorStopped(String);
+
+impl SimulatorStopped {
+    fn new(udid: &str) -> SimulatorStopped {
+        let stopped = SimulatorStopped(udid.to_owned());
+        stopped.stop();
+        stopped
+    }
+
+    fn stop(&self) {
+        for app in [SWIFTUI, EXPO] {
+            simctl(&["terminate", &self.0, app]);
+        }
+    }
+}
+
+impl Drop for SimulatorStopped {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Task 10.16, on a Simulator with the SwiftUI and Expo fixtures: as on the
+/// emulator, `scroll --until` must find `row-100` and `row-200`. A 600-point
+/// stroke over 300 ms whose finger lifted moving carried the Expo list
+/// 1,522 to 1,608 points on the iOS 26.5 Simulator, about twice what it
+/// shows. The test leaves both fixtures stopped.
+#[test]
+fn scroll_until_finds_a_mid_list_row_on_a_simulator() {
+    let test = "scroll_until_finds_a_mid_list_row_on_a_simulator";
+    let Some(udid) = gate(SIM_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let _fixtures = SimulatorStopped::new(&udid);
+    let mut env = Env::start();
+    let runs = scroll_until_runs(&env, &udid, &[SWIFTUI, EXPO], &[100, 200]);
+    env.shutdown();
+    report_until_runs(&udid, &runs);
 }
