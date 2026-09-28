@@ -1,0 +1,1256 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-09-28T14:25:26Z",
+    "finished_at": "2026-09-28T15:10:07Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.55,
+        2.89,
+        2.81
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "dd4ed5a4f3b470a0bac23f21d4a436ce2d333083",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+        "class": "simulator",
+        "model": "iPhone 17",
+        "os": "iOS 26.5",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 25265455,
+        "p95_us": 25517752,
+        "max_us": 25594456
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 8,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 16.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23983429,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25316977,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25381576,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25455525,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25214265,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25301967,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25514416,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25400523,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25240874,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25336246,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25517752,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25375043,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25498879,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23098251,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23792728,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25254323,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 22960564,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25265455,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25394920,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25509939,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent wait --timeout 10000 --text=Detail 200: wait_timeout: waited 10009 ms for text \"Detail 200\" to appear; the screen now shows revision 258, 1 windows, 506 elements with refs, read 595 ms ago:"
+          ]
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23034869,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25473807,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=row-200: invalid_argument: (201, 888) is off the 402x874 point screen"
+          ]
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25093416,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25186341,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25168229,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25208956,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25435537,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25357621,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=row-200: invalid_argument: (201, 889) is off the 402x874 point screen"
+          ]
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25247751,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23859917,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25141688,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25445773,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25420018,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25569313,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25467595,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent wait --timeout 10000 --text=Detail 200: wait_timeout: waited 10040 ms for text \"Detail 200\" to appear; the screen now shows revision 468, 1 windows, 506 elements with refs, read 0 ms ago:"
+          ]
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25296358,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=row-200: invalid_argument: (201, 876) is off the 402x874 point screen"
+          ]
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25256962,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25184209,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=row-200: invalid_argument: (201, 875.3333333333334) is off the 402x874 point screen"
+          ]
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24956548,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25429412,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25203398,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25421288,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24143350,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25388146,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24218170,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25406706,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23795597,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25464317,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25204769,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=row-200: invalid_argument: (201, 887.3333333333334) is off the 402x874 point screen"
+          ]
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 25367165,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": [
+            "mobile-agent wait --timeout 10000 --text=Detail 200: wait_timeout: waited 10070 ms for text \"Detail 200\" to appear; the screen now shows revision 685, 1 windows, 506 elements with refs, read 0 ms ago:"
+          ]
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23102001,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23158549,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25594456,
+          "nodes": null,
+          "detail": "7 scroll steps",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 20565332,
+        "p95_us": 21033210,
+        "max_us": 21111500
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20943761,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21010662,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20356086,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20927863,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20438472,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20565332,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20530701,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20757453,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20527271,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21019698,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20578458,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20529404,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20935266,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20559573,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20404809,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20515516,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20505709,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21037089,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20480987,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20564837,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20464211,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20365932,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20463202,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20423155,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20604631,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20954022,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20550234,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20510630,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20477543,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20575213,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21111500,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20941335,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20453188,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20980330,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20609987,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20468733,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20889244,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20494336,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20344267,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20591123,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20708479,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21003179,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20599998,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20476584,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20604355,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20614435,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20603725,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20859670,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20616779,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 21033210,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20435104,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20377816,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 20702274,
+          "nodes": null,
+          "detail": "6 scroll steps",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 316162,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "simulator cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator cold-attach",
+        "statistic": "p95",
+        "limit_us": 2000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator warm-snapshot swiftui big",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator warm-snapshot expo big",
+        "statistic": "p95",
+        "limit_us": 250000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      }
+    ]
+  }
+}

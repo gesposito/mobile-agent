@@ -1,0 +1,1231 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-09-28T14:00:59Z",
+    "finished_at": "2026-09-28T14:24:44Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.72,
+        3.49,
+        3.45
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "3da516f1f066f347dfb14afba31450ec515d6cd8",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "emulator-5554",
+        "class": "android-emulator",
+        "model": "sdk_gphone64_arm64",
+        "os": "Android API 36",
+        "api_level": 36,
+        "controller": "on",
+        "frame_source": true
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "emulator-5554",
+      "target_class": "android-emulator",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 12600921,
+        "p95_us": 13206186,
+        "max_us": 13313729
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12458103,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12479797,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12429191,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12666027,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12769591,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12550751,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12343618,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12409848,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12492982,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12639537,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12593352,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12658811,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13313729,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12609355,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12614989,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12653426,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12663501,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12858158,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12522210,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12765854,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12350886,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13206186,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12821110,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12486836,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12606892,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12682227,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12603523,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12419900,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12518942,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12482127,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12522472,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13292903,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12409814,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12644482,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12389539,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12520724,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12686909,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12665814,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12453479,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12567697,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12530598,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12752808,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12582426,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12568241,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12600921,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12662730,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12568515,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12578706,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12843226,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12521825,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12735327,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12506554,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 12698095,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "emulator-5554",
+      "target_class": "android-emulator",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 13740107,
+        "p95_us": 14112943,
+        "max_us": 14369584
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13889171,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13878458,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13597210,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13877324,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13773310,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13723170,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13646690,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13902751,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13778663,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13867037,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13708958,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13876292,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13369211,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13605505,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13901228,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13516851,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14242952,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13740107,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14112943,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13582587,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13846342,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13870282,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13879420,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13854590,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13641615,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13576122,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13706487,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13601860,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13820931,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13689602,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13695103,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14076184,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13432207,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13440340,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13488532,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13847582,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14028966,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13650609,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13834669,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13629262,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13716038,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13790622,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13547418,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13532280,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13857933,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13719312,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13876319,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13563692,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13774153,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14369584,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 14078597,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13610874,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13878297,
+          "nodes": null,
+          "detail": "16 strokes, visible 1.0",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "emulator-5554",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 84128,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "android-emulator cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-emulator cold-attach",
+        "statistic": "p95",
+        "limit_us": 1500000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-emulator warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 100000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-emulator tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": 67000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      }
+    ]
+  }
+}
