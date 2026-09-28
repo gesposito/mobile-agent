@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use support::{APP, Daemon, PID, SOCKET, TempDir, VERSION};
@@ -165,6 +165,81 @@ fn shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_direc
         !run.exists(),
         "the daemon's directory is left behind with {left:?}"
     );
+}
+
+/// Task 8.16: `shutdown` answers only once the daemon has stopped its
+/// targets and removed its socket and sidecar files, so a client that
+/// starts another daemon right after never meets this one's agent. The
+/// fake target takes 600 ms to stop, as stopping the Android agent takes
+/// its time.
+#[test]
+fn shutdown_answers_once_the_targets_have_stopped_and_the_socket_is_gone() {
+    let mut daemon = Daemon::builder()
+        .fake("android")
+        .arg("--fake-stop")
+        .arg("600")
+        .start();
+    let attached = daemon.request(json!({"action": "snapshot"}));
+    assert_eq!(attached["success"], true, "{attached}");
+    let sent = Instant::now();
+    let reply = daemon.request(json!({"id": "s1", "action": "shutdown"}));
+    let waited = sent.elapsed();
+    let left: Vec<&str> = [SOCKET, PID, VERSION]
+        .into_iter()
+        .filter(|file| daemon.dir.join(file).exists())
+        .collect();
+    assert_eq!(
+        reply,
+        json!({"id": "s1", "success": true, "data": {"stopped": true}, "error": null})
+    );
+    assert!(
+        waited >= Duration::from_millis(600),
+        "the reply came {waited:?} after the request, before the target's 600 ms stop ended"
+    );
+    assert!(left.is_empty(), "the reply came with {left:?} still there");
+    let status = daemon
+        .wait_exit(Duration::from_secs(2))
+        .expect("the daemon exits right after its reply");
+    assert!(status.success(), "{status}");
+}
+
+/// Task 8.16: the daemon waits at most 5 s for its targets to stop, then
+/// answers all the same, naming each target that had not stopped in
+/// `notStopped` and in a warning, and exits without waiting for it.
+#[test]
+fn a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply() {
+    let mut daemon = Daemon::builder()
+        .fake("android")
+        .arg("--fake-stop")
+        .arg("8s")
+        .start();
+    let attached = daemon.request(json!({"action": "snapshot"}));
+    assert_eq!(attached["success"], true, "{attached}");
+    let sent = Instant::now();
+    let reply = daemon.request(json!({"action": "shutdown"}));
+    let waited = sent.elapsed();
+    assert_eq!(reply["success"], true, "{reply}");
+    assert_eq!(
+        reply["data"],
+        json!({"stopped": true, "notStopped": ["emulator-5554"]}),
+        "{reply}"
+    );
+    let warning = reply["warning"].as_str().unwrap_or_default();
+    assert!(
+        warning.contains("emulator-5554") && warning.contains("5 s"),
+        "{reply}"
+    );
+    assert!(
+        (Duration::from_secs(5)..Duration::from_secs(7)).contains(&waited),
+        "the reply came {waited:?} after the request, not once the 5 s wait was over"
+    );
+    assert!(
+        !daemon.socket().exists(),
+        "the reply came before the socket went"
+    );
+    daemon
+        .wait_exit(Duration::from_secs(2))
+        .expect("the daemon exits without waiting for the target");
 }
 
 /// Starts the daemon without `--socket-dir`, with `env` set and

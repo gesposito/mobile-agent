@@ -173,6 +173,8 @@ pub(crate) struct Worker {
     status: Arc<Mutex<Status>>,
     report: ReportSlot,
     thread: Option<JoinHandle<()>>,
+    /// Disconnects as the thread ends, its target detached.
+    ended: Receiver<()>,
 }
 
 /// Sends commands to a worker; cheap to clone.
@@ -186,6 +188,7 @@ impl Worker {
     /// first command arrives.
     pub fn spawn(info: TargetInfo, driver: Arc<dyn Driver>) -> Worker {
         let (jobs, queue) = mpsc::channel();
+        let (ending, ended) = mpsc::channel();
         let status = Arc::new(Mutex::new(Status::default()));
         let report: ReportSlot = Arc::new(Mutex::new(None));
         let (shared_status, shared_report) = (Arc::clone(&status), Arc::clone(&report));
@@ -193,6 +196,8 @@ impl Worker {
         let thread = std::thread::Builder::new()
             .name(name)
             .spawn(move || {
+                // Dropped as the thread ends, after the target is detached.
+                let _ending: Sender<()> = ending;
                 serve(
                     &info,
                     driver.as_ref(),
@@ -207,6 +212,7 @@ impl Worker {
             status,
             report,
             thread,
+            ended,
         }
     }
 
@@ -228,14 +234,18 @@ impl Worker {
         let _ = self.handle.jobs.send(Job::Stop);
     }
 
-    /// Waits until `deadline` for the worker to finish detaching.
-    pub fn join(mut self, deadline: Instant) {
-        if let Some(thread) = self.thread.take() {
-            while !thread.is_finished() && Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(5));
-            }
-            if thread.is_finished() {
+    /// Waits until `deadline` for the worker to finish detaching, returning
+    /// as soon as it has; whether it has.
+    pub fn join(mut self, deadline: Instant) -> bool {
+        let Some(thread) = self.thread.take() else {
+            return true;
+        };
+        let wait = deadline.saturating_duration_since(Instant::now());
+        match self.ended.recv_timeout(wait) {
+            Err(RecvTimeoutError::Timeout) => false,
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
                 let _ = thread.join();
+                true
             }
         }
     }

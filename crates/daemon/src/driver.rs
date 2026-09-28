@@ -308,6 +308,8 @@ pub struct Registration<'a> {
     pub fake_splash: Duration,
     /// How long after they start fake targets' input sessions activate.
     pub fake_activation: Duration,
+    /// How long detaching a fake target takes.
+    pub fake_stop: Duration,
     /// Device drivers by name, as `MOBILE_AGENT_DRIVERS` lists them; see
     /// [`device_drivers`].
     pub drivers: Option<&'a str>,
@@ -329,10 +331,11 @@ pub struct Registration<'a> {
 /// stand in for them: when `fake` names any, only the fake driver serves,
 /// showing every change `fake_latency` after its cause, its frames from
 /// `fake_frame_delay` after the attach, its fixture apps' launch splash for
-/// `fake_splash` and its input `fake_activation` after its session starts,
-/// unless `drivers` names device drivers too. With `emulator_controller`
-/// off, the Android driver leaves every emulator's controller unused and
-/// fake emulators come without a frame source.
+/// `fake_splash`, its input `fake_activation` after its session starts and
+/// taking `fake_stop` to detach, unless `drivers` names device drivers too.
+/// With `emulator_controller` off, the Android driver leaves every
+/// emulator's controller unused and fake emulators come without a frame
+/// source.
 pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>>, String> {
     let fake = registration.fake.filter(|spec| !spec.trim().is_empty());
     let mut drivers: Vec<Arc<dyn Driver>> = Vec::new();
@@ -350,6 +353,7 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
                 .with_frame_delay(registration.fake_frame_delay)
                 .with_splash(registration.fake_splash)
                 .with_activation(registration.fake_activation)
+                .with_stop(registration.fake_stop)
                 .with_emulator_controller(registration.emulator_controller),
         ));
     }
@@ -462,6 +466,7 @@ mod tests {
                 fake_frame_delay: Duration::ZERO,
                 fake_splash: Duration::ZERO,
                 fake_activation: Duration::ZERO,
+                fake_stop: Duration::ZERO,
                 drivers,
                 state_dir: &dir,
                 emulator_controller: EmulatorController::Auto,

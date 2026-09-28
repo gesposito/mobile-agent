@@ -18,7 +18,7 @@ const DISCOVERY_TTL: Duration = Duration::from_secs(2);
 
 /// How long the daemon waits for its workers to detach their targets when
 /// it exits: long enough for the Android agent's `shutdown` and a kill.
-const STOP_WAIT: Duration = Duration::from_secs(5);
+pub(crate) const STOP_WAIT: Duration = Duration::from_secs(5);
 
 /// Which target a command asks for: `--device` and `--platform`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -91,6 +91,8 @@ pub(crate) struct Registry {
     /// Target id to the session holding it.
     claims: HashMap<String, String>,
     sessions: BTreeMap<String, SessionSettings>,
+    /// Set once the workers were stopped, as the daemon exits.
+    stopped: bool,
 }
 
 impl Registry {
@@ -103,6 +105,7 @@ impl Registry {
             workers: HashMap::new(),
             claims: HashMap::new(),
             sessions: BTreeMap::new(),
+            stopped: false,
         }
     }
 
@@ -292,10 +295,18 @@ impl Registry {
         &self.sessions
     }
 
-    /// The worker of `target`, started when none runs.
+    /// The worker of `target`, started when none runs. None starts once the
+    /// workers were stopped, so a request that came in as the daemon began
+    /// to exit attaches no target it would leave behind.
     pub fn handle(&mut self, target: &TargetInfo) -> Result<Handle, Failure> {
         if let Some(worker) = self.workers.get(&target.id) {
             return Ok(worker.handle());
+        }
+        if self.stopped {
+            return Err(Failure::new(
+                code::DAEMON_STOPPING,
+                "the daemon is shutting down; run the command again to start a new one",
+            ));
         }
         let driver = self
             .drivers
@@ -319,15 +330,90 @@ impl Registry {
     }
 
     /// Stops every worker, detaching every target: all at once, then waits
-    /// for them together.
-    pub fn stop(&mut self) {
-        let workers: Vec<Worker> = self.workers.drain().map(|(_, worker)| worker).collect();
-        for worker in &workers {
+    /// for them together, up to [`STOP_WAIT`]. Returns the targets whose
+    /// worker had not finished detaching by then, by id. No worker starts
+    /// afterwards.
+    pub fn stop(&mut self) -> Vec<String> {
+        self.stop_within(STOP_WAIT)
+    }
+
+    fn stop_within(&mut self, wait: Duration) -> Vec<String> {
+        self.stopped = true;
+        let workers: Vec<(String, Worker)> = self.workers.drain().collect();
+        for (_, worker) in &workers {
             worker.signal_stop();
         }
-        let deadline = Instant::now() + STOP_WAIT;
-        for worker in workers {
-            worker.join(deadline);
+        let deadline = Instant::now() + wait;
+        let mut unstopped: Vec<String> = workers
+            .into_iter()
+            .filter_map(|(target, worker)| (!worker.join(deadline)).then_some(target))
+            .collect();
+        unstopped.sort();
+        unstopped
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::AttachOptions;
+    use crate::fake::FakeDriver;
+    use crate::wire::Success;
+
+    /// A registry of the fake targets `spec`, each taking `stop` to detach,
+    /// with every one attached.
+    fn attached(spec: &str, stop: Duration) -> Registry {
+        let driver: Arc<dyn Driver> = Arc::new(FakeDriver::parse(spec).unwrap().with_stop(stop));
+        let mut registry = Registry::new(vec![driver]);
+        for target in registry.targets(true) {
+            registry
+                .handle(&target)
+                .unwrap()
+                .run(AttachOptions::default(), |_| Ok(Success::new(json!({}))))
+                .unwrap();
         }
+        registry
+    }
+
+    /// Task 8.16: stopping waits for every target to detach, up to the wait,
+    /// and names the targets still detaching once it is over.
+    #[test]
+    fn stopping_names_the_targets_still_detaching_when_the_wait_is_over() {
+        let mut quick = attached("android,ios", Duration::from_millis(100));
+        let started = Instant::now();
+        assert_eq!(
+            quick.stop_within(Duration::from_secs(2)),
+            Vec::<String>::new()
+        );
+        let took = started.elapsed();
+        assert!(
+            (Duration::from_millis(100)..Duration::from_secs(1)).contains(&took),
+            "{took:?}"
+        );
+
+        let mut slow = attached("android,ios", Duration::from_secs(1));
+        let started = Instant::now();
+        assert_eq!(
+            slow.stop_within(Duration::from_millis(200)),
+            ["FAKE-IOS-1", "emulator-5554"]
+        );
+        let took = started.elapsed();
+        assert!(
+            (Duration::from_millis(200)..Duration::from_millis(800)).contains(&took),
+            "{took:?}"
+        );
+    }
+
+    /// Task 8.16: once stopped, the registry starts no worker, so a request
+    /// that raced the shutdown attaches no target the exiting daemon would
+    /// leave attached.
+    #[test]
+    fn a_stopped_registry_starts_no_worker() {
+        let mut registry = attached("android", Duration::ZERO);
+        assert_eq!(registry.stop(), Vec::<String>::new());
+        let target = registry.targets(false).remove(0);
+        let refused = registry.handle(&target).err().expect("no worker starts");
+        assert_eq!(refused.code, code::DAEMON_STOPPING);
+        assert!(registry.worker_status(&target.id).is_none());
     }
 }

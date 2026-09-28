@@ -17,9 +17,11 @@
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
 //! the attach, as an emulator's starts once its subscription is up. A
 //! splash (`MOBILE_AGENT_FAKE_SPLASH_MS`) shows a fixture app's launch
-//! splash for that long when its process starts, and an activation
+//! splash for that long when its process starts, an activation
 //! (`MOBILE_AGENT_FAKE_ACTIVATION_MS`) holds input until the input session
-//! has been active that long, as a Simulator's dtuhidd session does.
+//! has been active that long, as a Simulator's dtuhidd session does, and a
+//! stop (`MOBILE_AGENT_FAKE_STOP_MS`) makes detaching a target take that
+//! long, as stopping the Android agent does.
 
 mod app;
 mod realtime;
@@ -49,6 +51,9 @@ pub(crate) struct Timing {
     /// How long after it starts the input session is active; input before
     /// then waits for it.
     pub activation: Duration,
+    /// How long detaching the target takes, as the Android agent's
+    /// `shutdown` and kill take.
+    pub stop: Duration,
 }
 
 /// Fake targets.
@@ -149,6 +154,12 @@ impl FakeDriver {
     /// start.
     pub fn with_activation(mut self, activation: Duration) -> FakeDriver {
         self.timing.activation = activation;
+        self
+    }
+
+    /// These targets, each taking `stop` to detach.
+    pub fn with_stop(mut self, stop: Duration) -> FakeDriver {
+        self.timing.stop = stop;
         self
     }
 

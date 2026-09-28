@@ -12,7 +12,11 @@
 //! file when no startup holds it, and the directory when that empties it.
 //!
 //! The accept loop waits on the listener and on a pipe of its own, so
-//! stopping wakes it without the socket's path, which may be gone.
+//! stopping wakes it without the socket's path, which may be gone. A
+//! stopping daemon accepts no more connections but keeps its socket while
+//! it stops its targets, then removes the socket and its other files, and
+//! only then answers the `shutdown` that stopped it: a client never meets
+//! the targets or the socket of a daemon that has answered.
 
 use std::ffi::OsString;
 use std::fs::{self, File};
@@ -30,7 +34,7 @@ use serde_json::json;
 use crate::driver::{self, EmulatorController};
 use crate::handlers;
 use crate::paths::{self, Paths};
-use crate::registry::Registry;
+use crate::registry::{Registry, STOP_WAIT};
 use crate::wire::{self, Failure, Request, Success, code};
 use crate::worker::Outcome;
 
@@ -45,6 +49,9 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long a daemon of another version gets to leave on request.
 const REPLACE_WAIT: Duration = Duration::from_secs(5);
+
+/// How long a stopped daemon waits for its `shutdown` replies to go out.
+const REPLY_WAIT: Duration = Duration::from_secs(1);
 
 /// How many times a startup takes the lock again after an exiting daemon
 /// removed the lock file it had opened.
@@ -74,6 +81,8 @@ pub struct Options {
     pub fake_splash: Duration,
     /// How long after they start fake targets' input sessions activate.
     pub fake_activation: Duration,
+    /// How long detaching a fake target takes.
+    pub fake_stop: Duration,
     /// Device drivers to register, as `MOBILE_AGENT_DRIVERS` lists them;
     /// `None` registers the host's device drivers unless fake targets are
     /// named (see [`driver::device_drivers`]).
@@ -86,12 +95,13 @@ impl Options {
     /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
     /// `--fake <targets>`, `--fake-latency <time>`, `--fake-frame-delay
     /// <time>`, `--fake-splash <time>`, `--fake-activation <time>`,
-    /// `--drivers <names>` and `--emulator-controller <auto|off>`, each
-    /// falling back to its environment variable: `MOBILE_AGENT_SOCKET_DIR`
-    /// (then the runtime directory, see [`paths::default_dir`]),
-    /// `MOBILE_AGENT_IDLE_TIMEOUT_MS`, `MOBILE_AGENT_FAKE_TARGETS`,
-    /// `MOBILE_AGENT_FAKE_LATENCY_MS`, `MOBILE_AGENT_FAKE_FRAME_DELAY_MS`,
-    /// `MOBILE_AGENT_FAKE_SPLASH_MS`, `MOBILE_AGENT_FAKE_ACTIVATION_MS`,
+    /// `--fake-stop <time>`, `--drivers <names>` and `--emulator-controller
+    /// <auto|off>`, each falling back to its environment variable:
+    /// `MOBILE_AGENT_SOCKET_DIR` (then the runtime directory, see
+    /// [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
+    /// `MOBILE_AGENT_FAKE_TARGETS`, `MOBILE_AGENT_FAKE_LATENCY_MS`,
+    /// `MOBILE_AGENT_FAKE_FRAME_DELAY_MS`, `MOBILE_AGENT_FAKE_SPLASH_MS`,
+    /// `MOBILE_AGENT_FAKE_ACTIVATION_MS`, `MOBILE_AGENT_FAKE_STOP_MS`,
     /// `MOBILE_AGENT_DRIVERS` and `MOBILE_AGENT_EMULATOR_CONTROLLER`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
@@ -101,6 +111,7 @@ impl Options {
         let mut frame_delay = None;
         let mut splash = None;
         let mut activation = None;
+        let mut stop = None;
         let mut drivers = None;
         let mut controller = None;
         let mut args = args.into_iter();
@@ -130,6 +141,7 @@ impl Options {
                 "--fake-activation" => {
                     activation = Some(value()?.to_string_lossy().into_owned());
                 }
+                "--fake-stop" => stop = Some(value()?.to_string_lossy().into_owned()),
                 "--drivers" => drivers = Some(value()?.to_string_lossy().into_owned()),
                 "--emulator-controller" => {
                     controller = Some(value()?.to_string_lossy().into_owned());
@@ -166,6 +178,7 @@ impl Options {
             "MOBILE_AGENT_FAKE_ACTIVATION_MS",
             "fake activation",
         )?;
+        let fake_stop = fake_time(stop, "MOBILE_AGENT_FAKE_STOP_MS", "fake stop")?;
         let emulator_controller =
             match controller.or_else(|| env("MOBILE_AGENT_EMULATOR_CONTROLLER")) {
                 Some(text) => EmulatorController::parse(&text)?,
@@ -179,6 +192,7 @@ impl Options {
             fake_frame_delay,
             fake_splash,
             fake_activation,
+            fake_stop,
             drivers: drivers.or_else(|| env("MOBILE_AGENT_DRIVERS")),
             emulator_controller,
         })
@@ -234,11 +248,23 @@ pub(crate) struct Daemon {
     stopping: AtomicBool,
     /// Wakes the accept loop: a byte written here ends its wait.
     wake: PipeWriter,
+    halt: Mutex<Halt>,
+    halt_changed: Condvar,
 }
 
 struct Activity {
     last: Instant,
     in_flight: usize,
+}
+
+/// The daemon's stop, as the `shutdown` requests waiting on it see it.
+#[derive(Default)]
+struct Halt {
+    /// Set once the targets have stopped and the socket and other files are
+    /// gone: the targets that had not stopped within the wait.
+    unstopped: Option<Vec<String>>,
+    /// `shutdown` requests yet to write their reply.
+    replying: usize,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -275,6 +301,51 @@ impl Daemon {
             let _ = (&self.wake).write_all(&[1]);
         }
     }
+
+    /// Stops the daemon for a `shutdown` request and waits until it has
+    /// stopped its targets and removed its socket and other files. Returns
+    /// the targets that had not stopped within the wait; the caller then
+    /// replies and calls [`Daemon::replied`].
+    fn shut_down(&self) -> Vec<String> {
+        lock(&self.halt).replying += 1;
+        self.stop();
+        let mut halt = lock(&self.halt);
+        loop {
+            if let Some(unstopped) = &halt.unstopped {
+                return unstopped.clone();
+            }
+            halt = self
+                .halt_changed
+                .wait(halt)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// A `shutdown` request's reply is out, or could not be written.
+    fn replied(&self) {
+        lock(&self.halt).replying -= 1;
+        self.halt_changed.notify_all();
+    }
+
+    /// Hands how the stop went to the `shutdown` requests waiting on it,
+    /// then waits up to [`REPLY_WAIT`] for their replies to go out.
+    fn halted(&self, unstopped: Vec<String>) {
+        let deadline = Instant::now() + REPLY_WAIT;
+        let mut halt = lock(&self.halt);
+        halt.unstopped = Some(unstopped);
+        self.halt_changed.notify_all();
+        while halt.replying > 0 {
+            let now = Instant::now();
+            if now >= deadline {
+                return;
+            }
+            halt = self
+                .halt_changed
+                .wait_timeout(halt, deadline - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
 }
 
 /// Runs a daemon until it is shut down or stays idle for its timeout.
@@ -285,6 +356,7 @@ pub fn run(options: Options) -> Result<Exit, String> {
         fake_frame_delay: options.fake_frame_delay,
         fake_splash: options.fake_splash,
         fake_activation: options.fake_activation,
+        fake_stop: options.fake_stop,
         drivers: options.drivers.as_deref(),
         state_dir: &options.socket_dir,
         emulator_controller: options.emulator_controller,
@@ -329,6 +401,8 @@ pub fn run(options: Options) -> Result<Exit, String> {
         changed: Condvar::new(),
         stopping: AtomicBool::new(false),
         wake,
+        halt: Mutex::new(Halt::default()),
+        halt_changed: Condvar::new(),
     });
     eprintln!(
         "mobile-agent-daemon: serving {} (pid {}, version {version})",
@@ -360,16 +434,27 @@ pub fn run(options: Options) -> Result<Exit, String> {
             Err(error) => eprintln!("mobile-agent-daemon: accept failed: {error}"),
         }
     }
-    drop(listener);
-    daemon.registry().stop();
+    // The listener stays open, accepting nothing, while the targets stop: a
+    // client that connects meanwhile waits and is then turned away, rather
+    // than finding no daemon and starting one beside targets still held.
+    let unstopped = daemon.registry().stop();
+    if !unstopped.is_empty() {
+        eprintln!(
+            "mobile-agent-daemon: {} had not stopped within {} s; exiting without waiting further",
+            unstopped.join(", "),
+            STOP_WAIT.as_secs()
+        );
+    }
     if socket_id.is_some() && file_id(&paths.socket()) == socket_id {
         let _ = fs::remove_file(paths.socket());
     }
+    drop(listener);
     if read_pid(&paths) == Some(std::process::id()) {
         let _ = fs::remove_file(paths.version());
         let _ = fs::remove_file(paths.pid());
     }
     release_dir(&paths);
+    daemon.halted(unstopped);
     Ok(Exit::Stopped)
 }
 
@@ -598,8 +683,8 @@ fn serve(daemon: &Daemon, stream: UnixStream) {
         let reply = respond(daemon, line);
         let written = writer.write_all(reply.line.as_bytes()).is_ok();
         daemon.end();
-        if reply.stop {
-            daemon.stop();
+        if reply.shutdown {
+            daemon.replied();
             return;
         }
         if reply.close || !written {
@@ -610,8 +695,9 @@ fn serve(daemon: &Daemon, stream: UnixStream) {
 
 struct Reply {
     line: String,
-    /// Shut the daemon down once the reply is out.
-    stop: bool,
+    /// The reply to `shutdown`, written once the daemon has stopped; the
+    /// daemon exits once it is out.
+    shutdown: bool,
     /// Close the connection once the reply is out.
     close: bool,
 }
@@ -624,7 +710,7 @@ fn respond(daemon: &Daemon, line: &str) -> Reply {
         ));
         return Reply {
             line: wire::reply_line(&serde_json::Value::Null, &refusal),
-            stop: false,
+            shutdown: false,
             close: true,
         };
     }
@@ -634,25 +720,39 @@ fn respond(daemon: &Daemon, line: &str) -> Reply {
             let id = failure.id.clone().unwrap_or(serde_json::Value::Null);
             return Reply {
                 line: wire::reply_line(&id, &Err(failure)),
-                stop: false,
+                shutdown: false,
                 close: false,
             };
         }
     };
     if request.action == "shutdown" {
-        let stopped: Outcome = Ok(Success::new(json!({"stopped": true})));
+        let unstopped = daemon.shut_down();
         return Reply {
-            line: wire::reply_line(&request.id, &stopped),
-            stop: true,
+            line: wire::reply_line(&request.id, &Ok(stopped(&unstopped))),
+            shutdown: true,
             close: true,
         };
     }
     let outcome = handlers::handle(daemon, &request);
     Reply {
         line: wire::reply_line(&request.id, &outcome),
-        stop: false,
+        shutdown: false,
         close: false,
     }
+}
+
+/// What `shutdown` answers once the daemon has stopped: `stopped`, and the
+/// targets that had not stopped within the wait, if any, in `notStopped`
+/// and a warning.
+fn stopped(unstopped: &[String]) -> Success {
+    if unstopped.is_empty() {
+        return Success::new(json!({"stopped": true}));
+    }
+    Success::new(json!({"stopped": true, "notStopped": unstopped})).warn(Some(format!(
+        "{} had not stopped within {} s, and the daemon stopped waiting; an agent it started there may still run",
+        unstopped.join(", "),
+        STOP_WAIT.as_secs()
+    )))
 }
 
 #[cfg(test)]
@@ -686,6 +786,7 @@ mod tests {
                 "--fake-splash=800",
                 "--fake-activation",
                 "1s",
+                "--fake-stop=600",
             ]
             .map(OsString::from),
         )
@@ -696,6 +797,7 @@ mod tests {
         assert_eq!(options.fake_frame_delay, Duration::from_secs(2));
         assert_eq!(options.fake_splash, Duration::from_millis(800));
         assert_eq!(options.fake_activation, Duration::from_secs(1));
+        assert_eq!(options.fake_stop, Duration::from_millis(600));
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
     }
 

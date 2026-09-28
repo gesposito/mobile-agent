@@ -11,9 +11,10 @@
 //! The frame stream can start some time after the attach, as an emulator's
 //! does once its subscription is up: frames captured before are never
 //! delivered, and the first one delivered shows the screen as it is then.
-//! A fixture app whose process starts can show a launch splash first, and
+//! A fixture app whose process starts can show a launch splash first,
 //! input can wait for an input session that activates some time after it
-//! starts, as a Simulator's does.
+//! starts, as a Simulator's does, and detaching can take time, as stopping
+//! the Android agent does: the last part dropped waits it out.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -69,6 +70,19 @@ struct Shared {
     /// How long the input session takes to activate once started.
     activation: Duration,
     session: Mutex<Session>,
+    /// How long detaching takes.
+    stop: Duration,
+}
+
+impl Drop for Shared {
+    /// The target is detached once every part of it is dropped, which takes
+    /// the stop time on the thread that drops the last one, as the Android
+    /// agent's stop takes its time on the thread that detaches the target.
+    fn drop(&mut self) {
+        if !self.stop.is_zero() {
+            std::thread::sleep(self.stop);
+        }
+    }
 }
 
 /// The input session: started by the first input, or ahead of it.
@@ -302,13 +316,15 @@ impl InputNotes for FakeSession {
 /// A fake device of `platform`, attached: it shows its launcher. It has a
 /// frame source when `frames` is set; `timing` says when its frames start,
 /// how late each change shows after the input or launch that caused it,
-/// how long a launch splash lasts and when its input session activates.
+/// how long a launch splash lasts, when its input session activates and
+/// how long detaching it takes.
 pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing) -> Attachment {
     let Timing {
         latency,
         frame_delay,
         splash,
         activation,
+        stop,
     } = timing;
     let device = Device::new(platform);
     let kit = device.kit;
@@ -329,6 +345,7 @@ pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing) -> Attach
         splash,
         activation,
         session: Mutex::new(Session::default()),
+        stop,
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {

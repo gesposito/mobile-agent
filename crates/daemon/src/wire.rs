@@ -39,6 +39,8 @@ pub mod code {
     pub const UNKNOWN_KEY: &str = "unknown_key";
     /// Writing a file, such as a screenshot, failed.
     pub const IO_ERROR: &str = "io_error";
+    /// The daemon is shutting down and attaches no more targets.
+    pub const DAEMON_STOPPING: &str = "daemon_stopping";
     /// The daemon failed unexpectedly.
     pub const INTERNAL: &str = "internal";
 }

@@ -9,7 +9,7 @@ mobile-agent-daemon: the host daemon behind the mobile-agent CLI
 Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <names>]
                            [--emulator-controller <auto|off>]
                            [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
-                           [--fake-splash <time>] [--fake-activation <time>]
+                           [--fake-splash <time>] [--fake-activation <time>] [--fake-stop <time>]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -42,6 +42,9 @@ Options:
                           Hold fake targets' input until their input session
                           has been started this long
                           (or MOBILE_AGENT_FAKE_ACTIVATION_MS; default 0)
+  --fake-stop <time>      Take this long to detach each fake target, as
+                          stopping the Android agent takes
+                          (or MOBILE_AGENT_FAKE_STOP_MS; default 0)
   -h, --help              Print this help
   -V, --version           Print the version
 
