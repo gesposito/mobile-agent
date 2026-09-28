@@ -1259,3 +1259,176 @@ fn the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path() {
     );
     env.shutdown();
 }
+
+/// The bounds of the element a reply's data carries, as `[left, top, right,
+/// bottom]` in points.
+#[track_caller]
+fn element_bounds(data: &Value) -> [f64; 4] {
+    let bounds = data["element"]["bounds"]
+        .as_array()
+        .unwrap_or_else(|| panic!("an element with bounds: {data}"));
+    let at = |i: usize| bounds[i].as_f64().expect("a coordinate");
+    [at(0), at(1), at(2), at(3)]
+}
+
+/// The Expo fixture's rows are 48 points tall (`fixtures/expo`).
+const EXPO_ROW: f64 = 48.0;
+
+/// Task 10.15, on an emulator on both of its paths (the controller's, with
+/// frames, and the agent's), with the Expo fixture. In a frame-path run of
+/// the harness's list-scroll flow the scroll stopped after seven strokes
+/// with `row-200` 1.2 points tall at the list's bottom edge, all of the row
+/// that Android reported, and the click hit that sliver. First the list's
+/// first screen, whose last row the list cuts off: `scroll --until` on that
+/// row must bring it in whole (48 points tall, which Android reports only
+/// for a row the list does not cut off) with one stroke, and the click on
+/// it must open it; the test prints the stroke's cost and how far the
+/// content went against the stroke's aim. Then the harness's list-scroll
+/// flow with `scroll --until` where the bench checks for the row itself:
+/// relaunch the app, click the List tab, scroll down 600 points at a time
+/// until `row-200` is mostly in view, click it and wait for `Detail 200`;
+/// each run must stop with the row whole and `visible` 1, and open it.
+#[test]
+fn scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator() {
+    let test = "scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    require_installed(&device, EXPO);
+    let _fixture = Stopped::new(&device, &[EXPO]);
+    let whole = |bounds: [f64; 4]| (bounds[3] - bounds[1] - EXPO_ROW).abs() < 0.5;
+    let paths: [(&str, &[(&str, &str)]); 2] = [
+        ("controller", &[]),
+        ("agent", &[("MOBILE_AGENT_EMULATOR_CONTROLLER", "off")]),
+    ];
+    for (path, vars) in paths {
+        let mut env = Env::start_with(vars);
+        let box_of = |id: &str| {
+            let data = env.on(&serial, &["get", "box", "--", id]).data();
+            let (x, y) = (number(&data, "x"), number(&data, "y"));
+            [
+                x,
+                y,
+                x + number(&data, "width"),
+                y + number(&data, "height"),
+            ]
+        };
+        let relaunch_on_the_list = || {
+            env.on(&serial, &["open", "--relaunch", "--", EXPO]).data();
+            env.on(
+                &serial,
+                &["click", "--timeout", "10000", "--", "id=tab-list"],
+            )
+            .data();
+        };
+
+        // The first screen's last row, which the list cuts off.
+        let mut brought_in = Vec::new();
+        for run in 1..=3 {
+            relaunch_on_the_list();
+            let screen = listing(&env.on(&serial, &["snapshot", "-i"]).data());
+            let last = (1..=40)
+                .rev()
+                .find(|n| screen.contains(&format!("id=row-{n},")))
+                .expect("rows on the list's first screen");
+            let row = format!("id=row-{last}");
+            let first = box_of("id=row-1");
+            let before = box_of(&row);
+            assert!(
+                !whole(before),
+                "{path} path, run {run}: the list cuts off row {last}, the last row on its first \
+                 screen: {before:?}"
+            );
+            let scroll = env.on(
+                &serial,
+                &[
+                    "scroll",
+                    "down",
+                    "600",
+                    "--until",
+                    &row,
+                    "--timeout",
+                    "30000",
+                ],
+            );
+            let data = scroll.data();
+            let after = element_bounds(&data);
+            assert!(
+                data["strokes"] == 1 && whole(after) && data["visible"] == 1.0,
+                "{path} path, run {run}: one stroke brings row {last} in whole: {data}"
+            );
+            env.on(&serial, &["click", "--timeout", "10000", "--", &row])
+                .data();
+            env.on(
+                &serial,
+                &[
+                    "wait",
+                    "--timeout",
+                    "10000",
+                    &format!("--text=Detail {last}"),
+                ],
+            )
+            .data();
+            // The stroke aims to carry the row's reported middle to the
+            // list's, from row 1's top to where the list cut the row off.
+            let aim = (before[1] + before[3]) / 2.0 - (first[1] + before[3]) / 2.0;
+            let carried = before[1] - after[1];
+            brought_in.push((
+                last,
+                (before[3] - before[1]).round(),
+                ms(scroll.elapsed).round(),
+                aim.round(),
+                carried.round(),
+            ));
+        }
+
+        // The harness's list-scroll flow.
+        let mut runs = Vec::new();
+        for run in 1..=3 {
+            relaunch_on_the_list();
+            let scroll = env.on(
+                &serial,
+                &[
+                    "scroll",
+                    "down",
+                    "600",
+                    "--until",
+                    "id=row-200",
+                    "--timeout",
+                    "30000",
+                ],
+            );
+            let data = scroll.data();
+            let bounds = element_bounds(&data);
+            assert!(
+                whole(bounds) && data["visible"] == 1.0,
+                "{path} path, run {run}: row-200 whole and in view where the scroll stopped: {data}"
+            );
+            env.on(
+                &serial,
+                &["click", "--timeout", "10000", "--", "id=row-200"],
+            )
+            .data();
+            env.on(
+                &serial,
+                &["wait", "--timeout", "10000", "--text=Detail 200"],
+            )
+            .data();
+            runs.push((
+                data["strokes"].clone(),
+                ms(scroll.elapsed).round(),
+                bounds[1],
+            ));
+        }
+        eprintln!(
+            "{serial}, {path} path: scroll down 600 --until on the first screen's cut-off row, per \
+             run (row, points of it shown, ms, the stroke's aim and the content's carry in \
+             points) {brought_in:?}; scroll down 600 --until row-200 after relaunching on the \
+             List tab, per run (strokes, ms, the row's top where it stopped) {runs:?}"
+        );
+        env.shutdown();
+    }
+}
