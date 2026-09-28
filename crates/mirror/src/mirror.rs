@@ -530,6 +530,18 @@ impl Mirror {
         Some(visibility::of(&self.replica, &view, w, i))
     }
 
+    /// The visible bounds of the scroll container that a stroke along the
+    /// vertical axis, or the horizontal one, through `at` moves, as the
+    /// replica has it now, without reading the target: the innermost node on
+    /// screen and not covered that scrolls along that axis and holds `at`,
+    /// its bounds clipped by its window and the scroll containers around
+    /// it, less the bars drawn over them, as an element inside it sees them
+    /// (see [`Visibility::viewport`]). `None` when no such node holds `at`.
+    pub fn scroll_viewport(&self, at: Point, vertical: bool) -> Option<Rect> {
+        let view = View::build(&self.replica);
+        visibility::scroller_at(&self.replica, &view, at, vertical)
+    }
+
     /// Where the element `reference` names is in the replica. The element
     /// must still be the control the ref was issued for: without an
     /// identifier, under the same accessible name.

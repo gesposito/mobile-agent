@@ -20,10 +20,14 @@
 //! where one of them can still scroll toward that edge, may therefore go on
 //! beyond it by an amount the replica does not show; that edge is its
 //! `cut`.
+//!
+//! The same visible bounds, seen from inside a scroll container, say how
+//! far a stroke through the container may carry its content before an
+//! element passes through them between two looks (task 10.16).
 
 use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowType};
 
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 use crate::replica::{Replica, Win};
 use crate::snapshot::{Direction, Role};
 use crate::view::{self, Hidden, View};
@@ -47,31 +51,55 @@ pub struct Visibility {
     pub cut: Option<Direction>,
 }
 
+/// One physical pixel in points: bounds that end within it of an edge end
+/// there.
+fn pixel(replica: &Replica) -> f64 {
+    if replica.scale > 0.0 {
+        1.0 / replica.scale
+    } else {
+        1.0
+    }
+}
+
+/// The scroll containers among node `i` of window `w`'s ancestors, from the
+/// innermost out.
+fn containers_around(window: &Win, view: &View, w: usize, i: usize) -> Vec<usize> {
+    let facts = &view.windows[w];
+    std::iter::successors(window.nodes[i].parent, |&a| window.nodes[a].parent)
+        .filter(|&a| view::scrolls(&window.nodes[a], &facts[a]))
+        .collect()
+}
+
+/// What window `w` shows inside the scroll containers `containers` of node
+/// `i`, which they hold or which is one of them: the window clipped by
+/// every container, and that clip less the bars drawn over it.
+fn inside(
+    replica: &Replica,
+    view: &View,
+    w: usize,
+    i: usize,
+    containers: &[usize],
+) -> (Rect, Rect) {
+    let facts = &view.windows[w];
+    let clip = containers.iter().fold(
+        Rect::from_pixels(replica.windows[w].bounds, replica.scale),
+        |clip, &c| clip.intersect(&facts[c].rect),
+    );
+    let pixel = pixel(replica);
+    let viewport = bars(replica, view, w, i, containers)
+        .iter()
+        .fold(clip, |viewport, bar| cut_by(viewport, bar, pixel));
+    (clip, viewport)
+}
+
 /// How much of node `i` of window `w` is in view, `view` being the
 /// replica's view.
 pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibility {
     let window = &replica.windows[w];
-    let facts = &view.windows[w];
-    let bounds = facts[i].rect;
-    // One physical pixel: bounds that end within it of an edge end there.
-    let pixel = if replica.scale > 0.0 {
-        1.0 / replica.scale
-    } else {
-        1.0
-    };
-    let mut clip = Rect::from_pixels(window.bounds, replica.scale);
-    let mut containers = Vec::new();
-    let mut up = window.nodes[i].parent;
-    while let Some(a) = up {
-        if view::scrolls(&window.nodes[a], &facts[a]) {
-            clip = clip.intersect(&facts[a].rect);
-            containers.push(a);
-        }
-        up = window.nodes[a].parent;
-    }
-    let viewport = bars(replica, view, w, i, &containers)
-        .iter()
-        .fold(clip, |viewport, bar| cut_by(viewport, bar, pixel));
+    let bounds = view.windows[w][i].rect;
+    let pixel = pixel(replica);
+    let containers = containers_around(window, view, w, i);
+    let (clip, viewport) = inside(replica, view, w, i, &containers);
     let cut = [
         Direction::Below,
         Direction::Above,
@@ -91,6 +119,45 @@ pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibili
         fraction: share(&bounds, &viewport),
         cut,
     }
+}
+
+/// The visible bounds of the scroll container that a stroke along the
+/// vertical axis, or the horizontal one, through `at` moves: the innermost
+/// node on screen and not covered that scrolls ([`view::scrolls`]) along
+/// that axis, or along an axis its platform does not name, and whose bounds
+/// hold `at`, in the top-most window that has one. They are what an element
+/// inside it sees of it (see [`Visibility::viewport`]): its bounds clipped
+/// by its window and the scroll containers around it, less the bars drawn
+/// over them. `None` when no such node holds `at`.
+pub(crate) fn scroller_at(
+    replica: &Replica,
+    view: &View,
+    at: Point,
+    vertical: bool,
+) -> Option<Rect> {
+    let axis = if vertical {
+        ScrollAxis::VERTICAL
+    } else {
+        ScrollAxis::HORIZONTAL
+    };
+    replica.windows.iter().enumerate().find_map(|(w, window)| {
+        let facts = &view.windows[w];
+        // Nodes come in pre-order, so the last one that holds the point is
+        // the innermost, or one drawn over it.
+        let c = (0..window.nodes.len()).rev().find(|&c| {
+            let (node, f) = (&window.nodes[c], &facts[c]);
+            f.visible
+                && f.hidden == Hidden::No
+                && view::scrolls(node, f)
+                && node
+                    .scroll
+                    .is_none_or(|scroll| scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN)
+                && f.rect.contains(at)
+        })?;
+        let mut containers = vec![c];
+        containers.extend(containers_around(window, view, w, c));
+        Some(inside(replica, view, w, c, &containers).1)
+    })
 }
 
 /// The share of `bounds` inside `viewport`.

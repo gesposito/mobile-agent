@@ -5,13 +5,20 @@
 //! over them) and whether its bounds end at an edge where a container can
 //! still scroll: Android reports bounds clipped to their ancestors, so a
 //! row a list cuts off reads as the sliver that shows.
+//!
+//! Task 10.16: how far a stroke may carry the content before an element
+//! passes through the view unseen. The mirror tells the visible bounds of
+//! the scroll container a stroke through a point moves, as an element
+//! inside it sees them.
 
 mod support;
 
 use std::time::Duration;
 
 use mirror::testing::FakeTarget;
-use mirror::{Condition, Direction, ElementId, Mirror, MirrorConfig, Rect, Selector, Visibility};
+use mirror::{
+    Condition, Direction, ElementId, Mirror, MirrorConfig, Point, Rect, Selector, Visibility,
+};
 use serde_json::{Value, json};
 use support::Screen;
 
@@ -304,4 +311,141 @@ fn an_element_outside_any_scroll_container_is_measured_against_its_window() {
     assert_eq!(button.fraction, 1.0, "{button:?}");
     assert_eq!(button.cut, None, "{button:?}");
     assert_eq!(mirror.visibility(ElementId(u64::MAX)), None);
+}
+
+/// Task 10.16: a stroke through the middle of the Expo list moves the list,
+/// whose visible bounds are its own inside its window.
+#[test]
+fn a_stroke_through_a_list_moves_the_list_and_its_visible_bounds_are_its_own() {
+    let mirror = mirror_showing(&android_list(72.0, Some((false, true))));
+    assert_eq!(
+        mirror.scroll_viewport(Point::new(204.0, 456.0), true),
+        Some(Rect::new(0.0, 72.0, 408.0, 840.0))
+    );
+    // Without scroll semantics the scroll view still scrolls.
+    let bare = mirror_showing(&android_list(72.0, None));
+    assert_eq!(
+        bare.scroll_viewport(Point::new(204.0, 456.0), true),
+        Some(Rect::new(0.0, 72.0, 408.0, 840.0))
+    );
+}
+
+/// Task 10.16: the bars over a list are left out of what a stroke through
+/// it can bring into view, whether they are the list's own window's
+/// navigation and tab bars, as a UIKit list runs under them, or windows
+/// above it, as an edge-to-edge Android list runs under the system bars and
+/// the keyboard.
+#[test]
+fn the_bars_over_a_list_are_left_out_of_its_visible_bounds() {
+    let screen = Screen::from_json(json!({
+        "backend": {"name": "simulator-reader", "fallback": false},
+        "scale": 3.0,
+        "windows": [{
+            "id": 7, "kind": "application", "package": "dev.mobileagent.fixture.swiftui",
+            "title": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+            "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+                    {"class": "XCUIElementTypeNavigationBar", "id": "nav", "desc": "List", "bounds": [0, 0, 402, 62]},
+                    {"class": "XCUIElementTypeCollectionView", "id": "list", "bounds": [0, 0, 402, 874],
+                     "children": rows("XCUIElementTypeCell", 78.0, 20, [0.0, 0.0, 402.0, 874.0], false)},
+                    {"class": "XCUIElementTypeTabBar", "id": "tabs", "desc": "Tab Bar", "bounds": [0, 791, 402, 874], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [0, 791, 134, 874]}
+                    ]}
+                ]}
+            ]}
+        }]
+    }));
+    let uikit = mirror_showing(&screen);
+    assert_eq!(
+        uikit.scroll_viewport(Point::new(201.0, 437.0), true),
+        Some(Rect::new(0.0, 62.0, 402.0, 791.0))
+    );
+
+    let list = json!({
+        "class": "android.widget.ScrollView", "id": "list", "bounds": [0, 0, 408, 912],
+        "flags": ["scrollable"], "scroll": {"axis": "vertical", "back": true, "forward": true},
+        "children": rows("android.view.ViewGroup", 0.0, 30, [0.0, 0.0, 408.0, 912.0], true)
+    });
+    let navigation_bar = json!({
+        "id": 3, "kind": "system", "layer": 3, "package": "com.android.systemui",
+        "title": "Navigation bar", "bounds": [0, 864, 408, 912], "owner": "com.android.systemui",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 864, 408, 912]}
+    });
+    let keyboard = json!({
+        "id": 5, "kind": "input_method", "layer": 4, "package": "com.google.android.inputmethod.latin",
+        "title": "Keyboard", "bounds": [0, 600, 408, 912], "owner": "com.google.android.inputmethod.latin",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 600, 408, 912]}
+    });
+    let edge_to_edge = mirror_showing(&android(vec![
+        status_bar(),
+        navigation_bar.clone(),
+        app_window(vec![list.clone()]),
+    ]));
+    assert_eq!(
+        edge_to_edge.scroll_viewport(Point::new(204.0, 456.0), true),
+        Some(Rect::new(0.0, 24.0, 408.0, 864.0))
+    );
+    let typing = mirror_showing(&android(vec![
+        keyboard,
+        status_bar(),
+        navigation_bar,
+        app_window(vec![list]),
+    ]));
+    assert_eq!(
+        typing.scroll_viewport(Point::new(204.0, 300.0), true),
+        Some(Rect::new(0.0, 24.0, 408.0, 600.0))
+    );
+}
+
+/// Task 10.16: of the containers under a point, a stroke moves the
+/// innermost one that scrolls along its axis: a carousel for a stroke
+/// across it, the list that holds the carousel for one along the list.
+#[test]
+fn a_stroke_moves_the_innermost_container_that_scrolls_along_its_axis() {
+    let carousel = json!({
+        "class": "androidx.recyclerview.widget.RecyclerView", "id": "carousel",
+        "bounds": [0, 200, 408, 400], "flags": ["scrollable"],
+        "scroll": {"axis": "horizontal", "back": false, "forward": true},
+        "children": [{
+            "class": "android.view.ViewGroup", "id": "card-1", "desc": "Card 1",
+            "flags": ["clickable"], "bounds": [16, 216, 216, 384]
+        }]
+    });
+    let list = json!({
+        "class": "android.widget.ScrollView", "id": "list", "bounds": [0, 72, 408, 840],
+        "flags": ["scrollable"], "scroll": {"axis": "vertical", "back": false, "forward": true},
+        "children": [{"class": "android.view.ViewGroup", "bounds": [0, 72, 408, 840], "children": [carousel]}]
+    });
+    let mirror = mirror_showing(&android(vec![status_bar(), app_window(vec![list])]));
+    let inside = Point::new(204.0, 300.0);
+    assert_eq!(
+        mirror.scroll_viewport(inside, false),
+        Some(Rect::new(0.0, 200.0, 408.0, 400.0)),
+        "across the carousel"
+    );
+    assert_eq!(
+        mirror.scroll_viewport(inside, true),
+        Some(Rect::new(0.0, 72.0, 408.0, 840.0)),
+        "along the list"
+    );
+}
+
+/// Task 10.16: a point that no scroll container holds has no container a
+/// stroke through it moves.
+#[test]
+fn a_point_outside_every_scroll_container_has_none() {
+    let mirror = mirror_showing(&android_list(72.0, Some((false, true))));
+    assert_eq!(
+        mirror.scroll_viewport(Point::new(204.0, 880.0), true),
+        None,
+        "below the list"
+    );
+    let form = mirror_showing(&android(vec![
+        status_bar(),
+        app_window(vec![json!({
+            "class": "android.widget.Button", "id": "submit", "text": "Sign in",
+            "flags": ["clickable", "focusable"], "bounds": [16, 200, 392, 248]
+        })]),
+    ]));
+    assert_eq!(form.scroll_viewport(Point::new(204.0, 224.0), true), None);
 }
