@@ -4,7 +4,7 @@
 
 use mirror::backend::{BackendInfo, Owner, TreeRead};
 use protocol::snapshot::{
-    Bounds, Node, NodeFlags, Snapshot, Truncation, Window, WindowFlags, WindowType,
+    Bounds, Node, NodeFlags, Scroll, Snapshot, Truncation, Window, WindowFlags, WindowType,
 };
 
 use crate::driver::Platform;
@@ -18,6 +18,8 @@ pub(crate) struct El {
     pub desc: Option<String>,
     pub rect: [f64; 4],
     pub flags: NodeFlags,
+    /// How the element scrolls, for one that does.
+    pub scroll: Option<Scroll>,
     pub children: Vec<El>,
 }
 
@@ -31,8 +33,14 @@ impl El {
             desc: None,
             rect,
             flags: NodeFlags::ENABLED | NodeFlags::VISIBLE,
+            scroll: None,
             children: Vec::new(),
         }
+    }
+
+    pub fn scroll(mut self, scroll: Scroll) -> El {
+        self.scroll = Some(scroll);
+        self
     }
 
     pub fn id(mut self, id: impl Into<String>) -> El {
@@ -102,6 +110,22 @@ pub(crate) struct Win {
 /// Whether `rect` contains the point.
 pub(crate) fn contains(rect: [f64; 4], x: f64, y: f64) -> bool {
     x >= rect[0] && x < rect[2] && y >= rect[1] && y < rect[3]
+}
+
+/// `el` and its subtree with their bounds cut to `rect`.
+fn clip(mut el: El, rect: [f64; 4]) -> El {
+    el.rect = [
+        el.rect[0].max(rect[0]),
+        el.rect[1].max(rect[1]),
+        el.rect[2].min(rect[2]),
+        el.rect[3].min(rect[3]),
+    ];
+    el.children = el
+        .children
+        .into_iter()
+        .map(|child| clip(child, rect))
+        .collect();
+    el
 }
 
 /// The identifier a tap at `(x, y)` in points lands on: the innermost
@@ -227,7 +251,7 @@ fn node(el: &El, scale: f64, strings: &mut Vec<String>, next: &mut u32) -> Node 
         bounds: pixels(el.rect, scale),
         flags: el.flags,
         children,
-        scroll: None,
+        scroll: el.scroll,
     }
 }
 
@@ -414,6 +438,17 @@ impl Kit {
         match self.platform {
             Platform::Android => El::new("android.view.ViewGroup", rect),
             Platform::Ios => El::new("XCUIElementTypeOther", rect),
+        }
+    }
+
+    /// `el` as the platform reports it inside a scroll container at
+    /// `viewport`: Android clips an element's bounds and its subtree's to
+    /// its ancestors (`getBoundsInScreen`), so a row the list cuts off reads
+    /// as the part that shows; iOS reports whole frames.
+    pub fn inside(self, el: El, viewport: [f64; 4]) -> El {
+        match self.platform {
+            Platform::Android => clip(el, viewport),
+            Platform::Ios => el,
         }
     }
 

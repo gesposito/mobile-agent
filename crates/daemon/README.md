@@ -530,7 +530,10 @@ settle windows take real time, and a device model:
 - a settings app with a Wi-Fi switch.
 
 Android fakes use widget classes, a status bar, a keyboard window and
-dialog windows, and send window events; iOS fakes use `XCUIElementType`
+dialog windows, and send window events; the fixture's list reports a row it
+cuts off with bounds clipped to the list, as Android does, and its scroll
+semantics as the agent reads a RecyclerView's (vertical, back and forward
+as far as it scrolls, its rows as items). iOS fakes use `XCUIElementType`
 classes and send no events, so the mirror re-reads them as it re-reads a
 Simulator, and show what the Simulator's reader reports (task 6.10):
 SpringBoard's window, system UI owned by the process name `SpringBoard`,

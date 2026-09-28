@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use mirror::backend::Owner;
 use protocol::message::TextMethod;
-use protocol::snapshot::WindowFlags;
+use protocol::snapshot::{
+    Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit, WindowFlags,
+};
 
 use super::tree::{El, Kit, Win};
 use crate::driver::{DriverError, Launch, Platform};
@@ -414,13 +416,12 @@ impl Device {
     /// A swipe from `from` to `to` in points; whether the screen changed.
     pub fn swipe(&mut self, from: (f64, f64), to: (f64, f64)) -> bool {
         let before = self.clone();
-        let (top, bottom) = self.kit.content();
+        let max = max_offset(self.kit);
         if let Some(fixture) = self.front_fixture()
             && fixture.tab == Tab::List
             && fixture.detail.is_none()
             && !fixture.modal()
         {
-            let max = f64::from(ROWS) * ROW - (bottom - top);
             fixture.offset = (fixture.offset + from.1 - to.1).clamp(0.0, max);
         }
         *self != before
@@ -776,14 +777,28 @@ fn tab_content(kit: Kit, fixture: &Fixture) -> Vec<El> {
                 kit.button("detail-back", "Back", kit.line(72.0, 48.0)),
             ],
             None => {
-                let rows = (1..=ROWS).map(|n| {
-                    let row_top = top + f64::from(n - 1) * ROW - fixture.offset;
-                    let rect = [0.0, row_top, width, row_top + ROW];
-                    let visible = rect[3] > top && rect[1] < bottom;
-                    let el = kit.pressable(&format!("row-{n}"), &format!("Row {n}"), rect);
-                    hide_unless(el, visible)
-                });
-                vec![kit.list("list", [0.0, top, width, bottom]).children(rows)]
+                let area = [0.0, top, width, bottom];
+                let mut shown = Vec::new();
+                let rows: Vec<El> = (1..=ROWS)
+                    .map(|n| {
+                        let row_top = top + f64::from(n - 1) * ROW - fixture.offset;
+                        let rect = [0.0, row_top, width, row_top + ROW];
+                        let visible = rect[3] > top && rect[1] < bottom;
+                        let el = kit.pressable(&format!("row-{n}"), &format!("Row {n}"), rect);
+                        if visible {
+                            shown.push(n - 1);
+                            kit.inside(el, area)
+                        } else {
+                            hide_unless(el, false)
+                        }
+                    })
+                    .collect();
+                let list = kit.list("list", area);
+                let list = match kit.platform {
+                    Platform::Android => list.scroll(list_scroll(kit, fixture.offset, &shown)),
+                    Platform::Ios => list,
+                };
+                vec![list.children(rows)]
             }
         },
         Tab::Big => {
@@ -835,6 +850,42 @@ fn tab_content(kit: Kit, fixture: &Fixture) -> Vec<El> {
             ),
             kit.button("system-alert", "Show in-app alert", kit.line(128.0, 48.0)),
         ],
+    }
+}
+
+/// How far the fixture's list scrolls, in points.
+fn max_offset(kit: Kit) -> f64 {
+    let (top, bottom) = kit.content();
+    f64::from(ROWS) * ROW - (bottom - top)
+}
+
+/// The list's scroll semantics as the Android agent reads a RecyclerView's:
+/// vertical, back and forward as far as the list scrolls from `offset`, and
+/// its rows as items, `shown` (zero-based) inside the viewport.
+fn list_scroll(kit: Kit, offset: f64, shown: &[u32]) -> Scroll {
+    let mut flags = ScrollFlags::EMPTY;
+    if offset > 0.0 {
+        flags |= ScrollFlags::BACK;
+    }
+    if offset < max_offset(kit) {
+        flags |= ScrollFlags::FORWARD;
+    }
+    let index = |n: u32| i32::try_from(n).unwrap_or(i32::MAX);
+    Scroll {
+        axis: ScrollAxis::VERTICAL,
+        flags,
+        range: Some(ScrollRange {
+            unit: ScrollUnit::ITEMS,
+            min: 0,
+            max: index(ROWS - 1),
+        }),
+        position: match (shown.first(), shown.last()) {
+            (Some(&first), Some(&last)) => Some(ScrollPosition {
+                first: index(first),
+                last: index(last),
+            }),
+            _ => None,
+        },
     }
 }
 
