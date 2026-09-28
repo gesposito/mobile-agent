@@ -1159,3 +1159,103 @@ fn open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest() {
     );
     env.shutdown();
 }
+
+/// Task 10.14, on an emulator on the agent path (the controller switch
+/// off): the harness's list-scroll flow on the Expo fixture, command for
+/// command as the bench's CLI adapter sends it (`crates/bench/src/cli`):
+/// relaunch the app, click the List tab, then settle, look for `row-200`
+/// without waiting and scroll down 600 points until it is there, click it
+/// and wait for `Detail 200`. The last stroke leaves the list at its end,
+/// where the platform's stretch springs back for 333 to 383 ms without an
+/// event, and until it rests the list takes a touch that comes down as the
+/// start of a drag: the bench's check run timed out waiting for `Detail
+/// 200` in both attempts of `reports/10.11-agent-path/report.md`, while the
+/// same commands by hand, seconds apart, opened the row. Each of three runs
+/// must open the row with the click sent right after the check, as the
+/// bench sends it. When one does not, a daemon started afresh reads the
+/// screen again, which tells a tap the list took from a change the replica
+/// missed.
+#[test]
+fn the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path() {
+    let test = "the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path";
+    let Some(serial) = gate(SERIAL_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let device = android_device(&serial);
+    android_quiet(&device);
+    require_installed(&device, EXPO);
+    let _fixture = Stopped::new(&device, &[EXPO]);
+    let agent_path = [("MOBILE_AGENT_EMULATOR_CONTROLLER", "off")];
+    let mut env = Env::start_with(&agent_path);
+    // The bench's session and command lines.
+    let bench = |env: &Env, args: &[&str]| {
+        let mut all = vec!["--session", "mobile-agent-bench"];
+        all.extend_from_slice(args);
+        env.on(&serial, &all)
+    };
+    let mut runs = Vec::new();
+    for run in 1..=3 {
+        bench(&env, &["open", "--relaunch", "--", EXPO]).data();
+        bench(&env, &["click", "--timeout", "10000", "--", "id=tab-list"]).data();
+        let mut strokes = 0u32;
+        let mut stroke_ended = None;
+        let (settle, found) = loop {
+            let settle = bench(&env, &["wait", "--settle"]).data();
+            let check = bench(&env, &["wait", "--timeout", "0", "--", "id=row-200"]);
+            if check.code == Some(0) {
+                break (settle, check.data());
+            }
+            let reply: Value = serde_json::from_str(check.stdout.trim_end()).unwrap_or_else(|e| {
+                panic!("run {run}: the check printed no JSON ({e}): {check:?}")
+            });
+            assert_eq!(reply["code"], "wait_timeout", "run {run}: {reply}");
+            assert!(
+                strokes < 50,
+                "run {run}: row-200 was not on screen after 50 strokes"
+            );
+            let started = Instant::now();
+            let stroke = bench(&env, &["scroll", "--", "down", "600"]);
+            stroke.data();
+            stroke_ended = Some(started + stroke.elapsed);
+            strokes += 1;
+        };
+        let clicked = Instant::now();
+        let click = bench(&env, &["click", "--timeout", "10000", "--", "id=row-200"]).data();
+        let after_stroke = stroke_ended.map(|ended| ms(clicked.duration_since(ended)));
+        let opened = bench(&env, &["wait", "--timeout", "10000", "--text=Detail 200"]);
+        if opened.code != Some(0) {
+            env.shutdown();
+            let fresh = Env::start_with(&agent_path);
+            let screen = listing(&fresh.on(&serial, &["snapshot", "-i"]).data());
+            let shows = |id: &str| screen.contains(&format!("id={id},"));
+            panic!(
+                "run {run}: the click on row-200 {after_stroke:?} ms after the last of {strokes} \
+                 strokes opened nothing: {}\nclick: {click}\nrow-200 at the check: {}\nsettle \
+                 before it: {settle}\na fresh daemon reads detail-200 {}, row-200 {}:\n{screen}",
+                opened.stdout.trim_end(),
+                found["element"]["bounds"],
+                shows("detail-200"),
+                shows("row-200"),
+            );
+        }
+        let shown = bench(
+            &env,
+            &["get", "text", "--timeout", "10000", "--", "id=detail-200"],
+        )
+        .data();
+        assert_eq!(shown["text"], "Detail 200", "run {run}: {shown}");
+        runs.push((
+            strokes,
+            settle["elapsedMs"].clone(),
+            after_stroke,
+            click["treeDeltaMs"].clone(),
+        ));
+    }
+    eprintln!(
+        "{serial}, agent path, the bench's list-scroll flow: per run (strokes, the settle after \
+         the last stroke in ms, the click's start after that stroke's end in ms, the click's \
+         tree delta in ms): {runs:?}"
+    );
+    env.shutdown();
+}
