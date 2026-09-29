@@ -307,3 +307,4 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 - The drivers use private Apple Simulator frameworks and hidden Android APIs. This is development tooling; nothing of it ships inside an app.
 - Not built: physical iOS, an MCP server, a CDP-subset endpoint and Android video streaming.
 - The OpenSpec change in `openspec/changes/mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks.
+- `docs/overview.md` answers, with sources, how the design differs from Maestro, agent-device and Appium, where it is and is not faster, what it leaves out, which platforms and versions it supports, which protocol it speaks and what an MCP edge would take.
