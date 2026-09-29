@@ -1,0 +1,15 @@
+appId: dev.mobileagent.fixture.expo
+---
+- launchApp
+- tapOn:
+    id: "tab-list"
+- scrollUntilVisible:
+    element:
+      id: "row-200"
+    direction: DOWN
+    timeout: 90000
+- tapOn:
+    id: "row-200"
+- assertVisible:
+    id: "detail-200"
+    text: "Detail 200"

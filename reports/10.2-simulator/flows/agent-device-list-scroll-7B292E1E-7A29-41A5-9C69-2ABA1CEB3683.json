@@ -1,0 +1,51 @@
+[
+  {
+    "command": "open",
+    "input": {
+      "app": "dev.mobileagent.fixture.expo",
+      "platform": "ios",
+      "relaunch": true
+    }
+  },
+  {
+    "command": "press",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"tab-list\""
+      }
+    }
+  },
+  {
+    "command": "scroll",
+    "input": {
+      "direction": "down",
+      "until": "id=\"row-200\""
+    }
+  },
+  {
+    "command": "press",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"row-200\""
+      }
+    }
+  },
+  {
+    "command": "wait",
+    "input": {
+      "kind": "text",
+      "text": "Detail 200",
+      "timeoutMs": 10000
+    }
+  },
+  {
+    "command": "is",
+    "input": {
+      "predicate": "text",
+      "selector": "id=\"detail-200\"",
+      "value": "Detail 200"
+    }
+  }
+]
