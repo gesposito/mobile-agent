@@ -10,7 +10,7 @@ mobile-agent drives Android devices, Android emulators and iOS Simulators for AI
 | Linux host | Android driver only; the Simulator driver builds as a stub | CI builds and tests it on `ubuntu-latest`, without a device |
 | Xcode | 26.0 up to, not including, 28; other versions are refused with `unsupported_xcode` | Xcode 27.0 (27A266a); CI also builds with Xcode 26 |
 | iOS Simulator | booted Simulators; no gate on the runtime version | iOS 26.5 (23F77), iPhone 17 |
-| Android emulator | fast path through the emulator's gRPC controller when it is enabled | API 36, arm64, Pixel 8 profile, Android Emulator 37.1.11 |
+| Android emulator | fast path through the emulator's gRPC controller when it answers, the agent's path with `--emulator-controller off` | API 36, arm64, Pixel 8 profile, Android Emulator 37.1.11 |
 | Android agent | minimum API 26: the dex is built with `--min-api 26` | API 36 only |
 | Physical Android device | expected to work through the same agent, without a frame stream; not yet measured (task 10.3 waits for a device) | none |
 | Physical iOS device | not supported: only an XCTest bundle can drive one | none |
@@ -61,10 +61,10 @@ mobile-agent click @e11                     # a ref from that listing, General i
 mobile-agent wait --settle
 mobile-agent --json snapshot -i
 mobile-agent close                          # stop the app and release the target
-mobile-agent shutdown                       # stop the daemon, which stops the Android agent
+mobile-agent shutdown                       # stop the daemon; it returns once its targets have stopped
 ```
 
-With several targets connected, give `open` a `--platform android|ios`, or a `--device <id>` when targets share a platform; the session then keeps using the target it holds. The first command starts the daemon, which exits after an hour without requests (`--idle-timeout`). `mobile-agent status` reports the daemon, its targets and, for each attached target, the paths its input, frames and tree take.
+With several targets connected, give `open` a `--platform android|ios`, or a `--device <id>` when targets share a platform; the session then keeps using the target it holds. The first command starts the daemon, which exits after an hour without requests (`--idle-timeout`). `shutdown` replies once the daemon has stopped its targets, an Android agent or a Simulator's reader, and removed its socket, and names a target that had not stopped within 5 s in `data.notStopped`. `mobile-agent status` reports the daemon, its targets and, for each attached target, the paths its input, frames and tree take.
 
 A run on an iOS 26.5 Simulator, trimmed where `…` stands. In `doctor`, ⚠ marks a warning, which does not fail it; `sfw` and `just` matter only to contributors. Ref numbers are never reused, and `open` lists the screen while it waits for the app, so the first listing need not start at e1. The degraded verdict is the quality check at work: Settings' search field holds two identical Dictate buttons that only their position tells apart.
 
@@ -74,7 +74,7 @@ $ mobile-agent doctor
 ✓ drivers              simulator, android
 ✓ xcode                Xcode 27.0 (27A266a) at /Applications/Xcode.app/Contents/Developer
 ✓ simulator-runtimes   iOS 26.5
-✓ android-sdk          /Users/<user>/Library/Android/sdk, adb 1.0.41 (37.0.1-15733141)
+✓ android-sdk          $HOME/Library/Android/sdk, adb 1.0.41 (37.0.1-15733141)
 ✓ adb-server           running on port 5037, protocol 41
 ✓ emulator-control     gRPC control: emulator-5554 on port 8554
 ⚠ sfw                  sfw is not on PATH
@@ -117,6 +117,31 @@ $ mobile-agent shutdown
 ✓ Daemon stopped
 ```
 
+The Android half was verified on the API 36 emulator on 2026-09-28, with a release build made as above (trimmed):
+
+```
+$ mobile-agent doctor
+…
+✓ android-sdk          $HOME/Library/Android/sdk, adb 1.0.41 (37.0.1-15733141)
+✓ adb-server           running on port 5037, protocol 41
+✓ emulator-control     gRPC control: emulator-5554 on port 8554
+…
+$ mobile-agent devices
+emulator-5554  android  android-emulator  sdk_gphone64_arm64  device
+$ mobile-agent --platform android open com.android.settings
+✓ Opened com.android.settings on emulator-5554
+$ mobile-agent snapshot -i
+- button "Search Settings" [id=search_action_bar, ref=e1]
+(1 more item above, scroll up to reveal)
+- button "Network & internet Mobile, Wi‑Fi, hotspot" [ref=e3]
+…
+(11 more actionable items below, scroll down to reveal)
+$ mobile-agent close
+✓ Closed com.android.settings and released emulator-5554
+$ mobile-agent shutdown
+✓ Daemon stopped
+```
+
 ## Agent guide
 
 `mobile-agent help agent` prints a compact form of this section for an agent's prompt (`crates/cli/src/agent-guide.txt`), and every command's `--help` ends with examples and states its defaults. The JSON examples below come from a daemon serving fake targets (`crates/daemon/README.md`, The fake driver): a launcher, a Settings app with one Wi-Fi switch and the fixture app, whose timings are not a device's.
@@ -128,7 +153,7 @@ mobile-agent wait --settle     # 3. let the screen settle
 mobile-agent snapshot -i       # 4. snapshot again before the next action
 ```
 
-**Output.** `--json` (or `MOBILE_AGENT_JSON=1`) prints one line per command in agent-browser's envelope: `success`, `data`, `error`, then `code` and `warning` only when set. Every failure exits with status 1 and carries a snake_case `code`; in JSON mode its message travels in the envelope on stdout, without `--json` it goes to stderr. A `warning` marks a success not to take at face value: a degraded snapshot, an `open` whose screen did not settle, a settle that timed out.
+**Output.** `--json` (or `MOBILE_AGENT_JSON=1`) prints one line per command in agent-browser's envelope: `success`, `data`, `error`, then `code` and `warning` only when set. Every failure exits with status 1 and carries a snake_case `code`; in JSON mode its message travels in the envelope on stdout, without `--json` it goes to stderr. A `warning` marks a success not to take at face value: a degraded snapshot, an `open` whose screen did not settle, a settle that timed out, a click on an element not mostly in view, a `shutdown` that left a target stopping.
 
 ```json
 {"success":false,"data":null,"error":"e4 is stale: the button \"Fixture\" it named is no longer on the screen. Take a new snapshot and use its refs","code":"stale_ref"}
@@ -158,19 +183,19 @@ mobile-agent snapshot -i       # 4. snapshot again before the next action
 
 **Selectors.** Where a ref goes, a selector works too, and waits up to the timeout for a match: `#id` or `id=...` for a test identifier, `text=...` or bare text for a name or value that contains the text, `text==...` for one that is exactly the text, `role=...`.
 
-**Clicks and their timing.** `click` (alias `tap`) replies once the tap's first frame change and first tree delta have arrived, or after 200 ms without a change, at most 1 s; after the first tap of a new input session it waits up to 1.5 s for the first change and 2.5 s in all. The reply's spans are milliseconds on the daemon's clock, from the dispatch: `dispatchMs` until the target accepted the input, `frameChangeMs` until the first frame whose hash differs, `treeDeltaMs` until the first tree delta, and `watchedMs` for how long the watch lasted. `frameChangeMs` and `treeDeltaMs` are absent, never 0 or null, when the signal did not come: the tap changed nothing that way, or the target has no frame source (Android devices, and emulators without the gRPC endpoint).
+**Clicks and their timing.** `click` (alias `tap`) replies once the tap's first frame change and first tree delta have arrived, or after 200 ms without a change, at most 1 s; after the first tap of a new input session it waits up to 1.5 s for the first change and 2.5 s in all. The reply's spans are milliseconds on the daemon's clock, from the dispatch: `dispatchMs` until the target accepted the input, `frameChangeMs` until the first frame whose hash differs, `treeDeltaMs` until the first tree delta, and `watchedMs` for how long the watch lasted. `frameChangeMs` and `treeDeltaMs` are absent, never 0 or null, when the signal did not come: the tap changed nothing that way, or the target has no frame source (Android devices, and emulators without the controller or with `--emulator-controller off`). A click on an element that is not mostly in view, as `scroll --until` judges it, still taps the centre of its bounds, and warns.
 
 ```json
 {"success":true,"data":{"accepted":true,"clicked":"@e7","dispatchMs":0.101,"frameChangeMs":0.026,"ref":"@e7","treeDeltaMs":0.112,"watchedMs":5.183,"x":204.0,"y":120.0},"error":null}
 ```
 
-**Settle and waits.** `wait --settle` resolves once neither the tree nor the frames have changed for the quiet window (`--quiet`, default 200 ms), at most `--timeout` (default 3000 ms). `endedBy` names the signal that changed last: `tree`, `frame`, `both` (within 20 ms of each other), `none` (nothing changed since the last action, or the screen was already quiet), or `timeout`. A timeout is still a success: `settled` is false, `stillChanging` names what kept changing, and `warning` says so. `--tree-only` ignores frames, for video. `wait <ref or selector>` waits for an element (`--state visible|hidden|detached|enabled`) and `wait --text <text>` for text; both fail with `wait_timeout` and a summary of the screen. `open` waits for the app's first tree, past any launch splash, and for its screen to settle, and replies `settled`, `elapsedMs` and `firstTreeMs`. On the fixture's endless animation:
+**Settle and waits.** `wait --settle` resolves once neither the tree nor the frames have changed for the quiet window (`--quiet`, default 200 ms), at most `--timeout` (default 3000 ms). `endedBy` names the signal that changed last: `tree`, `frame`, `both` (within 20 ms of each other), `none` (nothing changed since the last action, or the screen was already quiet), or `timeout`. A timeout is still a success: `settled` is false, `stillChanging` names what kept changing, and `warning` says so. `--tree-only` ignores frames, for video. On an Android target without frames, the settle also reads a few elements' bounds again every 50 ms and does not end while the platform still slides or scales a window in, and after a stroke that leaves a list at its end it holds for 500 ms while the list springs back. `wait <ref or selector>` waits for an element (`--state visible|hidden|detached|enabled`) and `wait --text <text>` for text; both fail with `wait_timeout` and a summary of the screen. `open` waits for the app's first tree, past any launch splash, and for its screen to settle, and replies `settled`, `elapsedMs` and `firstTreeMs`. On the fixture's endless animation:
 
 ```json
 {"success":true,"data":{"elapsedMs":3000.329,"endedBy":"timeout","frameChanges":175,"settled":false,"stillChanging":["frame"],"treeChanges":0,"waited":"settle"},"error":null,"warning":"the screen did not settle within 3000 ms: frame changes kept arriving"}
 ```
 
-**Scrolling.** `scroll down 600` moves the content 600 points. A stroke must be longer than a tap, more than 8 points on Android and 10 on iOS, or the command fails with `stroke_too_short`. `scroll down 600 --until '#row-150'` scrolls stroke by stroke, letting the screen settle after each, until the element is on screen, and fails with `element_not_found` once the content stops moving or at its timeout.
+**Scrolling.** `scroll down 600` moves the content 600 points. A stroke must be longer than a tap, more than 8 points on Android and 10 on iOS, or the command fails with `stroke_too_short`. `scroll down 600 --until '#row-150'` scrolls until the element is mostly in view: its centre and at least half of it inside what its list shows, less the bars over it. Each stroke comes to rest before the finger lifts, so the list moves only as far as the finger, and is at most three quarters of what the list shows, so the element cannot pass through the list between two looks; the screen settles after each stroke. The reply's `visible` is the share of the element's bounds in view, from 0 to 1. The scroll fails with `element_not_found` once the content stops moving or no stroke along its axis brings more of the element in, and waits at most `--timeout`.
 
 **Timeouts.** Waiting commands take `--timeout <ms>`; otherwise the session's default applies (`set timeout <ms>`), else `--default-timeout` or `MOBILE_AGENT_DEFAULT_TIMEOUT`, else 10000 ms. The maximum is 600000 ms.
 
