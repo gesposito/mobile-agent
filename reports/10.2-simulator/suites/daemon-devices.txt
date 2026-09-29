@@ -1,0 +1,58 @@
+# started 2026-09-28T17:39:06Z, load 4.28 53.77 59.39
+# cargo test --release -p daemon --test devices --no-fail-fast -- --nocapture --test-threads=1 (with MOBILE_AGENT_SIM_UDID=7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 MOBILE_AGENT_DRIVERS=simulator)
+   Compiling syn v3.0.6
+   Compiling serde_core v1.0.229
+warning: daemon@0.1.0: SKIP_AGENT_BUILD=1: this daemon embeds no Android agent and deploys one only from the jar MOBILE_AGENT_JAR names at run time
+   Compiling async-trait v0.1.92
+   Compiling tonic v0.14.6
+   Compiling serde_json v1.0.151
+   Compiling tonic-prost v0.14.6
+   Compiling android v0.1.0 (<repo>/crates/android)
+   Compiling daemon v0.1.0 (<repo>/crates/daemon)
+    Finished `release` profile [optimized] target(s) in 12.84s
+     Running tests/devices.rs (target/release/deps/devices-db78c3762a1fb969)
+
+running 13 tests
+test devices_lists_the_simulator_and_the_emulator_with_platform_and_state ... skipped devices_lists_the_simulator_and_the_emulator_with_platform_and_state: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills ... ok
+test force_takes_ui_automation_over_from_another_daemons_agent ... skipped force_takes_ui_automation_over_from_another_daemons_agent: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest ... skipped open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test scroll_until_finds_a_mid_list_row_on_a_simulator ... 7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-100: found strokes 8 in 6079 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-100: found strokes 8 in 6200 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-100: found strokes 8 in 6125 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-100: found strokes 8 in 6102 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-200: found strokes 17 in 12652 ms, visible 0.58, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-200: found strokes 17 in 13195 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-200: found strokes 18 in 14868 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.swiftui row-200: found strokes 17 in 13187 ms, visible 1.0, amount 600.0
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-100: found strokes 8 in 5543 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-100: found strokes 8 in 5508 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-100: found strokes 8 in 5538 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-100: found strokes 8 in 5517 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-200: found strokes 18 in 13065 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-200: found strokes 17 in 12470 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-200: found strokes 17 in 12711 ms, visible 1.0, amount 551.5
+7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 dev.mobileagent.fixture.expo row-200: found strokes 17 in 12004 ms, visible 0.83, amount 551.5
+ok
+test scroll_until_finds_a_mid_list_row_on_an_emulator ... skipped scroll_until_finds_a_mid_list_row_on_an_emulator: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator ... skipped scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test the_android_display_follows_its_rotation ... skipped the_android_display_follows_its_rotation: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path ... skipped the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test the_compose_fixture_is_driven_through_the_cli_on_an_emulator ... skipped the_compose_fixture_is_driven_through_the_cli_on_an_emulator: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test the_controller_switch_leaves_a_served_controller_unused ... skipped the_controller_switch_leaves_a_served_controller_unused: set MOBILE_AGENT_ANDROID_SERIAL to run it against a real target
+ok
+test the_expo_fixture_shows_its_screen_not_its_splash_right_after_open ... ok
+test the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator ... Simulator 7B292E1E-7A29-41A5-9C69-2ABA1CEB3683: open 2723.4 ms (settled: Some(true)); open to first snapshot 2861.6 ms; warm snapshot p50 9.5 ms through the CLI, 1.4 ms on the socket; click dispatch 0.130 ms, first frame change 67.1 ms, first tree delta 124.5 ms, watched 124.6 ms; settle 959.5 ms ended by frame; screenshot 460x1000; shutdown 373.4 ms
+ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 210.13s
+
+# finished 2026-09-28T17:42:49Z, exit 0, 223 s, load 7.18 28.64 46.99

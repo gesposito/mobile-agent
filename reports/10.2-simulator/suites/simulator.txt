@@ -1,0 +1,284 @@
+# started 2026-09-28T17:20:11Z, load 4.11 4.81 4.31
+# cargo test --release -p simulator --tests --no-fail-fast -- --nocapture --test-threads=1 (with MOBILE_AGENT_SIM_UDID=7B292E1E-7A29-41A5-9C69-2ABA1CEB3683)
+    Finished `release` profile [optimized] target(s) in 0.27s
+     Running unittests src/lib.rs (target/release/deps/simulator-1768df127650600e)
+
+running 106 tests
+test compat::tests::a_host_without_xcode_is_refused ... ok
+test compat::tests::the_table_renders_every_row_and_call_site ... ok
+test compat::tests::unsupported_xcode ... ok
+test compat::tests::xcode_26_and_27_are_supported ... ok
+test error::tests::a_framework_failure_names_the_call_and_the_exception ... ok
+test error::tests::an_invalid_state_names_the_device_its_state_and_the_need ... ok
+test frames::tests::a_full_queue_drops_its_oldest_frame ... ok
+test frames::tests::close_wakes_a_waiting_consumer_after_the_queue_drains ... ok
+test frames::tests::frames_come_out_in_order ... ok
+test frames::tests::pop_waits_for_a_frame_and_gives_up_after_its_timeout ... ok
+test gate::tests::a_flush_and_a_concurrent_sender_never_reorder_or_lose_events ... ok
+test gate::tests::activating_twice_sends_nothing_more ... ok
+test gate::tests::activation_flushes_the_held_events_in_order_then_sends_directly ... ok
+test gate::tests::an_active_gate_closes_when_the_peer_goes_away ... ok
+test gate::tests::closing_drops_what_is_held_and_refuses_the_rest ... ok
+test gate::tests::events_are_held_while_the_probe_is_out ... ok
+test gesture::tests::a_path_is_walked_at_an_even_pace_by_length ... ok
+test gesture::tests::a_point_off_the_screen_is_refused ... ok
+test gesture::tests::a_point_scales_to_a_ratio_of_the_native_framebuffer ... ok
+test gesture::tests::a_press_is_down_then_up_after_its_hold ... ok
+test gesture::tests::a_swipe_spreads_its_positions_and_repeats_the_last ... ok
+test gesture::tests::a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts ... ok
+test gesture::tests::a_two_finger_gesture_carries_both_contacts_in_every_event ... ok
+test gesture::tests::unsupported_gestures_are_refused ... ok
+test keymap::tests::a_character_without_a_usage_is_refused ... ok
+test keymap::tests::digits_run_one_to_nine_then_zero ... ok
+test keymap::tests::letters_start_at_the_keyboard_a_usage ... ok
+test keymap::tests::shifted_symbols_reuse_their_unshifted_usage ... ok
+test keymap::tests::the_fixture_password_maps_to_usages ... ok
+test keymap::tests::the_named_keys_resolve ... ok
+test lookup::tests::a_device_is_found_by_udid_in_any_case_or_by_its_unique_name ... ok
+test lookup::tests::a_device_type_is_chosen_by_name_or_identifier ... ok
+test lookup::tests::a_runtime_is_chosen_by_version_name_or_identifier_or_else_the_newest_ios ... ok
+test lookup::tests::an_unknown_or_shared_name_is_refused ... ok
+test macos::driver::tests::commands_refuse_an_xcode_outside_the_range ... ok
+test macos::driver::tests::esrch_means_the_application_is_not_running ... ok
+test macos::driver::tests::only_installds_promise_error_is_retried ... ok
+test macos::driver::tests::reader_failures_become_driver_errors ... ok
+test macos::driver::tests::the_driver_can_be_shared_between_threads ... ok
+test macos::driver::tests::this_host_is_within_the_range_and_the_table_says_why ... Component        Detected                                                                                                              Expected                                          Status     Note
+Xcode            27.0 (27A266a)                                                                                                        Xcode 26.0 up to but not including 28             validated  validated on Xcode 27.0; the CI matrix also builds on Xcode 26
+CoreSimulator    1171.7                                                                                                                1155.4 or later for dtuhidd                       validated  input through dtuhidd
+SimulatorKit     1005.2                                                                                                                present, for the Indigo fallback                  validated  /Applications/Xcode.app/Contents/SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit
+runtimes         iOS 26.5 (23F77)                                                                                                      iOS 26.5 validated                                validated  input and frames depend on the host, not the runtime
+input transport  dtuhidd, then Indigo                                                                                                  dtuhidd from CoreSimulator 1155.4, Indigo before  validated  CoreSimulator 1171.7 injects dtuhidd, as every CoreSimulator from 1155.4 does; Indigo stands in only if dtuhidd cannot be reached
+XPC symbols      the three _4sim functions resolve                                                                                     resolvable with dlsym                             validated  dtuhidd needs them
+tree reader      simulator-reader 0.1.0 at $HOME/Library/Caches/dev.mobileagent.simulator/simulator-reader-15a5a06b5ec759e7  built for aarch64-apple-ios-sim into this binary  validated  spawned into each booted Simulator, nothing installed
+tree translator  AccessibilityPlatformTranslation loads                                                                                present, for the fallback                         validated  reads when the reader cannot run; its snapshots are degraded
+frame encoder    turbojpeg                                                                                                             turbojpeg, or jpeg-encoder without libjpeg-turbo  validated  chosen at build time; see Building in the README
+
+Private call                                                                                                                                                                                                                                          Image                                                    Validated on
++[SimServiceContext sharedServiceContextForDeveloperDir:error:], -defaultDeviceSetWithError:, -supportedRuntimes, -supportedDeviceTypes                                                                                                               CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDeviceSet devices], -createDeviceAsyncWithType:runtime:name:completionQueue:completionHandler:, -deleteDeviceAsync:completionQueue:completionHandler:                                                                                            CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDevice UDID], -name, -state, -runtime, -deviceType, -bootStatus                                                                                                                                                                                  CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDevice bootAsyncWithOptions:completionQueue:completionHandler:], -shutdownAsyncWithCompletionQueue:completionHandler:                                                                                                                            CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDevice installApplication:withOptions:error:], -launchApplicationAsyncWithID:options:completionQueue:completionHandler:, -terminateApplicationWithID:error:                                                                                      CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDevice dataPath]                                                                                                                                                                                                                                 CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/lifecycle.rs
+-[SimDevice installedAppsWithError:], -setPrivacyAccessForService:bundleID:granted:error: (kTCCServicePasteboard)                                                                                                                                     CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/text.rs
+-[SimDevice io], -[SimDeviceIOClient ioPorts], port -descriptor, descriptor -state and -displayClass                                                                                                                                                  CoreSimDeviceIO, ROCKit proxies                          Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDisplayIOSurfaceRenderable framebufferSurface], -[SimScreen registerScreenCallbacksWithUUID:callbackQueue:frameCallback:surfacesChangedCallback:propertiesChangedCallback:], -unregisterScreenCallbacksWithUUID:                                 CoreSimDeviceIO, ROCKit proxies                          Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, tests/lifecycle.rs and tests/frames.rs
+-[SimDevice lookup:error:]                                                                                                                                                                                                                            CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S3 and tests/dtuhid.rs
+xpc_endpoint_create_mach_port_4sim, xpc_connection_create_from_endpoint, xpc_connection_enable_sim2host_4sim                                                                                                                                          libxpc                                                   Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S3 and tests/dtuhid.rs
+SimDeviceLegacyHIDClient -initWithDevice:error:, -sendWithMessage:freeWhenDone:completionQueue:completion:                                                                                                                                            SimulatorKit                                             Xcode 27.0, SimulatorKit 1005.2, iOS 26.5: spike S3 and tests/indigo.rs, on a fresh boot
+IndigoHIDMessageForMouseNSEvent (six parameters; down, dragged and up)                                                                                                                                                                                SimulatorKit                                             Xcode 27.0, SimulatorKit 1005.2, iOS 26.5: spike S3 and tests/indigo.rs, on a fresh boot
+-[SimDevice spawnWithPath:options:terminationQueue:terminationHandler:pid:error:]                                                                                                                                                                     CoreSimulator                                            Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S4 and tests/tree.rs
+-[XCTAccessibilityFramework initForRemoteAccess], -userTestingSnapshotForElement:options:error:, +[XCAccessibilityElement elementWithProcessIdentifier:], -AXUIElement, XCTDefaultSnapshotParameters, XCAXAccessibilityAttributesForStringAttributes  XCTAutomationSupport (in the guest)                      iOS 26.5 runtime, inside the Simulator: spike S4 and tests/tree.rs, through simulator-reader
++[AXElement primaryApp], -pid, AXValueGetValue, AXValueGetTypeID                                                                                                                                                                                      AXRuntime (in the guest)                                 iOS 26.5 runtime, inside the Simulator: spike S4 and tests/tree.rs, through simulator-reader
++[AXSettings sharedInstance], -setAutomationEnabled:, _AXSAutomationEnabled                                                                                                                                                                           AccessibilityUtilities, libAccessibility (in the guest)  iOS 26.5 runtime, inside the Simulator: spike S4 and tests/tree.rs, through simulator-reader
++[AXPTranslator sharedInstance], -setBridgeTokenDelegate:, -frontmostApplicationWithDisplayId:bridgeDelegateToken:, -macPlatformElementFromTranslation:, AXPTranslationObject -setBridgeDelegateToken:, -pid                                          AccessibilityPlatformTranslation                         macOS 26.6, AccessibilityPlatformTranslation 545.18, iOS 26.5: spike S4 and tests/tree.rs (fallback)
+AXPMacPlatformElement -translation, -accessibilityRole, -accessibilitySubrole, -accessibilityLabel, -accessibilityIdentifier, -accessibilityValue, -accessibilityFrame, -accessibilityAttributeValue: AXTraits, -accessibilityChildren                AccessibilityPlatformTranslation                         macOS 26.6, AccessibilityPlatformTranslation 545.18, iOS 26.5: spike S4 and tests/tree.rs (fallback)
+-[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:]                                                                                                                                                                         CoreSimulator                                            macOS 26.6, AccessibilityPlatformTranslation 545.18, iOS 26.5: spike S4 and tests/tree.rs (fallback)
+
+ok
+test macos::dtuhid::tests::a_one_finger_touch_has_one_point_and_uint64_fields ... ok
+test macos::dtuhid::tests::keys_and_buttons_are_usages_with_a_one_based_state ... ok
+test macos::dtuhid::tests::phases_edges_and_two_contacts_reach_the_wire ... ok
+test macos::dtuhid::tests::the_probe_is_a_barrier_key_up_with_usage_zero ... ok
+test macos::encode::tests::the_encoder_writes_a_baseline_jpeg_of_the_input_size ... ok
+test macos::host::tests::a_directory_without_an_xcode_has_no_version ... ok
+test macos::host::tests::detection_loads_core_simulator_and_reads_its_version ... ok
+test macos::host::tests::simulator_kit_is_found_for_the_selected_xcode ... ok
+test macos::host::tests::the_selected_xcode_has_a_version_and_build ... ok
+test macos::indigo::tests::the_hand_built_message_matches_idbs_layout ... ok
+test macos::objc::tests::a_call_that_does_not_raise_returns_its_value ... ok
+test macos::objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call ... 
+thread 'macos::objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call' (88108670) panicked at crates/simulator/src/macos/objc.rs:361:13:
+a bug in the call
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ok
+test macos::objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call ... ok
+test macos::objc::tests::core_simulator_loads_and_registers_its_classes ... ok
+test macos::prefs::tests::a_file_that_is_not_a_dictionary_is_refused_and_left_alone ... ok
+test macos::prefs::tests::a_fresh_data_path_gets_a_file_with_the_three_keys ... ok
+test macos::prefs::tests::existing_keys_are_kept_and_a_second_write_changes_nothing ... ok
+test macos::reader::tests::a_spawn_can_record_on_the_slot_while_it_runs ... ok
+test macos::reader::tests::socket_paths_fit_sun_path_and_differ ... ok
+test macos::reader::tests::statuses_read_as_exits_or_signals ... ok
+test macos::reader::tests::the_build_embedded_a_reader_for_the_simulator ... ok
+test macos::reader::tests::tokens_differ ... ok
+test macos::translator::tests::roles_map_to_the_types_the_reader_reports ... ok
+test macos::translator::tests::the_empty_response_outlives_the_guard_that_fetched_it ... ok
+test macos::translator::tests::the_translator_framework_loads_and_names_its_classes ... ok
+test macos::xpc::tests::a_dictionary_keeps_its_scalars_and_their_types ... ok
+test macos::xpc::tests::the_sim4_symbols_resolve_on_this_host ... ok
+test pipeline::tests::a_tall_span_sums_in_32_bits ... ok
+test pipeline::tests::a_view_accepts_an_unpadded_last_row ... ok
+test pipeline::tests::a_view_refuses_bad_geometry ... ok
+test pipeline::tests::fit_within_caps_the_longer_side_and_never_upscales ... ok
+test pipeline::tests::measure_the_frame_pipeline ... ignored, a measurement; run with --release --ignored --nocapture on a quiet machine
+test pipeline::tests::rows_from_drops_the_rows_above_and_keeps_the_stride ... ok
+test pipeline::tests::scaling_averages_the_covered_source_block ... ok
+test pipeline::tests::scaling_ignores_stride_padding_and_non_integer_ratios ... ok
+test pipeline::tests::scaling_rounds_the_mean_half_up ... ok
+test pipeline::tests::scaling_to_the_source_size_packs_the_rows ... ok
+test pipeline::tests::the_content_hash_leaves_the_status_bar_out ... ok
+test pipeline::tests::the_fast_path_matches_the_general_one_byte_for_byte ... ok
+test pipeline::tests::the_pixels_hash_sees_a_changed_byte_after_the_last_whole_block ... ok
+test pipeline::tests::the_pixels_hash_sees_one_changed_byte_anywhere ... ok
+test pipeline::tests::the_reciprocal_matches_rounded_division_for_every_mean_of_bytes ... ok
+test pipeline::tests::the_throttle_skips_presents_for_three_quarters_of_its_interval ... ok
+test pipeline::tests::the_thumbnail_hash_changes_when_a_visible_region_changes ... ok
+test pipeline::tests::the_thumbnail_hash_ignores_padding_alpha_and_a_single_pixel ... ok
+test select::tests::a_forced_transport_is_the_only_one_tried ... ok
+test select::tests::a_transport_that_failed_on_the_target_is_skipped ... ok
+test select::tests::an_unreadable_version_is_taken_as_current ... ok
+test select::tests::the_fallback_is_opened_only_when_the_first_fails ... ok
+test select::tests::the_host_core_simulator_selects_dtuhidd_from_1155_4 ... ok
+test select::tests::the_unsupported_combination_names_every_version_and_transport_tried ... ok
+test tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground ... ok
+test tree::tests::a_modal_window_cuts_the_windows_below_it ... ok
+test tree::tests::a_system_alert_belongs_to_system_ui ... ok
+test tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each ... ok
+test tree::tests::an_application_root_alone_is_sparse ... ok
+test tree::tests::backends_have_the_mirrors_names ... ok
+test tree::tests::frames_and_centers_are_in_points ... ok
+test tree::tests::the_foreground_is_the_window_that_owns_the_read ... ok
+test tree::tests::the_translator_and_truncation_degrade_the_read_with_reasons ... ok
+test tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it ... ok
+test tree::tests::without_an_alert_nothing_is_cut ... ok
+test version::tests::anything_but_dotted_digits_is_refused ... ok
+test version::tests::components_compare_numerically ... ok
+test version::tests::display_round_trips ... ok
+test version::tests::missing_components_count_as_zero ... ok
+
+test result: ok. 105 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running tests/containment.rs (target/release/deps/containment-2b0464235d2aec46)
+
+running 2 tests
+test a_tree_read_that_throws_takes_only_its_target_out_of_service ... Simulator 7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 is unavailable: -[SimDevice state] raised MobileAgentInjectedFault: injected into -[SimDevice state] (with CoreSimulator 1171.7, Xcode 27.0 (27A266a)); reset the target to use it again
+ok
+test framework_call_throws ... Simulator 7B292E1E-7A29-41A5-9C69-2ABA1CEB3683 is unavailable: -[SimDeviceSet devices] raised MobileAgentInjectedFault: injected into -[SimDeviceSet devices] (with CoreSimulator 1171.7, Xcode 27.0 (27A266a)); reset the target to use it again
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 73.55s
+
+     Running tests/dtuhid.rs (target/release/deps/dtuhid-666ba347b7d1d700)
+
+running 7 tests
+test a_tap_lands_on_the_fixture_button ... dtuhidd tap: dispatched in 64.541µs, completed in 147.208µs; status line changed by 10.60, fields by 0.00
+ok
+test an_input_session_opened_without_waiting_activates_on_its_own ... open_input without a wait returned in 5.032125ms: InputStatus { transport: Dtuhid, activation: None, connections: 1, reason: "dtuhidd is forced by the driver options" }
+ok
+test input_before_activation ... dtuhidd, warm daemon: activation waited 13.1645ms, the held tap went out 13.164917ms after the request
+ok
+test one_connection_carries_touch_keys_and_buttons ... ok
+test the_first_session_of_a_boot_waits_for_dtuhidd_to_start ... dtuhidd, first session of a boot: activation waited 302.395084ms, the held tap went out 302.395667ms after the request
+ok
+test the_input_session_opens_and_activates_without_input ... the input session opened and activated in 16.419ms: InputStatus { transport: Dtuhid, activation: Some(15.24875ms), connections: 1, reason: "dtuhidd is forced by the driver options" }
+the first tap after it dispatched in 24.375µs
+ok
+test warm_tap_latency ... dtuhidd warm tap over 100: touch-down handed to XPC p50 46.75µs p95 2.3985ms max 5.718208ms; whole tap sent (XPC barrier) p50 125.333µs p95 5.148208ms max 7.664125ms
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 90.21s
+
+     Running tests/frames.rs (target/release/deps/frames-9f85e62c1da8607b)
+
+running 4 tests
+test a_screenshot_is_timestamped_at_the_display_size ... ok
+test frame_stream_during_animation ... ok
+test frames_stop_when_the_display_is_static ... ok
+test frames_sustain_30_fps_under_a_fifth_of_a_core ... one-minute load average 37.89
+29.7 fps at 460x1000 with turbojpeg, pipeline 15.6% and process 16.7% of one core; 240 presents, 119 reads, 1 torn, 0 dropped; mean JPEG 16527 bytes
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 110.20s
+
+     Running tests/indigo.rs (target/release/deps/indigo-ecf65426d1efdc08)
+
+running 2 tests
+test a_swipe_scrolls_the_list ... Indigo swipe at load 76.1: the list moved 438 px (383 points); difference 0.66 there, 3.19 unshifted
+ok
+test a_tap_lands_on_the_fixture_button ... Indigo tap: dispatched in 181.667µs, completed in 25.497959ms; status line changed by 10.60, fields by 0.00
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 244.63s
+
+     Running tests/lifecycle.rs (target/release/deps/lifecycle-0aaffd77caca156c)
+
+running 5 tests
+test a_booted_device_is_left_alone ... ok
+test an_unknown_device_is_not_found ... ok
+test every_simulator_is_listed_with_identifier_name_runtime_and_state ... ok
+test launch_with_environment ... first boot to ready: 37.882282584s
+launch: 2.5617625s
+ok
+test simctl_lines_parse ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 56.77s
+
+     Running tests/metadata.rs (target/release/deps/metadata-861e2d8e69fdad02)
+
+running 5 tests
+test a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top ... SwiftUi list at its top: XCUIElementTypeCollectionView Some(Scroll { axis: ScrollAxis(vertical), flags: ScrollFlags(forward), range: Some(ScrollRange { unit: ScrollUnit(percent), min: 0, max: 100 }), position: Some(ScrollPosition { first: 0, last: 7 }) })
+SwiftUi list scrolled: Scroll { axis: ScrollAxis(vertical), flags: ScrollFlags(back | forward), range: Some(ScrollRange { unit: ScrollUnit(percent), min: 0, max: 100 }), position: Some(ScrollPosition { first: 4, last: 11 }) }
+Expo list at its top: XCUIElementTypeScrollView Some(Scroll { axis: ScrollAxis(vertical), flags: ScrollFlags(forward), range: Some(ScrollRange { unit: ScrollUnit(percent), min: 0, max: 100 }), position: Some(ScrollPosition { first: 0, last: 8 }) })
+Expo list scrolled: Scroll { axis: ScrollAxis(vertical), flags: ScrollFlags(back | forward), range: Some(ScrollRange { unit: ScrollUnit(percent), min: 0, max: 100 }), position: Some(ScrollPosition { first: 4, last: 12 }) }
+ok
+test a_permission_alert_window_is_owned_by_springboard ... SwiftUi permission alert: SpringBoard (pid 22789), window owners [(22789, Some("SpringBoard"))]
+Expo permission alert: SpringBoard (pid 22789), window owners [(22789, Some("SpringBoard"))]
+ok
+test a_read_with_the_keyboard_up_is_whole_and_holds_the_keys ... SwiftUi: 124 nodes, truncated Truncation(empty), 37 keys in the input method window
+Expo: 98 nodes, truncated Truncation(empty), 37 keys in the input method window
+ok
+test a_sheet_over_the_screen_is_a_modal_window ... New Contact: windows [(2147571263, false, None), (536958527, true, Some("New Contact")), (87615, false, Some("Contacts"))], truncated Truncation(empty)
+ok
+test an_in_app_alert_window_is_modal_and_the_application_window_is_not ... SwiftUi in-app alert: windows (id, layer, modal, title) [(1073829452, 1, true, Some("In-app alert")), (87628, 0, false, Some("FixtureSwiftUI"))]
+Expo in-app alert: windows (id, layer, modal, title) [(1073829471, 1, true, Some("In-app alert")), (87647, 0, false, Some("FixtureExpo"))]
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.93s
+
+     Running tests/text.rs (target/release/deps/text-ce77d15cccdde5ab)
+
+running 3 tests
+test a_short_string_is_typed_through_keyboard_events ... 25 characters by Keyboard in 491.450916ms
+ok
+test long_string ... 500 characters by Paste in 223.478666ms
+ok
+test text_no_key_types_is_pasted ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.95s
+
+     Running tests/transport.rs (target/release/deps/transport-63f08f7d02464b8f)
+
+running 2 tests
+test two_sessions ... ok
+test two_simulators_get_the_hosts_transport ... mobile-agent-spike (iOS 26.5 23F77): dtuhidd because CoreSimulator 1171.7 injects dtuhidd, as every CoreSimulator from 1155.4 does; Indigo stands in only if dtuhidd cannot be reached
+mobile-agent-simtest-fresh-87901-1790616657921487000 (iOS 26.5 23F77): dtuhidd because CoreSimulator 1171.7 injects dtuhidd, as every CoreSimulator from 1155.4 does; Indigo stands in only if dtuhidd cannot be reached
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 71.60s
+
+     Running tests/tree.rs (target/release/deps/tree-3547dd3a0ac1464f)
+
+running 8 tests
+test a_permission_alert_is_reported_as_system_owned ... permission alert: SpringBoard (pid 22789), Some(Alert { window: 22789, node: 134, title: Some("Allow “FixtureSwiftUI” to use your location?"), message: Some("The fixture requests location access only to show the system permission alert."), buttons: [AlertButton { label: "Allow Once", identifier: None, node: 155, center: Point { x: 201.0, y: 462.0 } }, AlertButton { label: "Allow While Using App", identifier: None, node: 156, center: Point { x: 201.0, y: 518.0 } }, AlertButton { label: "Don’t Allow", identifier: None, node: 157, center: Point { x: 201.0, y: 574.0 } }] })
+ok
+test each_simulator_has_its_own_reader ... ok
+test fresh_simulator ... fresh Simulator: first usable tree 1.139436709s after the launch returned, from simulator-reader
+ok
+test in_app_alert_content_is_cut ... in-app alert: 89 nodes read, 40 left once covered content is cut
+ok
+test sparse_tree_flagged ... sparse read: [Fallback { reason: "the driver was opened to read with the translator only" }, Sparse { window: 89568 }]; the screen shows the fixture (brightness spread 43.7)
+ok
+test swiftui_read_returns_identifiers_and_frames ... SwiftUI Login: 48 nodes, warm reads 16.407833ms to 20.332708ms
+SwiftUI Big: 546 nodes, warm reads 149.911458ms to 178.426958ms
+ok
+test target_status_reports_the_reader_and_its_readiness ... reader simulator-reader 0.1.0 (pid 89675) from $HOME/Library/Caches/dev.mobileagent.simulator/simulator-reader-15a5a06b5ec759e7: ready 527.465667ms after its spawn; simulator-reader runs in the Simulator
+warm spawns ready in [280.295ms, 295.569542ms, 296.844708ms]
+ok
+test the_translator_stands_in_when_the_reader_cannot_run ... read by the host translator, which flattens containers and misses elements, because the reader cannot run: spawning /nonexistent/simulator-reader failed: -[SimDevice spawnWithPath:options:terminationQueue:terminationHandler:pid:error:] failed with com.apple.CoreSimulator.LaunchdSimError 111: Process spawn via launchd failed.
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 373.64s
+
+# finished 2026-09-28T17:38:31Z, exit 0, 1100 s, load 5.40 60.07 61.75
