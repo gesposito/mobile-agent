@@ -335,7 +335,7 @@ A daemon that serves only fake targets registers no device driver, so its
 
 Every command's help ends with examples and states its defaults; `help
 <command>` prints the same as `<command> --help`, and `help get text`
-reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 84 lines
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 85 lines
 for an agent's prompt: the snapshot, act and snapshot-again loop, the
 listing format, refs and `stale_ref`, selectors, acting, waiting and
 settle, reading, output and codes, targets and sessions, and batch.

@@ -2,7 +2,7 @@
 
 ## Why
 
-Agents that drive mobile apps today pay for JVM cold starts, HTTP servers on the device, fixed idle waits and per-step polling, so a single tap-and-observe step costs hundreds of milliseconds to seconds even though the platform primitives underneath can answer in single-digit milliseconds. agent-browser has shown what a daemon-based, ref-driven CLI does for web agents; nothing equivalent exists for iOS and Android, and the two fastest paths the platforms allow, a resident shell-user process on Android and fully host-side Simulator control on macOS, are used by no agent tool today.
+Agents that drive mobile apps today pay for JVM cold starts, HTTP servers on the device, fixed idle waits and per-step polling, so a single tap-and-observe step costs hundreds of milliseconds to seconds even though the platform primitives underneath can answer in single-digit milliseconds. agent-browser has shown what a daemon-based, ref-driven CLI does for web agents; nothing equivalent exists for iOS and Android, and the two fastest paths the platforms allow, a resident shell-user process on Android and fully host-side Simulator control on macOS, are used by no agent tool as its main path today: openatx's u2.jar runs under `app_process` for a test framework, and idb, iosef, AXe and stim send Simulator input through dtuhidd, but none keeps a live mirror behind an agent-facing CLI (`docs/research/android-agent.md`, `docs/research/simulator.md`, design D2).
 
 ## What Changes
 
