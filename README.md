@@ -202,27 +202,59 @@ The full lists are in `crates/daemon/README.md` (Errors) and `crates/cli/README.
 
 ## Measured
 
-The harness judges each gate at p95 (`crates/bench/README.md`, Gates).
+The harness judges each gate at p95, and "under" is strict (`crates/bench/README.md`, Gates).
 
-iOS Simulator:
+iOS Simulator (`reports/10.2-simulator.md`, `reports/10.2-simulator/report.md`): an iPhone 17 Simulator on iOS 26.5, Xcode 27.0, commit e84d86e, 50 measured iterations.
 
-| Gate | Limit | Measured |
-|---|---|---|
-| CLI process start | under 20 ms | placeholder-pending-10.2 |
-| Cold attach | under 2 s | placeholder-pending-10.2 |
-| Warm snapshot, SwiftUI 500-node screen | under 150 ms | placeholder-pending-10.2 |
-| Warm snapshot, React Native (Expo) 500-node screen | under 250 ms | placeholder-pending-10.2 |
-| Tap dispatch | under 20 ms | placeholder-pending-10.2 |
+| Gate | Limit | Measured | Verdict |
+|---|---|---|---|
+| CLI process start | under 20 ms | 5.882 ms | pass |
+| Cold attach | under 2 s | SwiftUI 946.969 ms, Expo 837.939 ms | pass |
+| Warm snapshot, SwiftUI 500-node screen | under 150 ms | 7.880 ms | pass |
+| Warm snapshot, React Native (Expo) 500-node screen | under 250 ms | 7.652 ms | pass |
+| Tap dispatch | under 20 ms | SwiftUI 1.555 ms, Expo 0.178 ms | pass |
 
-Android emulator, from `reports/10.1-emulator-grpc/report.md`: Android Emulator 37.1.11, an API 36 arm64 AVD started with `-gpu host -grpc 8554 -grpc-use-token`, commit 05a4756, 50 measured iterations. With the control endpoint on, taps and frames go through the emulator's gRPC controller; with it off, taps go through the agent and there is no frame stream.
+The warm snapshot comes from the mirror's replica; in the driver's suite, reading the SwiftUI screen from the device took 149.9 to 178.4 ms, under a load that the suite's own Simulator boots raised to between 100 and 250.
 
-| Gate | Limit | Controller on | Verdict | Controller off |
+Android emulator (`reports/10.1-emulator.md`): an API 36 arm64 AVD on Android Emulator 37.1.11 started with `-gpu host`, commit 05a4756, 50 measured iterations. With the controller on (`-grpc 8554 -grpc-use-token`, `reports/10.1-emulator-grpc/report.md`), taps and frames go through the emulator's gRPC controller; with it off (`-ports 5554,5555`, `reports/10.1-emulator-agent/report.md`), taps go through the agent and there is no frame stream.
+
+| Gate | Limit | Controller on | Controller off |
+|---|---|---|---|
+| CLI process start | under 20 ms | 11.6 ms: pass | 9.1 ms: pass |
+| Cold attach | under 1.5 s | Expo 894.2 ms, Compose 1208.2 ms: pass | Expo 927.6 ms, Compose 880.1 ms: pass |
+| Warm snapshot, 500-cell screen | under 100 ms | Expo 12.8 ms, Compose 19.4 ms: pass | Expo 13.2 ms, Compose 11.3 ms: pass |
+| Tap to frame change | under 67 ms, with host GPU rendering | Expo 52.5 ms, Compose 55.1 ms: pass | not measured: no frame source |
+| Tap dispatch | no emulator gate | Expo 2.8 ms, Compose 3.3 ms | Expo 5.1 ms, Compose 6.7 ms |
+
+- Both runs drove the CLI through a shim (`reports/10.1-emulator-grpc/bench-android-cli.rs`) that task 10.10 has since made unnecessary. It adds a process start to every wall-clock sample: without it, `mobile-agent --version` took 5.0 and 5.3 ms at p95 (`reports/10.1-emulator.md`, finding 9).
+- The runs' own reports judged tap to frame change against the 50 ms gate of the time, and failed it. Task 10.13 restated the gate for host rendering, which these values pass (`docs/research/emulator-frames.md`). The controller-off report, made before task 10.10, counts that series as failed where the harness now reports it as not measured.
+
+Against the baselines: how many times faster mobile-agent's p50 was on each reference flow. "Not timed" means the tool failed the flow's golden check, so the harness did not time it. mobile-agent's flows had no failed or flaky iteration in the two runs below; a baseline's failure and flake rates follow its factor where they are not zero.
+
+iOS Simulator (`reports/10.2-simulator.md`, Baselines):
+
+| Flow | Maestro 2.10.0, SwiftUI | Maestro, Expo | agent-device 0.21.14, SwiftUI | agent-device, Expo |
 |---|---|---|---|---|
-| CLI process start | under 20 ms | 11.6 ms through the bench's Android shim; 5.0 ms for the binary alone | pass | placeholder-pending-10.1 |
-| Cold attach | under 1.5 s | Expo 894 ms, Compose 1208 ms | pass | placeholder-pending-10.1 |
-| Warm snapshot, 500-cell screen | under 100 ms | Expo 12.8 ms, Compose 19.4 ms | pass | placeholder-pending-10.1 |
-| Tap to frame change | under 50 ms | Expo 52.5 ms, Compose 55.1 ms | fail, over by 2.5 and 5.1 ms | placeholder-pending-10.1 |
-| Tap dispatch | no emulator gate | Expo 2.8 ms, Compose 3.3 ms | | placeholder-pending-10.1 |
+| login | 6.62x | 6.64x | 2.27x | not timed |
+| list-scroll | 6.06x | 6.05x (26 % failed, 22 % flaky) | not timed | not timed |
+| big-screen | 8.51x | 7.13x | 1.24x | not timed |
+
+Android emulator, controller on (`reports/10.1-emulator.md`, Baselines):
+
+| Flow | Maestro 2.10.0, Expo | Maestro, Compose | agent-device 0.21.14, Expo | agent-device, Compose |
+|---|---|---|---|---|
+| login | 14.50x | 5.99x (2 % failed, 2 % flaky) | 2.02x (32 % failed, 22 % flaky) | 1.74x |
+| list-scroll | not timed | not timed | not timed | not timed |
+| big-screen | 8.39x | 4.32x | 1.19x (76 % failed, 12 % flaky) | 1.06x |
+
+The list-scroll flow reaches `row-200` with one `scroll --until`, as an agent would, since task 10.17; before, the harness ran its own loop of settles, checks and plain strokes. p50 of the flow before and after (`reports/10.17-list-scroll.md`, with the Simulator's after column from the 10.2 run), the emulator with its controller on:
+
+| Target | Fixture | Before | After |
+|---|---|---|---|
+| iOS Simulator | SwiftUI | 25.3 s, 16 % flaky | 16.3 s, no flake |
+| iOS Simulator | Expo | 20.6 s | 15.0 s |
+| Android emulator | Expo | 14.1 s | 12.6 s |
+| Android emulator | Compose | 15.2 s | 13.7 s |
 
 Spike measurements. The throwaway programs under `spikes/` measured these before the crates existed, on one host (Apple M1 Max, macOS 26.6.2, Xcode 27.0, CoreSimulator 1171.7, iOS 26.5, an API 36 arm64 emulator); the spike verdicts table in `openspec/changes/mobile-automation-foundation/design.md` summarizes them. They are not harness results.
 
@@ -238,7 +270,7 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 
 ## How measurements are made
 
-`crates/bench` (`mobile-agent-bench`, run with `just bench`) drives the release CLI as an agent does, one `--json` process per command, on the reference fixtures of `fixtures/CONTRACT.md` (SwiftUI and Expo on the Simulator, Expo and Compose on Android), with 3 warm-up and 50 measured iterations per series and nearest-rank p50, p95, maximum, failure and flake rates. The same login, list-scroll and 500-node flows run through Maestro 2.10.0 (on Java 21.0.12) and agent-device 0.21.14 (on Node 25.8.0) as baselines, as the emulator run's provenance in `reports/10.1-emulator-grpc/report.md` records, and through maestro-runner when it is installed, each timed by wall clock around the tool's process. Each run writes `report.json` and `report.md`, committed under `reports/`, and exits non-zero when a gate fails.
+`crates/bench` (`mobile-agent-bench`, run with `just bench`) drives the release CLI as an agent does, one `--json` process per command, on the reference fixtures of `fixtures/CONTRACT.md` (SwiftUI and Expo on the Simulator, Expo and Compose on Android), with 3 warm-up and 50 measured iterations per series and nearest-rank p50, p95, maximum, failure and flake rates. The same login, list-scroll and 500-node flows run through Maestro 2.10.0 (on Java 21.0.12) and agent-device 0.21.14 (on Node 25.8.0) as baselines, as the runs' setups record (`reports/10.1-emulator.md`, `reports/10.2-simulator.md`), and through maestro-runner when it is installed, each timed by wall clock around the tool's process. Each run writes `report.json` and `report.md`, committed under `reports/`, and exits non-zero when a gate fails.
 
 ## Status and limitations
 
