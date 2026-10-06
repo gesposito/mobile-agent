@@ -1,15 +1,18 @@
 //! The device drivers end to end (task 8.8): a daemon started without fake
-//! targets registers the Simulator and Android drivers, and the
-//! `mobile-agent` CLI drives the reference fixtures through them on a booted
-//! Simulator and a running emulator.
+//! targets registers the Simulator and Android drivers, or those
+//! `MOBILE_AGENT_DRIVERS` names, and the `mobile-agent` CLI drives the
+//! reference fixtures through them on a booted Simulator and a running
+//! emulator.
 //!
 //! The Simulator tests run only when `MOBILE_AGENT_SIM_UDID` names a booted
 //! Simulator with the SwiftUI and Expo fixtures installed, the Android tests
 //! only when `MOBILE_AGENT_ANDROID_SERIAL` names an emulator or device with
 //! the Compose fixture installed and the agent jar built
 //! (`agent-android/build.sh`); without them each test prints why it skipped
-//! and passes. The tests take the devices one at a time, each with a daemon
-//! of its own on a private socket directory, and print what they measured.
+//! and passes. For a run on the Simulator alone,
+//! `MOBILE_AGENT_DRIVERS=simulator` starts the daemons without the Android
+//! driver. The tests take the devices one at a time, each with a daemon of
+//! its own on a private socket directory, and print what they measured.
 //! The Simulator is left with the Expo fixture on its Login tab and the
 //! SwiftUI fixture stopped, or both stopped after the mid-list scroll test;
 //! the fixtures are stopped on the emulator.
@@ -124,7 +127,8 @@ impl Env {
             builder = builder.env(key, value);
         }
         // The test's environment reaches the daemon without its
-        // MOBILE_AGENT_ variables; the agent jar's location is one to keep.
+        // MOBILE_AGENT_ variables but the drivers the run names; the agent
+        // jar's location is one more to keep.
         if let Ok(jar) = std::env::var("MOBILE_AGENT_JAR") {
             builder = builder.env("MOBILE_AGENT_JAR", &jar);
         }

@@ -112,6 +112,15 @@ impl Builder {
         };
         let mut command = Command::new(self.binary.as_deref().unwrap_or(Path::new(BIN)));
         clean_env(&mut command);
+        // Device drivers named beside fake targets register too, so a daemon
+        // with fake targets serves them alone unless its test names drivers.
+        if self
+            .env
+            .iter()
+            .any(|(key, _)| key == "MOBILE_AGENT_FAKE_TARGETS")
+        {
+            command.env_remove("MOBILE_AGENT_DRIVERS");
+        }
         command
             .arg("--socket-dir")
             .arg(&dir)
@@ -144,11 +153,17 @@ impl Builder {
 }
 
 /// Removes every `MOBILE_AGENT_*` variable the developer's shell may carry,
-/// so a test sees only what it sets.
+/// so a test sees only what it sets, except `MOBILE_AGENT_DRIVERS`: a daemon
+/// that serves the host's devices registers the drivers it names, and
+/// without it every driver the host runs, so a run against the Simulator
+/// alone (`MOBILE_AGENT_DRIVERS=simulator`) would still register the Android
+/// driver, whose listing asks the adb server for its devices. A daemon with
+/// fake targets goes without it ([`Builder::spawn`]).
 pub fn clean_env(command: &mut Command) {
     for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with("MOBILE_AGENT_") {
-            command.env_remove(key);
+        let name = key.to_string_lossy();
+        if name.starts_with("MOBILE_AGENT_") && name != "MOBILE_AGENT_DRIVERS" {
+            command.env_remove(&key);
         }
     }
 }

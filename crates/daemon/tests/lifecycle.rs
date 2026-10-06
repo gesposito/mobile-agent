@@ -243,12 +243,13 @@ fn a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply() {
 }
 
 /// Starts the daemon without `--socket-dir`, with `env` set and
-/// `MOBILE_AGENT_SOCKET_DIR`, `XDG_RUNTIME_DIR` and `HOME` cleared first, and
-/// waits for its socket at `expected`.
+/// `MOBILE_AGENT_SOCKET_DIR`, `MOBILE_AGENT_DRIVERS`, `XDG_RUNTIME_DIR` and
+/// `HOME` cleared first, and waits for its socket at `expected`.
 fn serves_at(env: &[(&str, &Path)], expected: &Path) {
     let mut command = Command::new(support::BIN);
     support::clean_env(&mut command);
     command
+        .env_remove("MOBILE_AGENT_DRIVERS")
         .env_remove("XDG_RUNTIME_DIR")
         .env_remove("HOME")
         .env("MOBILE_AGENT_FAKE_TARGETS", "android")
