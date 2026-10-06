@@ -85,7 +85,7 @@ Not on every axis. The gates cover mobile-agent's own primitives; the comparison
 - More than one environment: a physical Android device (task 10.3), OEM builds and other API levels, Xcode 26 and other iOS runtimes, with the emulator's GPU mode in the provenance (`crates/bench/README.md`, Reports).
 - A quiet, dedicated host and repeated runs with intervals: the reports carry the load and name the busiest processes, the harness gives one run's percentiles (`crates/bench/README.md`, What is measured), and the emulator-frames study shows what bootstrap intervals add (`docs/research/emulator-frames.md`, Method).
 - The emulator comparison run again with baselines and without the shim, after the agent-path work of tasks 10.9 to 10.17 (`openspec/changes/mobile-automation-foundation/tasks.md`).
-- Real apps past their sign-in screens, which the React Native claim of section 4 needs (`reports/10.4-rn-smoke.md`, Verdict).
+- Real apps past their sign-in screens other than Bluesky, the only one whose signed-in screens were read (`reports/10.4-rn-smoke.md`, Third run).
 
 ## 4. What are the current limitations, and what is left out?
 
@@ -97,7 +97,7 @@ Not on every axis. The gates cover mobile-agent's own primitives; the comparison
 - OEM Android builds, and whether Android 17 lets adbd connect to the agent's socket (design D3). The instrumentation fallback for a build that refuses the shell path is a follow-up, not built (design, Risks / Trade-offs).
 - Any Xcode but 27.0 and any iOS runtime but 26.5 (design, Spike verdicts). Xcode 26 is in the supported range and CI builds with it, but nothing has run there, and its input would be touch only, through Indigo (`crates/simulator/README.md`, Compatibility).
 - Direct USB for adb, deferred (design D3), and web content, since no fixture has a web view (S4, Fidelity).
-- The claim that mobile-agent's snapshots stay whole where XCTest's go sparse on React Native screens: no XCTest read on the 17 React Native Simulator screens tried reported a sparse root, and the signed-in Bluesky screens where others saw it were not reached (`reports/10.4-rn-smoke.md`, Verdict; task 10.4 is open).
+- XCTest's root without useful children, which agent-device's ADR 0004 reports on Bluesky. Signed in to Bluesky, agent-device's XCTest tree came back `sparse` or timed out on 8 of 52 reads, on the search screen with the keyboard up and a 711-node thread, and mobile-agent's snapshots of those screens were whole and not degraded, so the claim that they stay whole where XCTest's go sparse held; but those failures were the runner's 1 s budget running out, and no read returned such a root (`reports/10.4-rn-smoke.md`, Verdict).
 
 **Constraints the design accepts.**
 
@@ -109,7 +109,7 @@ Not on every axis. The gates cover mobile-agent's own primitives; the comparison
 - A Linux host drives Android only (`README.md`, Supported platforms).
 - Degraded reads are reported, not hidden: the host translator, the Simulator's fallback when the reader cannot run, flattens the tree and drops the tab bar's children and React Native text identifiers, and identical siblings are flagged `sibling_collision` (design D6; `crates/mirror/README.md`, Snapshots).
 
-**Open items and differences.** Tasks 10.18 (agent-device's daemon and runner outlive the harness's hand-off on iOS) and 10.19 (the device tests' daemons do not see `MOBILE_AGENT_DRIVERS`) are open (`openspec/changes/mobile-automation-foundation/tasks.md`). Against agent-browser, `snapshot` has no `-c` or `-s`, `screenshot` no `--full` or `--annotate`, `close` no `--all`, and `diff snapshot` no baseline file (`crates/cli/README.md`, Differences from agent-browser).
+**Open items and differences.** Tasks 10.18 (agent-device's daemon and runner outlive the harness's hand-off on iOS), 10.19 (the device tests' daemons do not see `MOBILE_AGENT_DRIVERS`), 10.21 (with the keyboard up on the Simulator every element counts as 0% in view), 10.22 (an overlay the app marks modal does not hide what it covers from `snapshot -i`) and 10.23 (`fill` does not read back the text it left) are open (`openspec/changes/mobile-automation-foundation/tasks.md`; the last three from `reports/10.4-rn-smoke.md`, third run, findings 1 to 3). Against agent-browser, `snapshot` has no `-c` or `-s`, `screenshot` no `--full` or `--annotate`, `close` no `--all`, and `diff snapshot` no baseline file (`crates/cli/README.md`, Differences from agent-browser).
 
 **A correction on record.** The React Native smoke test found every Simulator read with the keyboard up marked `truncated`, with advice to raise the node limit (`reports/10.4-rn-smoke.md`, second run, finding 2). The reader presents the keyboard as an input-method window whose keys arrive in the application's own read, and a child moved to a window of its own counts as delivered, so such a read is whole (design D6; `crates/simulator/README.md`, Tree).
 
@@ -121,7 +121,7 @@ Not on every axis. The gates cover mobile-agent's own primitives; the comparison
 
 - Android Views: Settings on the API 36 emulator (`README.md`, Quick start; S1).
 - Jetpack Compose: the Compose fixture. Compose sends no accessibility events to UI automation (S1, from Compose UI 1.11.4's bytecode), so the agent marks its windows, dialogs included, by the `androidx.compose.ui.semantics.id` extra data and the mirror re-reads them (design D5).
-- React Native on both platforms: the Expo fixture on both; Bluesky 1.133.0's release APK on 4 emulator screens and its Simulator build on the 9 screens the logged-out app reaches; Ignite 11.5's demo app on 5 Simulator screens. mobile-agent never reported a sparse tree there (`reports/10.4-rn-smoke.md`). Two of the mirror's listing rules come from those apps: a field without a label takes its container's, and a labelled leaf container gets a ref (design D5).
+- React Native on both platforms: the Expo fixture on both; Bluesky 1.133.0's release APK on 4 logged-out and 11 signed-in emulator screens, and its Simulator build on the 9 screens the logged-out app reaches and 13 behind sign-in; Ignite 11.5's demo app on 5 Simulator screens. mobile-agent never reported a sparse tree there, including the screens where agent-device's XCTest tree came back `sparse` or timed out (`reports/10.4-rn-smoke.md`). Two of the mirror's listing rules come from those apps: a field without a label takes its container's, and a labelled leaf container gets a ref (design D5).
 - SwiftUI: the SwiftUI fixture. SwiftUI attaches identifiers up to a second after launch on iOS 26.5, so the mirror treats the first tree after a launch as provisional (design D5).
 - UIKit: Settings (`README.md`, Quick start) and Contacts' New Contact sheet in the driver's tests (`crates/simulator/README.md`, Tests).
 
