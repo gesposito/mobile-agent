@@ -1,0 +1,164 @@
+{
+ "screen": "05-thread-r2",
+ "start": {
+  "time": "16:09:35",
+  "load": "3.43 5.22 7.11"
+ },
+ "end": {
+  "time": "16:09:41",
+  "load": "3.24 5.15 7.07"
+ },
+ "settle": {
+  "elapsedMs": 0,
+  "endedBy": "none",
+  "settled": true
+ },
+ "ma": {
+  "i1": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 26,
+   "lines": 27,
+   "readMs": 0.22,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 8
+  },
+  "i2": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 26,
+   "lines": 27,
+   "readMs": 0.194,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 7
+  },
+  "full": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 26,
+   "lines": 65,
+   "readMs": 0.224,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 7
+  },
+  "shot": {
+   "w": 460,
+   "h": 1000,
+   "wall": 17
+  }
+ },
+ "adI": {
+  "nodes": 39,
+  "named": 38,
+  "rootType": "Application",
+  "rootChildren": 12,
+  "maxDepth": 4,
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": {
+   "phase": "ios.snapshot-source.acquire",
+   "durationMs": 612,
+   "data": {
+    "producer": "simulator-ax-bridge"
+   }
+  },
+  "android": null,
+  "runnerRoundTrips": 0,
+  "costWallMs": 750,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 893
+ },
+ "adRaw": {
+  "nodes": 711,
+  "named": 438,
+  "rootType": "Application",
+  "rootChildren": 2,
+  "maxDepth": 40,
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": {
+   "phase": "ios.snapshot-source.acquire",
+   "durationMs": 607,
+   "data": {
+    "producer": "simulator-ax-bridge"
+   }
+  },
+  "android": null,
+  "runnerRoundTrips": 0,
+  "costWallMs": 746,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 909
+ },
+ "xctI": {
+  "nodes": 44,
+  "named": 44,
+  "rootType": "Application",
+  "rootChildren": 1,
+  "maxDepth": 14,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": "requested-backend",
+  "reason": "the recursive XCTest tree backend was explicitly selected for this capture",
+  "acquisitionMs": 1839,
+  "truncated": false,
+  "keyboard": "absent",
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 1909,
+  "roundTripsLogged": 0,
+  "wall": 2244
+ },
+ "xctRaw": {
+  "nodes": 711,
+  "named": 438,
+  "rootType": "Application",
+  "rootChildren": 2,
+  "maxDepth": 40,
+  "quality": "recovered",
+  "qualityBackend": "private-ax",
+  "reasonCode": "capture-failed",
+  "reason": "timed out while preparing tree snapshot on the XCTest main thread",
+  "acquisitionMs": 563,
+  "truncated": false,
+  "warnings": ["Detected an overly complex or slow accessibility tree. Fell back to the private-ax snapshot backend. It is OK to continue; use --json to inspect snapshotQuality.reason if you need recovery details."],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 1654,
+  "roundTripsLogged": 0,
+  "wall": 1953
+ }
+}

@@ -1,0 +1,156 @@
+{
+ "screen": "x1-search-focused-empty",
+ "start": {
+  "time": "16:04:22",
+  "load": "5.78 7.64 8.50"
+ },
+ "end": {
+  "time": "16:04:31",
+  "load": "5.67 7.55 8.45"
+ },
+ "settle": {
+  "elapsedMs": 305,
+  "endedBy": "frame",
+  "settled": true
+ },
+ "ma": {
+  "i1": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 18,
+   "lines": 19,
+   "readMs": 549.602,
+   "replica": false,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 880
+  },
+  "i2": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 18,
+   "lines": 19,
+   "readMs": 513.431,
+   "replica": false,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 524
+  },
+  "full": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 18,
+   "lines": 68,
+   "readMs": 536.774,
+   "replica": false,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 548
+  },
+  "shot": {
+   "w": 460,
+   "h": 1000,
+   "wall": 19
+  }
+ },
+ "adI": {
+  "nodes": 58,
+  "named": 56,
+  "rootType": "Application",
+  "rootChildren": 13,
+  "maxDepth": 3,
+  "quality": "recovered",
+  "qualityBackend": "private-ax",
+  "reasonCode": "capture-failed",
+  "reason": "timed out while preparing tree snapshot on the XCTest main thread",
+  "acquisitionMs": 316,
+  "truncated": false,
+  "warnings": ["Simulator AX snapshot inapplicable (system-surface-host-lingering); used XCTest, which read app content: the system surface host process was still running but no longer presenting.", "Detected an overly complex or slow accessibility tree. Fell back to the private-ax snapshot backend. It is OK to continue; use --json to inspect snapshotQuality.reason if you need recovery details."],
+  "captureBackend": "xctest",
+  "captureMs": 1393,
+  "routeFallback": {
+   "reason": "system-surface-host-lingering",
+   "host": "com.apple.SafariViewService"
+  },
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": 2,
+  "costWallMs": 1471,
+  "helperWallMs": null,
+  "roundTripsLogged": 1,
+  "wall": 1629
+ },
+ "adRaw": {
+  "nodes": 162,
+  "named": 82,
+  "rootType": "Application",
+  "rootChildren": 3,
+  "maxDepth": 33,
+  "quality": "recovered",
+  "qualityBackend": "private-ax",
+  "reasonCode": "capture-failed",
+  "reason": "timed out while preparing tree snapshot on the XCTest main thread",
+  "acquisitionMs": 424,
+  "truncated": false,
+  "warnings": ["Simulator AX snapshot inapplicable (system-surface-host-lingering); used XCTest, which read app content: the system surface host process was still running but no longer presenting.", "Detected an overly complex or slow accessibility tree. Fell back to the private-ax snapshot backend. It is OK to continue; use --json to inspect snapshotQuality.reason if you need recovery details."],
+  "captureBackend": "xctest",
+  "captureMs": 1503,
+  "routeFallback": {
+   "reason": "system-surface-host-lingering",
+   "host": "com.apple.SafariViewService"
+  },
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": 2,
+  "costWallMs": 1590,
+  "helperWallMs": null,
+  "roundTripsLogged": 1,
+  "wall": 1727
+ },
+ "xctI": {
+  "error": {
+   "code": "COMMAND_FAILED",
+   "message": "regular iOS snapshot presentation requires a valid viewport",
+   "details": {
+    "reason": "invalid-viewport",
+    "field": "viewport",
+    "snapshotQuality": {
+     "state": "sparse",
+     "backend": "tree",
+     "reason": "the recursive XCTest tree backend was explicitly selected for this capture",
+     "reasonCode": "requested-backend"
+    },
+    "hint": "No snapshot backend could read this screen (the recursive XCTest tree backend was explicitly selected for this capture). Its refs and selectors are invalid. Use screenshot as visual truth and coordinate taps; retry snapshot after navigating.",
+    "diagnosticId": "muwr2l4w-2b3f814e"
+   }
+  },
+  "wall": 1378
+ },
+ "xctRaw": {
+  "nodes": 162,
+  "named": 82,
+  "rootType": "Application",
+  "rootChildren": 3,
+  "maxDepth": 33,
+  "quality": "recovered",
+  "qualityBackend": "private-ax",
+  "reasonCode": "capture-failed",
+  "reason": "timed out while preparing tree snapshot on the XCTest main thread",
+  "acquisitionMs": 320,
+  "truncated": false,
+  "warnings": ["Detected an overly complex or slow accessibility tree. Fell back to the private-ax snapshot backend. It is OK to continue; use --json to inspect snapshotQuality.reason if you need recovery details."],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 2046,
+  "roundTripsLogged": 0,
+  "wall": 2329
+ }
+}

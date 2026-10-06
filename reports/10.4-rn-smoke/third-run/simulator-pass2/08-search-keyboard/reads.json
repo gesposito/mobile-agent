@@ -1,0 +1,165 @@
+{
+ "screen": "08-search-keyboard",
+ "start": {
+  "time": "16:10:21",
+  "load": "3.80 5.01 6.93"
+ },
+ "end": {
+  "time": "16:10:26",
+  "load": "3.73 4.98 6.91"
+ },
+ "settle": {
+  "elapsedMs": 0,
+  "endedBy": "none",
+  "settled": true
+ },
+ "ma": {
+  "i1": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 39,
+   "lines": 43,
+   "readMs": 0.299,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 9
+  },
+  "i2": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 39,
+   "lines": 43,
+   "readMs": 301.985,
+   "replica": false,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 314
+  },
+  "full": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "simulator-reader",
+   "refs": 39,
+   "lines": 91,
+   "readMs": 378.532,
+   "replica": false,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 388
+  },
+  "shot": {
+   "w": 460,
+   "h": 1000,
+   "wall": 21
+  }
+ },
+ "adI": {
+  "nodes": 107,
+  "named": 102,
+  "rootType": "Application",
+  "rootChildren": 21,
+  "maxDepth": 5,
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": {
+   "phase": "ios.snapshot-source.acquire",
+   "durationMs": 269,
+   "data": {
+    "producer": "simulator-ax-bridge"
+   }
+  },
+  "android": null,
+  "runnerRoundTrips": 0,
+  "costWallMs": 412,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 558
+ },
+ "adRaw": {
+  "nodes": 708,
+  "named": 483,
+  "rootType": "Application",
+  "rootChildren": 3,
+  "maxDepth": 43,
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": {
+   "phase": "ios.snapshot-source.acquire",
+   "durationMs": 298,
+   "data": {
+    "producer": "simulator-ax-bridge"
+   }
+  },
+  "android": null,
+  "runnerRoundTrips": 0,
+  "costWallMs": 440,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 603
+ },
+ "xctI": {
+  "nodes": 74,
+  "named": 73,
+  "rootType": "Application",
+  "rootChildren": 3,
+  "maxDepth": 10,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": "requested-backend",
+  "reason": "the recursive XCTest tree backend was explicitly selected for this capture",
+  "acquisitionMs": 1062,
+  "truncated": false,
+  "keyboard": "visible",
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 1131,
+  "roundTripsLogged": 0,
+  "wall": 1429
+ },
+ "xctRaw": {
+  "nodes": 192,
+  "named": 132,
+  "rootType": "Application",
+  "rootChildren": 3,
+  "maxDepth": 35,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": 1052,
+  "truncated": false,
+  "keyboard": "visible",
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 1110,
+  "roundTripsLogged": 0,
+  "wall": 1399
+ }
+}

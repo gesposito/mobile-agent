@@ -1,0 +1,192 @@
+{
+ "screen": "x3-discover-deep",
+ "start": {
+  "time": "16:07:31",
+  "load": "3.64 5.94 7.62"
+ },
+ "end": {
+  "time": "16:07:37",
+  "load": "3.99 5.98 7.62"
+ },
+ "settle": {
+  "elapsedMs": 2052,
+  "endedBy": "frame",
+  "settled": true
+ },
+ "ma": {
+  "i1": {
+   "degraded": true,
+   "reasons": [
+    {
+     "advice": "e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    },
+    {
+     "advice": "e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    }
+   ],
+   "backend": "simulator-reader",
+   "refs": 32,
+   "lines": 35,
+   "readMs": 0.524,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": "degraded snapshot (sibling_collision, sibling_collision): e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them; e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+   "wall": 134
+  },
+  "i2": {
+   "degraded": true,
+   "reasons": [
+    {
+     "advice": "e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    },
+    {
+     "advice": "e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    }
+   ],
+   "backend": "simulator-reader",
+   "refs": 32,
+   "lines": 35,
+   "readMs": 0.124,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": "degraded snapshot (sibling_collision, sibling_collision): e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them; e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+   "wall": 7
+  },
+  "full": {
+   "degraded": true,
+   "reasons": [
+    {
+     "advice": "e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    },
+    {
+     "advice": "e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+     "code": "sibling_collision"
+    }
+   ],
+   "backend": "simulator-reader",
+   "refs": 32,
+   "lines": 64,
+   "readMs": 0.164,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": "degraded snapshot (sibling_collision, sibling_collision): e454, e455 are identical siblings told apart only by position; take a new snapshot right before acting on one of them; e456, e457 are identical siblings told apart only by position; take a new snapshot right before acting on one of them",
+   "wall": 10
+  },
+  "shot": {
+   "w": 460,
+   "h": 1000,
+   "wall": 19
+  }
+ },
+ "adI": {
+  "nodes": 47,
+  "named": 45,
+  "rootType": "Application",
+  "rootChildren": 1,
+  "maxDepth": 18,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": 595,
+  "truncated": false,
+  "keyboard": "absent",
+  "warnings": ["Simulator AX snapshot inapplicable (system-surface-host-lingering); used XCTest, which read app content: the system surface host process was still running but no longer presenting."],
+  "captureBackend": "xctest",
+  "captureMs": 696,
+  "routeFallback": {
+   "reason": "system-surface-host-lingering",
+   "host": "com.apple.SafariViewService"
+  },
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": 2,
+  "costWallMs": 774,
+  "helperWallMs": null,
+  "roundTripsLogged": 1,
+  "wall": 940
+ },
+ "adRaw": {
+  "nodes": 298,
+  "named": 187,
+  "rootType": "Application",
+  "rootChildren": 2,
+  "maxDepth": 50,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": 537,
+  "truncated": false,
+  "keyboard": "absent",
+  "warnings": ["Simulator AX snapshot inapplicable (system-surface-host-lingering); used XCTest, which read app content: the system surface host process was still running but no longer presenting."],
+  "captureBackend": "xctest",
+  "captureMs": 613,
+  "routeFallback": {
+   "reason": "system-surface-host-lingering",
+   "host": "com.apple.SafariViewService"
+  },
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": 2,
+  "costWallMs": 634,
+  "helperWallMs": null,
+  "roundTripsLogged": 1,
+  "wall": 742
+ },
+ "xctI": {
+  "nodes": 47,
+  "named": 45,
+  "rootType": "Application",
+  "rootChildren": 1,
+  "maxDepth": 18,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": "requested-backend",
+  "reason": "the recursive XCTest tree backend was explicitly selected for this capture",
+  "acquisitionMs": 537,
+  "truncated": false,
+  "keyboard": "absent",
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 598,
+  "roundTripsLogged": 0,
+  "wall": 881
+ },
+ "xctRaw": {
+  "nodes": 298,
+  "named": 187,
+  "rootType": "Application",
+  "rootChildren": 2,
+  "maxDepth": 50,
+  "quality": "healthy",
+  "qualityBackend": "tree",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": 544,
+  "truncated": false,
+  "keyboard": "absent",
+  "warnings": [],
+  "captureBackend": null,
+  "captureMs": null,
+  "routeFallback": null,
+  "acquire": null,
+  "android": null,
+  "runnerRoundTrips": null,
+  "costWallMs": null,
+  "helperWallMs": 602,
+  "roundTripsLogged": 0,
+  "wall": 913
+ }
+}

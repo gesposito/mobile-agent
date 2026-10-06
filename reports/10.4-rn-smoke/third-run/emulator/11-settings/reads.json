@@ -1,0 +1,127 @@
+{
+ "screen": "11-settings",
+ "start": {
+  "time": "16:20:48",
+  "load": "4.29 4.26 5.53"
+ },
+ "end": {
+  "time": "16:20:50",
+  "load": "4.34 4.27 5.52"
+ },
+ "settle": {
+  "elapsedMs": 0,
+  "endedBy": "none",
+  "settled": true
+ },
+ "ma": {
+  "i1": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "android-agent",
+   "refs": 18,
+   "lines": 19,
+   "readMs": 0.081,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 7
+  },
+  "i2": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "android-agent",
+   "refs": 18,
+   "lines": 19,
+   "readMs": 0.078,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 7
+  },
+  "full": {
+   "degraded": false,
+   "reasons": [],
+   "backend": "android-agent",
+   "refs": 18,
+   "lines": 66,
+   "readMs": 0.11,
+   "replica": true,
+   "origin": "xyz.blueskyweb.app",
+   "warning": null,
+   "wall": 10
+  },
+  "shot": {
+   "w": 450,
+   "h": 1000,
+   "wall": 65
+  }
+ },
+ "adI": {
+  "nodes": 37,
+  "named": 35,
+  "rootType": "android.widget.ScrollView",
+  "rootChildren": 2,
+  "maxDepth": 3,
+  "quality": "healthy",
+  "qualityBackend": "android-helper",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": "android",
+  "captureMs": 510,
+  "routeFallback": null,
+  "acquire": null,
+  "android": {
+   "nodeCount": 302,
+   "windowCount": 2,
+   "elapsedMs": 240,
+   "captureMode": "interactive-windows",
+   "helperTruncated": false,
+   "sessionReused": false
+  },
+  "runnerRoundTrips": 0,
+  "costWallMs": 527,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 675
+ },
+ "adRaw": {
+  "nodes": 302,
+  "named": 101,
+  "rootType": "android.widget.FrameLayout",
+  "rootChildren": 2,
+  "maxDepth": 29,
+  "quality": "healthy",
+  "qualityBackend": "android-helper",
+  "reasonCode": null,
+  "reason": null,
+  "acquisitionMs": null,
+  "truncated": false,
+  "warnings": [],
+  "captureBackend": "android",
+  "captureMs": 518,
+  "routeFallback": null,
+  "acquire": null,
+  "android": {
+   "nodeCount": 302,
+   "windowCount": 2,
+   "elapsedMs": 230,
+   "captureMode": "interactive-windows",
+   "helperTruncated": false,
+   "sessionReused": false
+  },
+  "runnerRoundTrips": 0,
+  "costWallMs": 534,
+  "helperWallMs": null,
+  "roundTripsLogged": 0,
+  "wall": 663
+ },
+ "xctI": {
+  "missing": true
+ },
+ "xctRaw": {
+  "missing": true
+ }
+}
