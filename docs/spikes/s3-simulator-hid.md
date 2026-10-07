@@ -183,3 +183,23 @@ Proposed corrections and additions to `docs/research/simulator.md`. This spike d
 6. The note describes dtuhidd as demand-launched with a 10 s minimum runtime. After its first launch it stayed up for more than an hour with no peer, so the cold activation is paid once per boot, not once per idle period.
 7. The note does not give `-[SimDevice lookup:error:]`'s return type. It is `mach_port_t`, and a plain `msg_send!` with a `u32` return and an `NSError **` works, with the debug build's signature check.
 8. Missing risk: a device whose display stops presenting. Frame callbacks go silent while dtuhidd still accepts input, and the input changes nothing; a reboot fixed the one occurrence, and the lock button wakes a locked device.
+
+## Addendum: the pasteboard (task 10.31)
+
+Task 10.31 measured the ways to put a paste's text on the Simulator's pasteboard, on `mobile-agent-spike` (iPhone 17, iOS 26.5) under Xcode 27.0 with CoreSimulator 1171.7, on 2026-10-07. A throwaway harness, not committed, opened each fixture on its Login tab through the driver, focused `login-username`, and ran 20 trials per way and fixture with the ways' order rotated each trial: empty the field (Command-A, delete), then set a 36-character text unique to the trial, send Command-V over dtuhidd, and read the tree until the field showed the text, for at most 3 s. "Set" is the call that put the text on the pasteboard, "Command-V to shown" ends with the read that first showed it. The fresh-boot `pbcopy` series ran alone, right after a reboot, before anything had started `dtpasteboardd`; the rest ran from 12:47:05 to 12:51:04 UTC at a 1-minute load of 3.98 to 24.23, median 16.28, raised by another session's builds.
+
+| Way | Fixture | Set: min / p50 / p95 / max (ms) | Command-V to shown, p50 / p95 | Set to shown, p50 / p95 | Shown |
+|---|---|---|---|---|---|
+| `devicectl device pasteboard copy`, a process per paste | SwiftUI | 118.1 / 167.4 / 233.9 / 240.7 | 81.9 / 100.8 | 253.3 / 321.0 | 20 of 20 |
+| | Expo | 124.7 / 200.7 / 247.0 / 249.7 | 76.3 / 93.6 | 277.1 / 327.2 | 20 of 20 |
+| `xcrun simctl pbcopy`, `dtpasteboardd` running | SwiftUI | 312.4 / 366.1 / 406.9 / 425.8 | | | 0 of 20 |
+| | Expo | 310.0 / 353.6 / 404.0 / 423.9 | | | 0 of 20 |
+| `xcrun simctl pbcopy`, a fresh boot | SwiftUI | 298.8 / 348.4 / 398.5 / 468.5 | 78.9 / 101.7 | 426.1 / 549.5 | 20 of 20 |
+| `SET` to `dtpasteboardd`, a connection per paste | SwiftUI | 8.3 / 16.6 / 32.6 / 34.5 | 82.5 / 93.5 | 103.5 / 128.1 | 20 of 20 |
+| | Expo | 10.2 / 15.7 / 34.3 / 35.1 | 76.1 / 96.9 | 89.6 / 119.6 | 20 of 20 |
+| `SET` to `dtpasteboardd`, one connection kept | SwiftUI | 13.7 / 16.5 / 31.7 / 32.2 | 89.4 / 115.7 | 107.0 / 137.8 | 20 of 20 |
+| | Expo | 7.5 / 14.1 / 21.4 / 29.4 | 78.5 / 102.3 | 92.1 / 114.7 | 20 of 20 |
+
+- **`pbcopy` once `dtpasteboardd` runs.** Every Command-V pasted the previous trial's text: `pbcopy` exits 0, and `CoreSimulatorBridge`, its guest end, logs "Ignoring snapshot for com.apple.UIKit.pboard.general: the CoreDevice pasteboard stack is in use" (`docs/research/simulator.md`, The pasteboard). The host pasteboard's sync through Simulator.app or DeviceHub.app was not measured: it needs one of them attached to the device, DeviceHub.app attaches to every booted Simulator, other sessions' included, and the sync writes the host's own pasteboard.
+- **The `SET`.** It is `devicectl`'s own message, sent from the measuring process: `-[SimDevice lookup:error:]` for `com.apple.coredevice.feature.pasteboard` took 1.6 ms, and in a probe's eight `SET`s the reply came 3.0 to 7.6 ms after the send, at a load of 4 to 6. Keeping the connection saved nothing measurable, so the driver opens one per paste and keeps no state. No Command-V after a `SET_REPLY` pasted older text, in 80 trials.
+- **What a paste needs besides.** Without `kTCCServicePasteboard` the fixture showed "“FixtureSwiftUI” would like to paste from “dtpasteboardd”" with Don't Allow Paste and Allow Paste, and the field stayed empty; with it, the text arrived. That is what the driver's grant is for. `-[SimDevice installedAppsWithError:]`, which finds the applications to grant, took 10.8 / 12.5 / 21.8 ms (min / p50 / max) over 20 calls for the device's 39 applications, and a grant 2.9 / 6.8 / 20.5 ms over 15. A reinstall gave the application a new bundle directory and changed the modification time of `Containers/Bundle/Application`, and kept its grant.
