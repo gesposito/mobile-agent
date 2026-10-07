@@ -366,6 +366,8 @@ impl Walk<'_> {
             // AXPTranslator has no attribute for a scroll view's viewport.
             scroll_area: None,
             user_interaction: None,
+            // Nor does it say which view is modal.
+            modal: false,
         };
         if level >= self.limits.max_depth {
             return Ok(node);

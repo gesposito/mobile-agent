@@ -1,0 +1,58 @@
+{
+  "description": "Bluesky's search screen with the keyboard and the typeahead up, as the Simulator's reader shows it (reports/10.4-rn-smoke.md, third run, findings 1 and 2; tasks 10.21 and 10.22), shapes from task 10.22's spike and names replaced by placeholders: the keyboard's window has the bounds of what it draws, from the prediction bar down; in the application's window the screen's safe area view holds the screen's own empty view, the header with the drawer button, Cancel search, the search field and its clear button, the Explore page's scroll view and the typeahead, which Bluesky marks accessibilityViewIsModal and the reader flags modal. React Native flattens the views between them, so the header is one of the typeahead's siblings; the tab bar lies in another branch. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 9, "kind": "input_method", "layer": 1, "package": "xyz.blueskyweb.app",
+      "bounds": [0, 539, 402, 874], "events": false,
+      "root": {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 816], "children": [
+          {"class": "XCUIElementTypeKey", "desc": "q", "bounds": [4.67, 590, 44, 644], "flags": ["clickable"]}
+        ]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RNSSafeAreaViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "id": "searchScreen", "bounds": [0, 0, 402, 874]},
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 166.33], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Open drawer menu", "bounds": [13, 67.67, 46, 100.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "desc": "Cancel search", "bounds": [16, 119.67, 49, 152.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeTextField", "id": "searchScreenInput", "desc": "Search", "text": "nobel", "bounds": [93, 114, 374, 158.33], "flags": ["editable", "focusable", "focused"]},
+              {"class": "XCUIElementTypeButton", "id": "searchTextInputClearBtn", "desc": "Clear search query", "bounds": [337, 119.67, 370, 152.67], "flags": ["clickable"]}
+            ]},
+            {"class": "RCTScrollViewComponentView", "bounds": [0, 166.33, 402, 874], "flags": ["scrollable"], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder explore action", "bounds": [361, 174.67, 394, 207.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "desc": "Placeholder trending topic", "bounds": [16, 246.33, 386, 279.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder section action", "bounds": [357, 322, 390, 355], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-1", "desc": "Placeholder feed 1", "bounds": [0, 367.33, 402, 478.33], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-2", "desc": "Placeholder feed 2", "bounds": [0, 478.33, 402, 589.33], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-3", "desc": "Placeholder feed 3", "bounds": [0, 589.33, 402, 700.33], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-4", "desc": "Placeholder feed 4", "bounds": [0, 700.33, 402, 811.33], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-5", "desc": "Placeholder feed 5", "bounds": [0, 811.33, 402, 915.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-feed-6", "desc": "Placeholder feed 6", "bounds": [0, 915.67, 402, 1020], "flags": ["clickable"], "off": ["visible"]}
+            ]},
+            {"class": "RCTViewComponentView", "bounds": [0, 166.33, 402, 874], "flags": ["modal"], "children": [
+              {"class": "RCTViewComponentView", "desc": "Search for “nobel”", "bounds": [0, 166.33, 402, 219]},
+              {"class": "XCUIElementTypeLink", "id": "searchAutoCompleteResult-placeholder-1", "desc": "Placeholder Account 1", "bounds": [0, 219, 402, 279], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "searchAutoCompleteResult-placeholder-2", "desc": "Placeholder Account 2", "bounds": [0, 279, 402, 339], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "searchAutoCompleteResult-placeholder-3", "desc": "Placeholder Account 3", "bounds": [0, 339, 402, 399], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "id": "searchAutoCompleteResult-placeholder-4", "desc": "Placeholder Account 4", "bounds": [0, 399, 402, 459], "flags": ["clickable"]}
+            ]}
+          ]},
+          {"class": "RCTViewComponentView", "bounds": [0, 791, 402, 874], "children": [
+            {"class": "XCUIElementTypeButton", "id": "bottomBarHomeBtn", "desc": "Home", "bounds": [8, 793, 85.33, 840], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "desc": "Search", "bounds": [85.33, 793, 162.33, 840], "flags": ["clickable", "selected"]},
+            {"class": "XCUIElementTypeButton", "id": "bottomBarMessagesBtn", "desc": "Chat", "bounds": [162.33, 793, 239.67, 840], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "bottomBarNotificationsBtn", "desc": "Notifications", "bounds": [239.67, 793, 316.67, 840], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "bottomBarProfileBtn", "desc": "Profile", "bounds": [316.67, 793, 394, 840], "flags": ["clickable"]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

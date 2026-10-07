@@ -17,7 +17,10 @@
 //! - `res_id` is the accessibility identifier.
 //! - Bounds are physical pixels: frames in points times the screen scale.
 //! - Flags come from the type and the UIAccessibilityTraits bits; iOS reports
-//!   no visibility, so `visible` means the frame overlaps the screen.
+//!   no visibility, so `visible` means the frame overlaps the screen. No
+//!   attribute reports a view the app marks modal either; `modal` marks the
+//!   views a read honouring modal views kept where it left their siblings
+//!   out ([`mark_modal`], task 10.22).
 //! - `scroll` comes from a scroll view's [`ScrollArea`]: whether content lies
 //!   beyond the visible frame toward the start and the end of each axis,
 //!   and which part of the content the visible frame shows, in percent. The
@@ -167,6 +170,9 @@ pub struct Element {
     /// alone: it tells a sheet that blocks the screen from one resting at an
     /// undimmed detent. Absent when not read.
     pub user_interaction: Option<bool>,
+    /// The element is a view the app marks modal (`accessibilityViewIsModal`),
+    /// as [`mark_modal`] finds it; no attribute reports it.
+    pub modal: bool,
 }
 
 /// What the runtime reports about a scroll view's viewport: where the edges
@@ -581,6 +587,102 @@ fn sheet_title(view: &Element) -> Option<String> {
     })
 }
 
+/// Whether a read made with modal views honoured (the snapshot option
+/// `snapshotKeyHonorModalViews`, which XCTest's queries use) left children
+/// out for a view the app marks modal: some element delivered some of its
+/// children, but fewer than it counted. The app replaces a view's children
+/// with its modal one, so the element is the modal view's parent. A read the
+/// node budget cut says nothing, and an element at the depth limit comes
+/// without any of its children.
+pub fn pruned(root: &Element, limits: &Limits) -> bool {
+    fn short(element: &Element) -> bool {
+        let delivered = element.children.len() as u64;
+        (delivered > 0
+            && element
+                .children_count
+                .is_some_and(|count| count > delivered))
+            || element.children.iter().any(short)
+    }
+    fn size(element: &Element) -> u64 {
+        1 + element.children.iter().map(size).sum::<u64>()
+    }
+    size(root) <= u64::from(limits.max_nodes) && short(root)
+}
+
+/// Marks, in the read `whole`, the views the app marks modal, from a read of
+/// the same screen made with modal views honoured, `honoured`: where an
+/// element of `honoured` delivered fewer children than it counted, those it
+/// kept are modal. The reads are walked together; a kept child is the child
+/// of `whole` of the same class, type, identifier and label that holds the
+/// same, else that has the same frame, as the app may move it between the
+/// reads. Where the reads disagree nothing is marked.
+pub fn mark_modal(whole: &mut Element, honoured: &Element) {
+    let kept = &honoured.children;
+    let delivered = kept.len() as u64;
+    if delivered > 0
+        && honoured
+            .children_count
+            .is_some_and(|count| count > delivered)
+    {
+        let mut taken = vec![false; whole.children.len()];
+        for child in kept {
+            let Some(index) = counterpart(&whole.children, &taken, child) else {
+                continue;
+            };
+            taken[index] = true;
+            whole.children[index].modal = true;
+            mark_modal(&mut whole.children[index], child);
+        }
+        return;
+    }
+    if whole.children.len() != kept.len() {
+        return;
+    }
+    for (mine, theirs) in whole.children.iter_mut().zip(kept) {
+        if same(mine, theirs) {
+            mark_modal(mine, theirs);
+        }
+    }
+}
+
+/// Whether two elements of two reads name the same view.
+fn same(one: &Element, other: &Element) -> bool {
+    one.class == other.class
+        && one.automation_type == other.automation_type
+        && one.identifier == other.identifier
+        && one.label == other.label
+}
+
+/// Whether two elements of two reads are the same view holding the same.
+fn alike(one: &Element, other: &Element) -> bool {
+    same(one, other)
+        && one.children.len() == other.children.len()
+        && one
+            .children
+            .iter()
+            .zip(&other.children)
+            .all(|(one, other)| alike(one, other))
+}
+
+/// The index of the child of `children`, not yet `taken`, that is `kept`.
+fn counterpart(children: &[Element], taken: &[bool], kept: &Element) -> Option<usize> {
+    let candidates: Vec<usize> = (0..children.len())
+        .filter(|&index| !taken[index] && same(&children[index], kept))
+        .collect();
+    let only = |matches: &dyn Fn(&Element) -> bool| {
+        let found: Vec<usize> = candidates
+            .iter()
+            .copied()
+            .filter(|&index| matches(&children[index]))
+            .collect();
+        match found[..] {
+            [index] => Some(index),
+            _ => None,
+        }
+    };
+    only(&|child| alike(child, kept)).or_else(|| only(&|child| child.frame == kept.frame))
+}
+
 /// Whether an element of this automation type is a scroll view: a scroll
 /// view, table or collection view, which the reader marks `scrollable` and
 /// asks for its scroll area.
@@ -821,6 +923,9 @@ impl Builder {
         }
         if is_scroll_view(automation_type) {
             flags |= NodeFlags::SCROLLABLE;
+        }
+        if element.modal {
+            flags |= NodeFlags::MODAL;
         }
 
         let desc = present(&element.label).or(if text_input { placeholder } else { None });
@@ -1318,6 +1423,101 @@ mod tests {
                 e.children = vec![host]
             })]
         })
+    }
+
+    /// Bluesky's search screen with its typeahead up, as the two reads of
+    /// task 10.22's spike saw it on iOS 26.5, containers trimmed and names
+    /// replaced: the screen's safe area view holds the screen's own empty
+    /// view, the header with the search field, the Explore page's scroll
+    /// view and the typeahead, which Bluesky marks `accessibilityViewIsModal`
+    /// (React Native flattens the views between them, so the header is one
+    /// of its siblings); the tab bar lies in another branch. A read that
+    /// honours modal views (`honoured`) keeps only the typeahead of the safe
+    /// area view's four children, and says it has four.
+    fn bluesky_search(honoured: bool) -> Element {
+        const SCREEN: [f64; 4] = [0.0, 0.0, 402.0, 874.0];
+        let view = |frame: [f64; 4], children: Vec<Element>| {
+            at(
+                with(element(0, "RCTViewComponentView"), |e| {
+                    e.children = children
+                }),
+                frame,
+            )
+        };
+        let screen = with(view(SCREEN, vec![]), |e| {
+            e.identifier = Some("searchScreen".into())
+        });
+        let field = at(
+            with(element(types::TEXT_FIELD, "RCTUITextField"), |e| {
+                e.identifier = Some("searchScreenInput".into());
+                e.placeholder = Some("Search".into());
+                e.value = Some("nobel".into());
+            }),
+            [93.0, 114.0, 281.0, 44.33],
+        );
+        let cancel = button(
+            "RCTViewComponentView",
+            None,
+            "Cancel search",
+            [16.0, 119.67, 33.0, 33.0],
+        );
+        let header = view([0.0, 62.0, 402.0, 104.33], vec![cancel, field]);
+        let feed = at(
+            with(element(42, "RCTViewComponentView"), |e| {
+                e.label = Some("Placeholder feed".into())
+            }),
+            [0.0, 367.33, 402.0, 111.0],
+        );
+        let explore = at(
+            with(element(0, "RCTScrollViewComponentView"), |e| {
+                e.children = vec![feed]
+            }),
+            [0.0, 166.33, 402.0, 707.67],
+        );
+        let search_for = at(
+            with(element(0, "RCTViewComponentView"), |e| {
+                e.label = Some("Search for “nobel”".into())
+            }),
+            [0.0, 166.33, 402.0, 52.67],
+        );
+        let account = at(
+            with(element(42, "RCTViewComponentView"), |e| {
+                e.identifier = Some("searchAutoCompleteResult-placeholder".into());
+                e.label = Some("Placeholder Account".into());
+            }),
+            [0.0, 219.0, 402.0, 60.0],
+        );
+        let typeahead = view([0.0, 166.33, 402.0, 707.67], vec![search_for, account]);
+        let kept = if honoured {
+            vec![typeahead]
+        } else {
+            vec![screen, header, explore, typeahead]
+        };
+        let safe_area = at(
+            with(element(0, "RNSSafeAreaViewComponentView"), |e| {
+                e.children = kept
+            }),
+            SCREEN,
+        );
+        let home = button(
+            "RCTViewComponentView",
+            Some("bottomBarHomeBtn"),
+            "Home",
+            [8.0, 793.0, 77.33, 47.0],
+        );
+        let tab_bar = view([0.0, 791.0, 402.0, 83.0], vec![home]);
+        let mut root = counted(with(element(1, "UIApplication"), |e| {
+            e.label = Some("Bluesky".into());
+            e.children = vec![with(element(2, "UIWindow"), |e| {
+                e.children = vec![safe_area, tab_bar]
+            })];
+        }));
+        root.children[0].children[0].children_count = Some(4);
+        root
+    }
+
+    fn size(element: &Element) -> u32 {
+        1 + element.children.iter().map(size).sum::<u32>()
     }
 
     /// SpringBoard under the location permission alert, containers trimmed:
@@ -1915,6 +2115,79 @@ mod tests {
         let keyboard = &snapshot.windows[0];
         assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
         assert_eq!(keyboard.bounds, Bounds::default());
+    }
+
+    /// Task 10.22: no attribute says a view is modal, but a read that
+    /// honours modal views leaves its siblings out and still counts them.
+    #[test]
+    fn a_read_honouring_modal_views_that_left_children_out_was_pruned() {
+        let limits = Limits::default();
+        assert!(pruned(&bluesky_search(true), &limits));
+        assert!(
+            !pruned(&bluesky_search(false), &limits),
+            "every element delivers the children it counts"
+        );
+        let budget = Limits {
+            max_nodes: size(&bluesky_search(true)) - 1,
+            ..limits
+        };
+        assert!(
+            !pruned(&bluesky_search(true), &budget),
+            "a read the node budget cut says nothing about modal views"
+        );
+        let mut leaf = bluesky_search(false);
+        leaf.children[0].children[1].children[0].children_count = Some(3);
+        assert!(
+            !pruned(&leaf, &limits),
+            "an element at the depth limit comes without its children"
+        );
+    }
+
+    #[test]
+    fn the_view_a_pruned_read_kept_is_marked_modal_in_the_whole_read() {
+        let mut whole = bluesky_search(false);
+        mark_modal(&mut whole, &bluesky_search(true));
+        let snapshot = snapshot(&read(whole));
+        let marked: Vec<&Node> = nodes(&snapshot)
+            .into_iter()
+            .filter(|node| node.flags.contains(NodeFlags::MODAL))
+            .collect();
+        assert_eq!(marked.len(), 1, "{marked:?}");
+        assert_eq!(marked[0].bounds, Bounds::new(0, 499, 1206, 2622));
+        assert_eq!(marked[0].children.len(), 2, "the typeahead's two rows");
+        assert!(
+            holds(&snapshot.windows[0], "label:Placeholder feed"),
+            "the whole read keeps what the typeahead covers, for the mirror"
+        );
+    }
+
+    /// The typeahead fades in, so the second read can find it elsewhere; the
+    /// header, as nameless and of the same class, is not taken for it.
+    #[test]
+    fn a_kept_view_that_moved_between_the_reads_is_found_by_what_it_holds() {
+        let mut whole = bluesky_search(false);
+        whole.children[0].children[0].children[3].frame = Some([0.0, 186.33, 402.0, 707.67]);
+        mark_modal(&mut whole, &bluesky_search(true));
+        let marked: Vec<bool> = whole.children[0].children[0]
+            .children
+            .iter()
+            .map(|child| child.modal)
+            .collect();
+        assert_eq!(marked, [false, false, false, true]);
+    }
+
+    #[test]
+    fn nothing_is_marked_when_the_reads_disagree() {
+        let mut whole = bluesky_search(false);
+        whole.children[0].children[0].children.pop();
+        whole.children[0].children[0].children_count = Some(3);
+        mark_modal(&mut whole, &bluesky_search(true));
+        let snapshot = snapshot(&read(whole));
+        assert!(
+            nodes(&snapshot)
+                .iter()
+                .all(|node| !node.flags.contains(NodeFlags::MODAL))
+        );
     }
 
     #[test]

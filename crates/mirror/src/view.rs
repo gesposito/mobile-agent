@@ -25,7 +25,10 @@
 //!    in the React Native smoke test);
 //! 7. the top-most modal (a modal window, or an alert or dialog node) cuts
 //!    what lies outside it, since the Simulator's reader still returns the
-//!    screen under an alert (spike S4); keyboard windows are collapsed.
+//!    screen under an alert (spike S4); keyboard windows are collapsed;
+//! 8. a view marked modal inside its window (the `modal` node flag, a view
+//!    an iOS app marks `accessibilityViewIsModal`) cuts what its siblings
+//!    hold within its bounds (task 10.22).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -87,7 +90,11 @@ impl View {
             .map(|w| window_facts(w, replica.scale))
             .collect();
         let modal = cut(replica, &mut windows);
-        View { windows, modal }
+        let view_modal = cover_by_modal_views(replica, &mut windows);
+        View {
+            windows,
+            modal: modal.or(view_modal),
+        }
     }
 }
 
@@ -439,6 +446,81 @@ fn cover_below(replica: &Replica, facts: &mut [Vec<Facts>], w: usize) {
                 f.hidden = Hidden::Covered;
             }
         }
+    }
+}
+
+/// Hides what each view marked modal covers in its window (a node with the
+/// `modal` flag, which the Simulator's reader sets on a view the app marks
+/// `accessibilityViewIsModal`): the nodes of its siblings, other than
+/// siblings marked modal themselves, that lie within its bounds. Assistive
+/// technology leaves out every sibling, as XCTest's tree does; a sibling
+/// outside the view stays, since the user sees it and a tap reaches it, as
+/// Bluesky's header does, a sibling of its typeahead only because React
+/// Native flattens the views between them. A node is judged by its own
+/// bounds, so a container that reaches outside the view stays while what it
+/// holds inside is hidden. Returns the label of the first such view that
+/// hid anything.
+fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
+    let slack = if replica.scale > 0.0 {
+        1.0 / replica.scale
+    } else {
+        1.0
+    };
+    let mut label = None;
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind == WindowType::INPUT_METHOD {
+            continue;
+        }
+        let marked = |i: usize| window.nodes[i].flags.contains(NodeFlags::MODAL);
+        for m in 0..window.nodes.len() {
+            let f = &facts[w][m];
+            if !marked(m) || !f.visible || f.hidden != Hidden::No {
+                continue;
+            }
+            let Some(parent) = window.nodes[m].parent else {
+                continue;
+            };
+            let area = f.rect;
+            let mut hid = false;
+            let mut stack: Vec<usize> = window.nodes[parent]
+                .children
+                .iter()
+                .copied()
+                .filter(|&s| s != m && !marked(s))
+                .collect();
+            while let Some(d) = stack.pop() {
+                let covered = &mut facts[w][d];
+                if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
+                    covered.hidden = Hidden::Covered;
+                    hid = true;
+                }
+                stack.extend(window.nodes[d].children.iter().copied());
+            }
+            if hid && label.is_none() {
+                label = Some(modal_view_label(&facts[w][m]));
+            }
+        }
+    }
+    label
+}
+
+/// Whether `inner` lies within `outer`, to within `slack` on each side.
+fn within(inner: &Rect, outer: &Rect, slack: f64) -> bool {
+    inner.left >= outer.left - slack
+        && inner.top >= outer.top - slack
+        && inner.right <= outer.right + slack
+        && inner.bottom <= outer.bottom + slack
+}
+
+/// How errors name a view marked modal: by its role and name, or as a modal
+/// view when it says neither, as a plain container.
+fn modal_view_label(facts: &Facts) -> String {
+    let plain = matches!(facts.role, Role::Generic | Role::Group);
+    match (plain, facts.name.is_empty()) {
+        (true, true) => "modal view".to_owned(),
+        (true, false) => format!("modal view {:?}", facts.name),
+        (false, true) => facts.role.to_string(),
+        (false, false) => format!("{} {:?}", facts.role, facts.name),
     }
 }
 

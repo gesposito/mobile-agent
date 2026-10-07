@@ -3,8 +3,9 @@
 //! spike S4 ported it.
 //!
 //! - XCTAutomationSupport: `XCTAccessibilityFramework -initForRemoteAccess`
-//!   and `-userTestingSnapshotForElement:options:error:`, for the tree and
-//!   for each scroll view's scroll area,
+//!   and `-userTestingSnapshotForElement:options:error:`, for the tree, once
+//!   with modal views honoured and once more without when that left
+//!   children out, and for each scroll view's scroll area,
 //!   `XCAccessibilityElement +elementWithProcessIdentifier:` and
 //!   `-AXUIElement`, and the C functions `XCTDefaultSnapshotParameters` and
 //!   `XCAXAccessibilityAttributesForStringAttributes`.
@@ -22,7 +23,7 @@ use objc2::{msg_send, sel};
 use objc2_foundation::{NSArray, NSError, NSNumber, NSString};
 
 use crate::codes;
-use crate::elements::{Limits, Owner, Read};
+use crate::elements::{self, Limits, Owner, Read};
 use crate::guest::extract;
 use crate::guest::objc::{self, AXUIElementRef, Failure, guarded};
 use crate::guest::process;
@@ -66,6 +67,13 @@ pub const SCROLL_ATTRIBUTE_NAMES: [&str; 3] = [
 /// dimming views alone for the same reason as the scroll attributes: asked
 /// of every node, it costs a read far more.
 pub const INTERACTION_ATTRIBUTE_NAME: &str = "XC_kAXXCAttributeIsUserInteractionEnabled";
+
+/// The snapshot option that has the app leave out the siblings of a view it
+/// marks modal (`accessibilityViewIsModal`), replacing that view's parent's
+/// children with it and still counting them, as XCTest's queries do unless
+/// told to include non-modal elements. None of the 81 attribute names
+/// XCTAutomationSupport knows reports the flag (task 10.22).
+pub const HONOUR_MODAL_OPTION: &str = "snapshotKeyHonorModalViews";
 
 /// `kAXErrorIllegalArgument` from the AX server, which rejects a snapshot
 /// deeper than it will serialize; XCTAutomationSupport reports the same
@@ -326,13 +334,15 @@ impl Runtime {
     }
 
     /// One `userTestingSnapshotForElement:options:error:` call for
-    /// `attributes`.
+    /// `attributes`, which honours the views the app marks modal when
+    /// `honour_modal` says so ([`HONOUR_MODAL_OPTION`]).
     fn snapshot_call(
         &self,
         element: AXUIElementRef,
         attributes: &NSArray<NSNumber>,
         max_depth: u32,
         max_nodes: u32,
+        honour_modal: bool,
     ) -> Result<Result<Retained<AnyObject>, Retained<NSError>>, Failure> {
         guarded(
             "-[XCTAccessibilityFramework userTestingSnapshotForElement:options:error:]",
@@ -354,6 +364,9 @@ impl Runtime {
                 set("maxDepth", &NSNumber::new_u32(max_depth));
                 set("maxChildren", &NSNumber::new_u32(max_nodes));
                 set("maxArrayCount", &NSNumber::new_u32(max_nodes));
+                if honour_modal {
+                    set(HONOUR_MODAL_OPTION, &NSNumber::new_bool(true));
+                }
                 let mut error: *mut NSError = std::ptr::null_mut();
                 let tree: *mut AnyObject = msg_send![
                     &*self.framework,
@@ -381,7 +394,9 @@ impl Runtime {
         let Some(scroll) = &self.attributes.scroll else {
             return Ok(None);
         };
-        Ok(self.snapshot_call(element, &scroll.request, 0, 1)?.ok())
+        Ok(self
+            .snapshot_call(element, &scroll.request, 0, 1, false)?
+            .ok())
     }
 
     /// A snapshot of `element` alone with [`INTERACTION_ATTRIBUTE_NAME`];
@@ -393,13 +408,24 @@ impl Runtime {
         let Some((_, request)) = &self.attributes.interaction else {
             return Ok(None);
         };
-        Ok(self.snapshot_call(element, request, 0, 1)?.ok())
+        Ok(self.snapshot_call(element, request, 0, 1, false)?.ok())
     }
 
     /// Reads the tree of the process that owns the foreground: an
     /// application, or SpringBoard while it shows the home screen or a system
     /// alert. The owner is checked before and after, and a depth the server
     /// rejects is retried at half depth.
+    ///
+    /// The first snapshot honours the views the app marks modal, as XCTest's
+    /// queries do; nothing reports the flag itself (task 10.22). Without a
+    /// modal view on screen it holds every node and costs what a plain one
+    /// does, and it is the read. When it left children out
+    /// ([`elements::pruned`]), a second snapshot without the option gives the
+    /// whole tree, which keeps what the modal views cover for the mirror to
+    /// cut, and the first says which views those are
+    /// ([`elements::mark_modal`]). On Bluesky's search screen, with its
+    /// typeahead up, the first took 41 ms for 164 of the whole tree's 578
+    /// nodes and the second 228 ms.
     pub fn read(&self, limits: Limits, scale: f64) -> Result<Read, ReadError> {
         self.assert_automation();
         let Some(pid) = self.primary_pid()? else {
@@ -412,13 +438,64 @@ impl Runtime {
         let owner: Owner = process::owner(pid);
         let (_element, raw) = self.application_element(pid)?;
 
-        // One level past the limit, so the conversion sees what the limit cuts.
+        let (honoured, honoured_cut) = self.capture(raw, pid, &owner, limits, true)?;
+        let modal = extract::structure(self, &honoured, limits.max_nodes)?;
+        let (snapshot, depth_cut, modal) = if elements::pruned(&modal, &limits) {
+            let (whole, whole_cut) = self.capture(raw, pid, &owner, limits, false)?;
+            (whole, whole_cut, Some(modal))
+        } else {
+            (honoured, honoured_cut, None)
+        };
+
+        let after = self.primary_pid()?;
+        if after != Some(pid) {
+            return Err(ReadError::new(
+                protocol::code::WINDOW_CHANGED,
+                format!(
+                    "the foreground changed from pid {pid} to {} during the read",
+                    after.map_or("none".to_owned(), |p| p.to_string())
+                ),
+                true,
+            ));
+        }
+        let mut root = extract::element(self, &snapshot, limits.max_nodes)?;
+        if let Some(modal) = &modal {
+            elements::mark_modal(&mut root, modal);
+        }
+        Ok(Read {
+            owner,
+            root,
+            scale,
+            limits,
+            depth_cut,
+        })
+    }
+
+    /// One snapshot of the application element `raw`, of process `pid`
+    /// owned by `owner`, honouring modal views when `honour_modal` says so;
+    /// a depth the server rejects is retried at half depth, and the second
+    /// value says whether it had to be. One level past the limit is asked
+    /// for, so the conversion sees what the limit cuts.
+    fn capture(
+        &self,
+        raw: AXUIElementRef,
+        pid: i32,
+        owner: &Owner,
+        limits: Limits,
+        honour_modal: bool,
+    ) -> Result<(Retained<AnyObject>, bool), ReadError> {
         let wanted = limits.max_depth.saturating_add(1);
         let mut depth = wanted;
         let mut rejected = 0;
-        let snapshot = loop {
-            match self.snapshot_call(raw, &self.attributes.request, depth, limits.max_nodes)? {
-                Ok(tree) => break tree,
+        loop {
+            match self.snapshot_call(
+                raw,
+                &self.attributes.request,
+                depth,
+                limits.max_nodes,
+                honour_modal,
+            )? {
+                Ok(tree) => return Ok((tree, depth < wanted)),
                 Err(error) => {
                     let (domain, code, ax_error) = describe_error(&error);
                     let rejection = ax_error == Some(AX_ERROR_REJECTED)
@@ -446,27 +523,7 @@ impl Runtime {
                     ));
                 }
             }
-        };
-
-        let after = self.primary_pid()?;
-        if after != Some(pid) {
-            return Err(ReadError::new(
-                protocol::code::WINDOW_CHANGED,
-                format!(
-                    "the foreground changed from pid {pid} to {} during the read",
-                    after.map_or("none".to_owned(), |p| p.to_string())
-                ),
-                true,
-            ));
         }
-        let root = extract::element(self, &snapshot, limits.max_nodes)?;
-        Ok(Read {
-            owner,
-            root,
-            scale,
-            limits,
-            depth_cut: depth < wanted,
-        })
     }
 }
 

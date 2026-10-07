@@ -351,6 +351,114 @@ fn acting_on_an_element_an_alert_covers_fails_with_its_code() {
     assert!(target.inputs().is_empty());
 }
 
+/// Task 10.22: a view the app marks modal inside its window, as Bluesky
+/// marks its typeahead, hides what it covers: the Explore page's controls
+/// under it get no refs, and the page's scroll hint goes with them. Its
+/// siblings outside it stay: the header, a sibling only because React
+/// Native flattens the views between them, keeps the search field and
+/// Cancel search, and the tab bar lies in another branch.
+#[test]
+fn a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it() {
+    let (_, mut mirror) = mirror_on("bluesky-typeahead");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    for covered in [
+        "Placeholder explore action",
+        "Placeholder trending topic",
+        "Placeholder section action",
+        "Placeholder feed 1",
+        "Placeholder feed 4",
+    ] {
+        assert!(
+            snapshot.by_name(covered).is_none(),
+            "{covered} lies under the typeahead:\n{}",
+            snapshot.text
+        );
+    }
+    assert!(snapshot.hints.is_empty(), "{:?}", snapshot.hints);
+    for kept in ["Open drawer menu", "Cancel search", "Search for “nobel”"] {
+        assert!(
+            snapshot.by_name(kept).is_some(),
+            "{kept}:\n{}",
+            snapshot.text
+        );
+    }
+    for kept in [
+        "searchScreenInput",
+        "searchTextInputClearBtn",
+        "searchAutoCompleteResult-placeholder-1",
+        "searchAutoCompleteResult-placeholder-4",
+        "bottomBarHomeBtn",
+        "bottomBarProfileBtn",
+    ] {
+        assert!(
+            snapshot.by_identifier(kept).is_some(),
+            "{kept}:\n{}",
+            snapshot.text
+        );
+    }
+    assert_eq!(
+        snapshot.refs().len(),
+        14,
+        "4 in the header, 5 in the typeahead, 5 in the tab bar:\n{}",
+        snapshot.text
+    );
+}
+
+/// The Bluesky typeahead fixture with nothing marked modal.
+fn unmarked(screen: &Screen) -> Screen {
+    fn strip(node: &mut serde_json::Value) {
+        if let Some(flags) = node
+            .get_mut("flags")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            flags.retain(|flag| flag != "modal");
+        }
+        if let Some(children) = node
+            .get_mut("children")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            children.iter_mut().for_each(strip);
+        }
+    }
+    let mut value = screen.0.clone();
+    for window in value["windows"].as_array_mut().expect("windows") {
+        strip(&mut window["root"]);
+    }
+    Screen(value)
+}
+
+#[test]
+fn acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code() {
+    let screen = Screen::load("bluesky-typeahead");
+    let target = FakeTarget::new(unmarked(&screen).read());
+    target.at(ms(100), Step::Show(screen.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let feed = before
+        .by_identifier("placeholder-feed-1")
+        .expect("listed while nothing covers it")
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(feed),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED);
+    assert!(error.to_string().contains("modal view"), "{error}");
+    assert_eq!(
+        mirror.resolve(feed).unwrap().identifier.as_deref(),
+        Some("placeholder-feed-1"),
+        "the covered element keeps its ref"
+    );
+    assert!(target.inputs().is_empty());
+}
+
 #[test]
 fn a_system_alert_reports_system_ui_as_the_foreground() {
     let (_, mut mirror) = mirror_on("system-alert");

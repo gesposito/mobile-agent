@@ -57,12 +57,39 @@ pub fn element(
     snapshot: &AnyObject,
     max_nodes: u32,
 ) -> Result<Element, ReadError> {
+    extract(
+        runtime,
+        snapshot,
+        max_nodes,
+        MAX_SCROLL_VIEWS,
+        MAX_DIMMING_VIEWS,
+    )
+}
+
+/// The element tree of `snapshot` as [`element`] reads it, without asking
+/// scroll views and dimming views for more: what the elements are and hold,
+/// to tell which views the app marks modal.
+pub fn structure(
+    runtime: &Runtime,
+    snapshot: &AnyObject,
+    max_nodes: u32,
+) -> Result<Element, ReadError> {
+    extract(runtime, snapshot, max_nodes, 0, 0)
+}
+
+fn extract(
+    runtime: &Runtime,
+    snapshot: &AnyObject,
+    max_nodes: u32,
+    scroll_views: usize,
+    dimming_views: usize,
+) -> Result<Element, ReadError> {
     let mut extractor = Extractor {
         runtime,
         budget: max_nodes as usize + 1,
         screen: None,
-        scroll_views: MAX_SCROLL_VIEWS,
-        dimming_views: MAX_DIMMING_VIEWS,
+        scroll_views,
+        dimming_views,
     };
     guarded("reading the snapshot dictionaries", || {
         extractor.node(snapshot, 0)
@@ -154,6 +181,7 @@ impl Extractor<'_> {
             children: Vec::new(),
             scroll_area: None,
             user_interaction: None,
+            modal: false,
         };
         if level == 0 {
             self.screen = element.frame.filter(|f| f[2] > 0.0 && f[3] > 0.0);

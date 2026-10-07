@@ -198,8 +198,21 @@ by default, retried at half depth when the server rejects the depth), and
 checks the owner again afterwards: a change fails the read with
 `foreground_changed`; each scroll view on screen then takes one more call,
 for its scroll area. A permission alert makes SpringBoard the owner, so the
-read is SpringBoard's tree, whose alert lists its buttons. The payload
-follows the mirror's conventions (`reader/src/elements.rs`):
+read is SpringBoard's tree, whose alert lists its buttons. The snapshot
+honours the views the app marks modal (`snapshotKeyHonorModalViews`, as
+XCTest's queries do), since no attribute says which views those are (task
+10.22): the app then replaces a modal view's parent's children with the
+modal view and still counts them. With no modal view on screen it holds
+every node and costs what a plain one does (79 and 225 ms against 79 and
+218 ms at p50 on Bluesky's home and Explore screens, 244 and 484 nodes).
+When some element delivered fewer children than it counts, a second
+snapshot without the option is the read, which keeps what the modal views
+cover for the mirror to cut, and the views the first one kept there are
+flagged `modal` (matched by class, type, identifier and label, then by what
+they hold, then by frame; nothing is flagged where the two disagree). On
+Bluesky's search screen with the typeahead up the first took 41 ms for 164
+nodes and the second 228 ms for 578, at p50. The payload follows the
+mirror's conventions (`reader/src/elements.rs`):
 
 - the process's own window, its id the owner's pid, its kind `system` for
   system UI (SpringBoard and the other processes of the runtime's
@@ -267,7 +280,9 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   the reader); `visible` means the frame overlaps the screen, `enabled`,
   `selected` and `clickable` come from the traits, `editable`, `password`
   and `scrollable` from the type, and `focused` from the private editing
-  trait, which only the field with keyboard focus carries;
+  trait, which only the field with keyboard focus carries; `modal` marks a
+  view the app marks `accessibilityViewIsModal`, found as above, whose
+  siblings the mirror cuts within its bounds;
 - a scroll view on screen (a `ScrollView`, `Table` or `CollectionView`, at
   most 32 a read) carries `scroll`, from a snapshot of its own element with
   three more attributes: where its frame's edges fall in its content along
