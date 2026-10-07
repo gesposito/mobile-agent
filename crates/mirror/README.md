@@ -154,6 +154,7 @@ Conventions a driver follows:
 | window event, lifecycle `ready`, tree event for an unknown window, `note_window_change` | every window | `events` |
 | input the mirror injected, for windows without events | those windows, when the tree is next needed | `action` |
 | frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
+| text the mirror pasted or set into a field of such a window, not typed as keys, until a read shows the field's text changed, the next input, or 1 s after the text | the field's window, as soon as a frame changes after its last read began; without frames, as soon as that read ends (task 10.29) | `frames`; `action` without frames |
 | 1 s since such a window's last read began | it | `poll` |
 | while settling without frames, bounds probes found anchors held still where the replica does not have them | their windows, cache cleared | `moved` |
 | sequence gap, driver's out-of-sync report, reconnection, another backend | every window, identities started over | `resync` |
@@ -170,7 +171,8 @@ stops reading, serves the last replica and refuses actions.
 
 The daemon keeps a mirror current between commands with `pump` (apply what
 arrived, perform due reads, never wait) or `run_until(deadline)`, and
-`next_wakeup` says when the next poll or frame-driven re-read falls due.
+`next_wakeup` says when the next poll, frame-driven re-read or re-read after
+text falls due.
 `drain` applies what arrived without reading the tree, even when a read is
 due, and returns how many items it applied; the reads those items call for
 happen at the next `pump`, snapshot, wait or ref.
@@ -280,7 +282,7 @@ the reasons in this order, each with advice:
 | `DEFAULT_QUIET_WINDOW` | 200 ms | spike S1: content changes every 101 to 116 ms, gaps up to 187 ms inside a scroll |
 | `DEFAULT_SETTLE_MAX` | 3 s | design D8 |
 | `DEFAULT_POLL_INTERVAL` | 1 s | chosen here; spike S1 measured cold Compose reads at 21 to 349 ms |
-| `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval |
+| `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval, but for the window of a field text was just pasted or set into (task 10.29) |
 | `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
 | `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
 | `DEFAULT_OVERSCROLL` | 500 ms | task 10.14: on the API 36 emulator the Expo list pulled against its end drew its stretch for 333 to 383 ms after the finger lifted; 117 ms beyond the longest |
@@ -447,7 +449,18 @@ cargo test -p mirror
 - *Windows without change events* asks for a re-read after every injected
   action. The mirror re-reads when the tree is next needed (a snapshot, a
   wait, a ref), so the read sees the action's effect rather than racing it,
-  and design D5's frame-driven re-reads catch later changes.
+  and design D5's frame-driven re-reads catch later changes. After text
+  that goes in in one piece, pasted on a Simulator or set directly on
+  Android, the field's window does not wait out the minimum interval: on
+  the iOS 26.5 Simulator a paste showed 43 to 93 ms after Command-V, never
+  in the read that followed it, so that window is read again as soon as a
+  frame changes, until a read shows the field's text changed, the next
+  input or a poll interval after the text (task 10.29). A `fill` then took
+  a paste of 36 characters 69 to 124 ms after the entry, against 248 to
+  295 ms with the interval. Text typed as keys keeps the interval: `fill` holds it 200 ms,
+  which a read at its first frame cannot end, and that read would put the
+  next one 200 ms after it. Every other window and input keeps it too,
+  where an animation would otherwise make reads back to back.
 - *Settle predicate*: the quiet window counts from the last observed change
   or injected input. A screen that has been quiet that long settles at once,
   and a tap that changes nothing settles one window after the tap. On a
