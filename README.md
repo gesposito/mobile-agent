@@ -11,8 +11,8 @@ mobile-agent drives Android devices, Android emulators and iOS Simulators for AI
 | Xcode | 26.0 up to, not including, 28; other versions are refused with `unsupported_xcode` | Xcode 27.0 (27A266a); CI also builds with Xcode 26 |
 | iOS Simulator | booted Simulators; no gate on the runtime version | iOS 26.5 (23F77), iPhone 17 |
 | Android emulator | fast path through the emulator's gRPC controller when it answers, the agent's path with `--emulator-controller off` | API 36, arm64, Pixel 8 profile, Android Emulator 37.1.11 |
-| Android agent | minimum API 26: the dex is built with `--min-api 26` | API 36 only |
-| Physical Android device | expected to work through the same agent, without a frame stream; not yet measured (task 10.3 waits for a device) | none |
+| Android agent | minimum API 26: the dex is built with `--min-api 26`, and a platform member that exists only from a later level is read behind a check of the level (`agent-android/src/dev/mobileagent/agent/Levels.kt`) | API 36 on the emulator; API 27 (Android 8.1) on a Nexus 5X, from agent 0.4.3 |
+| Physical Android device | through the same agent, without a frame stream: taps and screenshots go through the agent | a Nexus 5X on Android 8.1 (API 27), a `user` build (`reports/10.3-physical-android.md`) |
 | Physical iOS device | not supported: only an XCTest bundle can drive one | none |
 
 CI (`.github/workflows/ci.yml`) runs `just validate` in three jobs: Linux, which also builds the Android agent and the Compose fixture; macOS with Xcode 26 on GitHub's `macos-26` image; and macOS with Xcode 27 on its `xcode-27` image. Each macOS job keeps the image's default Xcode when it has that major version and otherwise selects the newest `Xcode_<major>*.app`. The Simulator integration tests, the spikes and every measurement ran on Xcode 27.0 with CoreSimulator 1171.7 and iOS 26.5. Nothing has run on Xcode 26, where input would be touch only, through the older Indigo transport (`crates/simulator/README.md`, Compatibility).
@@ -255,6 +255,20 @@ Android emulator (`reports/10.1-emulator.md`): an API 36 arm64 AVD on Android Em
 - Both runs drove the CLI through a shim (`reports/10.1-emulator-grpc/bench-android-cli.rs`) that task 10.10 has since made unnecessary. It adds a process start to every wall-clock sample: without it, `mobile-agent --version` took 5.0 and 5.3 ms at p95 (`reports/10.1-emulator.md`, finding 9).
 - The runs' own reports judged tap to frame change against the 50 ms gate of the time, and failed it. Task 10.13 restated the gate for host rendering, which these values pass (`docs/research/emulator-frames.md`). The controller-off report, made before task 10.10, counts that series as failed where the harness now reports it as not measured.
 
+Physical Android device (`reports/10.3-physical-android.md`, `reports/10.3-physical-android/agent/report.md`): a Nexus 5X on Android 8.1 (API 27), commit 552c9e2 with agent 0.4.3, 20 measured iterations after 2 warm-up. A device has no frame stream: taps and screenshots go through the agent. The tap acknowledgement and warm snapshot gates are those the task named, taken from the android-driver spec's 50 ms "Tap acknowledged" bound and the Android warm snapshot gate, through a gate file (`reports/10.3-physical-android/gates.json`).
+
+| Gate | Limit | Measured | Verdict |
+|---|---|---|---|
+| CLI process start | under 20 ms | 6.3 ms | pass |
+| Cold attach | under 1.5 s | Expo 13,889.4 ms (2,193.7 at p50), Compose 3,131.5 ms | fail |
+| Warm snapshot, 500-cell screen | under 100 ms | Expo 7.0 ms, Compose 8.7 ms | pass |
+| Tap acknowledgement (tap dispatch) | under 50 ms | Expo 16.4 ms, Compose 11.4 ms | pass |
+| Tap to frame change | no device gate | not measured: no frame stream | — |
+
+- Cold attach misses its gate on this phone: `app_process` alone takes 1.1 to 1.4 s to start there, and two of Expo's 20 opens did not settle within 10 s.
+- Agent 0.4.2 and earlier could not run on Android 8.0 to 9: they called three platform members those levels lack (task 10.3, agent 0.4.3).
+- On Android 8.1 the Compose fixture's launch focuses its first field and raises the keyboard over the tab bar, so the Compose list-scroll and big-screen flows failed their golden checks. Expo's list-scroll failed its check at the list's end.
+
 Against the baselines: how many times faster mobile-agent's p50 was on each reference flow. "Not timed" means the tool failed the flow's golden check, so the harness did not time it. mobile-agent's flows had no failed or flaky iteration in the runs below; a baseline's failure and flake rates follow its factor where they are not zero.
 
 The login rows were measured again on 2026-10-07, after `fill` began reading the field back (task 10.23), together with the text-entry series (`reports/10.26-remeasure.md`); the other rows are the published runs'. On the emulator, mobile-agent's two series ran once more that day, after the read-back's 200 ms hold was kept for typed text alone (task 10.30), and its login factors there are taken against the baselines of the earlier run (`reports/10.26-remeasure.md`, 10.30 rerun). On the Simulator mobile-agent's two series ran once more, after the mirror began reading a field's window again as soon as a pasted text's frame changes it (task 10.29), and its text entry and SwiftUI login once more, after a paste began putting its text on the pasteboard without `devicectl` (task 10.31); the login's fills are typed and read back as before, so its Simulator rows stand (`reports/10.26-remeasure.md`, 10.29 and 10.31 reruns). A text entry of 36 characters took 199.2 and 387.0 ms at p50 on the Simulator (SwiftUI, Expo), which pastes it, against 376.3 and 555.4 ms before task 10.31, 545.5 and 718.3 ms before task 10.29 and 249.3 and 228.3 ms before the read-back, and 43.0 and 234.9 ms on the emulator (Expo, Compose), which sets it directly, against 23.8 and 26.1 ms before the read-back and 224.1 and 240.0 ms with the hold on every fill. At the median the read-back is 21.2 ms of it on the emulator's Expo fixture, whose fields report a change at once, 218.1 ms on Compose, whose window is read again after the action, and 92.4 to 100.4 ms on the Simulator. The Simulator's entries fall in two clusters about 250 ms apart, the slower waiting for a re-read after the emptied field's caret blinked, and its p50 lands in either.
@@ -274,6 +288,12 @@ Android emulator, controller on (`reports/10.1-emulator.md`, Baselines; login, `
 | login | 14.76x | 6.75x | 2.89x (24 % failed, 12 % flaky) | 1.70x |
 | list-scroll | not timed | not timed | not timed | not timed |
 | big-screen | 8.39x | 4.32x | 1.19x (76 % failed, 12 % flaky) | 1.06x |
+
+Physical Android device, the login flow alone (`reports/10.3-physical-android.md`, Login against the baselines; 20 measured iterations):
+
+| Flow | Maestro 2.10.0, Expo | Maestro, Compose | agent-device 0.21.14, Expo | agent-device, Compose |
+|---|---|---|---|---|
+| login | 23.10x | 7.58x | not timed: 100 % failed | 3.77x |
 
 What each tool costs the host and the device, memory and CPU over ten login flows and a minute idle, is in `reports/10.20-resources.md`: per flow, mobile-agent's processes used 0.35 CPU-s on the Simulator against agent-device's 2.75 and Maestro's 18.82, and on the emulator 0.28 on the host and 0.05 in the guest against 0.62 and 0.22, and 13.45 and 1.82.
 
@@ -304,8 +324,8 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 
 ## Status and limitations
 
-- Physical Android devices have not been measured; the device run (task 10.3) waits for one. Devices have no frame stream, so clicks there report no `frameChangeMs` and settle rests on the tree. OEM Android builds are unverified.
-- Only Xcode 27.0, iOS 26.5 and the API 36 emulator have run.
+- One physical Android device has run: a Nexus 5X on Android 8.1 (task 10.3, `reports/10.3-physical-android.md`). Cold attach missed its 1.5 s gate there. With the keyboard up, a `scroll` stroke that starts over the keyboard reaches it, and Gboard typed the strokes into the focused field. On Compose's 500-cell screen commands waited about 10 s, since Android 8.1's node cache is one for the whole process and every eviction empties it. Devices have no frame stream, so clicks there report no `frameChangeMs` and settle rests on the tree. OEM Android builds and the levels between 8.1 and 16 are unverified.
+- Only Xcode 27.0, iOS 26.5, the API 36 emulator and one API 27 device have run.
 - The emulator's tap-to-frame gate is p95 under 67 ms, four frames of the AVD's 60 Hz display, and holds for host GPU rendering (`-gpu host`) with the controller on: the guest's own frame pipeline takes about three frames at p95, and the tool's dispatch about 3 ms (`docs/research/emulator-frames.md`). The 10.1 run measured 52.5 ms on the Expo fixture and 55.1 ms on the Compose one. Software rendering is not gated; spike S7 measured 146.5 ms at p95 there.
 - On a Simulator whose first boot did not come from the driver, the first tree reads can fail for several seconds, until the reader has turned automation mode on (spike S4); retry.
 - React Native: `reports/10.4-rn-smoke.md` compared 17 logged-out React Native screens on the Simulator (Bluesky, Ignite's demo app, the Expo fixture), where no XCTest read reported a sparse root, then Bluesky's signed-in feeds, threads, profiles, notifications, search, chat and settings on the Simulator and the emulator. Signed in, agent-device's XCTest tree came back `sparse` or timed out on the search screen with the keyboard up and on a 711-node thread, and mobile-agent's snapshots of those screens were whole and not degraded. The same run found that with the keyboard up on the Simulator every element counts as 0% in view, so `click` warns wrongly and `scroll --until`, which stops by the same measure, cannot find its element in view (task 10.21).
