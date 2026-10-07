@@ -10,7 +10,7 @@ Usage: mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drive
                            [--emulator-controller <auto|off>]
                            [--fake <targets>] [--fake-latency <time>] [--fake-frame-delay <time>]
                            [--fake-splash <time>] [--fake-activation <time>] [--fake-stop <time>]
-                           [--fake-fling]
+                           [--fake-fling] [--fake-typing <mode>]
 
 Options:
   --socket-dir <dir>      Where the socket and sidecar files live
@@ -50,6 +50,13 @@ Options:
                           whose finger lifts moving, as far as the
                           platform's fling carries them
                           (or MOBILE_AGENT_FAKE_FLING=1; default off)
+  --fake-typing <mode>    How fake targets' fields take text whose method
+                          the target may choose: whole; keys, typed key by
+                          key up to 32 characters as on a Simulator;
+                          reorder, typed so from the fourth key on each
+                          lands before the last character; max:<n>, whole
+                          and cut to n characters
+                          (or MOBILE_AGENT_FAKE_TYPING; default whole)
   -h, --help              Print this help
   -V, --version           Print the version
 

@@ -25,7 +25,10 @@
 //! (`MOBILE_AGENT_FAKE_FLING`) makes the fixture's list glide on after a
 //! stroke whose finger lifts moving, as far as the platform's fling carries
 //! it; without it, and after a stroke whose finger comes to rest, the list
-//! moves as far as the finger.
+//! moves as far as the finger. A typing mode (`MOBILE_AGENT_FAKE_TYPING`)
+//! says how the fixture's fields take text whose method the target may
+//! choose, as `fill` sends it, which they otherwise take whole, as the
+//! Android agent sets it (see [`Typing`]).
 
 mod app;
 mod realtime;
@@ -60,6 +63,43 @@ pub(crate) struct Timing {
     pub stop: Duration,
 }
 
+/// How fake targets' fields take text whose method the target may choose.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Typing {
+    /// Whole, set directly as the Android agent sets it.
+    #[default]
+    Whole,
+    /// Key by key up to 32 characters, as a Simulator types it, and pasted
+    /// whole beyond.
+    Keys,
+    /// As [`Typing::Keys`], each key from the fourth on landing before the
+    /// field's last character, so "nobel" reads "noelb", as Bluesky's search
+    /// field took it on the Simulator (`reports/10.4-rn-smoke.md`).
+    Reorder,
+    /// Whole, and the fields keep their first `n` characters, however text
+    /// reaches them, as a field with a maximum length does.
+    Max(usize),
+}
+
+impl Typing {
+    /// Parses `whole`, `keys`, `reorder` or `max:<n>`.
+    pub fn parse(text: &str) -> Result<Typing, String> {
+        let text = text.trim();
+        match text {
+            "whole" => Ok(Typing::Whole),
+            "keys" => Ok(Typing::Keys),
+            "reorder" => Ok(Typing::Reorder),
+            _ => text
+                .strip_prefix("max:")
+                .and_then(|n| n.parse().ok())
+                .map(Typing::Max)
+                .ok_or_else(|| {
+                    format!("fake typing {text:?}: use whole, keys, reorder or max:<characters>")
+                }),
+        }
+    }
+}
+
 /// Fake targets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FakeDriver {
@@ -69,6 +109,8 @@ pub struct FakeDriver {
     controller: EmulatorController,
     /// Whether a stroke whose finger lifts moving glides the list on.
     fling: bool,
+    /// How the fields take text whose method the target may choose.
+    typing: Typing,
 }
 
 impl FakeDriver {
@@ -134,6 +176,7 @@ impl FakeDriver {
             timing: Timing::default(),
             controller: EmulatorController::Auto,
             fling: false,
+            typing: Typing::Whole,
         })
     }
 
@@ -184,6 +227,13 @@ impl FakeDriver {
         self.fling = fling;
         self
     }
+
+    /// These targets, their fixture's fields taking text whose method the
+    /// target may choose as `typing` says.
+    pub fn with_typing(mut self, typing: Typing) -> FakeDriver {
+        self.typing = typing;
+        self
+    }
 }
 
 /// What `status` shows about a fake Android emulator the switch keeps off
@@ -228,7 +278,13 @@ impl Driver for FakeDriver {
             TargetClass::AndroidEmulator => self.controller == EmulatorController::Auto,
             TargetClass::AndroidDevice => false,
         };
-        let mut attachment = realtime::attach(target.platform, frames, self.timing, self.fling);
+        let mut attachment = realtime::attach(
+            target.platform,
+            frames,
+            self.timing,
+            self.fling,
+            self.typing,
+        );
         if target.class == TargetClass::AndroidEmulator
             && self.controller == EmulatorController::Off
         {
@@ -241,6 +297,17 @@ impl Driver for FakeDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typing_modes_are_named_whole_keys_reorder_or_max_with_a_length() {
+        assert_eq!(Typing::parse("whole"), Ok(Typing::Whole));
+        assert_eq!(Typing::parse(" keys "), Ok(Typing::Keys));
+        assert_eq!(Typing::parse("reorder"), Ok(Typing::Reorder));
+        assert_eq!(Typing::parse("max:8"), Ok(Typing::Max(8)));
+        for bad in ["", "slow", "max:", "max:-1", "max:eight"] {
+            assert!(Typing::parse(bad).is_err(), "{bad:?}");
+        }
+    }
 
     #[test]
     fn fake_targets_take_default_ids_and_classes() {

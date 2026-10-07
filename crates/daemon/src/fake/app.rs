@@ -6,14 +6,29 @@
 use std::collections::HashMap;
 
 use mirror::backend::Owner;
-use protocol::message::TextMethod;
 use protocol::snapshot::{
     Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit, WindowFlags,
 };
 
+use super::Typing;
 use super::tree::{El, Kit, Win};
 use crate::driver::{DriverError, Launch, Platform};
 use crate::wire::code;
+
+/// How text reaches a field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// Key by key: in place of what the field holds when `replace` is set,
+    /// as `fill` types, else after it, as `type` does.
+    Keys { replace: bool },
+    /// In one piece, in place of what the field holds: set directly or
+    /// pasted.
+    Whole,
+}
+
+/// The first key, counting from 0, that a field which takes keys out of
+/// order ([`Typing::Reorder`]) lands before its last character.
+const REORDER_FROM: usize = 3;
 
 /// The fixture app the launcher's Fixture button opens.
 pub(crate) const FIXTURE: &str = "dev.mobileagent.fixture.expo";
@@ -351,9 +366,16 @@ impl Device {
         *self != before
     }
 
-    /// Text for the field `target` names, or the focused one: whether the
-    /// screen changed, or `None` when no editable field takes the text.
-    pub fn text(&mut self, target: Option<&str>, text: &str, method: TextMethod) -> Option<bool> {
+    /// Text for the field `target` names, or the focused one, entered as
+    /// `entry` says into fields that take text as `typing` says: whether
+    /// the screen changed, or `None` when no editable field takes the text.
+    pub fn text(
+        &mut self,
+        target: Option<&str>,
+        text: &str,
+        entry: Entry,
+        typing: Typing,
+    ) -> Option<bool> {
         let before = self.clone();
         let fixture = self.front_fixture()?;
         if fixture.tab != Tab::Login || fixture.modal() {
@@ -365,10 +387,29 @@ impl Device {
         };
         fixture.focus = Some(field);
         let value = fixture.field(field);
-        if method != TextMethod::KEYS {
-            value.clear();
+        match entry {
+            Entry::Whole => {
+                value.clear();
+                value.push_str(text);
+            }
+            Entry::Keys { replace } => {
+                if replace {
+                    value.clear();
+                }
+                for (index, key) in text.chars().enumerate() {
+                    let behind = typing == Typing::Reorder && index >= REORDER_FROM;
+                    match value.char_indices().last() {
+                        Some((last, _)) if behind => value.insert(last, key),
+                        _ => value.push(key),
+                    }
+                }
+            }
         }
-        value.push_str(text);
+        if let Typing::Max(max) = typing
+            && let Some((cut, _)) = value.char_indices().nth(max)
+        {
+            value.truncate(cut);
+        }
         Some(*self != before)
     }
 
@@ -964,6 +1005,44 @@ mod tests {
             glide(Platform::Android, f64::INFINITY),
             glide(Platform::Android, 8000.0),
             "the platform's fastest fling"
+        );
+    }
+
+    /// Task 10.23: a field that takes keys out of order lands each from the
+    /// fourth on before its last character, as Bluesky's search field took
+    /// "nobel" as "noelb"; it takes whole text as it is. A field with a
+    /// maximum length keeps its first characters however text reaches it,
+    /// and keys without `replace` add to what a field holds.
+    #[test]
+    fn fields_take_text_as_their_typing_mode_says() {
+        let mut device = Device::new(Platform::Ios);
+        device.launch(FIXTURE, &Launch::default()).unwrap();
+        /// Enters `text` into the username field and says what it holds.
+        fn enter(device: &mut Device, text: &str, entry: Entry, typing: Typing) -> String {
+            assert!(
+                device
+                    .text(Some("login-username"), text, entry, typing)
+                    .is_some()
+            );
+            device.fixtures[FIXTURE].username.clone()
+        }
+        let fill = Entry::Keys { replace: true };
+        assert_eq!(enter(&mut device, "nobel", fill, Typing::Reorder), "noelb");
+        assert_eq!(
+            enter(&mut device, "nobel", Entry::Whole, Typing::Reorder),
+            "nobel"
+        );
+        let keys = Entry::Keys { replace: false };
+        assert_eq!(enter(&mut device, "ab", keys, Typing::Keys), "nobelab");
+        assert_eq!(enter(&mut device, "agent", fill, Typing::Keys), "agent");
+        assert_eq!(
+            enter(&mut device, "nobel", Entry::Whole, Typing::Max(4)),
+            "nobe"
+        );
+        assert_eq!(enter(&mut device, "abcdef", fill, Typing::Max(4)), "abcd");
+        assert_eq!(
+            enter(&mut device, "abc", Entry::Whole, Typing::Max(4)),
+            "abc"
         );
     }
 

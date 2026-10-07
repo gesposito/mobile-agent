@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::driver::{self, EmulatorController};
+use crate::fake::Typing;
 use crate::handlers;
 use crate::paths::{self, Paths};
 use crate::registry::{Registry, STOP_WAIT};
@@ -86,6 +87,9 @@ pub struct Options {
     /// Whether fake targets' lists glide on after a stroke whose finger
     /// lifts moving.
     pub fake_fling: bool,
+    /// How fake targets' fields take text whose method the target may
+    /// choose.
+    pub fake_typing: Typing,
     /// Device drivers to register, as `MOBILE_AGENT_DRIVERS` lists them;
     /// `None` registers the host's device drivers unless fake targets are
     /// named (see [`driver::device_drivers`]).
@@ -98,7 +102,8 @@ impl Options {
     /// Reads `--socket-dir <dir>`, `--idle-timeout <time>`,
     /// `--fake <targets>`, `--fake-latency <time>`, `--fake-frame-delay
     /// <time>`, `--fake-splash <time>`, `--fake-activation <time>`,
-    /// `--fake-stop <time>`, `--fake-fling`, `--drivers <names>` and
+    /// `--fake-stop <time>`, `--fake-fling`, `--fake-typing <mode>`,
+    /// `--drivers <names>` and
     /// `--emulator-controller <auto|off>`, each falling back to its
     /// environment variable: `MOBILE_AGENT_SOCKET_DIR` (then the runtime
     /// directory, see [`paths::default_dir`]), `MOBILE_AGENT_IDLE_TIMEOUT_MS`,
@@ -106,7 +111,8 @@ impl Options {
     /// `MOBILE_AGENT_FAKE_FRAME_DELAY_MS`, `MOBILE_AGENT_FAKE_SPLASH_MS`,
     /// `MOBILE_AGENT_FAKE_ACTIVATION_MS`, `MOBILE_AGENT_FAKE_STOP_MS`,
     /// `MOBILE_AGENT_FAKE_FLING` (`1`, `true`, `yes` or `on`),
-    /// `MOBILE_AGENT_DRIVERS` and `MOBILE_AGENT_EMULATOR_CONTROLLER`.
+    /// `MOBILE_AGENT_FAKE_TYPING`, `MOBILE_AGENT_DRIVERS` and
+    /// `MOBILE_AGENT_EMULATOR_CONTROLLER`.
     pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Options, String> {
         let mut socket_dir = None;
         let mut idle = None;
@@ -117,6 +123,7 @@ impl Options {
         let mut activation = None;
         let mut stop = None;
         let mut fling = false;
+        let mut typing = None;
         let mut drivers = None;
         let mut controller = None;
         let mut args = args.into_iter();
@@ -148,6 +155,7 @@ impl Options {
                 }
                 "--fake-stop" => stop = Some(value()?.to_string_lossy().into_owned()),
                 "--fake-fling" if inline.is_none() => fling = true,
+                "--fake-typing" => typing = Some(value()?.to_string_lossy().into_owned()),
                 "--drivers" => drivers = Some(value()?.to_string_lossy().into_owned()),
                 "--emulator-controller" => {
                     controller = Some(value()?.to_string_lossy().into_owned());
@@ -192,6 +200,10 @@ impl Options {
                     "1" | "true" | "yes" | "on"
                 )
             });
+        let fake_typing = match typing.or_else(|| env("MOBILE_AGENT_FAKE_TYPING")) {
+            Some(text) => Typing::parse(&text)?,
+            None => Typing::Whole,
+        };
         let emulator_controller =
             match controller.or_else(|| env("MOBILE_AGENT_EMULATOR_CONTROLLER")) {
                 Some(text) => EmulatorController::parse(&text)?,
@@ -207,6 +219,7 @@ impl Options {
             fake_activation,
             fake_stop,
             fake_fling,
+            fake_typing,
             drivers: drivers.or_else(|| env("MOBILE_AGENT_DRIVERS")),
             emulator_controller,
         })
@@ -372,6 +385,7 @@ pub fn run(options: Options) -> Result<Exit, String> {
         fake_activation: options.fake_activation,
         fake_stop: options.fake_stop,
         fake_fling: options.fake_fling,
+        fake_typing: options.fake_typing,
         drivers: options.drivers.as_deref(),
         state_dir: &options.socket_dir,
         emulator_controller: options.emulator_controller,
@@ -803,6 +817,8 @@ mod tests {
                 "1s",
                 "--fake-stop=600",
                 "--fake-fling",
+                "--fake-typing",
+                "reorder",
             ]
             .map(OsString::from),
         )
@@ -815,7 +831,9 @@ mod tests {
         assert_eq!(options.fake_activation, Duration::from_secs(1));
         assert_eq!(options.fake_stop, Duration::from_millis(600));
         assert!(options.fake_fling);
+        assert_eq!(options.fake_typing, Typing::Reorder);
         assert!(Options::from_args([OsString::from("--bogus")]).is_err());
+        assert!(Options::from_args(["--fake-typing", "slow"].map(OsString::from)).is_err());
     }
 
     /// A fresh directory under the temporary directory, not created.

@@ -17,6 +17,8 @@
 //! the Android agent does: the last part dropped waits it out. The fixture's
 //! list can glide on after a stroke whose finger lifts moving, as far as the
 //! platform's fling carries it, the finger's speed its release velocity.
+//! Text whose method the target may choose goes in whole, unless the typing
+//! mode types it key by key as a Simulator does.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -30,11 +32,11 @@ use mirror::backend::{
 };
 use mirror::testing::{FakeTarget, Step};
 use protocol::event::{EventPayload, WindowChange, WindowChangeKind};
-use protocol::message::Rotation;
+use protocol::message::{Rotation, TextMethod};
 
-use super::Timing;
-use super::app::{self, Device};
+use super::app::{self, Device, Entry};
 use super::tree::{self, Win};
+use super::{Timing, Typing};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
     Size,
@@ -56,6 +58,26 @@ const SPINNER: u64 = 0xa11a_0000_0000_0000;
 /// The fake device's app window, which window events name.
 const APP_WINDOW: u32 = 1;
 
+/// The longest text that typing modes which type keys type key by key, as
+/// the Simulator driver's `TextMethod::Auto` does; longer text is pasted.
+const KEYBOARD_LIMIT: usize = 32;
+
+/// How text entered as `method` asks reaches a field under `typing`: keys
+/// add to what the field holds; text whose method the target may choose is
+/// typed key by key in its place when `typing` types keys and it is short
+/// enough, else it goes in whole, as direct text does.
+fn entry(method: TextMethod, text: &str, typing: Typing) -> Entry {
+    let typed =
+        matches!(typing, Typing::Keys | Typing::Reorder) && text.chars().count() <= KEYBOARD_LIMIT;
+    if method == TextMethod::KEYS {
+        Entry::Keys { replace: false }
+    } else if method == TextMethod::AUTO && typed {
+        Entry::Keys { replace: true }
+    } else {
+        Entry::Whole
+    }
+}
+
 struct Shared {
     target: FakeTarget,
     device: Mutex<Device>,
@@ -76,6 +98,8 @@ struct Shared {
     stop: Duration,
     /// Whether a stroke that lifts moving glides the list on.
     fling: bool,
+    /// How the fields take text whose method the target may choose.
+    typing: Typing,
 }
 
 impl Drop for Shared {
@@ -322,8 +346,15 @@ impl InputNotes for FakeSession {
 /// how late each change shows after the input or launch that caused it,
 /// how long a launch splash lasts, when its input session activates and
 /// how long detaching it takes. With `fling`, a stroke whose finger lifts
-/// moving glides the list on.
-pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing, fling: bool) -> Attachment {
+/// moving glides the list on; `typing` says how its fields take text whose
+/// method the target may choose.
+pub(crate) fn attach(
+    platform: Platform,
+    frames: bool,
+    timing: Timing,
+    fling: bool,
+    typing: Typing,
+) -> Attachment {
     let Timing {
         latency,
         frame_delay,
@@ -352,6 +383,7 @@ pub(crate) fn attach(platform: Platform, frames: bool, timing: Timing, fling: bo
         session: Mutex::new(Session::default()),
         stop,
         fling,
+        typing,
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -459,11 +491,17 @@ impl InputSink for Part {
             }
             Input::Key { code, meta } => device.key(*code, *meta),
             Input::Text { text, node, method } => {
+                let typing = self.shared.typing;
+                let entry = entry(*method, text, typing);
+                ack.method = Some(match entry {
+                    Entry::Keys { .. } => TextMethod::KEYS,
+                    Entry::Whole => TextMethod::DIRECT,
+                });
                 let field = node.map(|n| tree::identifier_of(&device.windows(), n.window, n.node));
                 let taken = match field {
                     Some(None) => None,
-                    Some(Some(id)) => device.text(Some(&id), text, *method),
-                    None => device.text(None, text, *method),
+                    Some(Some(id)) => device.text(Some(&id), text, entry, typing),
+                    None => device.text(None, text, entry, typing),
                 };
                 ack.accepted = taken.is_some();
                 taken.unwrap_or(false)
@@ -537,6 +575,31 @@ impl AppControl for Part {
 mod tests {
     use super::*;
 
+    /// Task 10.23: text whose method the target may choose is typed key by
+    /// key in a field's place under a typing mode that types keys, up to the
+    /// Simulator's 32 characters, and goes in whole otherwise; direct text
+    /// always goes in whole and keys always add to the field.
+    #[test]
+    fn text_is_typed_as_the_simulator_types_it_only_under_a_typing_mode_that_types_keys() {
+        let long = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let fill = Entry::Keys { replace: true };
+        for typing in [Typing::Keys, Typing::Reorder] {
+            assert_eq!(entry(TextMethod::AUTO, "nobel", typing), fill);
+            assert_eq!(entry(TextMethod::AUTO, &long[..32], typing), fill);
+            assert_eq!(entry(TextMethod::AUTO, long, typing), Entry::Whole);
+        }
+        for typing in [Typing::Whole, Typing::Max(4)] {
+            assert_eq!(entry(TextMethod::AUTO, "nobel", typing), Entry::Whole);
+        }
+        for typing in [Typing::Whole, Typing::Keys, Typing::Reorder] {
+            assert_eq!(entry(TextMethod::DIRECT, "nobel", typing), Entry::Whole);
+            assert_eq!(
+                entry(TextMethod::KEYS, "nobel", typing),
+                Entry::Keys { replace: false }
+            );
+        }
+    }
+
     /// The frames an attachment's event stream delivers within `window`.
     fn frames_within(attachment: &mut Attachment, window: Duration) -> Vec<FrameMeta> {
         let deadline = Instant::now() + window;
@@ -557,7 +620,7 @@ mod tests {
             splash: Duration::from_millis(150),
             ..Timing::default()
         };
-        let mut attachment = attach(Platform::Ios, false, timing, false);
+        let mut attachment = attach(Platform::Ios, false, timing, false, Typing::Whole);
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
                 windows: None,
@@ -591,13 +654,13 @@ mod tests {
             at: mirror::Point::new(1.0, 1.0),
             hold: None,
         };
-        let mut cold = attach(Platform::Ios, false, timing, false);
+        let mut cold = attach(Platform::Ios, false, timing, false, Typing::Whole);
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert!(cold.input_notes.unwrap().activation_wait().is_some());
 
-        let mut warm = attach(Platform::Ios, false, timing, false);
+        let mut warm = attach(Platform::Ios, false, timing, false, Typing::Whole);
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
         assert!(!session.active());
@@ -627,6 +690,7 @@ mod tests {
                 ..Timing::default()
             },
             false,
+            Typing::Whole,
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -639,7 +703,13 @@ mod tests {
         );
 
         // The same device without a delay shows its launcher's frame at once.
-        let mut prompt = attach(Platform::Android, true, Timing::default(), false);
+        let mut prompt = attach(
+            Platform::Android,
+            true,
+            Timing::default(),
+            false,
+            Typing::Whole,
+        );
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");
         assert_eq!(at_once[0].hash, first[0].hash, "the same launcher");

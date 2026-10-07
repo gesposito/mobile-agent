@@ -69,6 +69,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--fake-activation` | `MOBILE_AGENT_FAKE_ACTIVATION_MS` | `0`; how long after it starts a fake target's input session activates |
 | `--fake-stop` | `MOBILE_AGENT_FAKE_STOP_MS` | `0`; how long detaching a fake target takes, as stopping the Android agent takes |
 | `--fake-fling` | `MOBILE_AGENT_FAKE_FLING` (`1`, `true`, `yes` or `on`) | off; fake targets' lists glide on after a stroke whose finger lifts moving, as far as their platform's fling carries them |
+| `--fake-typing` | `MOBILE_AGENT_FAKE_TYPING` | `whole`; how fake targets' fields take text whose method the target may choose, as `fill` sends it: `whole`, set directly as the Android agent sets it; `keys`, typed key by key up to 32 characters and pasted beyond, as a Simulator enters it; `reorder`, as `keys` with each key from the fourth on landing before the field's last character; `max:<n>`, whole, the fields keeping their first `n` characters however text reaches them. Any other value is a usage error |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -618,7 +619,16 @@ normal deceleration rate; a 600-point stroke over 300 ms glides 647 points
 on Android and 998 on iOS, which puts the lists where the emulator's and
 the Simulator's went (1,103 to 1,319 and 1,522 to 1,608 points). A stroke
 that comes to rest before the finger lifts, and every stroke without the
-flag, moves the list as far as the finger. Screenshots are placeholder
+flag, moves the list as far as the finger. With `--fake-typing keys` the
+fixture's fields take a `fill` of up to 32 characters key by key and report
+the method `keys`, as a Simulator does, and longer text whole as a paste,
+`direct`; with `reorder` they take those keys out of order, each from the
+fourth on landing before the field's last character, so `fill nobel` leaves
+"noelb", as Bluesky's search field did on the Simulator
+(`reports/10.4-rn-smoke.md`, third run, finding 3); with `max:<n>` a field
+keeps its first `n` characters, as a field with a maximum length does.
+Direct text always goes in whole, and `type` key by key after what the
+field holds. Screenshots are placeholder
 bytes, not an image. An Android fake reports its paths in `status` as the
 Android driver names them: a fake emulator's input and frames go through
 the `emulator controller`, a fake device's input through the `agent` with
