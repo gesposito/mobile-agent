@@ -45,7 +45,7 @@ src/
     dtuhid.rs      the dtuhidd XPC transport
     indigo.rs      the legacy Indigo transport
     host.rs        the host's CoreSimulator and Xcode versions
-    pasteboard.rs  writing the device pasteboard through devicectl
+    pasteboard.rs  the paste grants, and a SET to dtpasteboardd or devicectl
     reader.rs      the embedded reader: caching, spawning, its protocol link
     translator.rs  the host translator, the tree fallback
     driver.rs      SimulatorDriver
@@ -480,20 +480,43 @@ they create.
 `type_text` types through key events or pastes, and reports which it did.
 `Auto` types a string of at most 32 characters that a US keyboard can type,
 one key press every 15 ms with Shift where needed; anything longer, or with
-a character no key types, is pasted. A paste writes the text to the device
-pasteboard with `devicectl device pasteboard copy`, since `simctl pbcopy`
-writes nothing under Xcode 27, and sends Command-V. iOS then asks whether the
-application may paste from `dtpasteboardd`, and the text never arrives unless
-someone taps Allow Paste, so before the first paste on a target the driver
-grants TCC's `kTCCServicePasteboard`, the "Paste from Other Apps" setting, to
-every user application on the device through `-[SimDevice
+a character no key types, is pasted. A paste puts the text on the device's
+general pasteboard and sends Command-V. The text goes there in a `SET` to the
+guest's `dtpasteboardd`, the daemon behind `devicectl device pasteboard
+copy`, reached as dtuhidd is: `-[SimDevice lookup:error:]` for
+`com.apple.coredevice.feature.pasteboard`, then the `_4sim` libxpc functions,
+over a connection of its own per paste. The message is `{command: "SET",
+pasteboardName: "general", items: [{types, data}]}`, the text's bytes under
+`public.utf8-plain-text`, `public.plain-text` and `public.text` as `devicectl`
+writes them, and `dtpasteboardd` answers `SET_REPLY` with the pasteboard as
+the `SET` left it, or an error naming what it could not decode. When the
+guest does not vend the service, or the `SET` fails, `devicectl device
+pasteboard copy` puts the text there instead, a process of its own per paste,
+and an error names both failures. `simctl pbcopy` is not used: it goes to
+`CoreSimulatorBridge` in the guest, which ignores it once `dtpasteboardd` has
+started. On Xcode 27 with iOS 26.5 the `SET` took 8 to 35 ms with its lookup
+and connection, against 118 to 250 ms for `devicectl`, on a host at a load of
+4 to 24, and `pbcopy` took 299 to 468 ms on a fresh boot (task 10.31,
+`reports/10.26-remeasure.md`).
+
+iOS then asks whether the application may paste from `dtpasteboardd`, and the
+text never arrives unless someone taps Allow Paste, so before a paste the
+driver grants TCC's `kTCCServicePasteboard`, the "Paste from Other Apps"
+setting, to every user application on the device through `-[SimDevice
 setPrivacyAccessForService:bundleID:granted:error:]`, the call behind `simctl
 privacy`. That changes the device's privacy settings; it does not restart
-running applications. System applications are left alone and still ask.
+running applications. System applications are left alone and still ask. The
+listing of the device's applications, 11 to 22 ms, and the grants, 3 to 21 ms
+each, are made again only once the device's applications change: the driver
+keeps the modification time of the directory that holds their bundles,
+`Containers/Bundle/Application` under the device's data path, which every
+install, upgrade and uninstall changes, whatever tool made it. An uninstall
+drops its application's grant, so a change grants every user application
+again.
 
 The tests read a field back by putting a sentinel on the pasteboard and
-sending Command-A and Command-C: 500 characters pasted in 0.2 s and 25 typed
-in 0.47 s came back exactly.
+sending Command-A and Command-C: 500 characters pasted in 48 ms, 204 ms through
+`devicectl`, and 25 typed in 0.49 s came back exactly.
 
 ## Compatibility
 
@@ -590,7 +613,7 @@ about a minute.
 | Input actions | Taps and swipes over the Indigo fallback (task 6.3) | `indigo::a_tap_lands_on_the_fixture_button`, `indigo::a_swipe_scrolls_the_list` |
 | Input actions | A swipe that comes to rest before the finger lifts (task 10.16) | `gesture::tests::a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts`; on the Simulator through the daemon, `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
-| Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted` |
+| Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted`; the paste's way to the pasteboard and its grants (task 10.31): `macos::pasteboard::tests::a_paste_goes_to_dtpasteboardd_and_leaves_devicectl_alone`, `macos::pasteboard::tests::a_guest_that_does_not_take_the_set_gets_devicectl`, `macos::pasteboard::tests::when_devicectl_fails_too_the_error_names_both`, `macos::pasteboard::tests::the_set_carries_the_text_under_each_plain_text_type`, `macos::pasteboard::tests::a_set_reply_succeeds_and_any_other_answer_says_why_not`, `macos::pasteboard::tests::the_second_paste_lists_nothing`, `macos::pasteboard::tests::a_changed_application_directory_lists_and_grants_again` |
 | Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |
 | Failure containment | Framework call throws | `containment::a_tree_read_that_throws_takes_only_its_target_out_of_service`, `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call`, `macos::driver::tests::reader_failures_become_driver_errors`, and in `reader/`: `guest::objc::tests::an_exception_becomes_a_failure_naming_the_call` |
 | Xcode compatibility statement | Unsupported Xcode | `compat::tests::unsupported_xcode`, `macos::driver::tests::commands_refuse_an_xcode_outside_the_range`, `compat::tests::a_host_without_xcode_is_refused`, `compat::tests::xcode_26_and_27_are_supported`, `compat::tests::the_table_renders_every_row_and_call_site`, `macos::driver::tests::this_host_is_within_the_range_and_the_table_says_why` |
