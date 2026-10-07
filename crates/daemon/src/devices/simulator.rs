@@ -16,7 +16,8 @@
 //! - Input goes through the host's transport (dtuhidd, else Indigo) in
 //!   points; iOS key codes are keyboard usages or consumer-page buttons.
 //!   Text for a field taps it, waits for its focus and, unless keys were
-//!   asked for, selects what it holds so the text replaces it. The input
+//!   asked for, selects what it holds so the text replaces it, deleting it
+//!   for an empty text. The input
 //!   session can start ahead of the first input, which then does not wait
 //!   for dtuhidd to activate.
 //! - Apps launch with their launch environment, and a running app comes to
@@ -92,6 +93,9 @@ fn swipe(from: Point, to: Point, duration: Duration, release: Release) -> Swipe 
 
 /// The usage of the `a` key, which selects everything with Command held.
 const USAGE_A: u32 = 0x04;
+
+/// The usage of the delete key, Backspace, which deletes the selection.
+const USAGE_DELETE: u32 = 0x2A;
 
 const KEYBOARD_PAGE: u32 = 0x07;
 const CONSUMER_PAGE: u32 = 0x0C;
@@ -435,7 +439,8 @@ impl InputSink for HostInput {
 impl HostInput {
     /// Enters `text` into the field `node` names, tapping it first, or into
     /// the focused field. Unless keys were asked for, what the field holds
-    /// is selected first so the text replaces it.
+    /// is selected first so the text replaces it, and deleted for an empty
+    /// text.
     fn text(
         &mut self,
         text: &str,
@@ -452,23 +457,23 @@ impl HostInput {
             })?;
             driver.tap(udid, point(center)).map_err(|e| error(&e))?;
             self.wait_for_focus();
-            if method != WireMethod::KEYS {
-                let select_all = Key {
-                    usage: USAGE_A,
-                    modifiers: Modifiers {
-                        command: true,
-                        ..Modifiers::default()
-                    },
-                };
-                driver.key(udid, select_all).map_err(|e| error(&e))?;
+            for key in readying_keys(text, method) {
+                driver.key(udid, key).map_err(|e| error(&e))?;
             }
         }
-        let entry = driver
-            .type_text(udid, text, text_method(method))
-            .map_err(|e| error(&e))?;
+        // An empty text leaves nothing to type or paste once the field is
+        // readied.
+        let entered = if text.is_empty() {
+            TextMethod::Keyboard
+        } else {
+            driver
+                .type_text(udid, text, text_method(method))
+                .map_err(|e| error(&e))?
+                .method
+        };
         Ok(InputAck {
             accepted: true,
-            method: Some(wire_method(entry.method)),
+            method: Some(wire_method(entered)),
         })
     }
 
@@ -485,6 +490,28 @@ impl HostInput {
             }
             thread::sleep(READ_RETRY);
         }
+    }
+}
+
+/// The keys that ready a field text tapped for `text`, entered as `method`
+/// asks: unless keys were asked for, Command-A selects what the field holds,
+/// so the text replaces it, and for an empty text, which types or pastes
+/// nothing, the delete key then deletes what it selected.
+fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
+    if method == WireMethod::KEYS {
+        return Vec::new();
+    }
+    let select_all = Key {
+        usage: USAGE_A,
+        modifiers: Modifiers {
+            command: true,
+            ..Modifiers::default()
+        },
+    };
+    if text.is_empty() {
+        vec![select_all, Key::usage(USAGE_DELETE)]
+    } else {
+        vec![select_all]
     }
 }
 
@@ -1270,6 +1297,31 @@ mod tests {
         assert_eq!(center(4242, 3), Some(Point::new(161.0 / 3.0, 585.5 / 3.0)));
         assert_eq!(center(7, 3), None, "the node is in another window");
         assert_eq!(center(4242, 9), None);
+    }
+
+    /// Task 10.23: text replaces what a field holds, so an empty text, for
+    /// which nothing is typed or pasted, deletes what Command-A selected;
+    /// keys add to the field and ready nothing.
+    #[test]
+    fn an_empty_text_deletes_what_the_field_held() {
+        let select_all = Key {
+            usage: USAGE_A,
+            modifiers: Modifiers {
+                command: true,
+                ..Modifiers::default()
+            },
+        };
+        let delete = Key::usage(USAGE_DELETE);
+        for method in [WireMethod::AUTO, WireMethod::DIRECT] {
+            assert_eq!(readying_keys("agent", method), [select_all], "{method:?}");
+            assert_eq!(
+                readying_keys("", method),
+                [select_all, delete],
+                "{method:?}"
+            );
+        }
+        assert_eq!(readying_keys("agent", WireMethod::KEYS), []);
+        assert_eq!(readying_keys("", WireMethod::KEYS), []);
     }
 
     #[test]
