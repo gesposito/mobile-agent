@@ -331,6 +331,33 @@ Xcode compatibility:
 A daemon that serves only fake targets registers no device driver, so its
 `drivers` check names `fake` and the table stays empty.
 
+The checks of a device driver that the run's `MOBILE_AGENT_DRIVERS` leaves
+out ask the host nothing: both outputs keep them in place as skips whose
+message says they were not consulted. They are `xcode`,
+`simulator-runtimes` and `xcode-compatibility` for the Simulator's driver,
+and `android-sdk`, `adb-server` and `emulator-control` for Android's.
+doctor reads the variable as the daemon does (a daemon the CLI starts
+inherits it): comma-separated names, `ios` for `simulator`, or `none`;
+unset or blank, every check runs. With `MOBILE_AGENT_DRIVERS=simulator` no
+adb runs and the adb server is not asked:
+
+```
+✓ daemon               running, pid 85469, version 0.1.0+6a9f20.18dc1c8451cdccf6
+✓ drivers              simulator
+✓ xcode                Xcode 27.0 (27A266a) at /Applications/Xcode.app/Contents/Developer
+✓ simulator-runtimes   iOS 26.5
+- android-sdk          not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
+- adb-server           not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
+- emulator-control     not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
+✓ sfw                  Socket Firewall Free, version 1.15.4
+✓ just                 just 1.58.0
+✓ xcode-compatibility  29 validated combinations, listed below
+```
+
+In `--json` each such check reads `{"name": "adb-server", "status": "skip",
+"message": "not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the
+Android driver", "hint": null}`.
+
 ## Help
 
 Every command's help ends with examples and states its defaults; `help
@@ -455,11 +482,19 @@ on fakes whose fields take keys out of order or cut text short
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and
 `doctor::doctor_lists_every_check_with_a_status_in_both_outputs` runs the
-command.
+command. Task 10.24 adds
+`doctor::the_run_s_drivers_choose_which_checks_ask_the_host` over scripted
+outputs, and
+`doctor::the_android_checks_are_not_consulted_when_the_run_names_the_simulator_alone`
+and `doctor::the_simulator_checks_are_not_consulted_when_the_run_names_android_alone`,
+which run the command against fake tools: `xcode-select`, `xcodebuild` and
+`xcrun` alone on `PATH`, an SDK whose `adb` logs its arguments, and an adb
+server on a port of its own that counts its connections.
 
 The tests start their daemons with fake targets and
-`MOBILE_AGENT_DRIVERS=none`, so a Simulator or emulator running on the
-host never shows up in their listings.
+`MOBILE_AGENT_DRIVERS=none` and give every CLI run the same, so a Simulator
+or emulator running on the host never shows up in their listings, and
+doctor asks neither the host's Xcode nor its adb.
 
 ```sh
 cargo test -p cli     # builds mobile-agent-daemon through cargo when it is missing
