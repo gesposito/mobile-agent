@@ -137,7 +137,7 @@ impl HandOffs {
     ) {
         let started = Instant::now();
         let mut errors = Vec::new();
-        let released = tools[from].release(target).unwrap_or_else(|e| {
+        let released = tools[from].release(target, probe).unwrap_or_else(|e| {
             errors.push(e.message);
             None
         });
@@ -290,7 +290,11 @@ mod tests {
             true
         }
 
-        fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+        fn release(
+            &mut self,
+            target: &Target,
+            _: &dyn Probe,
+        ) -> Result<Option<String>, AdapterError> {
             self.log
                 .borrow_mut()
                 .push(format!("{} released {}", self.name, target.id));

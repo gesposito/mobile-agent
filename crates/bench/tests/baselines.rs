@@ -503,17 +503,30 @@ const OTHER_PROCESSES: [Process; 5] = [
     ),
 ];
 
+/// agent-device's input-method helper, which stays in an Android guest as a
+/// cached process after `close` and `daemon stop`.
+const IME_HELPER: &str = "com.callstack.agentdevice.imehelper";
+
 /// The host agent-device drives a target from. Once a batch has run, `ps`
 /// lists agent-device's processes, `agent_device`, beside the others; after
 /// a `daemon stop` that followed the last batch, each of agent-device's
 /// processes ends as `agent_device` says. Each listing of the host's
-/// programs is noted in `events` with agent-device's processes on it; every
-/// other command is answered as `common::probe()` answers it.
+/// programs is noted in `events` with agent-device's processes on it.
+///
+/// On an emulator, `serial`, the host also answers `adb`: the guest's
+/// processes, which hold agent-device's input-method helper from the first
+/// batch on until a force-stop of its package after the last batch, and
+/// the force-stops, each noted in `events`. Every other command is answered
+/// as `common::probe()` answers it.
 struct Host {
     tool_log: PathBuf,
     events: Events,
     agent_device: &'static [(Process, u32)],
     listings_since_stop: Cell<u32>,
+    serial: Option<&'static str>,
+    /// Each package force-stopped in the guest, and how many batches had run
+    /// by then.
+    force_stopped: RefCell<Vec<(String, usize)>>,
     scripted: ScriptedProbe,
 }
 
@@ -528,6 +541,48 @@ impl Host {
             .iter()
             .rposition(|line| line.starts_with("daemon stop"));
         (last_batch.is_some(), last_stop > last_batch)
+    }
+
+    /// How many batches agent-device has run.
+    fn batches(&self) -> usize {
+        let log = fs::read_to_string(&self.tool_log).unwrap_or_default();
+        log.lines()
+            .filter(|line| line.starts_with("batch "))
+            .count()
+    }
+
+    /// `adb shell ps -A -o PID,NAME` in the guest: a header, then each
+    /// process and its name.
+    fn guest(&self) -> String {
+        let batches = self.batches();
+        let helper = batches > 0
+            && !self
+                .force_stopped
+                .borrow()
+                .iter()
+                .any(|(package, at)| package == IME_HELPER && *at == batches);
+        self.events.borrow_mut().push(if helper {
+            format!("the guest runs {IME_HELPER}")
+        } else {
+            "the guest runs none of agent-device's helpers".to_owned()
+        });
+        let mut listing =
+            "  PID NAME\n    1 init\n  462 zygote64\n25756 dev.mobileagent.fixture.expo".to_owned();
+        if helper {
+            listing.push_str(&format!("\n30694 {IME_HELPER}"));
+        }
+        listing
+    }
+
+    /// `adb shell am force-stop <package>`, which prints nothing.
+    fn force_stop(&self, package: &str) -> String {
+        self.events
+            .borrow_mut()
+            .push(format!("adb force-stops {package}"));
+        self.force_stopped
+            .borrow_mut()
+            .push((package.to_owned(), self.batches()));
+        String::new()
     }
 
     /// The processes alive now.
@@ -594,6 +649,16 @@ impl Probe for Host {
         match (program, args) {
             ("ps", ["-A", "-o", "pid=,comm="]) => Some(self.programs()),
             ("ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) => self.details(pids),
+            ("adb", ["-s", serial, "shell", "ps", "-A", "-o", "PID,NAME"])
+                if Some(*serial) == self.serial =>
+            {
+                Some(self.guest())
+            }
+            ("adb", ["-s", serial, "shell", "am", "force-stop", package])
+                if Some(*serial) == self.serial =>
+            {
+                Some(self.force_stop(package))
+            }
             _ => self.scripted.output(program, args),
         }
     }
@@ -694,6 +759,8 @@ fn hand_back(name: &str, target: Target, close: &str) -> (Report, Vec<String>, V
             _ => &ON_EMULATOR,
         },
         listings_since_stop: Cell::new(0),
+        serial: (target.class != TargetClass::Simulator).then_some("emulator-5554"),
+        force_stopped: RefCell::new(Vec::new()),
         scripted: common::probe(),
     };
     // The tool under test runs the flow, then agent-device does; then the
@@ -837,12 +904,14 @@ fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
 
 /// Task 10.27: on Android too, `agent-device close` ends only the session,
 /// and agent-device's daemon idled on the host for five minutes into the
-/// next tool's series (`reports/10.26-remeasure.md`, finding 5). Handing the
-/// emulator on, agent-device closes its session, then stops its daemon as
-/// on a Simulator, and the run lists the host's processes until the daemon
-/// is gone before the next tool takes the emulator.
+/// next tool's series (`reports/10.26-remeasure.md`, finding 5), while its
+/// input-method helper stayed in the guest. Handing the emulator on,
+/// agent-device closes its session, then stops its daemon as on a
+/// Simulator, the release force-stops the helper, which neither command
+/// ends, and the run lists the host's processes until the daemon is gone
+/// before the next tool takes the emulator.
 #[test]
-fn agent_device_s_daemon_is_gone_before_the_next_tool_takes_the_emulator() {
+fn agent_device_s_daemon_and_helper_are_gone_before_the_next_tool_takes_the_emulator() {
     let (report, events, commands) =
         hand_back("baselines-agent-device-emulator", emulator(), CLOSED);
     let agent_device = report
@@ -867,16 +936,22 @@ fn agent_device_s_daemon_is_gone_before_the_next_tool_takes_the_emulator() {
     assert_eq!(handoff.to.as_deref(), Some("mobile-agent"));
     assert_eq!(
         handoff.released.as_deref(),
-        Some("closed agent-device session mobile-agent-bench and stopped its daemon")
+        Some(
+            "closed agent-device session mobile-agent-bench, stopped its daemon and \
+             force-stopped its input-method helper"
+        )
     );
     assert_eq!(handoff.error, None);
-    // The hand-off listed the host's processes once the daemon was stopped,
+    // Once the daemon was stopped, the release force-stopped the helper it
+    // found in the guest; the hand-off then listed the host's processes,
     // found none of agent-device's, and only then did the tool under test
     // take the emulator.
     assert_eq!(
         events,
         [
             "mobile-agent prepares flow tab-list",
+            "the guest runs com.callstack.agentdevice.imehelper",
+            "adb force-stops com.callstack.agentdevice.imehelper",
             "ps lists none of agent-device's processes",
             "mobile-agent prepares cli-start",
         ]
@@ -884,7 +959,8 @@ fn agent_device_s_daemon_is_gone_before_the_next_tool_takes_the_emulator() {
 }
 
 /// As on a Simulator, a `close` that fails on the emulator leaves the daemon
-/// to its stop, which ends its sessions as it stops.
+/// to its stop, which ends its sessions as it stops, and the helper is
+/// force-stopped all the same.
 #[test]
 fn a_close_that_fails_on_the_emulator_still_stops_agent_device_s_daemon() {
     let (report, events, commands) = hand_back(
@@ -911,8 +987,9 @@ fn a_close_that_fails_on_the_emulator_still_stops_agent_device_s_daemon() {
         "{error}"
     );
     assert_eq!(
-        events[events.len() - 2..],
+        events[events.len() - 3..],
         [
+            "adb force-stops com.callstack.agentdevice.imehelper",
             "ps lists none of agent-device's processes",
             "mobile-agent prepares cli-start"
         ]

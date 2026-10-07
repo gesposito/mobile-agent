@@ -450,11 +450,12 @@ fn executable(path: &Path, script: &str) {
 /// holds while it runs and agent-device's snapshot helper holds until its
 /// session is closed or its daemon stopped, and its input method, which
 /// agent-device switches to its own and a fake `adb` reads and sets.
-/// agent-device's `session state-dir` touches neither. A baseline that finds
-/// the role held fails as Maestro's driver did on the emulator;
-/// `mobile-agent`, run through the returned wrapper around `cli`, fails as
-/// its agent's attach does, and also when the input method is not the one
-/// the run found.
+/// agent-device's input-method helper runs from its first session on, until
+/// `adb` force-stops it; `session state-dir` touches none of these. A
+/// baseline that finds the role held fails as Maestro's driver did on the
+/// emulator; `mobile-agent`, run through the returned wrapper around `cli`,
+/// fails as its agent's attach does, and also when the input method is not
+/// the one the run found.
 fn shared_device(tools: &Tools, socket: &Path, cli: &Path) -> PathBuf {
     let bin = &tools.bin;
     fs::write(bin.join("ime"), format!("{STOCK_IME}\n")).unwrap();
@@ -485,7 +486,7 @@ if [ "$tool $1" = "agent-device session" ]; then
 fi
 if [ -S '{socket}' ]; then conflict "the mobile-agent daemon's agent holds it"; fi
 if [ "$tool" = agent-device ]; then
-  touch "$dir/agent-device.helper"
+  touch "$dir/agent-device.helper" "$dir/agent-device.imehelper"
   echo '{AGENT_DEVICE_IME}' > "$dir/ime"
 elif [ -e "$dir/agent-device.helper" ]; then
   conflict "agent-device's snapshot helper holds it"
@@ -504,6 +505,11 @@ args="$*"
 case "$args" in
 *" shell settings get secure default_input_method") cat "$dir/ime" ;;
 *" shell ime set "*) ime="${args##* ime set }"; echo "$ime" > "$dir/ime"; echo "Input method $ime selected for user #0" ;;
+*" shell ps -A -o PID,NAME")
+  echo "  PID NAME"
+  echo "    1 init"
+  if [ -e "$dir/agent-device.imehelper" ]; then echo "30694 com.callstack.agentdevice.imehelper"; fi ;;
+*" shell am force-stop com.callstack.agentdevice.imehelper") rm -f "$dir/agent-device.imehelper" ;;
 *) exit 1 ;;
 esac
 "#,
@@ -668,7 +674,10 @@ fn a_run_hands_the_emulator_from_one_tool_to_the_next_between_series() {
         let (released, input_method) = match handoff["from"].as_str() {
             Some("mobile-agent") => (json!("stopped the daemon"), Value::Null),
             Some("agent-device") => (
-                json!("closed agent-device session mobile-agent-bench and stopped its daemon"),
+                json!(
+                    "closed agent-device session mobile-agent-bench, stopped its daemon and \
+                     force-stopped its input-method helper"
+                ),
                 json!(format!(
                     "{AGENT_DEVICE_IME} left selected, {STOCK_IME} set back"
                 )),
@@ -692,6 +701,7 @@ fn a_run_hands_the_emulator_from_one_tool_to_the_next_between_series() {
     // The emulator is left as the run found it.
     assert!(!devices.dir.join("daemon.sock").exists());
     assert!(!tools.bin.join("agent-device.helper").exists());
+    assert!(!tools.bin.join("agent-device.imehelper").exists());
     assert_eq!(
         fs::read_to_string(tools.bin.join("ime")).unwrap().trim(),
         STOCK_IME

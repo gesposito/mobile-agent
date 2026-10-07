@@ -41,6 +41,7 @@ use crate::flow::{Direction, Flow, Selector, Step};
 use crate::harness::Subject;
 use crate::primitive::{Primitive, TEXT_ENTRY};
 use crate::process;
+use crate::provenance::Probe;
 use crate::target::{Controller, Target, TargetClass};
 
 /// The tool's name in reports.
@@ -777,7 +778,7 @@ impl Adapter for CliAdapter {
     /// until the daemon exits; the `status` starts a daemon when none serves,
     /// which the shutdown then stops. Returns once the daemon has let go of
     /// its targets.
-    fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+    fn release(&mut self, target: &Target, _: &dyn Probe) -> Result<Option<String>, AdapterError> {
         self.observe(target);
         Ok(Some(
             if self.stop_daemon()? {

@@ -15,7 +15,9 @@
 //! automation role, and the test input method it selects for text entry.
 //! `agent-device close` ends the session: it stops the helper and selects the
 //! input method it found again. `close --shutdown` would also shut the target
-//! down, which the harness never asks for.
+//! down, which the harness never asks for. The input method's app stays in
+//! the guest as a cached process, which no command of agent-device ends, so
+//! the release force-stops it with `adb` ([`HELPERS`]).
 //!
 //! `close` leaves agent-device's daemon running until five idle minutes
 //! have passed, and on a Simulator its XCTest runner and its snapshot bridge
@@ -348,17 +350,84 @@ fn sets(line: &str, variable: &str, value: &str) -> bool {
     ends_word(line, &format!(" {variable}={value}"))
 }
 
-/// What the release did, from whether `close` ended a session and whether
-/// `daemon stop` stopped a daemon; `None` when neither did.
-pub fn released(closed: bool, stopped: bool, session: &str) -> Option<String> {
-    match (closed, stopped) {
-        (true, true) => Some(format!(
-            "closed agent-device session {session} and stopped its daemon"
-        )),
-        (true, false) => Some(format!("closed agent-device session {session}")),
-        (false, true) => Some("stopped agent-device's daemon".to_owned()),
-        (false, false) => None,
+/// agent-device's helper apps on an Android device, by package, and what
+/// each is: the input method it selects for text entry, which stays in the
+/// guest as a cached process after `close` and `daemon stop`, and the
+/// snapshot helper, whose instrumentation `close` ends but a daemon killed
+/// without its session closed leaves running.
+pub const HELPERS: [(&str, &str); 2] = [
+    ("com.callstack.agentdevice.imehelper", "input-method helper"),
+    (
+        "com.callstack.agentdevice.snapshothelper",
+        "snapshot helper",
+    ),
+];
+
+/// The arguments of `adb` that list the processes of the Android device
+/// `serial`, one per line after a header, as the pid and the process's name.
+pub fn guest_ps_args(serial: &str) -> [&str; 7] {
+    ["-s", serial, "shell", "ps", "-A", "-o", "PID,NAME"]
+}
+
+/// The arguments of `adb` that force-stop `package` on the Android device
+/// `serial`, which ends its processes and prints nothing.
+pub fn force_stop_args<'a>(serial: &'a str, package: &'a str) -> [&'a str; 6] {
+    ["-s", serial, "shell", "am", "force-stop", package]
+}
+
+/// The [`HELPERS`] that have a process in `listing`, the guest's processes
+/// as `adb` lists them with [`guest_ps_args`], in the order of
+/// [`HELPERS`]. A process is a package's when it is named after it, alone
+/// or followed by `:` and the name of one of its processes.
+pub fn running_helpers(listing: &str) -> Vec<(&'static str, &'static str)> {
+    let names: Vec<&str> = listing
+        .lines()
+        .filter_map(pid_and_rest)
+        .map(|(_, name)| name.trim_end())
+        .collect();
+    HELPERS
+        .into_iter()
+        .filter(|(package, _)| {
+            names.iter().any(|name| {
+                name.strip_prefix(package)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
+            })
+        })
+        .collect()
+}
+
+/// What the release did, from whether `close` ended a session, whether
+/// `daemon stop` stopped a daemon, and which helper apps it force-stopped on
+/// an Android device; `None` when it did none of these.
+pub fn released(closed: bool, stopped: bool, helpers: &[&str], session: &str) -> Option<String> {
+    let mut done = Vec::new();
+    if closed {
+        done.push(format!("closed agent-device session {session}"));
     }
+    // The first thing done names agent-device, the others say "its".
+    let whose = |done: &Vec<String>| {
+        if done.is_empty() {
+            "agent-device's"
+        } else {
+            "its"
+        }
+    };
+    if stopped {
+        done.push(format!("stopped {} daemon", whose(&done)));
+    }
+    if !helpers.is_empty() {
+        done.push(format!(
+            "force-stopped {} {}",
+            whose(&done),
+            helpers.join(" and ")
+        ));
+    }
+    let (last, rest) = done.split_last()?;
+    Some(if rest.is_empty() {
+        last.clone()
+    } else {
+        format!("{} and {last}", rest.join(", "))
+    })
 }
 
 /// Arguments for `agent-device snapshot` of the session's screen, as JSON:
@@ -778,18 +847,77 @@ mod tests {
     fn a_release_says_what_it_ended() {
         let s = "mobile-agent-bench";
         assert_eq!(
-            released(true, true, s).as_deref(),
+            released(true, true, &[], s).as_deref(),
             Some("closed agent-device session mobile-agent-bench and stopped its daemon")
         );
         assert_eq!(
-            released(true, false, s).as_deref(),
+            released(true, false, &[], s).as_deref(),
             Some("closed agent-device session mobile-agent-bench")
         );
         assert_eq!(
-            released(false, true, s).as_deref(),
+            released(false, true, &[], s).as_deref(),
             Some("stopped agent-device's daemon")
         );
-        assert_eq!(released(false, false, s), None);
+        assert_eq!(released(false, false, &[], s), None);
+        // On Android the release also force-stops the helpers it finds.
+        let ime = "input-method helper";
+        assert_eq!(
+            released(true, true, &[ime], s).as_deref(),
+            Some(
+                "closed agent-device session mobile-agent-bench, stopped its daemon and \
+                 force-stopped its input-method helper"
+            )
+        );
+        assert_eq!(
+            released(false, false, &[ime, "snapshot helper"], s).as_deref(),
+            Some("force-stopped agent-device's input-method helper and snapshot helper")
+        );
+        assert_eq!(
+            released(false, true, &[ime], s).as_deref(),
+            Some("stopped agent-device's daemon and force-stopped its input-method helper")
+        );
+    }
+
+    #[test]
+    fn the_helpers_running_in_a_guest_are_read_from_its_process_listing() {
+        let listing = "  PID NAME
+    1 init
+30694 com.callstack.agentdevice.imehelper
+30737 app_process
+30749 com.callstack.agentdevice.snapshothelper:remote
+31002 com.callstack.agentdevice.imehelper.other
+";
+        assert_eq!(
+            running_helpers(listing),
+            [
+                ("com.callstack.agentdevice.imehelper", "input-method helper"),
+                (
+                    "com.callstack.agentdevice.snapshothelper",
+                    "snapshot helper"
+                )
+            ]
+        );
+        assert!(running_helpers("  PID NAME\n    1 init\n").is_empty());
+        assert!(running_helpers("").is_empty());
+    }
+
+    #[test]
+    fn a_helper_is_force_stopped_on_the_device_it_runs_on() {
+        assert_eq!(
+            guest_ps_args("emulator-5554"),
+            ["-s", "emulator-5554", "shell", "ps", "-A", "-o", "PID,NAME"]
+        );
+        assert_eq!(
+            force_stop_args("emulator-5554", "com.callstack.agentdevice.imehelper"),
+            [
+                "-s",
+                "emulator-5554",
+                "shell",
+                "am",
+                "force-stop",
+                "com.callstack.agentdevice.imehelper"
+            ]
+        );
     }
 
     #[test]

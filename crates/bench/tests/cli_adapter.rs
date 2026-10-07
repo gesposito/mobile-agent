@@ -620,7 +620,7 @@ fn a_release_stops_the_daemon_and_returns_once_it_has_let_go_of_its_targets() {
     let socket = devices.dir.join("daemon.sock");
     assert!(socket.exists());
     assert_eq!(
-        adapter.release(&target),
+        adapter.release(&target, &common::probe()),
         Ok(Some("stopped the daemon".to_owned()))
     );
     assert!(

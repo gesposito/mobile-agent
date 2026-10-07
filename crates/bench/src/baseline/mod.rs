@@ -24,7 +24,7 @@ use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::process::{self, Finished};
 use crate::provenance::Probe;
-use crate::target::Target;
+use crate::target::{Platform, Target};
 
 /// The agent-device session every flow runs in.
 pub const SESSION: &str = "mobile-agent-bench";
@@ -257,9 +257,15 @@ impl Adapter for Baseline {
     /// which would otherwise idle for five minutes into the next tool's
     /// series, on a Simulator with its XCTest runner and its snapshot bridge;
     /// it does so even when the close failed, since the daemon ends its
-    /// sessions as it stops. Maestro and maestro-runner hold nothing: their
-    /// driver ends with the process that runs a flow.
-    fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
+    /// sessions as it stops. On Android it then force-stops agent-device's
+    /// helper apps still running on the device ([`stop_helpers`]). Maestro
+    /// and maestro-runner hold nothing: their driver ends with the process
+    /// that runs a flow.
+    fn release(
+        &mut self,
+        target: &Target,
+        probe: &dyn Probe,
+    ) -> Result<Option<String>, AdapterError> {
         if self.tool != BaselineTool::AgentDevice {
             return Ok(None);
         }
@@ -267,23 +273,40 @@ impl Adapter for Baseline {
             .path
             .clone()
             .ok_or_else(|| AdapterError::new("agent-device was not detected"))?;
-        let closed = self.agent_device(
-            &path,
-            &agent_device::close_args(target, SESSION),
-            "close",
-            agent_device::closed,
-        );
-        let stopped = self.agent_device(
-            &path,
-            &agent_device::daemon_stop_args(),
-            "daemon stop",
-            agent_device::stopped,
-        );
-        match (closed, stopped) {
-            (Ok(closed), Ok(stopped)) => Ok(agent_device::released(closed, stopped, SESSION)),
-            (Err(e), Ok(_)) | (Ok(_), Err(e)) => Err(e),
-            (Err(close), Err(stop)) => Err(AdapterError::new(format!("{close}; {stop}"))),
+        let mut errors = Vec::new();
+        let closed = self
+            .agent_device(
+                &path,
+                &agent_device::close_args(target, SESSION),
+                "close",
+                agent_device::closed,
+            )
+            .unwrap_or_else(|e| {
+                errors.push(e.message);
+                false
+            });
+        let stopped = self
+            .agent_device(
+                &path,
+                &agent_device::daemon_stop_args(),
+                "daemon stop",
+                agent_device::stopped,
+            )
+            .unwrap_or_else(|e| {
+                errors.push(e.message);
+                false
+            });
+        let helpers = match target.class.platform() {
+            Platform::Android => stop_helpers(probe, &target.id).unwrap_or_else(|e| {
+                errors.push(e);
+                Vec::new()
+            }),
+            Platform::Ios => Vec::new(),
+        };
+        if !errors.is_empty() {
+            return Err(AdapterError::new(errors.join("; ")));
         }
+        Ok(agent_device::released(closed, stopped, &helpers, SESSION))
     }
 
     /// What agent-device still runs for the target on the host: its daemon
@@ -437,6 +460,31 @@ impl Baseline {
                 format!("{name} read no screen: {e}; {}", exit_failure(&finished))
             })
         })
+    }
+}
+
+/// Force-stops each of agent-device's helper apps that has a process on the
+/// Android device `serial`, as `adb` lists them through `probe`, and
+/// returns what each was ([`agent_device::HELPERS`]). Neither `close` nor
+/// `daemon stop` ends the input-method helper, which stays in the guest as
+/// a cached process, and a daemon killed without its session closed leaves
+/// the snapshot helper's instrumentation running.
+fn stop_helpers(probe: &dyn Probe, serial: &str) -> Result<Vec<&'static str>, String> {
+    let listing = probe
+        .output("adb", &agent_device::guest_ps_args(serial))
+        .ok_or_else(|| format!("cannot list the processes of {serial} with adb"))?;
+    let mut stopped = Vec::new();
+    let mut failed = Vec::new();
+    for (package, what) in agent_device::running_helpers(&listing) {
+        match probe.output("adb", &agent_device::force_stop_args(serial, package)) {
+            Some(_) => stopped.push(what),
+            None => failed.push(format!("cannot force-stop {package} on {serial} with adb")),
+        }
+    }
+    if failed.is_empty() {
+        Ok(stopped)
+    } else {
+        Err(failed.join("; "))
     }
 }
 

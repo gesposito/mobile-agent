@@ -178,11 +178,17 @@ pub trait Adapter {
     /// Lets go of `target` so that another tool can drive it: stops what the
     /// tool keeps on the target between its commands, such as a daemon whose
     /// agent holds Android's one UI automation role or a helper that does.
-    /// The harness calls it outside every series, when another tool is about
-    /// to drive the target and once the run is over. Returns what the release
-    /// did, for the report; `None` when the tool held nothing.
-    fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
-        let _ = target;
+    /// What the tool's own commands leave behind on the device, such as a
+    /// helper app no command of the tool stops, the release ends through
+    /// `probe`. The harness calls it outside every series, when another tool
+    /// is about to drive the target and once the run is over. Returns what
+    /// the release did, for the report; `None` when the tool held nothing.
+    fn release(
+        &mut self,
+        target: &Target,
+        probe: &dyn Probe,
+    ) -> Result<Option<String>, AdapterError> {
+        let _ = (target, probe);
         Ok(None)
     }
 
