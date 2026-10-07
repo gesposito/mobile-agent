@@ -1,10 +1,13 @@
 package dev.mobileagent.agent
 
 import android.graphics.Rect
+import android.graphics.Region
+import android.graphics.RegionIterator
 import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.view.accessibility.AccessibilityWindowInfo
+import dev.mobileagent.agent.codec.Bounds
 import dev.mobileagent.agent.codec.Scroll
 import dev.mobileagent.agent.codec.ScrollAxis
 import dev.mobileagent.agent.codec.ScrollFlag
@@ -170,6 +173,21 @@ object Semantics {
     }
 
     private fun sizeDiffers(a: Rect, b: Rect) = abs(a.width() - b.width()) > 1 || abs(a.height() - b.height()) > 1
+
+    /**
+     * The rectangles of window `w`'s touchable region on screen, whose bounds are the window's
+     * bounds, as the platform reports them from Android 11 (`getRegionInScreen`); empty before.
+     */
+    fun region(w: AccessibilityWindowInfo): List<Bounds> {
+        if (Build.VERSION.SDK_INT < 30) return emptyList()
+        val region = Region()
+        w.getRegionInScreen(region)
+        val pieces = ArrayList<Bounds>()
+        val rects = RegionIterator(region)
+        val r = Rect()
+        while (rects.next(r)) pieces.add(Bounds(r.left, r.top, r.right, r.bottom))
+        return pieces
+    }
 
     /** Whether `n` scrolls: the platform marks it scrollable or it offers a scroll action. */
     fun scrolls(n: AccessibilityNodeInfo): Boolean {

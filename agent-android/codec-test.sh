@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Golden cross-check of the agent's CBOR codec (src/dev/mobileagent/agent/codec)
-# against crates/protocol, without Gradle:
+# against crates/protocol, and checks of the agent's code that calls no platform
+# API, without Gradle:
 #
 #   ./codec-test.sh [--write-golden] [--host-only]
 #
-#   1. kotlinc compiles the codec and codec-test/*.kt with the flags build.sh
-#      uses (-no-jdk against android.jar, so what compiles also links on a
-#      device) into out/codec-test/codec-test.jar, Kotlin runtime included.
+#   1. kotlinc compiles the codec, the agent sources that call no platform API
+#      (listed in `platform_free` below), codec-test/*.kt and unit-test/*.kt
+#      with the flags build.sh uses (-no-jdk against android.jar, so what
+#      compiles also links on a device) into out/codec-test/codec-test.jar,
+#      Kotlin runtime included.
 #   2. d8 dexes that jar and classes.dex is added to it, so the same jar runs
 #      on the host JVM and, through app_process, on ART.
 #   3. The host JVM runs CodecGoldenTestKt against crates/protocol/golden:
@@ -14,6 +17,7 @@
 #      for byte, and every Rust frame must decode and encode back to itself.
 #      With --write-golden it also writes the Kotlin frames to
 #      crates/protocol/golden/kotlin, which `cargo test -p protocol` decodes.
+#      It then runs each check of unit-test/, such as KeyboardAreaTestKt.
 #   4. Unless --host-only, the jar and the golden frames are pushed to a fresh
 #      directory under /data/local/tmp on the only connected device, or the one
 #      named by ANDROID_SERIAL, and the test runs once more through app_process;
@@ -37,6 +41,10 @@ jvm_target=17
 out="$here/out/codec-test"
 jar="$out/codec-test.jar"
 main_class=dev.mobileagent.agent.codec.CodecGoldenTestKt
+# Agent sources the checks of unit-test/ cover; each calls no platform API, so it runs on the host JVM.
+platform_free=("$here/src/dev/mobileagent/agent/KeyboardArea.kt")
+# The checks of unit-test/, one main class each, run on the host JVM.
+unit_classes=(dev.mobileagent.agent.KeyboardAreaTestKt)
 # Enforced on the device, so a hung run fails instead of stalling the script.
 device_timeout_s=120
 
@@ -91,8 +99,12 @@ mkdir -p "$out/dex"
 sources=()
 while IFS= read -r -d '' file; do
   sources+=("$file")
-done < <(find "$here/src/dev/mobileagent/agent/codec" "$here/codec-test" -name '*.kt' -print0 2>/dev/null)
+done < <(find "$here/src/dev/mobileagent/agent/codec" "$here/codec-test" "$here/unit-test" -name '*.kt' -print0 2>/dev/null)
 ((${#sources[@]} > 0)) || die "no Kotlin sources found"
+for file in "${platform_free[@]}"; do
+  [[ -f $file ]] || die "no $file"
+  sources+=("$file")
+done
 
 log "kotlinc: ${#sources[@]} sources, jvm-target $jvm_target, against android-36 (from $kotlin_home)"
 "$kotlinc" -jvm-target "$jvm_target" -no-jdk -no-reflect -Werror -include-runtime \
@@ -121,9 +133,15 @@ status=0
 if $write_golden; then
   log "wrote $(find "$golden/kotlin" -name '*.bin' | wc -l | tr -d ' ') Kotlin frames to $golden/kotlin"
 fi
+for unit_class in "${unit_classes[@]}"; do
+  log "host JVM: $unit_class"
+  status=0
+  "$java_bin" -cp "$jar" "$unit_class" | tee -a "$out/host.log" || status=$?
+  [[ $status -eq 0 ]] || die "$unit_class failed on the host JVM (log: $out/host.log)"
+done
 
 if $host_only; then
-  echo "PASS: codec golden test on the host JVM"
+  echo "PASS: codec golden test and unit checks on the host JVM"
   exit 0
 fi
 
@@ -154,4 +172,4 @@ adb shell "CLASSPATH=$remote/codec-test.jar timeout $device_timeout_s app_proces
   tr -d '\r' | tee "$out/device.log" || status=$?
 [[ $status -ne 124 ]] || die "the codec test did not finish on $serial within ${device_timeout_s}s"
 [[ $status -eq 0 ]] || die "the codec test failed on $serial (log: $out/device.log)"
-echo "PASS: codec golden test on the host JVM and on $serial"
+echo "PASS: codec golden test and unit checks on the host JVM, codec golden test on $serial"

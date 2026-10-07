@@ -343,6 +343,55 @@ fn the_ios_keyboard_cuts_from_its_prediction_bar_down() {
     );
 }
 
+/// Task 10.25: the Android agent gives the keyboard's window the bounds of
+/// what it draws, the pieces of its touchable region that hold its nodes. On
+/// the API 36 emulator, whose touchscreen also reports a stylus source,
+/// Gboard shows its stylus toolbar for a text field, a pill floating at the
+/// left from 342 to 605 points down, whose touchable region also holds the
+/// navigation bar it draws across the bottom edge; the box around both, from
+/// 342 points down across the screen, is the window's bounds as the platform
+/// reports them, which cut every row of Bluesky's typeahead below the pill's
+/// top. The pill spans no list, so it cuts none: the rows beside and below
+/// it are in view, and a stroke through the list moves all of it.
+#[test]
+fn gboard_s_floating_toolbar_leaves_the_rows_beside_and_below_it_in_view() {
+    let toolbar = json!({
+        "id": 14, "kind": "input_method", "layer": 4, "package": "com.google.android.inputmethod.latin",
+        "title": "Gboard", "bounds": [8, 342.1, 64.38, 604.95], "owner": "com.google.android.inputmethod.latin",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 50.3, 408, 912], "children": [
+            {"class": "android.widget.FrameLayout", "bounds": [8, 342.1, 64.38, 604.95], "children": [
+                {"class": "android.widget.FrameLayout", "desc": "Use voice typing", "flags": ["clickable"],
+                 "bounds": [12.2, 345.9, 60.2, 393.9]}
+            ]}
+        ]}
+    });
+    let typeahead = json!({
+        "class": "android.widget.ScrollView", "id": "typeahead", "bounds": [0, 152, 408, 832],
+        "flags": ["scrollable"], "scroll": {"axis": "vertical", "back": false, "forward": true},
+        "children": rows("android.view.ViewGroup", 200.0, 13, [0.0, 152.0, 408.0, 832.0], true)
+    });
+    let mut mirror = mirror_showing(&android(vec![
+        toolbar,
+        status_bar(),
+        app_window(vec![typeahead]),
+    ]));
+    // Row 3 spans [296, 344], across the toolbar's top; row 7, [488, 536],
+    // beside the toolbar; row 12, [728, 776], below it.
+    for row in ["row-3", "row-7", "row-12"] {
+        let seen = visibility(&mut mirror, row);
+        assert_eq!(seen.fraction, 1.0, "{row}: {seen:?}");
+        assert_eq!(
+            seen.viewport,
+            Rect::new(0.0, 152.0, 408.0, 832.0),
+            "{row}: {seen:?}"
+        );
+    }
+    assert_eq!(
+        mirror.scroll_viewport(Point::new(204.0, 500.0), true),
+        Some(Rect::new(0.0, 152.0, 408.0, 832.0))
+    );
+}
+
 /// An element no scroll container holds is in view as far as its window
 /// shows it.
 #[test]

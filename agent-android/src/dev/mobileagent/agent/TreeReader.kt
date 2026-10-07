@@ -394,18 +394,26 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
             nodes[id] = Node(id, b.cls, b.resPkg, b.resId, b.text, b.desc, b.bounds, b.flags, children, b.scroll)
         }
         val display = Semantics.displaySize()
+
+        /** The bounds of the serialized nodes of window `id` that are visible to the user. */
+        fun shown(id: Int): List<Bounds> =
+            built.indices.filter { nodeWindows[it] == id && (built[it].flags and NodeFlag.VISIBLE) != 0 }.map { built[it].bounds }
+
         val wire = Array(windows.size) { i ->
             val w = windows[i]
             val type = windowType(w.type)
             val modal = Semantics.modal(w, all, display, rect)
             w.getBoundsInScreen(rect)
+            // The platform's bounds are the box around the window's touchable region, which an
+            // input method spreads beyond what it draws (KeyboardArea).
+            val area = if (type == WindowType.INPUT_METHOD) KeyboardArea.of(Semantics.region(w), shown(w.id)) else null
             Window(
                 w.id,
                 type,
                 w.layer,
                 packageIndices[i],
                 w.title?.toString(),
-                Bounds(rect.left, rect.top, rect.right, rect.bottom),
+                area ?: Bounds(rect.left, rect.top, rect.right, rect.bottom),
                 windowFlags(w) or
                     (if (Semantics.transformed(w, infos.getOrNull(roots[i]), display)) WindowFlag.TRANSFORMED else 0),
                 roots[i].takeIf { it >= 0 }?.let { nodes[it] },

@@ -14,8 +14,9 @@ agent-android/
   build.sh                 kotlinc + R8 build, no Gradle
   agent.pro                R8 keep rules
   test.sh                  on-device smoke test
-  codec-test.sh            golden cross-check of the codec against crates/protocol
+  codec-test.sh            golden cross-check of the codec against crates/protocol, then the checks of unit-test/
   codec-test/              the Kotlin side of that cross-check
+  unit-test/               checks of agent code that calls no platform API, on the host JVM
   host-tests/              Rust tests that drive the agent on a device (own Cargo workspace)
   src/dev/mobileagent/agent/
     Main.kt                entry point that app_process calls, options
@@ -35,7 +36,10 @@ agent-android/
 
 The codec under `codec/` is shared with `codec-test.sh`, which checks that it
 writes and reads the golden frames of `crates/protocol/golden` byte for byte;
-the agent uses it unchanged for every frame it sends and receives.
+the agent uses it unchanged for every frame it sends and receives. The same
+script compiles the agent sources that call no platform API, which it lists
+(`KeyboardArea.kt`), with the checks under `unit-test/`, and runs each on the
+host JVM; `just codec-test` runs it with `--host-only`.
 
 ## Requirements
 
@@ -127,7 +131,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.4.0 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.4.1 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -155,6 +159,7 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
+| 0.4.1 | From task 10.25 on. They behave as 0.4.0 builds do, except that from Android 11 their snapshots give an input-method window the box around the pieces of its touchable region that hold its nodes visible to the user, where 0.4.0 and earlier builds give it the box around the whole region: on the API 36 emulator Gboard's floating toolbar reads as (21, 898) to (169, 1588) pixels, the toolbar, and not as (0, 898) to (1080, 2400), the box around the toolbar and the navigation bar strip the input method draws (Input-method windows, below). To the driver, an agent reporting 0.4.0 is another version. |
 | 0.4.0 | From task 10.16 on. They behave as 0.3.0 builds do, and also honor the swipe request's `rest_ms`, resting the pointer at the end of the swipe and moving it one pixel on before it lifts, which 0.3.0 and earlier builds skip, lifting the pointer moving. To the driver, an agent reporting 0.3.0 is another version. |
 | 0.3.0 | From task 10.11 to the last one before task 10.16. They behave as 0.2.1 builds do, and also advertise the `bounds` capability, answer `bounds` probes (their trace line is `trace bounds`) and honor the snapshot request's `evict`, which 0.2.1 and earlier builds skip, reading with their cache. Their snapshots flag a window the platform draws away from where its layout puts it `transformed`, a window flag earlier builds never set. To the driver, an agent reporting 0.2.1 is another version. |
 | 0.2.1 | From the agent of task 10.9 on. Their snapshots carry what 0.2.0 snapshots carry; the difference is in how a read behaves. A read spends at most 100 ms on retries of children whose fetch throws, a walk that finds a child's parent gone or changed starts again from the window roots, and a Compose re-read yields to a snapshot or resync request, so that a tap taking a screen away mid-walk does not hold a snapshot past its deadline, as it can on 0.2.0. The snapshot trace line adds `queued_ms` and `restarts`. To the driver, an agent reporting 0.2.0 is another version. |
@@ -441,6 +446,29 @@ adb shell MOBILE_AGENT_TOKEN=<token> CLASSPATH=/data/local/tmp/mobile-agent-andr
   an eviction can come back unscaled while the frame and the other nodes
   still read scaled (5 of 129 reads of the app's window in 30 launches over
   the launcher). Before Android 14 only the first test applies.
+- **Input-method windows** (task 10.25, `KeyboardArea.kt`). The platform
+  gives a window the bounds of its touchable region
+  (`AccessibilityWindowInfo.getBoundsInScreen` is the bounds of
+  `getRegionInScreen`, from Android 11), and an input method can take
+  touches over pieces of the screen far apart. On the API 36 emulator,
+  whose touchscreen also reports a stylus source, a focused text field
+  brings up Gboard's stylus toolbar, a pill at the left of the screen,
+  (21, 898) to (169, 1588) pixels, and its region adds the navigation bar the input
+  method draws across the bottom edge, (0, 2337) to (1080, 2400), a
+  transparent strip with the gesture handle: the platform's bounds, the box
+  around both, ran from 342 points down across the screen over content the
+  input method leaves in view, and the mirror counted all of it as hidden.
+  From Android 11 a snapshot gives an input-method window the box around
+  the pieces of its region (read with the window, no round trip) that hold
+  one of its nodes visible to the user, lying within the piece: the pill
+  for the toolbar, and for Gboard's emoji panel beside it, (186, 730) to
+  (1080, 1755), the box around both, though its input area node spans the
+  window and holds no piece. A docked keyboard's region is one piece, the
+  keys and the navigation bar below them, which it keeps whole although no
+  node of its own lies in that bar: (0, 1517) to (1080, 2400) for the
+  keyboard Gboard shows for a password field. When no piece
+  holds a node, and before Android 11, the window keeps the platform's
+  bounds.
 - **Resync.** `resync` answers the last sequence number sent on the stream,
   read and written under the lock events take; for the tree stream the node
   cache is emptied first, so the host's next snapshot is a full read.
@@ -619,6 +647,7 @@ the agent answers by id and its tests exercise it throughout.
 | | Compose windows read fresh after input the agent did not inject (task 3.7) | `events::a_snapshot_evicting_event_less_windows_sees_input_the_agent_did_not_inject` |
 | Bounds probes and eviction by window (task 10.11) | Nodes that moved without a change event | `bounds::a_probe_answers_the_nodes_of_the_last_snapshot_with_their_bounds`, `bounds::a_probe_sees_rows_a_drag_moved_that_the_last_snapshot_does_not_have`, `bounds::a_snapshot_evicting_a_window_reads_it_again_in_full`, `handshake::the_hello_advertises_every_capability_this_build_implements` |
 | | Windows the platform animates in (task 10.11) | `bounds::a_window_the_platform_scales_in_reads_as_transformed_until_it_comes_to_rest`, `bounds::a_window_the_platform_slides_in_reads_as_transformed_until_it_comes_to_rest` |
+| Input-method windows (task 10.25) | A floating toolbar, an emoji panel beside it, a docked keyboard | `codec-test.sh`: the checks of `unit-test/KeyboardAreaTest.kt` |
 | android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
 | | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
 | | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |
