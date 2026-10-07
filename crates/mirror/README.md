@@ -119,6 +119,9 @@ Conventions a driver follows:
   `androidx.compose.ui.platform.ComposeView` the API 36 emulator shows.
   `owner` names the system process that owns a window, `modal` marks a
   window that cuts the application windows below it.
+  An input-method window's bounds are what the keyboard covers, as
+  Android reports them and the Simulator's reader gives the keyboard's
+  window, which spans the screen (task 10.21).
 - **Classes and labels.** Android passes widget classes. The Simulator driver
   passes `XCUIElementType` names, or the UIKit class for elements typed
   `Other` so that `_UIAlertControllerPhoneTVMacView` is recognized as an
@@ -514,3 +517,4 @@ cargo test -p mirror
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
 | (task 10.15, how much of an element is in view) | (the share in view, the cut edge, the bars) | `visibility::a_row_inside_its_list_is_wholly_in_view_within_the_list_s_bounds`, `visibility::a_row_android_clips_at_the_bottom_edge_of_a_list_that_scrolls_on_is_cut_there`, `visibility::a_row_android_clips_at_the_top_edge_of_a_list_that_scrolls_back_is_cut_there`, `visibility::a_row_at_the_edge_of_a_list_that_cannot_scroll_that_way_is_whole`, `visibility::without_scroll_semantics_an_edge_is_no_cut`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds`, `visibility::an_element_outside_any_scroll_container_is_measured_against_its_window`, and the unit tests `visibility::tests::*` |
 | (task 10.16, the scroll container a stroke moves) | (its visible bounds, the bars, the axis) | `visibility::a_stroke_through_a_list_moves_the_list_and_its_visible_bounds_are_its_own`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, `visibility::a_stroke_moves_the_innermost_container_that_scrolls_along_its_axis`, `visibility::a_point_outside_every_scroll_container_has_none` |
+| (task 10.21, the keyboard over an iOS app) | (only what its input views cover is cut) | `visibility::the_ios_keyboard_cuts_from_its_prediction_bar_down`, and in the Simulator's reader `elements::tests::the_keyboard_window_covers_the_input_views_it_holds_not_the_screen`, `elements::tests::a_keyboard_sliding_in_covers_only_its_part_on_screen`, `elements::tests::a_keyboard_window_that_shows_nothing_covers_nothing` |
