@@ -484,17 +484,19 @@ impl SimulatorDriver {
     }
 
     /// Lets every user application on the target paste from other
-    /// applications, once each, so a paste raises no permission prompt.
-    /// Granting leaves running applications running.
+    /// applications, so a paste raises no permission prompt, listing them
+    /// again only once the device's applications changed. Granting leaves
+    /// running applications running.
     fn allow_paste(&self, target: &Target) -> Result<()> {
-        for (bundle_id, user) in target.device.installed_apps()? {
-            if user && target.allow_paste(&bundle_id) {
+        target.paste_access.allow(
+            pasteboard::applications_changed(&target.device.data_path()?),
+            || target.device.installed_apps(),
+            |bundle_id| {
                 target
                     .device
-                    .set_privacy(PASTEBOARD_SERVICE, &bundle_id, true)?;
-            }
-        }
-        Ok(())
+                    .set_privacy(PASTEBOARD_SERVICE, bundle_id, true)
+            },
+        )
     }
 
     /// Opens the first transport of the host's plan that works on `target`.
