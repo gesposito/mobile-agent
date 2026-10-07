@@ -307,7 +307,7 @@ The list-scroll flow reaches `row-200` with one `scroll --until`, as an agent wo
 | Android emulator | Expo | 14.1 s | 12.6 s |
 | Android emulator | Compose | 15.2 s | 13.7 s |
 
-Spike measurements. The throwaway programs under `spikes/` measured these before the crates existed, on one host (Apple M1 Max, macOS 26.6.2, Xcode 27.0, CoreSimulator 1171.7, iOS 26.5, an API 36 arm64 emulator); the spike verdicts table in `openspec/changes/mobile-automation-foundation/design.md` summarizes them. They are not harness results.
+Spike measurements. The throwaway programs under `spikes/` measured these before the crates existed, on one host (Apple M1 Max, macOS 26.6.2, Xcode 27.0, CoreSimulator 1171.7, iOS 26.5, an API 36 arm64 emulator); the spike verdicts table in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/design.md` summarizes them. They are not harness results.
 
 | Spike | Measurement | Source |
 |---|---|---|
@@ -332,5 +332,5 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 - React Native: `reports/10.4-rn-smoke.md` compared 17 logged-out React Native screens on the Simulator (Bluesky, Ignite's demo app, the Expo fixture), where no XCTest read reported a sparse root, then Bluesky's signed-in feeds, threads, profiles, notifications, search, chat and settings on the Simulator and the emulator. Signed in, agent-device's XCTest tree came back `sparse` or timed out on the search screen with the keyboard up and on a 711-node thread, and mobile-agent's snapshots of those screens were whole and not degraded. The same run found that with the keyboard up on the Simulator every element counts as 0% in view, so `click` warns wrongly and `scroll --until`, which stops by the same measure, cannot find its element in view (task 10.21).
 - The drivers use private Apple Simulator frameworks and hidden Android APIs. This is development tooling; nothing of it ships inside an app.
 - Not built: physical iOS, an MCP server, a CDP-subset endpoint and Android video streaming.
-- The OpenSpec change in `openspec/changes/mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks.
+- The OpenSpec change in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks.
 - `docs/overview.md` answers, with sources, how the design differs from Maestro, agent-device and Appium, where it is and is not faster, what it leaves out, which platforms and versions it supports, which protocol it speaks and what an MCP edge would take.

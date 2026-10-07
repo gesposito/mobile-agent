@@ -222,7 +222,7 @@ What it means for the tasks S5 gates:
 
 ### Proposed replacement for design.md D4
 
-To paste over D4 in `openspec/changes/mobile-automation-foundation/design.md`:
+To paste over D4 in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/design.md`:
 
 > ### D4. Wire format: CBOR, measured by spike S5
 > Frames are a 32-bit big-endian payload length followed by one CBOR item (RFC 8949) in preferred serialization with definite lengths. Requests, responses, snapshots and tree nodes are maps keyed by small integers, the field index, so absent optional fields cost nothing and receivers skip keys they do not know; events are positional arrays, because at thousands of frames the keys are the overhead. Message kinds: request with id, method and params; response with id and either result or error; event with stream, sequence and payload. Snapshots carry a per-snapshot string table for class names and resource-id prefixes; enums are integers and node flags a bitmask. The host uses minicbor with derive (no_std, borrowed strings, index-based evolution rules) and preallocates arrays from their length; the Kotlin agent hand-rolls the encoder and decoder for the fixed message set, about 400 lines with no dependency. Version and capability negotiation are the first exchange on every connection.
