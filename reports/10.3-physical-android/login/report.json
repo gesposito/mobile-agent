@@ -1,0 +1,1805 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-07T16:38:39Z",
+    "finished_at": "2026-10-07T17:42:30Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.95,
+        2.64,
+        2.63
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "552c9e223f68233ed750457fb51826e85620bf8b",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 20,
+      "warmup": 2,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "NEXUS5X-SERIAL",
+        "class": "android-device",
+        "model": "Nexus 5X",
+        "os": "Android API 27",
+        "api_level": 27,
+        "controller": null,
+        "frame_source": false
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "available",
+        "version": "2.10.0",
+        "note": null
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 2723410,
+        "p95_us": 2934789,
+        "max_us": 3006245
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5037844,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.165 ms; fill id=login-password: method direct, read back as length in 94.108 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2916537,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 64.51 ms; fill id=login-password: method direct, read back as length in 65.476 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2879511,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 62.251 ms; fill id=login-password: method direct, read back as length in 70.072 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3006245,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 41.35 ms; fill id=login-password: method direct, read back as length in 66.945 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2934789,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 52.075 ms; fill id=login-password: method direct, read back as length in 55.513 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2913814,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 62.909 ms; fill id=login-password: method direct, read back as length in 64.886 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2885385,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 47.325 ms; fill id=login-password: method direct, read back as length in 56.686 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2831791,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 40.77 ms; fill id=login-password: method direct, read back as length in 55.582 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2838811,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 62.47 ms; fill id=login-password: method direct, read back as length in 54.537 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2744273,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 37.199 ms; fill id=login-password: method direct, read back as length in 46.004 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2792614,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 53.538 ms; fill id=login-password: method direct, read back as length in 66.757 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2678331,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 69.005 ms; fill id=login-password: method direct, read back as length in 60.874 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2614247,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 58.962 ms; fill id=login-password: method direct, read back as length in 65.787 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2682406,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 33.289 ms; fill id=login-password: method direct, read back as length in 63.103 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2729845,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 65.12 ms; fill id=login-password: method direct, read back as length in 65.636 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2723410,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 64.163 ms; fill id=login-password: method direct, read back as length in 57.222 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2692645,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 62.139 ms; fill id=login-password: method direct, read back as length in 52.822 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2709688,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.214 ms; fill id=login-password: method direct, read back as length in 56.882 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2666245,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 65.64 ms; fill id=login-password: method direct, read back as length in 61.004 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2600677,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 61.527 ms; fill id=login-password: method direct, read back as length in 54.092 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2692354,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 34.78 ms; fill id=login-password: method direct, read back as length in 67.49 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2573366,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 63.6 ms; fill id=login-password: method direct, read back as length in 61.857 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "maestro",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 62920299,
+        "p95_us": 64828607,
+        "max_us": 67165609
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63601582,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63777562,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63569888,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 64045424,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 64828607,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63629889,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 62693914,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 67165609,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 62920299,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 64114399,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63445341,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 61571844,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 60909902,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 62202769,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 60501410,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 59983865,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63101142,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 64294975,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 62720876,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 63091947,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 60697520,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 60519862,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 20,
+        "failures": 20,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26357953,
+          "nodes": null,
+          "detail": "agent-device reported 24818 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 7347389,
+        "p95_us": 7716124,
+        "max_us": 8053071
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10642633,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 541.471 ms; fill id=login-password: method direct, read back as length in 367.144 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7509701,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 531.299 ms; fill id=login-password: method direct, read back as length in 362.946 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7456610,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 537.246 ms; fill id=login-password: method direct, read back as length in 364.105 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7189010,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 528.988 ms; fill id=login-password: method direct, read back as length in 360.567 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7316386,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 536.224 ms; fill id=login-password: method direct, read back as length in 365.505 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7411256,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 515.885 ms; fill id=login-password: method direct, read back as length in 375.504 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7190266,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 524.029 ms; fill id=login-password: method direct, read back as length in 366.672 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7385842,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 523.822 ms; fill id=login-password: method direct, read back as length in 372.729 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8053071,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 545.676 ms; fill id=login-password: method direct, read back as length in 399.732 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7354679,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 551.296 ms; fill id=login-password: method direct, read back as length in 364.039 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7384407,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 550.185 ms; fill id=login-password: method direct, read back as length in 360.134 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7327425,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 549.635 ms; fill id=login-password: method direct, read back as length in 358.553 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7347389,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 540.399 ms; fill id=login-password: method direct, read back as length in 371.264 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7376645,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 542.26 ms; fill id=login-password: method direct, read back as length in 395.087 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7256740,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 547.675 ms; fill id=login-password: method direct, read back as length in 397.337 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7716124,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 541.472 ms; fill id=login-password: method direct, read back as length in 630.471 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7108793,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 529.647 ms; fill id=login-password: method direct, read back as length in 369.809 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7400097,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 544.746 ms; fill id=login-password: method direct, read back as length in 358.342 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7295788,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 547.971 ms; fill id=login-password: method direct, read back as length in 371.345 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7363714,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 551.127 ms; fill id=login-password: method direct, read back as length in 377.632 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7345666,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 540.288 ms; fill id=login-password: method direct, read back as length in 375.053 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7263070,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 530.908 ms; fill id=login-password: method direct, read back as length in 374.949 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "maestro",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 55718815,
+        "p95_us": 57366449,
+        "max_us": 60568258
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56478711,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 53312707,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55471386,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55731641,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55353550,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56723485,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55218979,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56142585,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55718815,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 54579243,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55524587,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55152465,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55855476,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 54910476,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55067677,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56410056,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 55066334,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56971790,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 57366449,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56555268,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 56753056,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 60568258,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 27675130,
+        "p95_us": 28044847,
+        "max_us": 28081043
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 31772900,
+          "nodes": null,
+          "detail": "agent-device reported 30113 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27892208,
+          "nodes": null,
+          "detail": "agent-device reported 27736 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27435978,
+          "nodes": null,
+          "detail": "agent-device reported 27291 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27891423,
+          "nodes": null,
+          "detail": "agent-device reported 27758 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27704513,
+          "nodes": null,
+          "detail": "agent-device reported 27555 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26943169,
+          "nodes": null,
+          "detail": "agent-device reported 26807 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27356928,
+          "nodes": null,
+          "detail": "agent-device reported 27213 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27686336,
+          "nodes": null,
+          "detail": "agent-device reported 27549 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27761697,
+          "nodes": null,
+          "detail": "agent-device reported 27598 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27675130,
+          "nodes": null,
+          "detail": "agent-device reported 27537 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27873316,
+          "nodes": null,
+          "detail": "agent-device reported 27732 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27837590,
+          "nodes": null,
+          "detail": "agent-device reported 27691 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28044847,
+          "nodes": null,
+          "detail": "agent-device reported 27923 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28081043,
+          "nodes": null,
+          "detail": "agent-device reported 27935 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28024145,
+          "nodes": null,
+          "detail": "agent-device reported 27861 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27722733,
+          "nodes": null,
+          "detail": "agent-device reported 27575 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27564784,
+          "nodes": null,
+          "detail": "agent-device reported 27447 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27587071,
+          "nodes": null,
+          "detail": "agent-device reported 27430 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27484998,
+          "nodes": null,
+          "detail": "agent-device reported 27346 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27528469,
+          "nodes": null,
+          "detail": "agent-device reported 27406 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27630137,
+          "nodes": null,
+          "detail": "agent-device reported 27469 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27581622,
+          "nodes": null,
+          "detail": "agent-device reported 27427 ms",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 192767,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 107436,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 1016361,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 181732,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 97897,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 956728,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 170456,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 93888,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 888501,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 170065,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 107001,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "agent-device",
+      "to": null,
+      "elapsed_us": 928875,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "android-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 1500000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 100000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "android-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 50000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      }
+    ]
+  }
+}

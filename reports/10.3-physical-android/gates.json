@@ -1,0 +1,88 @@
+{
+  "gates": [
+    {
+      "class": "simulator",
+      "primitive": "cli-start",
+      "statistic": "p95",
+      "limit_ms": 20.0
+    },
+    {
+      "class": "simulator",
+      "primitive": "cold-attach",
+      "statistic": "p95",
+      "limit_ms": 2000.0
+    },
+    {
+      "class": "simulator",
+      "primitive": "warm-snapshot",
+      "fixture": "swiftui",
+      "screen": "big",
+      "statistic": "p95",
+      "limit_ms": 150.0
+    },
+    {
+      "class": "simulator",
+      "primitive": "warm-snapshot",
+      "fixture": "expo",
+      "screen": "big",
+      "statistic": "p95",
+      "limit_ms": 250.0
+    },
+    {
+      "class": "simulator",
+      "primitive": "tap-dispatch",
+      "statistic": "p95",
+      "limit_ms": 20.0
+    },
+    {
+      "class": "android-emulator",
+      "primitive": "cli-start",
+      "statistic": "p95",
+      "limit_ms": 20.0
+    },
+    {
+      "class": "android-emulator",
+      "primitive": "cold-attach",
+      "statistic": "p95",
+      "limit_ms": 1500.0
+    },
+    {
+      "class": "android-emulator",
+      "primitive": "warm-snapshot",
+      "screen": "big",
+      "statistic": "p95",
+      "limit_ms": 100.0
+    },
+    {
+      "class": "android-emulator",
+      "primitive": "tap-to-frame-change",
+      "statistic": "p95",
+      "limit_ms": 67.0
+    },
+    {
+      "class": "android-device",
+      "primitive": "cli-start",
+      "statistic": "p95",
+      "limit_ms": 20.0
+    },
+    {
+      "class": "android-device",
+      "primitive": "cold-attach",
+      "statistic": "p95",
+      "limit_ms": 1500.0
+    },
+    {
+      "class": "android-device",
+      "primitive": "warm-snapshot",
+      "screen": "big",
+      "statistic": "p95",
+      "limit_ms": 100.0
+    },
+    {
+      "class": "android-device",
+      "primitive": "tap-dispatch",
+      "statistic": "p95",
+      "limit_ms": 50.0
+    }
+  ]
+}

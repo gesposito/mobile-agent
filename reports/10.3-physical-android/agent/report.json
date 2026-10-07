@@ -1,0 +1,5277 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-07T16:05:41Z",
+    "finished_at": "2026-10-07T16:34:17Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        3.11,
+        2.79,
+        2.76
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "552c9e223f68233ed750457fb51826e85620bf8b",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 20,
+      "warmup": 2,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "NEXUS5X-SERIAL",
+        "class": "android-device",
+        "model": "Nexus 5X",
+        "os": "Android API 27",
+        "api_level": 27,
+        "controller": null,
+        "frame_source": false
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": null,
+      "screen": null,
+      "primitive": "cli-start",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 4592,
+        "p95_us": 6325,
+        "max_us": 7455
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9214,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8236,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7455,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6325,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5956,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4744,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4773,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4477,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4592,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4483,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4501,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5083,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4636,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4513,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4659,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4788,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4495,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4548,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4428,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4775,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4340,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4308,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "primitive": "cold-attach",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 2193680,
+        "p95_us": 13889442,
+        "max_us": 13889820
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3506024,
+          "nodes": null,
+          "detail": "open settled in 1431.462 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2200921,
+          "nodes": null,
+          "detail": "open settled in 339.603 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2146084,
+          "nodes": null,
+          "detail": "open settled in 350.213 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2102872,
+          "nodes": null,
+          "detail": "open settled in 361.088 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2146707,
+          "nodes": null,
+          "detail": "open settled in 330.416 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2178593,
+          "nodes": null,
+          "detail": "open settled in 327.086 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2164135,
+          "nodes": null,
+          "detail": "open settled in 344.962 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2177937,
+          "nodes": null,
+          "detail": "open settled in 347.307 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2226321,
+          "nodes": null,
+          "detail": "open settled in 344.392 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2126405,
+          "nodes": null,
+          "detail": "open settled in 342.603 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13889442,
+          "nodes": null,
+          "detail": "open did not settle in 10004.337 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2478219,
+          "nodes": null,
+          "detail": "open settled in 357.998 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2216359,
+          "nodes": null,
+          "detail": "open settled in 352.532 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2093467,
+          "nodes": null,
+          "detail": "open settled in 336.109 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13889820,
+          "nodes": null,
+          "detail": "open did not settle in 10000.436 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2308948,
+          "nodes": null,
+          "detail": "open settled in 323.969 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2235640,
+          "nodes": null,
+          "detail": "open settled in 328.669 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2193680,
+          "nodes": null,
+          "detail": "open settled in 335.412 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2200669,
+          "nodes": null,
+          "detail": "open settled in 321.196 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2235394,
+          "nodes": null,
+          "detail": "open settled in 334.754 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2251698,
+          "nodes": null,
+          "detail": "open settled in 334.377 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2184516,
+          "nodes": null,
+          "detail": "open settled in 346.917 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "big",
+      "primitive": "first-snapshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 7582160,
+        "p95_us": 8351627,
+        "max_us": 8455783
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 507,
+        "max": 507
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5354772,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5687549,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6842483,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7792667,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7582160,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7535309,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7400413,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8351627,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7903236,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7579951,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7540738,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8200583,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8062860,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7582017,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7420421,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8455783,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7977743,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7367905,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8261805,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7839952,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7440119,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8133301,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "big",
+      "primitive": "warm-snapshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 6206,
+        "p95_us": 6997,
+        "max_us": 7551
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 507,
+        "max": 507
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8793,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7530,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7551,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6997,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6473,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6206,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5938,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5918,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5951,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6182,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5981,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5912,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6215,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6190,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6354,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6229,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6126,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6208,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6372,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6466,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6093,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6325,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "list",
+      "primitive": "tap-dispatch",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 8144,
+        "p95_us": 16376,
+        "max_us": 22027
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8472,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7506,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8771,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5708,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7207,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6571,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6633,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6893,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8271,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7818,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 22027,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9344,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9191,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 15892,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8144,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6075,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 13099,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9657,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6852,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9279,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 16376,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7682,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "list",
+      "primitive": "tap-to-frame-change",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 0,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": "Android devices have no frame stream, only screenshots on demand (design D7), so a tap on one has no frame change to time",
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "list",
+      "primitive": "tap-to-tree-delta",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 130236,
+        "p95_us": 139307,
+        "max_us": 150419
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 186030,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 159981,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 131556,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 150419,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 139211,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 131838,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 123218,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 139307,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 138956,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 119548,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 121967,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 121078,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 135530,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 132488,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 132423,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 123132,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 124586,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 129748,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 130236,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 118555,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 124859,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 130981,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "login",
+      "primitive": "text-entry",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 117703,
+        "p95_us": 196402,
+        "max_us": 201752
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 165592,
+          "nodes": null,
+          "detail": "method direct, read back as text in 62.273 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 114661,
+          "nodes": null,
+          "detail": "method direct, read back as text in 62.823 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 109903,
+          "nodes": null,
+          "detail": "method direct, read back as text in 63.178 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 196402,
+          "nodes": null,
+          "detail": "method direct, read back as text in 65.189 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 122621,
+          "nodes": null,
+          "detail": "method direct, read back as text in 57.362 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 117848,
+          "nodes": null,
+          "detail": "method direct, read back as text in 70.395 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 91316,
+          "nodes": null,
+          "detail": "method direct, read back as text in 52.669 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 114413,
+          "nodes": null,
+          "detail": "method direct, read back as text in 66.33 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 110116,
+          "nodes": null,
+          "detail": "method direct, read back as text in 54.82 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 100570,
+          "nodes": null,
+          "detail": "method direct, read back as text in 55.048 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 104281,
+          "nodes": null,
+          "detail": "method direct, read back as text in 50.782 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 141245,
+          "nodes": null,
+          "detail": "method direct, read back as text in 56.905 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 118854,
+          "nodes": null,
+          "detail": "method direct, read back as text in 62.458 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 122702,
+          "nodes": null,
+          "detail": "method direct, read back as text in 66.349 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 201752,
+          "nodes": null,
+          "detail": "method direct, read back as text in 44.037 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 104197,
+          "nodes": null,
+          "detail": "method direct, read back as text in 50.207 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 118017,
+          "nodes": null,
+          "detail": "method direct, read back as text in 62.493 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 108479,
+          "nodes": null,
+          "detail": "method direct, read back as text in 51.428 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 96172,
+          "nodes": null,
+          "detail": "method direct, read back as text in 47.812 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 123268,
+          "nodes": null,
+          "detail": "method direct, read back as text in 63.21 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 117703,
+          "nodes": null,
+          "detail": "method direct, read back as text in 62.886 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 119274,
+          "nodes": null,
+          "detail": "method direct, read back as text in 61.491 ms; cleared: method direct, not read back",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "big",
+      "primitive": "screenshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 99987,
+        "p95_us": 109285,
+        "max_us": 196230
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 151976,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 104154,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 94536,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 102967,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 95121,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 102279,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 96318,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 108577,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 101340,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 109285,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 97966,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 98715,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 92877,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 107993,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 96347,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 106111,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 95285,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 103657,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 92864,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 196230,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 99987,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 102895,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": "list",
+      "primitive": "settle",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 228498,
+        "p95_us": 245339,
+        "max_us": 247015
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 203731,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 185037,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 200050,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 206047,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 237119,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 208029,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 213773,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 228498,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 243327,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 208009,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 242371,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 245339,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 230043,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 234164,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 222499,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 235447,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 241673,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 212136,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 247015,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 216147,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 214064,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 245099,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 2552306,
+        "p95_us": 2597342,
+        "max_us": 2626346
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2563499,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 33.169 ms; fill id=login-password: method direct, read back as length in 49.412 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2562458,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.121 ms; fill id=login-password: method direct, read back as length in 51.404 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2500996,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 58.114 ms; fill id=login-password: method direct, read back as length in 49.118 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2587680,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.305 ms; fill id=login-password: method direct, read back as length in 54.751 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2626346,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 37.105 ms; fill id=login-password: method direct, read back as length in 62.234 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2533441,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 68.353 ms; fill id=login-password: method direct, read back as length in 58.995 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2597342,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 61.162 ms; fill id=login-password: method direct, read back as length in 48.173 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2551443,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 58.805 ms; fill id=login-password: method direct, read back as length in 59.425 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2559080,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 61.036 ms; fill id=login-password: method direct, read back as length in 59.051 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2547026,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 59.147 ms; fill id=login-password: method direct, read back as length in 57.741 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2549089,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 59.82 ms; fill id=login-password: method direct, read back as length in 55.612 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2550007,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 36.604 ms; fill id=login-password: method direct, read back as length in 63.717 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2552033,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 32.959 ms; fill id=login-password: method direct, read back as length in 55.949 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2591327,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 61.235 ms; fill id=login-password: method direct, read back as length in 61.899 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2572969,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.087 ms; fill id=login-password: method direct, read back as length in 48.812 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2558352,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 32.884 ms; fill id=login-password: method direct, read back as length in 58.327 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2579425,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 64.494 ms; fill id=login-password: method direct, read back as length in 63.908 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2558487,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 51.823 ms; fill id=login-password: method direct, read back as length in 51.417 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2514805,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 55.679 ms; fill id=login-password: method direct, read back as length in 54.815 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2560324,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 57.724 ms; fill id=login-password: method direct, read back as length in 58.671 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2552306,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 45.062 ms; fill id=login-password: method direct, read back as length in 61.289 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2536379,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 47.821 ms; fill id=login-password: method direct, read back as length in 51.077 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 20,
+        "failures": 20,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: mobile-agent scroll --timeout 90000 --until id=row-200 -- down 600: element_not_found: id=row-200 was on screen but not mostly in view (cut off at the bottom edge of its scroll container, which scrolls on) after 25 strokes of 460.6 points down: the content stopped moving; take a snapshot to see where the content is / the check run failed: mobile-agent scroll --timeout 90000 --until id=row-200 -- down 600: element_not_found: id=row-200 was on screen but not mostly in view (cut off at the bottom edge of its scroll container, which scrolls on) after 24 strokes of 460.6 points down: the content stopped moving; take a snapshot to see where the content is",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 9500801,
+        "p95_us": 10226790,
+        "max_us": 10339832
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 507,
+        "max": 507
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "counts": {
+          "cell": 500
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9533701,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9524072,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10339832,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9628473,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9555897,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9404842,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9509222,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10106787,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10198211,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9500801,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9431113,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9441393,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9282095,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9967250,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10011244,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9285211,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9408741,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9265032,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10226790,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10052369,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9368215,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9387118,
+          "nodes": 507,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "primitive": "cold-attach",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 3050629,
+        "p95_us": 3131542,
+        "max_us": 3385442
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4690869,
+          "nodes": null,
+          "detail": "open settled in 1625.71 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3028760,
+          "nodes": null,
+          "detail": "open settled in 517.023 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3045593,
+          "nodes": null,
+          "detail": "open settled in 523.904 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3385442,
+          "nodes": null,
+          "detail": "open settled in 624.905 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3066144,
+          "nodes": null,
+          "detail": "open settled in 503.178 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3018351,
+          "nodes": null,
+          "detail": "open settled in 525.462 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3050629,
+          "nodes": null,
+          "detail": "open settled in 532.181 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2920300,
+          "nodes": null,
+          "detail": "open settled in 519.026 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3131542,
+          "nodes": null,
+          "detail": "open settled in 636.154 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3032425,
+          "nodes": null,
+          "detail": "open settled in 511.873 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3036528,
+          "nodes": null,
+          "detail": "open settled in 535.782 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3053768,
+          "nodes": null,
+          "detail": "open settled in 519.132 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3078078,
+          "nodes": null,
+          "detail": "open settled in 524.506 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3030304,
+          "nodes": null,
+          "detail": "open settled in 536.904 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3070298,
+          "nodes": null,
+          "detail": "open settled in 539.515 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3041784,
+          "nodes": null,
+          "detail": "open settled in 531.329 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3085003,
+          "nodes": null,
+          "detail": "open settled in 532.586 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3046548,
+          "nodes": null,
+          "detail": "open settled in 531.741 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3088747,
+          "nodes": null,
+          "detail": "open settled in 536.515 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3084999,
+          "nodes": null,
+          "detail": "open settled in 520.781 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3063190,
+          "nodes": null,
+          "detail": "open settled in 522.134 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3032077,
+          "nodes": null,
+          "detail": "open settled in 523.021 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "big",
+      "primitive": "first-snapshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 121480,
+        "p95_us": 156362,
+        "max_us": 167390
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 505,
+        "max": 505
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23108102,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 138558,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 167390,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 122714,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 137408,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 131200,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 110535,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 121480,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 104879,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 110022,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 114654,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 113249,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 156362,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 107873,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 100550,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 138007,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 102540,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 126075,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 136600,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 130854,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 125926,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 118832,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "big",
+      "primitive": "warm-snapshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 5919,
+        "p95_us": 8694,
+        "max_us": 10171
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 505,
+        "max": 505
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10363,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9590,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8694,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7072,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6929,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6393,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6010,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5863,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6236,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6111,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7331,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5919,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5643,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6178,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5765,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5717,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5860,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5789,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5812,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5751,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5702,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10171,
+          "nodes": 505,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "list",
+      "primitive": "tap-dispatch",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 8579,
+        "p95_us": 11439,
+        "max_us": 11522
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8875,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8166,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8845,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8334,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11439,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8966,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6915,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11302,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6781,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8579,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5947,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7733,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10772,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8237,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6160,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6913,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9064,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9125,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11054,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8745,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5046,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11522,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "list",
+      "primitive": "tap-to-frame-change",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 0,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": "Android devices have no frame stream, only screenshots on demand (design D7), so a tap on one has no frame change to time",
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "list",
+      "primitive": "tap-to-tree-delta",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 313269,
+        "p95_us": 319826,
+        "max_us": 324637
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 414394,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 315126,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 312085,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 311763,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 308669,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 319790,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 315227,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 319826,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 303936,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 311833,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 316712,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 311361,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 319190,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 300178,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 313962,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 324637,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 312620,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 313941,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 313269,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 315848,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 312559,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 319239,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "login",
+      "primitive": "text-entry",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 438737,
+        "p95_us": 524341,
+        "max_us": 539812
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 464223,
+          "nodes": null,
+          "detail": "method direct, read back as text in 419.501 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 452023,
+          "nodes": null,
+          "detail": "method direct, read back as text in 412.026 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 509277,
+          "nodes": null,
+          "detail": "method direct, read back as text in 387.431 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 416963,
+          "nodes": null,
+          "detail": "method direct, read back as text in 380.104 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 504639,
+          "nodes": null,
+          "detail": "method direct, read back as text in 380.496 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 412734,
+          "nodes": null,
+          "detail": "method direct, read back as text in 380.143 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 514598,
+          "nodes": null,
+          "detail": "method direct, read back as text in 402.466 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 419268,
+          "nodes": null,
+          "detail": "method direct, read back as text in 388.152 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 524341,
+          "nodes": null,
+          "detail": "method direct, read back as text in 392.112 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 427048,
+          "nodes": null,
+          "detail": "method direct, read back as text in 403.846 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 508859,
+          "nodes": null,
+          "detail": "method direct, read back as text in 374.355 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 428358,
+          "nodes": null,
+          "detail": "method direct, read back as text in 387.396 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 497051,
+          "nodes": null,
+          "detail": "method direct, read back as text in 384.69 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 428912,
+          "nodes": null,
+          "detail": "method direct, read back as text in 391.277 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 509169,
+          "nodes": null,
+          "detail": "method direct, read back as text in 386.413 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 412386,
+          "nodes": null,
+          "detail": "method direct, read back as text in 382.707 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 539812,
+          "nodes": null,
+          "detail": "method direct, read back as text in 407.002 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 419572,
+          "nodes": null,
+          "detail": "method direct, read back as text in 385.762 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 519312,
+          "nodes": null,
+          "detail": "method direct, read back as text in 380.782 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 438737,
+          "nodes": null,
+          "detail": "method direct, read back as text in 398.048 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 522644,
+          "nodes": null,
+          "detail": "method direct, read back as text in 391.584 ms; cleared: method direct, not read back",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 407773,
+          "nodes": null,
+          "detail": "method direct, read back as text in 382.208 ms; cleared: method direct, not read back",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "big",
+      "primitive": "screenshot",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 9981054,
+        "p95_us": 11160694,
+        "max_us": 11323120
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11214546,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10907684,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6026678,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8529357,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10586369,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9152718,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10130518,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10285491,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5126267,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9459277,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10365575,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10889653,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6517174,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10293722,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8530495,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11323120,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11160694,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8634406,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10397959,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9659304,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10369772,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9981054,
+          "nodes": null,
+          "detail": "562x1000",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": "list",
+      "primitive": "settle",
+      "clock": "tool",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 186057,
+        "p95_us": 213445,
+        "max_us": 333555
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 280114,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 77680,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 179476,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 183611,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 196732,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 195436,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 185166,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 189717,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 186057,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 182200,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 182085,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 196021,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 333555,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 185780,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 185566,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 195281,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 181620,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 213445,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 183762,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 196401,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 210850,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 191204,
+          "nodes": null,
+          "detail": "ended by tree",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 20,
+      "warmup": 2,
+      "stats": {
+        "n": 20,
+        "p50_us": 7450201,
+        "p95_us": 8114697,
+        "max_us": 8146543
+      },
+      "reliability": {
+        "iterations": 20,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7228246,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 528.351 ms; fill id=login-password: method direct, read back as length in 422.619 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7174505,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 425.068 ms; fill id=login-password: method direct, read back as length in 448.131 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7222375,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 499.543 ms; fill id=login-password: method direct, read back as length in 429.971 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7356166,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 533.549 ms; fill id=login-password: method direct, read back as length in 431.171 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7257549,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 525.302 ms; fill id=login-password: method direct, read back as length in 426.026 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7450201,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 513.359 ms; fill id=login-password: method direct, read back as length in 447.708 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7563521,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 525.722 ms; fill id=login-password: method direct, read back as length in 464.938 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7421649,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 525.301 ms; fill id=login-password: method direct, read back as length in 447.233 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7442828,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 529.487 ms; fill id=login-password: method direct, read back as length in 469.515 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7531155,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 529.439 ms; fill id=login-password: method direct, read back as length in 467.134 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7458129,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 528.576 ms; fill id=login-password: method direct, read back as length in 460.581 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8114697,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 517.075 ms; fill id=login-password: method direct, read back as length in 725.668 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7487371,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 530.106 ms; fill id=login-password: method direct, read back as length in 441.458 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7413344,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 502.161 ms; fill id=login-password: method direct, read back as length in 454.556 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7516961,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 520.513 ms; fill id=login-password: method direct, read back as length in 466.566 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7495094,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 524.807 ms; fill id=login-password: method direct, read back as length in 468.387 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7534803,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 510.024 ms; fill id=login-password: method direct, read back as length in 477.507 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7431334,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 532.065 ms; fill id=login-password: method direct, read back as length in 443.892 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8146543,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 555.702 ms; fill id=login-password: method direct, read back as length in 453.347 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7596947,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 511.077 ms; fill id=login-password: method direct, read back as length in 455.558 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7390121,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 549.166 ms; fill id=login-password: method direct, read back as length in 450.504 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7412586,
+          "nodes": null,
+          "detail": "fill id=login-username: method direct, read back as text in 540.817 ms; fill id=login-password: method direct, read back as length in 438.613 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 20,
+        "failures": 20,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: mobile-agent click --timeout 10000 -- id=tab-list: element_not_found: no element matches id tab-list after 10008 ms; the screen shows revision 75, 4 windows, 5 elements with refs, read 157 ms ago: / the check run failed: mobile-agent click --timeout 10000 -- id=tab-list: element_not_found: no element matches id tab-list after 10005 ms; the screen shows revision 77, 4 windows, 5 elements with refs, read 442 ms ago:",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "NEXUS5X-SERIAL",
+      "target_class": "android-device",
+      "fixture": "compose",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": null,
+      "iterations": 20,
+      "warmup": 2,
+      "stats": null,
+      "reliability": {
+        "iterations": 20,
+        "failures": 20,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: mobile-agent click --timeout 10000 -- id=tab-big: element_not_found: no element matches id tab-big after 10009 ms; the screen shows revision 78, 4 windows, 5 elements with refs, read 29 ms ago: / the check run failed: mobile-agent click --timeout 10000 -- id=tab-big: element_not_found: no element matches id tab-big after 10010 ms; the screen shows revision 79, 4 windows, 5 elements with refs, read 180 ms ago:",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "NEXUS5X-SERIAL",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 191515,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": false,
+    "rows": [
+      {
+        "gate": "android-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 6325,
+        "status": "pass"
+      },
+      {
+        "gate": "android-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 1500000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 13889442,
+        "status": "fail"
+      },
+      {
+        "gate": "android-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 1500000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 3131542,
+        "status": "fail"
+      },
+      {
+        "gate": "android-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 100000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 6997,
+        "status": "pass"
+      },
+      {
+        "gate": "android-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 100000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 8694,
+        "status": "pass"
+      },
+      {
+        "gate": "android-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 50000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 16376,
+        "status": "pass"
+      },
+      {
+        "gate": "android-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 50000,
+        "tool": "mobile-agent",
+        "target": "NEXUS5X-SERIAL",
+        "measured_us": 11439,
+        "status": "pass"
+      }
+    ]
+  }
+}
