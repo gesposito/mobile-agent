@@ -17,13 +17,13 @@
 //! input method it found again. `close --shutdown` would also shut the target
 //! down, which the harness never asks for.
 //!
-//! On a Simulator, `close` leaves agent-device's daemon running with its
-//! XCTest runner and its snapshot bridge, until five idle minutes have passed
-//! (`crates/bench/README.md`, Hand-offs between tools). There the release then
-//! runs `agent-device daemon stop --clean --json`, which stops the daemon of
-//! the state directory the bench's commands use and kills the runner the
-//! daemon leaves running for its successor, and [`left_running`] finds
-//! whichever of them the host still runs.
+//! `close` leaves agent-device's daemon running until five idle minutes
+//! have passed, and on a Simulator its XCTest runner and its snapshot bridge
+//! with it (`crates/bench/README.md`, Hand-offs between tools). So the
+//! release then runs `agent-device daemon stop --clean --json`, which stops
+//! the daemon of the state directory the bench's commands use and kills the
+//! runner the daemon leaves running for its successor, and [`left_running`]
+//! finds whichever of them the host still runs.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -243,19 +243,26 @@ pub fn ps_details(pids: &str) -> [&str; 6] {
     ["-E", "-ww", "-o", "pid=,command=", "-p", pids]
 }
 
-/// What agent-device still runs on the host for the Simulator `udid`, one
-/// entry per process, named with its pid:
+/// What agent-device still runs on the host for `target`, one entry per
+/// process, named with its pid:
 ///
 /// - its daemon: a `node` running `…/dist/src/internal/daemon.js`, the path
 ///   agent-device itself checks a daemon's command line for, whose
 ///   environment names `state_dir` as `AGENT_DEVICE_STATE_DIR`, which
 ///   agent-device sets for each daemon it starts;
+///
+/// and for a Simulator, whose UDID is the target's id:
+///
 /// - its XCTest runner: the `xcodebuild` building or running
 ///   `AgentDeviceRunner` for the Simulator, and the runner app under the
 ///   Simulator's directory;
 /// - its snapshot bridge: the `simctl spawn <udid>` that starts it, and the
 ///   `snapshot-bridge serve` in the Simulator, whose environment names the
 ///   Simulator as `SIMULATOR_UDID`.
+///
+/// On Android the daemon reaches the device through `adb` commands, the
+/// longest of which, the snapshot helper's `am instrument -w`, ends with
+/// the session's `close`, so the daemon is all there is to look for.
 ///
 /// `programs` is the host's processes as `ps` lists them with
 /// [`PS_PROGRAMS`]. `details` lists the processes whose pids it is given as
@@ -264,21 +271,24 @@ pub fn ps_details(pids: &str) -> [&str; 6] {
 /// ended.
 pub fn left_running(
     programs: &str,
-    udid: &str,
+    target: &Target,
     state_dir: &str,
     details: impl FnOnce(&[u32]) -> String,
 ) -> Vec<String> {
+    let udid = target.id.as_str();
+    let simulator = target.class.platform() == Platform::Ios;
     let devices = format!("/Devices/{udid}/");
     let mut left: Vec<(u32, &str)> = Vec::new();
     // The processes whose command line or environment tells whether they
-    // are agent-device's for this Simulator and state directory.
+    // are agent-device's for this target and state directory.
     let mut unsure: Vec<(u32, &str)> = Vec::new();
     for (pid, program) in programs.lines().filter_map(pid_and_rest) {
         match program.rsplit('/').next().unwrap_or(program) {
-            "AgentDeviceRunnerUITests-Runner" if program.contains(&devices) => {
+            "AgentDeviceRunnerUITests-Runner" if simulator && program.contains(&devices) => {
                 left.push((pid, "runner app"));
             }
-            name @ ("node" | "xcodebuild" | "simctl" | "snapshot-bridge") => {
+            "node" => unsure.push((pid, "node")),
+            name @ ("xcodebuild" | "simctl" | "snapshot-bridge") if simulator => {
                 unsure.push((pid, name));
             }
             _ => {}
@@ -338,8 +348,8 @@ fn sets(line: &str, variable: &str, value: &str) -> bool {
     ends_word(line, &format!(" {variable}={value}"))
 }
 
-/// What the release on a Simulator did, from whether `close` ended a session
-/// and whether `daemon stop` stopped a daemon; `None` when neither did.
+/// What the release did, from whether `close` ended a session and whether
+/// `daemon stop` stopped a daemon; `None` when neither did.
 pub fn released(closed: bool, stopped: bool, session: &str) -> Option<String> {
     match (closed, stopped) {
         (true, true) => Some(format!(
@@ -696,10 +706,14 @@ mod tests {
   504 /bin/zsh -c grep -e /dist/src/internal/daemon.js -e AgentDeviceRunner -e SIM-1 -e '/snapshot-bridge serve ' AGENT_DEVICE_STATE_DIR=/tmp/ad SIMULATOR_UDID=SIM-1
   506 node /usr/local/lib/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic AGENT_DEVICE_STATE_DIR=/tmp/ad";
 
+    fn simulator(udid: &str) -> Target {
+        Target::new(udid, TargetClass::Simulator)
+    }
+
     #[test]
     fn what_is_left_running_is_the_daemon_runner_and_bridge_of_the_state_directory_and_simulator() {
         let asked = RefCell::new(Vec::new());
-        let left = left_running(PROGRAMS, "SIM-1", "/tmp/ad", |pids| {
+        let left = left_running(PROGRAMS, &simulator("SIM-1"), "/tmp/ad", |pids| {
             asked.borrow_mut().extend_from_slice(pids);
             DETAILS.to_owned()
         });
@@ -719,7 +733,9 @@ mod tests {
         // Another state directory's daemon and another Simulator's runner
         // and bridge are not this run's.
         assert_eq!(
-            left_running(PROGRAMS, "SIM-2", "/tmp/ad-other", |_| DETAILS.to_owned()),
+            left_running(PROGRAMS, &simulator("SIM-2"), "/tmp/ad-other", |_| {
+                DETAILS.to_owned()
+            }),
             [
                 "daemon (pid 501)",
                 "runner's xcodebuild (pid 502)",
@@ -730,14 +746,28 @@ mod tests {
     }
 
     #[test]
+    fn what_is_left_running_beside_an_emulator_is_the_daemon_of_the_state_directory() {
+        // On Android agent-device runs neither a runner nor a bridge on the
+        // host, so only its daemon is looked for: a `node` process.
+        let asked = RefCell::new(Vec::new());
+        let emulator = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        let left = left_running(PROGRAMS, &emulator, "/tmp/ad", |pids| {
+            asked.borrow_mut().extend_from_slice(pids);
+            DETAILS.to_owned()
+        });
+        assert_eq!(left, ["daemon (pid 401)"]);
+        assert_eq!(asked.into_inner(), [401, 501, 506]);
+    }
+
+    #[test]
     fn processes_that_end_before_they_are_looked_at_closer_are_not_left() {
         // `ps -p` lists none of the pids it was asked about once they have
         // ended; the runner app is told by its program alone.
-        let left = left_running(PROGRAMS, "SIM-1", "/tmp/ad", |_| String::new());
+        let left = left_running(PROGRAMS, &simulator("SIM-1"), "/tmp/ad", |_| String::new());
         assert_eq!(left, ["runner app (pid 405)"]);
         let none = left_running(
             "    1 /sbin/launchd\n  504 /bin/zsh",
-            "SIM-1",
+            &simulator("SIM-1"),
             "/tmp/ad",
             |_| panic!("no process needed a closer look"),
         );
@@ -745,7 +775,7 @@ mod tests {
     }
 
     #[test]
-    fn a_release_on_a_simulator_says_what_it_ended() {
+    fn a_release_says_what_it_ended() {
         let s = "mobile-agent-bench";
         assert_eq!(
             released(true, true, s).as_deref(),

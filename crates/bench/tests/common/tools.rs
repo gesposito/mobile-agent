@@ -210,12 +210,17 @@ impl Tools {
 
     /// Each flow run and hierarchy read `tool` logged, reduced to what it
     /// did: `run <flow>` for a flow run, `read` for a hierarchy read. The
-    /// session closes of agent-device's releases are left out;
-    /// [`Tools::closes`] lists them.
+    /// commands of agent-device's releases are left out: its session's
+    /// `close`, which [`Tools::closes`] lists, `daemon stop` and the
+    /// `session state-dir` that tells the hand-off which daemon is its own.
     pub fn log(&self, tool: &str) -> Vec<String> {
         let log = fs::read_to_string(self.bin.join(format!("{tool}.log"))).unwrap_or_default();
         log.lines()
-            .filter(|line| !line.starts_with("close "))
+            .filter(|line| {
+                !["close ", "daemon ", "session "]
+                    .iter()
+                    .any(|c| line.starts_with(c))
+            })
             .map(|line| {
                 if line.contains(" hierarchy") || line.starts_with("snapshot ") {
                     "read".to_owned()

@@ -448,11 +448,13 @@ fn executable(path: &Path, script: &str) {
 /// Models the one Android device the tools share, in `tools`' directory: its
 /// UI automation role, which `mobile-agent`'s daemon, serving from `socket`,
 /// holds while it runs and agent-device's snapshot helper holds until its
-/// session is closed, and its input method, which agent-device switches to
-/// its own and a fake `adb` reads and sets. A baseline that finds the role
-/// held fails as Maestro's driver did on the emulator; `mobile-agent`, run
-/// through the returned wrapper around `cli`, fails as its agent's attach
-/// does, and also when the input method is not the one the run found.
+/// session is closed or its daemon stopped, and its input method, which
+/// agent-device switches to its own and a fake `adb` reads and sets.
+/// agent-device's `session state-dir` touches neither. A baseline that finds
+/// the role held fails as Maestro's driver did on the emulator;
+/// `mobile-agent`, run through the returned wrapper around `cli`, fails as
+/// its agent's attach does, and also when the input method is not the one
+/// the run found.
 fn shared_device(tools: &Tools, socket: &Path, cli: &Path) -> PathBuf {
     let bin = &tools.bin;
     fs::write(bin.join("ime"), format!("{STOCK_IME}\n")).unwrap();
@@ -470,6 +472,15 @@ fn shared_device(tools: &Tools, socket: &Path, cli: &Path) -> PathBuf {
 if [ "$tool $1" = "agent-device close" ]; then
   rm -f "$dir/agent-device.helper"
   echo '{{"success":true,"data":{{"session":"mobile-agent-bench"}}}}'
+  exit 0
+fi
+if [ "$tool $1" = "agent-device daemon" ]; then
+  rm -f "$dir/agent-device.helper"
+  echo '{{"success":true,"data":{{"stopped":true,"mode":"graceful","clean":true}}}}'
+  exit 0
+fi
+if [ "$tool $1" = "agent-device session" ]; then
+  echo "{{\"success\":true,\"data\":{{\"stateDir\":\"$dir/agent-device-state\"}}}}"
   exit 0
 fi
 if [ -S '{socket}' ]; then conflict "the mobile-agent daemon's agent holds it"; fi
@@ -552,7 +563,8 @@ fn drivers(target: &Target, fixtures: &[Fixture], baselines: &[&str]) -> Vec<Str
 /// Maestro's driver died because the agent held the role. The run hands the
 /// emulator from each tool to the next between series, and once it is over:
 /// the daemon is stopped and gone before a baseline starts, agent-device's
-/// session is closed, and the input method the run found is selected again.
+/// session is closed and its daemon stopped (task 10.27), and the input
+/// method the run found is selected again.
 /// The fake emulator takes 200 ms to stop, as the agent does, which the
 /// daemon's `shutdown` waits for before it answers (task 8.16).
 #[test]
@@ -656,7 +668,7 @@ fn a_run_hands_the_emulator_from_one_tool_to_the_next_between_series() {
         let (released, input_method) = match handoff["from"].as_str() {
             Some("mobile-agent") => (json!("stopped the daemon"), Value::Null),
             Some("agent-device") => (
-                json!("closed agent-device session mobile-agent-bench"),
+                json!("closed agent-device session mobile-agent-bench and stopped its daemon"),
                 json!(format!(
                     "{AGENT_DEVICE_IME} left selected, {STOCK_IME} set back"
                 )),

@@ -401,7 +401,7 @@ type Process = (u32, &'static str, &'static str, &'static str);
 /// still listed: its daemon, its XCTest runner's `xcodebuild`, its snapshot
 /// bridge's `simctl spawn`, the bridge in the Simulator, and the runner app
 /// in the Simulator.
-const AGENT_DEVICE_PROCESSES: [(Process, u32); 5] = [
+const ON_SIMULATOR: [(Process, u32); 5] = [
     (
         (
             401,
@@ -455,6 +455,20 @@ const AGENT_DEVICE_PROCESSES: [(Process, u32); 5] = [
     ),
 ];
 
+/// agent-device's process on the host for the emulator `emulator-5554` and
+/// the state directory `/state`: its daemon, gone at the first listing after
+/// a `daemon stop`, which returns once its daemon has exited. Its snapshot
+/// helper's `adb … am instrument -w` ends with the session's `close`.
+const ON_EMULATOR: [(Process, u32); 1] = [(
+    (
+        401,
+        "/opt/homebrew/bin/node",
+        "/opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js",
+        "AGENT_DEVICE_STATE_DIR=/state AGENT_DEVICE_DAEMON_SERVER_MODE=socket",
+    ),
+    0,
+)];
+
 /// Processes that are not agent-device's for `SIM-1` and `/state`, and never
 /// end: the daemon of another state directory, another Simulator's runner
 /// and bridge, and a shell whose command names everything agent-device's do.
@@ -489,15 +503,16 @@ const OTHER_PROCESSES: [Process; 5] = [
     ),
 ];
 
-/// The host agent-device drives `SIM-1` from. Once a batch has run, `ps`
-/// lists agent-device's processes beside the others; after a `daemon stop`
-/// that followed the last batch, each of agent-device's processes ends as
-/// [`AGENT_DEVICE_PROCESSES`] says. Each listing of the host's programs is
-/// noted in `events` with agent-device's processes on it; every other
-/// command is answered as `common::probe()` answers it.
+/// The host agent-device drives a target from. Once a batch has run, `ps`
+/// lists agent-device's processes, `agent_device`, beside the others; after
+/// a `daemon stop` that followed the last batch, each of agent-device's
+/// processes ends as `agent_device` says. Each listing of the host's
+/// programs is noted in `events` with agent-device's processes on it; every
+/// other command is answered as `common::probe()` answers it.
 struct Host {
     tool_log: PathBuf,
     events: Events,
+    agent_device: &'static [(Process, u32)],
     listings_since_stop: Cell<u32>,
     scripted: ScriptedProbe,
 }
@@ -519,7 +534,8 @@ impl Host {
     fn alive(&self) -> Vec<Process> {
         let agent_device: Vec<Process> = match self.ran_and_stopped() {
             (false, _) => Vec::new(),
-            (true, stopped) => AGENT_DEVICE_PROCESSES
+            (true, stopped) => self
+                .agent_device
                 .iter()
                 .filter(|(_, outlives)| !stopped || self.listings_since_stop.get() <= *outlives)
                 .map(|(process, _)| *process)
@@ -543,7 +559,7 @@ impl Host {
         let alive = self.alive();
         let theirs: Vec<String> = alive
             .iter()
-            .filter(|(pid, ..)| (401..=405).contains(pid))
+            .filter(|(pid, ..)| self.agent_device.iter().any(|((own, ..), _)| own == pid))
             .map(|(pid, ..)| pid.to_string())
             .collect();
         self.events.borrow_mut().push(if theirs.is_empty() {
@@ -636,12 +652,22 @@ impl Adapter for Watched {
 /// agent-device's `close` of the bench's session on `SIM-1`.
 const CLOSE_ON_SIM: &str = "close --json --platform ios --udid SIM-1 --session mobile-agent-bench";
 
-/// On the fake host of `SIM-1`, the tool under test runs the tab-list flow,
-/// then agent-device does, whose `close` runs `close`, a shell command;
-/// then the tool under test takes the Simulator back for its process start.
-/// Returns the report, what happened on the host and the commands
-/// agent-device was given besides its batches.
-fn hand_the_simulator_back(name: &str, close: &str) -> (Report, Vec<String>, Vec<String>) {
+/// agent-device's `close` of the bench's session on `emulator-5554`.
+const CLOSE_ON_EMULATOR: &str =
+    "close --json --platform android --serial emulator-5554 --session mobile-agent-bench";
+
+/// A `close` that ended the bench's session.
+const CLOSED: &str = "echo '{\"success\":true,\"data\":{\"session\":\"mobile-agent-bench\"}}'";
+
+/// A `close` that failed.
+const CLOSE_FAILS: &str = "echo '{\"success\":false,\"error\":{\"code\":\"COMMAND_FAILED\",\"message\":\"the session did not end\"}}'; exit 1";
+
+/// On the fake host of `target`, `SIM-1` or `emulator-5554`, the tool under
+/// test runs the tab-list flow, then agent-device does, whose `close` runs
+/// `close`, a shell command; then the tool under test takes the target back
+/// for its process start. Returns the report, what happened on the host and
+/// the commands agent-device was given besides its batches.
+fn hand_back(name: &str, target: Target, close: &str) -> (Report, Vec<String>, Vec<String>) {
     let setup = Setup::new(name);
     fake_tool(
         &setup.bin,
@@ -663,12 +689,15 @@ fn hand_the_simulator_back(name: &str, close: &str) -> (Report, Vec<String>, Vec
     let host = Host {
         tool_log: setup.bin.join("agent-device.log"),
         events: Rc::clone(&events),
+        agent_device: match target.class {
+            TargetClass::Simulator => &ON_SIMULATOR,
+            _ => &ON_EMULATOR,
+        },
         listings_since_stop: Cell::new(0),
         scripted: common::probe(),
     };
     // The tool under test runs the flow, then agent-device does; then the
-    // tool under test takes the Simulator back for its process start.
-    let target = Target::new("SIM-1", TargetClass::Simulator);
+    // tool under test takes the target back for its process start.
     let fake = FakeAdapter::new(FakeScript {
         tool: "mobile-agent".into(),
         version: Some("0.1.0".into()),
@@ -676,14 +705,14 @@ fn hand_the_simulator_back(name: &str, close: &str) -> (Report, Vec<String>, Vec
         targets: vec![target.clone()],
         series: vec![
             FakeSeries::new(
-                "SIM-1",
+                &target.id,
                 Some(Fixture::Expo),
                 None,
                 Subject::Flow("tab-list".into()),
                 vec![300.0],
             ),
             FakeSeries::new(
-                "SIM-1",
+                &target.id,
                 None,
                 None,
                 Subject::Primitive(Primitive::CliStart),
@@ -730,10 +759,8 @@ fn hand_the_simulator_back(name: &str, close: &str) -> (Report, Vec<String>, Vec
 /// and bridge is left before the next tool takes the Simulator.
 #[test]
 fn agent_device_s_daemon_runner_and_bridge_are_gone_before_the_next_tool_takes_the_simulator() {
-    let (report, events, commands) = hand_the_simulator_back(
-        "baselines-agent-device-simulator",
-        "echo '{\"success\":true,\"data\":{\"session\":\"mobile-agent-bench\"}}'",
-    );
+    let (report, events, commands) =
+        hand_back("baselines-agent-device-simulator", simulator(), CLOSED);
     let agent_device = report
         .measurements
         .iter()
@@ -781,9 +808,10 @@ fn agent_device_s_daemon_runner_and_bridge_are_gone_before_the_next_tool_takes_t
 /// for its processes, and the failure is recorded.
 #[test]
 fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
-    let (report, events, commands) = hand_the_simulator_back(
+    let (report, events, commands) = hand_back(
         "baselines-agent-device-close-fails",
-        "echo '{\"success\":false,\"error\":{\"code\":\"COMMAND_FAILED\",\"message\":\"the session did not end\"}}'; exit 1",
+        simulator(),
+        CLOSE_FAILS,
     );
     assert_eq!(commands[..2], [CLOSE_ON_SIM, "daemon stop --clean --json"]);
     let handoff = report
@@ -805,6 +833,98 @@ fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
         events[events.len() - 2],
         "ps lists none of agent-device's processes"
     );
+}
+
+/// Task 10.27: on Android too, `agent-device close` ends only the session,
+/// and agent-device's daemon idled on the host for five minutes into the
+/// next tool's series (`reports/10.26-remeasure.md`, finding 5). Handing the
+/// emulator on, agent-device closes its session, then stops its daemon as
+/// on a Simulator, and the run lists the host's processes until the daemon
+/// is gone before the next tool takes the emulator.
+#[test]
+fn agent_device_s_daemon_is_gone_before_the_next_tool_takes_the_emulator() {
+    let (report, events, commands) =
+        hand_back("baselines-agent-device-emulator", emulator(), CLOSED);
+    let agent_device = report
+        .measurements
+        .iter()
+        .find(|m| m.tool == "agent-device")
+        .unwrap();
+    assert_eq!(agent_device.stats.map(|s| s.n), Some(2));
+    // agent-device closed its session, then stopped its daemon.
+    assert!(
+        commands.starts_with(&[
+            CLOSE_ON_EMULATOR.to_owned(),
+            "daemon stop --clean --json".to_owned()
+        ]),
+        "agent-device was asked to {commands:?}"
+    );
+    let handoff = report
+        .handoffs
+        .iter()
+        .find(|h| h.from == "agent-device")
+        .unwrap();
+    assert_eq!(handoff.to.as_deref(), Some("mobile-agent"));
+    assert_eq!(
+        handoff.released.as_deref(),
+        Some("closed agent-device session mobile-agent-bench and stopped its daemon")
+    );
+    assert_eq!(handoff.error, None);
+    // The hand-off listed the host's processes once the daemon was stopped,
+    // found none of agent-device's, and only then did the tool under test
+    // take the emulator.
+    assert_eq!(
+        events,
+        [
+            "mobile-agent prepares flow tab-list",
+            "ps lists none of agent-device's processes",
+            "mobile-agent prepares cli-start",
+        ]
+    );
+}
+
+/// As on a Simulator, a `close` that fails on the emulator leaves the daemon
+/// to its stop, which ends its sessions as it stops.
+#[test]
+fn a_close_that_fails_on_the_emulator_still_stops_agent_device_s_daemon() {
+    let (report, events, commands) = hand_back(
+        "baselines-agent-device-emulator-close-fails",
+        emulator(),
+        CLOSE_FAILS,
+    );
+    assert!(
+        commands.starts_with(&[
+            CLOSE_ON_EMULATOR.to_owned(),
+            "daemon stop --clean --json".to_owned()
+        ]),
+        "agent-device was asked to {commands:?}"
+    );
+    let handoff = report
+        .handoffs
+        .iter()
+        .find(|h| h.from == "agent-device")
+        .unwrap();
+    assert_eq!(handoff.released, None);
+    let error = handoff.error.as_deref().unwrap_or_default();
+    assert!(
+        error.starts_with("agent-device close failed: COMMAND_FAILED: the session did not end"),
+        "{error}"
+    );
+    assert_eq!(
+        events[events.len() - 2..],
+        [
+            "ps lists none of agent-device's processes",
+            "mobile-agent prepares cli-start"
+        ]
+    );
+}
+
+fn simulator() -> Target {
+    Target::new("SIM-1", TargetClass::Simulator)
+}
+
+fn emulator() -> Target {
+    Target::new("emulator-5554", TargetClass::AndroidEmulator)
 }
 
 /// A run of `series` on the script's emulator, with the tab-list flow.

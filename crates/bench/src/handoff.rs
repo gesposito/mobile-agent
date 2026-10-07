@@ -3,7 +3,7 @@
 //! its commands: `mobile-agent`'s daemon keeps its agent until it exits, and
 //! agent-device keeps a snapshot helper until its session is closed. Tools
 //! can also leave device state behind, such as a test input method selected
-//! for text entry, or processes on the host, such as agent-device's daemon
+//! for text entry, or processes on the host, such as agent-device's daemon,
 //! with its XCTest runner and snapshot bridge on a Simulator. So before
 //! another tool drives a target, and once the run is over, the harness asks
 //! the tool that drove it last to let go ([`Adapter::release`]), waits until

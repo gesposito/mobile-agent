@@ -24,7 +24,7 @@ use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::process::{self, Finished};
 use crate::provenance::Probe;
-use crate::target::{Platform, Target};
+use crate::target::Target;
 
 /// The agent-device session every flow runs in.
 pub const SESSION: &str = "mobile-agent-bench";
@@ -253,12 +253,12 @@ impl Adapter for Baseline {
 
     /// Closes agent-device's session on the target, which stops the snapshot
     /// helper it keeps holding UI automation between commands and selects
-    /// the input method it found again. On a Simulator it then stops
-    /// agent-device's daemon, which would keep its XCTest runner and its
-    /// snapshot bridge running for five idle minutes; it does so even when
-    /// the close failed, since the daemon ends its sessions as it stops.
-    /// Maestro and maestro-runner hold nothing: their driver ends with the
-    /// process that runs a flow.
+    /// the input method it found again. It then stops agent-device's daemon,
+    /// which would otherwise idle for five minutes into the next tool's
+    /// series, on a Simulator with its XCTest runner and its snapshot bridge;
+    /// it does so even when the close failed, since the daemon ends its
+    /// sessions as it stops. Maestro and maestro-runner hold nothing: their
+    /// driver ends with the process that runs a flow.
     fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
         if self.tool != BaselineTool::AgentDevice {
             return Ok(None);
@@ -273,9 +273,6 @@ impl Adapter for Baseline {
             "close",
             agent_device::closed,
         );
-        if target.class.platform() != Platform::Ios {
-            return Ok(closed?.then(|| format!("closed agent-device session {SESSION}")));
-        }
         let stopped = self.agent_device(
             &path,
             &agent_device::daemon_stop_args(),
@@ -289,12 +286,13 @@ impl Adapter for Baseline {
         }
     }
 
-    /// On a Simulator, what agent-device still runs for it on the host: its
-    /// daemon of the state directory its commands use, its XCTest runner and
-    /// its snapshot bridge ([`agent_device::left_running`]). Elsewhere, and
-    /// for Maestro and maestro-runner, nothing.
+    /// What agent-device still runs for the target on the host: its daemon
+    /// of the state directory its commands use, and on a Simulator its
+    /// XCTest runner and its snapshot bridge
+    /// ([`agent_device::left_running`]). For Maestro and maestro-runner,
+    /// nothing.
     fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
-        if self.tool != BaselineTool::AgentDevice || target.class.platform() != Platform::Ios {
+        if self.tool != BaselineTool::AgentDevice {
             return Ok(Vec::new());
         }
         let state_dir = match self.state_dir.get() {
@@ -317,7 +315,7 @@ impl Adapter for Baseline {
             .ok_or("cannot list the host's processes with ps")?;
         Ok(agent_device::left_running(
             &programs,
-            &target.id,
+            target,
             state_dir,
             |pids| {
                 let pids: Vec<String> = pids.iter().map(u32::to_string).collect();
