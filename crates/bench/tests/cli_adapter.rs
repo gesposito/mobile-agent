@@ -152,8 +152,15 @@ fn every_listed_primitive_appears_through_the_cli_adapter_on_a_fake_emulator() {
             "{detail:?}"
         );
     }
+    // The fill read the field back; on Android the fill that empties the
+    // field is not read back, since an empty field reads as its hint.
     for detail in details(Primitive::TextEntry) {
-        assert_eq!(detail.as_deref(), Some("method direct"));
+        let detail = detail.unwrap_or_default();
+        assert!(
+            detail.starts_with("method direct, read back as text in ")
+                && detail.ends_with(" ms; cleared: method direct, not read back"),
+            "{detail}"
+        );
     }
 }
 
@@ -664,7 +671,15 @@ fn text_entry_fills_the_fixed_string_into_the_username_field() {
         .measure(&target, &scenario, Primitive::TextEntry)
         .unwrap();
     assert_eq!(sample.clock, Clock::Wall);
-    assert_eq!(sample.detail.as_deref(), Some("method direct"));
+    // Both fills read the field back, the one that empties it too.
+    let detail = sample.detail.unwrap_or_default();
+    let (filled, cleared) = detail.split_once("; cleared: ").unwrap_or_default();
+    for note in [filled, cleared] {
+        assert!(
+            note.starts_with("method direct, read back as text in ") && note.ends_with(" ms"),
+            "{detail}"
+        );
+    }
     // The field is empty again for the next fill.
     let value = devices.cli(&in_session(&target, &["get", "value", "id=login-username"]));
     assert!(value["value"].is_null() || value["value"] == "", "{value}");
@@ -712,6 +727,103 @@ fn a_text_entry_that_did_not_land_fails() {
         let line = format!("{session} {command}");
         assert!(log.lines().any(|l| l == line), "no {line:?} in:\n{log}");
     }
+}
+
+/// Task 10.26: a text entry's sample says how `fill` read the field back
+/// (task 10.23), for the timed fill and for the one that empties the field:
+/// the method, whether it entered the text again, what the read-back found
+/// and after how long, and the reply's warning.
+#[test]
+fn a_text_entry_notes_how_each_fill_read_the_field_back() {
+    let dir = common::scratch("cli-stand-in-read-back");
+    let mut settings = CliConfig::new(dir.join("work"));
+    let retried = json!({
+        "success": true,
+        "data": {"filled": "id=login-username", "method": "direct", "ref": "@e2",
+                 "verified": "text", "readBackMs": 301.25, "retried": true},
+        "error": null,
+        "warning": "id=login-username showed \"abc\" after fill typed the text, so fill pasted it instead"
+    })
+    .to_string();
+    let value = json!({"success": true, "data": {"value": TEXT_ENTRY}, "error": null}).to_string();
+    let cleared = json!({
+        "success": true,
+        "data": {"filled": "id=login-username", "method": "direct", "ref": "@e2",
+                 "verified": "text", "readBackMs": 120.5, "retried": false},
+        "error": null
+    })
+    .to_string();
+    settings.program = stand_in(
+        &dir,
+        &[
+            (TEXT_ENTRY, retried.as_str(), 0),
+            ("value", value.as_str(), 0),
+            ("id=login-username", cleared.as_str(), 0),
+        ],
+    );
+    let mut adapter = CliAdapter::new(settings);
+    adapter.detect();
+    let sample = adapter
+        .measure(
+            &simulator(),
+            &plan::scenario(Primitive::TextEntry, Fixture::Expo),
+            Primitive::TextEntry,
+        )
+        .unwrap();
+    assert_eq!(
+        sample.detail.as_deref(),
+        Some(
+            "method direct, retried, read back as text in 301.25 ms, warning: id=login-username \
+             showed \"abc\" after fill typed the text, so fill pasted it instead; cleared: method \
+             direct, read back as text in 120.5 ms"
+        )
+    );
+}
+
+/// Task 10.26: a flow's sample says how each of its fills read its field
+/// back, a field left unread with the reply's warning.
+#[test]
+fn the_login_flow_notes_how_each_fill_read_its_field_back() {
+    let dir = common::scratch("cli-stand-in-login-read-back");
+    let mut settings = CliConfig::new(dir.join("work"));
+    let username = json!({
+        "success": true,
+        "data": {"filled": "id=login-username", "method": "direct", "ref": "@e2",
+                 "verified": "text", "readBackMs": 251.5, "retried": false},
+        "error": null
+    })
+    .to_string();
+    let password = json!({
+        "success": true,
+        "data": {"filled": "id=login-password", "method": "direct", "ref": "@e3",
+                 "verified": null, "readBackMs": null, "retried": false},
+        "error": null,
+        "warning": "id=login-password left the screen after fill set the text directly, so it could not be read back"
+    })
+    .to_string();
+    let status =
+        json!({"success": true, "data": {"text": "Welcome, agent"}, "error": null}).to_string();
+    settings.program = stand_in(
+        &dir,
+        &[
+            ("id=login-username", username.as_str(), 0),
+            ("id=login-password", password.as_str(), 0),
+            ("text", status.as_str(), 0),
+        ],
+    );
+    let mut adapter = CliAdapter::new(settings);
+    adapter.detect();
+    let sample = adapter
+        .run_flow(&emulator(), &flow::login(Fixture::Expo))
+        .unwrap();
+    assert_eq!(
+        sample.detail.as_deref(),
+        Some(
+            "fill id=login-username: method direct, read back as text in 251.5 ms; fill \
+             id=login-password: method direct, not read back, warning: id=login-password left \
+             the screen after fill set the text directly, so it could not be read back"
+        )
+    );
 }
 
 #[test]

@@ -156,6 +156,7 @@ struct Reply {
     data: Value,
     error: Option<String>,
     code: Option<String>,
+    warning: Option<String>,
     started: Instant,
     elapsed: Duration,
 }
@@ -163,6 +164,11 @@ struct Reply {
 impl Reply {
     fn ended(&self) -> Instant {
         self.started + self.elapsed
+    }
+
+    /// The note of the fill this reply answers (see [`filled`]).
+    fn filled(&self) -> Option<String> {
+        filled(&self.data, self.warning.as_deref())
     }
 }
 
@@ -176,6 +182,8 @@ struct Envelope {
     error: Option<String>,
     #[serde(default)]
     code: Option<String>,
+    #[serde(default)]
+    warning: Option<String>,
 }
 
 impl CliAdapter {
@@ -238,6 +246,7 @@ impl CliAdapter {
             data: envelope.data,
             error: envelope.error,
             code: envelope.code,
+            warning: envelope.warning,
             started: finished.started,
             elapsed: finished.elapsed,
         })
@@ -419,6 +428,8 @@ impl CliAdapter {
     /// and settled. After the span it waits until the field shows the string,
     /// which a target may show late, checks that the field holds exactly it,
     /// then empties the field and lets the screen settle for the next fill.
+    /// The sample's detail holds the timed fill's note, then the emptying
+    /// fill's after `cleared: ` (see [`filled`]).
     fn text_entry(&self, target: &Target) -> Result<Sample, AdapterError> {
         let field = id(TEXT_FIELD);
         let reply = self.call(
@@ -434,10 +445,20 @@ impl CliAdapter {
                 check.data["value"]
             )));
         }
-        self.call(target, &["fill", "--timeout", WAIT, "--", &field, ""])?;
+        let cleared = self.call(target, &["fill", "--timeout", WAIT, "--", &field, ""])?;
         self.call(target, &["wait", "--settle"])?;
-        let method = reply.data["method"].as_str().map(|m| format!("method {m}"));
-        Ok(wall(reply.elapsed, None, method))
+        let notes: Vec<String> = [
+            reply.filled(),
+            cleared.filled().map(|note| format!("cleared: {note}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        Ok(wall(
+            reply.elapsed,
+            None,
+            (!notes.is_empty()).then(|| notes.join("; ")),
+        ))
     }
 
     /// Times one `screenshot` into the work directory.
@@ -477,8 +498,9 @@ impl CliAdapter {
     }
 
     /// Runs `flow`'s steps, each as its command; returns the wall time from
-    /// the first command's start to the last one's end, and a note of each
-    /// scroll-to (see [`CliAdapter::scroll_to`]).
+    /// the first command's start to the last one's end, and the notes of its
+    /// steps in their order: each fill's, after `fill <selector>: ` (see
+    /// [`filled`]), and each scroll-to's (see [`CliAdapter::scroll_to`]).
     fn run_steps(
         &self,
         target: &Target,
@@ -494,7 +516,7 @@ impl CliAdapter {
                 ))
             })?;
         let started = Instant::now();
-        let mut scrolls = Vec::new();
+        let mut notes = Vec::new();
         for step in &flow.steps {
             match step {
                 Step::Launch => {
@@ -510,15 +532,17 @@ impl CliAdapter {
                     target: element,
                     text,
                 } => {
-                    self.call(
-                        target,
-                        &["fill", "--timeout", WAIT, "--", &selector(element), text],
-                    )?;
+                    let field = selector(element);
+                    let reply =
+                        self.call(target, &["fill", "--timeout", WAIT, "--", &field, text])?;
+                    if let Some(note) = reply.filled() {
+                        notes.push(format!("fill {field}: {note}"));
+                    }
                 }
                 Step::ScrollTo {
                     target: element,
                     direction,
-                } => scrolls.push(self.scroll_to(target, element, *direction)?),
+                } => notes.push(self.scroll_to(target, element, *direction)?),
                 Step::AssertVisible(element) => {
                     self.call(
                         target,
@@ -528,7 +552,7 @@ impl CliAdapter {
                 Step::AssertText { id, text } => self.assert_text(target, id, text)?,
             }
         }
-        Ok((started.elapsed(), scrolls))
+        Ok((started.elapsed(), notes))
     }
 
     /// Scrolls `direction` until `element` is on screen as an agent does, with
@@ -736,15 +760,15 @@ impl Adapter for CliAdapter {
 
     /// Runs the flow's steps, timed by wall clock, then counts the refs of the
     /// final screen when the flow records its node count. The sample's detail
-    /// holds the note of each scroll-to, if the flow has one.
+    /// holds the notes of its fills and scroll-tos, if the flow has any.
     fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
-        let (elapsed, scrolls) = self.run_steps(target, flow)?;
+        let (elapsed, notes) = self.run_steps(target, flow)?;
         let nodes = if flow.count_nodes {
             Some(refs(&self.call(target, &["snapshot", "-i"])?)?)
         } else {
             None
         };
-        let detail = (!scrolls.is_empty()).then(|| scrolls.join("; "));
+        let detail = (!notes.is_empty()).then(|| notes.join("; "));
         Ok(wall(elapsed, nodes, detail))
     }
 
@@ -974,6 +998,37 @@ fn scrolled(data: &Value) -> String {
     }
 }
 
+/// The note of a fill, from the data of its `fill` reply and the reply's
+/// warning: the method the field's text went in by, `retried` when `fill`
+/// entered the text again in one piece, how the read-back found the field
+/// (`verified`, as the text or, for a secure field, by its length) and after
+/// how long (`readBackMs`), or that it was not read back, and the warning,
+/// such as `method keys, read back as text in 253.112 ms`. A reply without
+/// `verified`, from a `mobile-agent` that does not read fields back (before
+/// task 10.23), gives the method alone; `None` when the reply says none of
+/// these.
+fn filled(data: &Value, warning: Option<&str>) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(method) = data["method"].as_str() {
+        parts.push(format!("method {method}"));
+    }
+    if data["retried"] == true {
+        parts.push("retried".to_owned());
+    }
+    match data.get("verified") {
+        Some(Value::String(shown)) => parts.push(match &data["readBackMs"] {
+            Value::Number(ms) => format!("read back as {shown} in {ms} ms"),
+            _ => format!("read back as {shown}"),
+        }),
+        Some(Value::Null) => parts.push("not read back".to_owned()),
+        _ => {}
+    }
+    if let Some(warning) = warning {
+        parts.push(format!("warning: {warning}"));
+    }
+    (!parts.is_empty()).then(|| parts.join(", "))
+}
+
 fn wall(elapsed: Duration, nodes: Option<u32>, detail: Option<String>) -> Sample {
     Sample {
         elapsed,
@@ -1009,6 +1064,44 @@ fn file_safe(id: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_fill_s_note_says_how_the_field_was_read_back() {
+        let note = |data: Value, warning: Option<&str>| filled(&data, warning);
+        assert_eq!(
+            note(
+                json!({"method": "keys", "verified": "length", "readBackMs": 262.0, "retried": false}),
+                None
+            )
+            .as_deref(),
+            Some("method keys, read back as length in 262.0 ms")
+        );
+        assert_eq!(
+            note(
+                json!({"method": "direct", "verified": "text", "readBackMs": 843.125, "retried": true}),
+                Some("id=search showed \"nobe\" after fill typed the text, so fill pasted it instead")
+            )
+            .as_deref(),
+            Some(
+                "method direct, retried, read back as text in 843.125 ms, warning: id=search \
+                 showed \"nobe\" after fill typed the text, so fill pasted it instead"
+            )
+        );
+        assert_eq!(
+            note(
+                json!({"method": "direct", "verified": null, "readBackMs": null, "retried": false}),
+                None
+            )
+            .as_deref(),
+            Some("method direct, not read back")
+        );
+        // A mobile-agent from before task 10.23 does not read the field back.
+        assert_eq!(
+            note(json!({"method": "keys"}), None).as_deref(),
+            Some("method keys")
+        );
+        assert_eq!(note(json!({}), None), None);
+    }
 
     #[test]
     fn commands_name_json_mode_the_session_and_the_target_first() {
@@ -1072,6 +1165,7 @@ mod tests {
                 data: json!({"text": "Welcome, agent"}),
                 error: None,
                 code: None,
+                warning: None,
             })
         );
         assert_eq!(
@@ -1083,7 +1177,15 @@ mod tests {
                 data: Value::Null,
                 error: Some("e2 is stale".into()),
                 code: Some("stale_ref".into()),
+                warning: None,
             })
+        );
+        assert_eq!(
+            envelope(
+                r#"{"success":true,"data":{"filled":"id=search"},"error":null,"warning":"careful"}"#
+            )
+            .and_then(|envelope| envelope.warning),
+            Some("careful".to_owned())
         );
         assert_eq!(envelope("mobile-agent 0.1.0\n"), None);
         assert_eq!(envelope(r#"{"data": {}}"#), None);
