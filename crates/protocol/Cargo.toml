@@ -10,3 +10,11 @@ workspace = true
 
 [dependencies]
 minicbor = { version = "2.3.0", features = ["std", "derive"] }
+
+[dev-dependencies]
+criterion = { version = "0.8.2", default-features = false }
+
+# The microbenchmarks of the codec and the framing (benches/codec.rs), run by mobile-agent-bench micro; criterion's own harness is off.
+[[bench]]
+name = "codec"
+harness = false

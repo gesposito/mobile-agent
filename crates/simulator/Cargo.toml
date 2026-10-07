@@ -50,4 +50,10 @@ reader = []
 fault-injection = []
 
 [dev-dependencies]
+criterion = { version = "0.8.2", default-features = false }
 simulator = { path = ".", default-features = false, features = ["fault-injection"] }
+
+# The microbenchmarks of the frame pipeline (benches/frames.rs), run by mobile-agent-bench micro; criterion's own harness is off.
+[[bench]]
+name = "frames"
+harness = false

@@ -23,5 +23,11 @@ protoc-bin-vendored = "3.2.0"
 tonic-prost-build = "0.14.6"
 
 [dev-dependencies]
+criterion = { version = "0.8.2", default-features = false }
 miniz_oxide = "0.9.1"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "time"] }
+
+# The microbenchmarks of the emulator frame hash (benches/frames.rs), run by mobile-agent-bench micro; criterion's own harness is off.
+[[bench]]
+name = "frames"
+harness = false

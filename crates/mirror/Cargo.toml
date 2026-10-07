@@ -12,4 +12,10 @@ workspace = true
 protocol = { version = "0.1.0", path = "../protocol" }
 
 [dev-dependencies]
+criterion = { version = "0.8.2", default-features = false }
 serde_json = "1.0.151"
+
+# The microbenchmarks of the replica, the listings, visibility, deltas, waits and settle (benches/mirror.rs), run by mobile-agent-bench micro; criterion's own harness is off.
+[[bench]]
+name = "mirror"
+harness = false
