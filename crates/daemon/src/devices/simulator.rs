@@ -963,10 +963,13 @@ pub(crate) fn node_center(snapshot: &Snapshot, scale: f64, handle: NodeHandle) -
 }
 
 /// How text goes into a field for a request's method: key events when it
-/// asks for keys, the driver's choice otherwise.
+/// asks for keys, a paste, which sets the text in one operation, when it
+/// asks for direct setting, the driver's choice otherwise.
 pub(crate) fn text_method(method: WireMethod) -> TextMethod {
     if method == WireMethod::KEYS {
         TextMethod::Keyboard
+    } else if method == WireMethod::DIRECT {
+        TextMethod::Paste
     } else {
         TextMethod::Auto
     }
@@ -1324,11 +1327,13 @@ mod tests {
         assert_eq!(readying_keys("", WireMethod::KEYS), []);
     }
 
+    /// Task 10.23: direct text goes in in one piece, so a field that took
+    /// keys out of order takes it whole; a Simulator pastes it.
     #[test]
-    fn keys_are_asked_for_by_name_and_a_paste_reads_as_direct_setting() {
+    fn keys_are_typed_direct_text_is_pasted_and_a_paste_reads_as_direct_setting() {
         assert_eq!(text_method(WireMethod::KEYS), TextMethod::Keyboard);
         assert_eq!(text_method(WireMethod::AUTO), TextMethod::Auto);
-        assert_eq!(text_method(WireMethod::DIRECT), TextMethod::Auto);
+        assert_eq!(text_method(WireMethod::DIRECT), TextMethod::Paste);
         assert_eq!(wire_method(TextMethod::Keyboard), WireMethod::KEYS);
         assert_eq!(wire_method(TextMethod::Paste), WireMethod::DIRECT);
     }

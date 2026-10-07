@@ -460,8 +460,9 @@ traits:
   VolumeUp, VolumeDown, Siri). Text for a field taps it, waits up to 1.5 s
   for an editable node to take the focus and, unless keys were asked for
   (`type`), selects what the field holds with Command-A so the text
-  replaces it, and for an empty text deletes it with the delete key; a
-  paste reports the method `direct`, typing `keys`. The
+  replaces it, and for an empty text deletes it with the delete key.
+  Direct text is pasted, text left to the driver typed up to 32 characters
+  and pasted beyond; a paste reports the method `direct`, typing `keys`. The
   input session starts during `open` (`InputSession`): the driver's
   `open_input` opens it without any input, which sends dtuhidd its
   activation probe, and `open` lets it activate, at most 2 s from its
