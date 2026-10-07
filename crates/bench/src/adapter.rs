@@ -15,6 +15,7 @@ use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::primitive::Primitive;
+use crate::provenance::Probe;
 use crate::target::Target;
 
 /// Whether gates apply to a tool's measurements.
@@ -183,6 +184,17 @@ pub trait Adapter {
     fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
         let _ = target;
         Ok(None)
+    }
+
+    /// What the tool still has running for `target` after its release, as
+    /// `probe` finds it on the host: one entry per process, naming it and its
+    /// pid, such as `daemon (pid 4711)`; empty when nothing is left. The
+    /// hand-off asks again until nothing is, before another tool drives the
+    /// target. A tool whose release leaves nothing running keeps the default,
+    /// which asks the host nothing.
+    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+        let _ = (target, probe);
+        Ok(Vec::new())
     }
 
     /// Fills in the provenance the tool found out about `target` while

@@ -3,14 +3,18 @@
 //! its commands: `mobile-agent`'s daemon keeps its agent until it exits, and
 //! agent-device keeps a snapshot helper until its session is closed. Tools
 //! can also leave device state behind, such as a test input method selected
-//! for text entry. So before another tool drives a target, and once the run
-//! is over, the harness asks the tool that drove it last to let go
-//! ([`Adapter::release`]) and puts an Android target's input method back to
-//! the one the run found. Hand-offs happen between series, never inside one,
-//! and each is recorded with its duration.
+//! for text entry, or processes on the host, such as agent-device's daemon
+//! with its XCTest runner and snapshot bridge on a Simulator. So before
+//! another tool drives a target, and once the run is over, the harness asks
+//! the tool that drove it last to let go ([`Adapter::release`]), waits until
+//! nothing the tool keeps for the target is left running
+//! ([`Adapter::left_running`]), and puts an Android target's input method
+//! back to the one the run found. Hand-offs happen between series, never
+//! inside one, and each is recorded with its duration.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +22,18 @@ use crate::adapter::Adapter;
 use crate::provenance::Probe;
 use crate::stats::micros;
 use crate::target::{Platform, Target};
+
+/// How long a hand-off waits for what a tool left running to end after its
+/// release. On an iOS 26.5 Simulator at a load of 21, agent-device's daemon,
+/// runner and bridge were gone by the time its `daemon stop --clean`
+/// returned, under 0.5 s after it started (`crates/bench/README.md`,
+/// Hand-offs between tools). `daemon stop` itself waits up to 12 s for the
+/// daemon, and a bridge whose daemon has gone ends 60 s after its last
+/// request.
+const EXIT_WAIT: Duration = Duration::from_secs(30);
+
+/// How often a hand-off asks what is still running while it waits.
+const EXIT_POLL: Duration = Duration::from_millis(100);
 
 /// One hand-off of a target from the tool that drove it to the next.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,16 +45,17 @@ pub struct HandOff {
     /// The tool about to drive it; `None` for the release once the run is
     /// over.
     pub to: Option<String>,
-    /// How long the hand-off took: the tool's release and the reset of the
-    /// device together.
+    /// How long the hand-off took: the tool's release, the wait for what it
+    /// left running and the reset of the device together.
     pub elapsed_us: u64,
     /// What the tool's release did; `None` when the tool held nothing.
     pub released: Option<String>,
     /// On Android, the input method a tool left selected and the one set
     /// back; `None` when the input method was the one the run found.
     pub input_method: Option<String>,
-    /// Why the release or the reset failed, when one did. The run goes on,
-    /// and the next tool meets the target as it was left.
+    /// Why the release or the reset failed, or what the tool left running
+    /// past the wait, when one did. The run goes on, and the next tool meets
+    /// the target as it was left.
     pub error: Option<String>,
 }
 
@@ -51,6 +68,8 @@ pub(crate) struct HandOffs {
     /// The input method of each Android target when the run started.
     input_methods: HashMap<String, String>,
     pub(crate) done: Vec<HandOff>,
+    /// How long a hand-off waits for what a tool left running: [`EXIT_WAIT`].
+    exit_wait: Duration,
 }
 
 impl HandOffs {
@@ -66,6 +85,7 @@ impl HandOffs {
             holders: Vec::new(),
             input_methods,
             done: Vec::new(),
+            exit_wait: EXIT_WAIT,
         }
     }
 
@@ -104,8 +124,9 @@ impl HandOffs {
         }
     }
 
-    /// The release of `target` by `tools[from]`, then the reset of its input
-    /// method, timed together and recorded.
+    /// The release of `target` by `tools[from]`, the wait for what it left
+    /// running, then the reset of its input method, timed together and
+    /// recorded.
     fn hand_over(
         &mut self,
         tools: &mut [Box<dyn Adapter>],
@@ -120,6 +141,9 @@ impl HandOffs {
             errors.push(e.message);
             None
         });
+        if let Err(e) = self.await_exit(tools[from].as_ref(), probe, target) {
+            errors.push(e);
+        }
         let input_method = self.reset_input_method(probe, target).unwrap_or_else(|e| {
             errors.push(e);
             None
@@ -134,6 +158,34 @@ impl HandOffs {
             input_method,
             error: (!errors.is_empty()).then(|| errors.join("; ")),
         });
+    }
+
+    /// Waits until `tool` has nothing left running for `target`, asking every
+    /// [`EXIT_POLL`] for at most `exit_wait`. What is still running then is
+    /// an error naming it, as is a failure to tell.
+    fn await_exit(
+        &self,
+        tool: &dyn Adapter,
+        probe: &dyn Probe,
+        target: &Target,
+    ) -> Result<(), String> {
+        let started = Instant::now();
+        loop {
+            let left = tool.left_running(target, probe)?;
+            if left.is_empty() {
+                return Ok(());
+            }
+            let waited = started.elapsed();
+            if waited >= self.exit_wait {
+                return Err(format!(
+                    "{} left {} running {} after its release",
+                    tool.name(),
+                    left.join(", "),
+                    spoken(self.exit_wait)
+                ));
+            }
+            thread::sleep(EXIT_POLL.min(self.exit_wait - waited));
+        }
     }
 
     /// Selects the input method `target` had when the run started, when a
@@ -162,6 +214,15 @@ impl HandOffs {
                 now.as_deref().unwrap_or("no input method")
             )),
         }
+    }
+}
+
+/// `duration` in whole seconds, such as `30 s`, else in milliseconds.
+fn spoken(duration: Duration) -> String {
+    if duration.subsec_millis() == 0 && duration.as_secs() > 0 {
+        format!("{} s", duration.as_secs())
+    } else {
+        format!("{} ms", duration.as_millis())
     }
 }
 
@@ -199,12 +260,17 @@ mod tests {
     /// What the tools and the device were asked to do, in order.
     type Log = Rc<RefCell<Vec<String>>>;
 
+    /// The host's process listing, as a [`Holder`] asks the probe for it.
+    const PS: &str = "ps -A -ww -o pid=,command=";
+
     /// A tool that notes each release in the log, and fails its release when
-    /// told to.
+    /// told to. When it keeps processes on the host, it finds what it left
+    /// running in the host's process listing.
     struct Holder {
         name: &'static str,
         log: Log,
         fails: bool,
+        on_host: bool,
     }
 
     impl Adapter for Holder {
@@ -233,15 +299,57 @@ mod tests {
             }
             Ok(Some(format!("{} let go", self.name)))
         }
+
+        fn left_running(&self, _: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+            if !self.on_host {
+                return Ok(Vec::new());
+            }
+            let listing = probe
+                .output("ps", &["-A", "-ww", "-o", "pid=,command="])
+                .ok_or("ps failed")?;
+            let mine = format!(" of {}", self.name);
+            Ok(listing
+                .lines()
+                .filter_map(|line| line.strip_suffix(&mine))
+                .filter_map(|line| line.split_once(' '))
+                .map(|(pid, name)| format!("{name} (pid {pid})"))
+                .collect())
+        }
     }
 
-    /// An Android device's input method, as `adb` reads and sets it; the
-    /// commands it was asked to run go to the log.
+    /// A host and the Android device on it. The device's input method is as
+    /// `adb` reads and sets it. The host runs `processes`: the tool that runs
+    /// each, its pid and name, and how many process listings after the
+    /// tool's last release it is still listed, or `None` for never ending.
+    /// The commands it was asked to run go to the log.
     struct Device {
         ime: RefCell<Option<String>>,
         log: Log,
         /// `ime set` runs and changes nothing.
         stuck: bool,
+        processes: Vec<(&'static str, u32, &'static str, Option<usize>)>,
+    }
+
+    impl Device {
+        /// `ps`: each process its tool has not released, or released at most
+        /// as many listings ago, this one included, as it outlives a release
+        /// by.
+        fn listing(&self) -> String {
+            let log = self.log.borrow();
+            self.processes
+                .iter()
+                .filter(|(tool, .., outlives)| {
+                    let released = format!("{tool} released ");
+                    let Some(at) = log.iter().rposition(|l| l.starts_with(&released)) else {
+                        return true;
+                    };
+                    let since = log[at..].iter().filter(|l| *l == PS).count();
+                    outlives.is_none_or(|outlives| since <= outlives)
+                })
+                .map(|(tool, pid, name, _)| format!("{pid} {name} of {tool}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     }
 
     impl Probe for Device {
@@ -249,17 +357,21 @@ mod tests {
             self.log
                 .borrow_mut()
                 .push(format!("{program} {}", args.join(" ")));
-            match args {
-                [
-                    _,
-                    _,
-                    "shell",
-                    "settings",
-                    "get",
-                    "secure",
-                    "default_input_method",
-                ] => self.ime.borrow().clone(),
-                [_, _, "shell", "ime", "set", ime] => {
+            match (program, args) {
+                ("ps", ["-A", "-ww", "-o", "pid=,command="]) => Some(self.listing()),
+                (
+                    "adb",
+                    [
+                        _,
+                        _,
+                        "shell",
+                        "settings",
+                        "get",
+                        "secure",
+                        "default_input_method",
+                    ],
+                ) => self.ime.borrow().clone(),
+                ("adb", [_, _, "shell", "ime", "set", ime]) => {
                     if !self.stuck {
                         *self.ime.borrow_mut() = Some((*ime).to_owned());
                     }
@@ -282,6 +394,7 @@ mod tests {
                 name,
                 log: Rc::clone(&log),
                 fails,
+                on_host: false,
             }) as Box<dyn Adapter>
         };
         let tools = vec![tool("first", false), tool("second", true)];
@@ -289,12 +402,36 @@ mod tests {
             ime: RefCell::new(ime.map(str::to_owned)),
             log: Rc::clone(&log),
             stuck,
+            processes: Vec::new(),
         };
+        (tools, device, log)
+    }
+
+    /// Two tools on a Simulator, the first of which runs a daemon, a runner
+    /// and a bridge on the host, which end 0, 1 and `bridge` listings after
+    /// its release.
+    fn on_host(bridge: Option<usize>) -> (Vec<Box<dyn Adapter>>, Device, Log) {
+        let (mut tools, mut device, log) = setup(None, false);
+        tools[0] = Box::new(Holder {
+            name: "first",
+            log: Rc::clone(&log),
+            fails: false,
+            on_host: true,
+        });
+        device.processes = vec![
+            ("first", 101, "daemon", Some(0)),
+            ("first", 102, "runner", Some(1)),
+            ("first", 103, "bridge", bridge),
+        ];
         (tools, device, log)
     }
 
     fn emulator() -> Target {
         Target::new("emulator-5554", TargetClass::AndroidEmulator)
+    }
+
+    fn simulator() -> Target {
+        Target::new("SIM-1", TargetClass::Simulator)
     }
 
     #[test]
@@ -393,9 +530,45 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_s_processes_are_gone_before_the_next_tool_takes_the_target() {
+        let (mut tools, device, log) = on_host(Some(2));
+        let target = simulator();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        log.borrow_mut().push("second drives SIM-1".to_owned());
+        // After the release the hand-off listed the host's processes until
+        // the slowest, the bridge, was gone, and only then returned.
+        assert_eq!(
+            log.borrow()[..],
+            ["first released SIM-1", PS, PS, PS, "second drives SIM-1"]
+        );
+        assert_eq!(handoffs.done[0].released.as_deref(), Some("first let go"));
+        assert_eq!(handoffs.done[0].error, None);
+    }
+
+    #[test]
+    fn processes_that_outlive_the_wait_are_an_error_naming_what_was_left() {
+        let (mut tools, device, _) = on_host(None);
+        let target = simulator();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.exit_wait = Duration::from_millis(50);
+        handoffs.take(&mut tools, &device, &target, 0);
+        let started = Instant::now();
+        handoffs.take(&mut tools, &device, &target, 1);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        // The run goes on: the release is recorded, and so is what it left.
+        assert_eq!(handoffs.done[0].released.as_deref(), Some("first let go"));
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some("first left bridge (pid 103) running 50 ms after its release")
+        );
+    }
+
+    #[test]
     fn a_simulator_s_input_method_is_never_read() {
         let (mut tools, device, log) = setup(Some(STOCK), false);
-        let target = Target::new("SIM-1", TargetClass::Simulator);
+        let target = simulator();
         let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
         handoffs.take(&mut tools, &device, &target, 0);
         handoffs.finish(&mut tools, &device, std::slice::from_ref(&target));

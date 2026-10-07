@@ -5,19 +5,22 @@
 
 mod common;
 
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 use std::time::Duration;
 
-use bench::adapter::{Clock, Role};
+use bench::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
 use bench::baseline::{BaselineConfig, agent_device, baselines, maestro};
 use bench::fake::{FakeAdapter, FakeScript, FakeSeries};
 use bench::fixture::Fixture;
 use bench::flow::{Flow, Selector, Step};
 use bench::harness::{Harness, RunConfig, Subject};
-use bench::provenance::ToolStatus;
+use bench::primitive::Primitive;
+use bench::provenance::{Probe, ScriptedProbe, ToolStatus};
 use bench::report::{Outcome, Report};
 use bench::target::{Target, TargetClass};
 use serde_json::Value;
@@ -382,6 +385,425 @@ fn the_baselines_command_lists_each_tool_and_notes_absent_ones() {
             "—",
             "agent-device not found on PATH"
         ]
+    );
+}
+
+/// What happened on the host, in order: the processes `ps` listed, and the
+/// moments the tool under test took the target.
+type Events = Rc<RefCell<Vec<String>>>;
+
+/// A process on the host: its pid, its program as `ps -o comm=` names it,
+/// its arguments and its environment.
+type Process = (u32, &'static str, &'static str, &'static str);
+
+/// agent-device's processes for the Simulator `SIM-1` and the state
+/// directory `/state`, and how many listings after a `daemon stop` each is
+/// still listed: its daemon, its XCTest runner's `xcodebuild`, its snapshot
+/// bridge's `simctl spawn`, the bridge in the Simulator, and the runner app
+/// in the Simulator.
+const AGENT_DEVICE_PROCESSES: [(Process, u32); 5] = [
+    (
+        (
+            401,
+            "/opt/homebrew/bin/node",
+            "/opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js",
+            "AGENT_DEVICE_STATE_DIR=/state AGENT_DEVICE_DAEMON_SERVER_MODE=socket",
+        ),
+        0,
+    ),
+    (
+        (
+            402,
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
+            "test-without-building -only-testing AgentDeviceRunnerUITests/RunnerTests/testCommand \
+             -xctestrun /Users/<user>/.agent-device/apple-runner/derived/ios-simulator/cache-1/\
+             Build/Products/AgentDeviceRunner.env.session-SIM-1-owner-401-1-1.xctestrun \
+             -destination platform=iOS Simulator,id=SIM-1",
+            "AGENT_DEVICE_STATE_DIR=/state",
+        ),
+        1,
+    ),
+    (
+        (
+            403,
+            "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl",
+            "spawn SIM-1 /Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge serve \
+             /tmp/agent-device-ax-1-401-1/snapshot.sock --idle-timeout 60 --exit-on-disconnect false",
+            "AGENT_DEVICE_STATE_DIR=/state",
+        ),
+        0,
+    ),
+    (
+        (
+            404,
+            "/Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge",
+            "serve /tmp/agent-device-ax-1-401-1/snapshot.sock --idle-timeout 60 \
+             --exit-on-disconnect false",
+            "SIMULATOR_DEVICE_NAME=bench SIMULATOR_UDID=SIM-1",
+        ),
+        3,
+    ),
+    (
+        (
+            405,
+            "/Users/<user>/Library/Developer/CoreSimulator/Devices/SIM-1/data/Containers/Bundle/\
+             Application/1/AgentDeviceRunnerUITests-Runner.app/AgentDeviceRunnerUITests-Runner",
+            "",
+            "SIMULATOR_DEVICE_NAME=bench SIMULATOR_UDID=SIM-1",
+        ),
+        2,
+    ),
+];
+
+/// Processes that are not agent-device's for `SIM-1` and `/state`, and never
+/// end: the daemon of another state directory, another Simulator's runner
+/// and bridge, and a shell whose command names everything agent-device's do.
+const OTHER_PROCESSES: [Process; 5] = [
+    (1, "/sbin/launchd", "", ""),
+    (
+        501,
+        "/opt/homebrew/bin/node",
+        "/opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js",
+        "AGENT_DEVICE_STATE_DIR=/other AGENT_DEVICE_DAEMON_SERVER_MODE=socket",
+    ),
+    (
+        502,
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
+        "test-without-building -only-testing AgentDeviceRunnerUITests/RunnerTests/testCommand \
+         -destination platform=iOS Simulator,id=SIM-2",
+        "",
+    ),
+    (
+        503,
+        "/Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge",
+        "serve /tmp/agent-device-ax-2-501-1/snapshot.sock --idle-timeout 60 \
+         --exit-on-disconnect false",
+        "SIMULATOR_DEVICE_NAME=other SIMULATOR_UDID=SIM-2",
+    ),
+    (
+        504,
+        "/bin/zsh",
+        "-c grep -e /dist/src/internal/daemon.js -e AgentDeviceRunner -e SIM-1 \
+         -e '/snapshot-bridge serve ' -e xcodebuild",
+        "AGENT_DEVICE_STATE_DIR=/state SIMULATOR_UDID=SIM-1",
+    ),
+];
+
+/// The host agent-device drives `SIM-1` from. Once a batch has run, `ps`
+/// lists agent-device's processes beside the others; after a `daemon stop`
+/// that followed the last batch, each of agent-device's processes ends as
+/// [`AGENT_DEVICE_PROCESSES`] says. Each listing of the host's programs is
+/// noted in `events` with agent-device's processes on it; every other
+/// command is answered as `common::probe()` answers it.
+struct Host {
+    tool_log: PathBuf,
+    events: Events,
+    listings_since_stop: Cell<u32>,
+    scripted: ScriptedProbe,
+}
+
+impl Host {
+    /// Whether agent-device has run a batch, and whether a `daemon stop`
+    /// came after the last one.
+    fn ran_and_stopped(&self) -> (bool, bool) {
+        let log = fs::read_to_string(&self.tool_log).unwrap_or_default();
+        let lines: Vec<&str> = log.lines().collect();
+        let last_batch = lines.iter().rposition(|line| line.starts_with("batch "));
+        let last_stop = lines
+            .iter()
+            .rposition(|line| line.starts_with("daemon stop"));
+        (last_batch.is_some(), last_stop > last_batch)
+    }
+
+    /// The processes alive now.
+    fn alive(&self) -> Vec<Process> {
+        let agent_device: Vec<Process> = match self.ran_and_stopped() {
+            (false, _) => Vec::new(),
+            (true, stopped) => AGENT_DEVICE_PROCESSES
+                .iter()
+                .filter(|(_, outlives)| !stopped || self.listings_since_stop.get() <= *outlives)
+                .map(|(process, _)| *process)
+                .collect(),
+        };
+        OTHER_PROCESSES
+            .iter()
+            .copied()
+            .chain(agent_device)
+            .collect()
+    }
+
+    /// `ps -A -o pid=,comm=`: each process alive and its program.
+    fn programs(&self) -> String {
+        if self.ran_and_stopped() == (true, true) {
+            self.listings_since_stop
+                .set(self.listings_since_stop.get() + 1);
+        } else {
+            self.listings_since_stop.set(0);
+        }
+        let alive = self.alive();
+        let theirs: Vec<String> = alive
+            .iter()
+            .filter(|(pid, ..)| (401..=405).contains(pid))
+            .map(|(pid, ..)| pid.to_string())
+            .collect();
+        self.events.borrow_mut().push(if theirs.is_empty() {
+            "ps lists none of agent-device's processes".to_owned()
+        } else {
+            format!("ps lists {}", theirs.join(", "))
+        });
+        alive
+            .iter()
+            .map(|(pid, program, ..)| format!("{pid:>5} {program}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// `ps -E -ww -o pid=,command= -p <pids>`: each of those processes still
+    /// alive, its command and then its environment; nothing, as `ps` exits 1,
+    /// when none is.
+    fn details(&self, pids: &str) -> Option<String> {
+        let asked: Vec<u32> = pids.split(',').filter_map(|p| p.parse().ok()).collect();
+        let lines: Vec<String> = self
+            .alive()
+            .iter()
+            .filter(|(pid, ..)| asked.contains(pid))
+            .map(|(pid, program, args, env)| format!("{pid:>5} {program} {args} {env}"))
+            .collect();
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+}
+
+impl Probe for Host {
+    fn output(&self, program: &str, args: &[&str]) -> Option<String> {
+        match (program, args) {
+            ("ps", ["-A", "-o", "pid=,comm="]) => Some(self.programs()),
+            ("ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) => self.details(pids),
+            _ => self.scripted.output(program, args),
+        }
+    }
+}
+
+/// The fake tool under test, noting in `events` when it prepares a series,
+/// which is when it takes the target.
+struct Watched {
+    inner: FakeAdapter,
+    events: Events,
+}
+
+impl Adapter for Watched {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn role(&self) -> Role {
+        self.inner.role()
+    }
+
+    fn detect(&mut self) -> Detection {
+        self.inner.detect()
+    }
+
+    fn supports(&self, target: &Target, scenario: &Scenario, subject: &Subject) -> bool {
+        self.inner.supports(target, scenario, subject)
+    }
+
+    fn prepare(
+        &mut self,
+        target: &Target,
+        scenario: &Scenario,
+        subject: &Subject,
+    ) -> Result<(), AdapterError> {
+        self.events
+            .borrow_mut()
+            .push(format!("mobile-agent prepares {subject}"));
+        self.inner.prepare(target, scenario, subject)
+    }
+
+    fn measure(
+        &mut self,
+        target: &Target,
+        scenario: &Scenario,
+        primitive: Primitive,
+    ) -> Result<Sample, AdapterError> {
+        self.inner.measure(target, scenario, primitive)
+    }
+
+    fn run_flow(&mut self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
+        self.inner.run_flow(target, flow)
+    }
+}
+
+/// agent-device's `close` of the bench's session on `SIM-1`.
+const CLOSE_ON_SIM: &str = "close --json --platform ios --udid SIM-1 --session mobile-agent-bench";
+
+/// On the fake host of `SIM-1`, the tool under test runs the tab-list flow,
+/// then agent-device does, whose `close` runs `close`, a shell command;
+/// then the tool under test takes the Simulator back for its process start.
+/// Returns the report, what happened on the host and the commands
+/// agent-device was given besides its batches.
+fn hand_the_simulator_back(name: &str, close: &str) -> (Report, Vec<String>, Vec<String>) {
+    let setup = Setup::new(name);
+    fake_tool(
+        &setup.bin,
+        "agent-device",
+        "0.21.14",
+        &format!(
+            "case \"$1\" in\n\
+             batch) echo '{}' ;;\n\
+             close) {close} ;;\n\
+             daemon) echo '{{\"success\":true,\"data\":{{\"stopped\":true,\"mode\":\"graceful\",\"clean\":true}}}}' ;;\n\
+             session) echo '{{\"success\":true,\"data\":{{\"stateDir\":\"/state\"}}}}' ;;\n\
+             esac",
+            AGENT_DEVICE_PASSES
+                .trim_start_matches("echo '")
+                .trim_end_matches('\'')
+        ),
+    );
+    let events: Events = Rc::new(RefCell::new(Vec::new()));
+    let host = Host {
+        tool_log: setup.bin.join("agent-device.log"),
+        events: Rc::clone(&events),
+        listings_since_stop: Cell::new(0),
+        scripted: common::probe(),
+    };
+    // The tool under test runs the flow, then agent-device does; then the
+    // tool under test takes the Simulator back for its process start.
+    let target = Target::new("SIM-1", TargetClass::Simulator);
+    let fake = FakeAdapter::new(FakeScript {
+        tool: "mobile-agent".into(),
+        version: Some("0.1.0".into()),
+        role: Role::UnderTest,
+        targets: vec![target.clone()],
+        series: vec![
+            FakeSeries::new(
+                "SIM-1",
+                Some(Fixture::Expo),
+                None,
+                Subject::Flow("tab-list".into()),
+                vec![300.0],
+            ),
+            FakeSeries::new(
+                "SIM-1",
+                None,
+                None,
+                Subject::Primitive(Primitive::CliStart),
+                vec![4.0],
+            ),
+        ],
+        flows: vec![tab_flow()],
+    });
+    let mut harness = Harness::new(
+        RunConfig {
+            iterations: 2,
+            warmup: 0,
+            retries: 0,
+        },
+        fake.targets(),
+        fake.series(),
+    )
+    .flows(fake.flows())
+    .tool(Box::new(Watched {
+        inner: fake,
+        events: Rc::clone(&events),
+    }));
+    for baseline in baselines(&setup.config()) {
+        harness = harness.tool(baseline);
+    }
+    let report = harness.probe(Box::new(host), "macos").run().unwrap();
+    let commands = setup
+        .log("agent-device")
+        .lines()
+        .filter(|l| !l.starts_with("batch "))
+        .map(str::to_owned)
+        .collect();
+    let events = events.borrow().clone();
+    (report, events, commands)
+}
+
+/// Task 10.18: on the Simulator, `agent-device close` ends only the session.
+/// agent-device's daemon keeps its XCTest runner and its snapshot bridge,
+/// which idled for five minutes into the next tool's series in
+/// `reports/10.2-simulator.md` (finding 2). Handing the Simulator on,
+/// agent-device closes its session, then stops its daemon with `--clean`,
+/// which also ends the runner the daemon would leave running, and the run
+/// lists the host's processes until none of agent-device's daemon, runner
+/// and bridge is left before the next tool takes the Simulator.
+#[test]
+fn agent_device_s_daemon_runner_and_bridge_are_gone_before_the_next_tool_takes_the_simulator() {
+    let (report, events, commands) = hand_the_simulator_back(
+        "baselines-agent-device-simulator",
+        "echo '{\"success\":true,\"data\":{\"session\":\"mobile-agent-bench\"}}'",
+    );
+    let agent_device = report
+        .measurements
+        .iter()
+        .find(|m| m.tool == "agent-device")
+        .unwrap();
+    assert_eq!(agent_device.stats.map(|s| s.n), Some(2));
+    // agent-device closed its session, then stopped its daemon.
+    let close = commands.iter().position(|c| c == CLOSE_ON_SIM);
+    let stop = commands
+        .iter()
+        .position(|c| c == "daemon stop --clean --json");
+    assert!(
+        close.is_some() && stop.is_some() && close < stop,
+        "agent-device was asked to {commands:?}"
+    );
+    let handoff = report
+        .handoffs
+        .iter()
+        .find(|h| h.from == "agent-device")
+        .unwrap();
+    assert_eq!(handoff.to.as_deref(), Some("mobile-agent"));
+    assert_eq!(
+        handoff.released.as_deref(),
+        Some("closed agent-device session mobile-agent-bench and stopped its daemon")
+    );
+    assert_eq!(handoff.error, None);
+    // The hand-off listed the host's processes until the slowest of
+    // agent-device's, the bridge's process in the Simulator, was gone, and
+    // only then did the tool under test take the Simulator.
+    assert_eq!(
+        events,
+        [
+            "mobile-agent prepares flow tab-list",
+            "ps lists 402, 404, 405",
+            "ps lists 404, 405",
+            "ps lists 404",
+            "ps lists none of agent-device's processes",
+            "mobile-agent prepares cli-start",
+        ]
+    );
+}
+
+/// A `close` that fails leaves the daemon to its stop: it ends its sessions
+/// as it stops, so the release still stops it and the hand-off still waits
+/// for its processes, and the failure is recorded.
+#[test]
+fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
+    let (report, events, commands) = hand_the_simulator_back(
+        "baselines-agent-device-close-fails",
+        "echo '{\"success\":false,\"error\":{\"code\":\"COMMAND_FAILED\",\"message\":\"the session did not end\"}}'; exit 1",
+    );
+    assert_eq!(commands[..2], [CLOSE_ON_SIM, "daemon stop --clean --json"]);
+    let handoff = report
+        .handoffs
+        .iter()
+        .find(|h| h.from == "agent-device")
+        .unwrap();
+    assert_eq!(handoff.released, None);
+    let error = handoff.error.as_deref().unwrap_or_default();
+    assert!(
+        error.starts_with("agent-device close failed: COMMAND_FAILED: the session did not end"),
+        "{error}"
+    );
+    assert_eq!(
+        events.last().map(String::as_str),
+        Some("mobile-agent prepares cli-start")
+    );
+    assert_eq!(
+        events[events.len() - 2],
+        "ps lists none of agent-device's processes"
     );
 }
 

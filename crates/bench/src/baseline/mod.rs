@@ -9,6 +9,7 @@
 pub mod agent_device;
 pub mod maestro;
 
+use std::cell::OnceCell;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +23,8 @@ use crate::end_state::{EndState, Reading};
 use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::process::{self, Finished};
-use crate::target::Target;
+use crate::provenance::Probe;
+use crate::target::{Platform, Target};
 
 /// The agent-device session every flow runs in.
 pub const SESSION: &str = "mobile-agent-bench";
@@ -162,6 +164,9 @@ pub struct Baseline {
     config: BaselineConfig,
     /// The executable, once detected.
     path: Option<PathBuf>,
+    /// agent-device's state directory, once asked for: the directory of the
+    /// daemon its commands share.
+    state_dir: OnceCell<String>,
 }
 
 impl Baseline {
@@ -170,6 +175,7 @@ impl Baseline {
             tool,
             config,
             path: None,
+            state_dir: OnceCell::new(),
         }
     }
 
@@ -247,8 +253,12 @@ impl Adapter for Baseline {
 
     /// Closes agent-device's session on the target, which stops the snapshot
     /// helper it keeps holding UI automation between commands and selects
-    /// the input method it found again. Maestro and maestro-runner hold
-    /// nothing: their driver ends with the process that runs a flow.
+    /// the input method it found again. On a Simulator it then stops
+    /// agent-device's daemon, which would keep its XCTest runner and its
+    /// snapshot bridge running for five idle minutes; it does so even when
+    /// the close failed, since the daemon ends its sessions as it stops.
+    /// Maestro and maestro-runner hold nothing: their driver ends with the
+    /// process that runs a flow.
     fn release(&mut self, target: &Target) -> Result<Option<String>, AdapterError> {
         if self.tool != BaselineTool::AgentDevice {
             return Ok(None);
@@ -257,21 +267,88 @@ impl Adapter for Baseline {
             .path
             .clone()
             .ok_or_else(|| AdapterError::new("agent-device was not detected"))?;
-        let args = agent_device::close_args(target, SESSION);
-        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
-            .map_err(AdapterError::new)?;
-        match agent_device::closed(&finished.stdout) {
-            Ok(true) => Ok(Some(format!("closed agent-device session {SESSION}"))),
-            Ok(false) => Ok(None),
-            Err(e) => Err(AdapterError::new(format!(
-                "agent-device close failed: {e}; {}",
-                exit_failure(&finished)
-            ))),
+        let closed = self.agent_device(
+            &path,
+            &agent_device::close_args(target, SESSION),
+            "close",
+            agent_device::closed,
+        );
+        if target.class.platform() != Platform::Ios {
+            return Ok(closed?.then(|| format!("closed agent-device session {SESSION}")));
         }
+        let stopped = self.agent_device(
+            &path,
+            &agent_device::daemon_stop_args(),
+            "daemon stop",
+            agent_device::stopped,
+        );
+        match (closed, stopped) {
+            (Ok(closed), Ok(stopped)) => Ok(agent_device::released(closed, stopped, SESSION)),
+            (Err(e), Ok(_)) | (Ok(_), Err(e)) => Err(e),
+            (Err(close), Err(stop)) => Err(AdapterError::new(format!("{close}; {stop}"))),
+        }
+    }
+
+    /// On a Simulator, what agent-device still runs for it on the host: its
+    /// daemon of the state directory its commands use, its XCTest runner and
+    /// its snapshot bridge ([`agent_device::left_running`]). Elsewhere, and
+    /// for Maestro and maestro-runner, nothing.
+    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+        if self.tool != BaselineTool::AgentDevice || target.class.platform() != Platform::Ios {
+            return Ok(Vec::new());
+        }
+        let state_dir = match self.state_dir.get() {
+            Some(dir) => dir,
+            None => {
+                let path = self.path.as_ref().ok_or("agent-device was not detected")?;
+                let dir = self
+                    .agent_device(
+                        path,
+                        &agent_device::state_dir_args(),
+                        "session state-dir",
+                        agent_device::state_dir,
+                    )
+                    .map_err(|e| e.message)?;
+                self.state_dir.get_or_init(|| dir)
+            }
+        };
+        let programs = probe
+            .output("ps", &agent_device::PS_PROGRAMS)
+            .ok_or("cannot list the host's processes with ps")?;
+        Ok(agent_device::left_running(
+            &programs,
+            &target.id,
+            state_dir,
+            |pids| {
+                let pids: Vec<String> = pids.iter().map(u32::to_string).collect();
+                probe
+                    .output("ps", &agent_device::ps_details(&pids.join(",")))
+                    .unwrap_or_default()
+            },
+        ))
     }
 }
 
 impl Baseline {
+    /// Runs agent-device with `args` and reads what it printed with `read`;
+    /// a failure names the command, `what`, and how the process ended.
+    fn agent_device<T>(
+        &self,
+        path: &Path,
+        args: &[OsString],
+        what: &str,
+        read: fn(&str) -> Result<T, String>,
+    ) -> Result<T, AdapterError> {
+        let finished = process::run(Command::new(path).args(args), self.config.flow_timeout)
+            .map_err(AdapterError::new)?;
+        read(&finished.stdout).map_err(|e| {
+            AdapterError::new(format!(
+                "agent-device {what} failed: {e}; {}",
+                exit_failure(&finished)
+            ))
+        })
+    }
+
     /// Runs `flow` through the tool's process, which the sample times.
     fn run_tool(&self, target: &Target, flow: &Flow) -> Result<Sample, AdapterError> {
         let name = self.tool.name();
