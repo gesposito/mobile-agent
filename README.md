@@ -273,6 +273,8 @@ Android emulator, controller on (`reports/10.1-emulator.md`, Baselines):
 | list-scroll | not timed | not timed | not timed | not timed |
 | big-screen | 8.39x | 4.32x | 1.19x (76 % failed, 12 % flaky) | 1.06x |
 
+What each tool costs the host and the device, memory and CPU over ten login flows and a minute idle, is in `reports/10.20-resources.md`: per flow, mobile-agent's processes used 0.35 CPU-s on the Simulator against agent-device's 2.75 and Maestro's 18.82, and on the emulator 0.28 on the host and 0.05 in the guest against 0.62 and 0.22, and 13.45 and 1.82.
+
 The list-scroll flow reaches `row-200` with one `scroll --until`, as an agent would, since task 10.17; before, the harness ran its own loop of settles, checks and plain strokes. p50 of the flow before and after (`reports/10.17-list-scroll.md`, with the Simulator's after column from the 10.2 run), the emulator with its controller on:
 
 | Target | Fixture | Before | After |
