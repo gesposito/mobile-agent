@@ -43,7 +43,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`) that keep off the keyboard and the system bars (`covered_by_keyboard` when the keyboard covers what it scrolls); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |

@@ -45,7 +45,8 @@ Acting
                               directly on Android), a warning names them
   type @e2 ' smith'           add key events; without a ref, the focused field
   press Enter | Back | Home   keys; join modifiers with +, as Control+a
-  scroll down 600             move the content; -s @e7 scrolls inside @e7
+  scroll down 600             move the content; -s @e7 scrolls inside @e7;
+                              strokes keep off the keyboard and system bars
   scroll down --until '#row-150'   scroll until the element is mostly in view;
                               no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
@@ -73,9 +74,11 @@ Output and errors
   "warning" when set. A failure exits with status 1 and always has a
   snake_case code, such as stale_ref, unknown_ref, element_not_found,
   wait_timeout, target_claimed or ambiguous_target; text_mismatch means
-  fill left other text in the field, which its message names. Without
-  --json, errors go to stderr. A warning, such as a degraded snapshot, says
-  to check the screen before you trust what is missing from it.
+  fill left other text in the field, which its message names, and
+  covered_by_keyboard that the keyboard covers what you scroll: close it
+  (press Back on Android), then scroll again. Without --json, errors go to
+  stderr. A warning, such as a degraded snapshot, says to check the screen
+  before you trust what is missing from it.
 
 Targets and sessions
   devices lists the targets. With several, pass --device ID or --platform.

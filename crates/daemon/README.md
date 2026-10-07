@@ -139,7 +139,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
-| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`; with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow |
+| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`, `from` and `to` (where the last stroke came down and lifted, as `[x, y]`: every stroke's without `until`, null when it made none); with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow |
 | `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
@@ -171,6 +171,27 @@ scroll views pan only past 10 points. On the fixtures' lists, strokes that
 started on a row opened its detail up to 8 points on the emulator (the
 Compose fixture) and 10 points on the Simulator (the Expo fixture), and
 scrolled from 9 and 11 points.
+
+`scroll` strokes through what the system bars and the keyboard leave of
+the element it scrolls, or of the screen (`Mirror::uncovered`): its bounds
+less the system and input-method windows above its window, or for the
+screen above the window in front, each cutting them as a bar cuts an
+element's visible bounds, where it spans them from one side to the other
+and reaches one of their edges. A stroke that comes down on the keyboard
+goes to the keyboard, which takes it for typing (task 10.32: on a Nexus 5X
+with Gboard up, `scroll --until` stroked across the keyboard 50 times and
+glide typing entered "by" into the focused field 49 times; with Gboard
+docked on the API 36 emulator, `scroll down 600` came down at 757 points,
+179 below the keyboard's top, and typed "by"). The longest stroke, 80% of
+the extent, comes from that part, and with `until` the part is taken again
+before every stroke, since a stroke can bring the keyboard up or send it
+away. A keyboard window that spans the area neither across nor down, as
+Gboard's stylus toolbar or its floating keyboard, cuts nothing, as it cuts
+no visible bounds. When the keyboard leaves too little of the area for a
+stroke longer than a tap, where the area alone takes one, `scroll` fails
+with `covered_by_keyboard` before it touches the screen, naming what the
+keyboard covers and how to close it: `press Back` on Android, and on iOS
+the field's return key, as in most apps.
 
 `scroll` with `until` scrolls in strokes of at most `amount` points (at
 most 80% of the scrolled area) and lets the screen settle after each, at
@@ -607,13 +628,17 @@ settle windows take real time, and a device model:
   Android;
 - a settings app with a Wi-Fi switch.
 
-Android fakes use widget classes, a status bar, a keyboard window and
-dialog windows, and send window events; the fixture's list reports a row it
-cuts off with bounds clipped to the list, as Android does, and its scroll
-semantics as the agent reads a RecyclerView's (vertical, back and forward
-as far as it scrolls, its rows as items). iOS fakes use `XCUIElementType`
-classes and send no events, so the mirror re-reads them as it re-reads a
-Simulator, and show what the Simulator's reader reports (task 6.10):
+Android fakes use widget classes, a status bar, a keyboard window (from
+600 points down, while a fixture field has focus) and dialog windows, and
+send window events; a stroke that comes down on the keyboard goes to the
+keyboard and moves nothing, its glide typing entering "by" into the field
+in focus, as Gboard did on a Nexus 5X (task 10.32); the fixture's list
+reports a row it cuts off with bounds clipped to the list, as Android
+does, and its scroll semantics as the agent reads a RecyclerView's
+(vertical, back and forward as far as it scrolls, its rows as items). iOS
+fakes use `XCUIElementType` classes and send no events, so the mirror
+re-reads them as it re-reads a Simulator, and show what the Simulator's
+reader reports (task 6.10):
 SpringBoard's window, system UI owned by the process name `SpringBoard`,
 holds the home screen and the location prompt, so `origin` reads
 `SpringBoard` there; an in-app alert sits, with the view presenting it, in
@@ -680,6 +705,7 @@ source and reports the agent's paths, as a real emulator does.
 | `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, and `data.visible` for an element on screen |
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
+| `covered_by_keyboard` | the keyboard covers what a scroll strokes, but for too little for a stroke longer than the tap threshold, and a stroke that came down on it would type; the message names what it covers and how to close the keyboard; `data.strokes` |
 | `text_mismatch` | `fill` left other text in the field than it entered, typed or pasted and then entered again in one piece; the message names what the field holds (quoted, as a number of masked characters, or nothing); `data.ref`, `data.value` (null for nothing), `data.masked` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
@@ -773,6 +799,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.16, `scroll --until` does not carry its element past unseen) | (every stroke comes to rest before the finger lifts; a stroke that looks for the element goes at most three quarters of what the list shows; fake lists that fling) | `handlers::act::tests::a_stroke_that_looks_for_an_element_goes_at_most_three_quarters_of_what_its_list_shows`, `fake::app::tests::a_list_glides_on_as_far_as_its_platform_flings_it`, `fake::app::tests::a_swipe_moves_the_list_by_the_finger_and_the_glide`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the mirror's `visibility::*` and `settle::a_stroke_reaches_the_target_released_as_the_action_says`; the CLI's `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list` and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`; against devices, `devices::scroll_until_finds_a_mid_list_row_on_an_emulator` and `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | (task 10.23, `fill` reads the field back) | (keys a field takes out of order are pasted over; a field that keeps other text fails with `text_mismatch`; secure fields by length; text that shows late; empty fills; the Simulator's empty fill and direct text; fake fields that take text as a Simulator types it) | `handlers::act::tests::a_fill_whose_keys_a_field_takes_out_of_order_pastes_the_text`, `handlers::act::tests::a_fill_that_a_field_cuts_short_fails_naming_what_the_field_holds`, `handlers::act::tests::a_secure_field_is_read_back_by_the_number_of_its_characters`, `handlers::act::tests::a_fill_replies_once_the_field_shows_its_text`, `handlers::act::tests::an_empty_fill_reads_the_field_back_empty_except_on_android`, `handlers::act::tests::a_field_shows_the_text_exactly_as_its_mask_or_as_an_empty_placeholder`, `devices::simulator::tests::an_empty_text_deletes_what_the_field_held`, `devices::simulator::tests::keys_are_typed_direct_text_is_pasted_and_a_paste_reads_as_direct_setting`, `fake::app::tests::fields_take_text_as_their_typing_mode_says`, `fake::realtime::tests::text_is_typed_as_the_simulator_types_it_only_under_a_typing_mode_that_types_keys`, `fake::tests::typing_modes_are_named_whole_keys_reorder_or_max_with_a_length`; the CLI's `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` |
 | (task 10.30, the hold only after keys) | (text set or pasted in one piece taken at the first read that shows it, typed text after the 200 ms hold, on either platform; the text entered again after other text not held) | `handlers::act::tests::a_fill_whose_text_went_in_in_one_piece_takes_the_first_read_that_shows_it`, `handlers::act::tests::a_fill_typed_as_keys_takes_the_text_once_the_field_has_held_it_200_ms`, `handlers::act::tests::a_fill_that_enters_its_text_again_in_one_piece_takes_the_first_read_that_shows_it` |
+| (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

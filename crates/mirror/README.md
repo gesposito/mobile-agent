@@ -14,12 +14,13 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, visibility, scroll_viewport
+                timestamps, note_window_change, visibility, scroll_viewport, uncovered
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, modal cutting, scroll hints
   visibility.rs how much of an element is in view: its visible bounds, share and cut edge; the
-                visible bounds of the scroll container under a point
+                visible bounds of the scroll container under a point; what of an area the
+                system and keyboard windows above it leave a stroke
   roles.rs      roles from Android widget classes, XCUIElementType names and UIKit classes
   render.rs     listings and agent-browser's snapshot lines
   refs.rs       eN refs: parsing, issuing, stale detection
@@ -379,6 +380,16 @@ the reasons in this order, each with advice:
   it gets. The daemon bounds each stroke of `scroll --until` that looks
   for its element to three quarters of their extent along the axis, so
   that no element passes through them between two looks.
+- `uncovered` tells, the same way, what of an area a stroke may go
+  through (task 10.32): the area less the system and input-method windows
+  above the window of an element, or for the screen above the window in
+  front (the active window that is not a keyboard's, which Android flags
+  active while a finger touches it, else the top-most application
+  window), each cutting it as a bar cuts visible bounds, and whether a
+  keyboard cut it. A stroke that comes down on one of those windows goes
+  to it, and a keyboard takes it for typing (Gboard glide-typed a word
+  into the focused field at every stroke of a scroll on a Nexus 5X), so
+  the daemon strokes a scroll through what `uncovered` leaves.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
@@ -562,3 +573,4 @@ cargo test -p mirror
 | (task 10.22, a view marked modal inside its window) | (what it covers is cut, what lies outside it stays) | `interactive::a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it`, `interactive::acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code`, and in the Simulator's reader `elements::tests::a_read_honouring_modal_views_that_left_children_out_was_pruned`, `elements::tests::the_view_a_pruned_read_kept_is_marked_modal_in_the_whole_read`, `elements::tests::a_kept_view_that_moved_between_the_reads_is_found_by_what_it_holds`, `elements::tests::nothing_is_marked_when_the_reads_disagree` |
 | (task 10.25, the keyboard over an Android app) | (a floating toolbar cuts no list it does not span) | `visibility::gboard_s_floating_toolbar_leaves_the_rows_beside_and_below_it_in_view`, and in the Android agent the checks of `agent-android/unit-test/KeyboardAreaTest.kt` |
 | (task 10.28, a view drawn over its siblings on Android) | (what it covers is cut when it shows something; a node without an area is not judged) | `interactive::a_view_drawn_over_its_siblings_on_android_hides_what_it_covers`, `interactive::acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code`, `interactive::a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint`, `interactive::a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing`, and in the Android agent the checks of `agent-android/unit-test/StackingTest.kt` |
+| (task 10.32, where a stroke may come down) | (the area less the system and keyboard windows above its window, or above the window in front) | `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area`, `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
