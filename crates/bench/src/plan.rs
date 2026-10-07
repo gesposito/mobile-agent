@@ -73,15 +73,19 @@ pub fn series(target: &Target, fixtures: &[Fixture]) -> Vec<Series> {
     planned
 }
 
-/// The series of `planned` that time one of the flows `names` lists, in plan
-/// order; every series of `planned` when `names` is empty.
-pub fn only_flows(planned: Vec<Series>, names: &[String]) -> Vec<Series> {
-    if names.is_empty() {
+/// The series of `planned` that measure one of `primitives` or time one of
+/// the flows `flows` names, in plan order; every series of `planned` when
+/// both are empty.
+pub fn only(planned: Vec<Series>, primitives: &[Primitive], flows: &[String]) -> Vec<Series> {
+    if primitives.is_empty() && flows.is_empty() {
         return planned;
     }
     planned
         .into_iter()
-        .filter(|series| matches!(&series.subject, Subject::Flow(name) if names.contains(name)))
+        .filter(|series| match &series.subject {
+            Subject::Primitive(primitive) => primitives.contains(primitive),
+            Subject::Flow(name) => flows.contains(name),
+        })
         .collect()
 }
 
@@ -233,7 +237,7 @@ mod tests {
         let planned = series(&target, &[Fixture::SwiftUi, Fixture::Expo]);
         let kept = |names: &[&str]| -> Vec<(Option<Fixture>, String)> {
             let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
-            only_flows(planned.clone(), &names)
+            only(planned.clone(), &[], &names)
                 .iter()
                 .map(|s| (s.fixture, s.subject.to_string()))
                 .collect()
@@ -255,7 +259,45 @@ mod tests {
                 on(Fixture::Expo, "big-screen"),
             ]
         );
-        assert_eq!(only_flows(planned.clone(), &[]), planned);
+        assert_eq!(only(planned.clone(), &[], &[]), planned);
+    }
+
+    #[test]
+    fn named_primitives_keep_their_series_beside_the_named_flows_in_plan_order() {
+        let target = Target::new("SIM-1", TargetClass::Simulator);
+        let planned = series(&target, &[Fixture::SwiftUi, Fixture::Expo]);
+        let kept = |primitives: &[Primitive], flows: &[&str]| -> Vec<(Option<Fixture>, String)> {
+            let flows: Vec<String> = flows.iter().map(|name| (*name).to_owned()).collect();
+            only(planned.clone(), primitives, &flows)
+                .iter()
+                .map(|s| (s.fixture, s.subject.to_string()))
+                .collect()
+        };
+        let on = |fixture, subject: &str| (Some(fixture), subject.to_owned());
+        assert_eq!(
+            kept(&[Primitive::TextEntry], &[]),
+            [
+                on(Fixture::SwiftUi, "text-entry"),
+                on(Fixture::Expo, "text-entry")
+            ]
+        );
+        assert_eq!(
+            kept(&[Primitive::TextEntry], &[flow::LOGIN]),
+            [
+                on(Fixture::SwiftUi, "text-entry"),
+                on(Fixture::SwiftUi, "flow login"),
+                on(Fixture::Expo, "text-entry"),
+                on(Fixture::Expo, "flow login"),
+            ]
+        );
+        assert_eq!(
+            kept(&[Primitive::Settle, Primitive::CliStart], &[]),
+            [
+                (None, "cli-start".to_owned()),
+                on(Fixture::SwiftUi, "settle"),
+                on(Fixture::Expo, "settle")
+            ]
+        );
     }
 
     #[test]
