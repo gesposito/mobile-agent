@@ -1,16 +1,23 @@
 //! `doctor`: each check against scripted command outputs, and the real
-//! command listing every check with a status.
+//! command listing every check with a status and, against fake tools,
+//! asking nothing of a driver the run leaves out.
 
 mod support;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, TcpListener};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cli::doctor::{Output, Probe, Report, Status, run_checks};
 use serde_json::{Value, json};
-use support::TestEnv;
+use support::{Run, TestEnv};
 
-/// A host described by scripted answers.
+/// A host described by scripted answers, recording what it was asked.
 struct Host {
     os: &'static str,
     env: HashMap<&'static str, String>,
@@ -19,6 +26,9 @@ struct Host {
     dirs: HashMap<PathBuf, Vec<(PathBuf, String)>>,
     adb: Result<u32, String>,
     daemon: Result<Value, String>,
+    /// Each command line run, and `adb-server <port>` for each question to
+    /// the adb server.
+    asked: RefCell<Vec<String>>,
 }
 
 fn ok(stdout: &str) -> Output {
@@ -59,6 +69,7 @@ impl Host {
                 "drivers": ["fake"],
                 "compatibility": {"rows": [], "note": "the Simulator driver fills this table"}
             })),
+            asked: RefCell::default(),
         };
         host.command(
             "xcode-select -p",
@@ -116,7 +127,9 @@ impl Probe for Host {
     fn run(&self, program: &str, args: &[&str]) -> Option<Output> {
         let mut line = vec![program];
         line.extend_from_slice(args);
-        self.commands.get(&line.join(" ")).cloned()
+        let line = line.join(" ");
+        self.asked.borrow_mut().push(line.clone());
+        self.commands.get(&line).cloned()
     }
 
     fn is_file(&self, path: &Path) -> bool {
@@ -127,7 +140,8 @@ impl Probe for Host {
         self.dirs.get(dir).cloned().unwrap_or_default()
     }
 
-    fn adb_server(&self, _port: u16) -> Result<u32, String> {
+    fn adb_server(&self, port: u16) -> Result<u32, String> {
+        self.asked.borrow_mut().push(format!("adb-server {port}"));
         self.adb.clone()
     }
 
@@ -442,6 +456,67 @@ fn the_xcode_compatibility_table_waits_for_the_simulator_driver() {
     );
 }
 
+/// The checks of the Simulator's driver.
+const SIMULATOR_CHECKS: [&str; 3] = ["xcode", "simulator-runtimes", "xcode-compatibility"];
+
+/// The checks of Android's driver.
+const ANDROID_CHECKS: [&str; 3] = ["android-sdk", "adb-server", "emulator-control"];
+
+/// Task 10.24: doctor reads the run's `MOBILE_AGENT_DRIVERS` as the daemon
+/// does, comma-separated names in any case with `ios` for `simulator`, or
+/// `none`, and asks the host nothing for a driver it leaves out, whose
+/// checks it skips as not consulted; unset or blank, it leaves none out.
+#[test]
+fn the_run_s_drivers_choose_which_checks_ask_the_host() {
+    for (drivers, simulator, android) in [
+        (None, true, true),
+        (Some("  "), true, true),
+        (Some("simulator"), true, false),
+        (Some(" iOS "), true, false),
+        (Some("android"), false, true),
+        (Some("Android, simulator"), true, true),
+        (Some("none"), false, false),
+    ] {
+        let mut host = Host::healthy();
+        if let Some(value) = drivers {
+            host.env.insert("MOBILE_AGENT_DRIVERS", value.to_owned());
+        }
+        let report = run_checks(&host);
+        for (names, named) in [(SIMULATOR_CHECKS, simulator), (ANDROID_CHECKS, android)] {
+            for name in names {
+                let check = report
+                    .checks
+                    .iter()
+                    .find(|c| c.name == name)
+                    .unwrap_or_else(|| panic!("no {name} check"));
+                assert_eq!(
+                    check.message.contains("not consulted"),
+                    !named,
+                    "{drivers:?}: {check:?}"
+                );
+                if !named {
+                    assert_eq!(check.status, Status::Skip, "{drivers:?}: {check:?}");
+                    assert!(
+                        check.message.contains("MOBILE_AGENT_DRIVERS="),
+                        "{drivers:?}: {check:?}"
+                    );
+                }
+            }
+        }
+        let asked = host.asked.borrow();
+        assert_eq!(
+            asked.iter().any(|line| line.contains("adb")),
+            android,
+            "{drivers:?} asked {asked:?}"
+        );
+        assert_eq!(
+            asked.iter().any(|line| line.starts_with("xc")),
+            simulator,
+            "{drivers:?} asked {asked:?}"
+        );
+    }
+}
+
 #[test]
 fn doctor_lists_every_check_with_a_status_in_both_outputs() {
     let env = TestEnv::start("android");
@@ -482,4 +557,205 @@ fn doctor_lists_every_check_with_a_status_in_both_outputs() {
         assert!(["ok", "warn", "fail", "skip"].contains(&status), "{check}");
     }
     assert!(reply["data"]["compatibility"]["rows"].is_array());
+}
+
+/// Writes an executable shell script at `path` that logs its arguments to
+/// `path` with `.log` added, a line per run, then runs `body`.
+fn script(path: &Path, body: &str) {
+    let dir = path.parent().expect("the script has a directory");
+    std::fs::create_dir_all(dir).expect("the script's directory can be created");
+    let log = format!("{}.log", path.display());
+    std::fs::write(
+        path,
+        format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\n{body}\n"),
+    )
+    .expect("the script can be written");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .expect("the script can be made executable");
+}
+
+/// Fake tools for the real command: `xcode-select`, `xcodebuild` and
+/// `xcrun` alone on `PATH`, an SDK whose `adb` answers `version`, and
+/// `devices` with nothing attached, and an adb server on a port of its own
+/// that answers `host:version` with protocol 41 and counts its
+/// connections. Each tool logs its arguments beside itself.
+struct FakeTools {
+    bin: PathBuf,
+    sdk: PathBuf,
+    port: u16,
+    connections: Arc<AtomicUsize>,
+}
+
+impl FakeTools {
+    fn new(dir: &Path) -> FakeTools {
+        let bin = dir.join("fake-bin");
+        let sdk = dir.join("fake-sdk");
+        script(
+            &bin.join("xcode-select"),
+            "echo /Applications/Xcode.app/Contents/Developer",
+        );
+        script(
+            &bin.join("xcodebuild"),
+            r"printf 'Xcode 27.0\nBuild version 27A266a\n'",
+        );
+        script(
+            &bin.join("xcrun"),
+            r#"echo '{"runtimes": [{"name": "iOS 26.5", "isAvailable": true}]}'"#,
+        );
+        script(
+            &sdk.join("platform-tools/adb"),
+            r"case $1 in
+version) printf 'Android Debug Bridge version 1.0.41\nVersion 36.0.0-13206524\n' ;;
+devices) printf 'List of devices attached\n\n' ;;
+esac",
+        );
+        let listener =
+            TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a port for the adb server");
+        let port = listener.local_addr().expect("the server's address").port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&connections);
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                counted.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 16];
+                if stream.read_exact(&mut request).is_ok() && &request == b"000chost:version" {
+                    let _ = stream.write_all(b"OKAY00040029");
+                }
+            }
+        });
+        FakeTools {
+            bin,
+            sdk,
+            port,
+            connections,
+        }
+    }
+
+    /// Runs the CLI with `args` against the fakes, with `drivers` as the
+    /// run's `MOBILE_AGENT_DRIVERS`.
+    fn cli(&self, env: &TestEnv, args: &[&str], drivers: &str) -> Run {
+        let path = self.bin.to_string_lossy().into_owned();
+        let sdk = self.sdk.to_string_lossy().into_owned();
+        let port = self.port.to_string();
+        env.cli_env(
+            args,
+            &[
+                ("PATH", path.as_str()),
+                ("ANDROID_HOME", sdk.as_str()),
+                ("ANDROID_SDK_ROOT", sdk.as_str()),
+                ("ANDROID_ADB_SERVER_PORT", port.as_str()),
+                ("MOBILE_AGENT_DRIVERS", drivers),
+            ],
+        )
+    }
+
+    /// The arguments of each run of `tool`, a line per run; empty when it
+    /// never ran.
+    fn asked(&self, tool: &str) -> String {
+        let log = match tool {
+            "adb" => self.sdk.join("platform-tools/adb.log"),
+            _ => self.bin.join(format!("{tool}.log")),
+        };
+        std::fs::read_to_string(log).unwrap_or_default()
+    }
+
+    /// How many connections the adb server took.
+    fn connections(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
+    }
+}
+
+/// The line doctor's text gives check `name`.
+fn line_of<'a>(text: &'a str, name: &str) -> &'a str {
+    text.lines()
+        .find(|line| line.split_whitespace().nth(1) == Some(name))
+        .unwrap_or_else(|| panic!("no {name} line in:\n{text}"))
+}
+
+/// Check `name` in doctor's JSON reply.
+fn check_of<'a>(reply: &'a Value, name: &str) -> &'a Value {
+    reply["data"]["checks"]
+        .as_array()
+        .and_then(|checks| checks.iter().find(|c| c["name"] == name))
+        .unwrap_or_else(|| panic!("no {name} check in {reply}"))
+}
+
+/// Asserts that both outputs skip each of `names` as not consulted, naming
+/// the run's `MOBILE_AGENT_DRIVERS`.
+#[track_caller]
+fn assert_not_consulted(text: &str, reply: &Value, names: [&str; 3], drivers: &str) {
+    let variable = format!("MOBILE_AGENT_DRIVERS={drivers}");
+    for name in names {
+        let line = line_of(text, name);
+        assert!(
+            line.starts_with("- ") && line.contains("not consulted") && line.contains(&variable),
+            "{line}"
+        );
+        let check = check_of(reply, name);
+        assert_eq!(check["status"], "skip", "{check}");
+        assert!(
+            check["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("not consulted") && m.contains(&variable)),
+            "{check}"
+        );
+    }
+}
+
+/// Task 10.24: a run that names the Simulator's driver alone asks nothing
+/// of adb, as the daemon it starts does not. No adb runs and no adb server
+/// is asked; both outputs skip the Android checks as not consulted, while
+/// on macOS the Simulator's checks still ask Xcode.
+#[test]
+fn the_android_checks_are_not_consulted_when_the_run_names_the_simulator_alone() {
+    let env = TestEnv::start("android");
+    let tools = FakeTools::new(env.path());
+    let human = tools.cli(&env, &["doctor"], "simulator").ok();
+    let reply = tools
+        .cli(&env, &["--json", "doctor"], "simulator")
+        .ok()
+        .json();
+    assert_eq!(
+        (tools.asked("adb").as_str(), tools.connections()),
+        ("", 0),
+        "doctor ran adb or asked its server:\n{}",
+        human.stdout
+    );
+    assert_not_consulted(&human.stdout, &reply, ANDROID_CHECKS, "simulator");
+    if cfg!(target_os = "macos") {
+        assert_eq!(check_of(&reply, "xcode")["status"], "ok", "{reply}");
+        assert_eq!(
+            check_of(&reply, "simulator-runtimes")["message"],
+            "iOS 26.5",
+            "{reply}"
+        );
+        assert!(tools.asked("xcode-select").contains("-p"));
+    }
+}
+
+/// Task 10.24: a run that names Android's driver alone asks nothing of
+/// Xcode. Both outputs skip the Simulator's checks as not consulted, while
+/// the Android checks run adb and ask its server.
+#[test]
+fn the_simulator_checks_are_not_consulted_when_the_run_names_android_alone() {
+    let env = TestEnv::start("android");
+    let tools = FakeTools::new(env.path());
+    let human = tools.cli(&env, &["doctor"], "android").ok();
+    let reply = tools
+        .cli(&env, &["--json", "doctor"], "android")
+        .ok()
+        .json();
+    for tool in ["xcode-select", "xcodebuild", "xcrun"] {
+        assert_eq!(
+            tools.asked(tool),
+            "",
+            "doctor ran {tool}:\n{}",
+            human.stdout
+        );
+    }
+    assert_not_consulted(&human.stdout, &reply, SIMULATOR_CHECKS, "android");
+    assert_eq!(check_of(&reply, "android-sdk")["status"], "ok", "{reply}");
+    assert_eq!(check_of(&reply, "adb-server")["status"], "ok", "{reply}");
+    assert_eq!(tools.asked("adb"), "version\ndevices\nversion\ndevices\n");
+    assert_eq!(tools.connections(), 2, "each run asks the adb server once");
 }

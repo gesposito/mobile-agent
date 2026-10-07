@@ -2,7 +2,9 @@
 //! status (ok, warn, fail or skip), a message and, when something can be
 //! done, a hint. Only a failed check fails doctor; a missing toolchain for
 //! one platform is a warning, since the other platform may be all a user
-//! drives.
+//! drives. The checks of a device driver the run's `MOBILE_AGENT_DRIVERS`
+//! leaves out ask the host nothing and are skipped as not consulted, so a
+//! run that names the Simulator's driver alone runs no adb.
 //!
 //! The checks ask the host through a [`Probe`], which tests script. The
 //! Xcode compatibility table comes from the daemon, whose drivers supply
@@ -28,6 +30,28 @@ const ADB_PORT: u16 = 5037;
 /// Emulator gRPC ports follow the console port by this much, as the
 /// emulator's own `-grpc` examples and spike S7 used them.
 const GRPC_OFFSET: u16 = 3000;
+
+/// The variable that names the device drivers a daemon registers; a daemon
+/// the CLI starts inherits it.
+const DRIVERS: &str = "MOBILE_AGENT_DRIVERS";
+
+/// A device driver as [`DRIVERS`] names it.
+struct DeviceDriver {
+    /// The names the variable gives it.
+    names: &'static [&'static str],
+    /// Its name in doctor's messages.
+    title: &'static str,
+}
+
+const SIMULATOR: DeviceDriver = DeviceDriver {
+    names: &["simulator", "ios"],
+    title: "Simulator",
+};
+
+const ANDROID: DeviceDriver = DeviceDriver {
+    names: &["android"],
+    title: "Android",
+};
 
 /// What a command printed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,23 +231,36 @@ impl Report {
     }
 }
 
-/// Runs every check, in the order doctor prints them.
+/// Runs every check, in the order doctor prints them. The checks of a
+/// device driver the run leaves out (see `left_out`) ask the host nothing.
 pub fn run_checks(probe: &dyn Probe) -> Report {
     let daemon = probe.daemon();
     let mut checks = vec![daemon_check(&daemon), drivers_check(&daemon)];
-    let xcode = xcode_check(probe);
-    let has_xcode = xcode.status == Status::Ok;
-    checks.push(xcode);
-    checks.push(runtimes_check(probe, has_xcode));
-    let (sdk, adb) = android_sdk_check(probe);
-    checks.push(sdk);
-    let (server, running) = adb_server_check(probe);
-    checks.push(server);
-    checks.push(emulator_check(
-        probe,
-        adb.as_deref().filter(|_| running),
-        &daemon,
-    ));
+    let simulator = left_out(probe, &SIMULATOR);
+    if let Some(reason) = &simulator {
+        checks.extend(skipped(&["xcode", "simulator-runtimes"], reason));
+    } else {
+        let xcode = xcode_check(probe);
+        let has_xcode = xcode.status == Status::Ok;
+        checks.push(xcode);
+        checks.push(runtimes_check(probe, has_xcode));
+    }
+    if let Some(reason) = left_out(probe, &ANDROID) {
+        checks.extend(skipped(
+            &["android-sdk", "adb-server", "emulator-control"],
+            &reason,
+        ));
+    } else {
+        let (sdk, adb) = android_sdk_check(probe);
+        checks.push(sdk);
+        let (server, running) = adb_server_check(probe);
+        checks.push(server);
+        checks.push(emulator_check(
+            probe,
+            adb.as_deref().filter(|_| running),
+            &daemon,
+        ));
+    }
     checks.push(tool_check(
         probe,
         "sfw",
@@ -235,11 +272,41 @@ pub fn run_checks(probe: &dyn Probe) -> Report {
         "install it with sfw cargo install just",
     ));
     let compatibility = compatibility(&daemon);
-    checks.push(compatibility_check(probe, &compatibility));
+    checks.push(match &simulator {
+        Some(reason) => check("xcode-compatibility", Status::Skip, reason.as_str()),
+        None => compatibility_check(probe, &compatibility),
+    });
     Report {
         checks,
         compatibility,
     }
+}
+
+/// Why the checks of `driver` are not consulted: the run's
+/// `MOBILE_AGENT_DRIVERS` leaves it out. The variable is read as the daemon
+/// reads it, comma-separated names in any case or `none`; unset or blank,
+/// it leaves no driver out.
+fn left_out(probe: &dyn Probe, driver: &DeviceDriver) -> Option<String> {
+    let list = probe.env(DRIVERS).filter(|list| !list.trim().is_empty())?;
+    let named = list
+        .split(',')
+        .map(|entry| entry.trim().to_ascii_lowercase())
+        .any(|entry| driver.names.contains(&entry.as_str()));
+    (!named).then(|| {
+        format!(
+            "not consulted: {DRIVERS}={} leaves out the {} driver",
+            list.trim(),
+            driver.title
+        )
+    })
+}
+
+/// The checks `names`, each skipped for `reason` without asking the host.
+fn skipped(names: &[&'static str], reason: &str) -> Vec<Check> {
+    names
+        .iter()
+        .map(|&name| check(name, Status::Skip, reason))
+        .collect()
 }
 
 fn daemon_check(daemon: &Result<Value, String>) -> Check {

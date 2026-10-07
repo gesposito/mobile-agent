@@ -329,6 +329,8 @@ Examples:
     #[command(after_help = "\
 Prints a line per check (ok, warn, fail or skip) with a hint where something
 can be done, then the Xcode compatibility table the Simulator driver supplies.
+The checks of a device driver that MOBILE_AGENT_DRIVERS leaves out ask the host
+nothing and are skipped as not consulted: with simulator alone, no adb runs.
 Exits with status 1 when a check fails; warnings do not fail it.
 
 Examples:
