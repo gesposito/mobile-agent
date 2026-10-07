@@ -66,30 +66,18 @@ object Semantics {
         }
     }
 
-    private val SCROLL_BACK = intArrayOf(
-        AccessibilityAction.ACTION_SCROLL_UP.id,
-        AccessibilityAction.ACTION_PAGE_UP.id,
-        AccessibilityAction.ACTION_SCROLL_LEFT.id,
-        AccessibilityAction.ACTION_PAGE_LEFT.id,
-    )
-    private val SCROLL_FORWARD = intArrayOf(
-        AccessibilityAction.ACTION_SCROLL_DOWN.id,
-        AccessibilityAction.ACTION_PAGE_DOWN.id,
-        AccessibilityAction.ACTION_SCROLL_RIGHT.id,
-        AccessibilityAction.ACTION_PAGE_RIGHT.id,
-    )
-    private val VERTICAL = intArrayOf(
-        AccessibilityAction.ACTION_SCROLL_UP.id,
-        AccessibilityAction.ACTION_PAGE_UP.id,
-        AccessibilityAction.ACTION_SCROLL_DOWN.id,
-        AccessibilityAction.ACTION_PAGE_DOWN.id,
-    )
-    private val HORIZONTAL = intArrayOf(
-        AccessibilityAction.ACTION_SCROLL_LEFT.id,
-        AccessibilityAction.ACTION_PAGE_LEFT.id,
-        AccessibilityAction.ACTION_SCROLL_RIGHT.id,
-        AccessibilityAction.ACTION_PAGE_RIGHT.id,
-    )
+    private val SCROLL_BACK = scrollIds(AccessibilityAction.ACTION_SCROLL_UP) { AccessibilityAction.ACTION_PAGE_UP.id } +
+        scrollIds(AccessibilityAction.ACTION_SCROLL_LEFT) { AccessibilityAction.ACTION_PAGE_LEFT.id }
+    private val SCROLL_FORWARD = scrollIds(AccessibilityAction.ACTION_SCROLL_DOWN) { AccessibilityAction.ACTION_PAGE_DOWN.id } +
+        scrollIds(AccessibilityAction.ACTION_SCROLL_RIGHT) { AccessibilityAction.ACTION_PAGE_RIGHT.id }
+    private val VERTICAL = scrollIds(AccessibilityAction.ACTION_SCROLL_UP) { AccessibilityAction.ACTION_PAGE_UP.id } +
+        scrollIds(AccessibilityAction.ACTION_SCROLL_DOWN) { AccessibilityAction.ACTION_PAGE_DOWN.id }
+    private val HORIZONTAL = scrollIds(AccessibilityAction.ACTION_SCROLL_LEFT) { AccessibilityAction.ACTION_PAGE_LEFT.id } +
+        scrollIds(AccessibilityAction.ACTION_SCROLL_RIGHT) { AccessibilityAction.ACTION_PAGE_RIGHT.id }
+
+    /** The ids of the scroll action `scroll` and of the page action that moves the same way, where the level has it. */
+    private inline fun scrollIds(scroll: AccessibilityAction, page: () -> Int): IntArray =
+        Levels.scrollIds(Build.VERSION.SDK_INT, scroll.id, page)
 
     /** Whether `n` belongs to Compose content, which sends no change events to UI automation (spike S1). */
     fun hostsCompose(n: AccessibilityNodeInfo): Boolean =

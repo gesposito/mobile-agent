@@ -130,10 +130,9 @@ class Automation private constructor(
         UiAutomation::class.java.getDeclaredField("mConnectionId").apply { isAccessible = true }.getInt(uia)
     }
 
-    /** The connection's node cache, a hidden object; null where it cannot be reached. */
+    /** The connection's node cache, a hidden object ([Levels.nodeCache]); null where it cannot be reached. */
     private fun cache(): Any? = try {
-        Class.forName("android.view.accessibility.AccessibilityInteractionClient")
-            .getDeclaredMethod("getCache", Int::class.javaPrimitiveType).invoke(null, connectionId)
+        Levels.nodeCache(Class.forName("android.view.accessibility.AccessibilityInteractionClient"), connectionId)
     } catch (e: ReflectiveOperationException) {
         null
     }

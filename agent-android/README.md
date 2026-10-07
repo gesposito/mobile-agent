@@ -38,7 +38,7 @@ The codec under `codec/` is shared with `codec-test.sh`, which checks that it
 writes and reads the golden frames of `crates/protocol/golden` byte for byte;
 the agent uses it unchanged for every frame it sends and receives. The same
 script compiles the agent sources that call no platform API, which it lists
-(`KeyboardArea.kt`, `Stacking.kt`), with the checks under `unit-test/`, and runs
+(`KeyboardArea.kt`, `Stacking.kt`, `Levels.kt`), with the checks under `unit-test/`, and runs
 each on the host JVM; `just codec-test` runs it with `--host-only`.
 
 ## Requirements
@@ -131,7 +131,7 @@ platform code has started non-daemon threads.
 
 - `--version`, or no arguments: prints exactly one line to stdout and exits 0.
   The line is `mobile-agent-android <version> protocol=<n>`, for example
-  `mobile-agent-android 0.4.2 protocol=1`. `<version>` is the content of
+  `mobile-agent-android 0.4.3 protocol=1`. `<version>` is the content of
   `VERSION`. `<n>` is the codec's `Protocol.VERSION`, the revision of the
   host-agent wire protocol, currently 1.
 - `serve` without `--socket NAME`, or with an unknown option: prints a usage
@@ -159,6 +159,7 @@ builds have in common:
 
 | Version | Builds |
 |---|---|
+| 0.4.3 | From task 10.3 on. They behave as 0.4.2 builds do on Android 10 and later, and also serve Android 8.0 to 9, which 0.4.2 and earlier builds could not; only 8.1 has run (`Levels.kt`): before Android 9 a windows change is reported as a state change naming no window, where those builds called `AccessibilityEvent.getWindowChanges`, which Android 8.1 lacks, and ended at the first windows change; before Android 10 a node's scroll semantics leave out the page actions, which those builds read in a static initializer and so failed every snapshot with `internal` and a `NoSuchFieldError`; and where the accessibility client keeps one node cache for the process instead of one per connection, as Android 8.1's does, an eviction clears that cache, where those builds found no cache and evicted nothing, so a Compose window, which sends no events, was read again from the cache. To the driver, an agent reporting 0.4.2 is another version. |
 | 0.4.2 | From task 10.28 on. They behave as 0.4.1 builds do, except that their snapshots flag `on_top` (node flag bit 14) each node drawn after every sibling its bounds overlap, by the order the platform reports a parent draws its children in, a flag 0.4.1 and earlier builds never set (Nodes drawn over their siblings, below). To the driver, an agent reporting 0.4.1 is another version. |
 | 0.4.1 | From task 10.25 on. They behave as 0.4.0 builds do, except that from Android 11 their snapshots give an input-method window the box around the pieces of its touchable region that hold its nodes visible to the user, where 0.4.0 and earlier builds give it the box around the whole region: on the API 36 emulator Gboard's floating toolbar reads as (21, 898) to (169, 1588) pixels, the toolbar, and not as (0, 898) to (1080, 2400), the box around the toolbar and the navigation bar strip the input method draws (Input-method windows, below). To the driver, an agent reporting 0.4.0 is another version. |
 | 0.4.0 | From task 10.16 on. They behave as 0.3.0 builds do, and also honor the swipe request's `rest_ms`, resting the pointer at the end of the swipe and moving it one pixel on before it lifts, which 0.3.0 and earlier builds skip, lifting the pointer moving. To the driver, an agent reporting 0.3.0 is another version. |
@@ -666,6 +667,7 @@ the agent answers by id and its tests exercise it throughout.
 | | Windows the platform animates in (task 10.11) | `bounds::a_window_the_platform_scales_in_reads_as_transformed_until_it_comes_to_rest`, `bounds::a_window_the_platform_slides_in_reads_as_transformed_until_it_comes_to_rest` |
 | Input-method windows (task 10.25) | A floating toolbar, an emoji panel beside it, a docked keyboard | `codec-test.sh`: the checks of `unit-test/KeyboardAreaTest.kt` |
 | Nodes drawn over their siblings (task 10.28) | Bluesky's search overlay over the Explore page, a drawer's hidden backdrop, Compose's orders | `codec-test.sh`: the checks of `unit-test/StackingTest.kt` |
+| Platform reads by level (task 10.3) | Android 8.1's windows changes, scroll actions and node cache, beside API 36's | `codec-test.sh`: the checks of `unit-test/LevelsTest.kt` |
 | android-driver: Direct text setting with fallback | React Native text input | `text::a_focused_react_native_input_is_filled_directly_in_one_operation` |
 | | Element rejects direct setting | `text::a_focused_element_without_direct_setting_gets_key_events_and_the_fallback_is_named` |
 | | Keys on request, a named node, refusals | `text::keys_on_request_replace_the_field_text_and_name_the_key_method`, `text::a_node_named_from_the_last_snapshot_is_set_directly`, `text::direct_text_for_a_node_without_it_or_an_unknown_node_is_refused` |

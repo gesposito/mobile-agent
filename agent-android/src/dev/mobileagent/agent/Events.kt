@@ -1,5 +1,6 @@
 package dev.mobileagent.agent
 
+import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -111,7 +112,8 @@ class EventHub(private val automation: Automation) {
             AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED,
             -> listOf(TreeChange(TreeChangeKind.FOCUS, window, path(e)))
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> listOf(WindowChange(WindowChangeKind.STATE, window))
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> windowChanges(e.windowChanges).map { WindowChange(it, window) }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED ->
+                windowChanges(Levels.windowChangeBits(Build.VERSION.SDK_INT) { e.windowChanges }).map { WindowChange(it, window) }
             else -> emptyList()
         }
     }
