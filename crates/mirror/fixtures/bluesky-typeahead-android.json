@@ -1,0 +1,79 @@
+{
+  "description": "Bluesky's search screen on Android with the typeahead up over the Explore page, as the agent reads it on the API 36 emulator (task 10.28), shapes from the spike and names replaced by placeholders. The search screen's view group holds, in the order the platform lists them, the screen's own view, the header, the typeahead (an AbsListView, React Native's list role) and the view holding the Explore page: the typeahead and the page have the same bounds, and only the order they are drawn in says the typeahead is over the page, so the agent flags it on_top, as it flags the header, drawn after the screen's own view it overlaps, the Explore page's buttons drawn over their card's background, and the tab bar, drawn after the screen above it, over the page's bottom and a button lying wholly under it. Rows of the Explore page scrolled out of it have the bounds Android gives them, clipped to nothing. The keyboard's window is Gboard's floating toolbar. Device points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 3, "kind": "system", "layer": 2, "package": "com.android.systemui",
+      "bounds": [0, 0, 411.43, 50.29], "owner": "com.android.systemui",
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 50.29], "children": [
+        {"class": "android.widget.TextView", "text": "12:30", "bounds": [16, 17.14, 55.62, 33.52]}
+      ]}
+    },
+    {
+      "id": 2, "kind": "input_method", "layer": 1, "package": "com.google.android.inputmethod.latin", "title": "Gboard",
+      "bounds": [8, 342.1, 64.38, 604.95], "owner": "com.google.android.inputmethod.latin",
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 50.29, 411.43, 914.29], "children": [
+        {"class": "android.widget.ImageView", "desc": "Voice input", "bounds": [12.19, 345.9, 60.19, 393.9], "flags": ["clickable"]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app", "title": "Bluesky",
+      "bounds": [0, 0, 411.43, 914.29], "flags": ["active", "focused"], "events": true,
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 914.29], "children": [
+        {"class": "android.view.ViewGroup", "bounds": [0, 0, 411.43, 914.29], "children": [
+          {"class": "android.view.ViewGroup", "bounds": [0, 0, 411.43, 914.29], "children": [
+            {"class": "android.view.ViewGroup", "id": "searchScreen", "bounds": [0, 0, 411.43, 914.29]},
+            {"class": "android.view.ViewGroup", "bounds": [0, 50.29, 411.43, 154.67], "flags": ["on_top"], "children": [
+              {"class": "android.widget.Button", "desc": "Open drawer menu", "bounds": [16, 55.62, 46.1, 88.76], "flags": ["clickable", "focusable"]},
+              {"class": "android.widget.Button", "desc": "Cancel search", "bounds": [16, 108.19, 49.14, 141.33], "flags": ["clickable", "focusable"]},
+              {"class": "android.widget.EditText", "id": "searchScreenInput", "desc": "Search", "text": "nobel", "bounds": [92.95, 102.48, 383.62, 146.67], "flags": ["clickable", "focusable", "focused", "editable"]},
+              {"class": "android.widget.Button", "id": "searchTextInputClearBtn", "desc": "Clear search query", "bounds": [362.67, 112, 387.81, 136.76], "flags": ["clickable", "focusable"]}
+            ]},
+            {"class": "android.widget.AbsListView", "bounds": [0, 154.67, 411.43, 914.29], "flags": ["on_top"], "children": [
+              {"class": "android.widget.ScrollView", "bounds": [0, 154.67, 411.43, 843.05], "flags": ["scrollable", "focusable"], "children": [
+                {"class": "android.view.ViewGroup", "bounds": [0, 154.67, 411.43, 431.24], "children": [
+                  {"class": "android.view.ViewGroup", "desc": "Search for “nobel”", "bounds": [0, 154.67, 411.43, 207.24], "flags": ["clickable", "focusable"]},
+                  {"class": "android.view.View", "id": "searchAutoCompleteResult-placeholder-1", "desc": "View placeholder-1's profile", "bounds": [0, 207.24, 411.43, 263.24], "flags": ["clickable", "focusable"], "children": [
+                    {"class": "android.view.View", "desc": "Placeholder Account 1's avatar", "bounds": [12.19, 215.24, 52.19, 255.24], "flags": ["clickable", "focusable"]}
+                  ]},
+                  {"class": "android.view.View", "id": "searchAutoCompleteResult-placeholder-2", "desc": "View placeholder-2's profile", "bounds": [0, 263.24, 411.43, 319.24], "flags": ["clickable", "focusable"], "children": [
+                    {"class": "android.view.View", "desc": "Placeholder Account 2's avatar", "bounds": [12.19, 271.24, 52.19, 311.24], "flags": ["clickable", "focusable"]}
+                  ]},
+                  {"class": "android.view.View", "id": "searchAutoCompleteResult-placeholder-3", "desc": "View placeholder-3's profile", "bounds": [0, 319.24, 411.43, 375.24], "flags": ["clickable", "focusable"], "children": [
+                    {"class": "android.view.View", "desc": "Placeholder Account 3's avatar", "bounds": [12.19, 327.24, 52.19, 367.24], "flags": ["clickable", "focusable"]}
+                  ]},
+                  {"class": "android.view.View", "id": "searchAutoCompleteResult-placeholder-4", "desc": "View placeholder-4's profile", "bounds": [0, 375.24, 411.43, 431.24], "flags": ["clickable", "focusable"], "children": [
+                    {"class": "android.view.View", "desc": "Placeholder Account 4's avatar", "bounds": [12.19, 383.24, 52.19, 423.24], "flags": ["clickable", "focusable"]}
+                  ]}
+                ]}
+              ]}
+            ]},
+            {"class": "android.view.ViewGroup", "bounds": [0, 154.67, 411.43, 914.29], "children": [
+              {"class": "android.widget.ScrollView", "bounds": [0, 154.67, 411.43, 914.29], "flags": ["scrollable", "focusable"], "children": [
+                {"class": "android.view.ViewGroup", "bounds": [0, 154.67, 411.43, 914.29], "children": [
+                  {"class": "android.view.ViewGroup", "bounds": [0, 155.05, 411.43, 283.81]},
+                  {"class": "android.widget.Button", "desc": "Placeholder explore action", "bounds": [370.29, 163.05, 403.43, 195.81], "flags": ["clickable", "focusable", "on_top"]},
+                  {"class": "android.view.View", "desc": "Placeholder interests action", "bounds": [16, 234.29, 395.43, 267.43], "flags": ["clickable", "focusable", "on_top"]},
+                  {"class": "android.widget.Button", "desc": "Placeholder section action", "bounds": [366.48, 309.71, 399.62, 342.86], "flags": ["clickable", "focusable"]},
+                  {"repeat": [1, 5], "layout": {"rows": {"left": 0, "top": 355.05, "right": 411.43, "height": 110.86}},
+                   "node": {"class": "android.view.View", "id": "placeholder-topic-{n}", "desc": "Placeholder topic {n}", "flags": ["clickable", "focusable"]}},
+                  {"class": "android.widget.Button", "desc": "Placeholder action under the tab bar", "bounds": [16, 860.19, 37.33, 881.9], "flags": ["clickable", "focusable"]},
+                  {"class": "android.widget.Button", "desc": "Placeholder off-screen action", "bounds": [366.48, 945.52, 399.62, 914.29], "flags": ["clickable", "focusable"], "off": ["visible"]},
+                  {"class": "android.widget.Button", "desc": "Placeholder load more", "bounds": [0, 1864, 411.43, 914.29], "flags": ["clickable", "focusable"], "off": ["visible"]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"class": "android.view.ViewGroup", "bounds": [0, 843.05, 411.43, 914.29], "flags": ["on_top"], "children": [
+          {"class": "android.widget.Button", "id": "bottomBarHomeBtn", "desc": "Home", "bounds": [8, 843.43, 87.24, 890.29], "flags": ["clickable", "focusable"]},
+          {"class": "android.widget.Button", "desc": "Search", "bounds": [87.24, 843.43, 166.1, 890.29], "flags": ["clickable", "focusable", "selected"]},
+          {"class": "android.widget.Button", "id": "bottomBarMessagesBtn", "desc": "Chat", "bounds": [166.1, 843.43, 245.33, 890.29], "flags": ["clickable", "focusable"]},
+          {"class": "android.widget.Button", "id": "bottomBarNotificationsBtn", "desc": "Notifications", "bounds": [245.33, 843.43, 324.19, 890.29], "flags": ["clickable", "focusable"]},
+          {"class": "android.widget.Button", "id": "bottomBarProfileBtn", "desc": "Profile", "bounds": [324.19, 843.43, 403.43, 890.29], "flags": ["clickable", "focusable"]}
+        ]}
+      ]}
+    }
+  ]
+}

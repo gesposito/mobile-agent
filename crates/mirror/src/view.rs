@@ -28,7 +28,11 @@
 //!    screen under an alert (spike S4); keyboard windows are collapsed;
 //! 8. a view marked modal inside its window (the `modal` node flag, a view
 //!    an iOS app marks `accessibilityViewIsModal`) cuts what its siblings
-//!    hold within its bounds (task 10.22).
+//!    hold within its bounds (task 10.22);
+//! 9. a view drawn over the siblings it overlaps (the `on_top` node flag,
+//!    which the Android agent sets from the order a parent draws its
+//!    children in) cuts what they hold within its bounds when it shows
+//!    something (task 10.28).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -91,9 +95,10 @@ impl View {
             .collect();
         let modal = cut(replica, &mut windows);
         let view_modal = cover_by_modal_views(replica, &mut windows);
+        let drawn_over = cover_by_views_on_top(replica, &mut windows);
         View {
             windows,
-            modal: modal.or(view_modal),
+            modal: modal.or(view_modal).or(drawn_over),
         }
     }
 }
@@ -497,11 +502,97 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<S
                 stack.extend(window.nodes[d].children.iter().copied());
             }
             if hid && label.is_none() {
-                label = Some(modal_view_label(&facts[w][m]));
+                label = Some(cover_label(&facts[w][m], "modal view"));
             }
         }
     }
     label
+}
+
+/// Hides what each view drawn over its siblings covers in its window (a node
+/// with the `on_top` flag, which the Android agent sets on a node drawn after
+/// every sibling its bounds overlap, from the order the platform reports a
+/// parent draws its children in): the nodes of its siblings that lie within
+/// its bounds, as Bluesky's typeahead and recent searches lie over the
+/// Explore page, both with the same bounds, the platform listing the
+/// typeahead first (task 10.28). The platform reports no occlusion inside a
+/// window, so the page's rows read as on screen, and a tap on one lands on
+/// the typeahead. Only a view that shows something hides what it
+/// covers, one holding a node on screen, itself or below it, with a ref or
+/// a name: a plain view the agent flags, such as the decoration Bluesky
+/// draws over a video, can be transparent, and nothing in the tree tells a
+/// transparent view from a drawn one. A node is judged by its own bounds and
+/// only when it has an area, since Android clips a node's bounds to its
+/// ancestors' and leaves one scrolled out of its list with none, so that the
+/// rows below a list keep counting in its hint under a tab bar drawn over
+/// its bottom. Returns the label of the first such view that hid anything.
+fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
+    let slack = if replica.scale > 0.0 {
+        1.0 / replica.scale
+    } else {
+        1.0
+    };
+    let mut label = None;
+    for (w, window) in replica.windows.iter().enumerate() {
+        let on_top = |i: usize| window.nodes[i].flags.contains(NodeFlags::ON_TOP);
+        if window.kind == WindowType::INPUT_METHOD || !(0..window.nodes.len()).any(on_top) {
+            continue;
+        }
+        let shows = showing(window, &facts[w]);
+        for s in 0..window.nodes.len() {
+            let f = &facts[w][s];
+            if !on_top(s) || !shows[s] || !f.visible || f.hidden != Hidden::No {
+                continue;
+            }
+            let Some(parent) = window.nodes[s].parent else {
+                continue;
+            };
+            let area = f.rect;
+            let mut hid = false;
+            let mut stack: Vec<usize> = window.nodes[parent]
+                .children
+                .iter()
+                .copied()
+                .filter(|&sibling| sibling != s)
+                .collect();
+            while let Some(d) = stack.pop() {
+                let covered = &mut facts[w][d];
+                // What a node holds lies within its bounds as Android
+                // clips them, so a node without an area in the view's
+                // bounds holds nothing there either.
+                if !covered.rect.overlaps(&area) {
+                    continue;
+                }
+                if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
+                    covered.hidden = Hidden::Covered;
+                    hid = true;
+                }
+                stack.extend(window.nodes[d].children.iter().copied());
+            }
+            if hid && label.is_none() {
+                label = Some(cover_label(&facts[w][s], "overlay"));
+            }
+        }
+    }
+    label
+}
+
+/// Whether each node of `window`, or a node below it, is on screen with a
+/// ref or a name.
+fn showing(window: &Win, facts: &[Facts]) -> Vec<bool> {
+    let mut shows: Vec<bool> = facts
+        .iter()
+        .map(|f| f.visible && (f.bears_ref || !f.name.is_empty()))
+        .collect();
+    // Children come after their parent in the pre-order.
+    for i in (0..window.nodes.len()).rev() {
+        if shows[i]
+            && let Some(parent) = window.nodes[i].parent
+        {
+            shows[parent] = true;
+        }
+    }
+    shows
 }
 
 /// Whether `inner` lies within `outer`, to within `slack` on each side.
@@ -512,13 +603,14 @@ fn within(inner: &Rect, outer: &Rect, slack: f64) -> bool {
         && inner.bottom <= outer.bottom + slack
 }
 
-/// How errors name a view marked modal: by its role and name, or as a modal
-/// view when it says neither, as a plain container.
-fn modal_view_label(facts: &Facts) -> String {
+/// How errors name a view that covers what lies under it: by its role and
+/// name, or as `noun` (a modal view, an overlay) when it says neither, as a
+/// plain container.
+fn cover_label(facts: &Facts, noun: &str) -> String {
     let plain = matches!(facts.role, Role::Generic | Role::Group);
     match (plain, facts.name.is_empty()) {
-        (true, true) => "modal view".to_owned(),
-        (true, false) => format!("modal view {:?}", facts.name),
+        (true, true) => noun.to_owned(),
+        (true, false) => format!("{noun} {:?}", facts.name),
         (false, true) => facts.role.to_string(),
         (false, false) => format!("{} {:?}", facts.role, facts.name),
     }

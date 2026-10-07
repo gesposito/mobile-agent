@@ -459,6 +459,169 @@ fn acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code() {
     assert!(target.inputs().is_empty());
 }
 
+/// Task 10.28: on Android a view drawn over its siblings hides what it
+/// covers, as Bluesky draws its typeahead over the Explore page. The two
+/// have the same bounds and the platform lists the typeahead first, so only
+/// the order they are drawn in tells, which the agent passes on as the
+/// `on_top` flag. The page's controls under the typeahead get no refs, and
+/// the page's scroll hint goes with them; the header beside it and the tab
+/// bar drawn over the screen's bottom stay.
+#[test]
+fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
+    let (_, mut mirror) = mirror_on("bluesky-typeahead-android");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    for covered in [
+        "Placeholder explore action",
+        "Placeholder interests action",
+        "Placeholder section action",
+        "Placeholder topic 1",
+        "Placeholder topic 5",
+    ] {
+        assert!(
+            snapshot.by_name(covered).is_none(),
+            "{covered} lies under the typeahead:\n{}",
+            snapshot.text
+        );
+    }
+    assert!(snapshot.hints.is_empty(), "{:?}", snapshot.hints);
+    for kept in [
+        "Open drawer menu",
+        "Cancel search",
+        "Search for “nobel”",
+        "Placeholder Account 4's avatar",
+    ] {
+        assert!(
+            snapshot.by_name(kept).is_some(),
+            "{kept}:\n{}",
+            snapshot.text
+        );
+    }
+    for kept in [
+        "searchScreenInput",
+        "searchTextInputClearBtn",
+        "searchAutoCompleteResult-placeholder-1",
+        "searchAutoCompleteResult-placeholder-4",
+        "bottomBarHomeBtn",
+        "bottomBarProfileBtn",
+    ] {
+        assert!(
+            snapshot.by_identifier(kept).is_some(),
+            "{kept}:\n{}",
+            snapshot.text
+        );
+    }
+    assert_eq!(
+        snapshot.refs().len(),
+        18,
+        "4 in the header, 9 in the typeahead, 5 in the tab bar:\n{}",
+        snapshot.text
+    );
+}
+
+/// The Bluesky typeahead fixture on Android without its typeahead.
+fn without_typeahead(screen: &Screen) -> Screen {
+    fn prune(node: &mut serde_json::Value) {
+        if let Some(children) = node
+            .get_mut("children")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            children.retain(|child| child["class"] != "android.widget.AbsListView");
+            children.iter_mut().for_each(prune);
+        }
+    }
+    let mut value = screen.0.clone();
+    for window in value["windows"].as_array_mut().expect("windows") {
+        prune(&mut window["root"]);
+    }
+    Screen(value)
+}
+
+#[test]
+fn acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code() {
+    let screen = Screen::load("bluesky-typeahead-android");
+    let target = FakeTarget::new(without_typeahead(&screen).read());
+    target.at(ms(100), Step::Show(screen.read()));
+    target.at(
+        ms(100),
+        Step::Event(EventPayload::Tree(TreeChange {
+            change: TreeChangeKind::CONTENT,
+            window: 1,
+            path: vec![0],
+        })),
+    );
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    let topic = before
+        .by_identifier("placeholder-topic-1")
+        .expect("listed while nothing covers it")
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(200))).unwrap();
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(topic),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED);
+    assert!(error.to_string().contains("overlay"), "{error}");
+    assert_eq!(
+        mirror.resolve(topic).unwrap().identifier.as_deref(),
+        Some("placeholder-topic-1"),
+        "the covered element keeps its ref"
+    );
+    assert!(target.inputs().is_empty());
+}
+
+/// With the typeahead gone the tab bar, drawn over the screen's bottom,
+/// hides what lies wholly under it and nothing more: the topic row it
+/// overlaps stays, and so do the rows scrolled out of the page, which
+/// Android gives bounds clipped to nothing, in the page's hint.
+#[test]
+fn a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint() {
+    let screen = without_typeahead(&Screen::load("bluesky-typeahead-android"));
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        snapshot
+            .by_name("Placeholder action under the tab bar")
+            .is_none(),
+        "{}",
+        snapshot.text
+    );
+    for kept in ["Placeholder explore action", "Placeholder topic 5"] {
+        assert!(
+            snapshot.by_name(kept).is_some(),
+            "{kept}:\n{}",
+            snapshot.text
+        );
+    }
+    let hints: Vec<_> = snapshot
+        .hints
+        .iter()
+        .map(|h| (h.direction, h.count))
+        .collect();
+    assert_eq!(hints, [(Direction::Below, Some(2))], "{}", snapshot.text);
+}
+
+/// A view drawn over its siblings that shows nothing, neither a ref nor a
+/// name, as the decoration Bluesky draws over a video, hides nothing.
+#[test]
+fn a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing() {
+    let (_, mut mirror) = mirror_on_json(json!([
+        {"class": "android.view.ViewGroup", "bounds": [70, 460, 324, 912], "children": [
+            {"class": "android.widget.Button", "desc": "Play video", "bounds": [70, 460, 324, 912], "flags": ["clickable"]},
+            {"class": "android.view.ViewGroup", "bounds": [70, 460, 324, 912], "flags": ["on_top"]}
+        ]}
+    ]));
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        "- button \"Play video\" [ref=e1]"
+    );
+}
+
 #[test]
 fn a_system_alert_reports_system_ui_as_the_foreground() {
     let (_, mut mirror) = mirror_on("system-alert");

@@ -121,7 +121,9 @@ Conventions a driver follows:
   window that cuts the application windows below it. The `modal` node flag
   marks a view the platform marks modal inside its window, which the
   Simulator's reader finds for a view an iOS app marks
-  `accessibilityViewIsModal`.
+  `accessibilityViewIsModal`, and the `on_top` node flag a node drawn after
+  every sibling its bounds overlap, which the Android agent tells from the
+  order a parent draws its children in (task 10.28).
   An input-method window's bounds are what the keyboard covers, as the
   Android agent gives them, the pieces of the window's touchable region
   that hold what it shows (task 10.25), and as the Simulator's reader gives
@@ -245,7 +247,20 @@ also counts).
   header is beside its typeahead, a sibling only because React Native
   flattens the views between them. Each node is judged by its own bounds,
   and acting on a covered one fails with `element_covered`, naming the view
-  by its role and name, or `modal view` when it has neither.
+  by its role and name, or `modal view` when it has neither. On Android a
+  node drawn over the siblings it overlaps (the `on_top` node flag) cuts
+  what they hold within its bounds when it shows something, a node on
+  screen with a ref or a name in it or below it (task 10.28): Android
+  reports no occlusion inside a window and lists a view group's children
+  by where they lie, so Bluesky's typeahead and the Explore page under it,
+  both with the same bounds, read as siblings with the typeahead first. A
+  view drawn over others that shows nothing, such as the decoration Bluesky
+  draws over a video, may be transparent and hides nothing, and only a node
+  with an area is judged, since Android gives a node scrolled out of its
+  list bounds clipped to nothing: those rows keep counting in their list's
+  hint under the tab bar drawn over the list's bottom, which hides only
+  what lies wholly under it. Acting on a covered element names the view by
+  its role and name, or as an `overlay` when it is a plain container.
 - Scroll hints come from actionable nodes outside a container's viewport when
   the read has them, and from the container's scroll semantics otherwise
   (Compose reports only the nodes in the viewport): a range with a position
@@ -421,6 +436,7 @@ apps, in device points with the scale beside them:
 | `bluesky-hosting` | Bluesky's hosting provider sheet: Automatic and Manual as labelled `Other`s over static text, Dismiss as a labelled leaf, Done a button |
 | `bluesky-language` | Bluesky's language selector: 16 rows as labelled `Other`s over static text, 10 in the viewport |
 | `bluesky-typeahead` | Bluesky's search screen with the keyboard up and its typeahead flagged `modal` over the Explore page, the header a sibling outside it (names replaced) |
+| `bluesky-typeahead-android` | the same screen on Android: the typeahead an `AbsListView` flagged `on_top` over the Explore page, both with the same bounds, the header and the tab bar flagged too, rows scrolled out of the page clipped to nothing (names replaced) |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -545,3 +561,4 @@ cargo test -p mirror
 | (task 10.21, the keyboard over an iOS app) | (only what its input views cover is cut) | `visibility::the_ios_keyboard_cuts_from_its_prediction_bar_down`, and in the Simulator's reader `elements::tests::the_keyboard_window_covers_the_input_views_it_holds_not_the_screen`, `elements::tests::a_keyboard_sliding_in_covers_only_its_part_on_screen`, `elements::tests::a_keyboard_window_that_shows_nothing_covers_nothing` |
 | (task 10.22, a view marked modal inside its window) | (what it covers is cut, what lies outside it stays) | `interactive::a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it`, `interactive::acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code`, and in the Simulator's reader `elements::tests::a_read_honouring_modal_views_that_left_children_out_was_pruned`, `elements::tests::the_view_a_pruned_read_kept_is_marked_modal_in_the_whole_read`, `elements::tests::a_kept_view_that_moved_between_the_reads_is_found_by_what_it_holds`, `elements::tests::nothing_is_marked_when_the_reads_disagree` |
 | (task 10.25, the keyboard over an Android app) | (a floating toolbar cuts no list it does not span) | `visibility::gboard_s_floating_toolbar_leaves_the_rows_beside_and_below_it_in_view`, and in the Android agent the checks of `agent-android/unit-test/KeyboardAreaTest.kt` |
+| (task 10.28, a view drawn over its siblings on Android) | (what it covers is cut when it shows something; a node without an area is not judged) | `interactive::a_view_drawn_over_its_siblings_on_android_hides_what_it_covers`, `interactive::acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code`, `interactive::a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint`, `interactive::a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing`, and in the Android agent the checks of `agent-android/unit-test/StackingTest.kt` |

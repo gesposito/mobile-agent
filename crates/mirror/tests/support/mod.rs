@@ -595,6 +595,7 @@ fn node_flag(name: &str) -> NodeFlags {
         "visible" => NodeFlags::VISIBLE,
         "accessibility_focused" => NodeFlags::ACCESSIBILITY_FOCUSED,
         "modal" => NodeFlags::MODAL,
+        "on_top" => NodeFlags::ON_TOP,
         other => panic!("unknown node flag {other}"),
     }
 }
