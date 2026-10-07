@@ -10,6 +10,9 @@
 //! passes through the view unseen. The mirror tells the visible bounds of
 //! the scroll container a stroke through a point moves, as an element
 //! inside it sees them.
+//!
+//! Task 10.32: where a stroke may come down. The mirror tells what of an
+//! area the system and keyboard windows above it leave uncovered.
 
 mod support;
 
@@ -17,7 +20,8 @@ use std::time::Duration;
 
 use mirror::testing::FakeTarget;
 use mirror::{
-    Condition, Direction, ElementId, Mirror, MirrorConfig, Point, Rect, Selector, Visibility,
+    Condition, Direction, ElementId, Mirror, MirrorConfig, Point, Rect, Selector, Uncovered,
+    Visibility,
 };
 use serde_json::{Value, json};
 use support::Screen;
@@ -529,6 +533,166 @@ fn a_stroke_moves_the_innermost_container_that_scrolls_along_its_axis() {
         mirror.scroll_viewport(inside, true),
         Some(Rect::new(0.0, 72.0, 408.0, 840.0)),
         "along the list"
+    );
+}
+
+/// The Android keyboard's window over the screen from 600 points down,
+/// flagged as `flags` say.
+fn android_keyboard(flags: Value) -> Value {
+    json!({
+        "id": 5, "kind": "input_method", "layer": 4, "package": "com.google.android.inputmethod.latin",
+        "title": "Keyboard", "bounds": [0, 600, 408, 912], "owner": "com.google.android.inputmethod.latin",
+        "flags": flags,
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 600, 408, 912]}
+    })
+}
+
+/// Task 10.32: a stroke that comes down on a system bar or the keyboard goes
+/// to that window, and Gboard took the strokes of a scroll across its keys
+/// for glide typing. What of an area a stroke may go through is the area
+/// less the system and input-method windows above the window it lies in,
+/// each cutting it as a bar cuts visible bounds: the screen of an app less
+/// the status bar, the navigation bar and the keyboard above its window,
+/// even while the keyboard's window is the active one, as Android flags the
+/// window a finger touches; a row half under the keyboard less that half,
+/// nothing of a row under it, and all of a row above it.
+#[test]
+fn a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area() {
+    let list = json!({
+        "class": "android.widget.ScrollView", "id": "list", "bounds": [0, 0, 408, 912],
+        "flags": ["scrollable"], "scroll": {"axis": "vertical", "back": true, "forward": true},
+        "children": rows("android.view.ViewGroup", 0.0, 30, [0.0, 0.0, 408.0, 912.0], true)
+    });
+    let navigation_bar = json!({
+        "id": 3, "kind": "system", "layer": 3, "package": "com.android.systemui",
+        "title": "Navigation bar", "bounds": [0, 864, 408, 912], "owner": "com.android.systemui",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 864, 408, 912]}
+    });
+    let screen = Rect::new(0.0, 0.0, 408.0, 912.0);
+    let bare = mirror_showing(&android(vec![
+        status_bar(),
+        navigation_bar.clone(),
+        app_window(vec![list.clone()]),
+    ]));
+    assert_eq!(
+        bare.uncovered(screen, None),
+        Uncovered {
+            area: Rect::new(0.0, 24.0, 408.0, 864.0),
+            keyboard: false
+        }
+    );
+
+    let mut typing = mirror_showing(&android(vec![
+        android_keyboard(json!([])),
+        status_bar(),
+        navigation_bar.clone(),
+        app_window(vec![list.clone()]),
+    ]));
+    let above_the_keyboard = Uncovered {
+        area: Rect::new(0.0, 24.0, 408.0, 600.0),
+        keyboard: true,
+    };
+    assert_eq!(typing.uncovered(screen, None), above_the_keyboard);
+    // Row 13 spans [576, 624], half under the keyboard; row 14, [624, 672],
+    // under it; row 3, [96, 144], above it.
+    let row = |mirror: &mut Mirror, identifier: &str| {
+        let id = element(mirror, identifier);
+        let bounds = mirror.visibility(id).expect("the row").bounds;
+        mirror.uncovered(bounds, Some(id))
+    };
+    assert_eq!(
+        row(&mut typing, "row-13"),
+        Uncovered {
+            area: Rect::new(0.0, 576.0, 408.0, 600.0),
+            keyboard: true
+        }
+    );
+    let under = row(&mut typing, "row-14");
+    assert!(under.area.is_empty() && under.keyboard, "{under:?}");
+    assert_eq!(
+        row(&mut typing, "row-3"),
+        Uncovered {
+            area: Rect::new(0.0, 96.0, 408.0, 144.0),
+            keyboard: false
+        }
+    );
+
+    let mut touched = app_window(vec![list]);
+    touched["flags"] = json!([]);
+    let touching = mirror_showing(&android(vec![
+        android_keyboard(json!(["active"])),
+        status_bar(),
+        navigation_bar,
+        touched,
+    ]));
+    assert_eq!(touching.uncovered(screen, None), above_the_keyboard);
+}
+
+/// Task 10.32: the windows above the screen are those above the window in
+/// front. On a Simulator the keyboard's window, which the reader bounds by
+/// what it draws (task 10.21), leaves the screen above its prediction bar;
+/// Gboard's floating toolbar spans no part of the screen and cuts nothing
+/// (task 10.25); and a system window in front, as SpringBoard's home screen,
+/// is the screen's own window, which nothing above cuts.
+#[test]
+fn the_screen_loses_what_the_windows_above_the_one_in_front_cover() {
+    let swiftui = Screen::from_json(json!({
+        "backend": {"name": "simulator-reader", "fallback": false},
+        "scale": 3.0,
+        "windows": [
+            {"id": 9, "kind": "input_method", "layer": 1, "package": "dev.mobileagent.fixture.swiftui",
+             "bounds": [0, 539, 402, 874], "events": false,
+             "root": {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+                 {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 816]}
+             ]}},
+            {"id": 7, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui",
+             "title": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "events": false,
+             "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+                 {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+                     {"class": "XCUIElementTypeTextField", "id": "login-username", "desc": "Username",
+                      "bounds": [16, 78, 386, 112], "flags": ["focused"]}
+                 ]}
+             ]}}
+        ]
+    }));
+    let iphone = Rect::new(0.0, 0.0, 402.0, 874.0);
+    let uncovered = mirror_showing(&swiftui).uncovered(iphone, None);
+    assert!(
+        uncovered.keyboard && close(uncovered.area.bottom, 539.0),
+        "{uncovered:?}"
+    );
+    assert_eq!(uncovered.area.top, 0.0, "{uncovered:?}");
+
+    let toolbar = json!({
+        "id": 14, "kind": "input_method", "layer": 4, "package": "com.google.android.inputmethod.latin",
+        "title": "Gboard", "bounds": [8, 342.1, 64.38, 604.95], "owner": "com.google.android.inputmethod.latin",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [8, 342.1, 64.38, 604.95]}
+    });
+    let floating = mirror_showing(&android(vec![toolbar, status_bar(), app_window(vec![])]));
+    assert_eq!(
+        floating.uncovered(Rect::new(0.0, 0.0, 408.0, 912.0), None),
+        Uncovered {
+            area: Rect::new(0.0, 24.0, 408.0, 912.0),
+            keyboard: false
+        }
+    );
+
+    let home = Screen::from_json(json!({
+        "backend": {"name": "simulator-reader", "fallback": false},
+        "scale": 3.0,
+        "windows": [{
+            "id": 900, "kind": "system", "layer": 0, "package": "com.apple.springboard",
+            "title": "SpringBoard", "bounds": [0, 0, 402, 874], "flags": ["active", "focused"],
+            "owner": "SpringBoard", "events": false,
+            "root": {"class": "XCUIElementTypeApplication", "desc": "SpringBoard", "bounds": [0, 0, 402, 874]}
+        }]
+    }));
+    assert_eq!(
+        mirror_showing(&home).uncovered(iphone, None),
+        Uncovered {
+            area: iphone,
+            keyboard: false
+        }
     );
 }
 

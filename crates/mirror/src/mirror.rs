@@ -25,7 +25,7 @@ use crate::snapshot::{
 use crate::timestamps::Timestamps;
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
-use crate::visibility::{self, Visibility};
+use crate::visibility::{self, Uncovered, Visibility};
 use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
 /// How often a window that sends no change events is re-read when nothing
@@ -546,6 +546,20 @@ impl Mirror {
     pub fn scroll_viewport(&self, at: Point, vertical: bool) -> Option<Rect> {
         let view = View::build(&self.replica);
         visibility::scroller_at(&self.replica, &view, at, vertical)
+    }
+
+    /// What of `area`, in device points, a stroke may go through, as the
+    /// replica has it now, without reading the target (task 10.32): `area`
+    /// less the system and input-method windows above the window of
+    /// `within`, or, when `within` is `None` or gone, above the window in
+    /// front (the active window that is not a keyboard's, else the top-most
+    /// application window), each cutting it as a bar cuts visible bounds
+    /// (see [`Mirror::visibility`]).
+    pub fn uncovered(&self, area: Rect, within: Option<ElementId>) -> Uncovered {
+        let w = within
+            .and_then(|element| self.replica.locate(element))
+            .map(|(w, _)| w);
+        visibility::uncovered(&self.replica, w, area)
     }
 
     /// Where the element `reference` names is in the replica. The element

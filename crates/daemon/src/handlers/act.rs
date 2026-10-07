@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use mirror::backend::Release;
 use mirror::{
-    Action, DEFAULT_QUIET_WINDOW, MirrorError, Point, Rect, Ref, SettleOptions, Target, Timestamps,
-    Visibility,
+    Action, DEFAULT_QUIET_WINDOW, ElementId, MirrorError, Point, Rect, Ref, SettleOptions, Target,
+    Timestamps, Visibility,
 };
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
@@ -16,7 +16,9 @@ use super::view::element_json;
 use super::{millis, timeout};
 use crate::driver::Platform;
 use crate::keys;
-use crate::wire::code::{self, INPUT_REJECTED, STROKE_TOO_SHORT, TEXT_MISMATCH};
+use crate::wire::code::{
+    self, COVERED_BY_KEYBOARD, INPUT_REJECTED, STROKE_TOO_SHORT, TEXT_MISMATCH,
+};
 use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
 
@@ -782,6 +784,78 @@ fn screen(target: &mut Attached) -> Result<Rect, Failure> {
     Ok(Rect::new(0.0, 0.0, size.width, size.height))
 }
 
+/// What a scroll strokes: an element, or the screen.
+struct Scrolled {
+    /// Its bounds, in points.
+    bounds: Rect,
+    /// The element; `None` for the screen.
+    element: Option<ElementId>,
+    /// How messages name it: the element as the command gave it, or the
+    /// screen.
+    name: String,
+}
+
+/// A rectangle's extent along the vertical axis, or the horizontal one.
+fn extent(rect: &Rect, vertical: bool) -> f64 {
+    let (start, end) = along(rect, vertical);
+    (end - start).max(0.0)
+}
+
+/// The longest stroke along the vertical axis, or the horizontal one, that
+/// `area` takes: [`MAX_STROKE`] of its extent, and a point at least.
+fn longest_in(area: &Rect, vertical: bool) -> f64 {
+    (extent(area, vertical) * MAX_STROKE).max(1.0)
+}
+
+/// What of `scrolled` a stroke along the vertical axis, or the horizontal
+/// one, goes through: its bounds less the system and input-method windows
+/// above it (`Mirror::uncovered`), so no stroke comes down on a system bar
+/// or a keyboard across it. A keyboard takes a stroke that comes down on
+/// its keys for typing: on a Nexus 5X with Gboard up, `scroll --until`
+/// stroked across the keyboard 50 times, and glide typing entered text into
+/// the focused field 49 times (task 10.32). A window cuts the bounds as it
+/// cuts visible bounds, only where it spans them from one side to the
+/// other, so one floating inside them, as Gboard's stylus toolbar, cuts
+/// nothing. Fails with `covered_by_keyboard`, after `strokes` strokes,
+/// when the keyboard leaves too little of them for a stroke longer than a
+/// tap, where the bounds alone take one.
+fn stroke_area(
+    target: &Attached,
+    scrolled: &Scrolled,
+    vertical: bool,
+    strokes: u32,
+) -> Result<Rect, Failure> {
+    let uncovered = target.mirror.uncovered(scrolled.bounds, scrolled.element);
+    let platform = target.info.platform;
+    let slop = tap_slop(platform);
+    if uncovered.keyboard
+        && longest_in(&uncovered.area, vertical) <= slop
+        && longest_in(&scrolled.bounds, vertical) > slop
+    {
+        let covered = if uncovered.area.is_empty() {
+            format!("the keyboard covers {}", scrolled.name)
+        } else {
+            format!(
+                "the keyboard covers all but {} points of {}, too few for a stroke longer than a tap",
+                points(extent(&uncovered.area, vertical)),
+                scrolled.name
+            )
+        };
+        let close = match platform {
+            Platform::Android => "press Back to close the keyboard",
+            Platform::Ios => "close the keyboard, as the field's return key does in most apps",
+        };
+        return Err(Failure::new(
+            COVERED_BY_KEYBOARD,
+            format!(
+                "{covered}, and a stroke that came down on the keyboard would type rather than scroll; {close}, then scroll again"
+            ),
+        )
+        .with_data(json!({"strokes": strokes})));
+    }
+    Ok(uncovered.area)
+}
+
 fn point_param(request: &Request, key: &str) -> Result<Option<Point>, Failure> {
     match request.params.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -829,33 +903,50 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
 pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let direction = Direction::parse(request.str("direction").unwrap_or("down"))?;
     let amount = request.f64("amount")?.unwrap_or(DEFAULT_DISTANCE);
-    let area = match request.str("target") {
+    let scrolled = match request.str("target") {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            aim::element(target, session, &aim, timeout(request)?)?.bounds
+            let element = aim::element(target, session, &aim, timeout(request)?)?;
+            Scrolled {
+                bounds: element.bounds,
+                element: Some(element.id),
+                name: given.to_owned(),
+            }
         }
-        None => screen(target)?,
+        None => {
+            // The replica takes in what arrived, a keyboard that came up
+            // included, before it says where the strokes may come down.
+            target.mirror.pump()?;
+            Scrolled {
+                bounds: screen(target)?,
+                element: None,
+                name: "the screen".to_owned(),
+            }
+        }
     };
-    let extent = if direction.vertical() {
-        area.height()
-    } else {
-        area.width()
-    };
+    let vertical = direction.vertical();
+    let area = stroke_area(target, &scrolled, vertical, 0)?;
     // The content moves in the direction, so the finger moves the other way;
     // a long scroll takes several strokes, none of them short enough to be a
     // tap.
-    let longest = (extent * MAX_STROKE).max(1.0);
+    let longest = longest_in(&area, vertical);
     let platform = target.info.platform;
     if let Some(until) = request.str("until") {
         let step = amount.max(1.0).min(longest);
         check_stroke(platform, step, amount, longest)?;
-        return scroll_until(target, session, request, (area, direction, step), until);
+        return scroll_until(
+            target,
+            session,
+            request,
+            (&scrolled, direction, amount),
+            until,
+        );
     }
     let (count, step) = split(amount.max(0.0), longest);
     check_stroke(platform, step, amount, longest)?;
+    let (from, to) = stroke(area, direction.opposite(), step);
     let mut strokes = 0u32;
     while strokes < count {
-        let (from, to) = stroke(area, direction.opposite(), step);
         let outcome = target.mirror.act(&Action::Swipe {
             from,
             to,
@@ -872,6 +963,8 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
         "direction": direction.name(),
         "amount": amount,
         "strokes": strokes,
+        "from": at(from),
+        "to": at(to),
     })))
 }
 
@@ -977,14 +1070,10 @@ fn decide(seen: &Visibility, vertical: bool, step: f64, slop: f64) -> Next {
 /// or of `area` when there is none or it shows nothing, with the slop added,
 /// since the content moves only once the finger has gone that far.
 fn search_stroke(step: f64, viewport: Option<Rect>, area: Rect, vertical: bool, slop: f64) -> f64 {
-    let extent = |rect: &Rect| {
-        let (start, end) = along(rect, vertical);
-        end - start
-    };
     let shown = viewport
-        .map(|viewport| extent(&viewport))
+        .map(|viewport| extent(&viewport, vertical))
         .filter(|&shown| shown > 0.0)
-        .unwrap_or_else(|| extent(&area));
+        .unwrap_or_else(|| extent(&area, vertical));
     (REACH * shown + slop).min(step)
 }
 
@@ -1018,39 +1107,48 @@ fn in_view(seen: &Visibility) -> String {
     }
 }
 
-/// Scrolls `direction` inside `area` in strokes of at most `step` points
+/// Scrolls `scrolled` `direction` in strokes of at most `amount` points
 /// until the element `until` names is on screen, not covered and mostly in
 /// view (see [`mostly_in_view`]), letting the screen settle after each
-/// stroke so a check never races a moving list. Every stroke comes to rest
-/// before the finger lifts, so the content goes no farther than the finger,
-/// and a stroke that looks for the element carries the content at most
-/// [`REACH`] of what the scroll container it moves shows (see
-/// [`search_stroke`]), so the element cannot pass through the container
-/// between two looks. Once the element is on screen, each further stroke
-/// brings it in rather than going on by the step (see [`decide`]). Fails
-/// with `element_not_found` once the content stops moving or no stroke
-/// along the axis brings more of the element in, after [`UNTIL_STROKES`]
-/// strokes, or at the command's timeout; an element on screen then gives
-/// its share in view as `data.visible`.
+/// stroke so a check never races a moving list. Each stroke goes through
+/// what the system bars and the keyboard leave of `scrolled` as the screen
+/// is then (see [`stroke_area`]), since a stroke can bring the keyboard up
+/// or send it away, and is at most [`MAX_STROKE`] of that. Every stroke
+/// comes to rest before the finger lifts, so the content goes no farther
+/// than the finger, and a stroke that looks for the element carries the
+/// content at most [`REACH`] of what the scroll container it moves shows
+/// (see [`search_stroke`]), so the element cannot pass through the
+/// container between two looks. Once the element is on screen, each further
+/// stroke brings it in rather than going on by the step (see [`decide`]).
+/// Fails with `element_not_found` once the content stops moving or no
+/// stroke along the axis brings more of the element in, after
+/// [`UNTIL_STROKES`] strokes, or at the command's timeout; an element on
+/// screen then gives its share in view as `data.visible`.
 fn scroll_until(
     target: &mut Attached,
     session: &str,
     request: &Request,
-    (area, direction, step): (Rect, Direction, f64),
+    (scrolled, direction, amount): (&Scrolled, Direction, f64),
     until: &str,
 ) -> Outcome {
     let aim = Aim::parse(until)?;
     let deadline = Instant::now() + timeout(request)?;
     let vertical = direction.vertical();
-    let slop = tap_slop(target.info.platform);
+    let platform = target.info.platform;
+    let slop = tap_slop(platform);
     let mut strokes = 0u32;
     let mut still = 0u32;
+    let mut last = None;
     loop {
         target.catch_up()?;
         let found = aim::on_screen(target, session, &aim)?;
         let seen = found
             .as_ref()
             .and_then(|element| target.mirror.visibility(element.id));
+        let area = stroke_area(target, scrolled, vertical, strokes)?;
+        let longest = longest_in(&area, vertical);
+        let step = amount.max(1.0).min(longest);
+        check_stroke(platform, step, amount, longest)?;
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
         let reach = search_stroke(
             step,
@@ -1063,6 +1161,7 @@ fn scroll_until(
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
             }
+            let (from, to) = last.unzip();
             return Ok(Success::new(json!({
                 "scrolled": strokes > 0,
                 "direction": direction.name(),
@@ -1071,6 +1170,8 @@ fn scroll_until(
                 "until": until,
                 "visible": share(seen.fraction),
                 "element": element_json(element),
+                "from": from.map(at),
+                "to": to.map(at),
             })));
         }
         let now = Instant::now();
@@ -1133,6 +1234,7 @@ fn scroll_until(
             return Err(rejected("scroll"));
         }
         strokes += 1;
+        last = Some((from, to));
         target.mirror.settle(&SettleOptions {
             max: UNTIL_SETTLE.min(deadline.saturating_duration_since(Instant::now())),
             ..SettleOptions::default()
@@ -1154,6 +1256,8 @@ fn scroll_until(
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
+
+    use mirror::backend::{BackendError, Input, InputAck, InputSink};
 
     use super::*;
     use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
@@ -1718,5 +1822,152 @@ mod tests {
     fn a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second() {
         assert_eq!(bring_in_duration(44.0), SWIPE_DURATION);
         assert_eq!(bring_in_duration(400.0), Duration::from_secs(1));
+    }
+
+    /// The strokes a target was sent, each from where the finger came down
+    /// to where it lifted, in points.
+    type Strokes = Arc<Mutex<Vec<(Point, Point)>>>;
+
+    /// An input sink that notes every stroke it passes on.
+    struct Noting {
+        inner: Box<dyn InputSink>,
+        strokes: Strokes,
+    }
+
+    impl InputSink for Noting {
+        fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError> {
+            if let Input::Swipe { from, to, .. } = input {
+                self.strokes.lock().unwrap().push((*from, *to));
+            }
+            self.inner.perform(input)
+        }
+    }
+
+    /// A fake Android target with the fixture app open as `open` with `env`
+    /// opens it, its keyboard up over every screen when `keyboard` is set,
+    /// and the strokes it is sent.
+    fn noting_strokes(env: &[&str], keyboard: bool) -> (Attached, Strokes) {
+        let driver = FakeDriver::parse("android")
+            .unwrap()
+            .with_keyboard(keyboard);
+        let info = driver.discover().unwrap().remove(0);
+        let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let strokes = Strokes::default();
+        attachment.backend.input = Box::new(Noting {
+            inner: attachment.backend.input,
+            strokes: Arc::clone(&strokes),
+        });
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let open = json!({"action": "open", "app": FIXTURE, "env": env}).to_string();
+        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        (target, strokes)
+    }
+
+    /// `scroll` as `params` ask it.
+    fn scroll_with(target: &mut Attached, params: Value) -> Outcome {
+        let mut line = json!({"action": "scroll"});
+        line.as_object_mut()
+            .unwrap()
+            .extend(params.as_object().unwrap().clone());
+        super::scroll(target, "default", &request(&line.to_string()))
+    }
+
+    /// Where the fake Android keyboard starts, in points: it covers the
+    /// screen from there down.
+    const KEYBOARD_TOP: f64 = 600.0;
+
+    /// Task 10.32: on a Nexus 5X with Gboard up, `scroll --until` stroked
+    /// across the keyboard 50 times, each stroke starting low on its keys,
+    /// and glide typing entered "by" into the focused field 49 times, so
+    /// the screen never held still and the scroll ran out of strokes. A
+    /// scroll of the screen strokes through what the system bars and the
+    /// keyboard leave of it: with the fake keyboard over the screen below
+    /// 600 points, every stroke keeps above it, the field keeps its text,
+    /// and the scroll that looks for an element that is not there finds the
+    /// screen still after two strokes.
+    #[test]
+    fn a_scroll_of_the_screen_strokes_above_the_keyboard() {
+        let (mut target, strokes) = noting_strokes(&[], false);
+        fill_in(&mut target, "#login-username", "agent").unwrap();
+        for amount in [300.0, 600.0] {
+            scroll_with(&mut target, json!({"direction": "down", "amount": amount})).unwrap();
+        }
+        let until = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": "#row-150", "timeout": 3000}),
+        );
+        let strokes = strokes.lock().unwrap().clone();
+        for (from, to) in &strokes {
+            assert!(
+                from.y < KEYBOARD_TOP && to.y < KEYBOARD_TOP,
+                "every stroke above the keyboard: {strokes:?}"
+            );
+        }
+        assert_eq!(held(&mut target, "#login-username"), "agent");
+        let failure = until.expect_err("no row on the Login tab");
+        assert!(
+            failure.message.contains("the content stopped moving"),
+            "{}",
+            failure.message
+        );
+        assert_eq!(failure.data.unwrap_or_default()["strokes"], 2);
+    }
+
+    /// Task 10.32: a list partly under the keyboard takes strokes only
+    /// through what the keyboard leaves of it, each at most 80% of that
+    /// part's height. With the fake keyboard up over the List tab below 600
+    /// points, `scroll --until` inside the list, which spans 24 to 840
+    /// points, strokes between 24 and 600: 440 points that look for row 25
+    /// (three quarters of the 576 that show, and the tap threshold), and
+    /// 200 that bring it in from under the keyboard.
+    #[test]
+    fn a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it() {
+        let (mut target, strokes) = noting_strokes(&["initial_tab=list"], true);
+        let found = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": "#row-25", "target": "#list"}),
+        );
+        let strokes = strokes.lock().unwrap().clone();
+        for (from, to) in &strokes {
+            assert!(
+                [from.y, to.y].iter().all(|&y| y > 24.0 && y < KEYBOARD_TOP),
+                "every stroke inside the list above the keyboard: {strokes:?}"
+            );
+            assert!(
+                (from.y - to.y).abs() <= 0.8 * (KEYBOARD_TOP - 24.0),
+                "no stroke longer than 80% of what shows: {strokes:?}"
+            );
+        }
+        let data = found.unwrap().data;
+        assert_eq!(data["strokes"], 2, "{data}");
+        assert_eq!(data["amount"], 440.0, "{data}");
+        assert_eq!(data["visible"], 1.0, "{data}");
+        let lengths: Vec<f64> = strokes.iter().map(|(from, to)| from.y - to.y).collect();
+        assert_eq!(lengths, [440.0, 200.0], "{strokes:?}");
+    }
+
+    /// Task 10.32: an element the keyboard covers leaves no room for a
+    /// stroke, so a scroll inside it fails with `covered_by_keyboard`, with
+    /// `until` or without, before it sends any stroke: on the fake, the List
+    /// tab's button under the keyboard while the username field has focus.
+    #[test]
+    fn a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard() {
+        let (mut target, strokes) = noting_strokes(&[], false);
+        fill_in(&mut target, "#login-username", "agent").unwrap();
+        for until in [None, Some("#row-1")] {
+            let mut params = json!({"direction": "down", "amount": 100, "target": "#tab-list"});
+            if let Some(until) = until {
+                params["until"] = until.into();
+            }
+            let failure = scroll_with(&mut target, params).expect_err("the keyboard covers it");
+            assert_eq!(failure.code, "covered_by_keyboard", "{}", failure.message);
+            assert!(
+                failure.message.contains("#tab-list") && failure.message.contains("press Back"),
+                "the message names what the keyboard covers and how to close it: {}",
+                failure.message
+            );
+        }
+        assert!(strokes.lock().unwrap().is_empty());
+        assert_eq!(held(&mut target, "#login-username"), "agent");
     }
 }

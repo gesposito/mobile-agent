@@ -53,7 +53,7 @@ pub use snapshot::{
 };
 pub use timestamps::{ReadSpan, Timestamps};
 pub use verdict::{Degradation, Verdict};
-pub use visibility::Visibility;
+pub use visibility::{Uncovered, Visibility};
 pub use wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
 // A daemon moves each target's mirror to the thread that serves it.

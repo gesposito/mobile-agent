@@ -35,6 +35,10 @@ pub mod code {
     /// A scroll's strokes would be no longer than the platform takes for a
     /// tap, so they would tap what lies under them.
     pub const STROKE_TOO_SHORT: &str = "stroke_too_short";
+    /// The keyboard covers what a scroll strokes, but for too little to
+    /// take a stroke longer than a tap, and a stroke that came down on the
+    /// keyboard would type.
+    pub const COVERED_BY_KEYBOARD: &str = "covered_by_keyboard";
     /// `fill` left other text in the field than it entered, typed and then
     /// entered again in one piece; the message names what the field holds.
     pub const TEXT_MISMATCH: &str = "text_mismatch";

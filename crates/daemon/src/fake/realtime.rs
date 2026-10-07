@@ -347,13 +347,15 @@ impl InputNotes for FakeSession {
 /// how long a launch splash lasts, when its input session activates and
 /// how long detaching it takes. With `fling`, a stroke whose finger lifts
 /// moving glides the list on; `typing` says how its fields take text whose
-/// method the target may choose.
+/// method the target may choose. With `keyboard`, its keyboard stays up
+/// over every screen of the fixture apps.
 pub(crate) fn attach(
     platform: Platform,
     frames: bool,
     timing: Timing,
     fling: bool,
     typing: Typing,
+    keyboard: bool,
 ) -> Attachment {
     let Timing {
         latency,
@@ -362,7 +364,7 @@ pub(crate) fn attach(
         activation,
         stop,
     } = timing;
-    let device = Device::new(platform);
+    let device = Device::new(platform).with_keyboard(keyboard);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
     let target = FakeTarget::new(read(&device.windows(), &device));
@@ -620,7 +622,7 @@ mod tests {
             splash: Duration::from_millis(150),
             ..Timing::default()
         };
-        let mut attachment = attach(Platform::Ios, false, timing, false, Typing::Whole);
+        let mut attachment = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
                 windows: None,
@@ -654,13 +656,13 @@ mod tests {
             at: mirror::Point::new(1.0, 1.0),
             hold: None,
         };
-        let mut cold = attach(Platform::Ios, false, timing, false, Typing::Whole);
+        let mut cold = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert!(cold.input_notes.unwrap().activation_wait().is_some());
 
-        let mut warm = attach(Platform::Ios, false, timing, false, Typing::Whole);
+        let mut warm = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
         assert!(!session.active());
@@ -691,6 +693,7 @@ mod tests {
             },
             false,
             Typing::Whole,
+            false,
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -709,6 +712,7 @@ mod tests {
             Timing::default(),
             false,
             Typing::Whole,
+            false,
         );
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");

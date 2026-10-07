@@ -29,6 +29,14 @@
 //! says how the fixture's fields take text whose method the target may
 //! choose, as `fill` sends it, which they otherwise take whole, as the
 //! Android agent sets it (see [`Typing`]).
+//!
+//! An Android fake shows its keyboard, a window over the screen from 600
+//! points down, while a fixture field has focus, and with
+//! [`FakeDriver::with_keyboard`] over every fixture screen, so a list can
+//! lie partly under it. A stroke that comes down on the keyboard goes to the
+//! keyboard and moves nothing: its glide typing enters a word into the field
+//! in focus, as Gboard took the strokes of a `scroll` that started on its
+//! keys on a Nexus 5X (`reports/10.3-physical-android.md`, finding 4).
 
 mod app;
 mod realtime;
@@ -111,6 +119,9 @@ pub struct FakeDriver {
     fling: bool,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
+    /// Whether an Android fake's keyboard stays up over every fixture
+    /// screen.
+    keyboard: bool,
 }
 
 impl FakeDriver {
@@ -177,6 +188,7 @@ impl FakeDriver {
             controller: EmulatorController::Auto,
             fling: false,
             typing: Typing::Whole,
+            keyboard: false,
         })
     }
 
@@ -234,6 +246,14 @@ impl FakeDriver {
         self.typing = typing;
         self
     }
+
+    /// These targets, the Android ones keeping their keyboard up over every
+    /// screen of the fixture apps when `up` is set, whether or not a field
+    /// has focus.
+    pub fn with_keyboard(mut self, up: bool) -> FakeDriver {
+        self.keyboard = up;
+        self
+    }
 }
 
 /// What `status` shows about a fake Android emulator the switch keeps off
@@ -284,6 +304,7 @@ impl Driver for FakeDriver {
             self.timing,
             self.fling,
             self.typing,
+            self.keyboard,
         );
         if target.class == TargetClass::AndroidEmulator
             && self.controller == EmulatorController::Off

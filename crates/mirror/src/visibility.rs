@@ -24,8 +24,12 @@
 //! The same visible bounds, seen from inside a scroll container, say how
 //! far a stroke through the container may carry its content before an
 //! element passes through them between two looks (task 10.16).
+//!
+//! The same windows, cutting the area a stroke goes through, say where the
+//! stroke may come down without landing on a system bar or the keyboard
+//! (task 10.32).
 
-use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowType};
+use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowFlags, WindowType};
 
 use crate::geometry::{Point, Rect};
 use crate::replica::{Replica, Win};
@@ -49,6 +53,67 @@ pub struct Visibility {
     /// leave out whatever lies beyond. `None` when the bounds end at no such
     /// edge.
     pub cut: Option<Direction>,
+}
+
+/// What of an area a stroke may go through: the area less the system and
+/// input-method windows above the window it lies in (task 10.32), since a
+/// stroke that comes down on one of them goes to that window, and a
+/// keyboard takes a stroke across its keys for typing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Uncovered {
+    /// The area less those windows, each cutting it as a bar cuts visible
+    /// bounds (see [`Visibility::viewport`]): where it spans the area from
+    /// one side to the other and reaches one of its edges, so what is left
+    /// stays a rectangle, empty when one window covers all of it.
+    pub area: Rect,
+    /// Whether an input-method window cut the area.
+    pub keyboard: bool,
+}
+
+/// What of `area` a stroke may go through, when it lies in window `w`, or
+/// in the window in front when `w` is `None`: `area` less the system and
+/// input-method windows above that window, as [`bars`] has them.
+pub(crate) fn uncovered(replica: &Replica, w: Option<usize>, area: Rect) -> Uncovered {
+    let pixel = pixel(replica);
+    let w = w.unwrap_or_else(|| in_front(replica));
+    windows_above(replica, w).fold(
+        Uncovered {
+            area,
+            keyboard: false,
+        },
+        |left, (kind, bar)| {
+            let cut = cut_by(left.area, &bar, pixel);
+            Uncovered {
+                area: cut,
+                keyboard: left.keyboard || (kind == WindowType::INPUT_METHOD && cut != left.area),
+            }
+        },
+    )
+}
+
+/// The window in front: the active window, unless it is a keyboard's,
+/// which Android flags active while a finger touches it; else the top-most
+/// application window; else the bottom-most window.
+fn in_front(replica: &Replica) -> usize {
+    let windows = &replica.windows;
+    windows
+        .iter()
+        .position(|w| w.flags.contains(WindowFlags::ACTIVE) && w.kind != WindowType::INPUT_METHOD)
+        .or_else(|| {
+            windows
+                .iter()
+                .position(|w| w.kind == WindowType::APPLICATION)
+        })
+        .unwrap_or_else(|| windows.len().saturating_sub(1))
+}
+
+/// The system and input-method windows above window `w`, top-most first,
+/// with their kinds and bounds: the bars other windows draw over it.
+fn windows_above(replica: &Replica, w: usize) -> impl Iterator<Item = (WindowType, Rect)> + '_ {
+    replica.windows[..w]
+        .iter()
+        .filter(|above| matches!(above.kind, WindowType::SYSTEM | WindowType::INPUT_METHOD))
+        .map(|above| (above.kind, Rect::from_pixels(above.bounds, replica.scale)))
 }
 
 /// One physical pixel in points: bounds that end within it of an edge end
@@ -205,11 +270,7 @@ fn can_scroll(scroll: Option<Scroll>, side: Direction) -> bool {
 /// bars and toolbars on screen in its window other than those holding it
 /// and those inside its scroll containers, which scroll with it.
 fn bars(replica: &Replica, view: &View, w: usize, i: usize, containers: &[usize]) -> Vec<Rect> {
-    let mut out: Vec<Rect> = replica.windows[..w]
-        .iter()
-        .filter(|above| matches!(above.kind, WindowType::SYSTEM | WindowType::INPUT_METHOD))
-        .map(|above| Rect::from_pixels(above.bounds, replica.scale))
-        .collect();
+    let mut out: Vec<Rect> = windows_above(replica, w).map(|(_, bar)| bar).collect();
     let window = &replica.windows[w];
     let facts = &view.windows[w];
     for (b, f) in facts.iter().enumerate() {

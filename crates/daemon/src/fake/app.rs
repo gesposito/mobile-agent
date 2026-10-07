@@ -11,9 +11,14 @@ use protocol::snapshot::{
 };
 
 use super::Typing;
-use super::tree::{El, Kit, Win};
+use super::tree::{self, El, Kit, Win};
 use crate::driver::{DriverError, Launch, Platform};
 use crate::wire::code;
+
+/// The word the keyboard's glide typing takes a stroke across it for, as
+/// Gboard took each stroke of a `scroll` that started on its keys on a Nexus
+/// 5X (`reports/10.3-physical-android.md`, finding 4).
+const GLIDE_WORD: &str = "by";
 
 /// How text reaches a field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,6 +204,9 @@ pub(crate) struct Device {
     foreground: Foreground,
     fixtures: HashMap<String, Fixture>,
     wifi: bool,
+    /// Whether the keyboard stays up over every screen of the fixture apps,
+    /// whether or not a field has focus.
+    keyboard_up: bool,
 }
 
 impl Device {
@@ -208,7 +216,29 @@ impl Device {
             foreground: Foreground::Launcher,
             fixtures: HashMap::new(),
             wifi: true,
+            keyboard_up: false,
         }
+    }
+
+    /// This device, its keyboard up over every screen of the fixture apps
+    /// when `up` is set.
+    pub fn with_keyboard(mut self, up: bool) -> Device {
+        self.keyboard_up = up;
+        self
+    }
+
+    /// Where the keyboard is, in points, while it shows: over a fixture app
+    /// with a field in focus, or over any fixture screen when it stays up.
+    /// iOS fakes show none.
+    fn keyboard(&self) -> Option<[f64; 4]> {
+        let Foreground::Fixture(app) = &self.foreground else {
+            return None;
+        };
+        let fixture = self.fixtures.get(app)?;
+        if fixture.focus.is_none() && !self.keyboard_up {
+            return None;
+        }
+        self.kit.keyboard().map(|keyboard| keyboard.rect)
     }
 
     fn settings_id(&self) -> &'static str {
@@ -456,15 +486,27 @@ impl Device {
 
     /// A swipe from `from` to `to` in points, after which the list glides
     /// on `glide` points the way the finger went, as far as it scrolls;
-    /// whether the screen changed.
+    /// whether the screen changed. A swipe that comes down on the keyboard
+    /// goes to the keyboard, whose glide typing enters [`GLIDE_WORD`] into
+    /// the field in focus, if any, and moves nothing.
     pub fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
         let before = self.clone();
         let max = max_offset(self.kit);
-        if let Some(fixture) = self.front_fixture()
-            && fixture.tab == Tab::List
-            && fixture.detail.is_none()
-            && !fixture.modal()
-        {
+        let on_keyboard = self
+            .keyboard()
+            .is_some_and(|keyboard| tree::contains(keyboard, from.0, from.1));
+        let Some(fixture) = self.front_fixture() else {
+            return false;
+        };
+        if on_keyboard {
+            if let Some(field) = fixture.focus {
+                let value = fixture.field(field);
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push_str(GLIDE_WORD);
+            }
+        } else if fixture.tab == Tab::List && fixture.detail.is_none() && !fixture.modal() {
             let moved = from.1 - to.1;
             let way = if moved == 0.0 { 0.0 } else { moved.signum() };
             fixture.offset = (fixture.offset + moved + glide * way).clamp(0.0, max);
@@ -488,7 +530,8 @@ impl Device {
                 windows.push(kit.app_window(self.settings_id(), "Settings", content));
             }
             Foreground::Fixture(app) => {
-                fixture_windows(kit, app, &self.fixtures[app], &mut windows);
+                let keyboard = self.keyboard().is_some();
+                fixture_windows(kit, app, &self.fixtures[app], keyboard, &mut windows);
             }
         }
         windows.extend(kit.status_bar());
@@ -664,7 +707,9 @@ fn fixture_title(app: &str) -> &'static str {
     }
 }
 
-fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win>) {
+/// The windows `fixture`, running as `app`, shows, the keyboard among them
+/// when `keyboard` is set.
+fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windows: &mut Vec<Win>) {
     let title = fixture_title(app);
     let (top, bottom) = kit.content();
     let area = [0.0, top, kit.width(), bottom];
@@ -779,9 +824,7 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, windows: &mut Vec<Win
     if windows.iter().any(|w| w.modal) {
         window.flags = WindowFlags::EMPTY;
     }
-    if fixture.focus.is_some()
-        && let Some(keyboard) = kit.keyboard()
-    {
+    if keyboard && let Some(keyboard) = kit.keyboard() {
         windows.insert(0, keyboard);
     }
     windows.push(window);
@@ -1063,5 +1106,47 @@ mod tests {
         assert_eq!(offset(&device), 850.0);
         assert!(device.swipe((204.0, 100.0), (204.0, 700.0), 5000.0));
         assert_eq!(offset(&device), 0.0);
+    }
+
+    /// Task 10.32: a stroke that comes down on the keyboard goes to it, as
+    /// the strokes of a `scroll` went to Gboard on a Nexus 5X: its glide
+    /// typing enters a word into the field in focus, and the list under it
+    /// does not move. A keyboard that stays up shows over the List tab too,
+    /// and a stroke above it moves the list.
+    #[test]
+    fn a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing() {
+        let mut device = Device::new(Platform::Android);
+        device.launch(FIXTURE, &Launch::default()).unwrap();
+        assert!(device.tap(Some("login-username")));
+        assert!(device.swipe((204.0, 700.0), (204.0, 300.0), 0.0));
+        assert!(device.swipe((204.0, 650.0), (204.0, 250.0), 0.0));
+        assert_eq!(device.fixtures[FIXTURE].username, "by by");
+        assert!(
+            !device.swipe((204.0, 500.0), (204.0, 100.0), 0.0),
+            "above the keyboard the Login tab has nothing to scroll"
+        );
+
+        let list = Launch {
+            relaunch: false,
+            env: vec![("initial_tab".into(), "list".into())],
+        };
+        let mut up = Device::new(Platform::Android).with_keyboard(true);
+        up.launch(FIXTURE, &list).unwrap();
+        let keyboard = |device: &Device| {
+            device
+                .windows()
+                .iter()
+                .any(|w| w.kind == protocol::snapshot::WindowType::INPUT_METHOD)
+        };
+        assert!(keyboard(&up), "over the List tab, no field in focus");
+        assert!(!up.swipe((204.0, 700.0), (204.0, 300.0), 0.0));
+        assert!(up.swipe((204.0, 500.0), (204.0, 100.0), 0.0));
+        assert_eq!(up.fixtures[FIXTURE].offset, 400.0);
+
+        let mut down = Device::new(Platform::Android);
+        down.launch(FIXTURE, &list).unwrap();
+        assert!(!keyboard(&down));
+        assert!(down.swipe((204.0, 700.0), (204.0, 300.0), 0.0));
+        assert_eq!(down.fixtures[FIXTURE].offset, 400.0);
     }
 }
