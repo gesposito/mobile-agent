@@ -121,6 +121,28 @@ pub(crate) struct Stroke {
     pub at: Instant,
 }
 
+/// Text the mirror entered in one piece into a field of a window that sends
+/// no change events, until a read shows the field's text changed (task
+/// 10.29): the field shows the text some time after the input, often after
+/// the read that follows the input, so the field's window is read again as
+/// soon as frames change after its latest read began, or, on a target
+/// without frames, as soon as that read ends, rather than after the minimum
+/// re-read interval. Only the text counts: on a Simulator text for a field
+/// taps it first, and a read can show the field focused before its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Edit {
+    /// The window holding the field.
+    pub window: u32,
+    /// The field.
+    pub element: ElementId,
+    /// What the field held as the replica had it when the text went in.
+    pub text: Option<String>,
+    /// When the platform acknowledged the text.
+    pub at: Instant,
+    /// Whether the target has frames to say when the field's window changes.
+    pub frames: bool,
+}
+
 #[derive(Default)]
 struct Changes {
     added: Vec<ElementId>,
@@ -187,6 +209,10 @@ pub(crate) struct Replica {
     /// The latest input the mirror injected, when it was a stroke and the
     /// app in front has not changed since.
     pub last_stroke: Option<Stroke>,
+    /// The latest input the mirror injected, when it was text for a field of
+    /// a window that sends no change events and no read has shown the
+    /// field's text changed since.
+    pub edit: Option<Edit>,
     /// Tree and window events applied, plus deltas found by reads and moves
     /// found by bounds probes.
     pub tree_changes: u64,
@@ -221,6 +247,7 @@ impl Replica {
             last_read: None,
             last_action: None,
             last_stroke: None,
+            edit: None,
             tree_changes: 0,
             interner: HashMap::new(),
             index: HashMap::new(),
@@ -309,6 +336,7 @@ impl Replica {
         self.fresh = true;
         self.generation += 1;
         self.resyncs.push(cause);
+        self.edit = None;
     }
 
     /// Whether a read from `backend` comes from another backend than the
@@ -424,14 +452,55 @@ impl Replica {
 
     /// Marks the windows that send no change events for a re-read after
     /// input the mirror injected at `at`, a stroke from the first point to
-    /// the second when `stroke` gives them.
+    /// the second when `stroke` gives them. Any input ends the edit of the
+    /// input before it.
     pub fn note_action(&mut self, at: Instant, stroke: Option<(Point, Point)>) {
         self.last_action = self.last_action.max(Some(at));
         self.last_stroke = stroke.map(|(from, to)| Stroke { from, to, at });
+        self.edit = None;
         for window in &mut self.windows {
             if window.reread() {
                 window.action_pending = true;
             }
+        }
+    }
+
+    /// Records that the input noted last was text in one piece for
+    /// `element`, on a target with frames when `frames` says so: its window
+    /// is read again sooner until a read shows the field's text changed (see
+    /// [`Edit`]). Nothing is recorded for a field of a window that sends
+    /// change events.
+    pub fn note_edit(&mut self, element: ElementId, at: Instant, frames: bool) {
+        let Some((w, i)) = self.locate(element) else {
+            return;
+        };
+        let window = &self.windows[w];
+        if window.reread() {
+            self.edit = Some(Edit {
+                window: window.id,
+                element,
+                text: window.nodes[i].text.clone(),
+                at,
+                frames,
+            });
+        }
+    }
+
+    /// Why `window` is due at once for the edit of a field it holds, if it
+    /// is (see [`Edit`]): frames changed after its latest read began, or the
+    /// target has no frames. A poll interval after the text the edit no
+    /// longer calls for reads, so text that leaves its field as it was, and
+    /// so shows no change, re-reads its window sooner for that long at most.
+    fn edit_due(&self, window: &Win, now: Instant, config: &MirrorConfig) -> Option<ReadReason> {
+        let edit = self.edit.as_ref().filter(|edit| {
+            edit.window == window.id && window.reread() && now < edit.at + config.poll_interval
+        })?;
+        if !edit.frames {
+            Some(ReadReason::Action)
+        } else if self.frames_changed_since(window.read_started) {
+            Some(ReadReason::Frames)
+        } else {
+            None
         }
     }
 
@@ -480,6 +549,8 @@ impl Replica {
                 None
             } else if now >= window.read_started + config.poll_interval {
                 Some(ReadReason::Poll)
+            } else if let Some(reason) = self.edit_due(window, now, config) {
+                Some(reason)
             } else if self.frames_changed_since(window.read_started)
                 && now >= window.read_finished + config.min_reread_interval
             {
@@ -532,14 +603,17 @@ impl Replica {
             .min()
     }
 
-    /// When the next poll or frame-driven re-read falls due, if ever.
-    pub fn next_due(&self, config: &MirrorConfig) -> Option<Instant> {
+    /// When the next poll or frame-driven re-read falls due, as of `now`, if
+    /// ever; a window an edit calls for is due as its latest read ended.
+    pub fn next_due(&self, now: Instant, config: &MirrorConfig) -> Option<Instant> {
         self.windows
             .iter()
             .filter(|w| w.reread())
             .map(|w| {
                 let poll = w.read_started + config.poll_interval;
-                if self.frames_changed_since(w.read_started) {
+                if self.edit_due(w, now, config).is_some() {
+                    w.read_finished
+                } else if self.frames_changed_since(w.read_started) {
                     poll.min(w.read_finished + config.min_reread_interval)
                 } else {
                     poll
@@ -620,6 +694,16 @@ impl Replica {
         next_windows.sort_by_key(|w| std::cmp::Reverse(w.layer));
         self.windows = next_windows;
         self.reindex();
+        // An edit ends once a read shows its field's text changed or the
+        // field gone, or starts the replica over.
+        if let Some(edit) = &self.edit {
+            let shown = self
+                .locate(edit.element)
+                .is_none_or(|(w, i)| self.windows[w].nodes[i].text != edit.text);
+            if fresh || shown {
+                self.edit = None;
+            }
+        }
         self.scale = scale;
         self.backend = Some(backend);
         self.truncated = snapshot.truncated;

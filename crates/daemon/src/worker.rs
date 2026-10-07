@@ -103,10 +103,12 @@ impl Attached {
     /// Brings the replica up to the display before the tree is read. On a
     /// window that sends no change events, frames that changed after its
     /// latest read began call for another read, which the mirror schedules
-    /// no sooner than its minimum re-read interval after that read; this
-    /// waits for it, so a snapshot right after a tap shows what the tap
-    /// did rather than what the tap's own re-read caught. The mirror times
-    /// both: what arrived counts once drained, without reading the tree.
+    /// no sooner than its minimum re-read interval after that read, or at
+    /// once for the window of a field it has just pasted or set text into;
+    /// this waits for it, so a snapshot right after a tap shows what the
+    /// tap did rather than what the tap's own re-read caught. The mirror
+    /// times both: what arrived counts once drained, without reading the
+    /// tree.
     pub fn catch_up(&mut self) -> Result<(), MirrorError> {
         if !self.frames {
             return Ok(());

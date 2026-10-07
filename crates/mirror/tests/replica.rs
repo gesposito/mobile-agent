@@ -9,10 +9,15 @@
 
 mod support;
 
+use std::time::Duration;
+
 use mirror::backend::{ReadReason, ReadRequest};
 use mirror::testing::{FakeTarget, Step};
-use mirror::{Action, Mirror, MirrorConfig, Rect, RefreshMode, SnapshotOptions, Target};
+use mirror::{
+    Action, Mirror, MirrorConfig, Point, Rect, Ref, RefreshMode, SnapshotOptions, Target,
+};
 use protocol::event::{TreeChangeKind, WindowChangeKind};
+use protocol::message::TextMethod;
 use protocol::snapshot::WindowType;
 use serde_json::json;
 use support::{Screen, cold_dump, mirror_on, ms, timeline, tree_event, window_event};
@@ -271,6 +276,273 @@ fn frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_o
         "frame-driven re-reads 200 ms apart, the last after the frames stop; unchanged hashes read nothing"
     );
     assert_eq!(mirror.dump(), cold_dump(&welcome.read()));
+}
+
+/// The Login tab as the Simulator's reader shows it with the keyboard up:
+/// the application's window, 1, and the keyboard's, 9, neither sending
+/// change events.
+fn login_with_keyboard() -> Screen {
+    Screen::load("login-ios").patched(json!([{"add_window": {
+        "id": 9, "kind": "input_method", "layer": 1, "bounds": [0, 539, 402, 874], "events": false,
+        "root": {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 874]}
+    }}]))
+}
+
+/// `screen` with `text` in its username field.
+fn typed(screen: &Screen, text: &str) -> Screen {
+    screen.patched(json!([{"find": "login-username", "text": text}]))
+}
+
+/// The reads `target` saw from `from` on: when each began, from the start
+/// of the script, and what it asked for.
+fn reads_from(target: &FakeTarget, from: Duration) -> Vec<(Duration, ReadRequest)> {
+    target
+        .reads()
+        .into_iter()
+        .filter(|read| read.at >= from)
+        .map(|read| (read.at, read.request))
+        .collect()
+}
+
+/// A mirror over `screen` whose reads cost 30 ms, with frames unless
+/// `blind`, holding a ref to the username field from a snapshot at the
+/// start, its clock moved on to 500 ms.
+fn login_at_500_ms(screen: &Screen, blind: bool) -> (FakeTarget, Mirror, Ref) {
+    let target = FakeTarget::new(screen.read());
+    target.read_cost(ms(30));
+    let backend = if blind {
+        target.backend_without_frames()
+    } else {
+        target.at(ms(0), Step::Frame(0));
+        target.backend()
+    };
+    let mut mirror = Mirror::new(backend, MirrorConfig::default());
+    let field = mirror
+        .snapshot(&full())
+        .unwrap()
+        .by_identifier("login-username")
+        .unwrap()
+        .reference
+        .unwrap();
+    target.advance(ms(500) - target.elapsed());
+    (target, mirror, field)
+}
+
+/// Text for the field `field` names, pasted.
+fn paste(field: Ref, text: &str) -> Action {
+    Action::Text {
+        text: text.to_owned(),
+        into: Some(field),
+        method: TextMethod::DIRECT,
+    }
+}
+
+/// Task 10.29: on the iOS 26.5 Simulator a paste of 36 characters showed in
+/// the fixtures' username fields 43 to 86 ms after Command-V, never in the
+/// read the mirror made at once after the paste, and the next read of the
+/// field's window, which sends no change events, came 200 ms after that
+/// read ended, the minimum re-read interval: the fill took the text 252 to
+/// 315 ms after the paste. After text goes into a field, a frame that
+/// changes once the field's window was read calls for a re-read of that
+/// window at once; the keyboard's window keeps the interval.
+#[test]
+fn text_into_a_field_re_reads_its_window_as_soon_as_a_frame_changes_and_others_at_the_interval() {
+    let screen = login_with_keyboard();
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    target.at(ms(560), Step::Show(typed(&screen, "agent").read()));
+    target.at(ms(560), Step::Frame(1));
+
+    mirror.act(&paste(field, "agent")).unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[9, 1], ReadReason::Action)),
+            (ms(560), scoped(&[1], ReadReason::Frames)),
+            (ms(730), scoped(&[9], ReadReason::Frames)),
+        ],
+        "the field's window as the frame that shows the text arrives, the keyboard's \
+         200 ms after the read that followed the paste"
+    );
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        snapshot
+            .by_identifier("login-username")
+            .unwrap()
+            .value
+            .as_deref(),
+        Some("agent")
+    );
+}
+
+/// Task 10.29: on a Simulator text for a field taps the field first, so the
+/// read after the text can show the field focused before it shows the
+/// text, as the first fill after a launch did on the iOS 26.5 Simulator;
+/// the field's window is still read again as the frame that shows the text
+/// arrives.
+#[test]
+fn a_field_that_shows_its_focus_before_its_text_has_its_window_re_read_as_the_text_shows() {
+    let screen = Screen::load("login-ios");
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    let focused = screen.patched(json!([{"find": "login-username", "flags": ["focused"]}]));
+    target.input_cost(ms(20));
+    target.at(ms(510), Step::Show(focused.read()));
+    target.at(ms(510), Step::Frame(1));
+    target.at(ms(580), Step::Show(typed(&focused, "agent").read()));
+    target.at(ms(580), Step::Frame(2));
+
+    mirror.act(&paste(field, "agent")).unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(520), scoped(&[1], ReadReason::Action)),
+            (ms(580), scoped(&[1], ReadReason::Frames)),
+        ],
+        "the read at 520 ms shows the field focused, the one at 580 ms its text"
+    );
+}
+
+/// Task 10.29: the sooner re-read follows text alone, and only until a
+/// read shows the field's text changed: frames after a tap, after the
+/// field showed the text, or after a tap that followed the text re-read the
+/// field's window no sooner than the minimum interval after its last read.
+#[test]
+fn frames_after_a_tap_or_once_the_field_changed_re_read_at_the_minimum_interval() {
+    let screen = Screen::load("login-ios");
+    let tap = Action::Tap {
+        target: Target::Point(Point::new(200.0, 40.0)),
+        hold: None,
+    };
+
+    let (target, mut mirror, _) = login_at_500_ms(&screen, false);
+    target.at(ms(560), Step::Frame(1));
+    mirror.act(&tap).unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[1], ReadReason::Action)),
+            (ms(730), scoped(&[1], ReadReason::Frames)),
+        ],
+        "after a tap"
+    );
+
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    target.at(ms(560), Step::Show(typed(&screen, "agent").read()));
+    target.at(ms(560), Step::Frame(1));
+    target.at(ms(650), Step::Frame(2));
+    mirror.act(&paste(field, "agent")).unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[1], ReadReason::Action)),
+            (ms(560), scoped(&[1], ReadReason::Frames)),
+            (ms(790), scoped(&[1], ReadReason::Frames)),
+        ],
+        "once the read at 560 ms showed the text"
+    );
+
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    target.at(ms(600), Step::Show(typed(&screen, "agent").read()));
+    target.at(ms(600), Step::Frame(1));
+    mirror.act(&paste(field, "agent")).unwrap();
+    mirror.pump().unwrap();
+    target.advance(ms(10));
+    mirror.act(&tap).unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[1], ReadReason::Action)),
+            (ms(540), scoped(&[1], ReadReason::Action)),
+            (ms(770), scoped(&[1], ReadReason::Frames)),
+        ],
+        "after a tap that followed the text"
+    );
+}
+
+/// Task 10.29: text typed as keys keeps the interval. A `fill` holds typed
+/// text 200 ms after the entry, which a read at the first frame cannot end,
+/// and that read would put the next one 200 ms after it: on the iOS 26.5
+/// Simulator the read-back of Command-A and the delete key took 307.7 ms at
+/// p50 with it, against 279.6 ms without.
+#[test]
+fn text_typed_as_keys_re_reads_its_fields_window_at_the_minimum_interval() {
+    let screen = Screen::load("login-ios");
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    target.at(ms(560), Step::Show(typed(&screen, "agent").read()));
+    target.at(ms(560), Step::Frame(1));
+    target.at(ms(600), Step::Frame(2));
+
+    mirror
+        .act(&Action::Text {
+            text: "agent".to_owned(),
+            into: Some(field),
+            method: TextMethod::KEYS,
+        })
+        .unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[1], ReadReason::Action)),
+            (ms(730), scoped(&[1], ReadReason::Frames)),
+        ],
+        "200 ms after the read that followed the keys"
+    );
+}
+
+/// Task 10.29: without frames nothing says when the field changes, so its
+/// window is read again as soon as each read ends until one shows the
+/// field changed; the keyboard's window waits for its poll.
+#[test]
+fn without_frames_text_into_a_field_re_reads_its_window_until_the_field_changes() {
+    let screen = login_with_keyboard();
+    let (target, mut mirror, field) = login_at_500_ms(&screen, true);
+    target.at(ms(580), Step::Show(typed(&screen, "agent").read()));
+
+    mirror.act(&paste(field, "agent")).unwrap();
+    mirror.run_until(target.instant(ms(1_550))).unwrap();
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        [
+            (ms(500), scoped(&[9, 1], ReadReason::Action)),
+            (ms(530), scoped(&[1], ReadReason::Action)),
+            (ms(560), scoped(&[1], ReadReason::Action)),
+            (ms(590), scoped(&[1], ReadReason::Action)),
+            (ms(1_500), scoped(&[9], ReadReason::Poll)),
+        ],
+        "the field's window until the read at 590 ms shows the text"
+    );
+}
+
+/// Task 10.29: text that leaves its field as it was, as text the field
+/// already shows, never shows a change, so the sooner re-read lasts one
+/// poll interval after the text at most: then frames re-read the field's
+/// window no sooner than the minimum interval again.
+#[test]
+fn text_that_leaves_its_field_unchanged_re_reads_its_window_sooner_for_one_poll_interval() {
+    let screen = Screen::load("login-ios");
+    let (target, mut mirror, field) = login_at_500_ms(&screen, false);
+    for k in 0..15 {
+        target.at(ms(550 + 100 * k), Step::Frame(k + 1));
+    }
+
+    mirror.act(&paste(field, "")).unwrap();
+    mirror.run_until(target.instant(ms(2_000))).unwrap();
+    let mut expected = vec![(ms(500), scoped(&[1], ReadReason::Action))];
+    expected.extend((0..10).map(|k| (ms(550 + 100 * k), scoped(&[1], ReadReason::Frames))));
+    expected.extend([
+        (ms(1_680), scoped(&[1], ReadReason::Frames)),
+        (ms(1_910), scoped(&[1], ReadReason::Frames)),
+    ]);
+    assert_eq!(
+        reads_from(&target, ms(500)),
+        expected,
+        "each frame until 1,500 ms, then 200 ms after a read ends"
+    );
 }
 
 /// A window the protocol marks as sending no change events is re-read after

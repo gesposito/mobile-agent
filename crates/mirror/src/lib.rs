@@ -7,7 +7,8 @@
 //! input the mirror injects itself. Once warm, snapshots are served from the
 //! replica without a device round trip. Windows whose toolkit sends no change
 //! events are re-read in full after every injected action, when frames change
-//! and on a poll.
+//! and on a poll, and, after text goes into one of their fields in one piece,
+//! as soon as frames change until a read shows the field's text changed.
 //!
 //! The crate holds no device code. Drivers implement the traits in
 //! [`backend`]; [`testing`] provides a scripted fake target.

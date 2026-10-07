@@ -362,8 +362,10 @@ fn method_name(method: Option<TextMethod>) -> Value {
 /// How long `fill` reads back a field that shows other text than it entered
 /// before it takes that text as what the field holds: on the iOS 26.5
 /// Simulator a paste showed in the fixtures' fields 84 to 462 ms after
-/// Command-V (task 10.23), and the mirror reads a field that sends no
-/// change events again no sooner than its minimum interval after its last
+/// Command-V (task 10.23). The mirror reads the window of a field it pasted
+/// or set text into again as soon as a frame changes after its last read,
+/// until a read shows the field's text changed, and other windows, and a
+/// field typed into, no sooner than its minimum interval after their last
 /// read.
 const READ_BACK_MAX: Duration = Duration::from_secs(1);
 
@@ -1270,6 +1272,30 @@ mod tests {
             "{}",
             success.data
         );
+    }
+
+    /// Task 10.29: on the iOS 26.5 Simulator a paste showed 43 to 86 ms
+    /// after Command-V, never in the read the mirror made at once after it,
+    /// and the fill took it 252 to 315 ms after the paste, at the next read
+    /// of the field's window, 200 ms after that read. The mirror reads the
+    /// field's window again as the frame that shows the text arrives, so
+    /// the fill takes text that shows 60 ms after the entry within one read
+    /// of it.
+    #[test]
+    fn a_fill_takes_text_that_shows_after_the_first_read_as_its_frame_arrives() {
+        let latency = Duration::from_millis(60);
+        let mut target = login_on("ios", Typing::Whole, latency);
+        let success = fill_in(&mut target, "#login-username", "agent").unwrap();
+        let data = &success.data;
+        assert_eq!(data["method"], "direct", "{data}");
+        assert_eq!(data["verified"], "text", "{data}");
+        assert!(
+            data["readBackMs"]
+                .as_f64()
+                .is_some_and(|ms| (60.0..120.0).contains(&ms)),
+            "{data}"
+        );
+        assert_eq!(held(&mut target, "#login-username"), "agent");
     }
 
     /// The login form's fields, the text `fill` enters into each and how

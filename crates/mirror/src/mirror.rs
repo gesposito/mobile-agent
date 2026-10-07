@@ -35,7 +35,9 @@ pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The shortest time from the end of a read of a window that sends no change
 /// events to a re-read that frame changes trigger (design D5: re-read after
 /// frames change and once more when they stop, bounded by a minimum
-/// interval).
+/// interval), but for the window of a field the mirror has just entered
+/// text into in one piece, which frame changes re-read at once (see
+/// [`Mirror::act`]).
 pub const DEFAULT_MIN_REREAD_INTERVAL: Duration = Duration::from_millis(200);
 
 /// How often a settle wait without frames reads its anchor nodes' bounds
@@ -373,7 +375,7 @@ impl Mirror {
             }
             let wake = self
                 .replica
-                .next_due(&self.config)
+                .next_due(now, &self.config)
                 .map_or(deadline, |due| due.min(deadline))
                 .max(now);
             if let Some(item) = self.backend.events.next(wake) {
@@ -383,9 +385,10 @@ impl Mirror {
     }
 
     /// When a read of a window that sends no change events falls due next:
-    /// its poll, or a re-read after frames changed.
+    /// its poll, a re-read after frames changed, or, after text for one of
+    /// its fields, the re-read that text calls for.
     pub fn next_wakeup(&self) -> Option<Instant> {
-        self.replica.next_due(&self.config)
+        self.replica.next_due(self.now(), &self.config)
     }
 
     /// A snapshot of the replica, acquiring it first when none exists.
@@ -654,12 +657,23 @@ impl Mirror {
 
     /// Injects `action` and marks the windows that send no change events
     /// for a re-read, which happens when the tree is next needed or at the
-    /// next poll.
+    /// next poll. After text the platform took in one piece for a field of
+    /// such a window, pasted on a Simulator or set directly on Android, that
+    /// window is read again as soon as frames change after its latest read
+    /// began, without waiting out the minimum re-read interval, or, on a
+    /// target without frames, as soon as that read ends: until a read shows
+    /// the field's text changed, the next input, or a poll interval after
+    /// the text (task 10.29). Text typed as keys keeps the interval: a
+    /// reader that holds typed text, as `fill` holds it 200 ms, gains
+    /// nothing from a read at its first frame, which would put the next read
+    /// 200 ms after it.
     pub fn act(&mut self, action: &Action) -> Result<ActionOutcome, MirrorError> {
         self.drain();
         if let Some(reason) = &self.replica.disconnected {
             return Err(MirrorError::Disconnected(reason.clone()));
         }
+        // The element of the field text goes into.
+        let mut field = None;
         let (input, at) = match action {
             Action::Tap { target, hold } => {
                 let at = self.aim(target)?;
@@ -692,9 +706,11 @@ impl Mirror {
                         self.pump()?;
                         let (w, i) = self.locate_ref(*reference)?;
                         let window = &self.replica.windows[w];
+                        let node = &window.nodes[i];
+                        field = Some(node.element);
                         Some(NodeHandle {
                             window: window.id,
-                            node: window.nodes[i].node_id,
+                            node: node.node_id,
                         })
                     }
                     None => None,
@@ -716,6 +732,11 @@ impl Mirror {
             _ => None,
         };
         self.replica.note_action(now, stroke);
+        let in_one_piece = ack.accepted && ack.method != Some(TextMethod::KEYS);
+        if let (Some(element), true) = (field, in_one_piece) {
+            let frames = self.backend.frames.is_some();
+            self.replica.note_edit(element, now, frames);
+        }
         Ok(ActionOutcome {
             accepted: ack.accepted,
             at,
@@ -981,7 +1002,7 @@ impl Mirror {
             }
             let wake = self
                 .replica
-                .next_due(&self.config)
+                .next_due(now, &self.config)
                 .map_or(deadline, |due| due.min(deadline))
                 .max(now);
             if let Some(item) = self.backend.events.next(wake) {
