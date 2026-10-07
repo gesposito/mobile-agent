@@ -42,7 +42,7 @@ check-paths:
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
 
-# Cross-check the Kotlin codec against the Rust golden frames on the host JVM, skipping without kotlinc
+# Cross-check the Kotlin codec against the Rust golden frames and run the agent's host-side unit tests on the host JVM, skipping without kotlinc
 codec-test:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the codec cross-check"; elif ! command -v kotlinc >/dev/null 2>&1; then echo "kotlinc not present, skipping the codec cross-check"; elif [ -f agent-android/codec-test.sh ]; then agent-android/codec-test.sh --host-only; else echo "agent-android/codec-test.sh not present, skipping"; fi
 
