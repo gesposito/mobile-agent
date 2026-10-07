@@ -174,7 +174,7 @@ mobile-agent snapshot -i       # 4. snapshot again before the next action
 | Command | Does |
 |---|---|
 | `click @e4`, `click 200 480`, `click @e4 --hold 800` | taps a ref, a selector or a point in device points; holds for a long press |
-| `fill @e2 agent` | replaces a field's text and reads it back; the reply's `method` says whether it was set `direct` or typed as `keys`. Text typed that the field took otherwise is entered again in one piece, pasted on iOS and set directly on Android, with a warning naming what the keys left and `retried: true`; a field that still holds other text fails with `text_mismatch` (task 10.23) |
+| `fill @e2 agent` | replaces a field's text and reads it back; the reply's `method` says whether it was set `direct` or typed as `keys`. Typed text counts once the field has held it 200 ms, since an app that sets its field's value again can interleave with the keys; text set or pasted in one piece counts at the first read that shows it (task 10.30). Text typed that the field took otherwise is entered again in one piece, pasted on iOS and set directly on Android, with a warning naming what the keys left and `retried: true`; a field that still holds other text fails with `text_mismatch` (task 10.23) |
 | `type @e2 ' smith'` | adds key events to the field, or to the focused one when no target is given |
 | `press Enter` | presses a key, such as `Home`, `Back` on Android, a letter, or modifiers joined with `+` as in `Control+a` |
 | `swipe up`, `swipe 200 700 200 200` | moves the finger in a direction or between two points |
@@ -257,7 +257,7 @@ Android emulator (`reports/10.1-emulator.md`): an API 36 arm64 AVD on Android Em
 
 Against the baselines: how many times faster mobile-agent's p50 was on each reference flow. "Not timed" means the tool failed the flow's golden check, so the harness did not time it. mobile-agent's flows had no failed or flaky iteration in the runs below; a baseline's failure and flake rates follow its factor where they are not zero.
 
-The login rows were measured again on 2026-10-07, after `fill` began reading the field back (task 10.23), together with the text-entry series (`reports/10.26-remeasure.md`); the other rows are the published runs'. A text entry of 36 characters then took 545.5 and 718.3 ms at p50 on the Simulator (SwiftUI, Expo), against 249.3 and 228.3 ms before, and 224.1 and 240.0 ms on the emulator (Expo, Compose), against 23.8 and 26.1 ms; the read-back is 201 to 283 ms of it at the median.
+The login rows were measured again on 2026-10-07, after `fill` began reading the field back (task 10.23), together with the text-entry series (`reports/10.26-remeasure.md`); the other rows are the published runs'. On the emulator, mobile-agent's two series ran once more that day, after the read-back's 200 ms hold was kept for typed text alone (task 10.30), and its login factors there are taken against the baselines of the earlier run (`reports/10.26-remeasure.md`, 10.30 rerun). The Simulator's figures stand: its fills are typed and still held, or pasted, which no read showed sooner without the hold. A text entry of 36 characters took 545.5 and 718.3 ms at p50 on the Simulator (SwiftUI, Expo), which pastes it, against 249.3 and 228.3 ms before the read-back, and 43.0 and 234.9 ms on the emulator (Expo, Compose), which sets it directly, against 23.8 and 26.1 ms before the read-back and 224.1 and 240.0 ms with the hold on every fill. At the median the read-back is 21.2 ms of it on the emulator's Expo fixture, whose fields report a change at once, 218.1 ms on Compose, whose window is read again after the action, and 262.6 to 283.2 ms on the Simulator.
 
 iOS Simulator (`reports/10.2-simulator.md`, Baselines; login, `reports/10.26-remeasure.md`):
 
@@ -267,11 +267,11 @@ iOS Simulator (`reports/10.2-simulator.md`, Baselines; login, `reports/10.26-rem
 | list-scroll | 6.06x | 6.05x (26 % failed, 22 % flaky) | not timed | not timed |
 | big-screen | 8.51x | 7.13x | 1.24x | not timed |
 
-Android emulator, controller on (`reports/10.1-emulator.md`, Baselines; login, `reports/10.26-remeasure.md`):
+Android emulator, controller on (`reports/10.1-emulator.md`, Baselines; login, `reports/10.26-remeasure.md`, 10.30 rerun):
 
 | Flow | Maestro 2.10.0, Expo | Maestro, Compose | agent-device 0.21.14, Expo | agent-device, Compose |
 |---|---|---|---|---|
-| login | 11.89x | 6.60x | 2.33x (24 % failed, 12 % flaky) | 1.67x |
+| login | 14.76x | 6.75x | 2.89x (24 % failed, 12 % flaky) | 1.70x |
 | list-scroll | not timed | not timed | not timed | not timed |
 | big-screen | 8.39x | 4.32x | 1.19x (76 % failed, 12 % flaky) | 1.06x |
 

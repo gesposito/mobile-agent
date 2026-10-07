@@ -221,14 +221,20 @@ cut off it is the share of what Android reports, which can be 1.
 
 `fill` reads the field back after the entry (task 10.23: on Bluesky's
 search field a fill of "nobel", typed as keys 15 ms apart, left "noelb" and
-replied success). It takes the text once the field shows it and has held
-it since 200 ms after the entry, the settle's quiet window, as an app that
-owns its field's value can set it again after the edit: shown by a read
-that began that late, or by an earlier one after which neither the tree
-nor, on a target whose windows are read again as frames change, a frame
-changed. A field that shows other text is read again as reads fall due,
-up to 1 s after the entry, since a paste showed 84 to 462 ms after
-Command-V in the fixtures' fields on the iOS 26.5 Simulator. A field
+replied success). Text it typed as keys it takes once the field shows it
+and has held it since 200 ms after the entry, the settle's quiet window,
+as an app that owns its field's value can set it again between the keys
+and after them: shown by a read that began that late, or by an earlier one
+after which neither the tree nor, on a target whose windows are read again
+as frames change, a frame changed. Text that went in in one piece, pasted
+on a Simulator or set directly on Android, leaves such an app no keys to
+interleave with, so `fill` takes it at the first read that shows it: one
+that began after the entry, or an earlier one after which nothing changed
+(task 10.30: a hold after such text was 200 of the 224 ms a text entry took
+at p50 on the emulator's Expo fixture, whose fields report a change at
+once). A field that shows other text is read again as reads fall due, up
+to 1 s after the entry, since a paste showed 84 to 462 ms after Command-V
+in the fixtures' fields on the iOS 26.5 Simulator. A field
 counts as showing the text when it shows the text itself, as many mask
 characters (`•` or `●`), some perhaps showing the text's own, as a secure
 field does, or nothing while it is named as the text, since the
@@ -766,6 +772,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.15, `scroll --until` stops once the element is mostly in view) | (a sliver of the element on screen does not stop the scroll; `visible` in the reply) | `handlers::act::tests::a_scroll_that_looks_for_an_element_stops_once_it_is_mostly_in_view`, `handlers::act::tests::a_partly_shown_element_is_brought_in_by_one_stroke_no_longer_than_the_step`, `handlers::act::tests::no_stroke_brings_in_an_element_the_scroll_s_axis_does_not_cut_off`, `handlers::act::tests::a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second`; the mirror's `visibility::*`; the CLI's `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`, `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in` and `commands::a_click_on_an_element_mostly_out_of_view_warns`; against an emulator on both of its paths, `devices::scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator` |
 | (task 10.16, `scroll --until` does not carry its element past unseen) | (every stroke comes to rest before the finger lifts; a stroke that looks for the element goes at most three quarters of what the list shows; fake lists that fling) | `handlers::act::tests::a_stroke_that_looks_for_an_element_goes_at_most_three_quarters_of_what_its_list_shows`, `fake::app::tests::a_list_glides_on_as_far_as_its_platform_flings_it`, `fake::app::tests::a_swipe_moves_the_list_by_the_finger_and_the_glide`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the mirror's `visibility::*` and `settle::a_stroke_reaches_the_target_released_as_the_action_says`; the CLI's `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list` and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`; against devices, `devices::scroll_until_finds_a_mid_list_row_on_an_emulator` and `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | (task 10.23, `fill` reads the field back) | (keys a field takes out of order are pasted over; a field that keeps other text fails with `text_mismatch`; secure fields by length; text that shows late; empty fills; the Simulator's empty fill and direct text; fake fields that take text as a Simulator types it) | `handlers::act::tests::a_fill_whose_keys_a_field_takes_out_of_order_pastes_the_text`, `handlers::act::tests::a_fill_that_a_field_cuts_short_fails_naming_what_the_field_holds`, `handlers::act::tests::a_secure_field_is_read_back_by_the_number_of_its_characters`, `handlers::act::tests::a_fill_replies_once_the_field_shows_its_text`, `handlers::act::tests::an_empty_fill_reads_the_field_back_empty_except_on_android`, `handlers::act::tests::a_field_shows_the_text_exactly_as_its_mask_or_as_an_empty_placeholder`, `devices::simulator::tests::an_empty_text_deletes_what_the_field_held`, `devices::simulator::tests::keys_are_typed_direct_text_is_pasted_and_a_paste_reads_as_direct_setting`, `fake::app::tests::fields_take_text_as_their_typing_mode_says`, `fake::realtime::tests::text_is_typed_as_the_simulator_types_it_only_under_a_typing_mode_that_types_keys`, `fake::tests::typing_modes_are_named_whole_keys_reorder_or_max_with_a_length`; the CLI's `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` |
+| (task 10.30, the hold only after keys) | (text set or pasted in one piece taken at the first read that shows it, typed text after the 200 ms hold, on either platform; the text entered again after other text not held) | `handlers::act::tests::a_fill_whose_text_went_in_in_one_piece_takes_the_first_read_that_shows_it`, `handlers::act::tests::a_fill_typed_as_keys_takes_the_text_once_the_field_has_held_it_200_ms`, `handlers::act::tests::a_fill_that_enters_its_text_again_in_one_piece_takes_the_first_read_that_shows_it` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off
