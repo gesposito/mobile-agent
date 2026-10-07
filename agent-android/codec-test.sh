@@ -42,9 +42,9 @@ out="$here/out/codec-test"
 jar="$out/codec-test.jar"
 main_class=dev.mobileagent.agent.codec.CodecGoldenTestKt
 # Agent sources the checks of unit-test/ cover; each calls no platform API, so it runs on the host JVM.
-platform_free=("$here/src/dev/mobileagent/agent/KeyboardArea.kt")
+platform_free=("$here/src/dev/mobileagent/agent/KeyboardArea.kt" "$here/src/dev/mobileagent/agent/Stacking.kt")
 # The checks of unit-test/, one main class each, run on the host JVM.
-unit_classes=(dev.mobileagent.agent.KeyboardAreaTestKt)
+unit_classes=(dev.mobileagent.agent.KeyboardAreaTestKt dev.mobileagent.agent.StackingTestKt)
 # Enforced on the device, so a hung run fails instead of stalling the script.
 device_timeout_s=120
 

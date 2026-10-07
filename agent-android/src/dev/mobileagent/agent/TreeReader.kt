@@ -35,7 +35,8 @@ class Cancelled : RuntimeException() {
  *
  * Each window also carries its metadata and each scrolling node its scroll
  * semantics ([Semantics]): a window whose walk meets Compose content sends
- * no change events, one the walk completed without meeting it does.
+ * no change events, one the walk completed without meeting it does. A node
+ * drawn over the siblings it overlaps carries the `on_top` flag ([Stacking]).
  *
  * A child the walk cannot fetch, because the fetch throws, as the
  * platform's integrity check does on a debuggable build (see the README), or
@@ -164,6 +165,8 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
         @JvmField val parent: Int,
         @JvmField val window: Int,
         @JvmField val serialize: Boolean,
+        /** Drawn over the siblings it overlaps ([Stacking]). */
+        @JvmField val onTop: Boolean = false,
     )
 
     /** A child whose fetch threw twice, or once when the read's retry budget was spent. */
@@ -315,7 +318,7 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                             n.text?.toString(),
                             n.contentDescription?.toString(),
                             Bounds(rect.left, rect.top, rect.right, rect.bottom),
-                            nodeFlags(n),
+                            nodeFlags(n) or (if (item.onTop) NodeFlag.ON_TOP else 0),
                         ),
                     )
                     infos.add(n)
@@ -336,6 +339,7 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                 // How `n` changed under the walk, looked up once a child cannot be fetched.
                 var looked = false
                 var parentChange: String? = null
+                val kids = ArrayList<AccessibilityNodeInfo>(count)
                 for (i in 0 until count) {
                     // Per child too: one parent can have hundreds.
                     if (cancelled()) throw Cancelled()
@@ -372,7 +376,12 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
                         } ?: continue
                     }
                     scrolling?.add(c)
-                    queue.addLast(Item(c, item.depth + 1, if (childSerialized) id else -1, item.window, childSerialized))
+                    kids.add(c)
+                }
+                val parent = if (childSerialized) id else -1
+                val onTop = if (childSerialized && kids.size > 1) onTop(kids) else null
+                for (k in kids.indices) {
+                    queue.addLast(Item(kids[k], item.depth + 1, parent, item.window, childSerialized, onTop?.get(k) == true))
                 }
                 if (parentChange != null) {
                     // The read's restarts are spent: what the walk kept of this parent is out of date.
@@ -528,6 +537,21 @@ class TreeReader(private val automation: Automation, private val hooks: TestHook
 
     private fun describe(n: AccessibilityNodeInfo, window: Int): String =
         "${n.className}${n.viewIdResourceName?.let { " $it" } ?: ""} in window $window"
+
+    /**
+     * Which of `kids`, the children of one parent, are drawn over the siblings
+     * they overlap ([Stacking]), from fields of the nodes the walk holds: no
+     * round trip.
+     */
+    private fun onTop(kids: List<AccessibilityNodeInfo>): BooleanArray {
+        val r = Rect()
+        val bounds = Array(kids.size) {
+            kids[it].getBoundsInScreen(r)
+            Bounds(r.left, r.top, r.right, r.bottom)
+        }
+        val order = IntArray(kids.size) { kids[it].drawingOrder }
+        return Stacking.onTop(order, BooleanArray(kids.size) { kids[it].isVisibleToUser }, bounds)
+    }
 }
 
 /**
