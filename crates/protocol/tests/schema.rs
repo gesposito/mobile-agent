@@ -470,6 +470,18 @@ fn a_view_marked_modal_carries_a_flag_of_its_own() {
     round_trip(snapshot_response(snapshot));
 }
 
+/// Task 10.28: a node drawn over every sibling its bounds overlap is bit 14
+/// of the node flags, and keeps it through a round trip.
+#[test]
+fn a_node_drawn_over_its_siblings_carries_a_flag_of_its_own() {
+    assert_eq!(NodeFlags::ON_TOP.0, 1 << 14);
+    assert_eq!(NodeFlags::ON_TOP.names().collect::<Vec<_>>(), ["on_top"]);
+    let mut snapshot = sample_snapshot();
+    let root = snapshot.windows[0].root.as_mut().expect("a root");
+    root.children[1].flags |= NodeFlags::ON_TOP;
+    round_trip(snapshot_response(snapshot));
+}
+
 #[test]
 fn ping_is_an_integer_keyed_map() {
     assert_eq!(

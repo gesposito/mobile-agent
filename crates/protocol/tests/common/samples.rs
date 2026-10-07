@@ -2,9 +2,9 @@
 //! with integers at every CBOR head-length boundary, u32 and u64 values past
 //! 2^31 and 2^63, multi-byte UTF-8, a byte string and an array longer than 23
 //! elements, window metadata in every state, scroll semantics in every
-//! shape, and a bounds probe with its result. `agent-android/codec-test/Samples.kt`
-//! builds the same values in Kotlin; the two lists must stay in step, name
-//! for name.
+//! shape, a node drawn over its siblings, and a bounds probe with its result.
+//! `agent-android/codec-test/Samples.kt` builds the same values in Kotlin;
+//! the two lists must stay in step, name for name.
 
 use protocol::Error;
 use protocol::event::{
@@ -257,6 +257,46 @@ pub fn transformed_window_snapshot() -> Snapshot {
         node_count: 1,
         truncated: Truncation::EMPTY,
         seq: 9,
+    }
+}
+
+/// A node drawn over the sibling its bounds overlap, which comes after it in
+/// the tree: an overlay over the page below a header, as a view group gives
+/// its children to accessibility sorted by where they lie.
+pub fn on_top_snapshot() -> Snapshot {
+    let visible = NodeFlags::ENABLED | NodeFlags::VISIBLE;
+    let mut root = plain(0, 0, Bounds::new(0, 0, 1080, 2400), visible);
+    root.children = vec![
+        plain(1, 0, Bounds::new(0, 132, 1080, 406), visible),
+        plain(
+            2,
+            1,
+            Bounds::new(0, 406, 1080, 2400),
+            visible | NodeFlags::ON_TOP,
+        ),
+        plain(3, 0, Bounds::new(0, 406, 1080, 2400), visible),
+    ];
+    Snapshot {
+        strings: vec![
+            "android.view.ViewGroup".to_owned(),
+            "android.widget.AbsListView".to_owned(),
+        ],
+        windows: vec![Window {
+            id: 41,
+            kind: WindowType::APPLICATION,
+            layer: 0,
+            package: None,
+            title: None,
+            bounds: Bounds::new(0, 0, 1080, 2400),
+            flags: WindowFlags::ACTIVE | WindowFlags::FOCUSED,
+            root: Some(root),
+            emits_events: Some(true),
+            owner: None,
+            modal: false,
+        }],
+        node_count: 4,
+        truncated: Truncation::EMPTY,
+        seq: 10,
     }
 }
 
@@ -625,6 +665,10 @@ pub fn samples() -> Vec<(&'static str, Message)> {
         (
             "response_snapshot_scroll",
             ok(12, Method::SNAPSHOT, Reply::Snapshot(scroll_snapshot())),
+        ),
+        (
+            "response_snapshot_on_top",
+            ok(14, Method::SNAPSHOT, Reply::Snapshot(on_top_snapshot())),
         ),
         (
             "response_screenshot",

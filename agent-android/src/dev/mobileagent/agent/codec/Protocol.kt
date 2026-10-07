@@ -103,6 +103,11 @@ object NodeFlag {
     const val PASSWORD = 1 shl 10
     const val VISIBLE = 1 shl 11
     const val ACCESSIBILITY_FOCUSED = 1 shl 12
+
+    // Bit 13, modal, is set by the Simulator's reader alone.
+
+    /** Drawn after every sibling its bounds overlap, by the order the platform draws them in. */
+    const val ON_TOP = 1 shl 14
 }
 
 /** Window state bits. */

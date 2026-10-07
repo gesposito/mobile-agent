@@ -185,6 +185,40 @@ object Samples {
         seq = 9L,
     )
 
+    /**
+     * A node drawn over the sibling its bounds overlap, which comes after it in the tree: an
+     * overlay over the page below a header, as a view group gives its children to accessibility
+     * sorted by where they lie.
+     */
+    private val onTopSnapshot = Snapshot(
+        strings = arrayOf("android.view.ViewGroup", "android.widget.AbsListView"),
+        windows = arrayOf(
+            Window(
+                id = 41,
+                type = WindowType.APPLICATION,
+                layer = 0,
+                packageIndex = null,
+                title = null,
+                bounds = Bounds(0, 0, 1080, 2400),
+                flags = WindowFlag.ACTIVE or WindowFlag.FOCUSED,
+                root = Node(
+                    0, 0, null, null, null, null, Bounds(0, 0, 1080, 2400), VISIBLE,
+                    arrayOf(
+                        plain(1, 0, Bounds(0, 132, 1080, 406), VISIBLE),
+                        plain(2, 1, Bounds(0, 406, 1080, 2400), VISIBLE or NodeFlag.ON_TOP),
+                        plain(3, 0, Bounds(0, 406, 1080, 2400), VISIBLE),
+                    ),
+                ),
+                emitsEvents = true,
+                ownerIndex = null,
+                modal = false,
+            ),
+        ),
+        nodeCount = 4,
+        truncated = 0,
+        seq = 10L,
+    )
+
     private val scrollSnapshot = Snapshot(
         strings = arrayOf(
             "android.view.View",
@@ -316,6 +350,7 @@ object Samples {
         "response_snapshot_window_meta" to ok(11, Method.SNAPSHOT, windowMetaSnapshot),
         "response_snapshot_transformed_window" to ok(13, Method.SNAPSHOT, transformedWindowSnapshot),
         "response_snapshot_scroll" to ok(12, Method.SNAPSHOT, scrollSnapshot),
+        "response_snapshot_on_top" to ok(14, Method.SNAPSHOT, onTopSnapshot),
         "response_screenshot" to ok(
             2,
             Method.SCREENSHOT,

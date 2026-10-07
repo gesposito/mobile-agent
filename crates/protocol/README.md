@@ -173,9 +173,12 @@ the agent built beside it, which knows it.
 the tree. Window kinds are `AccessibilityWindowInfo.TYPE_*` values. Node flag
 bits: clickable, long_clickable, focusable, focused, enabled, checkable,
 checked, scrollable, selected, editable, password, visible,
-accessibility_focused, modal (bits 0 to 13); modal marks a view the platform
-keeps assistive technology inside, as iOS's `accessibilityViewIsModal` does,
-leaving out its siblings and what they hold. Window flag bits: active, focused,
+accessibility_focused, modal, on_top (bits 0 to 14); modal marks a view the
+platform keeps assistive technology inside, as iOS's `accessibilityViewIsModal`
+does, leaving out its siblings and what they hold, and on_top a node drawn after
+every sibling its bounds overlap, as Android reports the order a parent draws
+its children in (`getDrawingOrder`), which the order of the children does not
+say. Window flag bits: active, focused,
 accessibility_focused, picture_in_picture, transformed (bits 0 to 4);
 transformed marks a window drawn away from where its layout puts it, partly
 off the display or at another size than its layout's (the latter from

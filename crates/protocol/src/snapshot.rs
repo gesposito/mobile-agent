@@ -346,6 +346,10 @@ wire_flags! {
     /// `accessibilityViewIsModal`: assistive technology leaves out its
     /// siblings, and what they hold, while it is on screen.
     MODAL = 13, "modal";
+    /// Drawn after every sibling its bounds overlap, as Android reports the
+    /// order a parent draws its children in (`getDrawingOrder`): where they
+    /// overlap, it is what shows.
+    ON_TOP = 14, "on_top";
 }
 
 wire_flags! {
