@@ -323,7 +323,8 @@ fn handoffs(out: &mut String, handoffs: &[HandOff]) {
     out.push_str("## Hand-offs\n\n");
     out.push_str(
         "Between series, before another tool drives a target and once the run is \
-         over, the tool that drove it lets go of it, and an Android target gets back the \
+         over, the tool that drove it lets go of it, the run waits until nothing that \
+         tool keeps for the target is left running, and an Android target gets back the \
          input method the run found.\n\n",
     );
     let mut table = Table::new(&["Target", "From", "To", "ms", "What happened"]);
