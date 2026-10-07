@@ -92,8 +92,8 @@ pub fn copy(device: &Device, text: &str) -> Result<()> {
 }
 
 /// `direct`, then `fallback` when `direct` fails, as for a guest that does
-/// not vend the service or a `dtpasteboardd` that no longer reads this
-/// `SET`. When both fail, the error says why each did.
+/// not vend the service or a `dtpasteboardd` of another CoreDevice that
+/// does not decode this `SET`. When both fail, the error says why each did.
 fn copy_with(
     direct: impl FnOnce() -> std::result::Result<(), String>,
     fallback: impl FnOnce() -> Result<()>,
