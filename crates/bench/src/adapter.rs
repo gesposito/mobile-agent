@@ -95,6 +95,26 @@ impl fmt::Display for AdapterError {
 
 impl std::error::Error for AdapterError {}
 
+/// A process a tool still runs on the host for a target after its release,
+/// as [`Adapter::left_running`] finds it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Left {
+    /// What the process is to the tool, such as `daemon`.
+    pub name: String,
+    pub pid: u32,
+    /// Whether the release should have stopped it and did not reach it,
+    /// such as a daemon whose registration the tool's own stop never read.
+    /// The hand-off ends a stray itself, with SIGTERM and then SIGKILL,
+    /// where it waits for any other process to exit.
+    pub stray: bool,
+}
+
+impl fmt::Display for Left {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (pid {})", self.name, self.pid)
+    }
+}
+
 /// Where a series runs: which fixture app and which of its screens. Primitives
 /// that do not involve an app, such as CLI process start, leave both empty.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -194,11 +214,12 @@ pub trait Adapter {
 
     /// What the tool still has running for `target` after its release, as
     /// `probe` finds it on the host: one entry per process, naming it and its
-    /// pid, such as `daemon (pid 4711)`; empty when nothing is left. The
-    /// hand-off asks again until nothing is, before another tool drives the
-    /// target. A tool whose release leaves nothing running keeps the default,
-    /// which asks the host nothing.
-    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+    /// pid, such as `daemon (pid 4711)`, and whether it is a stray the
+    /// release should have stopped; empty when nothing is left. The hand-off
+    /// asks again until nothing is, before another tool drives the target,
+    /// and ends the strays itself. A tool whose release leaves nothing
+    /// running keeps the default, which asks the host nothing.
+    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<Left>, String> {
         let _ = (target, probe);
         Ok(Vec::new())
     }

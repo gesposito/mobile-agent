@@ -34,6 +34,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{json_document, last_line};
+use crate::adapter::Left;
 use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
 use crate::target::{Platform, Target};
@@ -251,7 +252,10 @@ pub fn ps_details(pids: &str) -> [&str; 6] {
 /// - its daemon: a `node` running `…/dist/src/internal/daemon.js`, the path
 ///   agent-device itself checks a daemon's command line for, whose
 ///   environment names `state_dir` as `AGENT_DEVICE_STATE_DIR`, which
-///   agent-device sets for each daemon it starts;
+///   agent-device sets for each daemon it starts. Once the release has run
+///   `daemon stop`, which returns only after the daemon `daemon.json` names
+///   has exited, a daemon still running is one the stop did not reach, a
+///   stray;
 ///
 /// and for a Simulator, whose UDID is the target's id:
 ///
@@ -276,7 +280,7 @@ pub fn left_running(
     target: &Target,
     state_dir: &str,
     details: impl FnOnce(&[u32]) -> String,
-) -> Vec<String> {
+) -> Vec<Left> {
     let udid = target.id.as_str();
     let simulator = target.class.platform() == Platform::Ios;
     let devices = format!("/Devices/{udid}/");
@@ -324,7 +328,11 @@ pub fn left_running(
     }
     left.sort_by_key(|(pid, _)| *pid);
     left.into_iter()
-        .map(|(pid, name)| format!("{name} (pid {pid})"))
+        .map(|(pid, name)| Left {
+            name: name.to_owned(),
+            pid,
+            stray: name == "daemon",
+        })
         .collect()
 }
 
@@ -779,6 +787,11 @@ mod tests {
         Target::new(udid, TargetClass::Simulator)
     }
 
+    /// Each process left, as the hand-off names it.
+    fn named(left: &[Left]) -> Vec<String> {
+        left.iter().map(Left::to_string).collect()
+    }
+
     #[test]
     fn what_is_left_running_is_the_daemon_runner_and_bridge_of_the_state_directory_and_simulator() {
         let asked = RefCell::new(Vec::new());
@@ -787,7 +800,7 @@ mod tests {
             DETAILS.to_owned()
         });
         assert_eq!(
-            left,
+            named(&left),
             [
                 "daemon (pid 401)",
                 "runner's xcodebuild (pid 402)",
@@ -796,15 +809,22 @@ mod tests {
                 "runner app (pid 405)"
             ]
         );
+        // The daemon is a stray, which the release's stop should have ended;
+        // the runner and the bridge end after it.
+        let strays: Vec<u32> = left.iter().filter(|l| l.stray).map(|l| l.pid).collect();
+        assert_eq!(strays, [401]);
         // Only the processes whose program may be agent-device's are looked
         // at closer; the shell that names them all is not one of them.
         assert_eq!(asked.into_inner(), [401, 402, 403, 404, 501, 502, 503, 506]);
         // Another state directory's daemon and another Simulator's runner
         // and bridge are not this run's.
         assert_eq!(
-            left_running(PROGRAMS, &simulator("SIM-2"), "/tmp/ad-other", |_| {
-                DETAILS.to_owned()
-            }),
+            named(&left_running(
+                PROGRAMS,
+                &simulator("SIM-2"),
+                "/tmp/ad-other",
+                |_| DETAILS.to_owned()
+            )),
             [
                 "daemon (pid 501)",
                 "runner's xcodebuild (pid 502)",
@@ -824,7 +844,8 @@ mod tests {
             asked.borrow_mut().extend_from_slice(pids);
             DETAILS.to_owned()
         });
-        assert_eq!(left, ["daemon (pid 401)"]);
+        assert_eq!(named(&left), ["daemon (pid 401)"]);
+        assert!(left[0].stray);
         assert_eq!(asked.into_inner(), [401, 501, 506]);
     }
 
@@ -833,7 +854,7 @@ mod tests {
         // `ps -p` lists none of the pids it was asked about once they have
         // ended; the runner app is told by its program alone.
         let left = left_running(PROGRAMS, &simulator("SIM-1"), "/tmp/ad", |_| String::new());
-        assert_eq!(left, ["runner app (pid 405)"]);
+        assert_eq!(named(&left), ["runner app (pid 405)"]);
         let none = left_running(
             "    1 /sbin/launchd\n  504 /bin/zsh",
             &simulator("SIM-1"),

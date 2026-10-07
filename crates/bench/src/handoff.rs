@@ -8,7 +8,8 @@
 //! another tool drives a target, and once the run is over, the harness asks
 //! the tool that drove it last to let go ([`Adapter::release`]), waits until
 //! nothing the tool keeps for the target is left running
-//! ([`Adapter::left_running`]), and puts an Android target's input method
+//! ([`Adapter::left_running`]), ending itself what the release should have
+//! stopped and did not reach, and puts an Android target's input method
 //! back to the one the run found. Hand-offs happen between series, never
 //! inside one, and each is recorded with its duration.
 
@@ -18,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::adapter::Adapter;
+use crate::adapter::{Adapter, Left};
 use crate::provenance::Probe;
 use crate::stats::micros;
 use crate::target::{Platform, Target};
@@ -34,6 +35,13 @@ const EXIT_WAIT: Duration = Duration::from_secs(30);
 
 /// How often a hand-off asks what is still running while it waits.
 const EXIT_POLL: Duration = Duration::from_millis(100);
+
+/// How long a stray has after the hand-off's SIGTERM before it is sent
+/// SIGKILL: as long as agent-device's own `daemon stop` gives its daemon. On
+/// the API 36 emulator a SIGTERM ended a daemon `daemon stop` did not reach
+/// in 305 ms, closing its session on the way out (`crates/bench/README.md`,
+/// Hand-offs between tools).
+const KILL_AFTER: Duration = Duration::from_secs(10);
 
 /// One hand-off of a target from the tool that drove it to the next.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,9 +61,10 @@ pub struct HandOff {
     /// On Android, the input method a tool left selected and the one set
     /// back; `None` when the input method was the one the run found.
     pub input_method: Option<String>,
-    /// Why the release or the reset failed, or what the tool left running
-    /// past the wait, when one did. The run goes on, and the next tool meets
-    /// the target as it was left.
+    /// Why the release or the reset failed, a stray the hand-off ended and
+    /// how, or what the tool left running past the wait, when there was
+    /// one. The run goes on, and the next tool meets the target as it was
+    /// left.
     pub error: Option<String>,
 }
 
@@ -70,6 +79,16 @@ pub(crate) struct HandOffs {
     pub(crate) done: Vec<HandOff>,
     /// How long a hand-off waits for what a tool left running: [`EXIT_WAIT`].
     exit_wait: Duration,
+    /// How long a stray has after SIGTERM before SIGKILL: [`KILL_AFTER`].
+    kill_after: Duration,
+}
+
+/// A stray the hand-off is ending: when it sent SIGTERM, and whether it has
+/// sent SIGKILL since.
+struct Ending {
+    left: Left,
+    termed: Instant,
+    killed: bool,
 }
 
 impl HandOffs {
@@ -86,6 +105,7 @@ impl HandOffs {
             input_methods,
             done: Vec::new(),
             exit_wait: EXIT_WAIT,
+            kill_after: KILL_AFTER,
         }
     }
 
@@ -161,8 +181,13 @@ impl HandOffs {
     }
 
     /// Waits until `tool` has nothing left running for `target`, asking every
-    /// [`EXIT_POLL`] for at most `exit_wait`. What is still running then is
-    /// an error naming it, as is a failure to tell.
+    /// [`EXIT_POLL`] for at most `exit_wait`. A stray, a process the release
+    /// should have stopped and did not reach, is sent SIGTERM through `probe`
+    /// as soon as it is listed, and SIGKILL once it has outlived SIGTERM by
+    /// `kill_after`. A stray is an error naming it and what was sent, however
+    /// it ended, since the release left it behind; any other process still
+    /// running once the wait is over is an error naming it, as is a failure
+    /// to tell.
     fn await_exit(
         &self,
         tool: &dyn Adapter,
@@ -170,21 +195,83 @@ impl HandOffs {
         target: &Target,
     ) -> Result<(), String> {
         let started = Instant::now();
+        let mut ending: Vec<Ending> = Vec::new();
         loop {
             let left = tool.left_running(target, probe)?;
-            if left.is_empty() {
-                return Ok(());
+            for stray in left.iter().filter(|left| left.stray) {
+                match ending
+                    .iter_mut()
+                    .find(|ending| ending.left.pid == stray.pid)
+                {
+                    None => {
+                        signal(probe, "TERM", stray.pid);
+                        ending.push(Ending {
+                            left: stray.clone(),
+                            termed: Instant::now(),
+                            killed: false,
+                        });
+                    }
+                    Some(ending)
+                        if !ending.killed && ending.termed.elapsed() >= self.kill_after =>
+                    {
+                        signal(probe, "KILL", stray.pid);
+                        ending.killed = true;
+                    }
+                    Some(_) => {}
+                }
             }
             let waited = started.elapsed();
-            if waited >= self.exit_wait {
-                return Err(format!(
-                    "{} left {} running {} after its release",
-                    tool.name(),
-                    left.join(", "),
-                    spoken(self.exit_wait)
-                ));
+            if left.is_empty() || waited >= self.exit_wait {
+                return self.what_was_left(tool.name(), &left, &ending);
             }
             thread::sleep(EXIT_POLL.min(self.exit_wait - waited));
+        }
+    }
+
+    /// The error of a wait that ended with `left` still running for `tool`,
+    /// after the hand-off sent signals to the strays `ending`; none when
+    /// nothing is left and there were no strays.
+    fn what_was_left(&self, tool: &str, left: &[Left], ending: &[Ending]) -> Result<(), String> {
+        let running = |pid: u32| left.iter().any(|left| left.pid == pid);
+        let mut errors: Vec<String> = ending
+            .iter()
+            .map(|ending| {
+                format!(
+                    "{tool} left {} running after its release; the hand-off sent it SIGTERM{}, \
+                     and it {}",
+                    ending.left,
+                    if ending.killed {
+                        format!(", then SIGKILL after {}", spoken(self.kill_after))
+                    } else {
+                        String::new()
+                    },
+                    if running(ending.left.pid) {
+                        format!(
+                            "was still running {} after its release",
+                            spoken(self.exit_wait)
+                        )
+                    } else {
+                        "exited".to_owned()
+                    }
+                )
+            })
+            .collect();
+        let rest: Vec<String> = left
+            .iter()
+            .filter(|left| !ending.iter().any(|ending| ending.left.pid == left.pid))
+            .map(Left::to_string)
+            .collect();
+        if !rest.is_empty() {
+            errors.push(format!(
+                "{tool} left {} running {} after its release",
+                rest.join(", "),
+                spoken(self.exit_wait)
+            ));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
         }
     }
 
@@ -215,6 +302,12 @@ impl HandOffs {
             )),
         }
     }
+}
+
+/// Sends `signal`, `TERM` or `KILL`, to the host's process `pid` with
+/// `kill` through `probe`. Whether it took is told by the next listing.
+fn signal(probe: &dyn Probe, signal: &str, pid: u32) {
+    probe.output("kill", &[&format!("-{signal}"), &pid.to_string()]);
 }
 
 /// `duration` in whole seconds, such as `30 s`, else in milliseconds.
@@ -265,7 +358,8 @@ mod tests {
 
     /// A tool that notes each release in the log, and fails its release when
     /// told to. When it keeps processes on the host, it finds what it left
-    /// running in the host's process listing.
+    /// running in the host's process listing, where a daemon is a stray: its
+    /// release should have stopped it.
     struct Holder {
         name: &'static str,
         log: Log,
@@ -304,7 +398,7 @@ mod tests {
             Ok(Some(format!("{} let go", self.name)))
         }
 
-        fn left_running(&self, _: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+        fn left_running(&self, _: &Target, probe: &dyn Probe) -> Result<Vec<Left>, String> {
             if !self.on_host {
                 return Ok(Vec::new());
             }
@@ -316,41 +410,62 @@ mod tests {
                 .lines()
                 .filter_map(|line| line.strip_suffix(&mine))
                 .filter_map(|line| line.split_once(' '))
-                .map(|(pid, name)| format!("{name} (pid {pid})"))
+                .map(|(pid, name)| Left {
+                    name: name.to_owned(),
+                    pid: pid.parse().unwrap(),
+                    stray: name == "daemon",
+                })
                 .collect())
         }
     }
 
+    /// A process a tool runs on the host: its pid and name, how many process
+    /// listings after the tool's last release it is still listed, or `None`
+    /// for as long as no signal ends it, and the weaker of the signals that
+    /// end it, `TERM` or `KILL`, or `None` for neither.
+    struct Running {
+        tool: &'static str,
+        pid: u32,
+        name: &'static str,
+        outlives: Option<usize>,
+        ends_on: Option<&'static str>,
+    }
+
     /// A host and the Android device on it. The device's input method is as
-    /// `adb` reads and sets it. The host runs `processes`: the tool that runs
-    /// each, its pid and name, and how many process listings after the
-    /// tool's last release it is still listed, or `None` for never ending.
-    /// The commands it was asked to run go to the log.
+    /// `adb` reads and sets it. The host runs `processes`, and `kill` sends
+    /// them signals. The commands it was asked to run go to the log.
     struct Device {
         ime: RefCell<Option<String>>,
         log: Log,
         /// `ime set` runs and changes nothing.
         stuck: bool,
-        processes: Vec<(&'static str, u32, &'static str, Option<usize>)>,
+        processes: Vec<Running>,
     }
 
     impl Device {
         /// `ps`: each process its tool has not released, or released at most
         /// as many listings ago, this one included, as it outlives a release
-        /// by.
+        /// by, and that no signal sent since has ended.
         fn listing(&self) -> String {
             let log = self.log.borrow();
             self.processes
                 .iter()
-                .filter(|(tool, .., outlives)| {
-                    let released = format!("{tool} released ");
+                .filter(|process| {
+                    let released = format!("{} released ", process.tool);
                     let Some(at) = log.iter().rposition(|l| l.starts_with(&released)) else {
                         return true;
                     };
                     let since = log[at..].iter().filter(|l| *l == PS).count();
-                    outlives.is_none_or(|outlives| since <= outlives)
+                    let ended = match process.ends_on {
+                        Some("TERM") => ["TERM", "KILL"].as_slice(),
+                        Some(_) => ["KILL"].as_slice(),
+                        None => [].as_slice(),
+                    }
+                    .iter()
+                    .any(|signal| log[at..].contains(&format!("kill -{signal} {}", process.pid)));
+                    !ended && process.outlives.is_none_or(|outlives| since <= outlives)
                 })
-                .map(|(tool, pid, name, _)| format!("{pid} {name} of {tool}"))
+                .map(|process| format!("{} {} of {}", process.pid, process.name, process.tool))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -363,6 +478,7 @@ mod tests {
                 .push(format!("{program} {}", args.join(" ")));
             match (program, args) {
                 ("ps", ["-A", "-ww", "-o", "pid=,command="]) => Some(self.listing()),
+                ("kill", [signal, _]) if signal.starts_with('-') => Some(String::new()),
                 (
                     "adb",
                     [
@@ -422,12 +538,37 @@ mod tests {
             fails: false,
             on_host: true,
         });
+        let running = |pid, name, outlives| Running {
+            tool: "first",
+            pid,
+            name,
+            outlives,
+            ends_on: None,
+        };
         device.processes = vec![
-            ("first", 101, "daemon", Some(0)),
-            ("first", 102, "runner", Some(1)),
-            ("first", 103, "bridge", bridge),
+            running(101, "daemon", Some(0)),
+            running(102, "runner", Some(1)),
+            running(103, "bridge", bridge),
         ];
         (tools, device, log)
+    }
+
+    /// Two tools on a Simulator, the first of which leaves its daemon running
+    /// after its release, a stray that `ends_on` ends.
+    fn with_a_stray(ends_on: Option<&'static str>) -> (Vec<Box<dyn Adapter>>, Device, Log) {
+        let (tools, mut device, log) = on_host(Some(0));
+        device.processes[0].outlives = None;
+        device.processes[0].ends_on = ends_on;
+        (tools, device, log)
+    }
+
+    /// The signals the hand-off sent, as the log has them.
+    fn kills(log: &Log) -> Vec<String> {
+        log.borrow()
+            .iter()
+            .filter(|line| line.starts_with("kill "))
+            .cloned()
+            .collect()
     }
 
     fn emulator() -> Target {
@@ -566,6 +707,90 @@ mod tests {
         assert_eq!(
             handoffs.done[0].error.as_deref(),
             Some("first left bridge (pid 103) running 50 ms after its release")
+        );
+    }
+
+    /// Task 10.27: a daemon the tool's own stop did not reach, such as
+    /// agent-device's daemon whose `daemon.json` a timed-out request deleted,
+    /// idled for minutes when the hand-off only reported it. The hand-off
+    /// sends such a stray SIGTERM as soon as it lists it, waits for it as for
+    /// the rest, and names what it did in the hand-off's error, since the
+    /// release left the stray behind.
+    #[test]
+    fn a_stray_is_sent_sigterm_at_once_and_the_error_says_it_exited() {
+        let (mut tools, device, log) = with_a_stray(Some("TERM"));
+        let target = simulator();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        log.borrow_mut().push("second drives SIM-1".to_owned());
+        assert_eq!(
+            log.borrow()[..],
+            [
+                "first released SIM-1",
+                PS,
+                "kill -TERM 101",
+                PS,
+                "second drives SIM-1"
+            ]
+        );
+        assert_eq!(handoffs.done[0].released.as_deref(), Some("first let go"));
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some(
+                "first left daemon (pid 101) running after its release; the hand-off sent \
+                 it SIGTERM, and it exited"
+            )
+        );
+    }
+
+    /// A stray still running `kill_after` past its SIGTERM gets SIGKILL, as
+    /// agent-device's own `daemon stop` does to its daemon after 10 s.
+    #[test]
+    fn a_stray_that_outlives_sigterm_is_sent_sigkill_once_the_bound_has_passed() {
+        let (mut tools, device, log) = with_a_stray(Some("KILL"));
+        let target = simulator();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.kill_after = Duration::from_millis(50);
+        handoffs.take(&mut tools, &device, &target, 0);
+        let started = Instant::now();
+        handoffs.take(&mut tools, &device, &target, 1);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        assert_eq!(kills(&log), ["kill -TERM 101", "kill -KILL 101"]);
+        // After SIGKILL the hand-off listed the host once more and found
+        // nothing left.
+        assert_eq!(
+            log.borrow()[log.borrow().len() - 2..],
+            ["kill -KILL 101", PS]
+        );
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some(
+                "first left daemon (pid 101) running after its release; the hand-off sent \
+                 it SIGTERM, then SIGKILL after 50 ms, and it exited"
+            )
+        );
+    }
+
+    /// A stray that outlives both signals is still running when the wait
+    /// ends, which the error says after what was sent.
+    #[test]
+    fn a_stray_that_outlives_both_signals_is_an_error_saying_what_was_sent() {
+        let (mut tools, device, log) = with_a_stray(None);
+        let target = simulator();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.kill_after = Duration::from_millis(20);
+        handoffs.exit_wait = Duration::from_millis(100);
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        assert_eq!(kills(&log), ["kill -TERM 101", "kill -KILL 101"]);
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some(
+                "first left daemon (pid 101) running after its release; the hand-off sent \
+                 it SIGTERM, then SIGKILL after 20 ms, and it was still running 100 ms \
+                 after its release"
+            )
         );
     }
 

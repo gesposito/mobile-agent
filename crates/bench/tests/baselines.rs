@@ -469,6 +469,19 @@ const ON_EMULATOR: [(Process, u32); 1] = [(
     0,
 )];
 
+/// A daemon of `/state` that `daemon stop` does not reach, as when a
+/// timed-out request deleted its `daemon.json` but left it running: no
+/// number of listings after the stop ends it, only a signal.
+const ORPHAN: (Process, u32) = (
+    (
+        409,
+        "/opt/homebrew/bin/node",
+        "/opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js",
+        "AGENT_DEVICE_STATE_DIR=/state AGENT_DEVICE_DAEMON_SERVER_MODE=socket",
+    ),
+    u32::MAX,
+);
+
 /// Processes that are not agent-device's for `SIM-1` and `/state`, and never
 /// end: the daemon of another state directory, another Simulator's runner
 /// and bridge, and a shell whose command names everything agent-device's do.
@@ -510,8 +523,9 @@ const IME_HELPER: &str = "com.callstack.agentdevice.imehelper";
 /// The host agent-device drives a target from. Once a batch has run, `ps`
 /// lists agent-device's processes, `agent_device`, beside the others; after
 /// a `daemon stop` that followed the last batch, each of agent-device's
-/// processes ends as `agent_device` says. Each listing of the host's
-/// programs is noted in `events` with agent-device's processes on it.
+/// processes ends as `agent_device` says, and `kill -TERM` or `kill -KILL`
+/// ends one at once. Each listing of the host's programs is noted in
+/// `events` with agent-device's processes on it, and so is each signal.
 ///
 /// On an emulator, `serial`, the host also answers `adb`: the guest's
 /// processes, which hold agent-device's input-method helper from the first
@@ -521,8 +535,10 @@ const IME_HELPER: &str = "com.callstack.agentdevice.imehelper";
 struct Host {
     tool_log: PathBuf,
     events: Events,
-    agent_device: &'static [(Process, u32)],
+    agent_device: Vec<(Process, u32)>,
     listings_since_stop: Cell<u32>,
+    /// agent-device's processes a signal ended.
+    killed: RefCell<Vec<u32>>,
     serial: Option<&'static str>,
     /// Each package force-stopped in the guest, and how many batches had run
     /// by then.
@@ -574,6 +590,24 @@ impl Host {
         listing
     }
 
+    /// `kill -TERM <pid>` or `kill -KILL <pid>`, which ends one of
+    /// agent-device's processes alive and prints nothing; it fails for any
+    /// other process.
+    fn kill(&self, signal: &str, pid: &str) -> Option<String> {
+        let pid: u32 = pid.parse().ok()?;
+        if !self.alive().iter().any(|(alive, ..)| *alive == pid)
+            || !self.agent_device.iter().any(|((own, ..), _)| *own == pid)
+        {
+            return None;
+        }
+        self.killed.borrow_mut().push(pid);
+        self.events.borrow_mut().push(format!(
+            "the hand-off sends SIG{} to {pid}",
+            signal.trim_start_matches('-')
+        ));
+        Some(String::new())
+    }
+
     /// `adb shell am force-stop <package>`, which prints nothing.
     fn force_stop(&self, package: &str) -> String {
         self.events
@@ -594,6 +628,7 @@ impl Host {
                 .iter()
                 .filter(|(_, outlives)| !stopped || self.listings_since_stop.get() <= *outlives)
                 .map(|(process, _)| *process)
+                .filter(|(pid, ..)| !self.killed.borrow().contains(pid))
                 .collect(),
         };
         OTHER_PROCESSES
@@ -659,6 +694,7 @@ impl Probe for Host {
             {
                 Some(self.force_stop(package))
             }
+            ("kill", [signal @ ("-TERM" | "-KILL"), pid]) => self.kill(signal, pid),
             _ => self.scripted.output(program, args),
         }
     }
@@ -730,9 +766,15 @@ const CLOSE_FAILS: &str = "echo '{\"success\":false,\"error\":{\"code\":\"COMMAN
 /// On the fake host of `target`, `SIM-1` or `emulator-5554`, the tool under
 /// test runs the tab-list flow, then agent-device does, whose `close` runs
 /// `close`, a shell command; then the tool under test takes the target back
-/// for its process start. Returns the report, what happened on the host and
-/// the commands agent-device was given besides its batches.
-fn hand_back(name: &str, target: Target, close: &str) -> (Report, Vec<String>, Vec<String>) {
+/// for its process start. The host runs agent-device's processes for the
+/// target's platform and `more`. Returns the report, what happened on the
+/// host and the commands agent-device was given besides its batches.
+fn hand_back(
+    name: &str,
+    target: Target,
+    close: &str,
+    more: &[(Process, u32)],
+) -> (Report, Vec<String>, Vec<String>) {
     let setup = Setup::new(name);
     fake_tool(
         &setup.bin,
@@ -755,10 +797,15 @@ fn hand_back(name: &str, target: Target, close: &str) -> (Report, Vec<String>, V
         tool_log: setup.bin.join("agent-device.log"),
         events: Rc::clone(&events),
         agent_device: match target.class {
-            TargetClass::Simulator => &ON_SIMULATOR,
-            _ => &ON_EMULATOR,
-        },
+            TargetClass::Simulator => ON_SIMULATOR.as_slice(),
+            _ => ON_EMULATOR.as_slice(),
+        }
+        .iter()
+        .chain(more)
+        .copied()
+        .collect(),
         listings_since_stop: Cell::new(0),
+        killed: RefCell::new(Vec::new()),
         serial: (target.class != TargetClass::Simulator).then_some("emulator-5554"),
         force_stopped: RefCell::new(Vec::new()),
         scripted: common::probe(),
@@ -827,7 +874,7 @@ fn hand_back(name: &str, target: Target, close: &str) -> (Report, Vec<String>, V
 #[test]
 fn agent_device_s_daemon_runner_and_bridge_are_gone_before_the_next_tool_takes_the_simulator() {
     let (report, events, commands) =
-        hand_back("baselines-agent-device-simulator", simulator(), CLOSED);
+        hand_back("baselines-agent-device-simulator", simulator(), CLOSED, &[]);
     let agent_device = report
         .measurements
         .iter()
@@ -879,6 +926,7 @@ fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
         "baselines-agent-device-close-fails",
         simulator(),
         CLOSE_FAILS,
+        &[],
     );
     assert_eq!(commands[..2], [CLOSE_ON_SIM, "daemon stop --clean --json"]);
     let handoff = report
@@ -913,7 +961,7 @@ fn a_close_that_fails_on_the_simulator_still_stops_agent_device_s_daemon() {
 #[test]
 fn agent_device_s_daemon_and_helper_are_gone_before_the_next_tool_takes_the_emulator() {
     let (report, events, commands) =
-        hand_back("baselines-agent-device-emulator", emulator(), CLOSED);
+        hand_back("baselines-agent-device-emulator", emulator(), CLOSED, &[]);
     let agent_device = report
         .measurements
         .iter()
@@ -967,6 +1015,7 @@ fn a_close_that_fails_on_the_emulator_still_stops_agent_device_s_daemon() {
         "baselines-agent-device-emulator-close-fails",
         emulator(),
         CLOSE_FAILS,
+        &[],
     );
     assert!(
         commands.starts_with(&[
@@ -994,6 +1043,67 @@ fn a_close_that_fails_on_the_emulator_still_stops_agent_device_s_daemon() {
             "mobile-agent prepares cli-start"
         ]
     );
+}
+
+/// Task 10.27: a daemon that agent-device's `daemon stop` does not reach,
+/// because a timed-out request deleted its `daemon.json` and left it
+/// running, idled with its session open for 7 minutes on a Simulator in
+/// 10.18's rerun, and the hand-off only reported it once its 30 s wait was
+/// over. On either platform the hand-off sends it SIGTERM as soon as it
+/// lists it after the release, waits for it as for the rest, and names what
+/// it did in its error.
+#[test]
+fn a_daemon_agent_device_s_stop_does_not_reach_is_ended_by_the_hand_off() {
+    let simulator_events = [
+        "mobile-agent prepares flow tab-list",
+        "ps lists 402, 404, 405, 409",
+        "the hand-off sends SIGTERM to 409",
+        "ps lists 404, 405",
+        "ps lists 404",
+        "ps lists none of agent-device's processes",
+        "mobile-agent prepares cli-start",
+    ];
+    let emulator_events = [
+        "mobile-agent prepares flow tab-list",
+        "the guest runs com.callstack.agentdevice.imehelper",
+        "adb force-stops com.callstack.agentdevice.imehelper",
+        "ps lists 409",
+        "the hand-off sends SIGTERM to 409",
+        "ps lists none of agent-device's processes",
+        "mobile-agent prepares cli-start",
+    ];
+    for (target, expected) in [
+        (simulator(), simulator_events.as_slice()),
+        (emulator(), emulator_events.as_slice()),
+    ] {
+        let name = format!("baselines-agent-device-orphan-{}", target.id);
+        let (report, events, commands) = hand_back(&name, target, CLOSED, &[ORPHAN]);
+        // The release ran as ever: its stop reached the daemon it knew.
+        assert!(
+            commands.contains(&"daemon stop --clean --json".to_owned()),
+            "{commands:?}"
+        );
+        let handoff = report
+            .handoffs
+            .iter()
+            .find(|h| h.from == "agent-device")
+            .unwrap();
+        assert!(
+            handoff
+                .released
+                .as_deref()
+                .is_some_and(|released| released.contains("stopped its daemon")),
+            "{handoff:?}"
+        );
+        assert_eq!(
+            handoff.error.as_deref(),
+            Some(
+                "agent-device left daemon (pid 409) running after its release; the hand-off \
+                 sent it SIGTERM, and it exited"
+            )
+        );
+        assert_eq!(events, expected);
+    }
 }
 
 fn simulator() -> Target {

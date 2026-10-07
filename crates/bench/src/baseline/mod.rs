@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
+use crate::adapter::{Adapter, AdapterError, Clock, Detection, Left, Role, Sample, Scenario};
 use crate::end_state::{EndState, Reading};
 use crate::flow::Flow;
 use crate::harness::Subject;
@@ -310,11 +310,11 @@ impl Adapter for Baseline {
     }
 
     /// What agent-device still runs for the target on the host: its daemon
-    /// of the state directory its commands use, and on a Simulator its
-    /// XCTest runner and its snapshot bridge
-    /// ([`agent_device::left_running`]). For Maestro and maestro-runner,
-    /// nothing.
-    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<String>, String> {
+    /// of the state directory its commands use, a stray once the release's
+    /// stop has returned, and on a Simulator its XCTest runner and its
+    /// snapshot bridge ([`agent_device::left_running`]). For Maestro and
+    /// maestro-runner, nothing.
+    fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<Left>, String> {
         if self.tool != BaselineTool::AgentDevice {
             return Ok(Vec::new());
         }
