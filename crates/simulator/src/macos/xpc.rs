@@ -25,12 +25,17 @@ unsafe extern "C" {
     fn xpc_copy_description(object: Object) -> *mut c_char;
 
     fn xpc_dictionary_create_empty() -> Object;
+    fn xpc_array_create_empty() -> Object;
+    fn xpc_array_append_value(array: Object, value: Object);
+    fn xpc_string_create(string: *const c_char) -> Object;
+    fn xpc_data_create(bytes: *const c_void, length: usize) -> Object;
     fn xpc_dictionary_set_string(dictionary: Object, key: *const c_char, value: *const c_char);
     fn xpc_dictionary_set_bool(dictionary: Object, key: *const c_char, value: bool);
     fn xpc_dictionary_set_uint64(dictionary: Object, key: *const c_char, value: u64);
     fn xpc_dictionary_set_double(dictionary: Object, key: *const c_char, value: f64);
     fn xpc_dictionary_set_value(dictionary: Object, key: *const c_char, value: Object);
     fn xpc_dictionary_get_string(dictionary: Object, key: *const c_char) -> *const c_char;
+    fn xpc_dictionary_get_value(dictionary: Object, key: *const c_char) -> Object;
 
     fn xpc_connection_set_target_queue(connection: Connection, queue: *const c_void);
     fn xpc_connection_set_event_handler(connection: Connection, handler: *mut c_void);
@@ -58,8 +63,12 @@ unsafe extern "C" {
     fn xpc_dictionary_get_bool(dictionary: Object, key: *const c_char) -> bool;
     fn xpc_dictionary_get_uint64(dictionary: Object, key: *const c_char) -> u64;
     fn xpc_dictionary_get_double(dictionary: Object, key: *const c_char) -> f64;
-    fn xpc_dictionary_get_value(dictionary: Object, key: *const c_char) -> Object;
     fn xpc_dictionary_get_count(dictionary: Object) -> usize;
+    fn xpc_array_get_count(array: Object) -> usize;
+    fn xpc_array_get_value(array: Object, index: usize) -> Object;
+    fn xpc_string_get_string_ptr(string: Object) -> *const c_char;
+    fn xpc_data_get_bytes_ptr(data: Object) -> *const c_void;
+    fn xpc_data_get_length(data: Object) -> usize;
 }
 
 fn c(text: &str) -> CString {
@@ -87,6 +96,26 @@ impl Value {
     pub fn dictionary() -> Value {
         // SAFETY: returns a new +1 dictionary.
         Value(unsafe { xpc_dictionary_create_empty() })
+    }
+
+    /// An empty array.
+    pub fn array() -> Value {
+        // SAFETY: returns a new +1 array.
+        Value(unsafe { xpc_array_create_empty() })
+    }
+
+    /// A string.
+    pub fn text(value: &str) -> Value {
+        let value = c(value);
+        // SAFETY: `value` outlives the call, which copies it; the result is +1.
+        Value(unsafe { xpc_string_create(value.as_ptr()) })
+    }
+
+    /// A data object holding a copy of `bytes`.
+    pub fn data(bytes: &[u8]) -> Value {
+        // SAFETY: `bytes` is valid for its length during the call, which
+        // copies it; the result is +1.
+        Value(unsafe { xpc_data_create(bytes.as_ptr().cast(), bytes.len()) })
     }
 
     /// Retains a borrowed object, such as one a handler receives.
@@ -171,7 +200,13 @@ impl Value {
         unsafe { xpc_dictionary_set_value(self.0, key.as_ptr(), value.0) };
     }
 
-    #[cfg(test)]
+    /// Appends `value` to this array, which retains it.
+    pub fn append(&self, value: &Value) {
+        // SAFETY: both objects are live; the array retains `value`.
+        unsafe { xpc_array_append_value(self.0, value.0) };
+    }
+
+    /// The string at `key` of a dictionary.
     pub fn string(&self, key: &str) -> Option<String> {
         let key = c(key);
         // SAFETY: `key` outlives the call; the result is nil or borrowed.
@@ -210,8 +245,7 @@ impl Value {
         Some(unsafe { xpc_dictionary_get_double(self.0, key.as_ptr()) })
     }
 
-    /// The object at `key`, retained.
-    #[cfg(test)]
+    /// The object at `key` of a dictionary, retained.
     pub fn value(&self, key: &str) -> Option<Value> {
         let key = c(key);
         // SAFETY: `key` outlives the call; the result is nil or borrowed and
@@ -223,6 +257,48 @@ impl Value {
     pub fn count(&self) -> usize {
         // SAFETY: the object is live; 0 for a non-dictionary.
         unsafe { xpc_dictionary_get_count(self.0) }
+    }
+
+    /// An array's items, retained.
+    #[cfg(test)]
+    pub fn items(&self) -> Vec<Value> {
+        // SAFETY: the object is live; the count is 0 for a non-array, and
+        // each item is borrowed and retained by `retaining`.
+        unsafe {
+            (0..xpc_array_get_count(self.0))
+                .filter_map(|index| Value::retaining(xpc_array_get_value(self.0, index)))
+                .collect()
+        }
+    }
+
+    /// A string object's text.
+    #[cfg(test)]
+    pub fn as_text(&self) -> Option<String> {
+        // SAFETY: the object is live; the pointer is NULL for a non-string
+        // and otherwise borrowed for the object's life.
+        unsafe {
+            let raw = xpc_string_get_string_ptr(self.0);
+            (!raw.is_null()).then(|| CStr::from_ptr(raw).to_string_lossy().into_owned())
+        }
+    }
+
+    /// A data object's bytes.
+    #[cfg(test)]
+    pub fn as_bytes(&self) -> Option<Vec<u8>> {
+        if self.type_name() != "data" {
+            return None;
+        }
+        // SAFETY: the object is a live data object; its bytes are borrowed
+        // for the object's life and copied here.
+        unsafe {
+            let length = xpc_data_get_length(self.0);
+            let bytes = xpc_data_get_bytes_ptr(self.0).cast::<u8>();
+            Some(if length == 0 || bytes.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(bytes, length).to_vec()
+            })
+        }
     }
 }
 
@@ -391,6 +467,20 @@ mod tests {
         assert_eq!(dictionary.uint64("x"), None, "a double is not a uint64");
         assert!(dictionary.value("missing").is_none());
         assert!(!dictionary.is_error());
+    }
+
+    #[test]
+    fn arrays_strings_and_data_keep_what_they_were_given() {
+        let array = Value::array();
+        array.append(&Value::text("public.text"));
+        array.append(&Value::data(b"36 characters"));
+        assert_eq!(array.type_name(), "array");
+        let items = array.items();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].as_text().as_deref(), Some("public.text"));
+        assert_eq!(items[1].as_bytes().as_deref(), Some(&b"36 characters"[..]));
+        assert_eq!(items[0].as_bytes(), None, "a string is not data");
+        assert_eq!(Value::data(b"").as_bytes(), Some(Vec::new()));
     }
 
     #[test]

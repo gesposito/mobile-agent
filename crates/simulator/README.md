@@ -525,6 +525,7 @@ the driver makes with the image it lives in and where it was validated:
 | `SimServiceContext`, `SimDeviceSet` and `SimDevice` lifecycle: create, delete, boot, `bootStatus`, shutdown, install, launch, terminate | CoreSimulator | Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S2, `tests/lifecycle.rs` |
 | `-[SimDevice dataPath]` | CoreSimulator | `tests/lifecycle.rs` |
 | `-[SimDevice installedAppsWithError:]`, `-setPrivacyAccessForService:bundleID:granted:error:` | CoreSimulator | `tests/text.rs` |
+| `-[SimDevice lookup:error:]` for `com.apple.coredevice.feature.pasteboard`, the three `_4sim` libxpc functions, its `SET` command and `SET_REPLY`; `devicectl device pasteboard copy` when they fail | CoreSimulator, libxpc, `dtpasteboardd` of CoreDevice 642.16 in the guest | task 10.31's benchmark, `tests/text.rs` |
 | `-[SimDevice io]`, `-ioPorts`, the display descriptor, `-framebufferSurface`, the SimScreen callbacks | CoreSimDeviceIO, ROCKit proxies | spike S2, `tests/frames.rs` |
 | `-[SimDevice lookup:error:]`, the three `_4sim` libxpc functions | CoreSimulator, libxpc | spike S3, `tests/dtuhid.rs` |
 | `SimDeviceLegacyHIDClient`, `IndigoHIDMessageForMouseNSEvent` (six parameters) | SimulatorKit 1005.2 | spike S3, `tests/indigo.rs` on a fresh boot |

@@ -1,16 +1,34 @@
 //! The device pasteboard: which applications may paste from it, and the
-//! text put on it, written through `devicectl device pasteboard copy`: under
-//! Xcode 27, `simctl pbcopy` exits 0 and writes nothing on iOS 26.5 guests
-//! (research note, from baguette).
+//! text put on it. A `SET` sent to the guest's `dtpasteboardd` puts it
+//! there, as `devicectl device pasteboard copy` does from a process of its
+//! own, which is the fallback; `simctl pbcopy` goes to `CoreSimulatorBridge`,
+//! which ignores it once `dtpasteboardd` runs (research note, task 10.31).
 
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::sync::{Mutex, MutexGuard};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
+
+use block2::RcBlock;
 
 use crate::error::{Error, Result};
-use crate::macos::coresim::developer_dir;
+use crate::macos::coresim::{Device, developer_dir};
+use crate::macos::objc;
+use crate::macos::xpc::{self, Sim4Symbols, Value};
+
+/// The guest service `dtpasteboardd` vends, of the CoreDevice feature
+/// services that dtuhidd's digitizer belongs to.
+pub const SERVICE: &str = "com.apple.coredevice.feature.pasteboard";
+
+/// The types `devicectl` writes text under, each with the same bytes.
+const TEXT_TYPES: [&str; 3] = ["public.utf8-plain-text", "public.plain-text", "public.text"];
+
+/// How long `dtpasteboardd` gets to answer a `SET`. With its lookup and
+/// connection, a `SET` took 8 to 35 ms on a loaded host (task 10.31); the
+/// first one of a boot launches the daemon.
+const REPLY: Duration = Duration::from_secs(5);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
@@ -67,8 +85,102 @@ pub fn applications_changed(data: &Path) -> Option<SystemTime> {
         .ok()
 }
 
-/// Puts `text` on the device's general pasteboard as plain text.
-pub fn copy(udid: &str, text: &str) -> Result<()> {
+/// Puts `text` on the device's general pasteboard as plain text: a `SET`
+/// to the guest's `dtpasteboardd`, or `devicectl` when that fails.
+pub fn copy(device: &Device, text: &str) -> Result<()> {
+    copy_with(|| set(device, text), || devicectl(&device.udid()?, text))
+}
+
+/// `direct`, then `fallback` when `direct` fails, as for a guest that does
+/// not vend the service or a `dtpasteboardd` that no longer reads this
+/// `SET`. When both fail, the error says why each did.
+fn copy_with(
+    direct: impl FnOnce() -> std::result::Result<(), String>,
+    fallback: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let Err(why) = direct() else {
+        return Ok(());
+    };
+    fallback().map_err(|error| Error::Io {
+        what: "setting the device pasteboard".into(),
+        reason: format!("a SET to dtpasteboardd failed ({why}), then {error}"),
+    })
+}
+
+/// Sends the `SET` for `text` to the guest's `dtpasteboardd` over a
+/// connection of its own, reached as dtuhidd is (spike S3), and waits for
+/// its reply, which carries the pasteboard as the `SET` left it.
+fn set(device: &Device, text: &str) -> std::result::Result<(), String> {
+    let symbols = Sim4Symbols::resolve()?;
+    let port = device
+        .lookup(SERVICE)
+        .map_err(|error| format!("the guest does not vend {SERVICE}: {error}"))?;
+    let connection = symbols
+        .connect(port)
+        .ok_or("xpc_connection_create_from_endpoint returned nothing")?;
+    let queue = objc::completion_queue();
+    connection.set_target_queue(queue);
+    // Errors reach the reply handler as well; libxpc wants a handler before
+    // the connection resumes.
+    let events = RcBlock::new(|_event: xpc::Object| {});
+    connection.set_event_handler(&events);
+    connection.resume();
+    let (tx, rx) = mpsc::sync_channel(1);
+    connection.send_with_reply(&set_message(text), queue, move |reply| {
+        // SAFETY: XPC hands the handler a live object.
+        let _ = tx.try_send(unsafe { Value::retaining(reply) });
+    });
+    let reply = rx
+        .recv_timeout(REPLY)
+        .map_err(|_| format!("no reply within {REPLY:?}"))?;
+    outcome(reply.as_ref())
+}
+
+/// The `SET` that puts `text` on the general pasteboard, as one item under
+/// each plain-text type: `{command, pasteboardName, items: [{types, data:
+/// {<type>: {data}}}]}`, the shape `dtpasteboardd` of CoreDevice 642.16
+/// decodes (task 10.31).
+fn set_message(text: &str) -> Value {
+    let types = Value::array();
+    let data = Value::dictionary();
+    for kind in TEXT_TYPES {
+        types.append(&Value::text(kind));
+        let representation = Value::dictionary();
+        representation.set_value("data", &Value::data(text.as_bytes()));
+        data.set_value(kind, &representation);
+    }
+    let item = Value::dictionary();
+    item.set_value("types", &types);
+    item.set_value("data", &data);
+    let items = Value::array();
+    items.append(&item);
+    let message = Value::dictionary();
+    message.set_string("command", "SET");
+    message.set_string("pasteboardName", "general");
+    message.set_value("items", &items);
+    message
+}
+
+/// What `dtpasteboardd` answered a `SET` with: `SET_REPLY` once the text is
+/// on the pasteboard, otherwise why not, such as the key it could not
+/// decode or the connection's error.
+fn outcome(reply: Option<&Value>) -> std::result::Result<(), String> {
+    let reply = reply.ok_or("a nil reply")?;
+    if reply.is_error() {
+        return Err(reply.error_reason());
+    }
+    if reply.string("command").as_deref() == Some("SET_REPLY") {
+        return Ok(());
+    }
+    Err(reply
+        .value("error")
+        .and_then(|error| error.value("userInfo"))
+        .and_then(|info| info.string("NSDebugDescription"))
+        .unwrap_or_else(|| reply.description()))
+}
+
+/// `devicectl device pasteboard copy`, a process of its own.
+fn devicectl(udid: &str, text: &str) -> Result<()> {
     let devicectl = developer_dir().join("usr/bin/devicectl");
     let mut command = if devicectl.exists() {
         Command::new(devicectl)
@@ -122,6 +234,111 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn a_paste_goes_to_dtpasteboardd_and_leaves_devicectl_alone() {
+        let ran_devicectl = Cell::new(false);
+        copy_with(
+            || Ok(()),
+            || {
+                ran_devicectl.set(true);
+                Ok(())
+            },
+        )
+        .expect("the text is on the pasteboard");
+        assert!(!ran_devicectl.get(), "devicectl ran after the SET");
+    }
+
+    #[test]
+    fn a_guest_that_does_not_take_the_set_gets_devicectl() {
+        let ran_devicectl = Cell::new(0);
+        copy_with(
+            || Err("the guest does not vend com.apple.coredevice.feature.pasteboard".into()),
+            || {
+                ran_devicectl.set(ran_devicectl.get() + 1);
+                Ok(())
+            },
+        )
+        .expect("devicectl stands in");
+        assert_eq!(ran_devicectl.get(), 1);
+    }
+
+    #[test]
+    fn when_devicectl_fails_too_the_error_names_both() {
+        let error = copy_with(
+            || Err("Expected to find key items.".into()),
+            || {
+                Err(Error::Io {
+                    what: "devicectl device pasteboard copy".into(),
+                    reason: "exit status: 1".into(),
+                })
+            },
+        )
+        .expect_err("neither route set the pasteboard");
+        assert_eq!(error.code(), "io");
+        let message = error.to_string();
+        for part in ["Expected to find key items.", "devicectl", "exit status: 1"] {
+            assert!(
+                message.contains(part),
+                "{part:?} is missing from: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_set_carries_the_text_under_each_plain_text_type() {
+        let text = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let message = set_message(text);
+        assert_eq!(message.string("command").as_deref(), Some("SET"));
+        assert_eq!(message.string("pasteboardName").as_deref(), Some("general"));
+        let items = message.value("items").expect("items").items();
+        assert_eq!(items.len(), 1, "one item");
+        let types: Vec<String> = items[0]
+            .value("types")
+            .expect("types")
+            .items()
+            .iter()
+            .filter_map(Value::as_text)
+            .collect();
+        assert_eq!(
+            types,
+            ["public.utf8-plain-text", "public.plain-text", "public.text"]
+        );
+        let data = items[0].value("data").expect("data");
+        for kind in &types {
+            let bytes = data
+                .value(kind)
+                .and_then(|representation| representation.value("data"))
+                .and_then(|data| data.as_bytes());
+            assert_eq!(bytes.as_deref(), Some(text.as_bytes()), "{kind}");
+        }
+    }
+
+    #[test]
+    fn a_set_reply_succeeds_and_any_other_answer_says_why_not() {
+        let reply = Value::dictionary();
+        reply.set_string("command", "SET_REPLY");
+        assert_eq!(outcome(Some(&reply)), Ok(()));
+
+        // A decoding error, as dtpasteboardd answers a SET it cannot read.
+        let user_info = Value::dictionary();
+        user_info.set_string("NSDebugDescription", "Expected to find key items.");
+        let error = Value::dictionary();
+        error.set_string("domain", "NSCocoaErrorDomain");
+        error.set_value("userInfo", &user_info);
+        let refused = Value::dictionary();
+        refused.set_value("error", &error);
+        assert_eq!(
+            outcome(Some(&refused)),
+            Err("Expected to find key items.".to_string())
+        );
+
+        let other = Value::dictionary();
+        other.set_string("command", "PULL_REPLY");
+        let why = outcome(Some(&other)).expect_err("not a SET's reply");
+        assert!(why.contains("PULL_REPLY"), "{why}");
+        assert!(outcome(None).is_err());
+    }
 
     /// A device's listing: the fixtures as user applications and one of the
     /// runtime's own.

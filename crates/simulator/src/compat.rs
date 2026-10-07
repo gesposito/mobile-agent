@@ -90,6 +90,7 @@ pub fn call_sites() -> Vec<CallSite> {
     const INDIGO: &str =
         "Xcode 27.0, SimulatorKit 1005.2, iOS 26.5: spike S3 and tests/indigo.rs, on a fresh boot";
     const TEXT: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/text.rs";
+    const PASTE: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: task 10.31's benchmark and tests/text.rs; devicectl device pasteboard copy when it fails";
     const LIFECYCLE: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: tests/lifecycle.rs";
     const READER: &str = "Xcode 27.0, CoreSimulator 1171.7, iOS 26.5: spike S4 and tests/tree.rs";
     const GUEST: &str = "iOS 26.5 runtime, inside the Simulator: spike S4 and tests/tree.rs, through simulator-reader";
@@ -130,6 +131,11 @@ pub fn call_sites() -> Vec<CallSite> {
             "-[SimDevice installedAppsWithError:], -setPrivacyAccessForService:bundleID:granted:error: (kTCCServicePasteboard)",
             "CoreSimulator",
             TEXT,
+        ),
+        site(
+            "-[SimDevice lookup:error:] for com.apple.coredevice.feature.pasteboard, the _4sim libxpc functions, its SET command and SET_REPLY",
+            "CoreSimulator, libxpc, dtpasteboardd of CoreDevice 642.16 (in the guest)",
+            PASTE,
         ),
         site(
             "-[SimDevice io], -[SimDeviceIOClient ioPorts], port -descriptor, descriptor -state and -displayClass",

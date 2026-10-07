@@ -919,7 +919,7 @@ impl Input for SimulatorDriver {
             } else {
                 let device = self.target(target)?;
                 self.allow_paste(&device)?;
-                pasteboard::copy(&device.device.udid()?, text)?;
+                pasteboard::copy(&device.device, text)?;
                 let paste = Key {
                     usage: USAGE_V,
                     modifiers: Modifiers {
@@ -1078,6 +1078,7 @@ mod tests {
             "lookup:error:",
             "spawnWithPath:",
             "userTestingSnapshotForElement:",
+            "com.apple.coredevice.feature.pasteboard",
         ] {
             assert!(
                 table.call_sites.iter().any(|site| site.call.contains(call)),
