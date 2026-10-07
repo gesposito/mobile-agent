@@ -1,0 +1,4879 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-07T06:16:18Z",
+    "finished_at": "2026-10-07T07:26:40Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.41,
+        6.63,
+        7.61
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "0ae21d1eaac5256c0ed2e0f57b0eae23bd0010ce",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+        "class": "simulator",
+        "model": "iPhone 17",
+        "os": "iOS 26.5",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "available",
+        "version": "2.10.0",
+        "note": null
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "swiftui",
+      "screen": "login",
+      "primitive": "text-entry",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 545468,
+        "p95_us": 808958,
+        "max_us": 823476
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1180141,
+          "nodes": null,
+          "detail": "method direct, read back as text in 265.773 ms; cleared: method keys, read back as text in 272.762 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 748614,
+          "nodes": null,
+          "detail": "method direct, read back as text in 260.44 ms; cleared: method keys, read back as text in 280.569 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 505022,
+          "nodes": null,
+          "detail": "method direct, read back as text in 273.766 ms; cleared: method keys, read back as text in 273.836 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 823208,
+          "nodes": null,
+          "detail": "method direct, read back as text in 289.368 ms; cleared: method keys, read back as text in 280.181 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 720555,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.437 ms; cleared: method keys, read back as text in 280.42 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 521418,
+          "nodes": null,
+          "detail": "method direct, read back as text in 268.912 ms; cleared: method keys, read back as text in 289.618 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 466487,
+          "nodes": null,
+          "detail": "method direct, read back as text in 287.173 ms; cleared: method keys, read back as text in 285.286 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 517869,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.316 ms; cleared: method keys, read back as text in 269.359 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 519160,
+          "nodes": null,
+          "detail": "method direct, read back as text in 287.466 ms; cleared: method keys, read back as text in 277.945 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 751720,
+          "nodes": null,
+          "detail": "method direct, read back as text in 254.19 ms; cleared: method keys, read back as text in 287.683 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 799652,
+          "nodes": null,
+          "detail": "method direct, read back as text in 294.113 ms; cleared: method keys, read back as text in 271.134 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 765096,
+          "nodes": null,
+          "detail": "method direct, read back as text in 264.193 ms; cleared: method keys, read back as text in 283.61 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 761055,
+          "nodes": null,
+          "detail": "method direct, read back as text in 282.907 ms; cleared: method keys, read back as text in 279.619 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 545468,
+          "nodes": null,
+          "detail": "method direct, read back as text in 293.481 ms; cleared: method keys, read back as text in 279.352 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 519482,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.993 ms; cleared: method keys, read back as text in 287.691 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 542520,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.318 ms; cleared: method keys, read back as text in 280.612 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 504810,
+          "nodes": null,
+          "detail": "method direct, read back as text in 276.025 ms; cleared: method keys, read back as text in 279.62 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 789695,
+          "nodes": null,
+          "detail": "method direct, read back as text in 295.729 ms; cleared: method keys, read back as text in 282.258 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 540468,
+          "nodes": null,
+          "detail": "method direct, read back as text in 285.072 ms; cleared: method keys, read back as text in 282.359 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 780063,
+          "nodes": null,
+          "detail": "method direct, read back as text in 261.253 ms; cleared: method keys, read back as text in 279.631 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 506589,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.692 ms; cleared: method keys, read back as text in 283.729 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 785644,
+          "nodes": null,
+          "detail": "method direct, read back as text in 292.028 ms; cleared: method keys, read back as text in 277.69 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 527078,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.896 ms; cleared: method keys, read back as text in 279.044 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 793188,
+          "nodes": null,
+          "detail": "method direct, read back as text in 287.564 ms; cleared: method keys, read back as text in 279.312 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 543498,
+          "nodes": null,
+          "detail": "method direct, read back as text in 286.309 ms; cleared: method keys, read back as text in 268.829 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 751256,
+          "nodes": null,
+          "detail": "method direct, read back as text in 256.202 ms; cleared: method keys, read back as text in 275.541 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 546526,
+          "nodes": null,
+          "detail": "method direct, read back as text in 280.21 ms; cleared: method keys, read back as text in 281.825 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 732065,
+          "nodes": null,
+          "detail": "method direct, read back as text in 291.692 ms; cleared: method keys, read back as text in 274.764 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 542445,
+          "nodes": null,
+          "detail": "method direct, read back as text in 291.943 ms; cleared: method keys, read back as text in 277.255 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 689772,
+          "nodes": null,
+          "detail": "method direct, read back as text in 263.672 ms; cleared: method keys, read back as text in 283.667 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 531850,
+          "nodes": null,
+          "detail": "method direct, read back as text in 292.969 ms; cleared: method keys, read back as text in 272.561 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 755698,
+          "nodes": null,
+          "detail": "method direct, read back as text in 287.185 ms; cleared: method keys, read back as text in 287.915 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 515470,
+          "nodes": null,
+          "detail": "method direct, read back as text in 273.876 ms; cleared: method keys, read back as text in 277.215 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 823476,
+          "nodes": null,
+          "detail": "method direct, read back as text in 273.088 ms; cleared: method keys, read back as text in 285.183 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 806277,
+          "nodes": null,
+          "detail": "method direct, read back as text in 293.76 ms; cleared: method keys, read back as text in 284.207 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 473453,
+          "nodes": null,
+          "detail": "method direct, read back as text in 282.694 ms; cleared: method keys, read back as text in 274.846 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 519171,
+          "nodes": null,
+          "detail": "method direct, read back as text in 286.273 ms; cleared: method keys, read back as text in 278.483 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 558846,
+          "nodes": null,
+          "detail": "method direct, read back as text in 291.994 ms; cleared: method keys, read back as text in 277.721 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 489731,
+          "nodes": null,
+          "detail": "method direct, read back as text in 271.284 ms; cleared: method keys, read back as text in 274.903 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 557792,
+          "nodes": null,
+          "detail": "method direct, read back as text in 290.712 ms; cleared: method keys, read back as text in 289.661 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 543439,
+          "nodes": null,
+          "detail": "method direct, read back as text in 288.77 ms; cleared: method keys, read back as text in 281.73 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 766787,
+          "nodes": null,
+          "detail": "method direct, read back as text in 291.369 ms; cleared: method keys, read back as text in 278.949 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 798773,
+          "nodes": null,
+          "detail": "method direct, read back as text in 288.0 ms; cleared: method keys, read back as text in 277.955 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 540668,
+          "nodes": null,
+          "detail": "method direct, read back as text in 289.324 ms; cleared: method keys, read back as text in 277.967 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 808958,
+          "nodes": null,
+          "detail": "method direct, read back as text in 295.515 ms; cleared: method keys, read back as text in 292.121 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 761094,
+          "nodes": null,
+          "detail": "method direct, read back as text in 269.755 ms; cleared: method keys, read back as text in 279.424 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 530724,
+          "nodes": null,
+          "detail": "method direct, read back as text in 269.892 ms; cleared: method keys, read back as text in 277.969 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 759060,
+          "nodes": null,
+          "detail": "method direct, read back as text in 280.983 ms; cleared: method keys, read back as text in 276.413 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 511018,
+          "nodes": null,
+          "detail": "method direct, read back as text in 288.451 ms; cleared: method keys, read back as text in 281.138 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 482064,
+          "nodes": null,
+          "detail": "method direct, read back as text in 283.214 ms; cleared: method keys, read back as text in 291.587 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 512772,
+          "nodes": null,
+          "detail": "method direct, read back as text in 264.03 ms; cleared: method keys, read back as text in 279.847 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 500472,
+          "nodes": null,
+          "detail": "method direct, read back as text in 271.09 ms; cleared: method keys, read back as text in 282.78 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 547844,
+          "nodes": null,
+          "detail": "method direct, read back as text in 290.436 ms; cleared: method keys, read back as text in 270.167 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 4173003,
+        "p95_us": 4358115,
+        "max_us": 4504427
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4224312,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 344.484 ms; fill id=login-password: method keys, read back as length in 282.513 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4233370,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 325.256 ms; fill id=login-password: method keys, read back as length in 281.89 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4344557,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 328.958 ms; fill id=login-password: method keys, read back as length in 286.197 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3814342,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 335.542 ms; fill id=login-password: method keys, read back as length in 285.356 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4117492,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 345.461 ms; fill id=login-password: method keys, read back as length in 286.454 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4222584,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 344.822 ms; fill id=login-password: method keys, read back as length in 274.194 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4020383,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 326.909 ms; fill id=login-password: method keys, read back as length in 287.343 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3999151,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 337.004 ms; fill id=login-password: method keys, read back as length in 282.154 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4293139,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 331.189 ms; fill id=login-password: method keys, read back as length in 291.515 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4290073,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 343.225 ms; fill id=login-password: method keys, read back as length in 272.437 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4274706,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 341.216 ms; fill id=login-password: method keys, read back as length in 271.991 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4183733,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 321.356 ms; fill id=login-password: method keys, read back as length in 275.763 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4182648,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 343.262 ms; fill id=login-password: method keys, read back as length in 289.995 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4127907,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 333.298 ms; fill id=login-password: method keys, read back as length in 284.97 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4286875,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 348.325 ms; fill id=login-password: method keys, read back as length in 280.507 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4299446,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 340.894 ms; fill id=login-password: method keys, read back as length in 270.866 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4082146,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 336.468 ms; fill id=login-password: method keys, read back as length in 289.164 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4043342,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 330.059 ms; fill id=login-password: method keys, read back as length in 278.017 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4261585,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 348.117 ms; fill id=login-password: method keys, read back as length in 283.715 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4358115,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 350.921 ms; fill id=login-password: method keys, read back as length in 283.804 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4082869,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 333.52 ms; fill id=login-password: method keys, read back as length in 282.492 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4311918,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 340.152 ms; fill id=login-password: method keys, read back as length in 272.698 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3799606,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 324.091 ms; fill id=login-password: method keys, read back as length in 273.681 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4207564,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 345.212 ms; fill id=login-password: method keys, read back as length in 289.52 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4278459,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 324.854 ms; fill id=login-password: method keys, read back as length in 287.221 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4152604,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 313.793 ms; fill id=login-password: method keys, read back as length in 269.465 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4101870,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 339.993 ms; fill id=login-password: method keys, read back as length in 269.829 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4087787,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 322.089 ms; fill id=login-password: method keys, read back as length in 282.741 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4073114,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 322.415 ms; fill id=login-password: method keys, read back as length in 272.994 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4083714,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 338.955 ms; fill id=login-password: method keys, read back as length in 265.836 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4210668,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 323.686 ms; fill id=login-password: method keys, read back as length in 277.457 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4323376,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 327.973 ms; fill id=login-password: method keys, read back as length in 270.637 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4031629,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 341.838 ms; fill id=login-password: method keys, read back as length in 286.362 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3725134,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 331.557 ms; fill id=login-password: method keys, read back as length in 284.264 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4306406,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 319.47 ms; fill id=login-password: method keys, read back as length in 283.489 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4321872,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 352.278 ms; fill id=login-password: method keys, read back as length in 286.828 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4355965,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 344.523 ms; fill id=login-password: method keys, read back as length in 291.338 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4424052,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 332.67 ms; fill id=login-password: method keys, read back as length in 286.311 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4302231,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 322.264 ms; fill id=login-password: method keys, read back as length in 282.156 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3734785,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 332.696 ms; fill id=login-password: method keys, read back as length in 267.33 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4300584,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 339.211 ms; fill id=login-password: method keys, read back as length in 285.079 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4504427,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 382.447 ms; fill id=login-password: method keys, read back as length in 288.356 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3981832,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 338.518 ms; fill id=login-password: method keys, read back as length in 284.154 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4173003,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 356.153 ms; fill id=login-password: method keys, read back as length in 285.301 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4098362,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 331.306 ms; fill id=login-password: method keys, read back as length in 271.639 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4109950,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 330.24 ms; fill id=login-password: method keys, read back as length in 271.931 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4296095,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 364.276 ms; fill id=login-password: method keys, read back as length in 285.21 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4086710,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 317.829 ms; fill id=login-password: method keys, read back as length in 269.137 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4037082,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 298.492 ms; fill id=login-password: method keys, read back as length in 268.325 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3993399,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 332.999 ms; fill id=login-password: method keys, read back as length in 273.359 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4175992,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 340.082 ms; fill id=login-password: method keys, read back as length in 287.285 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4296936,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 361.793 ms; fill id=login-password: method keys, read back as length in 286.963 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4167167,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 348.951 ms; fill id=login-password: method keys, read back as length in 289.692 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "maestro",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 25459144,
+        "p95_us": 28458372,
+        "max_us": 32103174
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26919404,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26330607,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25804552,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28458372,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25527908,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25491828,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25707630,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25988948,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27188592,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24641758,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24465972,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25231231,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25972868,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26321680,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27457210,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25271293,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 31420020,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26001590,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25712513,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 32103174,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26856303,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26153362,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25863835,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24454278,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24117841,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24734516,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25235996,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25830081,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24894823,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26078416,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24934069,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26543526,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25300588,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24424191,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24997161,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24644455,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25285647,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25786146,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24936579,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25000769,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25080243,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25739511,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26075074,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25782479,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25879784,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25044457,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25272582,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25443918,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26322458,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24338650,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25294221,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25459144,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25048954,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 8790197,
+        "p95_us": 8919262,
+        "max_us": 8933173
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11203714,
+          "nodes": null,
+          "detail": "agent-device reported 10335 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8768179,
+          "nodes": null,
+          "detail": "agent-device reported 8651 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8824780,
+          "nodes": null,
+          "detail": "agent-device reported 8684 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8933173,
+          "nodes": null,
+          "detail": "agent-device reported 8766 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8799281,
+          "nodes": null,
+          "detail": "agent-device reported 8671 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8777298,
+          "nodes": null,
+          "detail": "agent-device reported 8646 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8771359,
+          "nodes": null,
+          "detail": "agent-device reported 8627 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8806502,
+          "nodes": null,
+          "detail": "agent-device reported 8666 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8905597,
+          "nodes": null,
+          "detail": "agent-device reported 8755 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8851707,
+          "nodes": null,
+          "detail": "agent-device reported 8719 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8901020,
+          "nodes": null,
+          "detail": "agent-device reported 8763 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8708908,
+          "nodes": null,
+          "detail": "agent-device reported 8579 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8790197,
+          "nodes": null,
+          "detail": "agent-device reported 8658 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8723822,
+          "nodes": null,
+          "detail": "agent-device reported 8590 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8919262,
+          "nodes": null,
+          "detail": "agent-device reported 8785 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8784953,
+          "nodes": null,
+          "detail": "agent-device reported 8659 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8927176,
+          "nodes": null,
+          "detail": "agent-device reported 8782 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8799215,
+          "nodes": null,
+          "detail": "agent-device reported 8658 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8568191,
+          "nodes": null,
+          "detail": "agent-device reported 8446 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8851576,
+          "nodes": null,
+          "detail": "agent-device reported 8715 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8863149,
+          "nodes": null,
+          "detail": "agent-device reported 8719 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8881652,
+          "nodes": null,
+          "detail": "agent-device reported 8738 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8604503,
+          "nodes": null,
+          "detail": "agent-device reported 8494 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8646881,
+          "nodes": null,
+          "detail": "agent-device reported 8501 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8797753,
+          "nodes": null,
+          "detail": "agent-device reported 8659 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8710822,
+          "nodes": null,
+          "detail": "agent-device reported 8597 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8814804,
+          "nodes": null,
+          "detail": "agent-device reported 8676 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8699353,
+          "nodes": null,
+          "detail": "agent-device reported 8567 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8836894,
+          "nodes": null,
+          "detail": "agent-device reported 8708 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8782039,
+          "nodes": null,
+          "detail": "agent-device reported 8647 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8714292,
+          "nodes": null,
+          "detail": "agent-device reported 8575 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8774621,
+          "nodes": null,
+          "detail": "agent-device reported 8639 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8738672,
+          "nodes": null,
+          "detail": "agent-device reported 8593 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8801743,
+          "nodes": null,
+          "detail": "agent-device reported 8668 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8867745,
+          "nodes": null,
+          "detail": "agent-device reported 8725 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8910504,
+          "nodes": null,
+          "detail": "agent-device reported 8766 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8708831,
+          "nodes": null,
+          "detail": "agent-device reported 8564 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8765753,
+          "nodes": null,
+          "detail": "agent-device reported 8642 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8781548,
+          "nodes": null,
+          "detail": "agent-device reported 8672 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8791279,
+          "nodes": null,
+          "detail": "agent-device reported 8647 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8774579,
+          "nodes": null,
+          "detail": "agent-device reported 8633 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8789010,
+          "nodes": null,
+          "detail": "agent-device reported 8646 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8749239,
+          "nodes": null,
+          "detail": "agent-device reported 8607 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8755265,
+          "nodes": null,
+          "detail": "agent-device reported 8610 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8733316,
+          "nodes": null,
+          "detail": "agent-device reported 8616 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8826937,
+          "nodes": null,
+          "detail": "agent-device reported 8690 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8887523,
+          "nodes": null,
+          "detail": "agent-device reported 8767 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8863726,
+          "nodes": null,
+          "detail": "agent-device reported 8726 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8802881,
+          "nodes": null,
+          "detail": "agent-device reported 8671 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8693425,
+          "nodes": null,
+          "detail": "agent-device reported 8566 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8851340,
+          "nodes": null,
+          "detail": "agent-device reported 8713 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8721507,
+          "nodes": null,
+          "detail": "agent-device reported 8587 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8829979,
+          "nodes": null,
+          "detail": "agent-device reported 8689 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "expo",
+      "screen": "login",
+      "primitive": "text-entry",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 718264,
+        "p95_us": 804985,
+        "max_us": 807642
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1006706,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.754 ms; cleared: method keys, read back as text in 278.406 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 743138,
+          "nodes": null,
+          "detail": "method direct, read back as text in 250.536 ms; cleared: method keys, read back as text in 270.388 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 734853,
+          "nodes": null,
+          "detail": "method direct, read back as text in 274.899 ms; cleared: method keys, read back as text in 272.917 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 522737,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.611 ms; cleared: method keys, read back as text in 262.751 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 508073,
+          "nodes": null,
+          "detail": "method direct, read back as text in 275.001 ms; cleared: method keys, read back as text in 271.388 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 762231,
+          "nodes": null,
+          "detail": "method direct, read back as text in 286.366 ms; cleared: method keys, read back as text in 260.689 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 773040,
+          "nodes": null,
+          "detail": "method direct, read back as text in 264.2 ms; cleared: method keys, read back as text in 271.54 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 806261,
+          "nodes": null,
+          "detail": "method direct, read back as text in 286.78 ms; cleared: method keys, read back as text in 279.061 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 500765,
+          "nodes": null,
+          "detail": "method direct, read back as text in 250.408 ms; cleared: method keys, read back as text in 275.382 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 753672,
+          "nodes": null,
+          "detail": "method direct, read back as text in 259.061 ms; cleared: method keys, read back as text in 263.867 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 751551,
+          "nodes": null,
+          "detail": "method direct, read back as text in 251.245 ms; cleared: method keys, read back as text in 277.917 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 502894,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.402 ms; cleared: method keys, read back as text in 261.539 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 511291,
+          "nodes": null,
+          "detail": "method direct, read back as text in 249.866 ms; cleared: method keys, read back as text in 268.599 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 759185,
+          "nodes": null,
+          "detail": "method direct, read back as text in 261.479 ms; cleared: method keys, read back as text in 269.225 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 432430,
+          "nodes": null,
+          "detail": "method direct, read back as text in 260.127 ms; cleared: method keys, read back as text in 266.641 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 508932,
+          "nodes": null,
+          "detail": "method direct, read back as text in 258.591 ms; cleared: method keys, read back as text in 283.488 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 738334,
+          "nodes": null,
+          "detail": "method direct, read back as text in 271.244 ms; cleared: method keys, read back as text in 270.282 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 511333,
+          "nodes": null,
+          "detail": "method direct, read back as text in 256.052 ms; cleared: method keys, read back as text in 278.84 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 470154,
+          "nodes": null,
+          "detail": "method direct, read back as text in 284.137 ms; cleared: method keys, read back as text in 269.797 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 764617,
+          "nodes": null,
+          "detail": "method direct, read back as text in 260.163 ms; cleared: method keys, read back as text in 262.802 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 508533,
+          "nodes": null,
+          "detail": "method direct, read back as text in 263.497 ms; cleared: method keys, read back as text in 262.948 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 729992,
+          "nodes": null,
+          "detail": "method direct, read back as text in 279.723 ms; cleared: method keys, read back as text in 273.79 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 767143,
+          "nodes": null,
+          "detail": "method direct, read back as text in 261.048 ms; cleared: method keys, read back as text in 279.589 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 716405,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.176 ms; cleared: method keys, read back as text in 271.483 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 789377,
+          "nodes": null,
+          "detail": "method direct, read back as text in 273.17 ms; cleared: method keys, read back as text in 274.873 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 477717,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.114 ms; cleared: method keys, read back as text in 272.401 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 500252,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.562 ms; cleared: method keys, read back as text in 267.603 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 708946,
+          "nodes": null,
+          "detail": "method direct, read back as text in 263.026 ms; cleared: method keys, read back as text in 269.285 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 789965,
+          "nodes": null,
+          "detail": "method direct, read back as text in 285.431 ms; cleared: method keys, read back as text in 262.923 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 781453,
+          "nodes": null,
+          "detail": "method direct, read back as text in 282.419 ms; cleared: method keys, read back as text in 278.666 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 492354,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.951 ms; cleared: method keys, read back as text in 265.333 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 787202,
+          "nodes": null,
+          "detail": "method direct, read back as text in 270.484 ms; cleared: method keys, read back as text in 263.416 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 804985,
+          "nodes": null,
+          "detail": "method direct, read back as text in 287.395 ms; cleared: method keys, read back as text in 267.324 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 743474,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.659 ms; cleared: method keys, read back as text in 264.971 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 717950,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.58 ms; cleared: method keys, read back as text in 265.581 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 758649,
+          "nodes": null,
+          "detail": "method direct, read back as text in 284.038 ms; cleared: method keys, read back as text in 274.769 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 755714,
+          "nodes": null,
+          "detail": "method direct, read back as text in 265.983 ms; cleared: method keys, read back as text in 272.856 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 790011,
+          "nodes": null,
+          "detail": "method direct, read back as text in 274.96 ms; cleared: method keys, read back as text in 272.36 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 496542,
+          "nodes": null,
+          "detail": "method direct, read back as text in 259.063 ms; cleared: method keys, read back as text in 267.881 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 492262,
+          "nodes": null,
+          "detail": "method direct, read back as text in 256.967 ms; cleared: method keys, read back as text in 273.034 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 804284,
+          "nodes": null,
+          "detail": "method direct, read back as text in 288.253 ms; cleared: method keys, read back as text in 278.973 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 752054,
+          "nodes": null,
+          "detail": "method direct, read back as text in 284.699 ms; cleared: method keys, read back as text in 272.402 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 464979,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.391 ms; cleared: method keys, read back as text in 279.01 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 730016,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.306 ms; cleared: method keys, read back as text in 273.659 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 531298,
+          "nodes": null,
+          "detail": "method direct, read back as text in 286.596 ms; cleared: method keys, read back as text in 270.237 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 786286,
+          "nodes": null,
+          "detail": "method direct, read back as text in 284.518 ms; cleared: method keys, read back as text in 289.91 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 807642,
+          "nodes": null,
+          "detail": "method direct, read back as text in 288.182 ms; cleared: method keys, read back as text in 283.364 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 459333,
+          "nodes": null,
+          "detail": "method direct, read back as text in 259.406 ms; cleared: method keys, read back as text in 272.965 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 775795,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.691 ms; cleared: method keys, read back as text in 275.662 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 516187,
+          "nodes": null,
+          "detail": "method direct, read back as text in 262.38 ms; cleared: method keys, read back as text in 274.4 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 718264,
+          "nodes": null,
+          "detail": "method direct, read back as text in 258.098 ms; cleared: method keys, read back as text in 270.224 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 498667,
+          "nodes": null,
+          "detail": "method direct, read back as text in 257.571 ms; cleared: method keys, read back as text in 273.731 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 548953,
+          "nodes": null,
+          "detail": "method direct, read back as text in 289.422 ms; cleared: method keys, read back as text in 272.133 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 3860186,
+        "p95_us": 4269408,
+        "max_us": 4373599
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4132544,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.539 ms; fill id=login-password: method keys, read back as length in 268.661 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3883485,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 276.337 ms; fill id=login-password: method keys, read back as length in 274.315 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3725903,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.923 ms; fill id=login-password: method keys, read back as length in 281.82 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4269408,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 270.233 ms; fill id=login-password: method keys, read back as length in 275.163 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3873250,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 275.649 ms; fill id=login-password: method keys, read back as length in 277.779 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3701551,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 261.657 ms; fill id=login-password: method keys, read back as length in 280.047 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3716427,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 271.115 ms; fill id=login-password: method keys, read back as length in 261.239 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3734091,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 261.053 ms; fill id=login-password: method keys, read back as length in 278.019 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4209231,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 292.908 ms; fill id=login-password: method keys, read back as length in 277.529 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4373599,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.055 ms; fill id=login-password: method keys, read back as length in 274.691 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4226629,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 276.65 ms; fill id=login-password: method keys, read back as length in 255.055 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4260598,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 278.593 ms; fill id=login-password: method keys, read back as length in 280.266 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3946038,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 283.312 ms; fill id=login-password: method keys, read back as length in 274.99 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3832633,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 299.404 ms; fill id=login-password: method keys, read back as length in 274.31 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3884090,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 295.503 ms; fill id=login-password: method keys, read back as length in 273.64 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3688217,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 261.863 ms; fill id=login-password: method keys, read back as length in 276.551 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3935460,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 288.377 ms; fill id=login-password: method keys, read back as length in 274.852 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3929788,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 307.74 ms; fill id=login-password: method keys, read back as length in 282.009 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3847807,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 302.974 ms; fill id=login-password: method keys, read back as length in 276.258 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3744778,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 253.348 ms; fill id=login-password: method keys, read back as length in 282.976 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3862902,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 280.813 ms; fill id=login-password: method keys, read back as length in 280.568 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4262766,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 277.306 ms; fill id=login-password: method keys, read back as length in 277.379 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3882839,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 273.527 ms; fill id=login-password: method keys, read back as length in 279.401 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3704834,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 264.72 ms; fill id=login-password: method keys, read back as length in 267.463 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4133661,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.095 ms; fill id=login-password: method keys, read back as length in 265.12 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3648301,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.734 ms; fill id=login-password: method keys, read back as length in 263.9 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3858141,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 288.528 ms; fill id=login-password: method keys, read back as length in 276.208 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3873584,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 294.113 ms; fill id=login-password: method keys, read back as length in 277.21 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3695314,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 261.476 ms; fill id=login-password: method keys, read back as length in 285.526 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3653149,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.202 ms; fill id=login-password: method keys, read back as length in 275.1 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3695316,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.631 ms; fill id=login-password: method keys, read back as length in 276.71 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3733252,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 267.94 ms; fill id=login-password: method keys, read back as length in 283.893 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3768147,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 271.461 ms; fill id=login-password: method keys, read back as length in 276.243 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3680265,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 266.198 ms; fill id=login-password: method keys, read back as length in 281.188 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3648175,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 256.548 ms; fill id=login-password: method keys, read back as length in 276.374 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3866328,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 295.716 ms; fill id=login-password: method keys, read back as length in 275.825 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3699208,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.552 ms; fill id=login-password: method keys, read back as length in 274.681 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4206964,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 272.599 ms; fill id=login-password: method keys, read back as length in 258.45 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3719265,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 266.026 ms; fill id=login-password: method keys, read back as length in 282.804 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3699607,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.842 ms; fill id=login-password: method keys, read back as length in 285.58 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3883599,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.625 ms; fill id=login-password: method keys, read back as length in 273.661 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3870172,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 273.912 ms; fill id=login-password: method keys, read back as length in 277.674 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3785552,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 264.886 ms; fill id=login-password: method keys, read back as length in 281.357 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4337058,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 258.381 ms; fill id=login-password: method keys, read back as length in 274.189 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3896438,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 276.068 ms; fill id=login-password: method keys, read back as length in 284.064 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4229154,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 267.747 ms; fill id=login-password: method keys, read back as length in 273.454 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3833243,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 297.28 ms; fill id=login-password: method keys, read back as length in 274.366 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3860186,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 289.957 ms; fill id=login-password: method keys, read back as length in 266.077 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4158272,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 269.068 ms; fill id=login-password: method keys, read back as length in 268.255 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3847872,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 260.473 ms; fill id=login-password: method keys, read back as length in 276.216 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3689118,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 267.348 ms; fill id=login-password: method keys, read back as length in 267.107 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4120309,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 265.65 ms; fill id=login-password: method keys, read back as length in 279.931 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4211432,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 287.984 ms; fill id=login-password: method keys, read back as length in 280.113 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "maestro",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 24899915,
+        "p95_us": 26750680,
+        "max_us": 27385908
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26629426,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25302363,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24511664,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24633514,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24469313,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24829738,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24639379,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25800331,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24015883,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24278674,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24269267,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 23715687,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24764744,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25515958,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25938996,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26439079,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24265592,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25805002,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25035351,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24512898,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24154892,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26750680,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25493447,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24151332,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24924886,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26986416,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24647825,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25448007,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25895666,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25295716,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25282996,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25289806,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25372535,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25353989,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24744098,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24899915,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24392161,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24846088,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25061506,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24069214,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24044163,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24222362,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24593947,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25877047,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25267402,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24480796,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24150728,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26625130,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25315489,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26696222,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27385908,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24941321,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24837605,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "target_class": "simulator",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 5,
+        "p50_us": 8255461,
+        "p95_us": 8408351,
+        "max_us": 8408351
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 45,
+        "flakes": 1,
+        "failure_rate_pct": 90.0,
+        "flake_rate_pct": 2.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10667073,
+          "nodes": null,
+          "detail": "agent-device reported 9999 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8408351,
+          "nodes": null,
+          "detail": "agent-device reported 8285 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8255461,
+          "nodes": null,
+          "detail": "agent-device reported 8109 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8334847,
+          "nodes": null,
+          "detail": "agent-device reported 8200 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 8233518,
+          "nodes": null,
+          "detail": "agent-device reported 8082 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\"",
+            "COMMAND_FAILED: Batch failed at step 2 (fill): Selector did not match: id=\"login-username\""
+          ]
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8254280,
+          "nodes": null,
+          "detail": "agent-device reported 8105 ms",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 316835,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 3,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 802470,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 338780,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 0,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 719272,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 207827,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 1,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "agent-device",
+      "to": "mobile-agent",
+      "elapsed_us": 754836,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "mobile-agent",
+      "to": "maestro",
+      "elapsed_us": 128034,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "maestro",
+      "to": "agent-device",
+      "elapsed_us": 0,
+      "released": null,
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "7B292E1E-7A29-41A5-9C69-2ABA1CEB3683",
+      "from": "agent-device",
+      "to": null,
+      "elapsed_us": 732599,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "simulator cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator cold-attach",
+        "statistic": "p95",
+        "limit_us": 2000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator warm-snapshot swiftui big",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator warm-snapshot expo big",
+        "statistic": "p95",
+        "limit_us": 250000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "simulator tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      }
+    ]
+  }
+}
