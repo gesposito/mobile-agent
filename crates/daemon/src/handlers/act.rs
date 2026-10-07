@@ -367,11 +367,25 @@ fn method_name(method: Option<TextMethod>) -> Value {
 /// read.
 const READ_BACK_MAX: Duration = Duration::from_secs(1);
 
-/// How long after the entry a field must still show the text before `fill`
-/// takes it: an app that owns its field's value, as a controlled React
-/// Native `TextInput`, can set it again after the edit. The settle's quiet
-/// window; agent-device holds typed text 0.2 s.
+/// How long after an entry typed as keys a field must still show the text
+/// before `fill` takes it: an app that owns its field's value, as a
+/// controlled React Native `TextInput`, can set it again between the keys
+/// and after them. The settle's quiet window; agent-device holds typed text
+/// 0.2 s.
 const READ_BACK_HOLD: Duration = DEFAULT_QUIET_WINDOW;
+
+/// How long after an entry by `method` a field must still show the text
+/// before `fill` takes it: [`READ_BACK_HOLD`] after keys, and nothing after
+/// text that went in in one piece, pasted on a Simulator or set directly on
+/// Android, which leaves an app that sets its field's value again no keys
+/// to interleave with.
+fn hold_after(method: Option<TextMethod>) -> Duration {
+    if method == Some(TextMethod::KEYS) {
+        READ_BACK_HOLD
+    } else {
+        Duration::ZERO
+    }
+}
 
 /// How often a read-back looks at the field; the mirror applies what the
 /// target reports and reads what falls due in between.
@@ -448,18 +462,21 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
     now >= hold && !changed
 }
 
-/// Reads back the field `reference` names after an entry that ended at
-/// `entered`: until the field shows `text` and has held it since
-/// [`READ_BACK_HOLD`] after the entry, or until it has shown other text up
-/// to [`READ_BACK_MAX`] after the entry, the mirror reading it again as
-/// reads fall due meanwhile. What the field shows at the bound stands.
+/// Reads back the field `reference` names after an entry by `method` that
+/// ended at `entered`: until the field shows `text` and has held it since
+/// the hold after that method ends ([`hold_after`]), which after text that
+/// went in in one piece takes the first read that shows it, or until it
+/// has shown other text up to [`READ_BACK_MAX`] after the entry, the mirror
+/// reading it again as reads fall due meanwhile. What the field shows at
+/// the bound stands.
 fn read_back(
     target: &mut Attached,
     reference: Ref,
     text: &str,
     entered: Instant,
+    method: Option<TextMethod>,
 ) -> Result<ReadBack, Failure> {
-    let hold = entered + READ_BACK_HOLD;
+    let hold = entered + hold_after(method);
     let deadline = entered + READ_BACK_MAX;
     loop {
         let element = match target.mirror.resolve(reference) {
@@ -565,11 +582,13 @@ fn mismatch(given: &str, reference: Ref, value: Option<&str>, tries: &str) -> Fa
 }
 
 /// Fills the field the request names: enters the text, typed or pasted as
-/// the target chooses, and reads the field back. A field that shows other
-/// text gets the text again in one piece, pasted on a Simulator and set
-/// directly on Android, and is read back again; a field that still shows
-/// other text fails the fill with `text_mismatch`. On Android an empty
-/// field reads as its hint, so an empty fill there is not read back.
+/// the target chooses, and reads the field back, holding typed text
+/// [`READ_BACK_HOLD`] and taking text that went in in one piece from the
+/// first read that shows it. A field that shows other text gets the text
+/// again in one piece, pasted on a Simulator and set directly on Android,
+/// and is read back again; a field that still shows other text fails the
+/// fill with `text_mismatch`. On Android an empty field reads as its hint,
+/// so an empty fill there is not read back.
 pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let text = text_param(request)?;
     let given = request.required_str("target")?;
@@ -586,7 +605,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
             "{given} left the screen after fill {by}, so it could not be read back"
         ))
     };
-    let value = match read_back(target, reference, &text, entered)? {
+    let value = match read_back(target, reference, &text, entered, first)? {
         ReadBack::Shown { shown, after } => {
             return Ok(filled(given, reference, first, Some((shown, after)), false));
         }
@@ -616,7 +635,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
             described(value.as_deref())
         )
     };
-    match read_back(target, reference, &text, entered)? {
+    match read_back(target, reference, &text, entered, second)? {
         ReadBack::Shown { shown, after } => {
             Ok(filled(given, reference, second, Some((shown, after)), true).warn(Some(again())))
         }
@@ -1251,6 +1270,77 @@ mod tests {
             "{}",
             success.data
         );
+    }
+
+    /// The login form's fields, the text `fill` enters into each and how
+    /// the field shows it.
+    const LOGIN_FIELDS: [(&str, &str, &str); 2] = [
+        ("#login-username", "agent", "text"),
+        ("#login-password", "hunter2", "length"),
+    ];
+
+    /// Task 10.30: text that goes in in one piece, set directly on Android
+    /// or pasted on a Simulator, gives an app that sets its field's value
+    /// again no keys to interleave with, so the read-back takes the first
+    /// read that shows it. The fake's fields show a change at once, so that
+    /// read comes within 100 ms, half the hold after keys.
+    #[test]
+    fn a_fill_whose_text_went_in_in_one_piece_takes_the_first_read_that_shows_it() {
+        for platform in ["android", "ios"] {
+            let mut target = login_on(platform, Typing::Whole, Duration::ZERO);
+            for (field, text, shown) in LOGIN_FIELDS {
+                let success = fill_in(&mut target, field, text).unwrap();
+                let data = &success.data;
+                assert_eq!(data["method"], "direct", "{platform} {field}: {data}");
+                assert_eq!(data["verified"], shown, "{platform} {field}: {data}");
+                assert_eq!(data["retried"], false, "{platform} {field}: {data}");
+                assert!(
+                    data["readBackMs"].as_f64().is_some_and(|ms| ms < 100.0),
+                    "{platform} {field}: {data}"
+                );
+            }
+        }
+    }
+
+    /// Task 10.30: keys can interleave with an app that sets its field's
+    /// value again after the edit, as Bluesky's controlled search field did
+    /// (task 10.23), so a fill typed as keys takes the text only once the
+    /// field has held it since 200 ms after the entry, on either platform.
+    #[test]
+    fn a_fill_typed_as_keys_takes_the_text_once_the_field_has_held_it_200_ms() {
+        for platform in ["android", "ios"] {
+            let mut target = login_on(platform, Typing::Keys, Duration::ZERO);
+            for (field, text, shown) in LOGIN_FIELDS {
+                let success = fill_in(&mut target, field, text).unwrap();
+                let data = &success.data;
+                assert_eq!(data["method"], "keys", "{platform} {field}: {data}");
+                assert_eq!(data["verified"], shown, "{platform} {field}: {data}");
+                assert_eq!(data["retried"], false, "{platform} {field}: {data}");
+                assert!(
+                    data["readBackMs"].as_f64().is_some_and(|ms| ms >= 200.0),
+                    "{platform} {field}: {data}"
+                );
+            }
+        }
+    }
+
+    /// Task 10.30: the text `fill` enters again after the field showed
+    /// other text goes in in one piece, so the second read-back takes the
+    /// first read that shows it, without the hold after the keys before
+    /// it; the fake's field shows the paste at once, within 100 ms.
+    #[test]
+    fn a_fill_that_enters_its_text_again_in_one_piece_takes_the_first_read_that_shows_it() {
+        let mut target = login(Typing::Reorder);
+        let success = fill_in(&mut target, "#login-username", "nobel").unwrap();
+        let data = &success.data;
+        assert_eq!(data["retried"], true, "{data}");
+        assert_eq!(data["method"], "direct", "{data}");
+        assert_eq!(data["verified"], "text", "{data}");
+        assert!(
+            data["readBackMs"].as_f64().is_some_and(|ms| ms < 100.0),
+            "{data}"
+        );
+        assert_eq!(held(&mut target, "#login-username"), "nobel");
     }
 
     /// Task 10.23: an empty fill clears the field, which reads back empty;
