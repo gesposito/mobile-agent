@@ -19,6 +19,7 @@ Research notes (task group 2): `docs/research/protocol.md`, `docs/research/simul
 - Keep every host-side component in Rust and keep the only non-Rust component, the Android agent, as small as a single dex.
 - Make each backend swappable behind the protocol so later changes can add physical iOS, an in-process agent, and CDP or MCP edges without touching the mirror or the CLI.
 - Partition work so independent agents can implement crates in parallel with disjoint files.
+- Keep the core lean: a safeguard one platform, toolkit, version or entry method needs is gated on that case and costs the others nothing, even at the price of a separate path (task 10.30 keeps `fill`'s read-back hold after typed keys alone, where an app's re-sets can interleave with the entry, since the 200 ms it cost every fill took the emulator's text entry from 24 ms to 224 ms in task 10.26).
 
 **Non-Goals:**
 - Physical iOS devices, tvOS, HarmonyOS, web, desktop.
