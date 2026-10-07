@@ -30,7 +30,13 @@
 //! the application's own read: agent-device lists that window as an
 //! Application because iOS 26.5 gives every window automation type 2. A
 //! child moved to a window of its own still counts as delivered, so moving
-//! it cuts nothing. The window metadata of protocol task 3.6:
+//! it cuts nothing. The keyboard's window spans the screen and lets touches
+//! through outside what it draws, so its bounds are what it draws: the host
+//! view of its input views, which on iOS 26.5 runs from the prediction bar
+//! above the `Keyboard` element down through the dock to the bottom of the
+//! screen (539 to 874 points on an iPhone 17), or none when it draws
+//! nothing. The mirror cuts an element's visible bounds by that window
+//! (task 10.21). The window metadata of protocol task 3.6:
 //!
 //! - `emits_events` is `Some(false)` on every window: the Simulator sends no
 //!   change events (spikes S3 and S4), so the mirror reads its windows again
@@ -296,7 +302,7 @@ pub fn snapshot(read: &Read) -> Snapshot {
             layer: keyboard_layer,
             package,
             title: None,
-            bounds: builder.bounds(keyboard.frame),
+            bounds: builder.bounds(keyboard_area(keyboard, builder.screen)),
             flags: WindowFlags::EMPTY,
             root,
             emits_events: Some(false),
@@ -373,6 +379,63 @@ pub fn snapshot(read: &Read) -> Snapshot {
 
 fn is_keyboard_window(element: &Element) -> bool {
     element.class.as_deref() == Some(KEYBOARD_WINDOW_CLASS)
+}
+
+/// Less than this, in points, between two edges counts as none.
+const EDGE_SLACK: f64 = 0.5;
+
+/// The part of the screen a keyboard window covers, in points: the union of
+/// its outermost descendants on screen that do not span it, clipped to it.
+/// The window and the input set container inside it span the screen and let
+/// touches through; below them the host view holds what the keyboard draws
+/// (on iOS 26.5 the prediction bar, the keys and the dock, from 539 points
+/// down on an iPhone 17), and a descent stops there, before the views of
+/// the prediction bar that reach beyond the screen. `None` when the window
+/// shows nothing.
+fn keyboard_area(window: &Element, screen: Option<[f64; 4]>) -> Option<[f64; 4]> {
+    fn collect(element: &Element, within: [f64; 4], area: &mut Option<[f64; 4]>) {
+        for child in &element.children {
+            match child.frame.and_then(|frame| intersection(frame, within)) {
+                Some(shown) if !spans(shown, within) => {
+                    *area = Some(area.map_or(shown, |area| union(area, shown)));
+                }
+                _ => collect(child, within, area),
+            }
+        }
+    }
+    let within = window
+        .frame
+        .filter(|[_, _, width, height]| *width > 0.0 && *height > 0.0)
+        .or(screen)?;
+    let mut area = None;
+    collect(window, within, &mut area);
+    area
+}
+
+/// The part of `frame` inside `within`, when it has an area.
+fn intersection(frame: [f64; 4], within: [f64; 4]) -> Option<[f64; 4]> {
+    let left = frame[0].max(within[0]);
+    let top = frame[1].max(within[1]);
+    let right = (frame[0] + frame[2]).min(within[0] + within[2]);
+    let bottom = (frame[1] + frame[3]).min(within[1] + within[3]);
+    (right > left && bottom > top).then_some([left, top, right - left, bottom - top])
+}
+
+/// Whether `frame` covers all of `within`, to within [`EDGE_SLACK`].
+fn spans(frame: [f64; 4], within: [f64; 4]) -> bool {
+    frame[0] <= within[0] + EDGE_SLACK
+        && frame[1] <= within[1] + EDGE_SLACK
+        && frame[0] + frame[2] >= within[0] + within[2] - EDGE_SLACK
+        && frame[1] + frame[3] >= within[1] + within[3] - EDGE_SLACK
+}
+
+/// The smallest frame that holds both.
+fn union(one: [f64; 4], other: [f64; 4]) -> [f64; 4] {
+    let left = one[0].min(other[0]);
+    let top = one[1].min(other[1]);
+    let right = (one[0] + one[2]).max(other[0] + other[2]);
+    let bottom = (one[1] + one[3]).max(other[1] + other[3]);
+    [left, top, right - left, bottom - top]
 }
 
 /// The name system UI goes by as the owner of its windows: the process's
@@ -1189,6 +1252,74 @@ mod tests {
         })
     }
 
+    /// The keyboard's window over Bluesky's search screen, as the reader read
+    /// it on iOS 26.5 for task 10.21, keys trimmed to one: the window and its
+    /// input set container span the screen, and the host view below them
+    /// holds the prediction bar (with a scroll view's wrapper reaching far
+    /// beyond the screen), the backdrop, the key plane (the `Keyboard`
+    /// element, 583 to 816 points down) and the dock with the globe and
+    /// dictation keys, which ends at the bottom of the screen.
+    fn bluesky_keyboard() -> Element {
+        let predictions = at(
+            with(element(0, "TUISystemInputAssistantView"), |e| {
+                e.identifier = Some("SystemInputAssistantView".into());
+                e.children = vec![at(element(0, "UIView"), [0.0, -61.0, 402.0, 1244.0])];
+            }),
+            [0.0, 539.0, 402.0, 44.0],
+        );
+        let backdrop = at(
+            element(0, "UIKBInputBackdropView"),
+            [0.0, 539.0, 402.0, 335.0],
+        );
+        let key = at(
+            with(element(20, "UIAccessibilityElementKBKey"), |e| {
+                e.label = Some("q".into())
+            }),
+            [4.67, 590.0, 39.33, 54.0],
+        );
+        let keys = at(
+            with(element(19, "UIKeyboardAutomatic"), |e| {
+                e.children = vec![key]
+            }),
+            [0.0, 583.0, 402.0, 233.0],
+        );
+        let input = at(
+            with(element(0, "_UIKBCompatInputView"), |e| {
+                e.children = vec![keys]
+            }),
+            [0.0, 583.0, 402.0, 233.0],
+        );
+        let globe = button(
+            "UIKeyboardDockItemButton",
+            None,
+            "Next keyboard",
+            [8.48, 805.7, 68.09, 68.74],
+        );
+        let dictation = button(
+            "UIKeyboardDockItemButton",
+            Some("dictation"),
+            "Dictate",
+            [325.44, 805.37, 68.09, 68.74],
+        );
+        let dock = at(
+            with(element(0, "UIKeyboardDockView"), |e| {
+                e.children = vec![globe, dictation]
+            }),
+            [0.0, 583.0, 402.0, 291.0],
+        );
+        let host = at(
+            with(element(0, "UIInputSetHostView"), |e| {
+                e.children = vec![predictions, backdrop, input, dock]
+            }),
+            [0.0, 539.0, 402.0, 335.0],
+        );
+        with(element(2, KEYBOARD_WINDOW_CLASS), |e| {
+            e.children = vec![with(element(0, "UIInputSetContainerView"), |e| {
+                e.children = vec![host]
+            })]
+        })
+    }
+
     /// SpringBoard under the location permission alert, containers trimmed:
     /// a window of the status bar's and the one holding the alert.
     fn springboard_alert() -> Read {
@@ -1738,6 +1869,52 @@ mod tests {
             nodes(&one).len()
         };
         assert_eq!(app_nodes, 9, "the keys left the application's window");
+    }
+
+    /// Task 10.21: the window spans the screen, so with its frame as its
+    /// bounds the mirror counted every element under it, the sign-in button
+    /// and the search history above the keyboard included, as 0% in view.
+    #[test]
+    fn the_keyboard_window_covers_the_input_views_it_holds_not_the_screen() {
+        let mut root = login();
+        root.children.push(bluesky_keyboard());
+        let snapshot = snapshot(&read(counted(root)));
+        let keyboard = &snapshot.windows[0];
+        assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
+        assert_eq!(
+            keyboard.bounds,
+            Bounds::new(0, 1617, 1206, 2622),
+            "the host view's frame: the prediction bar from 539 points down, the keys and the dock"
+        );
+        assert_eq!(
+            keyboard.root.as_ref().expect("the window's node").bounds,
+            Bounds::new(0, 0, 1206, 2622),
+            "the window's own node keeps the window's frame"
+        );
+        assert!(holds(keyboard, "label:q") && holds(keyboard, "dictation"));
+    }
+
+    #[test]
+    fn a_keyboard_sliding_in_covers_only_its_part_on_screen() {
+        let mut root = login();
+        let mut sliding = bluesky_keyboard();
+        sliding.children[0].children[0].frame = Some([0.0, 800.0, 402.0, 335.0]);
+        root.children.push(sliding);
+        let snapshot = snapshot(&read(counted(root)));
+        assert_eq!(snapshot.windows[0].bounds, Bounds::new(0, 2400, 1206, 2622));
+    }
+
+    #[test]
+    fn a_keyboard_window_that_shows_nothing_covers_nothing() {
+        let mut root = login();
+        root.children
+            .push(with(element(2, KEYBOARD_WINDOW_CLASS), |e| {
+                e.children = vec![element(0, "UIInputSetContainerView")]
+            }));
+        let snapshot = snapshot(&read(counted(root)));
+        let keyboard = &snapshot.windows[0];
+        assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
+        assert_eq!(keyboard.bounds, Bounds::default());
     }
 
     #[test]

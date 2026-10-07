@@ -211,7 +211,15 @@ follows the mirror's conventions (`reader/src/elements.rs`):
   gives every window automation type 2, which XCTest's enum names so. A
   child moved to a window of its own still counts as delivered, so the move
   marks nothing truncated, as it did before task 6.12 whenever the keyboard
-  was up;
+  was up. The window spans the screen and lets touches through outside
+  what it draws, so its bounds are the union of its outermost descendants
+  that do not span it, clipped to the screen: the host view of its input
+  views, from the prediction bar down through the keys and the dock to the
+  bottom of the screen (539 to 874 points on an iPhone 17 on Bluesky's
+  search screen, where the `Keyboard` element starts at 583), and none
+  while it draws nothing: with its frame the mirror would count every
+  element under the window, above the keyboard too, as out of view (task
+  10.21);
 - an application's alert on screen moves, with the view that presents it,
   to a window of its own between the two, its id the pid with bit 30 set,
   titled by the alert, marked `modal`, and `active` and `focused` in the

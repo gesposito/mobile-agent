@@ -290,6 +290,59 @@ fn system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds() {
     assert_eq!(under.fraction, 0.0, "{under:?}");
 }
 
+/// Task 10.21: the Simulator's reader gives the keyboard's window the bounds
+/// of what it draws, from the prediction bar down to the bottom of the
+/// screen, as it read on Bluesky's search screen; what lies above stays in
+/// view, the Cancel search button the smoke test's click warned about
+/// included, and the tab bar under the keyboard does not.
+#[test]
+fn the_ios_keyboard_cuts_from_its_prediction_bar_down() {
+    let screen = Screen::from_json(json!({
+        "backend": {"name": "simulator-reader", "fallback": false},
+        "scale": 3.0,
+        "windows": [
+            {"id": 9, "kind": "input_method", "layer": 1, "package": "xyz.blueskyweb.app",
+             "bounds": [0, 539, 402, 874], "events": false,
+             "root": {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+                 {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 816], "children": [
+                     {"class": "XCUIElementTypeKey", "desc": "q", "bounds": [4.67, 590, 44, 644], "flags": ["clickable"]}
+                 ]}
+             ]}},
+            {"id": 7, "kind": "application", "layer": 0, "package": "xyz.blueskyweb.app",
+             "title": "Bluesky", "bounds": [0, 0, 402, 874], "events": false,
+             "root": {"class": "XCUIElementTypeApplication", "desc": "Bluesky", "bounds": [0, 0, 402, 874], "children": [
+                 {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+                     {"class": "XCUIElementTypeButton", "id": "cancel", "desc": "Cancel search", "bounds": [16, 119.67, 49, 152.67]},
+                     {"class": "XCUIElementTypeScrollView", "id": "typeahead", "bounds": [0, 166.33, 402, 874],
+                      "flags": ["scrollable"], "children": rows("XCUIElementTypeButton", 166.33, 15, [0.0, 166.33, 402.0, 874.0], false)},
+                     {"class": "XCUIElementTypeTabBar", "id": "tabs", "bounds": [0, 791, 402, 874], "children": [
+                         {"class": "XCUIElementTypeButton", "id": "bottomBarHomeBtn", "desc": "Home", "bounds": [8, 793, 85.33, 840]}
+                     ]}
+                 ]}
+             ]}}
+        ]
+    }));
+    let mut mirror = mirror_showing(&screen);
+    let cancel = visibility(&mut mirror, "cancel");
+    assert_eq!(cancel.fraction, 1.0, "{cancel:?}");
+    // Row 1 spans [166.33, 214.33], row 8 [502.33, 550.33], 11 of its 48
+    // points under the prediction bar.
+    let first = visibility(&mut mirror, "row-1");
+    assert_eq!(first.fraction, 1.0, "{first:?}");
+    assert!(close(first.viewport.bottom, 539.0), "{first:?}");
+    let eighth = visibility(&mut mirror, "row-8");
+    assert!(close(eighth.fraction, 37.0 / 48.0), "{eighth:?}");
+    let home = visibility(&mut mirror, "bottomBarHomeBtn");
+    assert_eq!(home.fraction, 0.0, "{home:?}");
+    let list = mirror
+        .scroll_viewport(Point::new(201.0, 300.0), true)
+        .expect("the typeahead's list");
+    assert!(
+        close(list.top, 166.33) && close(list.bottom, 539.0),
+        "{list:?}"
+    );
+}
+
 /// An element no scroll container holds is in view as far as its window
 /// shows it.
 #[test]
