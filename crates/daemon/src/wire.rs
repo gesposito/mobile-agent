@@ -35,6 +35,9 @@ pub mod code {
     /// A scroll's strokes would be no longer than the platform takes for a
     /// tap, so they would tap what lies under them.
     pub const STROKE_TOO_SHORT: &str = "stroke_too_short";
+    /// `fill` left other text in the field than it entered, typed and then
+    /// entered again in one piece; the message names what the field holds.
+    pub const TEXT_MISMATCH: &str = "text_mismatch";
     /// `press` got a key the target's platform has no code for.
     pub const UNKNOWN_KEY: &str = "unknown_key";
     /// Writing a file, such as a screenshot, failed.

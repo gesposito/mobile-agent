@@ -95,6 +95,29 @@ fn every_failure_carries_a_snake_case_code() {
     }
 }
 
+/// Task 10.23: a fill that leaves other text in the field than it entered,
+/// typed and then entered again in one piece, fails with `text_mismatch`,
+/// whose message names what the field holds.
+#[test]
+fn a_fill_whose_field_keeps_other_text_fails_with_text_mismatch() {
+    let env = TestEnv::start_with("ios", &[("MOBILE_AGENT_FAKE_TYPING", "max:4")]);
+    env.cli(&["open", APP]).ok();
+    let reply = env
+        .cli(&["--json", "fill", "#login-username", "nobel"])
+        .failed()
+        .json();
+    assert_eq!(reply["code"], "text_mismatch", "{reply}");
+    assert_eq!(reply["data"]["value"], "nobe", "{reply}");
+    let message = reply["error"].as_str().unwrap_or_default();
+    assert!(message.contains("\"nobe\""), "{message}");
+    assert!(
+        message.contains("snapshot"),
+        "the message says what to do: {message}"
+    );
+    let human = env.cli(&["fill", "#login-username", "nobel"]).failed();
+    assert!(human.stderr.contains("\"nobe\""), "{}", human.stderr);
+}
+
 #[test]
 fn an_unreachable_daemon_is_reported_with_a_code() {
     let env = TestEnv::new("android");

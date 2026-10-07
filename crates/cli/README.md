@@ -39,7 +39,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `close` | stops the app this session opened and releases the target |
 | `snapshot [-i] [-d N] [--delta [--full]]` | lists elements, one per line with role, name and ref |
 | `click <target>` or `click <x> <y>` (alias `tap`) `[--hold MS]` | taps a ref, a selector or a point in device points |
-| `fill <target> <text>` | replaces a field's text |
+| `fill <target> <text>` | replaces a field's text and reads it back: text typed that the field took otherwise is entered again in one piece, pasted on iOS and set directly on Android, with a warning naming what the keys left; a field that still holds other text fails with `text_mismatch`, naming what it holds |
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
@@ -447,6 +447,10 @@ and `commands::a_click_on_an_element_mostly_out_of_view_warns`.
 Task 10.16 adds `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list`
 and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`,
 on fakes whose lists fling (`MOBILE_AGENT_FAKE_FLING`).
+Task 10.23 adds `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`
+and `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch`,
+on fakes whose fields take keys out of order or cut text short
+(`MOBILE_AGENT_FAKE_TYPING`).
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

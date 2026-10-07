@@ -174,7 +174,7 @@ mobile-agent snapshot -i       # 4. snapshot again before the next action
 | Command | Does |
 |---|---|
 | `click @e4`, `click 200 480`, `click @e4 --hold 800` | taps a ref, a selector or a point in device points; holds for a long press |
-| `fill @e2 agent` | replaces a field's text; the reply's `method` says whether it was set `direct` or typed as `keys` |
+| `fill @e2 agent` | replaces a field's text and reads it back; the reply's `method` says whether it was set `direct` or typed as `keys`. Text typed that the field took otherwise is entered again in one piece, pasted on iOS and set directly on Android, with a warning naming what the keys left and `retried: true`; a field that still holds other text fails with `text_mismatch` (task 10.23) |
 | `type @e2 ' smith'` | adds key events to the field, or to the focused one when no target is given |
 | `press Enter` | presses a key, such as `Home`, `Back` on Android, a letter, or modifiers joined with `+` as in `Control+a` |
 | `swipe up`, `swipe 200 700 200 200` | moves the finger in a direction or between two points |
@@ -217,6 +217,7 @@ $ mobile-agent --json batch --bail 'get text #settings-wifi' 'click @e99' 'snaps
 | `element_covered`, `element_offscreen` | a dialog covers the element; it is scrolled out of view |
 | `element_not_found`, `wait_timeout` | no element matched within the timeout; the waited-for condition did not hold |
 | `stroke_too_short` | a scroll stroke no longer than the platform's tap threshold |
+| `text_mismatch` | `fill` left other text in the field after typing the text and entering it again in one piece; the message and `data.value` name what the field holds |
 | `no_target`, `ambiguous_target`, `target_not_found`, `target_claimed` | target selection and session claims |
 | `app_not_found`, `input_rejected`, `no_frame`, `disconnected` | no such app; the target refused the input; no frame source or no frame yet; the target is gone |
 | `automation_conflict`, `target_not_ready`, `agent_failed`, `adb_failed` | Android: another holder of UI automation; the device is not in the `device` state; the agent did not start; adb failed |

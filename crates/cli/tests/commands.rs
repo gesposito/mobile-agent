@@ -121,6 +121,44 @@ fn fill_replaces_a_field_and_type_appends_to_it() {
     );
 }
 
+/// Task 10.23: `fill` reads the field back. Keys a field took out of order,
+/// as Bluesky's search field took "nobel" as "noelb", are replaced by the
+/// text in one piece, and a warning names what the keys left.
+#[test]
+fn fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order() {
+    let env = TestEnv::start_with("ios", &[("MOBILE_AGENT_FAKE_TYPING", "reorder")]);
+    env.cli(&["open", APP]).ok();
+    let reply = env
+        .cli(&["--json", "fill", "#login-username", "nobel"])
+        .ok()
+        .json();
+    let data = &reply["data"];
+    assert_eq!(data["method"], "direct", "{reply}");
+    assert_eq!(data["retried"], true, "{reply}");
+    assert_eq!(data["verified"], "text", "{reply}");
+    assert!(
+        data["readBackMs"].as_f64().is_some_and(|ms| ms >= 0.0),
+        "{reply}"
+    );
+    let warning = reply["warning"].as_str().unwrap_or_default();
+    assert!(
+        warning.contains("\"noelb\"") && warning.contains("pasted"),
+        "{reply}"
+    );
+    assert_eq!(
+        env.cli(&["get", "text", "#login-username"]).ok().stdout,
+        "nobel\n"
+    );
+    let typed = env.cli(&["--json", "fill", "#login-username", "nob"]).ok();
+    let reply = typed.json();
+    assert_eq!(
+        reply["data"]["method"], "keys",
+        "three keys stay in order: {reply}"
+    );
+    assert_eq!(reply["data"]["retried"], false, "{reply}");
+    assert!(reply.get("warning").is_none(), "{reply}");
+}
+
 #[test]
 fn press_enter_submits_the_login_form() {
     let env = TestEnv::start("android");

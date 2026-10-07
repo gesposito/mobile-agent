@@ -40,7 +40,9 @@ Acting
   click @e4 | click 200 480   tap a ref, a selector, or a point in points
   tap @e4                     the same as click
   click @e4 --hold 800        long press
-  fill @e2 agent              replace a field's text
+  fill @e2 agent              replace a field's text, then read it back; keys
+                              the field took wrong are pasted over (set
+                              directly on Android), a warning names them
   type @e2 ' smith'           add key events; without a ref, the focused field
   press Enter | Back | Home   keys; join modifiers with +, as Control+a
   scroll down 600             move the content; -s @e7 scrolls inside @e7
@@ -70,9 +72,10 @@ Output and errors
   --json prints one object: {"success", "data", "error"}, plus "code" and
   "warning" when set. A failure exits with status 1 and always has a
   snake_case code, such as stale_ref, unknown_ref, element_not_found,
-  wait_timeout, target_claimed or ambiguous_target. Without --json, errors
-  go to stderr. A warning, such as a degraded snapshot, says to check the
-  screen before you trust what is missing from it.
+  wait_timeout, target_claimed or ambiguous_target; text_mismatch means
+  fill left other text in the field, which its message names. Without
+  --json, errors go to stderr. A warning, such as a degraded snapshot, says
+  to check the screen before you trust what is missing from it.
 
 Targets and sessions
   devices lists the targets. With several, pass --device ID or --platform.

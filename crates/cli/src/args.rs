@@ -190,6 +190,12 @@ Examples:
 
     /// Clear a text field and enter text into it
     #[command(after_help = "\
+fill reads the field back. Text it typed that the field took otherwise is
+entered again in one piece, pasted on iOS and set directly on Android, with
+a warning naming what the keys left; a secure field is read back by its
+length. A field that still holds other text fails with text_mismatch,
+naming what it holds.
+
 Examples:
   mobile-agent fill @e2 agent
   mobile-agent fill '#login-password' hunter2

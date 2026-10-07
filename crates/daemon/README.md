@@ -135,7 +135,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
-| `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` |
+| `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` (how the text the field holds went in: `keys` or `direct`), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; null when it was not read back), `readBackMs` (from the end of the entry to the read-back taking the field's text, null when not read back), `retried` (whether the text went in again in one piece) |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
@@ -218,6 +218,30 @@ fling, were the platform still to take the finger as moving, stays short.
 `visible` rounds the share to a hundredth, and an `element_not_found` for
 an element on screen carries it as `data.visible`; for an element Android
 cut off it is the share of what Android reports, which can be 1.
+
+`fill` reads the field back after the entry (task 10.23: on Bluesky's
+search field a fill of "nobel", typed as keys 15 ms apart, left "noelb" and
+replied success). It takes the text once the field shows it and has held
+it since 200 ms after the entry, the settle's quiet window, as an app that
+owns its field's value can set it again after the edit: shown by a read
+that began that late, or by an earlier one after which neither the tree
+nor, on a target whose windows are read again as frames change, a frame
+changed. A field that shows other text is read again as reads fall due,
+up to 1 s after the entry, since a paste showed 84 to 462 ms after
+Command-V in the fixtures' fields on the iOS 26.5 Simulator. A field
+counts as showing the text when it shows the text itself, as many mask
+characters (`•` or `●`), some perhaps showing the text's own, as a secure
+field does, or nothing while it is named as the text, since the
+Simulator's reader leaves out a value that repeats the placeholder. Other
+text at the bound gets the text again in one piece, `direct`: pasted on a
+Simulator, set with `ACTION_SET_TEXT` on Android, as Playwright's and
+agent-browser's single `Input.insertText` and UiAutomator2's set text are,
+rather than typed again into a field that can reorder keys again; the reply
+then has `retried` and a warning naming what the field showed. Still other
+text fails with `text_mismatch`, naming what the field holds. On Android
+an empty field reads as its hint, so an empty fill there is not read back.
+A field that leaves the screen before it shows the text ends the read-back
+with a warning.
 
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
@@ -650,6 +674,7 @@ source and reports the agent's paths, as a real emulator does.
 | `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, and `data.visible` for an element on screen |
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
+| `text_mismatch` | `fill` left other text in the field than it entered, typed or pasted and then entered again in one piece; the message names what the field holds (quoted, as a number of masked characters, or nothing); `data.ref`, `data.value` (null for nothing), `data.masked` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
 | `daemon_stopping` | the daemon is shutting down, and a target command reached it after it stopped its targets; run the command again to start a new daemon |
@@ -740,6 +765,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.14, overscroll without frames) | (a click right after the settle that follows a stroke to the end of a list opens the row) | the mirror's `settle::without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change` and their controls; against an emulator on the agent path, `devices::the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path` |
 | (task 10.15, `scroll --until` stops once the element is mostly in view) | (a sliver of the element on screen does not stop the scroll; `visible` in the reply) | `handlers::act::tests::a_scroll_that_looks_for_an_element_stops_once_it_is_mostly_in_view`, `handlers::act::tests::a_partly_shown_element_is_brought_in_by_one_stroke_no_longer_than_the_step`, `handlers::act::tests::no_stroke_brings_in_an_element_the_scroll_s_axis_does_not_cut_off`, `handlers::act::tests::a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second`; the mirror's `visibility::*`; the CLI's `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`, `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in` and `commands::a_click_on_an_element_mostly_out_of_view_warns`; against an emulator on both of its paths, `devices::scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator` |
 | (task 10.16, `scroll --until` does not carry its element past unseen) | (every stroke comes to rest before the finger lifts; a stroke that looks for the element goes at most three quarters of what the list shows; fake lists that fling) | `handlers::act::tests::a_stroke_that_looks_for_an_element_goes_at_most_three_quarters_of_what_its_list_shows`, `fake::app::tests::a_list_glides_on_as_far_as_its_platform_flings_it`, `fake::app::tests::a_swipe_moves_the_list_by_the_finger_and_the_glide`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the mirror's `visibility::*` and `settle::a_stroke_reaches_the_target_released_as_the_action_says`; the CLI's `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list` and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`; against devices, `devices::scroll_until_finds_a_mid_list_row_on_an_emulator` and `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
+| (task 10.23, `fill` reads the field back) | (keys a field takes out of order are pasted over; a field that keeps other text fails with `text_mismatch`; secure fields by length; text that shows late; empty fills; the Simulator's empty fill and direct text; fake fields that take text as a Simulator types it) | `handlers::act::tests::a_fill_whose_keys_a_field_takes_out_of_order_pastes_the_text`, `handlers::act::tests::a_fill_that_a_field_cuts_short_fails_naming_what_the_field_holds`, `handlers::act::tests::a_secure_field_is_read_back_by_the_number_of_its_characters`, `handlers::act::tests::a_fill_replies_once_the_field_shows_its_text`, `handlers::act::tests::an_empty_fill_reads_the_field_back_empty_except_on_android`, `handlers::act::tests::a_field_shows_the_text_exactly_as_its_mask_or_as_an_empty_placeholder`, `devices::simulator::tests::an_empty_text_deletes_what_the_field_held`, `devices::simulator::tests::keys_are_typed_direct_text_is_pasted_and_a_paste_reads_as_direct_setting`, `fake::app::tests::fields_take_text_as_their_typing_mode_says`, `fake::realtime::tests::text_is_typed_as_the_simulator_types_it_only_under_a_typing_mode_that_types_keys`, `fake::tests::typing_modes_are_named_whole_keys_reorder_or_max_with_a_length`; the CLI's `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

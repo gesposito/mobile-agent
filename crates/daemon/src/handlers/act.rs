@@ -4,7 +4,10 @@
 use std::time::{Duration, Instant};
 
 use mirror::backend::Release;
-use mirror::{Action, DEFAULT_QUIET_WINDOW, Point, Rect, SettleOptions, Target, Visibility};
+use mirror::{
+    Action, DEFAULT_QUIET_WINDOW, MirrorError, Point, Rect, Ref, SettleOptions, Target, Timestamps,
+    Visibility,
+};
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
 
@@ -13,7 +16,7 @@ use super::view::element_json;
 use super::{millis, timeout};
 use crate::driver::Platform;
 use crate::keys;
-use crate::wire::code::{self, INPUT_REJECTED, STROKE_TOO_SHORT};
+use crate::wire::code::{self, INPUT_REJECTED, STROKE_TOO_SHORT, TEXT_MISMATCH};
 use crate::wire::{Failure, Request, Success};
 use crate::worker::{Attached, Outcome};
 
@@ -356,24 +359,286 @@ fn method_name(method: Option<TextMethod>) -> Value {
         .map_or(Value::Null, Value::from)
 }
 
+/// How long `fill` reads back a field that shows other text than it entered
+/// before it takes that text as what the field holds: on the iOS 26.5
+/// Simulator a paste showed in the fixtures' fields 84 to 462 ms after
+/// Command-V (task 10.23), and the mirror reads a field that sends no
+/// change events again no sooner than its minimum interval after its last
+/// read.
+const READ_BACK_MAX: Duration = Duration::from_secs(1);
+
+/// How long after the entry a field must still show the text before `fill`
+/// takes it: an app that owns its field's value, as a controlled React
+/// Native `TextInput`, can set it again after the edit. The settle's quiet
+/// window; agent-device holds typed text 0.2 s.
+const READ_BACK_HOLD: Duration = DEFAULT_QUIET_WINDOW;
+
+/// How often a read-back looks at the field; the mirror applies what the
+/// target reports and reads what falls due in between.
+const READ_BACK_SLICE: Duration = Duration::from_millis(10);
+
+/// The characters a secure field shows for each of its own: the bullet iOS
+/// and Android show, and the black circle of some Android fonts.
+const MASKS: [char; 2] = ['\u{2022}', '\u{25CF}'];
+
+/// How a field shows the text `fill` entered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    /// As the text itself.
+    Text,
+    /// As as many mask characters, a secure field's.
+    Length,
+}
+
+impl Shown {
+    fn name(self) -> &'static str {
+        match self {
+            Shown::Text => "text",
+            Shown::Length => "length",
+        }
+    }
+}
+
+/// How a field whose element is named `name` and that shows `value`
+/// compares with the `text` `fill` entered: as the text; as an empty read
+/// of a field named as the text, since the Simulator's reader leaves out a
+/// value that repeats the placeholder; or as as many mask characters, a
+/// secure field's, some of them perhaps showing the text's own. `None` is
+/// other text.
+fn compare(value: Option<&str>, name: &str, text: &str) -> Option<Shown> {
+    let value = value.unwrap_or_default();
+    if value == text || (value.is_empty() && text == name) {
+        return Some(Shown::Text);
+    }
+    let mask = |c: char| MASKS.contains(&c);
+    let masked = value.chars().count() == text.chars().count()
+        && value.chars().any(mask)
+        && value
+            .chars()
+            .zip(text.chars())
+            .all(|(shown, typed)| shown == typed || mask(shown));
+    masked.then_some(Shown::Length)
+}
+
+/// What a read-back found in the field.
+#[derive(Debug, PartialEq)]
+enum ReadBack {
+    /// It shows the text, which the read-back took `after` the entry.
+    Shown { shown: Shown, after: Duration },
+    /// It showed other text, `None` for none, until the read-back's bound.
+    Other(Option<String>),
+    /// It left the screen before it showed the text.
+    Gone,
+}
+
+/// Whether the replica shows the screen as the app has held it since
+/// `hold`: its latest read began at or after `hold`, or `hold` has passed
+/// and nothing changed since that read began, neither the tree nor, when
+/// `rereads` says windows that send no change events are read again as
+/// frames change, a frame.
+fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool {
+    let Some(read) = stamps.last_read else {
+        return false;
+    };
+    if read.started >= hold {
+        return true;
+    }
+    let changed = (rereads && stamps.last_frame_change.is_some_and(|at| at > read.started))
+        || stamps.last_tree_change.is_some_and(|at| at > read.finished);
+    now >= hold && !changed
+}
+
+/// Reads back the field `reference` names after an entry that ended at
+/// `entered`: until the field shows `text` and has held it since
+/// [`READ_BACK_HOLD`] after the entry, or until it has shown other text up
+/// to [`READ_BACK_MAX`] after the entry, the mirror reading it again as
+/// reads fall due meanwhile. What the field shows at the bound stands.
+fn read_back(
+    target: &mut Attached,
+    reference: Ref,
+    text: &str,
+    entered: Instant,
+) -> Result<ReadBack, Failure> {
+    let hold = entered + READ_BACK_HOLD;
+    let deadline = entered + READ_BACK_MAX;
+    loop {
+        let element = match target.mirror.resolve(reference) {
+            Ok(element) => element,
+            Err(MirrorError::StaleRef { .. }) => return Ok(ReadBack::Gone),
+            Err(error) => return Err(error.into()),
+        };
+        let now = Instant::now();
+        let rereads = target.mirror.next_wakeup().is_some();
+        let stamps = target.mirror.timestamps();
+        match compare(element.value.as_deref(), &element.name, text) {
+            Some(shown) if now >= deadline || held(&stamps, hold, now, rereads) => {
+                return Ok(ReadBack::Shown {
+                    shown,
+                    after: now.saturating_duration_since(entered),
+                });
+            }
+            None if now >= deadline => return Ok(ReadBack::Other(element.value)),
+            _ => {}
+        }
+        let until = if now < hold { hold } else { deadline };
+        target
+            .mirror
+            .run_until((now + READ_BACK_SLICE).min(until))?;
+    }
+}
+
+/// Enters `text` into the field `reference` names as `method` asks; says
+/// the method the target used.
+fn enter(
+    target: &mut Attached,
+    reference: Ref,
+    text: &str,
+    method: TextMethod,
+) -> Result<Option<TextMethod>, Failure> {
+    let outcome = target.mirror.act(&Action::Text {
+        text: text.to_owned(),
+        into: Some(reference),
+        method,
+    })?;
+    if !outcome.accepted {
+        return Err(rejected("text; fill takes a text field"));
+    }
+    Ok(outcome.method)
+}
+
+/// How `fill` entered its text by `method` on `platform`, as messages say.
+fn entered_by(platform: Platform, method: Option<TextMethod>) -> &'static str {
+    if method == Some(TextMethod::KEYS) {
+        return "typed the text";
+    }
+    match platform {
+        Platform::Ios => "pasted the text",
+        Platform::Android => "set the text directly",
+    }
+}
+
+/// What a field showing `value` holds, as messages name it.
+fn described(value: Option<&str>) -> String {
+    match value.filter(|value| !value.is_empty()) {
+        None => "nothing".to_owned(),
+        Some(value) if value.chars().all(|c| MASKS.contains(&c)) => {
+            format!("{} masked characters", value.chars().count())
+        }
+        Some(value) => format!("{value:?}"),
+    }
+}
+
+/// A fill's reply: the field as `given`, its ref, the method the text the
+/// field holds went in by, how the read-back found it and how long after
+/// the entry it took it (`None` when the field was not read back), and
+/// whether `fill` entered the text again.
+fn filled(
+    given: &str,
+    reference: Ref,
+    method: Option<TextMethod>,
+    read: Option<(Shown, Duration)>,
+    retried: bool,
+) -> Success {
+    Success::new(json!({
+        "filled": given,
+        "ref": format!("@{reference}"),
+        "method": method_name(method),
+        "verified": read.map(|(shown, _)| shown.name()),
+        "readBackMs": read.map(|(_, after)| millis(after)),
+        "retried": retried,
+    }))
+}
+
+/// The failure of a fill whose field `given` holds `value` after `fill`
+/// entered the text as `tries` say.
+fn mismatch(given: &str, reference: Ref, value: Option<&str>, tries: &str) -> Failure {
+    let masked =
+        value.is_some_and(|value| !value.is_empty() && value.chars().all(|c| MASKS.contains(&c)));
+    Failure::new(
+        TEXT_MISMATCH,
+        format!(
+            "{given} holds {} after fill {tries}; a field that limits or formats its text shows it so: take a snapshot to see the field, then fill it again or go on if it holds what you meant",
+            described(value)
+        ),
+    )
+    .with_data(json!({"ref": format!("@{reference}"), "value": value, "masked": masked}))
+}
+
+/// Fills the field the request names: enters the text, typed or pasted as
+/// the target chooses, and reads the field back. A field that shows other
+/// text gets the text again in one piece, pasted on a Simulator and set
+/// directly on Android, and is read back again; a field that still shows
+/// other text fails the fill with `text_mismatch`. On Android an empty
+/// field reads as its hint, so an empty fill there is not read back.
 pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let text = text_param(request)?;
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
     let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
-    let outcome = target.mirror.act(&Action::Text {
-        text,
-        into: Some(reference),
-        method: TextMethod::AUTO,
-    })?;
-    if !outcome.accepted {
-        return Err(rejected("text; fill takes a text field"));
+    let platform = target.info.platform;
+    let first = enter(target, reference, &text, TextMethod::AUTO)?;
+    let entered = Instant::now();
+    if text.is_empty() && platform == Platform::Android {
+        return Ok(filled(given, reference, first, None, false));
     }
-    Ok(Success::new(json!({
-        "filled": given,
-        "ref": format!("@{reference}"),
-        "method": method_name(outcome.method),
-    })))
+    let gone = |by: &str| {
+        Some(format!(
+            "{given} left the screen after fill {by}, so it could not be read back"
+        ))
+    };
+    let value = match read_back(target, reference, &text, entered)? {
+        ReadBack::Shown { shown, after } => {
+            return Ok(filled(given, reference, first, Some((shown, after)), false));
+        }
+        ReadBack::Gone => {
+            return Ok(filled(given, reference, first, None, false)
+                .warn(gone(entered_by(platform, first))));
+        }
+        ReadBack::Other(value) => value,
+    };
+    let first_by = entered_by(platform, first);
+    let second = match enter(target, reference, &text, TextMethod::DIRECT) {
+        Ok(second) => second,
+        Err(failure) => {
+            let tries = format!(
+                "{first_by}, and entering it again in one piece failed: {}",
+                failure.message
+            );
+            return Err(mismatch(given, reference, value.as_deref(), &tries));
+        }
+    };
+    let entered = Instant::now();
+    let second_by = entered_by(platform, second);
+    let again = || {
+        let it = second_by.replacen("the text", "it", 1);
+        format!(
+            "{given} showed {} after fill {first_by}, so fill {it} instead",
+            described(value.as_deref())
+        )
+    };
+    match read_back(target, reference, &text, entered)? {
+        ReadBack::Shown { shown, after } => {
+            Ok(filled(given, reference, second, Some((shown, after)), true).warn(Some(again())))
+        }
+        ReadBack::Gone => Ok(
+            filled(given, reference, second, None, true).warn(Some(format!(
+                "{}; {}",
+                again(),
+                gone(second_by).unwrap_or_default()
+            ))),
+        ),
+        ReadBack::Other(still) => {
+            let tries = if first_by == second_by {
+                format!("{first_by} twice")
+            } else {
+                format!(
+                    "{first_by}, then {}",
+                    second_by.replacen("the text", "it", 1)
+                )
+            };
+            Err(mismatch(given, reference, still.as_deref(), &tries))
+        }
+    }
 }
 
 pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request) -> Outcome {
@@ -871,7 +1136,169 @@ mod tests {
 
     use super::*;
     use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
-    use crate::fake::FakeDriver;
+    use crate::fake::{FakeDriver, Typing};
+
+    /// The fake fixture app.
+    const FIXTURE: &str = "dev.mobileagent.fixture.expo";
+
+    /// A fake target of `platform` whose fields take text as `typing` says
+    /// and show each change `latency` after its cause, with the fixture app
+    /// open on its Login tab.
+    fn login_on(platform: &str, typing: Typing, latency: Duration) -> Attached {
+        let driver = FakeDriver::parse(platform)
+            .unwrap()
+            .with_typing(typing)
+            .with_latency(latency);
+        let info = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let open = json!({"action": "open", "app": FIXTURE}).to_string();
+        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        target
+    }
+
+    /// A fake Simulator whose fields take text as `typing` says, with the
+    /// fixture app open on its Login tab.
+    fn login(typing: Typing) -> Attached {
+        login_on("ios", typing, Duration::ZERO)
+    }
+
+    /// `fill` of `text` into the field `field` names.
+    fn fill_in(target: &mut Attached, field: &str, text: &str) -> Outcome {
+        let fill = json!({"action": "fill", "target": field, "text": text}).to_string();
+        super::fill(target, "default", &request(&fill))
+    }
+
+    /// What the field `field` names holds, as `get value` reads it.
+    fn held(target: &mut Attached, field: &str) -> Value {
+        let get = json!({"action": "get", "what": "value", "target": field}).to_string();
+        super::super::view::get(target, "default", &request(&get))
+            .unwrap()
+            .data["value"]
+            .clone()
+    }
+
+    /// Task 10.23: on Bluesky's search field a fill of "nobel", typed as
+    /// keys 15 ms apart, left "noelb" and replied success. A field that
+    /// takes keys out of order gets the text pasted once the read-back
+    /// finds its keys out of order, and the reply says so.
+    #[test]
+    fn a_fill_whose_keys_a_field_takes_out_of_order_pastes_the_text() {
+        let mut target = login(Typing::Reorder);
+        let reply = fill_in(&mut target, "#login-username", "nobel");
+        let holds = held(&mut target, "#login-username");
+        assert_eq!(
+            holds, "nobel",
+            "fill replied {reply:?} while the field holds {holds}"
+        );
+        let success = reply.unwrap();
+        assert_eq!(success.data["method"], "direct", "{}", success.data);
+        assert_eq!(success.data["retried"], true, "{}", success.data);
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("\"noelb\"") && warning.contains("pasted"),
+            "the warning names what the keys left and the paste: {warning}"
+        );
+    }
+
+    /// Task 10.23: a field that keeps other text than the fill's, however
+    /// the text reaches it, fails the fill with `text_mismatch`, whose
+    /// message names what the field holds.
+    #[test]
+    fn a_fill_that_a_field_cuts_short_fails_naming_what_the_field_holds() {
+        let mut target = login(Typing::Max(4));
+        let reply = fill_in(&mut target, "#login-username", "nobel");
+        let holds = held(&mut target, "#login-username");
+        let failure = reply.expect_err(&format!("the field holds {holds}"));
+        assert_eq!(failure.code, TEXT_MISMATCH, "{}", failure.message);
+        assert!(
+            failure.message.contains("\"nobe\""),
+            "the message names what the field holds: {}",
+            failure.message
+        );
+        let data = failure.data.unwrap_or_default();
+        assert_eq!(data["value"], "nobe", "{data}");
+        assert_eq!(data["masked"], false, "{data}");
+    }
+
+    /// Task 10.23: a secure field shows a mask character for each of its
+    /// own, so the read-back compares their number.
+    #[test]
+    fn a_secure_field_is_read_back_by_the_number_of_its_characters() {
+        let mut target = login(Typing::Keys);
+        let success = fill_in(&mut target, "#login-password", "hunter2").unwrap();
+        assert_eq!(success.data["method"], "keys", "{}", success.data);
+        assert_eq!(success.data["verified"], "length", "{}", success.data);
+        assert_eq!(success.data["retried"], false, "{}", success.data);
+        assert_eq!(held(&mut target, "#login-password"), "•••••••");
+    }
+
+    /// Task 10.23: a fill replies once the field shows the text, which can
+    /// come late, as a paste showed up to 462 ms after Command-V on the
+    /// Simulator.
+    #[test]
+    fn a_fill_replies_once_the_field_shows_its_text() {
+        let latency = Duration::from_millis(300);
+        let mut target = login_on("ios", Typing::Whole, latency);
+        let success = fill_in(&mut target, "#login-username", "agent").unwrap();
+        assert_eq!(held(&mut target, "#login-username"), "agent");
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert!(
+            success.data["readBackMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= 250.0),
+            "{}",
+            success.data
+        );
+    }
+
+    /// Task 10.23: an empty fill clears the field, which reads back empty;
+    /// on Android an empty field reads as its hint, so an empty fill there
+    /// is not read back.
+    #[test]
+    fn an_empty_fill_reads_the_field_back_empty_except_on_android() {
+        let mut target = login(Typing::Whole);
+        fill_in(&mut target, "#login-username", "agent").unwrap();
+        let success = fill_in(&mut target, "#login-username", "").unwrap();
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert_eq!(held(&mut target, "#login-username"), Value::Null);
+
+        let mut android = login_on("android", Typing::Whole, Duration::ZERO);
+        fill_in(&mut android, "#login-username", "agent").unwrap();
+        let success = fill_in(&mut android, "#login-username", "").unwrap();
+        assert!(success.data["verified"].is_null(), "{}", success.data);
+        assert!(success.data["readBackMs"].is_null(), "{}", success.data);
+        assert_eq!(held(&mut android, "#login-username"), Value::Null);
+    }
+
+    /// Task 10.23: a field's text is the fill's when it is the text, an
+    /// empty read of a field named as the text (the Simulator's reader
+    /// leaves out a value that repeats the placeholder), or as many mask
+    /// characters, some of them in the text's place, as a secure field
+    /// shows; anything else is other text.
+    #[test]
+    fn a_field_shows_the_text_exactly_as_its_mask_or_as_an_empty_placeholder() {
+        let shows = |value: Option<&str>, name: &str, text: &str| compare(value, name, text);
+        assert_eq!(shows(Some("nobel"), "Search", "nobel"), Some(Shown::Text));
+        assert_eq!(shows(None, "Search", ""), Some(Shown::Text));
+        assert_eq!(shows(Some(""), "Search", ""), Some(Shown::Text));
+        assert_eq!(shows(None, "Search", "Search"), Some(Shown::Text));
+        assert_eq!(
+            shows(Some("•••••••"), "Password", "hunter2"),
+            Some(Shown::Length)
+        );
+        assert_eq!(shows(Some("●●●"), "Password", "abc"), Some(Shown::Length));
+        assert_eq!(
+            shows(Some("••••••2"), "Password", "hunter2"),
+            Some(Shown::Length)
+        );
+        assert_eq!(shows(Some("noelb"), "Search", "nobel"), None);
+        assert_eq!(shows(Some("••••••"), "Password", "hunter2"), None);
+        assert_eq!(shows(Some("••••••x"), "Password", "hunter2"), None);
+        assert_eq!(shows(None, "Search", "nobel"), None);
+        assert_eq!(shows(Some("it’s"), "Username", "it's"), None);
+    }
 
     /// A screen that turns to landscape once `turned` is set.
     struct Turning(Arc<AtomicBool>);
