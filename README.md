@@ -255,21 +255,23 @@ Android emulator (`reports/10.1-emulator.md`): an API 36 arm64 AVD on Android Em
 - Both runs drove the CLI through a shim (`reports/10.1-emulator-grpc/bench-android-cli.rs`) that task 10.10 has since made unnecessary. It adds a process start to every wall-clock sample: without it, `mobile-agent --version` took 5.0 and 5.3 ms at p95 (`reports/10.1-emulator.md`, finding 9).
 - The runs' own reports judged tap to frame change against the 50 ms gate of the time, and failed it. Task 10.13 restated the gate for host rendering, which these values pass (`docs/research/emulator-frames.md`). The controller-off report, made before task 10.10, counts that series as failed where the harness now reports it as not measured.
 
-Against the baselines: how many times faster mobile-agent's p50 was on each reference flow. "Not timed" means the tool failed the flow's golden check, so the harness did not time it. mobile-agent's flows had no failed or flaky iteration in the two runs below; a baseline's failure and flake rates follow its factor where they are not zero.
+Against the baselines: how many times faster mobile-agent's p50 was on each reference flow. "Not timed" means the tool failed the flow's golden check, so the harness did not time it. mobile-agent's flows had no failed or flaky iteration in the runs below; a baseline's failure and flake rates follow its factor where they are not zero.
 
-iOS Simulator (`reports/10.2-simulator.md`, Baselines):
+The login rows were measured again on 2026-10-07, after `fill` began reading the field back (task 10.23), together with the text-entry series (`reports/10.26-remeasure.md`); the other rows are the published runs'. A text entry of 36 characters then took 545.5 and 718.3 ms at p50 on the Simulator (SwiftUI, Expo), against 249.3 and 228.3 ms before, and 224.1 and 240.0 ms on the emulator (Expo, Compose), against 23.8 and 26.1 ms; the read-back is 201 to 283 ms of it at the median.
+
+iOS Simulator (`reports/10.2-simulator.md`, Baselines; login, `reports/10.26-remeasure.md`):
 
 | Flow | Maestro 2.10.0, SwiftUI | Maestro, Expo | agent-device 0.21.14, SwiftUI | agent-device, Expo |
 |---|---|---|---|---|
-| login | 6.62x | 6.64x | 2.27x | not timed |
+| login | 6.10x | 6.45x | 2.11x | 2.14x (90 % failed, 2 % flaky) |
 | list-scroll | 6.06x | 6.05x (26 % failed, 22 % flaky) | not timed | not timed |
 | big-screen | 8.51x | 7.13x | 1.24x | not timed |
 
-Android emulator, controller on (`reports/10.1-emulator.md`, Baselines):
+Android emulator, controller on (`reports/10.1-emulator.md`, Baselines; login, `reports/10.26-remeasure.md`):
 
 | Flow | Maestro 2.10.0, Expo | Maestro, Compose | agent-device 0.21.14, Expo | agent-device, Compose |
 |---|---|---|---|---|
-| login | 14.50x | 5.99x (2 % failed, 2 % flaky) | 2.02x (32 % failed, 22 % flaky) | 1.74x |
+| login | 11.89x | 6.60x | 2.33x (24 % failed, 12 % flaky) | 1.67x |
 | list-scroll | not timed | not timed | not timed | not timed |
 | big-screen | 8.39x | 4.32x | 1.19x (76 % failed, 12 % flaky) | 1.06x |
 
