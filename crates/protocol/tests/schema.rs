@@ -458,6 +458,18 @@ fn snapshot_round_trips_with_its_string_table_enums_and_flags() {
     }));
 }
 
+/// Task 10.22: a view the platform marks modal is bit 13 of the node flags,
+/// and keeps it through a round trip.
+#[test]
+fn a_view_marked_modal_carries_a_flag_of_its_own() {
+    assert_eq!(NodeFlags::MODAL.0, 1 << 13);
+    assert_eq!(NodeFlags::MODAL.names().collect::<Vec<_>>(), ["modal"]);
+    let mut snapshot = sample_snapshot();
+    let root = snapshot.windows[0].root.as_mut().expect("a root");
+    root.children[0].flags |= NodeFlags::MODAL;
+    round_trip(snapshot_response(snapshot));
+}
+
 #[test]
 fn ping_is_an_integer_keyed_map() {
     assert_eq!(

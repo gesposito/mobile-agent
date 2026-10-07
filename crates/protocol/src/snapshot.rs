@@ -342,6 +342,10 @@ wire_flags! {
     /// Visible to the user, as the platform reports it.
     VISIBLE = 11, "visible";
     ACCESSIBILITY_FOCUSED = 12, "accessibility_focused";
+    /// A view the platform marks modal, as iOS does with
+    /// `accessibilityViewIsModal`: assistive technology leaves out its
+    /// siblings, and what they hold, while it is on screen.
+    MODAL = 13, "modal";
 }
 
 wire_flags! {
