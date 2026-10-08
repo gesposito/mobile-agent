@@ -1022,3 +1022,138 @@ fn subtree_identifiers(nodes: &[RNode], root: usize) -> HashSet<&str> {
     }
     ids
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FRAME: &str = "android.widget.FrameLayout";
+    const TEXT: &str = "android.widget.TextView";
+    const BUTTON: &str = "android.widget.Button";
+    const GROUP: &str = "android.view.ViewGroup";
+    const IMAGE: &str = "android.widget.ImageView";
+    const SWITCH: &str = "android.widget.Switch";
+    const EDIT: &str = "android.widget.EditText";
+    const PROGRESS: &str = "android.widget.ProgressBar";
+    const CHECKBOX: &str = "android.widget.CheckBox";
+
+    /// The string table of the reads below: their nodes' classes.
+    const CLASSES: [&str; 9] = [
+        FRAME, TEXT, BUTTON, GROUP, IMAGE, SWITCH, EDIT, PROGRESS, CHECKBOX,
+    ];
+
+    /// A node of `class`, one of [`CLASSES`], with the identifier and the
+    /// text given, holding `children`.
+    fn node(
+        class: &str,
+        identifier: Option<&str>,
+        text: Option<&str>,
+        children: Vec<Node>,
+    ) -> Node {
+        let class = CLASSES
+            .iter()
+            .position(|&c| c == class)
+            .expect("a class of the table");
+        Node {
+            id: 0,
+            class: class as u32,
+            res_pkg: None,
+            res_id: identifier.map(str::to_owned),
+            text: text.map(str::to_owned),
+            desc: None,
+            bounds: Bounds::default(),
+            flags: NodeFlags::EMPTY,
+            children,
+            scroll: None,
+        }
+    }
+
+    fn identified(class: &str, identifier: &str) -> Node {
+        node(class, Some(identifier), None, Vec::new())
+    }
+
+    fn text(shown: &str) -> Node {
+        node(TEXT, None, Some(shown), Vec::new())
+    }
+
+    /// A list row: a view group identified as `row`, as every row is,
+    /// holding a text view identified as `label` that shows `shown`.
+    fn row(label: &str, shown: &str) -> Node {
+        let held = node(TEXT, Some(label), Some(shown), Vec::new());
+        node(GROUP, Some("row"), None, vec![held])
+    }
+
+    /// A window's nodes as the replica holds them: `children` under a root.
+    fn window(children: Vec<Node>) -> Vec<RNode> {
+        let strings = CLASSES.map(String::from);
+        Replica::new().convert_nodes(&node(FRAME, None, None, children), &strings)
+    }
+
+    /// What node `i` shows: its text, its first child's, or its identifier.
+    fn label(nodes: &[RNode], i: usize) -> &str {
+        let node = &nodes[i];
+        let first_child = node.children.first().map(|&c| &nodes[c]);
+        node.text
+            .as_deref()
+            .or_else(|| first_child?.text.as_deref())
+            .or(node.identifier.as_deref())
+            .expect("a label")
+    }
+
+    /// The children of two matched nodes pair in the order their class and
+    /// identifier first appear among the old node's children, whatever the
+    /// new node's order, and so in the same order on every call; within a
+    /// class and identifier, in the order the rules pair them: subtree
+    /// content, then a shared identified descendant. `reconcile` walks the
+    /// pairs in that order, so what its stack allocates is the same for the
+    /// same two reads, as design D14's exact allocation counts need.
+    #[test]
+    fn children_pair_in_the_order_their_keys_first_appear_on_every_call() {
+        let old = window(vec![
+            text("Title"),
+            identified(BUTTON, "save"),
+            row("row-1-label", "One"),
+            text("Subtitle"),
+            identified(IMAGE, "logo"),
+            row("row-2-label", "Two"),
+            identified(SWITCH, "wifi"),
+            identified(EDIT, "name"),
+            identified(PROGRESS, "spinner"),
+            identified(CHECKBOX, "terms"),
+        ]);
+        let new = window(vec![
+            identified(CHECKBOX, "terms"),
+            identified(SWITCH, "wifi"),
+            row("row-2-label", "Two (done)"),
+            text("Subtitle"),
+            identified(EDIT, "name"),
+            row("row-1-label", "One (done)"),
+            text("Title"),
+            identified(IMAGE, "logo"),
+            identified(BUTTON, "save"),
+            identified(PROGRESS, "loading"),
+        ]);
+
+        let first = match_children(&old, 0, &new, 0);
+        let second = match_children(&old, 0, &new, 0);
+        assert_eq!(first, second, "the same pairs in the same order");
+        let named: Vec<(&str, &str)> = first
+            .iter()
+            .map(|&(o, n)| (label(&old, o), label(&new, n)))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("Subtitle", "Subtitle"),
+                ("Title", "Title"),
+                ("save", "save"),
+                ("Two", "Two (done)"),
+                ("One", "One (done)"),
+                ("logo", "logo"),
+                ("wifi", "wifi"),
+                ("name", "name"),
+                ("terms", "terms"),
+            ]
+        );
+    }
+}
