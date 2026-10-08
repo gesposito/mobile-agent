@@ -18,10 +18,10 @@ use protocol::snapshot::{Node, NodeFlags, ScrollAxis, ScrollUnit, Snapshot, Wind
 /// their FNV-1a digest, recorded from the generator's first green run. A
 /// deliberate change to the generator records them again.
 const PINNED: [(&str, usize, u64); 4] = [
-    ("snapshot-500", 0, 0),
-    ("snapshot-1049", 0, 0),
-    ("events-10k", 0, 0),
-    ("requests-1k", 0, 0),
+    ("snapshot-500", 21_340, 0x4100_7d10_bf85_8cea),
+    ("snapshot-1049", 39_797, 0xbb70_a504_d285_5586),
+    ("events-10k", 248_653, 0x6a92_2342_2094_73cb),
+    ("requests-1k", 24_751, 0xbe6d_9734_103d_79d4),
 ];
 
 fn snapshot(message: &Message) -> &Snapshot {
