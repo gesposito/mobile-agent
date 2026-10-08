@@ -16,14 +16,18 @@ pub mod guard;
 pub mod markdown;
 pub mod report;
 
+use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, SystemTime};
 
-use crate::provenance::Probe;
+use crate::provenance::{Probe, capture_commit, capture_host, compact_timestamp, utc_timestamp};
 use crate::report::ReportFiles;
 
+use self::compare::Baseline;
 use self::guard::Host;
-use self::report::Report;
+use self::report::{GuardSettings, HarnessSettings, Provenance, Report};
 
 /// Version of the JSON layouts of `report.json` and the baseline file, bumped
 /// on incompatible changes.
@@ -40,9 +44,10 @@ pub const MAX_LOAD: f64 = 4.0;
 /// 1.15% that spike S8 measured, raised to the floor of 5% (design D16).
 pub const THRESHOLD_PCT: f64 = 5.0;
 
-/// The `cargo` arguments that run every suite in the bench profile, release
-/// settings: the bench targets of `protocol`, `mirror`, `daemon`, `simulator`
-/// and `android`, by name, so no library's or binary's libtest harness runs.
+/// The `cargo` arguments that run every suite in the bench profile, which
+/// takes the release profile's settings: the bench targets of `protocol`,
+/// `mirror`, `daemon`, `simulator` and `android`, by name, so no library's
+/// or binary's libtest harness runs.
 pub const CARGO_BENCH: [&str; 10] = [
     "bench",
     "--workspace",
@@ -81,7 +86,8 @@ pub struct Settings {
     pub filter: Option<String>,
     /// Rewrite the baseline with this run's values and provenance.
     pub save_baseline: bool,
-    /// The host's `std::env::consts::OS`, for provenance and the load.
+    /// The host's `std::env::consts::OS`, which says how provenance reads
+    /// the host.
     pub os: String,
 }
 
@@ -135,15 +141,58 @@ impl CargoBench {
     /// The arguments for `filter`: [`CARGO_BENCH`], `--`, [`CRITERION_FLAGS`]
     /// and the filter, if any.
     pub fn args(filter: Option<&str>) -> Vec<String> {
-        let _ = filter;
-        todo!()
+        CARGO_BENCH
+            .into_iter()
+            .chain(["--"])
+            .chain(CRITERION_FLAGS)
+            .chain(filter)
+            .map(str::to_owned)
+            .collect()
     }
 }
 
 impl Suites for CargoBench {
     fn run(&mut self, criterion_home: &Path, filter: Option<&str>) -> Result<String, String> {
-        let _ = (criterion_home, filter);
-        todo!()
+        let program = self.program.display().to_string();
+        let mut child = Command::new(&self.program)
+            .args(CargoBench::args(filter))
+            .env("CRITERION_HOME", criterion_home)
+            .current_dir(&self.root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| format!("cannot start {program}: {e}"))?;
+        let mut captured = String::new();
+        if let Some(stdout) = child.stdout.take() {
+            let mut reader = BufReader::new(stdout);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_until(b'\n', &mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let text = String::from_utf8_lossy(&line);
+                        print!("{text}");
+                        captured.push_str(&text);
+                    }
+                    Err(e) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(format!("cannot read what cargo bench printed: {e}"));
+                    }
+                }
+            }
+        }
+        let status = child
+            .wait()
+            .map_err(|e| format!("cannot wait for {program}: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "cargo bench failed with {status}; nothing was compared"
+            ));
+        }
+        Ok(captured)
     }
 }
 
@@ -169,6 +218,117 @@ pub fn run(
     probe: &dyn Probe,
     suites: &mut dyn Suites,
 ) -> Result<Finished, String> {
-    let _ = (settings, host, probe, suites);
-    todo!()
+    if settings.save_baseline {
+        // A baseline never comes from a host the default guard would refuse,
+        // nor from part of the suites.
+        if settings.max_load > MAX_LOAD {
+            return Err(format!(
+                "--save-baseline takes a 1-minute load under {MAX_LOAD} at most, the default \
+                 bound; --max-load {} would let a busier host write the baseline",
+                settings.max_load
+            ));
+        }
+        if let Some(filter) = &settings.filter {
+            return Err(format!(
+                "--save-baseline writes every suite's values, and --filter {filter} measures \
+                 only some of them"
+            ));
+        }
+    }
+    let baseline_path = settings.root.join(BASELINE);
+    let baseline = Baseline::load(&baseline_path)?;
+    let quiet = guard::wait_quiet(host, settings.max_load, settings.wait)?;
+
+    let started = SystemTime::now();
+    let out = settings.out.clone().unwrap_or_else(|| {
+        settings
+            .root
+            .join("target/bench/micro")
+            .join(compact_timestamp(started))
+    });
+    // The bench binaries run in their crates' directories, so criterion is
+    // given an absolute path, and a directory of its own, so that every
+    // estimates.json in it is this run's.
+    let criterion_home = std::path::absolute(out.join("criterion"))
+        .map_err(|e| format!("no absolute path for {}: {e}", out.display()))?;
+    fs::create_dir_all(&out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
+    fs::create_dir(&criterion_home).map_err(|e| {
+        format!(
+            "cannot create a fresh {} for criterion's files: {e}",
+            criterion_home.display()
+        )
+    })?;
+    let mut machine = capture_host(probe, &settings.os);
+    machine.load_average = Some(quiet.load_average);
+    let commit = capture_commit(probe);
+    let toolchain = probe.output("rustc", &["-V"]);
+    let library = fs::read_to_string(settings.root.join("Cargo.lock"))
+        .ok()
+        .and_then(|lock| criterion::version(&lock));
+
+    let stdout = suites.run(&criterion_home, settings.filter.as_deref())?;
+    let measured = criterion::read(&criterion_home, &stdout)?;
+    if measured.is_empty() {
+        return Err(match &settings.filter {
+            Some(filter) => {
+                format!("the suites measured no benchmark whose id matches --filter {filter}")
+            }
+            None => "the suites measured no benchmark".to_owned(),
+        });
+    }
+    let provenance = Provenance {
+        started_at: utc_timestamp(started),
+        finished_at: utc_timestamp(SystemTime::now()),
+        host: machine,
+        load_average_end: host.check().load_average,
+        commit,
+        toolchain,
+        harness: HarnessSettings::criterion(library),
+        guard: GuardSettings {
+            max_load: settings.max_load,
+            waited_s: quiet.waited.as_secs(),
+        },
+    };
+    let mut report = Report::new(
+        provenance,
+        settings.threshold_pct,
+        BASELINE,
+        baseline.as_ref(),
+        &measured,
+    );
+
+    // The baseline is written after the comparison, which read the previous
+    // one, and before the reports, which say whether it was.
+    let mut written = None;
+    let mut unwritten = None;
+    if settings.save_baseline {
+        let fresh = Baseline {
+            schema_version: SCHEMA_VERSION,
+            provenance: report.provenance.clone(),
+            benchmarks: measured,
+        };
+        match fresh.save(&baseline_path) {
+            Ok(()) => {
+                report.baseline.saved = true;
+                written = Some(baseline_path);
+            }
+            Err(e) => {
+                unwritten = Some(format!(
+                    "cannot write the baseline {}: {e}",
+                    baseline_path.display()
+                ))
+            }
+        }
+    }
+    let files = report
+        .write(&out)
+        .map_err(|e| format!("cannot write the report into {}: {e}", out.display()))?;
+    if let Some(error) = unwritten {
+        return Err(format!("{error}; the reports are in {}", out.display()));
+    }
+    Ok(Finished {
+        report,
+        files,
+        baseline: written,
+    })
 }

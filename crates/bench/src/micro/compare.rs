@@ -28,26 +28,42 @@ pub struct Baseline {
 impl Baseline {
     /// Parses a baseline written by [`Baseline::to_json`].
     pub fn from_json(text: &str) -> Result<Baseline, String> {
-        let _ = (text, SCHEMA_VERSION);
-        todo!()
+        let baseline: Baseline = serde_json::from_str(text)
+            .map_err(|e| format!("not a microbenchmark baseline: {e}"))?;
+        if baseline.schema_version != SCHEMA_VERSION {
+            return Err(format!(
+                "baseline schema version {} is not the supported {SCHEMA_VERSION}",
+                baseline.schema_version
+            ));
+        }
+        Ok(baseline)
     }
 
-    /// Pretty-printed JSON, one benchmark after another in id order, so a
-    /// refreshed baseline's diff shows what moved.
+    /// Pretty-printed JSON, the benchmarks one after another in id order, so
+    /// a refreshed baseline's diff shows what moved.
     pub fn to_json(&self) -> String {
-        todo!()
+        // Every key is a string and serde_json writes non-finite floats as
+        // null, so serializing a baseline cannot fail.
+        serde_json::to_string_pretty(self).expect("a baseline always serializes")
     }
 
     /// The baseline at `path`; `None` when there is no file there.
     pub fn load(path: &Path) -> Result<Option<Baseline>, String> {
-        let _ = path;
-        todo!()
+        match fs::read_to_string(path) {
+            Ok(text) => Baseline::from_json(&text)
+                .map(Some)
+                .map_err(|e| format!("{}: {e}", path.display())),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("cannot read {}: {e}", path.display())),
+        }
     }
 
     /// Writes the baseline to `path`, creating its directory.
     pub fn save(&self, path: &Path) -> io::Result<()> {
-        let _ = (path, fs::create_dir_all::<&Path>);
-        todo!()
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::write(path, self.to_json() + "\n")
     }
 }
 
@@ -101,13 +117,93 @@ pub fn compare(
     baseline: Option<&Baseline>,
     threshold_pct: f64,
 ) -> Comparison {
-    let _ = (measured, baseline, threshold_pct);
-    todo!()
+    let saved = baseline.map_or(&[][..], |b| &b.benchmarks[..]);
+    let benchmarks = measured
+        .iter()
+        .map(|m| judge(m, saved.iter().find(|s| s.id == m.id), threshold_pct))
+        .collect();
+    let mut missing: Vec<Measured> = saved
+        .iter()
+        .filter(|s| !measured.iter().any(|m| m.id == s.id))
+        .cloned()
+        .collect();
+    missing.sort_by(|a, b| a.id.cmp(&b.id));
+    Comparison {
+        benchmarks,
+        missing,
+    }
+}
+
+/// `measured` against `saved`, the baseline's values for it, if any.
+fn judge(measured: &Measured, saved: Option<&Measured>, threshold_pct: f64) -> Benchmark {
+    let Some(saved) = saved else {
+        return Benchmark {
+            measured: measured.clone(),
+            baseline: None,
+            difference_pct: None,
+            time_verdict: None,
+            allocations_verdict: None,
+            verdict: Verdict::New,
+        };
+    };
+    let difference = difference_pct(saved.median_ns, measured.median_ns);
+    let time_verdict = difference.map(|pct| {
+        if pct > threshold_pct {
+            Verdict::Regression
+        } else if pct < -threshold_pct {
+            Verdict::Improvement
+        } else {
+            Verdict::Same
+        }
+    });
+    let allocations_verdict = match (
+        saved.allocations.zip(saved.bytes_allocated),
+        measured.allocations.zip(measured.bytes_allocated),
+    ) {
+        (Some((n, bytes)), Some((now_n, now_bytes))) => {
+            Some(exactly(&[(n, now_n), (bytes, now_bytes)]))
+        }
+        _ => None,
+    };
+    let verdicts = [time_verdict, allocations_verdict];
+    let verdict = if verdicts.contains(&Some(Verdict::Regression)) {
+        Verdict::Regression
+    } else if verdicts.contains(&Some(Verdict::Improvement)) {
+        Verdict::Improvement
+    } else {
+        Verdict::Same
+    };
+    Benchmark {
+        measured: measured.clone(),
+        baseline: Some(saved.clone()),
+        difference_pct: difference,
+        time_verdict,
+        allocations_verdict,
+        verdict,
+    }
+}
+
+/// Counts as `(baseline, measured)` pairs, compared exactly: a regression
+/// when any rose, an improvement when one fell and none rose.
+fn exactly(counts: &[(u64, u64)]) -> Verdict {
+    if counts.iter().any(|(saved, now)| now > saved) {
+        Verdict::Regression
+    } else if counts.iter().any(|(saved, now)| now < saved) {
+        Verdict::Improvement
+    } else {
+        Verdict::Same
+    }
 }
 
 /// How much slower `measured_ns` is than `baseline_ns`, in percent rounded
-/// to a tenth, negative when faster; `None` for a zero baseline.
+/// to a tenth, negative when faster; `None` for a zero baseline. The
+/// verdicts are taken on this rounded value, the one both reports show.
 pub fn difference_pct(baseline_ns: u64, measured_ns: u64) -> Option<f64> {
-    let _ = (baseline_ns, measured_ns);
-    todo!()
+    if baseline_ns == 0 {
+        return None;
+    }
+    let pct = (measured_ns as f64 - baseline_ns as f64) / baseline_ns as f64 * 100.0;
+    let tenths = (pct * 10.0).round() / 10.0;
+    // A difference that rounds to nothing would print as -0.0.
+    Some(if tenths == 0.0 { 0.0 } else { tenths })
 }

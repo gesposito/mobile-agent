@@ -9,7 +9,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::compare::{Baseline, Benchmark};
+use super::SCHEMA_VERSION;
+use super::compare::{Baseline, Benchmark, Verdict, compare};
 use super::criterion::Measured;
 use crate::provenance::{Commit, Host};
 use crate::report::ReportFiles;
@@ -133,8 +134,19 @@ impl Provenance {
     /// commit, the times, the loads and the guard are the run's own, and
     /// never listed.
     pub fn environment_differences(&self, other: &Provenance) -> Vec<String> {
-        let _ = other;
-        todo!()
+        let (a, b) = (&self.host, &other.host);
+        [
+            ("host.hardware", a.hardware != b.hardware),
+            ("host.cpu_cores", a.cpu_cores != b.cpu_cores),
+            ("host.memory_bytes", a.memory_bytes != b.memory_bytes),
+            ("host.os", a.os != b.os),
+            ("toolchain", self.toolchain != other.toolchain),
+            ("harness", self.harness != other.harness),
+        ]
+        .into_iter()
+        .filter(|&(_, differ)| differ)
+        .map(|(name, _)| name.to_owned())
+        .collect()
     }
 }
 
@@ -148,19 +160,78 @@ impl Report {
         baseline: Option<&Baseline>,
         measured: &[Measured],
     ) -> Report {
-        let _ = (provenance, threshold_pct, baseline_path, baseline, measured);
-        todo!()
+        let compared = compare(measured, baseline, threshold_pct);
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        let with = |verdict| {
+            count(
+                compared
+                    .benchmarks
+                    .iter()
+                    .filter(|b| b.verdict == verdict)
+                    .count(),
+            )
+        };
+        let regressed: Vec<&str> = compared
+            .benchmarks
+            .iter()
+            .filter(|b| b.verdict == Verdict::Regression)
+            .map(|b| b.measured.id.as_str())
+            .collect();
+        let reason = match (baseline, regressed.len()) {
+            (None, _) => format!("no baseline at {baseline_path}, so every benchmark is new"),
+            (Some(_), 0) => "no regression against the baseline".to_owned(),
+            (Some(_), n) => format!(
+                "{n} {} against the baseline: {}",
+                if n == 1 { "regression" } else { "regressions" },
+                regressed.join(", ")
+            ),
+        };
+        let summary = Summary {
+            benchmarks: count(compared.benchmarks.len()),
+            regressions: with(Verdict::Regression),
+            improvements: with(Verdict::Improvement),
+            same: with(Verdict::Same),
+            new: with(Verdict::New),
+            missing: count(compared.missing.len()),
+            exit_status: u8::from(!regressed.is_empty()),
+            reason,
+        };
+        Report {
+            schema_version: SCHEMA_VERSION,
+            baseline: BaselineInfo {
+                path: baseline_path.to_owned(),
+                provenance: baseline.map(|b| b.provenance.clone()),
+                environment_differences: baseline
+                    .map(|b| b.provenance.environment_differences(&provenance))
+                    .unwrap_or_default(),
+                saved: false,
+            },
+            provenance,
+            threshold_pct,
+            benchmarks: compared.benchmarks,
+            missing: compared.missing,
+            summary,
+        }
     }
 
     /// Pretty-printed JSON.
     pub fn to_json(&self) -> String {
-        todo!()
+        // Every key is a string and serde_json writes non-finite floats as
+        // null, so serializing a report cannot fail.
+        serde_json::to_string_pretty(self).expect("a report always serializes")
     }
 
     /// Parses a report written by [`Report::to_json`].
     pub fn from_json(text: &str) -> Result<Report, String> {
-        let _ = text;
-        todo!()
+        let report: Report =
+            serde_json::from_str(text).map_err(|e| format!("not a microbenchmark report: {e}"))?;
+        if report.schema_version != SCHEMA_VERSION {
+            return Err(format!(
+                "report schema version {} is not the supported {SCHEMA_VERSION}",
+                report.schema_version
+            ));
+        }
+        Ok(report)
     }
 
     /// The markdown summary.
@@ -176,7 +247,13 @@ impl Report {
 
     /// Writes `report.json` and `report.md` into `dir`, creating it.
     pub fn write(&self, dir: &Path) -> io::Result<ReportFiles> {
-        let _ = (dir, fs::create_dir_all::<&Path>);
-        todo!()
+        fs::create_dir_all(dir)?;
+        let files = ReportFiles {
+            json: dir.join("report.json"),
+            markdown: dir.join("report.md"),
+        };
+        fs::write(&files.json, self.to_json() + "\n")?;
+        fs::write(&files.markdown, self.to_markdown())?;
+        Ok(files)
     }
 }

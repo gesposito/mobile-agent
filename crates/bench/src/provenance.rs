@@ -151,9 +151,7 @@ pub fn capture_host(probe: &dyn Probe, os: &str) -> Host {
             cpu_cores: parsed(probe, "sysctl", &["-n", "hw.ncpu"]),
             memory_bytes: parsed(probe, "sysctl", &["-n", "hw.memsize"]),
             os: mac_os(probe),
-            load_average: probe
-                .output("sysctl", &["-n", "vm.loadavg"])
-                .and_then(|text| load_average(&text)),
+            load_average: capture_load(probe, os),
         }
     } else {
         Host {
@@ -167,11 +165,20 @@ pub fn capture_host(probe: &dyn Probe, os: &str) -> Host {
                 .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
                 .map(|kib| kib * 1024),
             os: probe.output("uname", &["-sr"]),
-            load_average: probe
-                .output("cat", &["/proc/loadavg"])
-                .and_then(|text| load_average(&text)),
+            load_average: capture_load(probe, os),
         }
     }
+}
+
+/// The host's 1, 5 and 15 minute load averages through `probe`: from
+/// `sysctl -n vm.loadavg` on macOS, from `/proc/loadavg` elsewhere.
+pub fn capture_load(probe: &dyn Probe, os: &str) -> Option<[f64; 3]> {
+    let text = if os == "macos" {
+        probe.output("sysctl", &["-n", "vm.loadavg"])
+    } else {
+        probe.output("cat", &["/proc/loadavg"])
+    };
+    text.and_then(|text| load_average(&text))
 }
 
 fn parsed<T: FromStr>(probe: &dyn Probe, program: &str, args: &[&str]) -> Option<T> {
