@@ -11,7 +11,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 /// The daemon binary under test.
 pub const BIN: &str = env!("CARGO_BIN_EXE_mobile-agent-daemon");
@@ -22,6 +22,19 @@ pub const VERSION: &str = "daemon.version";
 
 /// The fixture app every fake target has installed.
 pub const APP: &str = "dev.mobileagent.fixture.expo";
+
+/// The line the CLI sends for `snapshot -i` in the default session: its
+/// fields in the order serde_json writes a map's, and an id as the CLI makes
+/// them, `r` and the microseconds.
+pub const INTERACTIVE_SNAPSHOT: &str =
+    r#"{"action":"snapshot","id":"r123456","interactive":true,"session":"default"}"#;
+
+/// The cells of the fixture's Big tab (`fixtures/CONTRACT.md`).
+pub const BIG_CELLS: usize = 500;
+
+/// What an interactive snapshot of the Big tab lists, each with a ref: the
+/// cells and the five tab buttons.
+pub const BIG_ELEMENTS: usize = BIG_CELLS + 5;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -272,6 +285,65 @@ impl Drop for Daemon {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Brings the only target of `daemon` to the fixture's Big tab as an agent
+/// would: opens the fixture app, clicks the tab, waits for the screen to
+/// settle and takes an interactive snapshot, which issues the screen's refs
+/// and retires the Login screen's. Every snapshot after it is warm, as
+/// [`check_big`] checks and the daemon's benchmarks time it.
+pub fn open_big(daemon: &Daemon) {
+    let opened = daemon.request(json!({"action": "open", "app": APP}));
+    assert_eq!(opened["data"]["settled"], true, "{opened}");
+    let clicked = daemon.request(json!({"action": "click", "target": "#tab-big"}));
+    assert_eq!(clicked["success"], true, "{clicked}");
+    let settled = daemon.request(json!({"action": "wait", "settle": true}));
+    assert_eq!(settled["data"]["settled"], true, "{settled}");
+    let first = daemon.request(json!({"action": "snapshot", "interactive": true}));
+    assert_eq!(first["success"], true, "{first}");
+}
+
+/// Checks that `reply` is a warm interactive snapshot of the Big tab, the
+/// reply the daemon's benchmarks time and write: it lists the cells and the
+/// tabs, each with a ref, retires no ref and was served from the replica,
+/// reading nothing from the target.
+#[track_caller]
+pub fn check_big(reply: &Value) {
+    assert_eq!(reply["success"], true, "{reply}");
+    let data = &reply["data"];
+    let listing = data["snapshot"].as_str().unwrap_or_default();
+    assert_eq!(
+        cells(listing),
+        BIG_CELLS,
+        "a ref for every cell:\n{listing}"
+    );
+    assert_eq!(
+        listing.lines().count(),
+        BIG_ELEMENTS,
+        "the cells and the tabs:\n{listing}"
+    );
+    let refs = data["refs"].as_object().map_or(0, Map::len);
+    assert_eq!(refs, BIG_ELEMENTS, "a ref for every element listed");
+    assert_eq!(data["removedRefs"], json!([]), "no ref retired");
+    assert_eq!(
+        data["servedFromReplica"], true,
+        "a warm snapshot reads nothing from the target"
+    );
+}
+
+/// The distinct `cell-N` identifiers a listing gives refs to.
+pub fn cells(listing: &str) -> usize {
+    let mut ids: Vec<&str> = listing
+        .lines()
+        .filter(|line| line.contains("ref=e"))
+        .filter_map(|line| {
+            let start = line.find("id=cell-")? + 3;
+            line[start..].split([',', ']']).next()
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.len()
 }
 
 /// Sends one request line on a fresh connection and reads one reply line.
