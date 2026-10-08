@@ -8,6 +8,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
+[lib]
+bench = false
+
 [dependencies]
 jpeg-encoder = "0.7.1"
 mirror = { version = "0.1.0", path = "../mirror" }

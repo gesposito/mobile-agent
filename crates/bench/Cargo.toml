@@ -5,9 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+# The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.
+[lib]
+bench = false
+
 [[bin]]
 name = "mobile-agent-bench"
 path = "src/main.rs"
+bench = false
 
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }

@@ -8,6 +8,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
+[lib]
+bench = false
+
 # The tree payload is the protocol's snapshot; the reader's library holds the
 # conversion into it, which the host translator shares. build.rs builds the
 # reader's binary for the Simulator (README.md, Building).
