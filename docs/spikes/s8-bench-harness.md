@@ -10,7 +10,7 @@ Task 1.2 of `microbenchmarks`. It measures, on this host, how far each candidate
 
 **Toolchain and crates.** Rust 1.98.1, pinned by `rust-toolchain.toml`, in the bench profile the workspace's `cargo bench` uses (opt-level 3, no LTO, 16 codegen units). The harnesses are criterion 0.8.2 with default features off, divan 0.1.21, tango-bench 0.8.0 and glassbench 0.5.0, the latest releases on 2026-10-07. The shipped `protocol` crate comes in by path, on minicbor 2.3.0. Every crate came through `sfw cargo add` and `sfw cargo fetch`, and the builds ran offline.
 
-**Code.** The measured binaries are those of commit `d50ea44`. A later commit adds the list's row count to `s8 input`, and to the tables the shift under load, the total wait and the column naming each harness's statistics; none of it changes the timed code.
+**Code.** The measured binaries are those of commit `9a35256`. A later commit adds the list's row count to `s8 input`, and to the tables the shift under load, the total wait and the column naming each harness's statistics; none of it changes the timed code.
 
 **Input.** `src/generator.rs` ports the tree half of S5's generator to the shipped `protocol` types. It draws from S5's seed (20260926) in S5's order, so the tree is S5's `T500`:
 

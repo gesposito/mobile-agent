@@ -20,7 +20,7 @@
       2.08
     ],
     "commit": {
-      "sha": "fadee7744206708f96fb472b1435b6f30f170383",
+      "sha": "b724af05f80a3c74760d34b086ecbee51d5b0707",
       "dirty": false
     },
     "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)",
