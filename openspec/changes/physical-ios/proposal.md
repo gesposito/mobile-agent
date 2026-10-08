@@ -2,7 +2,7 @@
 
 ## Why
 
-mobile-agent drives iOS Simulators from the host and Android devices through a shell-user agent, and a physical iPhone has been a stated non-goal since the first change: the only supported route to its screen is an XCTest runner, which cannot carry the host-side speed story. Agents that test shipping apps still need the phone, for what a Simulator does not have (push notifications, the camera, Face ID, real performance, carrier and Bluetooth paths, device-only bugs), and the ranked backlog's last item asks whether the model holds there at all: a resident runner that never restarts, a live mirror fed by the host's frame stream instead of XCTest's idle waits, and the same protocol, CLI and harness as the other two targets. The investigation that preceded the foundation change (its spike C, kept privately) reserved it for a later change with its own spikes and gates; this is that change, on the user's iPhone on iOS 26.6.2 with a paid developer team to sign with.
+mobile-agent drives iOS Simulators from the host and Android devices through a shell-user agent, and a physical iPhone has been a stated non-goal since the first change: the only supported route to its screen is an XCTest runner, which cannot carry the host-side speed story. Agents that test shipping apps still need the phone, for what a Simulator does not have (push notifications, the camera, Face ID, real performance, carrier and Bluetooth paths, device-only bugs), and the ranked backlog's last item asks whether the model holds there at all: a resident runner that never restarts, a live mirror fed by the host's frame stream instead of XCTest's idle waits, and the same protocol, CLI and harness as the other two targets. The investigation that preceded the foundation change (its spike C, kept privately) reserved it for a later change with its own spikes and gates; this is that change, on the maintainer's iPhone on iOS 26.6.2 with a paid developer team to sign with.
 
 ## What Changes
 
@@ -11,8 +11,8 @@ mobile-agent drives iOS Simulators from the host and Android devices through a s
 - A new driver crate, `crates/ios`, behind the existing traits: device discovery with readiness checks, the tunnel, app lifecycle, the runner's deployment and session, tree reads, input, frames and screenshots.
 - A runner bundle, `agent-ios/`, built once per signing team and kept resident for a session: the device-side counterpart of `agent-android/`, speaking the same CBOR protocol with the `tree`, `input`, `screenshot` and `text_set` capabilities.
 - The daemon registers the driver (`MOBILE_AGENT_DRIVERS` gains `ios`), `devices` lists physical devices with their readiness, `doctor` checks pairing, Developer Mode, the developer disk image, the signing identity and the runner build, and the mirror treats the device's windows as windows without change events, re-read on frame changes and polls, as the Simulator's are.
-- The SwiftUI and Expo fixtures build for a device with the team's signing, the harness gains the `ios-device` target class with its gates, and the primitives and flows run on the user's iPhone through `mobile-agent` and through the baselines that support devices, in a report under `reports/`.
-- Not in this change: watchOS, tvOS and visionOS; devices over Wi-Fi (USB only); an in-app SDK; more than one iOS version validated (the user's device runs iOS 26.6.2); CI runs with a device.
+- The SwiftUI and Expo fixtures build for a device with the team's signing, the harness gains the `ios-device` target class with its gates, and the primitives and flows run on the maintainer's iPhone through `mobile-agent` and through the baselines that support devices, in a report under `reports/`.
+- Not in this change: watchOS, tvOS and visionOS; devices over Wi-Fi (USB only); an in-app SDK; more than one iOS version validated (the maintainer's device runs iOS 26.6.2); CI runs with a device.
 
 ## Capabilities
 
