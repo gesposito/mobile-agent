@@ -8,7 +8,8 @@
 //! a reused vector under the default limit, every message of the input on
 //! each iteration; the event stream, written once as frames, is also timed
 //! through a fresh `FrameDecoder` fed 64 KiB at a time. Ids are
-//! `protocol/<function>/<input>`.
+//! `protocol/<function>/<input>`. The decodes of the event and request runs
+//! are timed on a stack pinned to a page ([`PINNED_DECODES`]).
 //!
 //! Before each benchmark, one extra call of its routine checks the result
 //! against the input outside the timed region and counts what the call
@@ -38,6 +39,23 @@ const GROUP: &str = "protocol";
 
 /// How many bytes of the event stream the frame decoder is given at a time.
 const PIECE: usize = 64 * 1024;
+
+/// The inputs whose `decode` is timed on a stack pinned to a page
+/// ([`pinned`]). Criterion runs each sample under
+/// `alloca::with_alloca(i % page_size)`, so sample `i`'s stack is lowered by
+/// about `i` bytes, in 16-byte steps on arm64: the samples fall in blocks of
+/// 16 that share one offset, eight offsets over the 100 samples. These two
+/// loops, of 1,000 and 10,000 small messages, run 35 to 56% slower at one or
+/// two of the eight offsets, and which ones depends on where the process's
+/// stack starts in its page, set by the size of its environment, so their
+/// median swung between runs (133.5 and 141.4 µs for `requests-1k`). Pinned,
+/// they time one alignment, the same on every run, in exchange for
+/// criterion's deliberate variation, which the other benchmarks keep. With
+/// the environment padded by 0 to 112 bytes in eight steps, the pinned
+/// medians stayed within 130.7 to 132.5 µs and 829.8 to 834.5 µs, with 1 to
+/// 10% of the samples more than 5% over the minimum, but 22 to 28% in two of
+/// the layouts, in blocks 5 to 14% slower.
+const PINNED_DECODES: &[&str] = &["events-10k", "requests-1k"];
 
 /// One input, with what its benchmarks check their results against.
 struct Input {
@@ -167,10 +185,30 @@ fn bench_decode(group: &mut BenchmarkGroup<'_, WallTime>, input: &Input) {
     });
     alloc::report(&input.id("decode"), counts);
     // Each decoded message is dropped inside the timed region, as spike S8
-    // timed `Message::decode`.
-    group.bench_with_input(BenchmarkId::new("decode", input.name), input, |b, input| {
-        b.iter(|| decode(black_box(input), |_, message| drop(black_box(message))));
-    });
+    // timed `Message::decode`. Each path keeps a closure of its own, so the
+    // unpinned decodes compile apart from the pinned ones.
+    let id = BenchmarkId::new("decode", input.name);
+    if PINNED_DECODES.contains(&input.name) {
+        group.bench_with_input(id, input, |b, input| {
+            b.iter(|| pinned(|| decode(black_box(input), |_, message| drop(black_box(message)))));
+        });
+    } else {
+        group.bench_with_input(id, input, |b, input| {
+            b.iter(|| decode(black_box(input), |_, message| drop(black_box(message))));
+        });
+    }
+}
+
+/// Runs `f` on a frame aligned to 16 KiB, a page on Apple silicon, so that
+/// `f`'s stack sits at the same offset within its page whatever lies above,
+/// criterion's shift included.
+#[inline(never)]
+fn pinned<T>(f: impl FnOnce() -> T) -> T {
+    #[repr(align(16384))]
+    struct Page(u8);
+    let page = Page(0);
+    black_box(&page.0);
+    f()
 }
 
 fn bench_to_vec(group: &mut BenchmarkGroup<'_, WallTime>, input: &Input) {
