@@ -23,8 +23,14 @@ src/
   cbor.rs        shared decoding helpers
 golden/          frames this crate writes for the golden samples
 golden/kotlin/   frames the Kotlin codec writes for the same samples
-tests/           one file per task: schema, framing, handshake, events, liveness, golden
+tests/           one file per task: schema, framing, handshake, events, liveness, golden, bench_inputs
+benches/         codec.rs: microbenchmarks of the codec and the framing; support/: their seeded inputs and the counting allocator
 ```
+
+`cargo bench -p protocol -- --noplot` runs the benchmarks of design D14 with
+criterion's default settings, about 10 s each, and prints each one's
+allocations per iteration as `allocations <id> <allocations> <bytes>`. A
+number that goes into a report comes from a run on a quiet host (design D15).
 
 ## Frames
 
