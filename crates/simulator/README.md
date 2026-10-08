@@ -75,9 +75,11 @@ benches/
   frames.rs        the frame pipeline's microbenchmarks (design D14)
 ```
 
-`cargo bench -p simulator --bench frames -- --noplot` runs the benchmarks,
-which need no Simulator. Naming the target keeps cargo from also running the
-library's test harness, which refuses criterion's flags.
+`cargo bench -p simulator -- --noplot [filter]` runs the benchmarks, which
+need no Simulator. The library sets `bench = false`, so its test harness
+never sees criterion's flags. `just micro` runs them with the other suites
+against `reports/micro/baseline.json` (design D14 to D16 of the
+`microbenchmarks` change).
 
 ## Building
 

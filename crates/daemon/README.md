@@ -47,19 +47,21 @@ src/
 tests/          claims, controller, idle and lifecycle, over the socket against the binary;
                 bench_inputs, the same for the screen the benches time; devices, the CLI
                 against a real Simulator and emulator
-benches/        daemon.rs, the microbenchmarks of design D14: Request::parse of the line the
-                CLI sends for snapshot -i, reply_line of the reply to it on the fake
-                fixture's Big tab (500 cells), with their allocations, and that snapshot
-                through the socket of a daemon on a fake emulator, one request per iteration
+benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
+                Request::parse of the line the CLI sends for snapshot -i, reply_line of the
+                reply to it on the fake fixture's Big tab (500 cells), with their
+                allocations, and that snapshot through the socket of a daemon on a fake
+                emulator, one request per iteration
 ```
 
-`cargo bench -p daemon --bench daemon -- --noplot` runs the benchmarks with
+`cargo bench -p daemon -- --noplot [filter]` runs the benchmarks with
 criterion's default settings, about 10 s each, after a setup that starts a
 daemon on a fake target, brings it to the Big tab and stops it once the
-socket benchmark is done. `--bench daemon` matters: without it, cargo hands
-criterion's flags to the library's and the binary's test harnesses too,
-which refuse them. A run on a busy host is no measurement; numbers for a
-report come from a quiet one (design D15).
+socket benchmark is done. The library and the binary set `bench = false`, so
+their test harnesses never see criterion's flags. A run on a busy host is no
+measurement; numbers for a report come from a quiet one (design D15), which
+`just micro` waits for before it compares every suite with
+`reports/micro/baseline.json`.
 
 ## Running
 

@@ -36,11 +36,12 @@ src/
 fixtures/       synthetic trees in device points with their scale, and event timelines
 benches/        microbenchmarks of pump, snapshot, visibility, scroll_viewport, uncovered,
                 delta_snapshot, diff, wait and settle over grid, list, bluesky-typeahead-android
-                and grid-rn on the fake target (design D14), each printing beside criterion's
-                timing the allocations and bytes of a call, which three verified calls must agree
-                on; run them with `cargo bench -p mirror --bench mirror -- --noplot` (naming the
-                target keeps cargo from also running the library's built-in bench harness, which
-                rejects criterion's options)
+                and grid-rn on the fake target (design D14 of the microbenchmarks change), each
+                printing beside criterion's timing the allocations and bytes of a call, which
+                three verified calls must agree on; run them with
+                `cargo bench -p mirror -- --noplot [filter]` (the library sets bench = false, so
+                its built-in bench harness never sees criterion's options), or with every suite
+                against the committed baseline through `just micro` (reports/micro/README.md)
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
                 timestamps, editables, controls, visibility, and bench_inputs for the fixtures the
                 benchmarks read

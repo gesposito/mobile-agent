@@ -11,10 +11,11 @@ Host-side Android driver (design D11). So far it holds:
   the mirror's backend traits (design D5 and D7, task 5.3), with path
   selection and the status report (task 5.5).
 - `benches/`: the microbenchmark of the emulator frame hash, `FrameHasher::key`
-  of a synthetic 540x1200 frame (design D14).
-  `cargo bench -p android --bench frames -- --noplot` runs it, which needs no
-  device. Naming the target keeps cargo from also running the library's test
-  harness, which refuses criterion's flags.
+  of a synthetic 540x1200 frame (design D14 of the `microbenchmarks` change).
+  `cargo bench -p android -- --noplot` runs it, which needs no device. The
+  library sets `bench = false`, so its test harness never sees criterion's
+  flags. `just micro` runs it with the other suites against
+  `reports/micro/baseline.json`.
 
 ## adb client
 

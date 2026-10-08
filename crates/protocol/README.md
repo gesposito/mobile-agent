@@ -27,10 +27,12 @@ tests/           one file per task: schema, framing, handshake, events, liveness
 benches/         codec.rs: microbenchmarks of the codec and the framing; support/: their seeded inputs and the counting allocator
 ```
 
-`cargo bench -p protocol -- --noplot` runs the benchmarks of design D14 with
-criterion's default settings, about 10 s each, and prints each one's
-allocations per iteration as `allocations <id> <allocations> <bytes>`. A
-number that goes into a report comes from a run on a quiet host (design D15).
+`cargo bench -p protocol -- --noplot [filter]` runs the benchmarks of design
+D14 of the `microbenchmarks` change with criterion's default settings, about
+10 s each, and prints each one's allocations per iteration as
+`allocations <id> <allocations> <bytes>`. A number that goes into a report
+comes from a run on a quiet host (design D15): `just micro` waits for one and
+compares every suite with `reports/micro/baseline.json`.
 
 ## Frames
 
