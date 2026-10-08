@@ -8,16 +8,18 @@
 //! fixture.
 //!
 //! Before its first sample, each benchmark calls its routine
-//! [`COUNTED_CALLS`] times more, outside the timed region: it verifies every
-//! call's result and prints the fewest allocations and bytes a call took on
-//! a line of its own, `allocations <id> <allocations> <bytes>`, for `micro`
-//! to read. A routine that uses up its state, as a pump uses up the read
-//! that was due, runs on a target and mirror that its setup builds afresh
-//! for every iteration outside the timed region (`iter_batched_ref`); a
-//! routine that leaves its state as it found it runs on one target and
-//! mirror (`iter`). Either way the routine's output is dropped inside the
-//! timed region, as spike S8 timed the protocol's decode, so that a first
-//! snapshot and the same snapshot again count the same work.
+//! [`COUNTED_CALLS`] times more, outside the timed region, each call on a
+//! state of its own that the benchmark's setup builds: it verifies every
+//! call's result, checks that the calls allocated the same and prints what a
+//! call allocated, and how many bytes, on a line of its own,
+//! `allocations <id> <allocations> <bytes>`, for `micro` to read. A routine
+//! that uses up its state, as a pump uses up the read that was due, runs on
+//! a target and mirror that its setup builds afresh for every iteration
+//! outside the timed region (`iter_batched_ref`); a routine that leaves its
+//! state as it found it runs on one target and mirror (`iter`). Either way
+//! the routine's output is dropped inside the timed region, as spike S8
+//! timed the protocol's decode, so that a first snapshot and the same
+//! snapshot again count the same work.
 //!
 //! Besides the mirror's own work, the timed region holds the fake target's:
 //! a read hands over a clone of the screen the target shows, standing in for
@@ -63,17 +65,16 @@ const NAVIGATION_BAR: u32 = 3;
 /// time only if something blocks.
 const REAL_TIME_BOUND: Duration = Duration::from_millis(50);
 
-/// How many calls a benchmark's allocations are counted over. The replica
-/// pairs a read's nodes with the previous read's through hash maps, which
-/// the standard library seeds afresh for every map, and the stack of pairs
-/// it walks grows to a peak that follows their order: a read matched against
-/// the one before can allocate once more, or up to 128 bytes more, in one
-/// call than in another. On a state the calls share, the call that grows the
-/// fake target's record of reads allocates more than the rest too. The
-/// fewest over this many calls is the same from run to run: the rarest
-/// fewest seen, `pump/one-change-grid-rn`'s, came up in 34 of 300 calls, so
-/// 200 calls all miss it about once in 3 * 10^10.
-const COUNTED_CALLS: usize = 200;
+/// How many calls a benchmark's allocations are counted over, each on a state
+/// of its own. They must all allocate the same, or the benchmark fails:
+/// `micro` compares the count exactly (design D14), so a count that varied
+/// from call to call would show as a change no change made. Calls on equal
+/// states do the same work: the replica takes the children of matched nodes
+/// in the order of the reads, whatever the seeds of its hash maps, so the
+/// stack of pairs it walks grows to the same peak. Calls on one shared state
+/// would not: the call that grows the fake target's record of reads
+/// allocates more than the others.
+const COUNTED_CALLS: usize = 3;
 
 /// What the benchmarks use: criterion's group of wall-clock measurements.
 type Group<'a> = BenchmarkGroup<'a, WallTime>;
@@ -244,16 +245,28 @@ fn counted_call<S, O>(
     counts
 }
 
-/// Prints for `micro` the fewest allocations and the fewest bytes among the
-/// counts of `calls`.
-fn report_fewest(id: &str, calls: impl Iterator<Item = alloc::Counts>) {
-    let fewest = calls
-        .reduce(|a, b| alloc::Counts {
-            allocations: a.allocations.min(b.allocations),
-            bytes: a.bytes.min(b.bytes),
-        })
-        .expect("at least one call");
-    alloc::report(id, fewest);
+/// Checks that `calls` allocated the same, and prints for `micro` what one
+/// of them allocated.
+fn report_agreed(id: &str, calls: impl Iterator<Item = alloc::Counts>) {
+    let counts: Vec<alloc::Counts> = calls.collect();
+    let first = *counts.first().expect("at least one call");
+    assert!(
+        counts.iter().all(|&c| c == first),
+        "the calls of {id} allocated differently: {counts:?}"
+    );
+    alloc::report(id, first);
+}
+
+/// Calls `routine` [`COUNTED_CALLS`] times, each on a state `setup` builds,
+/// verifies each result and prints for `micro` what a call allocated.
+fn count<S, O>(
+    id: &str,
+    setup: &impl Fn() -> S,
+    routine: &impl Fn(&mut S) -> O,
+    verify: &impl Fn(&mut S, O, Duration),
+) {
+    let calls = (0..COUNTED_CALLS).map(|_| counted_call(&mut setup(), routine, verify));
+    report_agreed(id, calls);
 }
 
 /// Benchmarks `routine` on a state `setup` builds afresh for every
@@ -275,8 +288,7 @@ fn batched<S, O>(
     group.bench_function(BenchmarkId::new(function, parameter), |b| {
         if !checked {
             checked = true;
-            let calls = (0..COUNTED_CALLS).map(|_| counted_call(&mut setup(), &routine, &verify));
-            report_fewest(&id, calls);
+            count(&id, &setup, &routine, &verify);
         }
         b.iter_batched_ref(
             &setup,
@@ -291,26 +303,22 @@ fn batched<S, O>(
 /// Benchmarks `routine` on one state, built by `setup` before the first
 /// sample, which every iteration leaves as it found it; the routine's
 /// output is dropped inside the timed region. Before the first sample,
-/// [`COUNTED_CALLS`] calls on that state are verified and their allocations
-/// counted.
+/// [`COUNTED_CALLS`] calls, each on a state of its own that `setup` builds
+/// as it builds the timed one, are verified and their allocations counted.
 fn reused<S, O>(
     group: &mut Group<'_>,
     function: &str,
     parameter: &str,
-    setup: impl FnOnce() -> S,
+    setup: impl Fn() -> S,
     routine: impl Fn(&mut S) -> O,
     verify: impl Fn(&mut S, O, Duration),
 ) {
     let id = format!("mirror/{function}/{parameter}");
-    let mut setup = Some(setup);
     let mut state = None;
     group.bench_function(BenchmarkId::new(function, parameter), |b| {
         let state = state.get_or_insert_with(|| {
-            let setup = setup.take().expect("the state is built once");
-            let mut state = setup();
-            let calls = (0..COUNTED_CALLS).map(|_| counted_call(&mut state, &routine, &verify));
-            report_fewest(&id, calls);
-            state
+            count(&id, &setup, &routine, &verify);
+            setup()
         });
         b.iter(|| routine(state));
     });
@@ -712,7 +720,7 @@ fn settles(group: &mut Group<'_>, fixtures: [&Fixture; 2]) {
                 "settle",
                 &format!("{kind}-{}", f.name),
                 || {
-                    // One settle before the counted ones, so that the
+                    // One settle before those counted or timed, so that the
                     // target's queues hold what every later one finds.
                     let mut state = warm(&f.read, frames);
                     settle_after_a_change(&mut state).expect("the first settle");
