@@ -29,7 +29,7 @@ A microbenchmark run SHALL measure only on a quiet host: the 1-minute load avera
 - **THEN** nothing is measured and the run exits with status 2
 
 ### Requirement: Comparison against the committed baseline
-A microbenchmark run SHALL compare each benchmark's median against the committed baseline and SHALL report a regression when the median is slower by more than a threshold, configurable per run with a default set from the measured run-to-run noise of a quiet host, and an improvement when it is faster by more than it; a difference in allocations per iteration SHALL be reported as a regression or an improvement at any size, since the count is deterministic. A benchmark the baseline lacks SHALL be reported as new, and one the run lacks as missing, neither a regression. A run with any regression SHALL exit with status 1 and list the regressions with the baseline and measured values. A run asked to save the baseline SHALL rewrite it with the run's medians, spreads, allocations and provenance.
+A microbenchmark run SHALL compare each benchmark's median against the committed baseline and SHALL report a regression when the median is slower by more than a threshold, configurable per run with a default set from the measured run-to-run noise of a quiet host, and lies outside the interval the baseline recorded around its median, since a median inside that interval is within the baseline's own uncertainty; and an improvement when it is faster by more than the threshold and outside the interval the same way; a difference in allocations per iteration SHALL be reported as a regression or an improvement at any size, since the count is deterministic. A benchmark the baseline lacks SHALL be reported as new, and one the run lacks as missing, neither a regression. A run with any regression SHALL exit with status 1 and list the regressions with the baseline and measured values. A run asked to save the baseline SHALL rewrite it with the run's medians, spreads, allocations and provenance.
 
 #### Scenario: Regression flagged
 - **WHEN** the baseline holds a snapshot decode at 59 µs and the run measures it at 77 µs with a 10 percent threshold
@@ -38,6 +38,10 @@ A microbenchmark run SHALL compare each benchmark's median against the committed
 #### Scenario: Within the threshold
 - **WHEN** every benchmark's median is within the threshold of its baseline and its allocations are unchanged
 - **THEN** the run exits with status 0 and the report shows each difference
+
+#### Scenario: Within the baseline's interval
+- **WHEN** the baseline holds a decode at 133.5 µs with an interval of 132.2 to 143.5 µs around its median and the run measures 141.4 µs with a 5 percent threshold
+- **THEN** the benchmark is reported as the same, with its difference shown, and the exit status does not change
 
 #### Scenario: More allocations
 - **WHEN** a listing allocated 412 times per iteration in the baseline and allocates 418 times in the run
