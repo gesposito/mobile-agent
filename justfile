@@ -60,9 +60,9 @@ bench *args:
 micro *args:
     cargo run -p bench --release -- micro "$@"
 
-# Validate the OpenSpec change in strict mode
+# Validate every active OpenSpec change and the main specs in strict mode
 openspec-validate:
-    openspec validate mobile-automation-foundation --strict
+    openspec validate --all --strict
 
 # Run build, lint, fmt-check, check-paths, test, agent-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
 validate: build lint fmt-check check-paths test agent-build codec-test fixtures-build openspec-validate
