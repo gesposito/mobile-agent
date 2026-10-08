@@ -42,7 +42,7 @@ Rules that bind every task below (see design.md, Delivery process): the research
 
 - [ ] 6.1 Build the SwiftUI and Expo fixtures for a device: a device destination and the team from the environment in their build scripts, the bundles signed, with a failing check in `fixtures/build.sh`'s tests that a device build is produced when the team is set and skipped with a message when it is not; verify both install and run on the device with every contract element reachable
 - [ ] 6.2 Add `TargetClass::IosDevice` to the harness with the spec delta's gates, the fixtures' installation through the driver, the provenance fields (device model, iOS version, battery, auto-lock, the runner's version), with fail-first tests on the plan, gates and report; verify red-then-green and `just bench default-gates` listing the class
-- [ ] 6.3 Baselines on a device: find which of Maestro, agent-device and WebDriverAgent run on the user's iPhone with the team's signing, make their adapters install, run and release on the device with the hand-off stopping the other tool's runner, with fail-first tests on the fake adapter; verify each tool's golden check on the device and record which were skipped and why
+- [ ] 6.3 Baselines on a device: find which of Maestro, agent-device and WebDriverAgent run on the iPhone with the team's signing, make their adapters install, run and release on the device with the hand-off stopping the other tool's runner, with fail-first tests on the fake adapter; verify each tool's golden check on the device and record which were skipped and why
 
 ## 7. Measured runs
 
