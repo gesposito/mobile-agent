@@ -11,7 +11,7 @@ What the platform allows on a physical device, from the investigation plan and t
 - Frames: Xcode records a device's screen through CoreDevice, which is what `display_stream` names, and macOS exposes a connected iPhone as a screen-capture device to AVFoundation once CoreMediaIO is told to allow it, the path QuickTime Player's movie recording takes; DVT screenshots are a request each. Which gives a hashable stream at 30 fps under a quarter of a core, and at what latency after a tap, is spike S11's question.
 - The accessibility audit service that Xcode's Accessibility Inspector and go-ios's `ax` use navigates the screen element by element (focus, label, perform action) rather than returning a tree, so it is a complement for actions on an element at most, not a tree source.
 - Signing: the runner must be signed for a team with a provisioning profile that includes the device; the user has a paid team. Developer Mode must be on, and the device unlocked and trusted. Nothing removes those steps; the driver reports which is missing.
-- The device for this change: the user's iPhone on iOS 26.6.2, under the host's Xcode 27.0.
+- The device for this change: the user's iPhone SE (3rd generation, A15) on iOS 26.6.2, under the host's Xcode 27.0; its identifier stays in the environment and the reports' provenance.
 
 Research note: `docs/research/ios-device.md` (task 1.1). Spike reports: `docs/spikes/s9-ios-transport.md`, `docs/spikes/s10-ios-runner.md`, `docs/spikes/s11-ios-frames.md` (tasks 2.1 to 2.3).
 
