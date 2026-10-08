@@ -1,7 +1,8 @@
-//! Task 3.1: `mobile-agent-bench micro`, the runner of the host
+//! Tasks 3.1 and 3.3: `mobile-agent-bench micro`, the runner of the host
 //! microbenchmarks (design D15): the quiet-host guard, the reader of
 //! criterion's files and of the suites' allocation lines, the comparison
-//! against the committed baseline (design D16) and the two reports. No test
+//! against the committed baseline, its threshold and the interval the
+//! baseline recorded (design D16), and the two reports. No test
 //! runs `cargo bench`: in-process, recorded suites write criterion's files
 //! through `micro::Suites`; through the binary, a fake cargo does.
 
@@ -509,10 +510,13 @@ fn the_runner_names_every_suite_s_bench_target_and_passes_noplot_and_the_filter(
 #[test]
 fn a_snapshot_decode_from_59_to_77_us_past_a_10_percent_threshold_is_a_regression_and_exits_1() {
     let root = checkout("micro-regression");
+    // The decode's baseline recorded a tight interval around its median,
+    // which 77 µs lies far above.
     save_baseline(
         &root,
         vec![
             Recorded::new("protocol/decode/snapshot-500", 59_000)
+                .interval(58_800, 59_300)
                 .allocating(765, 95_687)
                 .measured(),
             Recorded::new("protocol/encode/snapshot-500", 20_000)
@@ -550,8 +554,8 @@ fn a_snapshot_decode_from_59_to_77_us_past_a_10_percent_threshold_is_a_regressio
         )
     );
 
-    // What the run prints at its end names the benchmark, both medians and
-    // the threshold, as the markdown does.
+    // What the run prints at its end names the benchmark, both medians, the
+    // baseline's interval and the threshold, as the markdown does.
     let printed = report.verdict();
     let md = report.to_markdown();
     for text in [printed.as_str(), md.as_str()] {
@@ -561,6 +565,7 @@ fn a_snapshot_decode_from_59_to_77_us_past_a_10_percent_threshold_is_a_regressio
         assert_eq!(table.cell(row, "Benchmark"), "protocol/decode/snapshot-500");
         assert_eq!(table.cell(row, "Measure"), "median µs");
         assert_eq!(table.cell(row, "Baseline"), "59.000");
+        assert_eq!(table.cell(row, "Baseline interval"), "58.800–59.300");
         assert_eq!(table.cell(row, "Measured"), "77.000");
         assert_eq!(table.cell(row, "Difference"), "+30.5%");
         assert_eq!(table.cell(row, "Threshold"), "10.0%");
@@ -653,8 +658,206 @@ fn a_median_faster_by_more_than_the_threshold_is_an_improvement_and_exits_0() {
     let row = &table.rows[0];
     assert_eq!(table.cell(row, "Benchmark"), id);
     assert_eq!(table.cell(row, "Baseline"), "400.000");
+    assert_eq!(table.cell(row, "Baseline interval"), "396.000–404.000");
     assert_eq!(table.cell(row, "Measured"), "320.000");
     assert_eq!(table.cell(row, "Difference"), "-20.0%");
+    assert_eq!(table.cell(row, "Threshold"), "5.0%");
+}
+
+/// How the comparison judges a run's median at `median_ns` under
+/// `threshold_pct` against a baseline holding `saved`: the difference and
+/// the time verdict.
+fn time_verdict(saved: Recorded) -> impl Fn(u64, f64) -> (Option<f64>, Option<Verdict>) {
+    let baseline = Baseline {
+        schema_version: micro::SCHEMA_VERSION,
+        provenance: provenance(),
+        benchmarks: vec![saved.measured()],
+    };
+    move |median_ns, threshold_pct| {
+        let measured = Recorded::new(&saved.id, median_ns).measured();
+        let mut compared = compare::compare(&[measured], Some(&baseline), threshold_pct);
+        let b = compared.benchmarks.remove(0);
+        (b.difference_pct, b.time_verdict)
+    }
+}
+
+#[test]
+fn a_median_inside_the_interval_the_baseline_recorded_is_the_same_whatever_the_threshold_says() {
+    // Task 3.2's first run against the baseline measured
+    // `protocol/decode/requests-1k` at 141,370 ns, 5.9% slower than the
+    // baseline's 133,498 ns by median alone and inside the 132,178 to
+    // 143,493 ns the baseline recorded around it: the benchmark's samples
+    // fall in two modes 5 to 15% apart, and its median lands in either from
+    // run to run (design D16).
+    let root = checkout("micro-inside-interval");
+    let id = "protocol/decode/requests-1k";
+    let saved = Recorded::new(id, 133_498)
+        .interval(132_178, 143_493)
+        .allocating(217, 4_715);
+    save_baseline(&root, vec![saved.measured()]);
+    let mut suites = RecordedSuites::new(vec![
+        Recorded::new(id, 141_370)
+            .interval(132_849, 142_739)
+            .allocating(217, 4_715),
+    ]);
+    let finished = run(&settings(&root), &mut suites).unwrap();
+    let report = &finished.report;
+    assert_eq!(report.threshold_pct, 5.0);
+    let b = find(report, id);
+    assert_eq!(
+        (
+            b.difference_pct,
+            b.time_verdict,
+            b.allocations_verdict,
+            b.verdict
+        ),
+        (
+            Some(5.9),
+            Some(Verdict::Same),
+            Some(Verdict::Same),
+            Verdict::Same
+        )
+    );
+    assert_eq!(
+        (
+            report.summary.exit_status,
+            report.summary.regressions,
+            report.summary.same
+        ),
+        (0, 0, 1)
+    );
+    assert_eq!(report.summary.reason, "no regression against the baseline");
+
+    // The report shows the difference, says what kept the median the same,
+    // and states the rule with the interval.
+    let md = fs::read_to_string(&finished.files.markdown).unwrap();
+    let (table, row) = row(&md, id);
+    assert_eq!(table.cell(&row, "Difference"), "+5.9%");
+    assert_eq!(
+        table.cell(&row, "Verdict"),
+        "same (median inside the baseline's interval)"
+    );
+    assert!(
+        md.contains("inside the 95% interval the baseline recorded"),
+        "{md}"
+    );
+    let printed = report.verdict();
+    for text in [md.as_str(), printed.as_str()] {
+        assert!(!text.contains("## Regressions"), "{text}");
+        assert!(
+            text.contains("Exit status 0: no regression against the baseline"),
+            "{text}"
+        );
+    }
+
+    // Inside the interval, a tighter threshold changes nothing.
+    let judge = time_verdict(saved);
+    for threshold_pct in [0.1, 1.0, 5.0, 5.8] {
+        assert_eq!(
+            judge(141_370, threshold_pct),
+            (Some(5.9), Some(Verdict::Same)),
+            "at {threshold_pct}%"
+        );
+    }
+}
+
+#[test]
+fn a_slower_median_regresses_only_past_the_threshold_and_above_the_baseline_s_interval() {
+    // A baseline at 100 µs whose samples left an interval of 92 to 110 µs.
+    let judge = time_verdict(
+        Recorded::new("protocol/decode/events-10k", 100_000).interval(92_000, 110_000),
+    );
+    // Past the threshold and above the interval's high end.
+    assert_eq!(judge(110_001, 5.0), (Some(10.0), Some(Verdict::Regression)));
+    // Past the threshold and inside the interval, its high end included.
+    assert_eq!(judge(106_000, 5.0), (Some(6.0), Some(Verdict::Same)));
+    assert_eq!(judge(110_000, 5.0), (Some(10.0), Some(Verdict::Same)));
+    // Above the interval and within the threshold.
+    assert_eq!(judge(110_001, 10.0), (Some(10.0), Some(Verdict::Same)));
+}
+
+#[test]
+fn a_faster_median_improves_only_past_the_threshold_and_below_the_baseline_s_interval() {
+    // A baseline at 100 µs whose samples left an interval of 92 to 110 µs.
+    let judge = time_verdict(
+        Recorded::new("protocol/decode/events-10k", 100_000).interval(92_000, 110_000),
+    );
+    // Past the threshold and below the interval's low end.
+    assert_eq!(judge(91_999, 5.0), (Some(-8.0), Some(Verdict::Improvement)));
+    // Past the threshold and inside the interval, its low end included.
+    assert_eq!(judge(94_000, 5.0), (Some(-6.0), Some(Verdict::Same)));
+    assert_eq!(judge(92_000, 5.0), (Some(-8.0), Some(Verdict::Same)));
+    // Below the interval and within the threshold.
+    assert_eq!(judge(91_999, 8.0), (Some(-8.0), Some(Verdict::Same)));
+}
+
+#[test]
+fn a_baseline_entry_without_an_interval_is_judged_on_the_threshold_alone() {
+    // A baseline file whose entries hold no interval: `spread_ns` is null in
+    // one and absent from the other.
+    let root = checkout("micro-no-interval");
+    let file = Baseline {
+        schema_version: micro::SCHEMA_VERSION,
+        provenance: provenance(),
+        benchmarks: vec![
+            Recorded::new("protocol/decode/requests-1k", 133_498)
+                .allocating(217, 4_715)
+                .measured(),
+            Recorded::new("simulator/pixels_hash/460x1000", 50_000).measured(),
+        ],
+    }
+    .to_json();
+    let mut file: Value = serde_json::from_str(&file).unwrap();
+    file["benchmarks"][0]["spread_ns"] = Value::Null;
+    file["benchmarks"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("spread_ns");
+    fs::create_dir_all(root.join("reports/micro")).unwrap();
+    fs::write(root.join(BASELINE), file.to_string()).unwrap();
+
+    // The recorded 5.9% slower median, which the interval held to the same,
+    // and one 6.0% faster.
+    let mut suites = RecordedSuites::new(vec![
+        Recorded::new("protocol/decode/requests-1k", 141_370)
+            .interval(132_849, 142_739)
+            .allocating(217, 4_715),
+        Recorded::new("simulator/pixels_hash/460x1000", 47_000),
+    ]);
+    let finished = run(&settings(&root), &mut suites).unwrap();
+    let report = &finished.report;
+    for (id, difference, verdict) in [
+        ("protocol/decode/requests-1k", 5.9, Verdict::Regression),
+        ("simulator/pixels_hash/460x1000", -6.0, Verdict::Improvement),
+    ] {
+        let b = find(report, id);
+        assert_eq!(
+            (b.difference_pct, b.time_verdict, b.verdict),
+            (Some(difference), Some(verdict), verdict),
+            "{id}"
+        );
+    }
+    assert_eq!(report.summary.exit_status, 1);
+
+    // Both reports say there was no interval to compare with.
+    let text = fs::read_to_string(&finished.files.json).unwrap();
+    let json: Value = serde_json::from_str(&text).unwrap();
+    for b in json["benchmarks"].as_array().unwrap() {
+        assert_eq!(b["baseline"]["spread_ns"], Value::Null, "{b}");
+    }
+    let md = fs::read_to_string(&finished.files.markdown).unwrap();
+    for (heading, id) in [
+        ("Regressions", "protocol/decode/requests-1k"),
+        ("Improvements", "simulator/pixels_hash/460x1000"),
+    ] {
+        let table = common::table(&md, heading);
+        assert_eq!(table.rows.len(), 1, "{md}");
+        let row = &table.rows[0];
+        assert_eq!(table.cell(row, "Benchmark"), id);
+        assert_eq!(table.cell(row, "Baseline interval"), "—");
+        assert_eq!(table.cell(row, "Threshold"), "5.0%");
+    }
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
 }
 
 #[test]
@@ -889,6 +1092,10 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
             Recorded::new("mirror/snapshot/interactive-grid", 300_000)
                 .allocating(412, 40_000)
                 .measured(),
+            Recorded::new("protocol/decode/requests-1k", 133_498)
+                .interval(132_178, 143_493)
+                .allocating(217, 4_715)
+                .measured(),
             Recorded::new("protocol/decode/snapshot-500", 59_000)
                 .allocating(765, 95_687)
                 .measured(),
@@ -896,6 +1103,9 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
                 .allocating(0, 0)
                 .measured(),
             Recorded::new("simulator/content_hash/460x1000", 110_000).measured(),
+            Recorded::new("simulator/scale_bgra/1206x2622-to-460x1000", 1_100_000)
+                .interval(1_020_000, 1_130_000)
+                .measured(),
         ],
     );
     let mut suites = RecordedSuites::new(vec![
@@ -905,12 +1115,18 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
         Recorded::new("daemon/wire/parse-snapshot-request", 961).allocating(8, 680),
         // +3.3% with 6 more allocations.
         Recorded::new("mirror/snapshot/interactive-grid", 310_000).allocating(418, 40_000),
+        // +5.9%, inside the baseline's interval.
+        Recorded::new("protocol/decode/requests-1k", 141_370)
+            .interval(132_849, 142_739)
+            .allocating(217, 4_715),
         // +30.5%.
         Recorded::new("protocol/decode/snapshot-500", 77_000).allocating(765, 95_687),
         // -21.9%, in 87 samples.
         Recorded::new("protocol/encode/snapshot-500", 21_000)
             .allocating(0, 0)
             .sampled(87),
+        // -5.5%, inside the baseline's interval.
+        Recorded::new("simulator/scale_bgra/1206x2622-to-460x1000", 1_040_000),
     ]);
     let finished = run(&settings(&root), &mut suites).unwrap();
     assert_eq!(finished.files.json, root.join("out/report.json"));
@@ -925,19 +1141,21 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
         .into_iter()
         .map(|(heading, _)| heading)
         .collect();
-    for krate in ["android", "daemon", "mirror", "protocol"] {
+    for krate in ["android", "daemon", "mirror", "protocol", "simulator"] {
         assert!(
             headings.iter().any(|h| h == krate),
             "{krate} in {headings:?}"
         );
     }
     let benchmarks = json["benchmarks"].as_array().unwrap();
-    assert_eq!(benchmarks.len(), 5);
+    assert_eq!(benchmarks.len(), 7);
     let ns = |v: &Value| us(v.as_u64().unwrap());
     let count = |v: &Value| match v {
         Value::Null => "—".to_owned(),
         n => n.to_string(),
     };
+    let threshold = json["threshold_pct"].as_f64().unwrap();
+    let mut held = Vec::new();
     for b in benchmarks {
         let id = b["id"].as_str().unwrap();
         let (table, row) = row(&md, id);
@@ -982,7 +1200,31 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
             "{id}: {} against {verdict}",
             table.cell(&row, "Verdict")
         );
+        // A median the baseline's interval kept the same is one the JSON
+        // shows past the threshold and inside that interval.
+        if table.cell(&row, "Verdict") == "same (median inside the baseline's interval)" {
+            let median = b["median_ns"].as_u64().unwrap();
+            let interval = &b["baseline"]["spread_ns"];
+            assert!(
+                interval["low"].as_u64().unwrap() <= median
+                    && median <= interval["high"].as_u64().unwrap(),
+                "{id}"
+            );
+            assert!(
+                b["difference_pct"].as_f64().unwrap().abs() > threshold,
+                "{id}"
+            );
+            assert_eq!(b["time_verdict"], "same", "{id}");
+            held.push(id);
+        }
     }
+    assert_eq!(
+        held,
+        [
+            "protocol/decode/requests-1k",
+            "simulator/scale_bgra/1206x2622-to-460x1000"
+        ]
+    );
     assert_eq!(
         find(&finished.report, "protocol/encode/snapshot-500").difference_pct,
         Some(-21.9)
@@ -990,10 +1232,10 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
 
     let summary = &json["summary"];
     for (key, expected) in [
-        ("benchmarks", 5),
+        ("benchmarks", 7),
         ("regressions", 2),
         ("improvements", 1),
-        ("same", 1),
+        ("same", 3),
         ("new", 1),
         ("missing", 1),
         ("exit_status", 1),
@@ -1038,6 +1280,22 @@ fn the_json_report_and_the_markdown_summary_agree_on_every_number_and_every_comp
             "median µs".to_owned()
         )]
     );
+    // Beside each median that moved, the interval the baseline recorded
+    // around its own; the counts have none.
+    for table in [&regressions, &improvements] {
+        for r in &table.rows {
+            let id = table.cell(r, "Benchmark");
+            let b = benchmarks.iter().find(|b| b["id"] == id).unwrap();
+            let interval = match table.cell(r, "Measure") {
+                "median µs" => {
+                    let spread = &b["baseline"]["spread_ns"];
+                    format!("{}–{}", ns(&spread["low"]), ns(&spread["high"]))
+                }
+                _ => "—".to_owned(),
+            };
+            assert_eq!(table.cell(r, "Baseline interval"), interval, "{id}");
+        }
+    }
     let missing = common::table(&md, "Missing");
     assert_eq!(missing.rows.len(), 1);
     assert_eq!(
@@ -1322,6 +1580,7 @@ fn micro_exits_1_on_a_regression_and_prints_it_with_both_medians() {
     let row = &table.rows[0];
     assert_eq!(table.cell(row, "Benchmark"), "protocol/decode/snapshot-500");
     assert_eq!(table.cell(row, "Baseline"), "96.117");
+    assert_eq!(table.cell(row, "Baseline interval"), "95.156–97.078");
     assert_eq!(table.cell(row, "Measured"), "124.952");
     assert_eq!(table.cell(row, "Difference"), "+30.0%");
     assert_eq!(table.cell(row, "Threshold"), "5.0%");

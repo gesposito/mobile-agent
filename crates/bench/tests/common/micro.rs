@@ -93,6 +93,13 @@ impl Recorded {
         self
     }
 
+    /// The same, with its median's interval from `low_ns` to `high_ns`.
+    pub fn interval(mut self, low_ns: u64, high_ns: u64) -> Self {
+        self.low_ns = low_ns;
+        self.high_ns = high_ns;
+        self
+    }
+
     /// What the run reads for it.
     pub fn measured(&self) -> Measured {
         Measured {
