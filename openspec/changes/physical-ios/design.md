@@ -33,11 +33,51 @@ Research note: `docs/research/ios-device.md` (task 1.1). Spike reports: `docs/sp
 
 Decisions D18 to D23 are candidates until their spike records numbers here (Delivery process, Measured decisions).
 
-### D18. Transport: the `idevice` crate in the daemon's process
-`crates/ios` speaks usbmuxd and lockdown for discovery, pairing records and the device's services, and opens the CoreDevice tunnel with `idevice`'s in-process TCP stack to reach the developer services over RSD; no `devicectl`, no Python or Go helper, no root. Alternatives: `xcrun devicectl` (a process per operation, 0.5 to 2 s each, no tree or input, and its tunnel is Xcode's); pymobiledevice3's `tunneld` or go-ios's tunnel (a helper process and another runtime); libimobiledevice bindings (no CoreDevice tunnel). The tunnel carries the RSD services only: its in-process TCP stack (jktcp) sends one segment at a time and retransmits after 200 ms, so the runner's socket goes through usbmuxd's port connection, as `idevice`'s own WebDriverAgent client and agent-device's transport do. From iOS 17.4 a device missing from the disk image's manifest mounts it only as a Cryptex1 through `cryptexd`, and either form needs Apple's signing server online. Spike S9 verifies on iOS 26.6.2: pairing reuse, the tunnel from an unprivileged process, the developer disk image mounted or mountable and which form, which CoreDevice services the device lists (display, screen capture, the two HID services), launch and kill of the fixture through DVT process control and through CoreDevice's app service with their latencies, a DVT and a CoreDevice screenshot's latency, and `devicectl`'s cost for the same operations; gate: the tunnel without root, a launch under 2 s at p95, a screenshot under 500 ms.
+### D18. Transport: the `idevice` crate in the daemon's process, with the tunnel in process
+`crates/ios` lists devices over usbmuxd and takes the device's USB entry: usbmuxd lists a phone with Wi-Fi sync on a second time, on the network. It reads the host's pairing record from usbmuxd (`ReadPairRecord`) and opens lockdown sessions with it. It opens the CoreDevice tunnel through lockdown's `CoreDeviceProxy`, with `idevice`'s in-process TCP stack (jktcp), and reaches the developer services over RSD. There is no `devicectl`, no Python or Go helper, no root and no TUN device. Spike S9 (`docs/spikes/s9-ios-transport.md`) measured these p50 and p95 times on an iPhone SE (3rd generation) with iOS 26.6.2, from an unprivileged process, with `idevice` 0.1.68:
 
-### D19. Lifecycle through the developer services
-Install from the signed fixture bundle through the installation proxy, launch and terminate through DVT process control, and the foreground application's identity from the runner's read. `open` settles as on the Simulator, on frames.
+- usbmuxd's device listing: 0.40 and 0.93 ms;
+- a lockdown session with the pairing record and one value: 22.1 and 30.7 ms, 17.8 and 24.9 ms of it the TLS session;
+- the tunnel with RSD's handshake: 59.9 and 70.0 ms (`CoreDeviceProxy` 42.2 and 52.3 ms, the handshake 15.9 and 20.7 ms); the host's `utun` interfaces stay the same while it is open;
+- the first DVT connection after the tunnel opens: 37.0 and 38.5 ms, later ones 25 to 30 ms, so the driver keeps its service connections open for the target's lifetime;
+- a screenshot through DVT, 42.3 and 43.5 ms, or through CoreDevice's screen capture, 42.5 and 43.4 ms: the same 750×1334 PNG of 141 KB.
+
+The device lists 82 RSD services. Among them are the display service, the screen capture service and the two HID services (`hid.indigo`, `hid.universalhidservice`) that D22 and D23 build on, as well as the app service, the device information service, `testmanagerd.remote` and DVT's `instruments.dtservicehub`. Three behaviours of iOS 26.6.2 shape the driver:
+
+- The lock state comes from lockdown's `PasswordProtected`, which follows the lock as `devicectl`'s `passcodeRequired` does. CoreDevice's `getlockstate` is listed but answers that it is not implemented.
+- CoreDevice's screen capture takes only `png`; `idevice`'s JPEG request is refused.
+- The developer disk image of Xcode 27.0 was mounted as the personalized image at `/System/Developer`, through the image mounter. From iOS 17.4, a device missing from a disk image's build manifest mounts it only as a Cryptex1 through `cryptexd`, and either form needs Apple's signing server online. S9 exercised neither mount, since the host's CoreDevice had already mounted the image.
+
+The tunnel carries the RSD services only. Its TCP stack sends one segment at a time and retransmits after 200 ms, so the runner's socket goes through usbmuxd's port connection, as `idevice`'s own WebDriverAgent client and agent-device's transport do.
+
+Alternatives:
+
+- `xcrun devicectl` (rejected for the daemon: a process per operation, 228 ms for `device info lockState`, 370 ms for `capture screenshot`, 295 ms for `process launch` and 272 ms for `process terminate` at p50, against 22, 42, 42.5 and 2.9 ms for the same through `idevice`, about 250 ms of each call passing before its request reaches the device; no tree or input; its tunnel is CoreDevice's);
+- pymobiledevice3's `tunneld` or go-ios's tunnel (not measured: a helper process and another runtime, and a kernel tunnel needs root);
+- libimobiledevice bindings (not measured: no CoreDevice tunnel).
+
+D18's gate is met: the tunnel runs without root, the slowest launch path through `idevice` answered in 46.4 ms at p95 against 2 s, and a screenshot took 43.5 ms at p95 against 500 ms.
+
+### D19. Lifecycle through DVT process control, with the lock read first
+Launch with DVT process control's `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:` with `KillExisting`, whose reply carries the pid. Terminate with `sendSignal:toPid:` and SIGKILL, whose reply confirms the signal; `killPid:` with the pid archived as an `NSNumber` is the form without a reply. `idevice` 0.1.68's `kill_app` is not used. It sends the pid as a primitive integer, and on iOS 26.6.2 that left the app running and dropped every DVT connection, so the driver sends the call itself until the crate changes. S9 measured these p50 and p95 times on Settings:
+
+- the launch's reply: 42.5 and 46.4 ms;
+- the pid's `Running` app-state notification: 40.2 and 44.5 ms, so the process runs before the reply arrives;
+- the pid in DVT's process list: 47.9 and 51.4 ms;
+- the kill's reply: 2.9 and 5.0 ms through `sendSignal:toPid:`, 0.12 and 0.49 ms to write `killPid:`;
+- the pid gone from the process list: 22.4 and 24.2 ms after `sendSignal:toPid:`, 22.5 and 25.9 ms after `killPid:`.
+
+A locked device makes a launch's outcome unreliable, so the driver reads `PasswordProtected` before a launch and reports `locked`:
+
+- DVT refuses with an `NSError` that the crate does not decode.
+- The app service refuses with SpringBoard's reason, "Locked", but at other moments it launched the app behind the lock screen.
+
+The foreground application's identity comes from the runner's read. DVT's app-state notifications report only `Running`, `Suspended` and `Terminated` on iOS 26.6.2, and `Running` came for an app behind the lock screen too. Apps are installed from the signed fixture bundle through the installation proxy. S9 did not measure the install, since the host has no signing identity yet, so task 3.3 measures it. `open` settles as on the Simulator, on frames.
+
+Alternatives:
+
+- CoreDevice's app service (`launchapplication`, `sendsignaltoprocess`; kept as the second path): 41.3 and 44.5 ms to launch and 3.4 and 8.9 ms to the kill's reply, the same as DVT within noise, and its refusals are readable;
+- `devicectl device process launch` and `terminate` (rejected: 295 and 351 ms to launch and 272 and 320 ms to terminate, at p50 and p95, each a process).
 
 ### D20. The runner: a resident XCTest bundle in Rust, speaking the device protocol
 `agent-ios/` builds an `.xctest` bundle: a Rust `cdylib` with an Objective-C shim that defines the `XCTestCase` subclass whose one test method starts the agent and waits, as WebDriverAgent's does, and the agent is the device protocol's `AgentSession` over a TCP listener on the device that the host reaches through usbmuxd's port connection or the tunnel. The host starts it through the test manager with `idevice`'s `xctest` session, with the fixture's bundle identifier as the application under test when one is wanted, and keeps the session for the target's lifetime; the runner's version travels in its hello, as the Android agent's does, and a mismatch replaces the bundle. The bundle is signed with the team the environment names (`MOBILE_AGENT_IOS_TEAM`, never in a tracked file) and a provisioning profile Xcode manages; the test manager accepts a runner signed outside Xcode as long as its executable is named `<Name>-Runner`, its test bundle sits at `PlugIns/<Name>.xctest` and no XCTest framework is embedded (they load from the disk image), which is how Appium's prebuilt WebDriverAgent and go-ios run. Alternatives: WebDriverAgent itself (HTTP and JSON per node, an idle wait per action, a Node and Carthage build); agent-device's runner (its own protocol; a Node dependency); a `devicectl`-launched runner without the test manager (no automation session, and on iOS 27 a runner launched in the foreground never backgrounds itself or serves, which is why Appium disabled that path there). Spike S10 builds the minimum and measures: cold start to the runner's hello, warm tree read of the two fixtures' 500-cell screens through `userTestingSnapshotForElement:` inside the runner (the Simulator reader's `extract` ported to the device target), tap dispatch through `XCUIDevice`'s event synthesis and through the private `XCTRunnerDaemonSession` synthesis that skips the idle wait, typed text, a screenshot through XCTest against DVT's, and whether the runner survives 30 minutes of commands; gates: tap dispatch p95 under 150 ms, tree p95 under 1 s on either screen, no restart in the session.
