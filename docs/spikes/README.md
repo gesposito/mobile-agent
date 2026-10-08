@@ -1,6 +1,6 @@
 # Spike reports
 
-One report per spike from tasks.md group 2, named `s<N>-<slug>.md` after the spike's directory under `spikes/`, for example `s2-simulator-frames.md`. The report is the lasting output of a spike; design.md decisions cite it by file name.
+One report per spike, S1 to S7 from group 2 of the archived change `mobile-automation-foundation` and S8 from task 1.2 of `microbenchmarks`, named `s<N>-<slug>.md` after the spike's directory under `spikes/`, for example `s2-simulator-frames.md`. The report is the lasting output of a spike; design.md decisions cite it by file name.
 
 Every report has these sections, in this order:
 
