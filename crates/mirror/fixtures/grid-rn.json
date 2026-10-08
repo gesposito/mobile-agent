@@ -1,0 +1,97 @@
+{
+  "description": "Big tab of the Expo fixture on the API 36 emulator, as the agent reads it: 1,049 nodes, the status bar's 28 and the app's 1,021, as spike S1 counted them. Below the app's root views and the safe area come the header holding the count, a scroll view whose content holds the grid, and the tab bar, each tab a view group holding its label. The grid fits the scroll view, so all 500 cells are on screen: 20 columns of 19-point cells, each a clickable view group labelled Cell n holding a text view with its number. The status bar's nodes are a plausible shape around its clock and icons. React Native views send change events. Device points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 2, "kind": "system", "layer": 3, "package": "com.android.systemui", "title": "Status bar",
+      "bounds": [0, 0, 411.43, 50.29], "owner": "com.android.systemui",
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 50.29], "children": [
+        {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 50.29], "children": [
+          {"class": "android.widget.LinearLayout", "bounds": [0, 0, 411.43, 50.29], "children": [
+            {"class": "android.widget.FrameLayout", "bounds": [16, 0, 190.86, 50.29], "children": [
+              {"class": "android.widget.LinearLayout", "bounds": [16, 0, 190.86, 50.29], "children": [
+                {"class": "android.widget.TextView", "text": "12:30", "bounds": [16, 17.14, 55.62, 33.52]},
+                {"class": "android.widget.FrameLayout", "bounds": [61.71, 0, 190.86, 50.29], "children": [
+                  {"class": "android.widget.LinearLayout", "bounds": [61.71, 16.76, 190.86, 33.52], "children": [
+                    {"class": "android.widget.ImageView", "desc": "Placeholder notification 1", "bounds": [61.71, 16.76, 78.48, 33.52]},
+                    {"class": "android.widget.ImageView", "desc": "Placeholder notification 2", "bounds": [82.29, 16.76, 99.05, 33.52]},
+                    {"class": "android.widget.ImageView", "bounds": [102.86, 21.33, 108.95, 28.95]}
+                  ]}
+                ]}
+              ]}
+            ]},
+            {"class": "android.view.View", "bounds": [190.86, 0, 220.57, 50.29]},
+            {"class": "android.widget.FrameLayout", "bounds": [220.57, 0, 395.43, 50.29], "children": [
+              {"class": "android.widget.LinearLayout", "bounds": [220.57, 0, 395.43, 50.29], "children": [
+                {"class": "android.widget.FrameLayout", "bounds": [220.57, 0, 296.38, 50.29]},
+                {"class": "android.widget.LinearLayout", "bounds": [296.38, 0, 395.43, 50.29], "children": [
+                  {"class": "android.widget.LinearLayout", "bounds": [296.38, 16.76, 357.71, 33.52], "children": [
+                    {"class": "android.widget.FrameLayout", "desc": "Wifi signal full.", "bounds": [296.38, 16.76, 315.43, 33.52], "children": [
+                      {"class": "android.widget.ImageView", "bounds": [296.38, 16.76, 315.43, 33.52]},
+                      {"class": "android.widget.ImageView", "bounds": [296.38, 16.76, 302.48, 22.86]},
+                      {"class": "android.widget.ImageView", "bounds": [309.33, 16.76, 315.43, 22.86]}
+                    ]},
+                    {"class": "android.widget.FrameLayout", "desc": "Phone signal full.", "bounds": [319.24, 16.76, 357.71, 33.52], "children": [
+                      {"class": "android.widget.ImageView", "bounds": [319.24, 16.76, 336, 33.52]},
+                      {"class": "android.widget.ImageView", "bounds": [336, 16.76, 349.71, 25.14]},
+                      {"class": "android.widget.ImageView", "bounds": [349.71, 16.76, 357.71, 25.14]}
+                    ]}
+                  ]},
+                  {"class": "android.widget.LinearLayout", "desc": "Battery 100 percent.", "bounds": [361.52, 16.76, 395.43, 33.52], "children": [
+                    {"class": "android.widget.ImageView", "bounds": [361.52, 16.76, 384.38, 33.52]},
+                    {"class": "android.widget.ImageView", "bounds": [384.38, 20.57, 395.43, 29.71]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.expo", "title": "FixtureExpo",
+      "bounds": [0, 0, 411.43, 914.29], "flags": ["active", "focused"], "events": true,
+      "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 914.29], "children": [
+        {"class": "android.widget.LinearLayout", "bounds": [0, 0, 411.43, 914.29], "children": [
+          {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 914.29], "children": [
+            {"class": "android.widget.FrameLayout", "bounds": [0, 0, 411.43, 914.29], "children": [
+              {"class": "android.view.ViewGroup", "bounds": [0, 0, 411.43, 914.29], "children": [
+                {"class": "android.view.ViewGroup", "bounds": [0, 0, 411.43, 914.29], "children": [
+                  {"class": "android.widget.TextView", "id": "big-count", "text": "500 elements", "bounds": [0, 50.29, 411.43, 97.62]},
+                  {"class": "android.widget.ScrollView", "bounds": [0, 97.62, 411.43, 834.29], "flags": ["scrollable", "focusable"], "children": [
+                    {"class": "android.view.ViewGroup", "bounds": [0, 97.62, 411.43, 588.62], "children": [
+                      {"class": "android.view.ViewGroup", "bounds": [15.71, 105.62, 395.71, 580.62], "children": [
+                        {"repeat": [1, 500], "layout": {"grid": {"columns": 20, "left": 15.71, "top": 105.62, "width": 19, "height": 19}}, "viewport": [0, 97.62, 411.43, 834.29],
+                         "node": {"class": "android.view.ViewGroup", "id": "cell-{n}", "desc": "Cell {n}", "flags": ["clickable", "focusable"], "children": [
+                           {"class": "android.widget.TextView", "text": "{n}", "bounds": "fill"}
+                         ]}}
+                      ]}
+                    ]}
+                  ]},
+                  {"class": "android.view.ViewGroup", "bounds": [0, 834.29, 411.43, 890.29], "children": [
+                    {"class": "android.view.ViewGroup", "id": "tab-login", "desc": "Login", "bounds": [0, 834.29, 82.29, 890.29], "flags": ["clickable", "focusable"], "children": [
+                      {"class": "android.widget.TextView", "text": "Login", "bounds": [22.14, 852.29, 60.14, 872.29]}
+                    ]},
+                    {"class": "android.view.ViewGroup", "id": "tab-list", "desc": "List", "bounds": [82.29, 834.29, 164.57, 890.29], "flags": ["clickable", "focusable"], "children": [
+                      {"class": "android.widget.TextView", "text": "List", "bounds": [110.93, 852.29, 135.93, 872.29]}
+                    ]},
+                    {"class": "android.view.ViewGroup", "id": "tab-big", "desc": "Big", "bounds": [164.57, 834.29, 246.86, 890.29], "flags": ["clickable", "focusable", "selected"], "children": [
+                      {"class": "android.widget.TextView", "text": "Big", "bounds": [194.21, 852.29, 217.21, 872.29]}
+                    ]},
+                    {"class": "android.view.ViewGroup", "id": "tab-anim", "desc": "Anim", "bounds": [246.86, 834.29, 329.14, 890.29], "flags": ["clickable", "focusable"], "children": [
+                      {"class": "android.widget.TextView", "text": "Anim", "bounds": [270.5, 852.29, 305.5, 872.29]}
+                    ]},
+                    {"class": "android.view.ViewGroup", "id": "tab-system", "desc": "System", "bounds": [329.14, 834.29, 411.43, 890.29], "flags": ["clickable", "focusable"], "children": [
+                      {"class": "android.widget.TextView", "text": "System", "bounds": [345.29, 852.29, 395.29, 872.29]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

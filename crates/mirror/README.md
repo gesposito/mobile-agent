@@ -35,7 +35,8 @@ src/
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
-                timestamps, editables, controls, visibility
+                timestamps, editables, controls, visibility, and bench_inputs for the fixtures the
+                benchmarks read
 tests/support/  the fixture loader
 ```
 
@@ -434,6 +435,7 @@ apps, in device points with the scale beside them:
 | `list` | Expo list: 200 rows, rows 1 to 16 visible, 17 to 19 mounted below the fold |
 | `list-compose` | Compose list: 16 rows in the viewport and scroll semantics for 200 |
 | `grid` | SwiftUI Big tab: a header and 500 cells in a 20-column grid |
+| `grid-rn` | Expo Big tab on the API 36 emulator, 1,049 nodes as spike S1 counted them: the status bar's 28 and the app's 1,021, its 500 cells in a 20-column grid, each a clickable view group holding a text view with its number, all on screen |
 | `login-ios` | SwiftUI login read by the Simulator's in-guest reader |
 | `alert` | the SwiftUI login under its in-app alert, with the covered screen still in the read |
 | `system-alert` | a location prompt in SpringBoard's tree |
