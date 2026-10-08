@@ -7,7 +7,12 @@
 #   - Claude Code's per-user directory: ~/.claude or $HOME/.claude;
 #   - a Claude Code scratch directory: /tmp/claude-<uid>, also under /private;
 #   - the macOS per-user temporary directory under /var/folders;
-#   - the directory that holds this repository's worktrees, mobile-agent-wt.
+#   - the directory that holds this repository's worktrees, mobile-agent-wt;
+#   - an iOS device identifier (0000XXXX-XXXXXXXXXXXXXXXX), which names one
+#     person's phone; write the model and keep the identifier in the
+#     environment and the reports' provenance;
+#   - an email address, other than one under example.com, .org or .net and
+#     Kotlin's this@Class.
 # Write $HOME, $TMPDIR, <repo> for the checkout, or a repo-relative path
 # instead. Lock files are generated, so they are skipped; so is this script,
 # which spells out the patterns.
@@ -26,11 +31,21 @@ claude='(~|\$HOME)/\.claude'
 scratch='/tmp/claude-[0-9]+'
 tmpdir='/var/folders/'
 worktrees='mobile-agent-wt'
+udid='0000[0-9A-Fa-f]{4}-[0-9A-Fa-f]{16}'
+email='[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'
 
 # git grep exits 0 on a match, 1 on none and above 1 on an error.
 status=0
-found=$(git --no-pager grep -nE "$home|$claude|$scratch|$tmpdir|$worktrees" -- . \
+found=$(git --no-pager grep -nE "$home|$claude|$scratch|$tmpdir|$worktrees|$udid" -- . \
   ':(exclude)*.lock' ':(exclude)scripts/check-local-paths.sh') || status=$?
+# Email addresses, less the reserved example domains and Kotlin's this@Class.
+mail_status=0
+mail=$(git --no-pager grep -nE "$email" -- . ':(exclude)*.lock' ':(exclude)scripts/check-local-paths.sh' \
+  | grep -vE '@example\.(com|org|net)\b|this@' ) || mail_status=$?
+if [ "$mail_status" = 0 ]; then
+  found=$(printf '%s\n%s' "$found" "$mail" | sed '/^$/d')
+  status=0
+fi
 
 case $status in
   0)
