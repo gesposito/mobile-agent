@@ -1,12 +1,13 @@
 //! `mobile-agent-bench`: benchmark harness and baseline adapters.
 //!
 //! Exit status: 0 when every gate passed, 1 when any gate failed, 2 when the
-//! harness itself could not run.
+//! harness itself could not run. `micro`: 0 without a regression, 1 on any,
+//! 2 when the host was busy or the run could not complete.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use bench::adapter::{Adapter, Detection};
 use bench::baseline::{BaselineConfig, baselines};
@@ -16,9 +17,11 @@ use bench::fixture::Fixture;
 use bench::flow;
 use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
+use bench::micro::guard::SystemHost;
+use bench::micro::{self, CargoBench, Settings};
 use bench::plan;
 use bench::primitive::Primitive;
-use bench::provenance::compact_timestamp;
+use bench::provenance::{Probe, SystemProbe, compact_timestamp};
 use bench::report::Report;
 use clap::builder::PossibleValuesParser;
 use clap::{Args, Parser, Subcommand};
@@ -44,6 +47,43 @@ enum Command {
     DefaultGates,
     /// Look for Maestro, maestro-runner and agent-device on PATH and print what was found
     Baselines,
+    /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, and write report.json and report.md
+    Micro(MicroArgs),
+}
+
+#[derive(Args)]
+struct MicroArgs {
+    /// Wait up to this many minutes for a quiet host, checking every 30 s [default: refuse a busy host at once]
+    #[arg(long, value_name = "MINUTES")]
+    wait: Option<u32>,
+
+    /// Measure only while the 1-minute load average is under this; --save-baseline takes at most the default
+    #[arg(long, value_name = "N", default_value_t = micro::MAX_LOAD, value_parser = positive)]
+    max_load: f64,
+
+    /// A median slower or faster than the baseline's by more than this percentage is a regression or an improvement
+    #[arg(long, value_name = "PERCENT", default_value_t = micro::THRESHOLD_PCT, value_parser = positive)]
+    threshold: f64,
+
+    /// Run only the benchmarks whose ids match this regular expression, criterion's filter, such as protocol/decode
+    #[arg(long, value_name = "NAME")]
+    filter: Option<String>,
+
+    /// Rewrite reports/micro/baseline.json with this run's values and provenance, after comparing; refused with --filter or a raised --max-load
+    #[arg(long)]
+    save_baseline: bool,
+
+    /// Directory for report.json, report.md and criterion's files [default: target/bench/micro/ and the UTC start time, in the repository root]
+    #[arg(long, value_name = "DIR")]
+    out: Option<PathBuf>,
+}
+
+/// A positive, finite number.
+fn positive(text: &str) -> Result<f64, String> {
+    match text.parse::<f64>() {
+        Ok(n) if n.is_finite() && n > 0.0 => Ok(n),
+        _ => Err(format!("{text} is not a positive number")),
+    }
 }
 
 #[derive(Args)]
@@ -132,6 +172,7 @@ fn main() -> ExitCode {
             list_baselines();
             Ok(ExitCode::SUCCESS)
         }
+        Command::Micro(args) => run_micro(&args),
     };
     result.unwrap_or_else(|message| {
         eprintln!("mobile-agent-bench: {message}");
@@ -250,6 +291,44 @@ fn list_baselines() {
         };
         println!("{row}");
     }
+}
+
+/// The microbenchmarks of the checkout the current directory is in, run
+/// through `cargo bench` behind the guard on this host.
+fn run_micro(args: &MicroArgs) -> Result<ExitCode, String> {
+    let probe = SystemProbe;
+    let root = probe
+        .output("git", &["rev-parse", "--show-toplevel"])
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .ok_or("micro runs in the repository's checkout, and git finds none here")?;
+    let settings = Settings {
+        out: args.out.clone(),
+        max_load: args.max_load,
+        wait: Duration::from_secs(u64::from(args.wait.unwrap_or(0)) * 60),
+        threshold_pct: args.threshold,
+        filter: args.filter.clone(),
+        save_baseline: args.save_baseline,
+        ..Settings::new(&root)
+    };
+    let mut host = SystemHost::new(
+        Box::new(SystemProbe),
+        std::env::consts::OS,
+        std::process::id(),
+    );
+    let mut suites = CargoBench::new(&root);
+    let finished = micro::run(&settings, &mut host, &probe, &mut suites)?;
+    println!(
+        "\nwrote {} and {}",
+        finished.files.json.display(),
+        finished.files.markdown.display()
+    );
+    if let Some(baseline) = &finished.baseline {
+        println!("wrote the baseline {}", baseline.display());
+    }
+    println!();
+    print!("{}", finished.report.verdict());
+    Ok(ExitCode::from(finished.report.summary.exit_status))
 }
 
 fn judge(args: &GatesArgs) -> Result<ExitCode, String> {

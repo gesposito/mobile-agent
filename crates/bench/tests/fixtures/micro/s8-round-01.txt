@@ -1,0 +1,18 @@
+Benchmarking decode
+Benchmarking decode: Warming up for 3.0000 s
+Benchmarking decode: Collecting 100 samples in estimated 5.0489 s (40k iterations)
+Benchmarking decode: Analyzing
+decode                  time:   [125.03 µs 125.92 µs 127.00 µs]
+Found 19 outliers among 100 measurements (19.00%)
+  5 (5.00%) high mild
+  14 (14.00%) high severe
+
+Benchmarking decode_slow
+Benchmarking decode_slow: Warming up for 3.0000 s
+Benchmarking decode_slow: Collecting 100 samples in estimated 5.3984 s (40k iterations)
+Benchmarking decode_slow: Analyzing
+decode_slow             time:   [132.15 µs 133.31 µs 134.63 µs]
+Found 16 outliers among 100 measurements (16.00%)
+  2 (2.00%) high mild
+  14 (14.00%) high severe
+

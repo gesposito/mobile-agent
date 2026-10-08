@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+pub mod micro;
 pub mod tools;
 
 use std::collections::BTreeSet;
@@ -152,10 +153,18 @@ fn collect(value: &Value, key: &str, out: &mut BTreeSet<String>) {
                 if key.ends_with("_us") {
                     out.insert(ms(u));
                 }
+                if key.ends_with("_ns") {
+                    out.insert(micro::us(u));
+                }
             }
+            // The summary prints a signed number's sign apart from its
+            // digits, as in `-4.9%`.
             if let Some(f) = n.as_f64() {
-                out.insert(format!("{f:.1}"));
-                out.insert(format!("{f:.2}"));
+                for f in [f, f.abs()] {
+                    out.insert(f.to_string());
+                    out.insert(format!("{f:.1}"));
+                    out.insert(format!("{f:.2}"));
+                }
             }
         }
         Value::Array(items) => {
@@ -165,6 +174,13 @@ fn collect(value: &Value, key: &str, out: &mut BTreeSet<String>) {
         }
         Value::Object(map) => {
             for (k, v) in map {
+                // An interval's bounds keep its unit: `spread_ns` holds `low`
+                // and `high`.
+                let k = if key.ends_with("_ns") || key.ends_with("_us") {
+                    key
+                } else {
+                    k
+                };
                 collect(v, k, out);
             }
         }

@@ -1,0 +1,58 @@
+android/frame-hasher/key-540x1200: benchmark
+
+daemon/socket/snapshot-interactive-big: benchmark
+allocations daemon/wire/parse-snapshot-request 8 680
+daemon/wire/parse-snapshot-request: benchmark
+allocations daemon/wire/reply-snapshot-big 21 295346
+daemon/wire/reply-snapshot-big: benchmark
+
+allocations protocol/encode/response-snapshot 0 0
+protocol/encode/response-snapshot: benchmark
+allocations protocol/decode/response-snapshot 17 2412
+protocol/decode/response-snapshot: benchmark
+allocations protocol/to_vec/response-snapshot 7 1233
+protocol/to_vec/response-snapshot: benchmark
+allocations protocol/write_frame/response-snapshot 0 0
+protocol/write_frame/response-snapshot: benchmark
+allocations protocol/encode/snapshot-500 0 0
+protocol/encode/snapshot-500: benchmark
+allocations protocol/decode/snapshot-500 765 95687
+protocol/decode/snapshot-500: benchmark
+allocations protocol/to_vec/snapshot-500 13 83951
+protocol/to_vec/snapshot-500: benchmark
+allocations protocol/write_frame/snapshot-500 0 0
+protocol/write_frame/snapshot-500: benchmark
+allocations protocol/encode/snapshot-1049 0 0
+protocol/encode/snapshot-1049: benchmark
+allocations protocol/decode/snapshot-1049 2104 199782
+protocol/decode/snapshot-1049: benchmark
+allocations protocol/to_vec/snapshot-1049 14 139254
+protocol/to_vec/snapshot-1049: benchmark
+allocations protocol/write_frame/snapshot-1049 0 0
+protocol/write_frame/snapshot-1049: benchmark
+allocations protocol/encode/events-10k 0 0
+protocol/encode/events-10k: benchmark
+allocations protocol/decode/events-10k 8975 216716
+protocol/decode/events-10k: benchmark
+allocations protocol/to_vec/events-10k 30040 563392
+protocol/to_vec/events-10k: benchmark
+allocations protocol/write_frame/events-10k 0 0
+protocol/write_frame/events-10k: benchmark
+allocations protocol/encode/requests-1k 0 0
+protocol/encode/requests-1k: benchmark
+allocations protocol/decode/requests-1k 217 4715
+protocol/decode/requests-1k: benchmark
+allocations protocol/to_vec/requests-1k 3092 65664
+protocol/to_vec/requests-1k: benchmark
+allocations protocol/write_frame/requests-1k 0 0
+protocol/write_frame/requests-1k: benchmark
+allocations protocol/frame-decoder/events-10k 2 196608
+protocol/frame-decoder/events-10k: benchmark
+
+simulator/scale_bgra/1206x2622-to-460x1000: benchmark
+simulator/pixels_hash/460x1000: benchmark
+simulator/thumbnail_hash/460x1000: benchmark
+simulator/content_hash/460x1000: benchmark
+simulator/encode/460x1000-q80: benchmark
+simulator/pipeline/frame-to-jpeg: benchmark
+
