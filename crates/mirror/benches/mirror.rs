@@ -424,7 +424,7 @@ fn pumps(group: &mut Group<'_>, grid: &Fixture, list: &Fixture, grid_rn: &Fixtur
         );
     }
     for (f, added, removed) in [
-        (list, "window-added", "window-removed"),
+        (list, "window-added-list", "window-removed-list"),
         (grid_rn, "window-added-grid-rn", "window-removed-grid-rn"),
     ] {
         // A system window added in front of the application, then removed:
