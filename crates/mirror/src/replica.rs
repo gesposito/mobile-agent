@@ -946,7 +946,12 @@ fn reconcile(previous: &Win, new: &mut Win, next: &mut u64) -> Changes {
     changes
 }
 
-/// Pairs the children of old node `o` with those of new node `n`.
+/// Pairs the children of old node `o` with those of new node `n`. The
+/// children are grouped by class and identifier, and each group is taken at
+/// its first old child, so the pairs come in the order the groups' keys first
+/// appear among the old children, the same order whenever the reads are the
+/// same: `reconcile` walks the pairs in that order, and what its stack
+/// allocates follows it. A group without old children pairs nothing.
 fn match_children(old: &[RNode], o: usize, new: &[RNode], n: usize) -> Vec<(usize, usize)> {
     type Key<'a> = (&'a str, Option<&'a str>);
     let mut groups: HashMap<Key<'_>, (Vec<usize>, Vec<usize>)> = HashMap::new();
@@ -959,8 +964,12 @@ fn match_children(old: &[RNode], o: usize, new: &[RNode], n: usize) -> Vec<(usiz
         groups.entry(key).or_default().1.push(c);
     }
     let mut pairs = Vec::new();
-    for (olds, news) in groups.into_values() {
-        if olds.is_empty() || news.is_empty() {
+    for &first in &old[o].children {
+        let key = (&*old[first].class, old[first].identifier.as_deref());
+        let Some((olds, news)) = groups.remove(&key) else {
+            continue;
+        };
+        if news.is_empty() {
             continue;
         }
         if olds.len() == 1 && news.len() == 1 {
