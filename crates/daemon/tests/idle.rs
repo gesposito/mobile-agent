@@ -48,6 +48,32 @@ fn a_daemon_whose_socket_file_was_removed_still_exits_when_idle() {
     assert!(!run.exists(), "the daemon's directory is left behind");
 }
 
+/// The daemon outlives the process that started it. When that process read
+/// the daemon's error output through a pipe, as a test or a benchmark does,
+/// and dies, every write to the pipe fails; the daemon still exits once
+/// idle, cleanly, and removes its files.
+#[test]
+fn a_daemon_whose_error_output_nobody_reads_still_exits_when_idle() {
+    let started = Instant::now();
+    let mut daemon = Daemon::builder()
+        .fake("android")
+        .env("MOBILE_AGENT_IDLE_TIMEOUT_MS", "400")
+        .start();
+    daemon.close_stderr();
+    let status = daemon
+        .wait_exit(Duration::from_secs(5))
+        .expect("the daemon exits once idle, its error output unread");
+    let lived = started.elapsed();
+    assert!(status.success(), "idle exit is a clean exit: {status}");
+    assert!(
+        lived >= Duration::from_millis(400),
+        "exited after {lived:?}"
+    );
+    for file in [SOCKET, PID, VERSION] {
+        assert!(!daemon.dir.join(file).exists(), "{file} is left behind");
+    }
+}
+
 #[test]
 fn requests_postpone_the_idle_exit() {
     let mut daemon = Daemon::builder()

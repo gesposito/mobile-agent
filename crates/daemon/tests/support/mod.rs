@@ -275,6 +275,16 @@ impl Daemon {
         text
     }
 
+    /// Closes the reading end of the daemon's error output once the daemon
+    /// has written its first line there, the one that says where it serves,
+    /// as the death of the process that started the daemon does: whatever
+    /// the daemon writes there afterwards meets a broken pipe.
+    pub fn close_stderr(&mut self) {
+        if let Some(stderr) = self.child.stderr.take() {
+            let _ = BufReader::new(stderr).read_line(&mut String::new());
+        }
+    }
+
     pub fn file(&self, name: &str) -> Option<String> {
         std::fs::read_to_string(self.dir.join(name)).ok()
     }
