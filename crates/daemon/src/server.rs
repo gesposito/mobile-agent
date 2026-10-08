@@ -674,7 +674,11 @@ fn watch_idle(daemon: &Daemon, idle: Duration) {
         let now = Instant::now();
         if now >= deadline {
             drop(activity);
-            eprintln!(
+            // Not eprintln!, which panics when the write fails, as it does
+            // to a pipe whose reader is gone: this thread would end before
+            // it stops the daemon, which would then serve on forever.
+            let _ = writeln!(
+                std::io::stderr(),
                 "mobile-agent-daemon: no requests for {} ms, exiting",
                 idle.as_millis()
             );
