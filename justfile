@@ -55,6 +55,11 @@ fixtures-build:
 bench *args:
     cargo run -p bench --release -- "$@"
 
+# Run the host microbenchmarks on a quiet host and compare them with reports/micro/baseline.json, passing arguments through
+[positional-arguments]
+micro *args:
+    cargo run -p bench --release -- micro "$@"
+
 # Validate the OpenSpec change in strict mode
 openspec-validate:
     openspec validate mobile-automation-foundation --strict
