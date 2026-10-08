@@ -8,6 +8,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
+[lib]
+bench = false
+
 [dependencies]
 minicbor = { version = "2.3.0", features = ["std", "derive"] }
 
