@@ -379,10 +379,10 @@ fn criterion_s_files_as_spike_s8_recorded_them_give_the_median_its_interval_and_
             Measured {
                 id: "decode".to_owned(),
                 median_ns: 124_952,
-                spread_ns: Spread {
+                spread_ns: Some(Spread {
                     low: 124_596,
                     high: 125_234,
-                },
+                }),
                 samples: 100,
                 allocations: None,
                 bytes_allocated: None,
@@ -390,10 +390,10 @@ fn criterion_s_files_as_spike_s8_recorded_them_give_the_median_its_interval_and_
             Measured {
                 id: "decode_slow".to_owned(),
                 median_ns: 131_275,
-                spread_ns: Spread {
+                spread_ns: Some(Spread {
                     low: 130_868,
                     high: 131_548,
-                },
+                }),
                 samples: 100,
                 allocations: None,
                 bytes_allocated: None,
@@ -839,12 +839,14 @@ fn a_baseline_entry_without_an_interval_is_judged_on_the_threshold_alone() {
     }
     assert_eq!(report.summary.exit_status, 1);
 
-    // Both reports say there was no interval to compare with.
+    // Both reports say there was no interval to compare with, and the JSON
+    // reads back.
     let text = fs::read_to_string(&finished.files.json).unwrap();
     let json: Value = serde_json::from_str(&text).unwrap();
     for b in json["benchmarks"].as_array().unwrap() {
         assert_eq!(b["baseline"]["spread_ns"], Value::Null, "{b}");
     }
+    assert_eq!(&Report::from_json(&text).unwrap(), report);
     let md = fs::read_to_string(&finished.files.markdown).unwrap();
     for (heading, id) in [
         ("Regressions", "protocol/decode/requests-1k"),

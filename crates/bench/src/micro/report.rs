@@ -105,7 +105,8 @@ pub struct Summary {
     pub benchmarks: u32,
     pub regressions: u32,
     pub improvements: u32,
-    /// Within the threshold, with the same allocations.
+    /// Within the threshold or inside the baseline's interval, with the same
+    /// allocations.
     pub same: u32,
     pub new: u32,
     pub missing: u32,

@@ -23,8 +23,10 @@ pub struct Measured {
     pub id: String,
     /// The median's point estimate.
     pub median_ns: u64,
-    /// The median's 95% interval.
-    pub spread_ns: Spread,
+    /// The median's 95% interval, which a run always reads; `None` only in
+    /// an entry of a baseline file that holds none, null or absent there.
+    #[serde(default)]
+    pub spread_ns: Option<Spread>,
     /// The samples criterion took.
     pub samples: u32,
     /// Allocations per iteration, where the bench counts them.
@@ -128,10 +130,10 @@ fn benchmark(
         }
     };
     let median_ns = ns(median.point_estimate, "point estimate")?;
-    let spread_ns = Spread {
+    let spread_ns = Some(Spread {
         low: ns(median.confidence_interval.lower_bound, "lower bound")?,
         high: ns(median.confidence_interval.upper_bound, "upper bound")?,
-    };
+    });
     let counts = counted.get(&id).copied();
     Ok(Measured {
         id,

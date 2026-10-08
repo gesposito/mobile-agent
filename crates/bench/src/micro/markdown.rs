@@ -6,7 +6,7 @@
 use crate::markdown::{Table, or_dash};
 
 use super::compare::{Benchmark, Verdict};
-use super::criterion::Measured;
+use super::criterion::{Measured, Spread};
 use super::report::{Provenance, Report};
 
 /// Renders `report` as markdown: the summary line, the provenance, the
@@ -23,12 +23,14 @@ pub fn render(report: &Report) -> String {
          the nanosecond, with their 95% intervals; allocations and bytes are per \
          iteration, where the bench counts them. A median more than {:.1}% slower \
          than the baseline's is a regression and one more than {:.1}% faster an \
-         improvement; any change in allocations or bytes is one or the other.\n\n",
+         improvement, unless it lies inside the 95% interval the baseline recorded \
+         around its own median; any change in allocations or bytes is one or the \
+         other.\n\n",
         p.started_at, p.finished_at, report.threshold_pct, report.threshold_pct
     ));
     provenance(&mut out, p);
     baseline(&mut out, report);
-    benchmarks(&mut out, &report.benchmarks);
+    benchmarks(&mut out, report);
     moved(&mut out, report, Verdict::Regression);
     moved(&mut out, report, Verdict::Improvement);
     missing(&mut out, &report.missing);
@@ -55,6 +57,11 @@ pub fn us(ns: u64) -> String {
 /// A difference in percent with its sign, such as `+30.5%`.
 fn percent(pct: f64) -> String {
     format!("{pct:+.1}%")
+}
+
+/// An interval in microseconds, such as `132.178–143.493`.
+fn interval(spread: Spread) -> String {
+    format!("{}–{}", us(spread.low), us(spread.high))
 }
 
 /// `Exit status <n>: <reason>.`, then the counts.
@@ -165,7 +172,8 @@ fn krate(id: &str) -> &str {
 }
 
 /// One table per crate, in id order.
-fn benchmarks(out: &mut String, benchmarks: &[Benchmark]) {
+fn benchmarks(out: &mut String, report: &Report) {
+    let benchmarks = &report.benchmarks;
     out.push_str("## Benchmarks\n\n");
     let mut crates: Vec<&str> = Vec::new();
     for b in benchmarks {
@@ -192,13 +200,13 @@ fn benchmarks(out: &mut String, benchmarks: &[Benchmark]) {
             table.row(vec![
                 m.id.clone(),
                 us(m.median_ns),
-                format!("{}–{}", us(m.spread_ns.low), us(m.spread_ns.high)),
+                or_dash(m.spread_ns.map(interval)),
                 m.samples.to_string(),
                 or_dash(m.allocations),
                 or_dash(m.bytes_allocated),
                 or_dash(b.baseline.as_ref().map(|saved| us(saved.median_ns))),
                 or_dash(b.difference_pct.map(percent)),
-                verdict_cell(b),
+                verdict_cell(b, report.threshold_pct),
             ]);
         }
         table.render(out);
@@ -215,8 +223,9 @@ fn word(verdict: Verdict) -> &'static str {
 }
 
 /// The verdict, and for a regression or an improvement the measures that
-/// moved that way, such as `regression (allocations)`.
-fn verdict_cell(b: &Benchmark) -> String {
+/// moved that way, such as `regression (allocations)`; the same verdict on a
+/// median past `threshold_pct` says that the baseline's interval held it.
+fn verdict_cell(b: &Benchmark, threshold_pct: f64) -> String {
     let measures: Vec<&str> = [
         (b.time_verdict, "median"),
         (b.allocations_verdict, "allocations"),
@@ -229,8 +238,26 @@ fn verdict_cell(b: &Benchmark) -> String {
         Verdict::Regression | Verdict::Improvement => {
             format!("{} ({})", word(b.verdict), measures.join(", "))
         }
+        Verdict::Same if held(b, threshold_pct) => {
+            "same (median inside the baseline's interval)".to_owned()
+        }
         Verdict::Same | Verdict::New => word(b.verdict).to_owned(),
     }
+}
+
+/// Whether `b`'s median differs from the baseline's by more than
+/// `threshold_pct` and lies inside the interval the baseline recorded
+/// around its own median, which keeps its time the same.
+fn held(b: &Benchmark, threshold_pct: f64) -> bool {
+    let past = b
+        .difference_pct
+        .is_some_and(|pct| pct.abs() > threshold_pct);
+    let inside = b
+        .baseline
+        .as_ref()
+        .and_then(|saved| saved.spread_ns)
+        .is_some_and(|i| (i.low..=i.high).contains(&b.measured.median_ns));
+    past && inside
 }
 
 /// How a count moved from `saved` to `now`.
@@ -244,12 +271,14 @@ fn direction(saved: u64, now: u64) -> Verdict {
 
 /// Every measure that moved as `way`, a regression or an improvement, with
 /// the baseline's and the measured value, under its heading; nothing when
-/// none did.
+/// none did. A median's row has the two conditions it met: the interval the
+/// baseline recorded around its own median, and the threshold.
 fn moved(out: &mut String, report: &Report, way: Verdict) {
     let mut table = Table::new(&[
         "Benchmark",
         "Measure",
         "Baseline",
+        "Baseline interval",
         "Measured",
         "Difference",
         "Threshold",
@@ -264,6 +293,7 @@ fn moved(out: &mut String, report: &Report, way: Verdict) {
                 m.id.clone(),
                 "median µs".to_owned(),
                 us(saved.median_ns),
+                or_dash(saved.spread_ns.map(interval)),
                 us(m.median_ns),
                 or_dash(b.difference_pct.map(percent)),
                 format!("{:.1}%", report.threshold_pct),
@@ -281,6 +311,7 @@ fn moved(out: &mut String, report: &Report, way: Verdict) {
                     m.id.clone(),
                     measure.to_owned(),
                     before.to_string(),
+                    "—".to_owned(),
                     now.to_string(),
                     if now > before { "more" } else { "fewer" }.to_owned(),
                     "exact".to_owned(),

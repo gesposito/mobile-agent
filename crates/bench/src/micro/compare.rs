@@ -1,9 +1,13 @@
 //! The committed baseline and the comparison of design D16. A median slower
-//! than the baseline's by more than the threshold is a regression, and one
-//! faster by more than it an improvement; allocations and bytes are
-//! deterministic, so any change in them is a regression or an improvement,
-//! whatever the time. A benchmark the baseline lacks is new and one the run
-//! lacks missing, neither a regression.
+//! than the baseline's by more than the threshold and above the 95% interval
+//! the baseline recorded around its own median is a regression, and one
+//! faster by more than it and below that interval an improvement: a median
+//! inside the interval is within the baseline's own uncertainty, whatever
+//! its difference. A baseline entry without an interval is judged on the
+//! threshold alone. Allocations and bytes are deterministic, so any change
+//! in them is a regression or an improvement, whatever the time. A benchmark
+//! the baseline lacks is new and one the run lacks missing, neither a
+//! regression.
 
 use std::fs;
 use std::io;
@@ -12,7 +16,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::SCHEMA_VERSION;
-use super::criterion::Measured;
+use super::criterion::{Measured, Spread};
 use super::report::Provenance;
 
 /// The baseline file, `reports/micro/baseline.json`: the values and the
@@ -73,7 +77,8 @@ impl Baseline {
 pub enum Verdict {
     Regression,
     Improvement,
-    /// Within the threshold, or the same allocations and bytes.
+    /// Within the threshold or inside the baseline's interval, or the same
+    /// allocations and bytes.
     Same,
     /// Not in the baseline.
     New,
@@ -89,7 +94,8 @@ pub struct Benchmark {
     /// How much slower the median is than the baseline's, in percent to a
     /// tenth, negative when faster; `None` when new.
     pub difference_pct: Option<f64>,
-    /// The median against the threshold; `None` when new.
+    /// The median against the threshold and the baseline's interval; `None`
+    /// when new.
     pub time_verdict: Option<Verdict>,
     /// Allocations and bytes against the baseline's, compared exactly: a
     /// regression when either rose, an improvement when one fell and neither
@@ -147,15 +153,8 @@ fn judge(measured: &Measured, saved: Option<&Measured>, threshold_pct: f64) -> B
         };
     };
     let difference = difference_pct(saved.median_ns, measured.median_ns);
-    let time_verdict = difference.map(|pct| {
-        if pct > threshold_pct {
-            Verdict::Regression
-        } else if pct < -threshold_pct {
-            Verdict::Improvement
-        } else {
-            Verdict::Same
-        }
-    });
+    let time_verdict =
+        difference.map(|pct| time(pct, threshold_pct, measured.median_ns, saved.spread_ns));
     let allocations_verdict = match (
         saved.allocations.zip(saved.bytes_allocated),
         measured.allocations.zip(measured.bytes_allocated),
@@ -180,6 +179,25 @@ fn judge(measured: &Measured, saved: Option<&Measured>, threshold_pct: f64) -> B
         time_verdict,
         allocations_verdict,
         verdict,
+    }
+}
+
+/// A median's verdict: `pct` is how much slower it is than the baseline's,
+/// negative when faster, `median_ns` its value and `interval` the one the
+/// baseline recorded around its own median. A regression when slower by
+/// more than `threshold_pct` and above the interval's high end, an
+/// improvement when faster by more than it and below the low end, else the
+/// same; a median at either end is inside. Without an interval the
+/// threshold alone decides.
+fn time(pct: f64, threshold_pct: f64, median_ns: u64, interval: Option<Spread>) -> Verdict {
+    let above = interval.is_none_or(|i| median_ns > i.high);
+    let below = interval.is_none_or(|i| median_ns < i.low);
+    if pct > threshold_pct && above {
+        Verdict::Regression
+    } else if pct < -threshold_pct && below {
+        Verdict::Improvement
+    } else {
+        Verdict::Same
     }
 }
 

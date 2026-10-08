@@ -105,10 +105,10 @@ impl Recorded {
         Measured {
             id: self.id.clone(),
             median_ns: self.median_ns,
-            spread_ns: Spread {
+            spread_ns: Some(Spread {
                 low: self.low_ns,
                 high: self.high_ns,
-            },
+            }),
             samples: self.samples as u32,
             allocations: self.allocations.map(|(n, _)| n),
             bytes_allocated: self.allocations.map(|(_, bytes)| bytes),

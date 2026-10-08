@@ -80,7 +80,8 @@ pub struct Settings {
     /// How long to wait for a quiet host; zero refuses a busy one at once.
     pub wait: Duration,
     /// A median slower or faster than the baseline's by more than this
-    /// percentage is a regression or an improvement.
+    /// percentage, and outside the interval the baseline recorded around its
+    /// own median, is a regression or an improvement.
     pub threshold_pct: f64,
     /// criterion's filter, a regular expression over the benchmark ids.
     pub filter: Option<String>,

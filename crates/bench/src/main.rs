@@ -61,7 +61,7 @@ struct MicroArgs {
     #[arg(long, value_name = "N", default_value_t = micro::MAX_LOAD, value_parser = positive)]
     max_load: f64,
 
-    /// A median slower or faster than the baseline's by more than this percentage is a regression or an improvement
+    /// A median slower or faster than the baseline's by more than this percentage, and outside the interval the baseline recorded around its own median, is a regression or an improvement
     #[arg(long, value_name = "PERCENT", default_value_t = micro::THRESHOLD_PCT, value_parser = positive)]
     threshold: f64,
 
