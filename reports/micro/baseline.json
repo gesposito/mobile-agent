@@ -1,0 +1,791 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-08T08:29:35Z",
+    "finished_at": "2026-10-08T08:41:11Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        3.43,
+        3.81,
+        3.36
+      ]
+    },
+    "load_average_end": [
+      1.66,
+      2.08,
+      2.65
+    ],
+    "commit": {
+      "sha": "5c741d44271f9fd276c4bf0e2e355732e5c7ad80",
+      "dirty": false
+    },
+    "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "harness": {
+      "library": "criterion",
+      "version": "0.8.2",
+      "warm_up_s": 3,
+      "measurement_s": 5,
+      "sample_size": 100,
+      "resamples": 100000,
+      "confidence_pct": 95
+    },
+    "guard": {
+      "max_load": 4.0,
+      "waited_s": 90
+    }
+  },
+  "benchmarks": [
+    {
+      "id": "android/frame-hasher/key-540x1200",
+      "median_ns": 52524,
+      "spread_ns": {
+        "low": 52505,
+        "high": 52547
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "daemon/socket/snapshot-interactive-big",
+      "median_ns": 789348,
+      "spread_ns": {
+        "low": 788285,
+        "high": 790928
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "daemon/wire/parse-snapshot-request",
+      "median_ns": 367,
+      "spread_ns": {
+        "low": 366,
+        "high": 368
+      },
+      "samples": 100,
+      "allocations": 8,
+      "bytes_allocated": 680
+    },
+    {
+      "id": "daemon/wire/reply-snapshot-big",
+      "median_ns": 97288,
+      "spread_ns": {
+        "low": 97002,
+        "high": 97447
+      },
+      "samples": 100,
+      "allocations": 21,
+      "bytes_allocated": 295346
+    },
+    {
+      "id": "mirror/delta_snapshot/one-change-list",
+      "median_ns": 56329,
+      "spread_ns": {
+        "low": 56273,
+        "high": 56469
+      },
+      "samples": 100,
+      "allocations": 1243,
+      "bytes_allocated": 107712
+    },
+    {
+      "id": "mirror/diff/one-change-list",
+      "median_ns": 44191,
+      "spread_ns": {
+        "low": 44082,
+        "high": 44278
+      },
+      "samples": 100,
+      "allocations": 893,
+      "bytes_allocated": 101827
+    },
+    {
+      "id": "mirror/pump/first-read-grid",
+      "median_ns": 96114,
+      "spread_ns": {
+        "low": 96020,
+        "high": 96299
+      },
+      "samples": 100,
+      "allocations": 2092,
+      "bytes_allocated": 415640
+    },
+    {
+      "id": "mirror/pump/first-read-grid-rn",
+      "median_ns": 192709,
+      "spread_ns": {
+        "low": 192243,
+        "high": 193254
+      },
+      "samples": 100,
+      "allocations": 4180,
+      "bytes_allocated": 804061
+    },
+    {
+      "id": "mirror/pump/first-read-list",
+      "median_ns": 9306,
+      "spread_ns": {
+        "low": 9267,
+        "high": 9316
+      },
+      "samples": 100,
+      "allocations": 201,
+      "bytes_allocated": 44731
+    },
+    {
+      "id": "mirror/pump/one-change-grid",
+      "median_ns": 208749,
+      "spread_ns": {
+        "low": 208329,
+        "high": 209594
+      },
+      "samples": 100,
+      "allocations": 3117,
+      "bytes_allocated": 594038
+    },
+    {
+      "id": "mirror/pump/one-change-grid-rn",
+      "median_ns": 413535,
+      "spread_ns": {
+        "low": 413058,
+        "high": 414234
+      },
+      "samples": 100,
+      "allocations": 7337,
+      "bytes_allocated": 1179804
+    },
+    {
+      "id": "mirror/pump/resync-grid",
+      "median_ns": 89176,
+      "spread_ns": {
+        "low": 88906,
+        "high": 89428
+      },
+      "samples": 100,
+      "allocations": 2068,
+      "bytes_allocated": 364082
+    },
+    {
+      "id": "mirror/pump/resync-grid-rn",
+      "median_ns": 179310,
+      "spread_ns": {
+        "low": 178910,
+        "high": 179654
+      },
+      "samples": 100,
+      "allocations": 4153,
+      "bytes_allocated": 701217
+    },
+    {
+      "id": "mirror/pump/unchanged-grid",
+      "median_ns": 209205,
+      "spread_ns": {
+        "low": 208378,
+        "high": 209682
+      },
+      "samples": 100,
+      "allocations": 3114,
+      "bytes_allocated": 593256
+    },
+    {
+      "id": "mirror/pump/unchanged-grid-rn",
+      "median_ns": 416042,
+      "spread_ns": {
+        "low": 414843,
+        "high": 418054
+      },
+      "samples": 100,
+      "allocations": 7334,
+      "bytes_allocated": 1179022
+    },
+    {
+      "id": "mirror/pump/unchanged-list",
+      "median_ns": 19810,
+      "spread_ns": {
+        "low": 19758,
+        "high": 19888
+      },
+      "samples": 100,
+      "allocations": 348,
+      "bytes_allocated": 61722
+    },
+    {
+      "id": "mirror/pump/window-added-grid-rn",
+      "median_ns": 415736,
+      "spread_ns": {
+        "low": 415143,
+        "high": 416850
+      },
+      "samples": 100,
+      "allocations": 7352,
+      "bytes_allocated": 1181850
+    },
+    {
+      "id": "mirror/pump/window-added-list",
+      "median_ns": 20674,
+      "spread_ns": {
+        "low": 20623,
+        "high": 20739
+      },
+      "samples": 100,
+      "allocations": 369,
+      "bytes_allocated": 64662
+    },
+    {
+      "id": "mirror/pump/window-removed-grid-rn",
+      "median_ns": 416027,
+      "spread_ns": {
+        "low": 415013,
+        "high": 417424
+      },
+      "samples": 100,
+      "allocations": 7338,
+      "bytes_allocated": 1180462
+    },
+    {
+      "id": "mirror/pump/window-removed-list",
+      "median_ns": 20047,
+      "spread_ns": {
+        "low": 19993,
+        "high": 20092
+      },
+      "samples": 100,
+      "allocations": 352,
+      "bytes_allocated": 63162
+    },
+    {
+      "id": "mirror/scroll_viewport/list",
+      "median_ns": 7148,
+      "spread_ns": {
+        "low": 7124,
+        "high": 7170
+      },
+      "samples": 100,
+      "allocations": 183,
+      "bytes_allocated": 9497
+    },
+    {
+      "id": "mirror/settle/frames-grid",
+      "median_ns": 127,
+      "spread_ns": {
+        "low": 127,
+        "high": 127
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "mirror/settle/frames-grid-rn",
+      "median_ns": 127,
+      "spread_ns": {
+        "low": 127,
+        "high": 127
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "mirror/settle/no-frames-grid",
+      "median_ns": 211035,
+      "spread_ns": {
+        "low": 210496,
+        "high": 211602
+      },
+      "samples": 100,
+      "allocations": 3116,
+      "bytes_allocated": 593276
+    },
+    {
+      "id": "mirror/settle/no-frames-grid-rn",
+      "median_ns": 152,
+      "spread_ns": {
+        "low": 152,
+        "high": 152
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "mirror/snapshot/full-bluesky-typeahead-android",
+      "median_ns": 18914,
+      "spread_ns": {
+        "low": 18858,
+        "high": 18969
+      },
+      "samples": 100,
+      "allocations": 406,
+      "bytes_allocated": 36986
+    },
+    {
+      "id": "mirror/snapshot/full-grid",
+      "median_ns": 322545,
+      "spread_ns": {
+        "low": 322201,
+        "high": 323396
+      },
+      "samples": 100,
+      "allocations": 8175,
+      "bytes_allocated": 689912
+    },
+    {
+      "id": "mirror/snapshot/full-grid-rn",
+      "median_ns": 478260,
+      "spread_ns": {
+        "low": 476495,
+        "high": 479102
+      },
+      "samples": 100,
+      "allocations": 12260,
+      "bytes_allocated": 1027069
+    },
+    {
+      "id": "mirror/snapshot/full-list",
+      "median_ns": 21629,
+      "spread_ns": {
+        "low": 21592,
+        "high": 21664
+      },
+      "samples": 100,
+      "allocations": 580,
+      "bytes_allocated": 39621
+    },
+    {
+      "id": "mirror/snapshot/interactive-again-bluesky-typeahead-android",
+      "median_ns": 17324,
+      "spread_ns": {
+        "low": 17276,
+        "high": 17352
+      },
+      "samples": 100,
+      "allocations": 363,
+      "bytes_allocated": 31679
+    },
+    {
+      "id": "mirror/snapshot/interactive-again-grid",
+      "median_ns": 341169,
+      "spread_ns": {
+        "low": 339928,
+        "high": 342038
+      },
+      "samples": 100,
+      "allocations": 7632,
+      "bytes_allocated": 534179
+    },
+    {
+      "id": "mirror/snapshot/interactive-again-grid-rn",
+      "median_ns": 423005,
+      "spread_ns": {
+        "low": 421631,
+        "high": 424310
+      },
+      "samples": 100,
+      "allocations": 9166,
+      "bytes_allocated": 619789
+    },
+    {
+      "id": "mirror/snapshot/interactive-again-list",
+      "median_ns": 19656,
+      "spread_ns": {
+        "low": 19600,
+        "high": 19685
+      },
+      "samples": 100,
+      "allocations": 515,
+      "bytes_allocated": 34466
+    },
+    {
+      "id": "mirror/snapshot/interactive-bluesky-typeahead-android",
+      "median_ns": 18362,
+      "spread_ns": {
+        "low": 18318,
+        "high": 18414
+      },
+      "samples": 100,
+      "allocations": 389,
+      "bytes_allocated": 36524
+    },
+    {
+      "id": "mirror/snapshot/interactive-grid",
+      "median_ns": 323495,
+      "spread_ns": {
+        "low": 322705,
+        "high": 324032
+      },
+      "samples": 100,
+      "allocations": 8155,
+      "bytes_allocated": 689493
+    },
+    {
+      "id": "mirror/snapshot/interactive-grid-rn",
+      "median_ns": 406704,
+      "spread_ns": {
+        "low": 405870,
+        "high": 407143
+      },
+      "samples": 100,
+      "allocations": 9689,
+      "bytes_allocated": 775103
+    },
+    {
+      "id": "mirror/snapshot/interactive-list",
+      "median_ns": 20756,
+      "spread_ns": {
+        "low": 20712,
+        "high": 20803
+      },
+      "samples": 100,
+      "allocations": 544,
+      "bytes_allocated": 39079
+    },
+    {
+      "id": "mirror/uncovered/under-keyboard",
+      "median_ns": 14,
+      "spread_ns": {
+        "low": 14,
+        "high": 14
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "mirror/visibility/row-list",
+      "median_ns": 7115,
+      "spread_ns": {
+        "low": 7100,
+        "high": 7131
+      },
+      "samples": 100,
+      "allocations": 183,
+      "bytes_allocated": 9521
+    },
+    {
+      "id": "mirror/wait/events-typing",
+      "median_ns": 62360,
+      "spread_ns": {
+        "low": 62220,
+        "high": 62544
+      },
+      "samples": 100,
+      "allocations": 1061,
+      "bytes_allocated": 139257
+    },
+    {
+      "id": "mirror/wait/holds-list",
+      "median_ns": 7356,
+      "spread_ns": {
+        "low": 7342,
+        "high": 7377
+      },
+      "samples": 100,
+      "allocations": 184,
+      "bytes_allocated": 9395
+    },
+    {
+      "id": "protocol/decode/events-10k",
+      "median_ns": 876228,
+      "spread_ns": {
+        "low": 832228,
+        "high": 887125
+      },
+      "samples": 100,
+      "allocations": 8975,
+      "bytes_allocated": 216716
+    },
+    {
+      "id": "protocol/decode/requests-1k",
+      "median_ns": 133498,
+      "spread_ns": {
+        "low": 132178,
+        "high": 143493
+      },
+      "samples": 100,
+      "allocations": 217,
+      "bytes_allocated": 4715
+    },
+    {
+      "id": "protocol/decode/response-snapshot",
+      "median_ns": 1750,
+      "spread_ns": {
+        "low": 1746,
+        "high": 1754
+      },
+      "samples": 100,
+      "allocations": 17,
+      "bytes_allocated": 2412
+    },
+    {
+      "id": "protocol/decode/snapshot-1049",
+      "median_ns": 242896,
+      "spread_ns": {
+        "low": 242235,
+        "high": 243602
+      },
+      "samples": 100,
+      "allocations": 2104,
+      "bytes_allocated": 199782
+    },
+    {
+      "id": "protocol/decode/snapshot-500",
+      "median_ns": 123826,
+      "spread_ns": {
+        "low": 123677,
+        "high": 124103
+      },
+      "samples": 100,
+      "allocations": 765,
+      "bytes_allocated": 95687
+    },
+    {
+      "id": "protocol/encode/events-10k",
+      "median_ns": 717562,
+      "spread_ns": {
+        "low": 717181,
+        "high": 718300
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/encode/requests-1k",
+      "median_ns": 72936,
+      "spread_ns": {
+        "low": 72867,
+        "high": 73100
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/encode/response-snapshot",
+      "median_ns": 681,
+      "spread_ns": {
+        "low": 680,
+        "high": 682
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/encode/snapshot-1049",
+      "median_ns": 108398,
+      "spread_ns": {
+        "low": 108327,
+        "high": 108482
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/encode/snapshot-500",
+      "median_ns": 54444,
+      "spread_ns": {
+        "low": 54397,
+        "high": 54485
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/frame-decoder/events-10k",
+      "median_ns": 42886,
+      "spread_ns": {
+        "low": 42764,
+        "high": 43033
+      },
+      "samples": 100,
+      "allocations": 2,
+      "bytes_allocated": 196608
+    },
+    {
+      "id": "protocol/to_vec/events-10k",
+      "median_ns": 1466364,
+      "spread_ns": {
+        "low": 1464805,
+        "high": 1467812
+      },
+      "samples": 100,
+      "allocations": 30040,
+      "bytes_allocated": 563392
+    },
+    {
+      "id": "protocol/to_vec/requests-1k",
+      "median_ns": 156273,
+      "spread_ns": {
+        "low": 156079,
+        "high": 156381
+      },
+      "samples": 100,
+      "allocations": 3092,
+      "bytes_allocated": 65664
+    },
+    {
+      "id": "protocol/to_vec/response-snapshot",
+      "median_ns": 927,
+      "spread_ns": {
+        "low": 926,
+        "high": 928
+      },
+      "samples": 100,
+      "allocations": 7,
+      "bytes_allocated": 1233
+    },
+    {
+      "id": "protocol/to_vec/snapshot-1049",
+      "median_ns": 110409,
+      "spread_ns": {
+        "low": 110268,
+        "high": 110519
+      },
+      "samples": 100,
+      "allocations": 14,
+      "bytes_allocated": 139254
+    },
+    {
+      "id": "protocol/to_vec/snapshot-500",
+      "median_ns": 56311,
+      "spread_ns": {
+        "low": 56254,
+        "high": 56361
+      },
+      "samples": 100,
+      "allocations": 13,
+      "bytes_allocated": 83951
+    },
+    {
+      "id": "protocol/write_frame/events-10k",
+      "median_ns": 725615,
+      "spread_ns": {
+        "low": 724825,
+        "high": 726765
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/write_frame/requests-1k",
+      "median_ns": 73549,
+      "spread_ns": {
+        "low": 73436,
+        "high": 73602
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/write_frame/response-snapshot",
+      "median_ns": 682,
+      "spread_ns": {
+        "low": 681,
+        "high": 683
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/write_frame/snapshot-1049",
+      "median_ns": 108454,
+      "spread_ns": {
+        "low": 108336,
+        "high": 108512
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "protocol/write_frame/snapshot-500",
+      "median_ns": 54467,
+      "spread_ns": {
+        "low": 54385,
+        "high": 54493
+      },
+      "samples": 100,
+      "allocations": 0,
+      "bytes_allocated": 0
+    },
+    {
+      "id": "simulator/content_hash/460x1000",
+      "median_ns": 106864,
+      "spread_ns": {
+        "low": 106805,
+        "high": 106895
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "simulator/encode/460x1000-q80",
+      "median_ns": 942341,
+      "spread_ns": {
+        "low": 940151,
+        "high": 944438
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "simulator/pipeline/frame-to-jpeg",
+      "median_ns": 2248847,
+      "spread_ns": {
+        "low": 2247620,
+        "high": 2250006
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "simulator/pixels_hash/460x1000",
+      "median_ns": 100687,
+      "spread_ns": {
+        "low": 100590,
+        "high": 100770
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "simulator/scale_bgra/1206x2622-to-460x1000",
+      "median_ns": 1089441,
+      "spread_ns": {
+        "low": 1088306,
+        "high": 1090988
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    },
+    {
+      "id": "simulator/thumbnail_hash/460x1000",
+      "median_ns": 114808,
+      "spread_ns": {
+        "low": 114733,
+        "high": 114862
+      },
+      "samples": 100,
+      "allocations": null,
+      "bytes_allocated": null
+    }
+  ]
+}
