@@ -71,7 +71,13 @@ tests/
   text.rs          task 6.7
   containment.rs   tasks 6.8 and 6.6
   metadata.rs      task 6.10
+benches/
+  frames.rs        the frame pipeline's microbenchmarks (design D14)
 ```
+
+`cargo bench -p simulator --bench frames -- --noplot` runs the benchmarks,
+which need no Simulator. Naming the target keeps cargo from also running the
+library's test harness, which refuses criterion's flags.
 
 ## Building
 
