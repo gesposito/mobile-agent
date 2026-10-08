@@ -19,3 +19,4 @@ mod translator;
 mod xpc;
 
 pub use driver::SimulatorDriver;
+pub use encode::Encoder;

@@ -47,6 +47,14 @@ pub use tree::{
     TreeChoice, TreeOptions,
 };
 
+// The frame thread's pixel work and its JPEG encoder, public so that
+// benches/frames.rs can time them.
+#[cfg(target_os = "macos")]
+pub use macos::Encoder;
+pub use pipeline::{
+    FrameView, content_hash, fit_within, pixels_hash, scale_bgra, status_bar_rows, thumbnail_hash,
+};
+
 #[cfg(target_os = "macos")]
 pub use macos::SimulatorDriver;
 #[cfg(not(target_os = "macos"))]

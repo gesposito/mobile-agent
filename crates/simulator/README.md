@@ -390,6 +390,11 @@ for byte. Measured CPU time rises with the host's load: runs right after a
 rebuild, while the host's endpoint agent scanned the new binaries, read up
 to 24 percent, so the CPU test waits for a quiet host as the spikes did.
 
+The pixel work is public from the crate root so that `benches/frames.rs`
+can time it without a Simulator: `FrameView`, `fit_within`, `scale_bgra`,
+`pixels_hash`, `thumbnail_hash`, `content_hash` and `status_bar_rows`
+wherever the crate builds, and the JPEG `Encoder` on macOS.
+
 ## Input
 
 `gesture.rs` turns a tap, a press, a swipe or a two-finger gesture into
