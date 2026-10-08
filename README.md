@@ -307,6 +307,44 @@ The list-scroll flow reaches `row-200` with one `scroll --until`, as an agent wo
 | Android emulator | Expo | 14.1 s | 12.6 s |
 | Android emulator | Compose | 15.2 s | 13.7 s |
 
+Host costs, from the host microbenchmarks (`reports/micro/baseline.json`; `reports/micro/README.md` says how to run and read them): what each host-side path costs without a device, measured by `just micro` on 2026-10-08 at commit fadee77 on the same Apple M1 Max under macOS 26.6.2, with rustc 1.98.1 and criterion 0.8.2, from a 1-minute load of 2.46 that the quiet-host guard passed. Each value is the median of criterion's 100 samples, in microseconds; allocations are per iteration, one pass over the input, where the benches of `protocol`, `mirror` and `daemon` count them. The mirror's paths run on its scripted fake target, whose read hands over a copy of the screen where a driver would decode one, and the socket's on a daemon serving a fake emulator. The 1,049-node screen is the Expo fixture's Big tab as spike S1 read it on the emulator, reconstructed, since the repository holds no capture.
+
+| Path | Benchmark | Median (µs) | Allocations |
+|---|---|---:|---:|
+| A 500-node snapshot in S5's shape, 21,340 bytes, decoded | `protocol/decode/snapshot-500` | 123.9 | 765 |
+| The same snapshot encoded into a reused buffer | `protocol/encode/snapshot-500` | 55.6 | 0 |
+| A 1,049-node snapshot of the React Native 500-cell screen, decoded | `protocol/decode/snapshot-1049` | 240.1 | 2,104 |
+| The same snapshot encoded | `protocol/encode/snapshot-1049` | 110.4 | 0 |
+| 10,000 events decoded | `protocol/decode/events-10k` | 830.9 | 8,975 |
+| 10,000 events encoded | `protocol/encode/events-10k` | 716.6 | 0 |
+| The frame decoder splitting those events' frames out of their stream, fed 64 KiB at a time | `protocol/frame-decoder/events-10k` | 42.6 | 2 |
+| The SwiftUI 500-cell screen, 510 nodes, read into the replica the first time | `mirror/pump/first-read-grid` | 97.4 | 2,092 |
+| The same read again, matched unchanged | `mirror/pump/unchanged-grid` | 208.3 | 3,114 |
+| The React Native 500-cell screen, 1,049 nodes, read the first time | `mirror/pump/first-read-grid-rn` | 192.6 | 4,180 |
+| The same read again, matched unchanged | `mirror/pump/unchanged-grid-rn` | 412.8 | 7,334 |
+| The SwiftUI screen's interactive listing, 505 refs, right after a read | `mirror/snapshot/interactive-grid` | 327.3 | 8,155 |
+| The React Native screen's interactive listing, 505 refs | `mirror/snapshot/interactive-grid-rn` | 404.4 | 9,689 |
+| Visibility of a row in the Expo list | `mirror/visibility/row-list` | 7.1 | 183 |
+| A delta snapshot after one row changed | `mirror/delta_snapshot/one-change-list` | 56.2 | 1,243 |
+| A diff after one row changed | `mirror/diff/one-change-list` | 43.8 | 893 |
+| A settle with frames: one change taken in, the quiet window waited out on the fake clock | `mirror/settle/frames-grid` | 0.126 | 0 |
+| The same without frames on the React Native screen, whose windows send change events | `mirror/settle/no-frames-grid-rn` | 0.152 | 0 |
+| The same without frames on the SwiftUI screen, whose window sends none and is read again once | `mirror/settle/no-frames-grid` | 209.9 | 3,116 |
+| `snapshot -i` through the daemon's socket to a fake emulator on the 500-cell Big tab, 505 refs, one connection per request | `daemon/socket/snapshot-interactive-big` | 798.2 | — |
+| Its reply line written, 45 KB | `daemon/wire/reply-snapshot-big` | 98.4 | 21 |
+| Its request line parsed | `daemon/wire/parse-snapshot-request` | 0.370 | 8 |
+| A 1206x2622 BGRA frame downscaled to 460x1000 | `simulator/scale_bgra/1206x2622-to-460x1000` | 1,092.9 | — |
+| The 460x1000 frame hashed whole, the frame thread's test for a changed frame | `simulator/pixels_hash/460x1000` | 100.7 | — |
+| Its 32-pixel thumbnail hashed | `simulator/thumbnail_hash/460x1000` | 114.7 | — |
+| Its thumbnail below the status bar hashed, the settle's frame signal | `simulator/content_hash/460x1000` | 106.8 | — |
+| Its JPEG at quality 80 | `simulator/encode/460x1000-q80` | 930.8 | — |
+| Downscale, hash, JPEG and content hash in sequence | `simulator/pipeline/frame-to-jpeg` | 2,241.5 | — |
+| The emulator's frame key of a 540x1200 RGB888 frame | `android/frame-hasher/key-540x1200` | 52.7 | — |
+
+- The socket's span runs from writing the request out to the reply parsed, the host's whole path less the CLI process; most of its work is in the daemon's process, whose allocations the bench does not count. The baseline's other 39 benchmarks cover the remaining inputs and cases: the golden sample and the 1,000 requests, `to_vec` and `write_frame`, the list and Bluesky fixtures, full listings and listings taken again, reads with one change, with a window added or removed and after a resync, `scroll_viewport`, `uncovered`, waits, and the React Native screen's settle with frames.
+- The daemon's Simulator frame thread runs that sequence without the JPEG: it downscales and hashes each frame it reads, at most 30 a second, and encodes a JPEG only for a screenshot (`crates/daemon/src/devices/simulator.rs`). Spike S2's pipeline encoded every frame; at 60 frames a second the sequence with the JPEG would take 13.4% of a core, where S2 measured 20.9% for its whole pipeline (`docs/spikes/s2-simulator-frames.md`, Verdict).
+- Beside spike S5, which encoded its 500-node tree in 26.9 µs and decoded it in 59.1 µs on its own model types, built with fat LTO and one codegen unit and with each decoded value dropped outside the timed region (`docs/spikes/s5-wire-format.md`, Rust on the host): the suite's 500-node snapshot has S5's shape on the shipped crate's types, 21,340 bytes against the 21,410 of S5's own tree on those types (`docs/spikes/s8-bench-harness.md`, Input), and its decode drops the message inside the timed region, under the workspace's release profile. Built with S5's profile, on a quiet host at a 1-minute load of 2.45, the same benchmarks gave 25.4 µs encode, 25.6 µs `write_frame`, 27.4 µs `to_vec` and 119.6 µs decode, against 54.4 µs encode and 123.8 µs decode in the first baseline, taken the same day (task 3.2 of the `microbenchmarks` change): the encode's gap to S5 is the build profile, and the decode's, twice S5's under the same profile, the shipped node decoder.
+
 Spike measurements. The throwaway programs under `spikes/` measured these before the crates existed, on one host (Apple M1 Max, macOS 26.6.2, Xcode 27.0, CoreSimulator 1171.7, iOS 26.5, an API 36 arm64 emulator); the spike verdicts table in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/design.md` summarizes them. They are not harness results.
 
 | Spike | Measurement | Source |
@@ -323,6 +361,8 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 
 `crates/bench` (`mobile-agent-bench`, run with `just bench`) drives the release CLI as an agent does, one `--json` process per command, on the reference fixtures of `fixtures/CONTRACT.md` (SwiftUI and Expo on the Simulator, Expo and Compose on Android), with 3 warm-up and 50 measured iterations per series and nearest-rank p50, p95, maximum, failure and flake rates. The same login, list-scroll and 500-node flows run through Maestro 2.10.0 (on Java 21.0.12) and agent-device 0.21.14 (on Node 25.8.0) as baselines, as the runs' setups record (`reports/10.1-emulator.md`, `reports/10.2-simulator.md`), and through maestro-runner when it is installed, each timed by wall clock around the tool's process. Each run writes `report.json` and `report.md`, committed under `reports/`, and exits non-zero when a gate fails.
 
+`just micro` (`mobile-agent-bench micro`, `crates/bench/README.md`, Microbenchmarks) times the host-side paths without a device, through the suites in the crates' `benches/` under criterion 0.8.2 at its default settings: 3 s of warm-up, then 100 samples over about 5 s per benchmark, of which it keeps the median, the median's 95% interval and the sample count, beside the allocations and bytes per iteration that the benches of `protocol`, `mirror` and `daemon` count. It measures only on a quiet host, a 1-minute load under 4 and no build, emulator or Simulator process above 5% of a core, and otherwise exits 2 or, with `--wait`, waits for one. It compares the run with the committed baseline, `reports/micro/baseline.json`, and exits 1 on a regression: a median more than 5% slower than the baseline's and above the 95% interval the baseline recorded around its own, or any rise in allocations or bytes, which compare exactly. The threshold is twice criterion's run-to-run coefficient of variation on a quiet host, with a floor of 5%; spike S8 measured that coefficient at 1.15%, so the floor holds (`docs/spikes/s8-bench-harness.md`). A baseline is refreshed only by a run that passed the guard, `--save-baseline`, and committed with the change that moved it. CI compiles the suites, since `just lint` covers all targets, and runs none of them: hosted runners give no stable timings.
+
 ## Status and limitations
 
 - One physical Android device has run: a Nexus 5X on Android 8.1 (task 10.3, `reports/10.3-physical-android.md`). Cold attach missed its 1.5 s gate there. With the keyboard up, a `scroll` stroke that starts over the keyboard reaches it, and Gboard typed the strokes into the focused field. On Compose's 500-cell screen commands waited about 10 s, since Android 8.1's node cache is one for the whole process and every eviction empties it. Devices have no frame stream, so clicks there report no `frameChangeMs` and settle rests on the tree. OEM Android builds and the levels between 8.1 and 16 are unverified.
@@ -332,5 +372,5 @@ Spike measurements. The throwaway programs under `spikes/` measured these before
 - React Native: `reports/10.4-rn-smoke.md` compared 17 logged-out React Native screens on the Simulator (Bluesky, Ignite's demo app, the Expo fixture), where no XCTest read reported a sparse root, then Bluesky's signed-in feeds, threads, profiles, notifications, search, chat and settings on the Simulator and the emulator. Signed in, agent-device's XCTest tree came back `sparse` or timed out on the search screen with the keyboard up and on a 711-node thread, and mobile-agent's snapshots of those screens were whole and not degraded. The same run found that with the keyboard up on the Simulator every element counts as 0% in view, so `click` warns wrongly and `scroll --until`, which stops by the same measure, cannot find its element in view (task 10.21).
 - The drivers use private Apple Simulator frameworks and hidden Android APIs. This is development tooling; nothing of it ships inside an app.
 - Not built: physical iOS, an MCP server, a CDP-subset endpoint and Android video streaming.
-- The OpenSpec change in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks.
+- The OpenSpec change in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks; the `microbenchmarks` change under `openspec/changes/` adds the host microbenchmarks, design D13 to D17.
 - `docs/overview.md` answers, with sources, how the design differs from Maestro, agent-device and Appium, where it is and is not faster, what it leaves out, which platforms and versions it supports, which protocol it speaks and what an MCP edge would take.
