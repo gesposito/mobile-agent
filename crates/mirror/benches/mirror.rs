@@ -142,16 +142,32 @@ fn held_text(screen: &Screen, id: &str, text: &str) -> Screen {
     Screen(value)
 }
 
-/// A three-button navigation bar, the system window the window benchmarks
-/// add to the list and remove from it: four nodes.
-fn navigation_bar() -> Value {
+/// A three-button navigation bar 48 points tall across the bottom of
+/// `screen`'s application window, the system window the window benchmarks
+/// add to a screen and remove from it: four nodes. On `list` it spans
+/// `[0, 864, 408, 912]`.
+fn navigation_bar(screen: &Screen) -> Value {
+    let app = screen.0["windows"]
+        .as_array()
+        .expect("windows")
+        .iter()
+        .find(|window| window["id"] == APP)
+        .expect("the application window");
+    let edge = |i: usize| app["bounds"][i].as_f64().expect("the window's bounds");
+    let (width, bottom) = (edge(2), edge(3));
+    let top = bottom - 48.0;
+    let button = |desc: &str, middle: f64| {
+        json!({
+            "class": "android.widget.ImageView", "desc": desc,
+            "bounds": [middle - 32.0, top, middle + 32.0, bottom], "flags": ["clickable"]
+        })
+    };
+    let middle = width / 2.0;
     json!({
         "id": NAVIGATION_BAR, "kind": "system", "layer": 3, "package": "com.android.systemui",
-        "title": "Navigation bar", "bounds": [0, 864, 408, 912], "owner": "com.android.systemui",
-        "root": {"class": "android.widget.FrameLayout", "bounds": [0, 864, 408, 912], "children": [
-            {"class": "android.widget.ImageView", "desc": "Back", "bounds": [40, 864, 104, 912], "flags": ["clickable"]},
-            {"class": "android.widget.ImageView", "desc": "Home", "bounds": [172, 864, 236, 912], "flags": ["clickable"]},
-            {"class": "android.widget.ImageView", "desc": "Overview", "bounds": [304, 864, 368, 912], "flags": ["clickable"]}
+        "title": "Navigation bar", "bounds": [0, top, width, bottom], "owner": "com.android.systemui",
+        "root": {"class": "android.widget.FrameLayout", "bounds": [0, top, width, bottom], "children": [
+            button("Back", middle - 132.0), button("Home", middle), button("Overview", middle + 132.0)
         ]}
     })
 }
@@ -407,54 +423,61 @@ fn pumps(group: &mut Group<'_>, grid: &Fixture, list: &Fixture, grid_rn: &Fixtur
             },
         );
     }
-    let with_bar = list
-        .screen
-        .patched(json!([{"add_window": navigation_bar()}]))
-        .read();
-    batched(
-        group,
-        "pump",
-        "window-added",
-        || {
-            let (target, mirror) = warm(&list.read, true);
-            let added = window_event(WindowChangeKind::ADDED, NAVIGATION_BAR);
-            play(&target, vec![Step::Show(with_bar.clone()), added]);
-            (target, mirror)
-        },
-        |(_, mirror)| mirror.pump(),
-        |(target, mirror), result, _| {
-            result.expect("the read");
-            assert_eq!(mirror.revision(), 2);
-            let [delta] = mirror.deltas() else {
-                panic!("one delta: {:?}", mirror.deltas());
-            };
-            let found = (delta.added.len(), delta.removed.len(), delta.changed.len());
-            assert_eq!((delta.window, found), (NAVIGATION_BAR, (4, 0, 0)));
-            assert_one_full_read(target, ReadReason::Events);
-        },
-    );
-    batched(
-        group,
-        "pump",
-        "window-removed",
-        || {
-            let (target, mirror) = warm(&with_bar, true);
-            let removed = window_event(WindowChangeKind::REMOVED, NAVIGATION_BAR);
-            play(&target, vec![Step::Show(list.read.clone()), removed]);
-            (target, mirror)
-        },
-        |(_, mirror)| mirror.pump(),
-        |(target, mirror), result, _| {
-            result.expect("the read");
-            assert_eq!(mirror.revision(), 2);
-            let [delta] = mirror.deltas() else {
-                panic!("one delta: {:?}", mirror.deltas());
-            };
-            let found = (delta.added.len(), delta.removed.len(), delta.changed.len());
-            assert_eq!((delta.window, found), (NAVIGATION_BAR, (0, 4, 0)));
-            assert_one_full_read(target, ReadReason::Events);
-        },
-    );
+    for (f, added, removed) in [
+        (list, "window-added", "window-removed"),
+        (grid_rn, "window-added-grid-rn", "window-removed-grid-rn"),
+    ] {
+        // A system window added in front of the application, then removed:
+        // its four nodes come or go, every other window matched unchanged.
+        let with_bar = f
+            .screen
+            .patched(json!([{"add_window": navigation_bar(&f.screen)}]))
+            .read();
+        batched(
+            group,
+            "pump",
+            added,
+            || {
+                let (target, mirror) = warm(&f.read, true);
+                let event = window_event(WindowChangeKind::ADDED, NAVIGATION_BAR);
+                play(&target, vec![Step::Show(with_bar.clone()), event]);
+                (target, mirror)
+            },
+            |(_, mirror)| mirror.pump(),
+            |(target, mirror), result, _| {
+                result.expect("the read");
+                assert_eq!(mirror.revision(), 2);
+                let [delta] = mirror.deltas() else {
+                    panic!("one delta: {:?}", mirror.deltas());
+                };
+                let found = (delta.added.len(), delta.removed.len(), delta.changed.len());
+                assert_eq!((delta.window, found), (NAVIGATION_BAR, (4, 0, 0)));
+                assert_one_full_read(target, ReadReason::Events);
+            },
+        );
+        batched(
+            group,
+            "pump",
+            removed,
+            || {
+                let (target, mirror) = warm(&with_bar, true);
+                let event = window_event(WindowChangeKind::REMOVED, NAVIGATION_BAR);
+                play(&target, vec![Step::Show(f.read.clone()), event]);
+                (target, mirror)
+            },
+            |(_, mirror)| mirror.pump(),
+            |(target, mirror), result, _| {
+                result.expect("the read");
+                assert_eq!(mirror.revision(), 2);
+                let [delta] = mirror.deltas() else {
+                    panic!("one delta: {:?}", mirror.deltas());
+                };
+                let found = (delta.added.len(), delta.removed.len(), delta.changed.len());
+                assert_eq!((delta.window, found), (NAVIGATION_BAR, (0, 4, 0)));
+                assert_one_full_read(target, ReadReason::Events);
+            },
+        );
+    }
     for f in [grid, grid_rn] {
         // A new agent connection: the replica starts over from a full read
         // that carries no identity.
