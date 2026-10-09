@@ -36,7 +36,10 @@
 //! [`FakeDriver::with_keyboard`] over every fixture screen, so a list can
 //! lie partly under it: on Android a window over the screen from 600 points
 //! down, on iOS the window the Simulator's reader gives the keyboard, from
-//! its prediction bar at 539 points down. A stroke that comes down on the
+//! its prediction bar at 539 points down. The keyboard comes up with the
+//! focus, or as [`FakeDriver::with_slide`] says (see [`Slide`]): some time
+//! after it, an iOS field losing the text that comes sooner, or never. A
+//! stroke that comes down on the
 //! keyboard goes to the keyboard and moves nothing: its glide typing enters
 //! a word into the field in focus, as Gboard took the strokes of a `scroll`
 //! that started on its keys on a Nexus 5X
@@ -73,6 +76,25 @@ pub(crate) struct Timing {
     /// How long detaching the target takes, as the Android agent's
     /// `shutdown` and kill take.
     pub stop: Duration,
+    /// How the keyboard comes up once a field takes the focus.
+    pub slide: Slide,
+}
+
+/// How a fake's keyboard comes up once a field takes the focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Slide {
+    /// With the focus.
+    #[default]
+    AtOnce,
+    /// That long after the field took the focus. On iOS text that reaches
+    /// the field before then is lost, typed or pasted, as the first keys
+    /// typed into a just-focused field were lost while the Simulator's
+    /// keyboard slid in, in 3 of 8 runs of the React Native smoke test of
+    /// 2026-10-09; Android's text set types nothing and is never lost.
+    After(Duration),
+    /// Never: no keyboard window shows, and fields take text, as with a
+    /// hardware keyboard connected to a Simulator.
+    Never,
 }
 
 /// How fake targets' fields take text whose method the target may choose.
@@ -254,6 +276,13 @@ impl FakeDriver {
     /// fixture apps when `up` is set, whether or not a field has focus.
     pub fn with_keyboard(mut self, up: bool) -> FakeDriver {
         self.keyboard = up;
+        self
+    }
+
+    /// These targets, their keyboard coming up as `slide` says once a field
+    /// takes the focus.
+    pub fn with_slide(mut self, slide: Slide) -> FakeDriver {
+        self.timing.slide = slide;
         self
     }
 }

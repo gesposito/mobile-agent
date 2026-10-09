@@ -4,14 +4,15 @@
 //! app. Each state renders to the windows a driver would read.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use mirror::backend::Owner;
 use protocol::snapshot::{
     Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit, WindowFlags,
 };
 
-use super::Typing;
 use super::tree::{self, El, Kit, Win};
+use super::{Slide, Typing};
 use crate::driver::{DriverError, Launch, Platform};
 use crate::wire::code;
 
@@ -324,6 +325,17 @@ pub(crate) enum Screen {
     },
 }
 
+/// Where the keyboard is in coming up for the field in focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Keys {
+    /// Down: no field has the focus, or its keyboard never comes.
+    Down,
+    /// Coming up, as [`Slide::After`] has it.
+    Coming,
+    /// Up.
+    Up,
+}
+
 /// The fake device: which app is in front and every running app's state.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Device {
@@ -336,6 +348,10 @@ pub(crate) struct Device {
     /// Whether the keyboard stays up over every screen of the fixture apps,
     /// whether or not a field has focus.
     keyboard_up: bool,
+    /// How the keyboard comes up once a field takes the focus.
+    slide: Slide,
+    /// Where it is in coming up.
+    keys: Keys,
 }
 
 impl Device {
@@ -347,6 +363,8 @@ impl Device {
             placeholder: None,
             wifi: true,
             keyboard_up: false,
+            slide: Slide::AtOnce,
+            keys: Keys::Down,
         }
     }
 
@@ -357,24 +375,80 @@ impl Device {
         self
     }
 
+    /// This device, its keyboard coming up as `slide` says once a field
+    /// takes the focus.
+    pub fn with_slide(mut self, slide: Slide) -> Device {
+        self.slide = slide;
+        self
+    }
+
     /// Where the keyboard is, in points, while it shows: over an app with a
-    /// field in focus, or over any fixture screen when it stays up.
+    /// field in focus, once it came up, or over any fixture screen when it
+    /// stays up.
     fn keyboard(&self) -> Option<[f64; 4]> {
         let app = match &self.foreground {
-            Foreground::Fixture(app) => {
-                let fixture = self.fixtures.get(app)?;
-                if fixture.focus.is_none() && !self.keyboard_up {
-                    return None;
-                }
-                app.as_str()
-            }
-            Foreground::Placeholder => {
-                self.placeholder.as_ref()?.focus?;
-                PLACEHOLDER
-            }
-            Foreground::Launcher | Foreground::Settings => return None,
+            Foreground::Fixture(app) if self.keyboard_up || self.keys == Keys::Up => app.as_str(),
+            Foreground::Placeholder if self.keys == Keys::Up => PLACEHOLDER,
+            _ => return None,
         };
         Some(self.kit.keyboard(app).rect)
+    }
+
+    /// Whether a field of the app in front has the focus.
+    fn focused(&self) -> bool {
+        match &self.foreground {
+            Foreground::Fixture(app) => self
+                .fixtures
+                .get(app)
+                .is_some_and(|fixture| fixture.focus.is_some()),
+            Foreground::Placeholder => self
+                .placeholder
+                .as_ref()
+                .is_some_and(|forms| forms.focus.is_some()),
+            Foreground::Launcher | Foreground::Settings => false,
+        }
+    }
+
+    /// Brings the keyboard up or down after a change, before which a field
+    /// had the focus when `was` says so: a field taking the focus brings it
+    /// up as the slide says, and no field in focus sends it down.
+    fn update_keyboard(&mut self, was: bool) {
+        if !self.focused() {
+            self.keys = Keys::Down;
+            if let Some(forms) = self.placeholder.as_mut() {
+                forms.lifted = false;
+            }
+        } else if !was || self.keys == Keys::Down {
+            self.keys = match self.slide {
+                Slide::AtOnce => Keys::Up,
+                Slide::After(_) => Keys::Coming,
+                Slide::Never => Keys::Down,
+            };
+        }
+    }
+
+    /// Whether the keyboard is coming up, and how long after the focus it
+    /// comes.
+    pub fn keyboard_coming(&self) -> Option<Duration> {
+        match (self.keys, self.slide) {
+            (Keys::Coming, Slide::After(after)) => Some(after),
+            _ => None,
+        }
+    }
+
+    /// Brings up the keyboard that was coming; whether it came.
+    pub fn raise_keyboard(&mut self) -> bool {
+        if self.keys != Keys::Coming || !self.focused() {
+            return false;
+        }
+        self.keys = Keys::Up;
+        true
+    }
+
+    /// Whether text for the field in focus is lost: on iOS, while its
+    /// keyboard comes up.
+    fn loses_text(&self) -> bool {
+        self.kit.platform == Platform::Ios && self.keys == Keys::Coming
     }
 
     /// Whether the placeholder app's layout has yet to move its submit
@@ -427,6 +501,13 @@ impl Device {
     }
 
     pub fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+        let was = self.focused();
+        let launched = self.launch_app(app, launch);
+        self.update_keyboard(was);
+        launched
+    }
+
+    fn launch_app(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
         if app == self.settings_id() {
             self.foreground = Foreground::Settings;
             return Ok(());
@@ -484,6 +565,13 @@ impl Device {
     }
 
     pub fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
+        let was = self.focused();
+        let stopped = self.stop_app(app);
+        self.update_keyboard(was);
+        stopped
+    }
+
+    fn stop_app(&mut self, app: &str) -> Result<(), DriverError> {
         if !self.installed().contains(&app) {
             return Err(self.not_installed(app));
         }
@@ -544,6 +632,7 @@ impl Device {
     /// changed.
     pub fn tap(&mut self, hit: Option<&str>, at: (f64, f64)) -> bool {
         let before = self.clone();
+        let was = self.focused();
         let on_keyboard = self
             .keyboard()
             .is_some_and(|keyboard| tree::contains(keyboard, at.0, at.1));
@@ -571,12 +660,15 @@ impl Device {
                 }
             }
         }
+        self.update_keyboard(was);
         *self != before
     }
 
     /// Text for the field `target` names, or the focused one, entered as
     /// `entry` says into fields that take text as `typing` says: whether
     /// the screen changed, or `None` when no editable field takes the text.
+    /// The field takes the focus; on iOS it loses the text while its
+    /// keyboard comes up.
     pub fn text(
         &mut self,
         target: Option<&str>,
@@ -585,6 +677,7 @@ impl Device {
         typing: Typing,
     ) -> Option<bool> {
         let before = self.clone();
+        let was = self.focused();
         if self.foreground == Foreground::Placeholder {
             let forms = self.placeholder.as_mut()?;
             let field = match target {
@@ -592,7 +685,12 @@ impl Device {
                 None => forms.focus?,
             };
             forms.focus = Some(field);
-            take(forms.field(field), text, entry, typing);
+            self.update_keyboard(was);
+            if !self.loses_text()
+                && let Some(forms) = self.placeholder.as_mut()
+            {
+                take(forms.field(field), text, entry, typing);
+            }
             return Some(*self != before);
         }
         let fixture = self.front_fixture()?;
@@ -604,13 +702,19 @@ impl Device {
             None => fixture.focus?,
         };
         fixture.focus = Some(field);
-        take(fixture.field(field), text, entry, typing);
+        self.update_keyboard(was);
+        if !self.loses_text()
+            && let Some(fixture) = self.front_fixture()
+        {
+            take(fixture.field(field), text, entry, typing);
+        }
         Some(*self != before)
     }
 
     /// A key press; whether the screen changed.
     pub fn key(&mut self, code: u32, meta: Option<u32>) -> bool {
         let before = self.clone();
+        let was = self.focused();
         let platform = self.kit.platform;
         let key = Key::decode(platform, code, meta.unwrap_or(0));
         match key {
@@ -622,6 +726,7 @@ impl Device {
                 }
             }
         }
+        self.update_keyboard(was);
         *self != before
     }
 

@@ -410,8 +410,11 @@ pub(crate) fn attach(
         splash,
         activation,
         stop,
+        slide,
     } = timing;
-    let device = Device::new(platform).with_keyboard(keyboard);
+    let device = Device::new(platform)
+        .with_keyboard(keyboard)
+        .with_slide(slide);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
     let target = FakeTarget::new(read(&device.windows(), &device));
