@@ -79,6 +79,36 @@ fn the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back() {
     }
 }
 
+/// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
+/// the readiness states a command on one can fail with and where the step
+/// is named, the slower tier that makes settle and waits take longer, and
+/// how text goes in, typed or set through the runner rather than pasted.
+#[test]
+fn the_agent_guide_says_where_a_physical_iphone_differs() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "MOBILE_AGENT_DRIVERS",
+        "device_locked",
+        "developer_mode_off",
+        "automation_not_enabled",
+        "doctor",
+        "0.5 s",
+        "19 a second",
+        "through the runner",
+        "not a paste",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+    assert!(
+        guide.contains("pasted on a Simulator"),
+        "the guide says the paste is a Simulator's:\n{guide}"
+    );
+}
+
 #[test]
 fn every_command_has_help_with_examples() {
     let env = TestEnv::new("android");

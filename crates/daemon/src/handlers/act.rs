@@ -1672,6 +1672,23 @@ mod tests {
         );
     }
 
+    /// Physical-ios, task 5.3: on a physical iPhone the text entered again
+    /// in one piece is the field's value set through the runner, not a
+    /// paste, and fill's warning says so.
+    #[test]
+    fn a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it() {
+        let mut target = login_on("ios-device", Typing::Reorder, Duration::ZERO);
+        let reply = fill_in(&mut target, "#login-username", "nobel");
+        let success = reply.unwrap();
+        assert_eq!(success.data["method"], "direct", "{}", success.data);
+        assert_eq!(success.data["retried"], true, "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("set it through the runner") && !warning.contains("paste"),
+            "{warning}"
+        );
+    }
+
     /// Task 10.23: a field that keeps other text than the fill's, however
     /// the text reaches it, fails the fill with `text_mismatch`, whose
     /// message names what the field holds.
