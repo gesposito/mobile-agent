@@ -150,7 +150,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
-| `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` (how the text the field holds went in: `keys` or `direct`), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; null when it was not read back), `readBackMs` (from the end of the entry to the read-back taking the field's text, null when not read back), `retried` (whether the text went in again in one piece) |
+| `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` (how the text the field holds went in: `keys` or `direct`, which is a paste on iOS and a set on Android), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; `false` when it showed nothing to read back; null when it was not read back), `readFrom` (where the read-back took the text from: `value`, or `descendants` for a field without a value of its own; null unless verified), `reason` (`no_value_to_read` when `verified` is false, else null), `readBackMs` (from the end of the entry to the read-back taking the field's text, or to its giving up on a field with nothing to read; null when not read back), `retried` (whether the text went in again in one piece) |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
@@ -280,10 +280,27 @@ Simulator, set with `ACTION_SET_TEXT` on Android, as Playwright's and
 agent-browser's single `Input.insertText` and UiAutomator2's set text are,
 rather than typed again into a field that can reorder keys again; the reply
 then has `retried` and a warning naming what the field showed. Still other
-text fails with `text_mismatch`, naming what the field holds. On Android
-an empty field reads as its hint, so an empty fill there is not read back.
-A field that leaves the screen before it shows the text ends the read-back
-with a warning.
+text fails with `text_mismatch`, naming what the field holds and the text
+entered (by its length where the field shows nothing or mask characters).
+On Android an empty field reads as its hint, so an empty fill there is not
+read back. A field that leaves the screen before it shows the text ends the
+read-back with a warning.
+
+What a field shows is its own value when it has one, or when it is a text
+field (a textbox or a search field), whose empty value the platform
+reports as none (design D33). A field without a value of its own is read
+back through its descendants: their values, else the names of the texts
+and untraited nodes with nothing listed below them, joined in the order of
+the full listing, as a React Native code input built of six boxes keeps
+its digits in the boxes' texts (in the smoke test of 2026-10-09 `fill`
+typed such a code and failed with `text_mismatch`, reading the field
+alone); the reply's `readFrom` says `descendants`. A field that shows
+neither, as iOS reads a React Native field inside a view marked accessible
+(a labelled node with nothing below it), cannot be read back: once the
+screen has held still from a settle's quiet window after the entry, the
+fill succeeds with `verified: false`, `reason: no_value_to_read` and a
+warning, without entering the text again, which could enter it twice.
+`type` reads nothing back.
 
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
@@ -753,7 +770,7 @@ source and reports the agent's paths, as a real emulator does.
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
 | `covered_by_keyboard` | the keyboard covers what a scroll strokes, but for too little for a stroke longer than the tap threshold, and a stroke that came down on it would type; the message names what it covers and how to close the keyboard; `data.strokes` |
-| `text_mismatch` | `fill` left other text in the field than it entered, typed or pasted and then entered again in one piece; the message names what the field holds (quoted, as a number of masked characters, or nothing); `data.ref`, `data.value` (null for nothing), `data.masked` |
+| `text_mismatch` | `fill` left other text in the field than it entered, typed or pasted and then entered again in one piece, as its value or its descendants show it; the message names what the field holds (quoted, as a number of masked characters, or nothing) and the text entered (quoted, or by its length when the field shows nothing or mask characters); `data.ref`, `data.value` (null for nothing), `data.masked` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
 | `daemon_stopping` | the daemon is shutting down, and a target command reached it after it stopped its targets; run the command again to start a new daemon |
@@ -819,6 +836,15 @@ Worked around here without changing `crates/mirror`:
   fixed per identifier; the fake driver adds a real-time adapter and a
   stateful device model. Its `inputs()` copies the whole history, so the
   adapter hit-tests taps itself.
+- The mirror reads one window on demand only after text it entered, so a
+  click on an element none of which is in view reads its window again with
+  `note_window_change` and `pump`, which reads every window and counts as a
+  tree change before the tap (the click's spans count only what follows
+  the tap); a Simulator's reader reads every window at each read anyway.
+- `Element` carries no children, so `fill`'s read-back through a field's
+  descendants takes them from a full listing, by depth: one listing per
+  look while the field shows no value of its own, which issues refs as any
+  snapshot does, and misses descendants the listing folds into a name.
 
 ## Spec requirements and their tests
 
@@ -850,6 +876,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.30, the hold only after keys) | (text set or pasted in one piece taken at the first read that shows it, typed text after the 200 ms hold, on either platform; the text entered again after other text not held) | `handlers::act::tests::a_fill_whose_text_went_in_in_one_piece_takes_the_first_read_that_shows_it`, `handlers::act::tests::a_fill_typed_as_keys_takes_the_text_once_the_field_has_held_it_200_ms`, `handlers::act::tests::a_fill_that_enters_its_text_again_in_one_piece_takes_the_first_read_that_shows_it` |
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 | Single coordinate contract (design D32) | Submit button moved by the keyboard | `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning`, `handlers::act::tests::a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until` |
+| Text entry verification (design D33) | Composite code field; Value that cannot be read back; Mismatch | `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified`, `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end

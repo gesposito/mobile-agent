@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use mirror::backend::Release;
 use mirror::{
-    Action, DEFAULT_QUIET_WINDOW, Element, ElementId, MirrorError, Point, Rect, Ref, SettleOptions,
-    Target, Timestamps, Visibility,
+    Action, DEFAULT_QUIET_WINDOW, Element, ElementId, MirrorError, Point, Rect, Ref, Role,
+    SettleOptions, SnapshotOptions, Target, Timestamps, Visibility,
 };
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
@@ -529,13 +529,100 @@ fn compare(value: Option<&str>, name: &str, text: &str) -> Option<Shown> {
     masked.then_some(Shown::Length)
 }
 
+/// Where a read-back took what a field shows from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    /// The field's own value.
+    Value,
+    /// Its descendants' values or texts, joined in order.
+    Descendants,
+}
+
+impl Source {
+    fn name(self) -> &'static str {
+        match self {
+            Source::Value => "value",
+            Source::Descendants => "descendants",
+        }
+    }
+}
+
+/// What a field shows, for a read-back.
+#[derive(Debug, PartialEq)]
+enum Reading {
+    /// Its own value, `None` for none.
+    Own(Option<String>),
+    /// What its descendants show, their values or texts joined in order.
+    Below(String),
+    /// Nothing: no value of its own and nothing below it.
+    Nothing,
+}
+
+/// What `element` shows, for a read-back (design D33): its own value when
+/// it has one, or when it is a text field, whose empty value the platform
+/// reports as none; else its descendants' values or texts, joined in the
+/// order of the full listing, as a React Native code input built of boxes
+/// keeps its characters in its boxes' texts; else nothing.
+fn reading(target: &mut Attached, element: &Element) -> Result<Reading, Failure> {
+    let own = element
+        .value
+        .as_deref()
+        .is_some_and(|value| !value.is_empty());
+    if own || matches!(element.role, Role::Textbox | Role::Searchbox) {
+        return Ok(Reading::Own(element.value.clone()));
+    }
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+    let below = shown_below(&listing.elements, element.id);
+    Ok(if below.is_empty() {
+        Reading::Nothing
+    } else {
+        Reading::Below(below)
+    })
+}
+
+/// What the elements of a full listing below the element `id` show, in
+/// order: each one's value, else the name of a text, or of a node without
+/// traits, that has nothing listed below it.
+fn shown_below(elements: &[Element], id: ElementId) -> String {
+    let Some(at) = elements.iter().position(|element| element.id == id) else {
+        return String::new();
+    };
+    let depth = elements[at].depth;
+    let below: Vec<&Element> = elements[at + 1..]
+        .iter()
+        .take_while(|element| element.depth > depth)
+        .collect();
+    let mut shown = String::new();
+    for (k, element) in below.iter().enumerate() {
+        let leaf = below
+            .get(k + 1)
+            .is_none_or(|next| next.depth <= element.depth);
+        match element.value.as_deref().filter(|value| !value.is_empty()) {
+            Some(value) => shown.push_str(value),
+            None if leaf && matches!(element.role, Role::Text | Role::Generic) => {
+                shown.push_str(&element.name);
+            }
+            None => {}
+        }
+    }
+    shown
+}
+
 /// What a read-back found in the field.
 #[derive(Debug, PartialEq)]
 enum ReadBack {
-    /// It shows the text, which the read-back took `after` the entry.
-    Shown { shown: Shown, after: Duration },
+    /// It shows the text, read from `from`, which the read-back took `after`
+    /// the entry.
+    Shown {
+        shown: Shown,
+        from: Source,
+        after: Duration,
+    },
     /// It showed other text, `None` for none, until the read-back's bound.
     Other(Option<String>),
+    /// It showed nothing to read back, neither a value nor anything below
+    /// it, and the read-back stopped looking `after` the entry.
+    Unreadable { after: Duration },
     /// It left the screen before it showed the text.
     Gone,
 }
@@ -558,12 +645,15 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
 }
 
 /// Reads back the field `reference` names after an entry by `method` that
-/// ended at `entered`: until the field shows `text` and has held it since
-/// the hold after that method ends ([`hold_after`]), which after text that
-/// went in in one piece takes the first read that shows it, or until it
-/// has shown other text up to [`READ_BACK_MAX`] after the entry, the mirror
-/// reading it again as reads fall due meanwhile. What the field shows at
-/// the bound stands.
+/// ended at `entered`, from what it shows ([`reading`]): until the field
+/// shows `text` and has held it since the hold after that method ends
+/// ([`hold_after`]), which after text that went in in one piece takes the
+/// first read that shows it, or until it has shown other text up to
+/// [`READ_BACK_MAX`] after the entry, the mirror reading it again as reads
+/// fall due meanwhile. What the field shows at the bound stands. A field
+/// that shows nothing to read back once the screen has held still since a
+/// settle's quiet window after the entry ([`READ_BACK_HOLD`]) is
+/// unreadable.
 fn read_back(
     target: &mut Attached,
     reference: Ref,
@@ -572,6 +662,7 @@ fn read_back(
     method: Option<TextMethod>,
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
+    let quiet = entered + READ_BACK_HOLD;
     let deadline = entered + READ_BACK_MAX;
     loop {
         let element = match target.mirror.resolve(reference) {
@@ -579,17 +670,33 @@ fn read_back(
             Err(MirrorError::StaleRef { .. }) => return Ok(ReadBack::Gone),
             Err(error) => return Err(error.into()),
         };
+        let reading = reading(target, &element)?;
         let now = Instant::now();
+        let after = now.saturating_duration_since(entered);
         let rereads = target.mirror.next_wakeup().is_some();
         let stamps = target.mirror.timestamps();
-        match compare(element.value.as_deref(), &element.name, text) {
-            Some(shown) if now >= deadline || held(&stamps, hold, now, rereads) => {
-                return Ok(ReadBack::Shown {
-                    shown,
-                    after: now.saturating_duration_since(entered),
-                });
+        let (shown, from) = match &reading {
+            Reading::Own(value) => (
+                compare(value.as_deref(), &element.name, text),
+                Source::Value,
+            ),
+            Reading::Below(below) => (
+                compare(Some(below), &element.name, text),
+                Source::Descendants,
+            ),
+            Reading::Nothing => (None, Source::Value),
+        };
+        match (shown, reading) {
+            (Some(shown), _) if now >= deadline || held(&stamps, hold, now, rereads) => {
+                return Ok(ReadBack::Shown { shown, from, after });
             }
-            None if now >= deadline => return Ok(ReadBack::Other(element.value)),
+            (None, Reading::Nothing) if now >= deadline || held(&stamps, quiet, now, rereads) => {
+                return Ok(ReadBack::Unreadable { after });
+            }
+            (None, Reading::Own(value)) if now >= deadline => return Ok(ReadBack::Other(value)),
+            (None, Reading::Below(below)) if now >= deadline => {
+                return Ok(ReadBack::Other(Some(below)));
+            }
             _ => {}
         }
         let until = if now < hold { hold } else { deadline };
@@ -640,36 +747,91 @@ fn described(value: Option<&str>) -> String {
     }
 }
 
+/// Why a fill's text was not verified, as its reply's `reason` says: the
+/// field showed neither a value nor anything below it.
+const NO_VALUE_TO_READ: &str = "no_value_to_read";
+
+/// What a fill's read-back concluded.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Check {
+    /// The field showed the text as `shown`, read from `from`, `after` the
+    /// entry.
+    Verified {
+        shown: Shown,
+        from: Source,
+        after: Duration,
+    },
+    /// The field showed nothing to read back; the read-back stopped looking
+    /// `after` the entry.
+    Unverified { after: Duration },
+    /// The field was not read back: an empty fill on Android, or a field that
+    /// left the screen.
+    Skipped,
+}
+
 /// A fill's reply: the field as `given`, its ref, the method the text the
-/// field holds went in by, how the read-back found it and how long after
-/// the entry it took it (`None` when the field was not read back), and
-/// whether `fill` entered the text again.
+/// field holds went in by, what the read-back concluded and how long after
+/// the entry, and whether `fill` entered the text again. `verified` is how
+/// the field showed the text, `false` when it showed nothing to read back
+/// (`reason` says so), and null when it was not read back; `readFrom` is
+/// where the read-back took it from.
 fn filled(
     given: &str,
     reference: Ref,
     method: Option<TextMethod>,
-    read: Option<(Shown, Duration)>,
+    check: Check,
     retried: bool,
 ) -> Success {
+    let (verified, from, reason, after) = match check {
+        Check::Verified { shown, from, after } => (
+            Value::from(shown.name()),
+            Value::from(from.name()),
+            Value::Null,
+            Some(after),
+        ),
+        Check::Unverified { after } => (
+            Value::Bool(false),
+            Value::Null,
+            Value::from(NO_VALUE_TO_READ),
+            Some(after),
+        ),
+        Check::Skipped => (Value::Null, Value::Null, Value::Null, None),
+    };
     Success::new(json!({
         "filled": given,
         "ref": format!("@{reference}"),
         "method": method_name(method),
-        "verified": read.map(|(shown, _)| shown.name()),
-        "readBackMs": read.map(|(_, after)| millis(after)),
+        "verified": verified,
+        "readFrom": from,
+        "reason": reason,
+        "readBackMs": after.map(millis),
         "retried": retried,
     }))
 }
 
-/// The failure of a fill whose field `given` holds `value` after `fill`
-/// entered the text as `tries` say.
-fn mismatch(given: &str, reference: Ref, value: Option<&str>, tries: &str) -> Failure {
+/// The warning of a fill whose field `given` showed nothing to read back.
+fn unreadable(given: &str) -> String {
+    format!(
+        "{given} shows neither a value nor anything below it, so fill could not read its text back; a screenshot shows what it holds"
+    )
+}
+
+/// The failure of a fill of `text` whose field `given` holds `value` after
+/// `fill` entered the text as `tries` say: the message names both, the text
+/// by its length where the field shows nothing or mask characters, as a
+/// secure field does.
+fn mismatch(given: &str, reference: Ref, text: &str, value: Option<&str>, tries: &str) -> Failure {
     let masked =
         value.is_some_and(|value| !value.is_empty() && value.chars().all(|c| MASKS.contains(&c)));
+    let entered = if value.is_some_and(|value| !value.is_empty()) && !masked {
+        format!("{text:?}")
+    } else {
+        format!("{} characters", text.chars().count())
+    };
     Failure::new(
         TEXT_MISMATCH,
         format!(
-            "{given} holds {} after fill {tries}; a field that limits or formats its text shows it so: take a snapshot to see the field, then fill it again or go on if it holds what you meant",
+            "{given} holds {} where fill entered {entered}, after it {tries}; a field that limits or formats its text shows it so: take a snapshot to see the field, then fill it again or go on if it holds what you meant",
             described(value)
         ),
     )
@@ -679,11 +841,14 @@ fn mismatch(given: &str, reference: Ref, value: Option<&str>, tries: &str) -> Fa
 /// Fills the field the request names: enters the text, typed or pasted as
 /// the target chooses, and reads the field back, holding typed text
 /// [`READ_BACK_HOLD`] and taking text that went in in one piece from the
-/// first read that shows it. A field that shows other text gets the text
-/// again in one piece, pasted on a Simulator and set directly on Android,
-/// and is read back again; a field that still shows other text fails the
-/// fill with `text_mismatch`. On Android an empty field reads as its hint,
-/// so an empty fill there is not read back.
+/// first read that shows it, from the field's value or, for a field without
+/// one, through its descendants (see [`reading`]). A field that shows other
+/// text gets the text again in one piece, pasted on a Simulator and set
+/// directly on Android, and is read back again; a field that still shows
+/// other text fails the fill with `text_mismatch`. A field that shows
+/// nothing to read back, neither a value nor anything below it, leaves the
+/// fill unverified, with a warning, and gets the text once. On Android an
+/// empty field reads as its hint, so an empty fill there is not read back.
 pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let text = text_param(request)?;
     let given = request.required_str("target")?;
@@ -693,20 +858,22 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let first = enter(target, reference, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
-        return Ok(filled(given, reference, first, None, false));
+        return Ok(filled(given, reference, first, Check::Skipped, false));
     }
-    let gone = |by: &str| {
-        Some(format!(
-            "{given} left the screen after fill {by}, so it could not be read back"
-        ))
-    };
+    let gone =
+        |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
     let value = match read_back(target, reference, &text, entered, first)? {
-        ReadBack::Shown { shown, after } => {
-            return Ok(filled(given, reference, first, Some((shown, after)), false));
+        ReadBack::Shown { shown, from, after } => {
+            let check = Check::Verified { shown, from, after };
+            return Ok(filled(given, reference, first, check, false));
+        }
+        ReadBack::Unreadable { after } => {
+            let check = Check::Unverified { after };
+            return Ok(filled(given, reference, first, check, false).warn(Some(unreadable(given))));
         }
         ReadBack::Gone => {
-            return Ok(filled(given, reference, first, None, false)
-                .warn(gone(entered_by(platform, first))));
+            return Ok(filled(given, reference, first, Check::Skipped, false)
+                .warn(Some(gone(entered_by(platform, first)))));
         }
         ReadBack::Other(value) => value,
     };
@@ -718,7 +885,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
                 "{first_by}, and entering it again in one piece failed: {}",
                 failure.message
             );
-            return Err(mismatch(given, reference, value.as_deref(), &tries));
+            return Err(mismatch(given, reference, &text, value.as_deref(), &tries));
         }
     };
     let entered = Instant::now();
@@ -731,16 +898,19 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
         )
     };
     match read_back(target, reference, &text, entered, second)? {
-        ReadBack::Shown { shown, after } => {
-            Ok(filled(given, reference, second, Some((shown, after)), true).warn(Some(again())))
+        ReadBack::Shown { shown, from, after } => {
+            let check = Check::Verified { shown, from, after };
+            Ok(filled(given, reference, second, check, true).warn(Some(again())))
         }
-        ReadBack::Gone => Ok(
-            filled(given, reference, second, None, true).warn(Some(format!(
-                "{}; {}",
-                again(),
-                gone(second_by).unwrap_or_default()
-            ))),
-        ),
+        ReadBack::Unreadable { after } => {
+            let check = Check::Unverified { after };
+            let warning = format!("{}; {}", again(), unreadable(given));
+            Ok(filled(given, reference, second, check, true).warn(Some(warning)))
+        }
+        ReadBack::Gone => {
+            let warning = format!("{}; {}", again(), gone(second_by));
+            Ok(filled(given, reference, second, Check::Skipped, true).warn(Some(warning)))
+        }
         ReadBack::Other(still) => {
             let tries = if first_by == second_by {
                 format!("{first_by} twice")
@@ -750,7 +920,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
                     second_by.replacen("the text", "it", 1)
                 )
             };
-            Err(mismatch(given, reference, still.as_deref(), &tries))
+            Err(mismatch(given, reference, &text, still.as_deref(), &tries))
         }
     }
 }
