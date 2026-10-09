@@ -23,7 +23,12 @@ workspace = true
 idevice = { version = "=0.1.68", features = ["usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "rsd", "xpc", "mobile_image_mounter", "tss", "installation_proxy", "afc", "dvt", "xctest", "core_device", "display_stream"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "time", "sync", "macros", "io-util", "process"] }
 
+# The device tests ask for the runner `agent-ios` builds, and list its trees
+# through the mirror beside the Simulator reader's, which the Simulator
+# driver records with its reader.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 agent-ios = { version = "0.1.0", path = "../../agent-ios" }
 libc = "0.2"
+mirror = { version = "0.1.0", path = "../mirror" }
 ns-keyed-archive = "0.1.5"
+simulator = { version = "0.1.0", path = "../simulator", default-features = false, features = ["jpeg-encoder", "reader"] }

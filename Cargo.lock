@@ -927,6 +927,7 @@ dependencies = [
  "agent-ios",
  "idevice",
  "libc",
+ "mirror",
  "ns-keyed-archive",
  "plist",
  "png",

@@ -1,0 +1,7 @@
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "Vertical scroll bar, 2 pages": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [id=inapp-alert-ok, ref=e1]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%

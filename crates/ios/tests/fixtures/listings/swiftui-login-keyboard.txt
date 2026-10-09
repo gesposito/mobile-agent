@@ -1,0 +1,17 @@
+- textbox "Username" [focused, id=login-username, ref=e1]
+- textbox "Password" [id=login-password, ref=e2]
+- button "Sign in" [id=login-submit, ref=e3]
+- text "Signed out" [id=login-status]
+- tablist "Tab Bar"
+  - button "Login" [selected, id=tab-login, ref=e4]
+    - image "account" [id=person.crop.circle]
+  - button "List" [id=tab-list, ref=e5]
+    - image "List" [id=list.bullet]
+  - button "Big" [id=tab-big, ref=e6]
+    - image "square.grid.3x3" [id=square.grid.3x3]
+  - button "Anim" [id=tab-anim, ref=e7]
+    - image "syncing" [id=arrow.triangle.2.circlepath]
+  - button "System" [id=tab-system, ref=e8]
+    - image "Alert" [id=exclamationmark.bubble]
+- generic [id=inputView]
+- keyboard
