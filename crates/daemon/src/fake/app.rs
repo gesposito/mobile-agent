@@ -1488,4 +1488,40 @@ mod tests {
         assert!(down.swipe((204.0, 700.0), (204.0, 300.0), 0.0));
         assert_eq!(down.fixtures[FIXTURE].offset, 400.0);
     }
+
+    /// Design D34: a keyboard that slides in comes up some time after the
+    /// field took the focus; until then an iOS field loses the text that
+    /// reaches it, the text that focused it included, while Android's text
+    /// set types nothing and lands. A keyboard that never comes shows no
+    /// window, and the field takes text.
+    #[test]
+    fn an_ios_field_loses_text_while_its_keyboard_slides_in() {
+        let slide = Slide::After(Duration::from_millis(400));
+        let username = |device: &Device| device.fixtures[FIXTURE].username.clone();
+        let fill = Entry::Keys { replace: true };
+
+        let mut ios = Device::new(Platform::Ios).with_slide(slide);
+        ios.launch(FIXTURE, &Launch::default()).unwrap();
+        assert!(ios.text(Some("login-username"), "agent", fill, Typing::Keys) == Some(true));
+        assert_eq!(username(&ios), "", "lost while the keyboard comes up");
+        assert_eq!(ios.keyboard_coming(), Some(Duration::from_millis(400)));
+        assert!(ios.keyboard().is_none());
+        assert!(ios.raise_keyboard());
+        assert!(ios.keyboard().is_some());
+        ios.text(Some("login-username"), "agent", fill, Typing::Keys);
+        assert_eq!(username(&ios), "agent");
+
+        let mut android = Device::new(Platform::Android).with_slide(slide);
+        android.launch(FIXTURE, &Launch::default()).unwrap();
+        android.text(Some("login-username"), "agent", Entry::Whole, Typing::Whole);
+        assert_eq!(username(&android), "agent");
+        assert!(android.keyboard().is_none(), "its keyboard still comes up");
+
+        let mut never = Device::new(Platform::Ios).with_slide(Slide::Never);
+        never.launch(FIXTURE, &Launch::default()).unwrap();
+        never.text(Some("login-username"), "agent", fill, Typing::Keys);
+        assert_eq!(username(&never), "agent");
+        assert_eq!(never.keyboard_coming(), None);
+        assert!(never.keyboard().is_none());
+    }
 }

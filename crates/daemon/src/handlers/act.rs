@@ -1522,7 +1522,7 @@ mod tests {
 
     use super::*;
     use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
-    use crate::fake::{FakeDriver, Typing};
+    use crate::fake::{FakeDriver, Slide, Typing};
 
     /// The fake fixture app.
     const FIXTURE: &str = "dev.mobileagent.fixture.expo";
@@ -2538,5 +2538,123 @@ mod tests {
             );
             assert_eq!(failure.data.unwrap_or_default()["value"], holds, "{field}");
         }
+    }
+
+    /// A 20-character text that starts with a lower-case letter, as the
+    /// keys the smoke test lost the first of.
+    const TWENTY: &str = "placeholder-entry-20";
+
+    /// A fake target of `platform` whose keyboard comes up as `slide` says
+    /// and whose fields take text as `typing` says, with the fixture app open
+    /// on its Login tab, and the inputs it is sent.
+    fn sliding(platform: &str, slide: Slide, typing: Typing) -> (Attached, Sent) {
+        let driver = FakeDriver::parse(platform)
+            .unwrap()
+            .with_slide(slide)
+            .with_typing(typing);
+        recorded(&driver, FIXTURE, &[])
+    }
+
+    /// How long after the first tap among `sent` the first text went out.
+    fn text_after_tap(sent: &Sent) -> Option<Duration> {
+        let sent = sent.lock().unwrap();
+        let tap = sent
+            .iter()
+            .find(|(_, input)| matches!(input, Input::Tap { .. }))?
+            .0;
+        let text = sent
+            .iter()
+            .find(|(_, input)| matches!(input, Input::Text { .. }))?
+            .0;
+        text.checked_duration_since(tap)
+    }
+
+    /// Design D34: in the React Native smoke test the first keys typed into
+    /// a just-focused field were lost in 3 of 8 runs while the Simulator's
+    /// keyboard slid in. On iOS `fill` into a field without the focus, the
+    /// keyboard down, taps the field, then types once the replica shows the
+    /// keyboard's window: with a keyboard that comes up 400 ms after the
+    /// focus, and a field that loses what comes sooner, the keys go out
+    /// after the keyboard, within a read of it, and land whole at once.
+    #[test]
+    fn a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up() {
+        let slide = Duration::from_millis(400);
+        let (mut target, sent) = sliding("ios", Slide::After(slide), Typing::Keys);
+        let success = fill_in(&mut target, "#login-username", TWENTY).unwrap();
+        let data = &success.data;
+        assert_eq!(data["retried"], false, "{data}: {:?}", success.warning);
+        assert_eq!(data["method"], "keys", "{data}");
+        assert_eq!(data["verified"], "text", "{data}");
+        assert_eq!(held(&mut target, "#login-username"), TWENTY);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then types");
+        assert!(
+            waited >= slide && waited < slide + Duration::from_millis(350),
+            "{waited:?}"
+        );
+    }
+
+    /// Design D34: a paste is Command-V, a key the keyboard takes as it
+    /// takes the others, so text longer than 32 characters, which the
+    /// Simulator pastes, waits for the keyboard as typed text does.
+    #[test]
+    fn a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up() {
+        let slide = Duration::from_millis(400);
+        let (mut target, sent) = sliding("ios", Slide::After(slide), Typing::Keys);
+        let long = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let success = fill_in(&mut target, "#login-username", long).unwrap();
+        let data = &success.data;
+        assert_eq!(data["retried"], false, "{data}: {:?}", success.warning);
+        assert_eq!(data["method"], "direct", "{data}");
+        assert_eq!(held(&mut target, "#login-username"), long);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then pastes");
+        assert!(waited >= slide, "{waited:?}");
+    }
+
+    /// Design D34: the wait is bounded: a field whose keyboard never comes,
+    /// as with a hardware keyboard connected, gets its text 1 s after the
+    /// tap.
+    #[test]
+    fn a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes() {
+        let (mut target, sent) = sliding("ios", Slide::Never, Typing::Keys);
+        let success = fill_in(&mut target, "#login-username", TWENTY).unwrap();
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert_eq!(success.data["retried"], false, "{}", success.data);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then types");
+        assert!(
+            waited >= Duration::from_secs(1) && waited < Duration::from_millis(1300),
+            "{waited:?}"
+        );
+    }
+
+    /// Design D34: a field that has the focus with the keyboard up gets no
+    /// tap of fill's own and pays no wait.
+    #[test]
+    fn a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait() {
+        let slide = Duration::from_millis(600);
+        let (mut target, sent) = sliding("ios", Slide::After(slide), Typing::Whole);
+        fill_in(&mut target, "#login-username", "agent").unwrap();
+        sent.lock().unwrap().clear();
+        let started = Instant::now();
+        let success = fill_in(&mut target, "#login-username", TWENTY).unwrap();
+        let took = started.elapsed();
+        assert!(took < Duration::from_millis(200), "{took:?}");
+        assert!(taps(&sent).is_empty(), "{:?}", taps(&sent));
+        assert_eq!(success.data["retried"], false, "{}", success.data);
+        assert_eq!(held(&mut target, "#login-username"), TWENTY);
+    }
+
+    /// Design D34: the wait is iOS's alone: Android's text set types
+    /// nothing, so `fill` there neither taps first nor waits for a keyboard,
+    /// even one that comes up 600 ms after the focus.
+    #[test]
+    fn a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard() {
+        let slide = Duration::from_millis(600);
+        let (mut target, sent) = sliding("android", Slide::After(slide), Typing::Whole);
+        let started = Instant::now();
+        let success = fill_in(&mut target, "#login-username", TWENTY).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(300));
+        assert!(taps(&sent).is_empty(), "{:?}", taps(&sent));
+        assert_eq!(success.data["method"], "direct", "{}", success.data);
+        assert_eq!(success.data["retried"], false, "{}", success.data);
     }
 }

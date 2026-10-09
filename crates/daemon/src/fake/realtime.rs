@@ -18,7 +18,10 @@
 //! list can glide on after a stroke whose finger lifts moving, as far as the
 //! platform's fling carries it, the finger's speed its release velocity.
 //! Text whose method the target may choose goes in whole, unless the typing
-//! mode types it key by key as a Simulator does.
+//! mode types it key by key as a Simulator does. A keyboard can come up some
+//! time after a field took the focus, shown then with a frame, and the
+//! placeholder app's layout moves its submit button above the keyboard some
+//! time after that, in no frame.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -106,6 +109,8 @@ struct Shared {
     fling: bool,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
+    /// When the keyboard that is coming up comes up.
+    keyboard_due: Mutex<Option<Instant>>,
     /// When the placeholder app's layout moves its submit button above the
     /// keyboard, once the keyboard is up.
     lift_due: Mutex<Option<Instant>>,
@@ -191,8 +196,24 @@ impl Shared {
         let now = real.max(fake);
         self.start_frames(now);
         self.animate(now);
+        self.raise(now);
         self.lift(now);
         now
+    }
+
+    /// Brings up the keyboard that was coming once it is due, showing it as
+    /// any change within the screen shows, with a frame.
+    fn raise(&self, now: Instant) {
+        let due = *lock(&self.keyboard_due);
+        if due.is_none_or(|due| now < due) {
+            return;
+        }
+        *lock(&self.keyboard_due) = None;
+        let mut device = lock(&self.device);
+        if device.raise_keyboard() {
+            self.show_after(&device, Change::Content, Duration::ZERO);
+            self.follow(&device, Duration::ZERO);
+        }
     }
 
     /// Moves the placeholder app's submit button above the keyboard once
@@ -209,13 +230,19 @@ impl Shared {
         }
     }
 
-    /// Schedules what follows a change shown `delay` from now: the
-    /// placeholder app's layout moves its submit button [`LIFT`] after the
-    /// keyboard came up.
+    /// Schedules what follows a change shown `delay` from now: a keyboard
+    /// that is coming up comes up as long after the focus as its slide says,
+    /// and the placeholder app's layout moves its submit button [`LIFT`]
+    /// after the keyboard came up.
     fn follow(&self, device: &Device, delay: Duration) {
-        let mut due = lock(&self.lift_due);
-        *due = if device.lift_pending() {
-            due.or_else(|| Some(self.target.clock().now() + delay + LIFT))
+        let now = self.target.clock().now();
+        let mut keyboard = lock(&self.keyboard_due);
+        *keyboard = device
+            .keyboard_coming()
+            .and_then(|after| keyboard.or(Some(now + delay + after)));
+        let mut lift = lock(&self.lift_due);
+        *lift = if device.lift_pending() {
+            lift.or(Some(now + delay + LIFT))
         } else {
             None
         };
@@ -436,6 +463,7 @@ pub(crate) fn attach(
         stop,
         fling,
         typing,
+        keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
     });
     shared.show(&lock(&shared.device), Change::Content);
