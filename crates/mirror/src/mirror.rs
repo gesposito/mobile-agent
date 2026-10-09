@@ -995,7 +995,10 @@ impl Mirror {
     /// Waits until an element matching `selector` meets `condition`,
     /// re-evaluating whenever the target reports something or a re-read
     /// falls due, and fails at `timeout` with a summary of the screen.
-    /// Only elements on screen and not covered match.
+    /// Only elements on screen and not covered match. A condition that
+    /// holds in the replica answers at once, without a read that is due,
+    /// while the replica is current by the mirror's own rules: read since
+    /// the last window change, event naming a window and injected input.
     pub fn wait(
         &mut self,
         selector: &Selector,
@@ -1004,8 +1007,22 @@ impl Mirror {
     ) -> Result<WaitOutcome, MirrorError> {
         let start = self.now();
         let deadline = start + timeout;
+        self.drain();
+        // Whether the next look takes the reads that are due first: the
+        // first one does not when a read is due of a replica that is
+        // current, so a condition that holds in it answers without that
+        // read (rn-app-fixes, design D36), which the next pump takes. With
+        // nothing due, reading first reads nothing.
+        let now = self.now();
+        let mut read = !(self.replica.current()
+            && self
+                .replica
+                .next_due(now, &self.config)
+                .is_some_and(|due| due <= now));
         loop {
-            self.pump()?;
+            if read {
+                self.pump()?;
+            }
             let now = self.now();
             let found = self.first_match(selector, condition == Condition::Enabled);
             let holds = match condition {
@@ -1017,6 +1034,10 @@ impl Mirror {
                     elapsed: now - start,
                     element: found,
                 });
+            }
+            if !read {
+                read = true;
+                continue;
             }
             if now >= deadline {
                 let summary = self.summary()?;

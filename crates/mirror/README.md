@@ -448,7 +448,17 @@ the reasons in this order, each with advice:
   sleeping on the event stream in between; selectors match text in the name
   or value, the identifier, the role and a ref, among elements on screen and
   not covered. A timeout fails with `wait_timeout` and a summary of an
-  interactive snapshot.
+  interactive snapshot. Its first look takes in what arrived and leaves a
+  read that is due for later while the replica is current by the mirror's
+  own rules: no read of every window due (before the first read, after a
+  resync or a window change), no window an event named or input went to
+  since its read. A condition that holds then answers at once, without the
+  poll or the re-read after frames or text that is due, which the next
+  pump takes (rn-app-fixes, design D36): in the smoke test a wait paid 43
+  to 473 ms for that read, 380 ms at the median. Otherwise, and once it
+  does not hold, the wait reads first as before; it never answers from a
+  replica that has not been read, where nothing would match and every
+  disappearance would hold, nor from the screen before a tap.
 - `diff` matches elements by identity and lists added, removed and changed
   elements with the changed fields; bounds are not compared.
 - `delta_snapshot` follows agent-browser's `--delta`: revisions count from 1;

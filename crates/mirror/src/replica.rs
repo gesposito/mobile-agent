@@ -530,6 +530,22 @@ impl Replica {
         })
     }
 
+    /// Whether the replica shows the screen as of what the target reported
+    /// and the mirror did, by its own rules: no read of every window is due
+    /// (before the first read, after a resync or a window change), no event
+    /// named a window since its read, and no input went to a window that
+    /// sends no change events since its read, which the mirror reads again
+    /// when the tree is next needed. A read due for another reason, a poll
+    /// or a re-read after frames or text, refreshes a replica that is
+    /// current.
+    pub fn current(&self) -> bool {
+        self.need_full.is_none()
+            && self
+                .windows
+                .iter()
+                .all(|window| !window.dirty && !window.action_pending)
+    }
+
     /// The read due at `now`, if any.
     pub fn due_read(&self, now: Instant, config: &MirrorConfig) -> Option<ReadRequest> {
         if let Some(reason) = self.need_full {
