@@ -21,8 +21,65 @@ pub struct Bundle {
 /// its provisioning profile (`embedded.mobileprovision`). Fails with the
 /// reason when it cannot.
 pub fn inspect(app: &Path) -> Result<Bundle, String> {
-    let _ = app;
-    todo!()
+    if !app.exists() {
+        return Err("there is no such bundle".to_owned());
+    }
+    if !app.is_dir() {
+        return Err(
+            "it is not a .app bundle: pass the application directory built for a device".to_owned(),
+        );
+    }
+    let info: plist::Dictionary = plist::from_file(app.join("Info.plist"))
+        .map_err(|error| format!("its Info.plist cannot be read: {error}"))?;
+    let text = |key: &str| {
+        info.get(key)
+            .and_then(plist::Value::as_string)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("its Info.plist names no {key}"))
+    };
+    let bundle_id = text("CFBundleIdentifier")?;
+    let executable = text("CFBundleExecutable")?;
+    let platforms: Vec<&str> = info
+        .get("CFBundleSupportedPlatforms")
+        .and_then(plist::Value::as_array)
+        .map(|platforms| {
+            platforms
+                .iter()
+                .filter_map(plist::Value::as_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !platforms.is_empty() && !platforms.contains(&"iPhoneOS") {
+        return Err(format!(
+            "it is built for {}, not a device: build it with -destination generic/platform=iOS \
+             and the team's signing",
+            if platforms.contains(&"iPhoneSimulator") {
+                "the Simulator".to_owned()
+            } else {
+                platforms.join(", ")
+            }
+        ));
+    }
+    if !app.join(&executable).is_file() {
+        return Err(format!("it lacks its executable, {executable}"));
+    }
+    if !app.join("_CodeSignature").join("CodeResources").is_file() {
+        return Err(
+            "it is not signed: sign it with an Apple Development identity of the team".to_owned(),
+        );
+    }
+    if !app.join("embedded.mobileprovision").is_file() {
+        return Err(
+            "it has no embedded provisioning profile, which a device needs to run a \
+             development-signed app"
+                .to_owned(),
+        );
+    }
+    Ok(Bundle {
+        bundle_id,
+        executable,
+    })
 }
 
 #[cfg(test)]
