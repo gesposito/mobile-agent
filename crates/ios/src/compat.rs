@@ -61,6 +61,7 @@ pub fn call_sites() -> Vec<CallSite> {
     const DISCOVERY: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/discovery.rs";
     const TUNNEL: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/tunnel.rs";
     const MOUNT: &str = "iOS 26.6.2, Xcode 27.0: not exercised, the image was mounted in S9, S10 and tests/tunnel.rs; S10's personalized mount through idevice never returned, though the image was mounted by then";
+    const LIFECYCLE: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 (Settings) and tests/lifecycle.rs (the SwiftUI fixture)";
     let site = |call, service, validated_on, note| CallSite {
         call,
         service,
@@ -90,7 +91,7 @@ pub fn call_sites() -> Vec<CallSite> {
             "GetValue PasswordProtected",
             "lockdownd",
             DISCOVERY,
-            "follows the lock; CoreDevice's com.apple.coredevice.feature.getlockstate is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked",
+            "follows the lock and is read before every launch, on a session kept for it; CoreDevice's com.apple.coredevice.feature.getlockstate is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked",
         ),
         site(
             "CopyDevices",
@@ -127,6 +128,36 @@ pub fn call_sites() -> Vec<CallSite> {
             "CoreDevice 642.16 on the host",
             MOUNT,
             "the fallback within 120 s, a process of its own; it mounts the Cryptex1 form for a device the build manifest does not name",
+        ),
+        site(
+            "_requestChannelWithCode:identifier:",
+            "com.apple.instruments.dtservicehub (DVT)",
+            LIFECYCLE,
+            "each channel on a DVT connection of its own, kept for the target's lifetime",
+        ),
+        site(
+            "launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options: with KillExisting",
+            "DVT's com.apple.instruments.server.services.processcontrol",
+            LIFECYCLE,
+            "written by hand, since idevice 0.1.68's launch_app drops the device's reason for a refusal; the NSError is read from the reply's archive",
+        ),
+        site(
+            "sendSignal:toPid: with SIGKILL and the pid archived",
+            "DVT's com.apple.instruments.server.services.processcontrol",
+            LIFECYCLE,
+            "idevice 0.1.68's kill_app sends killPid: with the pid as a primitive integer, which left the app running and dropped every DVT connection on iOS 26.6.2 (S9); it is never called",
+        ),
+        site(
+            "runningProcesses, isRunningPid:",
+            "DVT's com.apple.instruments.server.services.deviceinfo",
+            LIFECYCLE,
+            "application processes carry bundleIdentifier on iOS 26.6.2; the list of about 580 processes takes 480 to 710 ms, so a terminated pid is waited for with isRunningPid:",
+        ),
+        site(
+            "AFC upload to PublicStaging; installation_proxy Upgrade and Lookup",
+            "com.apple.afc and com.apple.mobile.installation_proxy (lockdown)",
+            LIFECYCLE,
+            "through usbmuxd rather than the tunnel, whose stack sends one segment at a time",
         ),
     ]
 }
