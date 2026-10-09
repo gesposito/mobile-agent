@@ -532,6 +532,16 @@ impl Kit {
         self.group(rect).id(id).desc(label)
     }
 
+    /// A toolbar, which the mirror takes for a bar drawn over what lies
+    /// under it.
+    pub fn toolbar(self, id: &str, rect: [f64; 4]) -> El {
+        match self.platform {
+            Platform::Android => El::new("androidx.appcompat.widget.Toolbar", rect),
+            Platform::Ios => El::new("XCUIElementTypeToolbar", rect),
+        }
+        .id(id)
+    }
+
     /// A text that shows `text`, or nothing.
     pub fn text(self, text: Option<&str>, rect: [f64; 4]) -> El {
         let el = match self.platform {

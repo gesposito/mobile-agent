@@ -2465,6 +2465,45 @@ mod tests {
         assert_eq!(taps(&sent).last(), Some(&Point::new(201.0, 549.0)));
     }
 
+    /// Designs D31 and D32: a footer listed after a button that lies wholly
+    /// under it is drawn over the button, which is also 0% in view under the
+    /// footer, a bar. A click on the button by the ref an earlier snapshot
+    /// gave it fails with `element_covered`, naming the accept button a tap
+    /// there would land on, without reading the windows again, which is for
+    /// bounds out of date, and without a tap.
+    #[test]
+    fn a_click_on_a_button_a_footer_is_drawn_over_fails_covered_without_a_read_or_a_tap() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
+        let terms = ref_named(&mut target, "Placeholder terms");
+        click_on(&mut target, "#placeholder-hint").unwrap();
+        ref_named(&mut target, "Placeholder accept");
+        let tapped = taps(&sent).len();
+        let changed = target.mirror.timestamps().last_tree_change;
+        let failure = click_on(&mut target, &terms).expect_err(&format!(
+            "the footer covers the terms button; taps {:?}",
+            taps(&sent)
+        ));
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
+        assert!(
+            failure.message.contains("\"Placeholder accept\""),
+            "the message names what a tap there would land on: {}",
+            failure.message
+        );
+        assert_eq!(
+            taps(&sent).len(),
+            tapped,
+            "nothing tapped: {:?}",
+            taps(&sent)
+        );
+        assert_eq!(
+            target.mirror.timestamps().last_tree_change,
+            changed,
+            "the windows were not read again"
+        );
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Hint shown");
+    }
+
     /// Design D32: `click` makes no stroke; a row of a list the keyboard
     /// covers all of fails the click with `element_offscreen`, which names
     /// `scroll --until`, and `scroll --until` brings the row in with one

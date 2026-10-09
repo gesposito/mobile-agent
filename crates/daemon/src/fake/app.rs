@@ -248,6 +248,8 @@ struct Forms {
     /// Whether the layout has moved the submit button above the keyboard,
     /// which it does some time after the keyboard came up.
     lifted: bool,
+    /// Whether the footer shows, which the hint brings up.
+    footer: bool,
 }
 
 impl Forms {
@@ -258,6 +260,7 @@ impl Forms {
             focus: None,
             status: "Not submitted".to_owned(),
             lifted: false,
+            footer: false,
         }
     }
 
@@ -291,7 +294,12 @@ impl Forms {
                 self.focus = None;
             }
             Some("placeholder-help") => self.status = "Help shown".to_owned(),
-            Some("placeholder-hint") => self.status = "Hint shown".to_owned(),
+            Some("placeholder-hint") => {
+                self.status = "Hint shown".to_owned();
+                self.footer = true;
+            }
+            Some("placeholder-accept") => self.status = "Accepted".to_owned(),
+            Some("placeholder-terms") => self.status = "Terms shown".to_owned(),
             _ => self.focus = None,
         }
         if self.focus.is_none() {
@@ -1124,8 +1132,11 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windo
 /// that the keyboard, once up, covers all but its top 14 points of; the
 /// submit button low on the screen, which the layout moves above the
 /// keyboard some time after the keyboard came up, as React Native moves a
-/// view out of the keyboard's way; and a help button at the bottom, which
-/// the keyboard covers.
+/// view out of the keyboard's way; a help button, which the keyboard
+/// covers; a terms button at the bottom; and, once the hint brings it up, a
+/// footer listed after the terms button and drawn over it, a toolbar
+/// holding an accept button, as a fixed footer is drawn over what scrolls
+/// under it.
 fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let (width, height) = (kit.width(), kit.height());
     let keyboard = kit.keyboard_top();
@@ -1145,7 +1156,15 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
     } else {
         height - 174.0
     };
-    vec![
+    let footer = forms.footer.then(|| {
+        kit.toolbar("placeholder-footer", [0.0, height - 60.0, width, height])
+            .child(kit.button(
+                "placeholder-accept",
+                "Placeholder accept",
+                [16.0, height - 54.0, width - 16.0, height - 6.0],
+            ))
+    });
+    let mut content = vec![
         kit.heading(
             "placeholder-title",
             "Placeholder form",
@@ -1166,7 +1185,14 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         kit.button("placeholder-hint", "Placeholder hint", row(keyboard - 14.0)),
         kit.button("placeholder-submit", "Placeholder submit", row(submit)),
         kit.button("placeholder-help", "Placeholder help", row(height - 114.0)),
-    ]
+        kit.button(
+            "placeholder-terms",
+            "Placeholder terms",
+            [16.0, height - 52.0, width - 16.0, height - 8.0],
+        ),
+    ];
+    content.extend(footer);
+    content
 }
 
 fn tab_content(kit: Kit, fixture: &Fixture) -> Vec<El> {
