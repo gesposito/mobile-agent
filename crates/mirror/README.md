@@ -17,7 +17,7 @@ src/
                 timestamps, note_window_change, visibility, covered_by, scroll_viewport, uncovered
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
-  view.rs       roles, names, visibility, modal cutting, scroll hints
+  view.rs       roles, names, visibility, what modals and views drawn over others cut, scroll hints
   visibility.rs how much of an element is in view: its visible bounds, share and cut edge; the
                 visible bounds of the scroll container under a point; what of an area the
                 system and keyboard windows above it leave a stroke
@@ -271,6 +271,34 @@ also counts).
   hint under the tab bar drawn over the list's bottom, which hides only
   what lies wholly under it. Acting on a covered element names the view by
   its role and name, or as an `overlay` when it is a plain container.
+- On iOS the order is what tells (rn-app-fixes, design D31): XCTest lists a
+  view's subviews in the order UIKit draws them and reports no occlusion,
+  so in a tree from XCTest's snapshot (a window rooted at an
+  `XCUIElementType` class, from a backend that is not a fallback, since the
+  translator flattens the tree into a list in another order) a node listed
+  after a sibling it overlaps cuts what the sibling holds within its
+  bounds, under the conditions of `on_top`: it shows something, only nodes
+  with an area are judged, and the walk enters no node outside its bounds,
+  so what a scroll container clips stays in the container's hint. The
+  shapes verified are those of the first smoke test of a production React
+  Native app on an iOS 26 Simulator, as synthetic fixtures: a consent
+  screen's footer over the heading scrolled inside its Accept and continue
+  button, a create screen's floating button over a list's last row, a
+  feed's sticky header over the post scrolled under it; and Bluesky's
+  typeahead, listed after the Explore page it is drawn over, which the
+  order covers without its modal flag. Bars are spared: XCTest lists a
+  navigation bar before the content its controller draws it over, which
+  runs under it (the SwiftUI fixture's List tab), and `visibility` already
+  cuts every bar out of what lies beside it; a tab bar listed after a list
+  covers the rows wholly under it, as on Android. The risk is 10.28's: a
+  later sibling transparent where it spans an earlier one hides it as if
+  drawn, and nothing in the tree tells; the smoke test's and Bluesky's
+  screens showed none, and a screen that does is recorded here and the
+  rule gated further. Acting on what a view drawn over it covers names the
+  node a tap there would land on, the innermost one of the view that holds
+  the element's bounds and shows something itself, else the view, and
+  advises bringing the element out from under it rather than acting on
+  the cover: the smoke test's tap on that heading accepted the consent.
 - Scroll hints come from actionable nodes outside a container's viewport when
   the read has them, and from the container's scroll semantics otherwise
   (Compose reports only the nodes in the viewport): a range with a position
@@ -428,7 +456,7 @@ the reasons in this order, each with advice:
 |---|:-:|---|
 | `stale_ref` | no | the ref's element is gone, or the replica was rebuilt after it was issued; take a new snapshot |
 | `unknown_ref` | no | not a ref this mirror issued |
-| `element_covered` | no | a modal covers the ref's element |
+| `element_covered` | no | a modal, or a view drawn over it, covers the ref's element |
 | `element_offscreen` | no | the ref's element is scrolled out of view |
 | `wait_timeout` | yes | the condition did not hold in time; the error carries the screen |
 | `no_frame` | yes | no frame source, or no frame yet |
@@ -574,7 +602,7 @@ cargo test -p mirror
 | | (task 7.12: labelled controls without traits) | `controls::labelled_controls_without_traits_on_the_hosting_provider_sheet_get_refs`, `controls::language_rows_get_refs_and_those_below_the_fold_are_hinted`, `controls::a_labelled_control_under_an_alert_is_covered`, `controls::inside_a_clickable_ancestor_such_controls_name_it_and_get_no_ref`, `controls::identical_labelled_controls_collide`, `controls::nodes_with_more_than_static_text_below_them_or_no_label_are_no_such_controls`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs` |
 | | Heading under a fixed footer on iOS | `interactive::a_footer_drawn_after_a_heading_on_ios_hides_it`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
 | | Card under a sticky header | `interactive::a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
-| | (rn-app-fixes 1.1: a floating button over a list's last row) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view` |
+| | (rn-app-fixes 1.1: a floating button over a list's last row; bars spared, a tab bar covering what lies wholly under it; overlapping siblings in any order) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, and the unit tests `view::tests::*` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |

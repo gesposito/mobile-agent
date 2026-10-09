@@ -268,10 +268,12 @@ fn a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full() {
 #[test]
 fn delta_ref_changes_follow_agent_browser_ops() {
     let screen = Screen::load("grid");
+    // The new cell takes cell 3's place; listed after cell 4, at cell 4's
+    // bounds it would be drawn over it.
     let swapped = screen.patched(json!([
         {"remove": "cell-3"},
         {"insert_before": "cell-5", "node":
-            {"class": "XCUIElementTypeButton", "id": "cell-new", "desc": "New cell", "bounds": [61, 90, 81, 118]}}
+            {"class": "XCUIElementTypeButton", "id": "cell-new", "desc": "New cell", "bounds": [41, 90, 61, 118]}}
     ]));
     let target = FakeTarget::new(screen.read());
     target.at(ms(500), Step::Show(swapped.read()));

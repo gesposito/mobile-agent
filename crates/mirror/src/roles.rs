@@ -11,7 +11,9 @@ use protocol::snapshot::NodeFlags;
 
 use crate::snapshot::Role;
 
-const XCUI_PREFIX: &str = "XCUIElementType";
+/// The prefix of the class of every node the Simulator driver names by its
+/// `XCUIElementType`.
+pub(crate) const XCUI_PREFIX: &str = "XCUIElementType";
 
 /// The role a class names on its own, if any.
 pub(crate) fn class_role(class: &str) -> Option<Role> {

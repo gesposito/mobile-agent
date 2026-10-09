@@ -404,25 +404,27 @@ fn a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it() {
     );
 }
 
-/// The Bluesky typeahead fixture with nothing marked modal.
-fn unmarked(screen: &Screen) -> Screen {
-    fn strip(node: &mut serde_json::Value) {
-        if let Some(flags) = node
-            .get_mut("flags")
-            .and_then(serde_json::Value::as_array_mut)
-        {
-            flags.retain(|flag| flag != "modal");
-        }
+/// The Bluesky typeahead fixture without the typeahead, the view it marks
+/// modal. Unmarked, the typeahead would still cover the Explore page:
+/// XCTest lists it after the page, which it is drawn over (rn-app-fixes,
+/// design D31).
+fn without_modal_views(screen: &Screen) -> Screen {
+    fn prune(node: &mut serde_json::Value) {
         if let Some(children) = node
             .get_mut("children")
             .and_then(serde_json::Value::as_array_mut)
         {
-            children.iter_mut().for_each(strip);
+            children.retain(|child| {
+                !child["flags"]
+                    .as_array()
+                    .is_some_and(|flags| flags.iter().any(|flag| flag == "modal"))
+            });
+            children.iter_mut().for_each(prune);
         }
     }
     let mut value = screen.0.clone();
     for window in value["windows"].as_array_mut().expect("windows") {
-        strip(&mut window["root"]);
+        prune(&mut window["root"]);
     }
     Screen(value)
 }
@@ -430,7 +432,7 @@ fn unmarked(screen: &Screen) -> Screen {
 #[test]
 fn acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code() {
     let screen = Screen::load("bluesky-typeahead");
-    let target = FakeTarget::new(unmarked(&screen).read());
+    let target = FakeTarget::new(without_modal_views(&screen).read());
     target.at(ms(100), Step::Show(screen.read()));
     target.at(ms(100), Step::Frame(1));
     target.at(ms(120), Step::Frame(2));

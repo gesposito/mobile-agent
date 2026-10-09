@@ -32,7 +32,11 @@
 //! 9. a view drawn over the siblings it overlaps (the `on_top` node flag,
 //!    which the Android agent sets from the order a parent draws its
 //!    children in) cuts what they hold within its bounds when it shows
-//!    something (task 10.28).
+//!    something (task 10.28);
+//! 10. in XCTest's tree, whose order is the order UIKit draws views in, a
+//!     node listed after a sibling it overlaps cuts what that sibling holds
+//!     within its bounds when it shows something, as `on_top` does
+//!     (rn-app-fixes, design D31).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -48,10 +52,38 @@ use crate::snapshot::{Direction, HintSource, Role, ScrollHint};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Hidden {
     No,
-    /// A modal covers it.
+    /// A modal, a view marked modal or a view drawn over it covers it.
     Covered,
     /// It belongs to a keyboard window, listed as one line.
     Keyboard,
+}
+
+/// What covers a node, by window and node index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cover {
+    /// A modal window, named by its title.
+    Window(usize),
+    /// Node `i` of window `w`, named by its role and name, or as `noun`
+    /// when it is a plain container without a name: an alert or a dialog,
+    /// or a view marked modal.
+    Node {
+        w: usize,
+        i: usize,
+        noun: &'static str,
+    },
+    /// Node `i` of the covered node's window, drawn over it.
+    DrawnOver(usize),
+}
+
+/// How errors name what covers a node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CoverName {
+    /// As `role "name"`, as `dialog "title"`, or as a plain container is
+    /// called: `modal view`, `overlay`.
+    pub by: String,
+    /// Whether a view drawn over the node covers it, rather than a modal
+    /// that an action on it would dismiss.
+    pub drawn_over: bool,
 }
 
 /// A node as snapshots present it.
@@ -79,11 +111,15 @@ pub(crate) struct Facts {
 }
 
 /// The facts of every node of every window, parallel to the replica, and
-/// what covers the screen.
+/// what covers the nodes that are covered.
 pub(crate) struct View {
     pub windows: Vec<Vec<Facts>>,
-    /// The covering modal as `role "name"`, when one cuts the screen.
-    pub modal: Option<String>,
+    /// The top-most modal, when one cuts the screen: it covers every node
+    /// it hid.
+    modal: Option<Cover>,
+    /// What covers each node that a view marked modal or a view drawn over
+    /// it hid: window, node, cover.
+    covers: Vec<(usize, usize, Cover)>,
 }
 
 impl View {
@@ -93,13 +129,73 @@ impl View {
             .iter()
             .map(|w| window_facts(w, replica.scale))
             .collect();
+        let mut covers = Vec::new();
         let modal = cut(replica, &mut windows);
-        let view_modal = cover_by_modal_views(replica, &mut windows);
-        let drawn_over = cover_by_views_on_top(replica, &mut windows);
+        cover_by_modal_views(replica, &mut windows, &mut covers);
+        cover_by_views_on_top(replica, &mut windows, &mut covers);
+        if drawn_in_order(replica) {
+            cover_by_later_siblings(replica, &mut windows, &mut covers);
+        }
         View {
             windows,
-            modal: modal.or(view_modal).or(drawn_over),
+            modal,
+            covers,
         }
+    }
+
+    /// How errors name what covers node `i` of window `w`, if something
+    /// does. A view drawn over it is named after the innermost node of it
+    /// that holds the covered node's bounds and shows something itself,
+    /// where a tap on the covered node would land, else after the view.
+    pub fn cover(&self, replica: &Replica, w: usize, i: usize) -> Option<CoverName> {
+        if self.windows[w][i].hidden != Hidden::Covered {
+            return None;
+        }
+        let cover = self
+            .covers
+            .iter()
+            .find(|&&(cw, ci, _)| (cw, ci) == (w, i))
+            .map(|&(_, _, cover)| cover)
+            .or(self.modal);
+        Some(match cover {
+            Some(Cover::Window(m)) => CoverName {
+                by: format!(
+                    "dialog {:?}",
+                    replica.windows[m].title.as_deref().unwrap_or_default()
+                ),
+                drawn_over: false,
+            },
+            Some(Cover::Node { w, i, noun }) => CoverName {
+                by: cover_label(&self.windows[w][i], noun),
+                drawn_over: false,
+            },
+            Some(Cover::DrawnOver(s)) => {
+                let lies_under = holder(
+                    &replica.windows[w],
+                    &self.windows[w],
+                    s,
+                    &self.windows[w][i].rect,
+                    pixel(replica),
+                );
+                CoverName {
+                    by: cover_label(&self.windows[w][lies_under], "overlay"),
+                    drawn_over: true,
+                }
+            }
+            None => CoverName {
+                by: "modal".to_owned(),
+                drawn_over: false,
+            },
+        })
+    }
+}
+
+/// One physical pixel in points: bounds within it of each other meet.
+fn pixel(replica: &Replica) -> f64 {
+    if replica.scale > 0.0 {
+        1.0 / replica.scale
+    } else {
+        1.0
     }
 }
 
@@ -400,16 +496,15 @@ fn untraited_controls(window: &Win, facts: &mut [Facts]) {
     }
 }
 
-/// Finds the top-most modal and hides what it covers; returns its label.
-fn cut(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
+/// Finds the top-most modal and hides what it covers; returns it.
+fn cut(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<Cover> {
     for (w, window) in replica.windows.iter().enumerate() {
         if window.kind == WindowType::INPUT_METHOD {
             continue;
         }
         if window.modal {
             cover_below(replica, facts, w);
-            let title = window.title.as_deref().unwrap_or_default();
-            return Some(format!("dialog {title:?}"));
+            return Some(Cover::Window(w));
         }
         let modal = (0..window.nodes.len())
             .rev()
@@ -432,11 +527,12 @@ fn cut(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
                 }
             }
             cover_below(replica, facts, w);
-            let f = &facts[w][m];
-            return Some(if f.name.is_empty() {
-                f.role.to_string()
-            } else {
-                format!("{} {:?}", f.role, f.name)
+            // An alert or a dialog is no plain container: it is named by
+            // its role.
+            return Some(Cover::Node {
+                w,
+                i: m,
+                noun: "modal",
             });
         }
     }
@@ -463,15 +559,13 @@ fn cover_below(replica: &Replica, facts: &mut [Vec<Facts>], w: usize) {
 /// Bluesky's header does, a sibling of its typeahead only because React
 /// Native flattens the views between them. A node is judged by its own
 /// bounds, so a container that reaches outside the view stays while what it
-/// holds inside is hidden. Returns the label of the first such view that
-/// hid anything.
-fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
-    let slack = if replica.scale > 0.0 {
-        1.0 / replica.scale
-    } else {
-        1.0
-    };
-    let mut label = None;
+/// holds inside is hidden. Records the view as the cover of what it hid.
+fn cover_by_modal_views(
+    replica: &Replica,
+    facts: &mut [Vec<Facts>],
+    covers: &mut Vec<(usize, usize, Cover)>,
+) {
+    let slack = pixel(replica);
     for (w, window) in replica.windows.iter().enumerate() {
         if window.kind == WindowType::INPUT_METHOD {
             continue;
@@ -486,7 +580,11 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<S
                 continue;
             };
             let area = f.rect;
-            let mut hid = false;
+            let cover = Cover::Node {
+                w,
+                i: m,
+                noun: "modal view",
+            };
             let mut stack: Vec<usize> = window.nodes[parent]
                 .children
                 .iter()
@@ -497,16 +595,12 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<S
                 let covered = &mut facts[w][d];
                 if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
                     covered.hidden = Hidden::Covered;
-                    hid = true;
+                    covers.push((w, d, cover));
                 }
                 stack.extend(window.nodes[d].children.iter().copied());
             }
-            if hid && label.is_none() {
-                label = Some(cover_label(&facts[w][m], "modal view"));
-            }
         }
     }
-    label
 }
 
 /// Hides what each view drawn over its siblings covers in its window (a node
@@ -525,14 +619,14 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<S
 /// only when it has an area, since Android clips a node's bounds to its
 /// ancestors' and leaves one scrolled out of its list with none, so that the
 /// rows below a list keep counting in its hint under a tab bar drawn over
-/// its bottom. Returns the label of the first such view that hid anything.
-fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<String> {
-    let slack = if replica.scale > 0.0 {
-        1.0 / replica.scale
-    } else {
-        1.0
-    };
-    let mut label = None;
+/// its bottom. Records the view as the cover of what it hid.
+fn cover_by_views_on_top(
+    replica: &Replica,
+    facts: &mut [Vec<Facts>],
+    covers: &mut Vec<(usize, usize, Cover)>,
+) {
+    let slack = pixel(replica);
+    let mut stack = Vec::new();
     for (w, window) in replica.windows.iter().enumerate() {
         let on_top = |i: usize| window.nodes[i].flags.contains(NodeFlags::ON_TOP);
         if window.kind == WindowType::INPUT_METHOD || !(0..window.nodes.len()).any(on_top) {
@@ -547,34 +641,236 @@ fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>]) -> Option<
             let Some(parent) = window.nodes[s].parent else {
                 continue;
             };
-            let area = f.rect;
-            let mut hid = false;
-            let mut stack: Vec<usize> = window.nodes[parent]
-                .children
-                .iter()
-                .copied()
-                .filter(|&sibling| sibling != s)
-                .collect();
-            while let Some(d) = stack.pop() {
-                let covered = &mut facts[w][d];
-                // What a node holds lies within its bounds as Android
-                // clips them, so a node without an area in the view's
-                // bounds holds nothing there either.
-                if !covered.rect.overlaps(&area) {
+            stack.clear();
+            stack.extend(
+                window.nodes[parent]
+                    .children
+                    .iter()
+                    .copied()
+                    .filter(|&sibling| sibling != s),
+            );
+            hide_under(window, &mut facts[w], s, &mut stack, slack, false, |d| {
+                covers.push((w, d, Cover::DrawnOver(s)));
+            });
+        }
+    }
+}
+
+/// Hides the nodes on `stack` and below them that lie within the bounds of
+/// node `s` of `window`, a view drawn over them, and calls `hid` with each.
+/// What a node holds lies within its bounds as Android clips them, so the
+/// walk does not enter a node without an area in the view's bounds. iOS
+/// reports whole frames, and a node there can hold one outside its own
+/// bounds; such a node lies outside the clip of a scroll container it
+/// overflows, out of view rather than covered, and keeps counting in the
+/// container's hint. With `spare_bars` the walk leaves tab bars and
+/// toolbars alone, with what they hold.
+fn hide_under(
+    window: &Win,
+    facts: &mut [Facts],
+    s: usize,
+    stack: &mut Vec<usize>,
+    slack: f64,
+    spare_bars: bool,
+    mut hid: impl FnMut(usize),
+) {
+    let area = facts[s].rect;
+    while let Some(d) = stack.pop() {
+        let covered = &mut facts[d];
+        if !covered.rect.overlaps(&area)
+            || (spare_bars && matches!(covered.role, Role::Tablist | Role::Toolbar))
+        {
+            continue;
+        }
+        if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
+            covered.hidden = Hidden::Covered;
+            hid(d);
+        }
+        stack.extend(window.nodes[d].children.iter().copied());
+    }
+}
+
+/// Whether the order of the replica's nodes is the order they are drawn
+/// in, a later sibling over an earlier one: the tree is XCTest's, as the
+/// Simulator's reader reads it (a window's root carries an
+/// `XCUIElementType` class), which lists a view's subviews in the order
+/// UIKit draws them, and does not come from a fallback, as the
+/// translator's tree does, which flattens it into a list in another order.
+/// Android's agent lists a view group's children by where they lie and
+/// flags the one drawn over the others (`on_top`) instead.
+fn drawn_in_order(replica: &Replica) -> bool {
+    !replica.backend.as_ref().is_some_and(|b| b.fallback)
+        && replica.windows.iter().any(|window| {
+            window
+                .nodes
+                .first()
+                .is_some_and(|root| root.class.starts_with(roles::XCUI_PREFIX))
+        })
+}
+
+/// Hides, in a tree whose order is its drawing order ([`drawn_in_order`]),
+/// what each node drawn after a sibling it overlaps covers of that
+/// sibling: the sibling's nodes that lie within its bounds, when it shows
+/// something, a node on screen with a ref or a name in it or below it, as
+/// a view flagged `on_top` does on Android (task 10.28). XCTest reports no
+/// occlusion, so only the order and the bounds say that a React Native
+/// screen's fixed footer lies over the heading scrolled under it, a
+/// floating button over a list's last row, a sticky header over the post
+/// scrolled under it (rn-app-fixes, design D31). Only siblings are
+/// compared, only nodes with an area are judged, and the walk below a
+/// covered sibling follows [`hide_under`]. Bars are spared: XCTest lists a
+/// navigation bar before the content its controller draws it over, which
+/// runs under it (the SwiftUI fixture's List tab), so the order says
+/// nothing about a bar listed first; `visibility` already cuts every tab
+/// bar and toolbar out of the visible bounds of what lies beside it. A
+/// bar listed after content, as UIKit's tab bar is, covers what lies
+/// wholly under it as any later sibling does.
+///
+/// The covers are taken top-most first, parents before their children and
+/// later siblings before earlier ones, so a node two views cover is
+/// recorded under the one drawn last. Overlapping siblings are found by
+/// [`overlapping`].
+fn cover_by_later_siblings(
+    replica: &Replica,
+    facts: &mut [Vec<Facts>],
+    covers: &mut Vec<(usize, usize, Cover)>,
+) {
+    let slack = pixel(replica);
+    let mut sweep = Sweep::default();
+    let mut stack = Vec::new();
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind == WindowType::INPUT_METHOD {
+            continue;
+        }
+        let widest = window.nodes.iter().map(|n| n.children.len()).max();
+        sweep.active.reserve(widest.unwrap_or(0));
+        let mut shows: Option<Vec<bool>> = None;
+        for parent in 0..window.nodes.len() {
+            let children = &window.nodes[parent].children;
+            if children.len() < 2 {
+                continue;
+            }
+            let pairs = overlapping(&facts[w], children, &mut sweep);
+            if pairs.is_empty() {
+                continue;
+            }
+            pairs.sort_unstable_by(|x, y| y.1.cmp(&x.1).then(x.0.cmp(&y.0)));
+            let shows = shows.get_or_insert_with(|| showing(window, &facts[w]));
+            for &(earlier, later) in pairs.iter() {
+                let (e, s) = (children[earlier], children[later]);
+                let f = &facts[w][s];
+                if !shows[s] || !f.visible || f.hidden != Hidden::No {
                     continue;
                 }
-                if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
-                    covered.hidden = Hidden::Covered;
-                    hid = true;
-                }
-                stack.extend(window.nodes[d].children.iter().copied());
-            }
-            if hid && label.is_none() {
-                label = Some(cover_label(&facts[w][s], "overlay"));
+                stack.clear();
+                stack.push(e);
+                hide_under(window, &mut facts[w], s, &mut stack, slack, true, |d| {
+                    covers.push((w, d, Cover::DrawnOver(s)));
+                });
             }
         }
     }
-    label
+}
+
+/// Scratch space for [`overlapping`], kept across the parents of a view.
+#[derive(Default)]
+struct Sweep {
+    /// Positions of a parent's children in the order of their top edges,
+    /// when they do not come in it.
+    order: Vec<usize>,
+    /// The children the sweep has passed whose bottom edges it may not
+    /// have passed.
+    active: Vec<usize>,
+    /// The overlapping pairs found.
+    pairs: Vec<(usize, usize)>,
+}
+
+/// The pairs of `children`, by their positions among them, earlier first,
+/// whose bounds in `facts` overlap: a sweep over the children with an area
+/// in the order of their top edges, comparing each with those above it
+/// whose bottom edges reach below its top. Most children come in that
+/// order already, a list's rows and a grid's cells among them, and those
+/// cost a comparison or two each: a row starts below every row before it,
+/// and a cell to the right of every cell beside it.
+fn overlapping<'s>(
+    facts: &[Facts],
+    children: &[usize],
+    sweep: &'s mut Sweep,
+) -> &'s mut Vec<(usize, usize)> {
+    let Sweep {
+        order,
+        active,
+        pairs,
+    } = sweep;
+    pairs.clear();
+    active.clear();
+    let rect = |k: usize| &facts[children[k]].rect;
+    let sorted = children
+        .windows(2)
+        .all(|pair| facts[pair[0]].rect.top <= facts[pair[1]].rect.top);
+    order.clear();
+    if !sorted {
+        order.extend(0..children.len());
+        order.sort_unstable_by(|&a, &b| rect(a).top.total_cmp(&rect(b).top).then(a.cmp(&b)));
+    }
+    let mut in_place = 0..children.len();
+    let mut by_top = order.iter().copied();
+    let positions: &mut dyn Iterator<Item = usize> =
+        if sorted { &mut in_place } else { &mut by_top };
+    // The highest bottom edge and the rightmost right edge among the
+    // active children: below the one, or right of the other, nothing
+    // active reaches.
+    let (mut low, mut right) = (f64::INFINITY, f64::NEG_INFINITY);
+    for k in positions {
+        let r = rect(k);
+        if r.is_empty() {
+            continue;
+        }
+        if r.top >= low {
+            active.retain(|&a| rect(a).bottom > r.top);
+            low = active
+                .iter()
+                .map(|&a| rect(a).bottom)
+                .fold(f64::INFINITY, f64::min);
+            right = active
+                .iter()
+                .map(|&a| rect(a).right)
+                .fold(f64::NEG_INFINITY, f64::max);
+        }
+        if r.left < right {
+            pairs.extend(
+                active
+                    .iter()
+                    .filter(|&&a| rect(a).overlaps(r))
+                    .map(|&a| (a.min(k), a.max(k))),
+            );
+        }
+        active.push(k);
+        low = low.min(r.bottom);
+        right = right.max(r.right);
+    }
+    pairs
+}
+
+/// The node of `window` that a tap on a node at `covered` would land on
+/// below node `cover`, a view drawn over it: the innermost node of the
+/// view, or the one drawn last, whose bounds hold `covered`, to within
+/// `slack`, and that shows something itself, on screen with a ref or a
+/// name; else the view itself.
+fn holder(window: &Win, facts: &[Facts], cover: usize, covered: &Rect, slack: f64) -> usize {
+    let mut found = cover;
+    let mut stack = vec![cover];
+    while let Some(n) = stack.pop() {
+        let f = &facts[n];
+        if !within(covered, &f.rect, slack) {
+            continue;
+        }
+        if f.visible && (f.bears_ref || !f.name.is_empty()) && n > found {
+            found = n;
+        }
+        stack.extend(window.nodes[n].children.iter().copied());
+    }
+    found
 }
 
 /// Whether each node of `window`, or a node below it, is on screen with a
@@ -755,5 +1051,76 @@ fn slot(direction: Direction) -> usize {
         Direction::Left => 1,
         Direction::Below => 2,
         Direction::Right => 3,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plain containers at `rects`, in points.
+    fn at(rects: &[[f64; 4]]) -> Vec<Facts> {
+        rects
+            .iter()
+            .map(|&[left, top, right, bottom]| Facts {
+                role: Role::Generic,
+                name: String::new(),
+                value: None,
+                rect: Rect::new(left, top, right, bottom),
+                visible: true,
+                actionable: false,
+                checked: None,
+                bears_ref: false,
+                signature: 0,
+                absorbed: false,
+                lent: false,
+                hidden: Hidden::No,
+            })
+            .collect()
+    }
+
+    fn pairs(facts: &[Facts]) -> Vec<(usize, usize)> {
+        let children: Vec<usize> = (0..facts.len()).collect();
+        let mut found = overlapping(facts, &children, &mut Sweep::default()).clone();
+        found.sort_unstable();
+        found
+    }
+
+    #[test]
+    fn siblings_overlap_in_whatever_order_they_come_and_touching_ones_do_not() {
+        let facts = at(&[
+            [0.0, 62.0, 402.0, 874.0],
+            // A header listed after the content it overlaps, above it.
+            [0.0, 0.0, 402.0, 118.0],
+            [16.0, 126.0, 196.0, 190.0],
+            [196.0, 126.0, 386.0, 190.0],
+            [16.0, 190.0, 386.0, 254.0],
+            // Nothing without an area overlaps.
+            [100.0, 100.0, 100.0, 300.0],
+        ]);
+        assert_eq!(pairs(&facts), [(0, 1), (0, 2), (0, 3), (0, 4)]);
+    }
+
+    #[test]
+    fn the_cells_of_a_grid_and_the_rows_of_a_list_overlap_nothing() {
+        let grid: Vec<[f64; 4]> = (0..60)
+            .map(|n| {
+                let (column, row) = (f64::from(n % 20), f64::from(n / 20));
+                [
+                    1.0 + 20.0 * column,
+                    90.0 + 28.0 * row,
+                    21.0 + 20.0 * column,
+                    118.0 + 28.0 * row,
+                ]
+            })
+            .collect();
+        assert_eq!(pairs(&at(&grid)), []);
+        let mut list: Vec<[f64; 4]> = (0..10)
+            .map(|n| [0.0, 48.0 * f64::from(n), 402.0, 48.0 * f64::from(n + 1)])
+            .collect();
+        assert_eq!(pairs(&at(&list)), []);
+        // A row drawn over the two it straddles.
+        list.push([0.0, 72.0, 402.0, 120.0]);
+        assert_eq!(pairs(&at(&list)), [(1, 10), (2, 10)]);
     }
 }

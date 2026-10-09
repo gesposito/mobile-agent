@@ -18,7 +18,8 @@ pub mod code {
     pub const STALE_REF: &str = "stale_ref";
     /// The input is not a ref this mirror issued.
     pub const UNKNOWN_REF: &str = "unknown_ref";
-    /// The ref's element exists but a modal, such as an alert, covers it.
+    /// The ref's element exists but a modal, such as an alert, or a view
+    /// drawn over it, such as a fixed footer, covers it.
     pub const ELEMENT_COVERED: &str = "element_covered";
     /// The ref's element exists but lies outside the visible area.
     pub const ELEMENT_OFFSCREEN: &str = "element_offscreen";
@@ -86,8 +87,13 @@ pub enum MirrorError {
     },
     /// Not a ref this mirror issued.
     UnknownRef(String),
-    /// The ref's element is covered by a modal, named by `by`.
-    Covered { reference: Ref, by: String },
+    /// The ref's element is covered, by a modal or, when `drawn_over`, by
+    /// a view drawn over it, named by `by`.
+    Covered {
+        reference: Ref,
+        by: String,
+        drawn_over: bool,
+    },
     /// The ref's element is scrolled out of view.
     Offscreen { reference: Ref },
     /// A wait timed out; the summary shows the screen it saw last.
@@ -165,7 +171,18 @@ impl fmt::Display for MirrorError {
                 f,
                 "{input} is not a ref from this target's snapshots; take a snapshot and use the refs it prints, such as @e1"
             ),
-            MirrorError::Covered { reference, by } => write!(
+            // A tap on what a view drawn over the element holds would press
+            // it, as a heading under a consent screen's footer would accept
+            // the consent, so the advice is to move the element instead.
+            MirrorError::Covered {
+                reference,
+                by,
+                drawn_over: true,
+            } => write!(
+                f,
+                "{reference} lies under the {by}, which a tap there would land on; scroll it out from under the {by}, or close what covers it, then take a new snapshot"
+            ),
+            MirrorError::Covered { reference, by, .. } => write!(
                 f,
                 "{reference} is covered by the {by}; act on the {by} first, then take a new snapshot"
             ),

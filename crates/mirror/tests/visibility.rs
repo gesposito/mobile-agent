@@ -194,7 +194,10 @@ fn without_scroll_semantics_an_edge_is_no_cut() {
 
 /// iOS reports whole frames, and a UIKit list runs under the navigation bar
 /// and the tab bar: the bars cut its visible bounds, and a row under the
-/// tab bar is in view only as far as it shows above it.
+/// tab bar is in view only as far as it shows above it. A row wholly under
+/// the tab bar, which XCTest lists after the list, is covered by it
+/// (rn-app-fixes, design D31), the navigation bar listed before the list
+/// is no less a bar for it.
 #[test]
 fn bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share() {
     let list_rows = rows(
@@ -229,8 +232,15 @@ fn bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share() {
     assert_eq!(row.viewport, Rect::new(0.0, 62.0, 402.0, 791.0), "{row:?}");
     assert!(close(row.fraction, 41.0 / 48.0), "{row:?}");
     assert_eq!(row.cut, None, "a whole frame is no cut: {row:?}");
-    // Row 16 spans [798, 846], under the tab bar.
-    let hidden = visibility(&mut mirror, "row-16");
+    // Row 16 spans [798, 846], wholly under the tab bar: covered, and none
+    // of it in view.
+    let before = screen.patched(json!([{"remove": "tabs"}]));
+    let (_, covered, row_16) = read_then_covered(&before, &screen, 7, "row-16");
+    assert_eq!(
+        covered.covered_by(row_16).as_deref(),
+        Some("tablist \"Tab Bar\"")
+    );
+    let hidden = covered.visibility(row_16).expect("the replica holds it");
     assert_eq!(hidden.fraction, 0.0, "{hidden:?}");
 
     // A tab of the tab bar is not under its own bar.

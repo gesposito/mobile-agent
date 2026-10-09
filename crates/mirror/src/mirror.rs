@@ -545,7 +545,7 @@ impl Mirror {
     pub fn covered_by(&self, element: ElementId) -> Option<String> {
         let (w, i) = self.replica.locate(element)?;
         let view = View::build(&self.replica);
-        (view.windows[w][i].hidden == Hidden::Covered).then(|| cover_name(&view))
+        view.cover(&self.replica, w, i).map(|cover| cover.by)
     }
 
     /// The visible bounds of the scroll container that a stroke along the
@@ -630,10 +630,11 @@ impl Mirror {
         let (w, i) = self.locate_ref(reference)?;
         let view = View::build(&self.replica);
         let facts = &view.windows[w][i];
-        if facts.hidden == Hidden::Covered {
+        if let Some(cover) = view.cover(&self.replica, w, i) {
             return Err(MirrorError::Covered {
                 reference,
-                by: cover_name(&view),
+                by: cover.by,
+                drawn_over: cover.drawn_over,
             });
         }
         if !facts.visible {
@@ -1190,11 +1191,6 @@ impl Mirror {
     pub fn dump(&self) -> String {
         self.replica.dump()
     }
-}
-
-/// How errors name what covers the screen of `view`.
-fn cover_name(view: &View) -> String {
-    view.modal.clone().unwrap_or_else(|| "modal".to_owned())
 }
 
 /// An element as snapshots list it.
