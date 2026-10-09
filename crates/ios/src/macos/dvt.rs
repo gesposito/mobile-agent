@@ -11,10 +11,12 @@ use std::time::Duration;
 use idevice::ReadWrite;
 use idevice::dvt::message::{AuxValue, Message};
 use idevice::dvt::remote_server::RemoteServerClient;
-use plist::Value;
+use plist::{Dictionary, Value};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
 
+use super::host::describe;
 use crate::model::LaunchOptions;
 
 /// DVT's process control: launches and signals.
@@ -39,21 +41,53 @@ pub(crate) struct Call {
 /// environment and arguments archived, the app started running rather than
 /// suspended, and `KillExisting` as `terminate_running` asks.
 pub(crate) fn launch(bundle_id: &str, options: &LaunchOptions) -> Call {
-    let _ = (bundle_id, options);
-    todo!()
+    let environment: Dictionary = options
+        .environment
+        .iter()
+        .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+        .collect();
+    let arguments = options
+        .arguments
+        .iter()
+        .map(|argument| Value::String(argument.clone()))
+        .collect();
+    let mut launch_options = Dictionary::new();
+    launch_options.insert("StartSuspendedKey".into(), Value::Boolean(false));
+    launch_options.insert(
+        "KillExisting".into(),
+        Value::Boolean(options.terminate_running),
+    );
+    Call {
+        selector: LAUNCH,
+        args: vec![
+            AuxValue::archived_value(Value::String(String::new())),
+            AuxValue::archived_value(Value::String(bundle_id.to_owned())),
+            AuxValue::archived_value(Value::Dictionary(environment)),
+            AuxValue::archived_value(Value::Array(arguments)),
+            AuxValue::archived_value(Value::Dictionary(launch_options)),
+        ],
+    }
 }
 
 /// `sendSignal:toPid:` with `signal` and `pid` both archived as NSNumbers;
 /// its reply confirms the signal (S9: 2.9 ms at p50, the process gone from
 /// the list 22 ms after the request).
 pub(crate) fn send_signal(pid: u32, signal: i64) -> Call {
-    let _ = (pid, signal);
-    todo!()
+    Call {
+        selector: SEND_SIGNAL,
+        args: vec![
+            AuxValue::archived_value(Value::Integer(signal.into())),
+            AuxValue::archived_value(Value::Integer(i64::from(pid).into())),
+        ],
+    }
 }
 
 /// The process list.
 pub(crate) fn running_processes() -> Call {
-    todo!()
+    Call {
+        selector: RUNNING_PROCESSES,
+        args: Vec::new(),
+    }
 }
 
 /// A process in DVT's list.
@@ -69,21 +103,133 @@ pub(crate) struct Process {
 
 /// The pid a launch's reply carries, or why the device refused.
 pub(crate) fn launched_pid(reply: &Message) -> Result<u32, String> {
-    let _ = reply;
-    todo!()
+    if let Some(Value::Integer(pid)) = &reply.data {
+        return pid
+            .as_unsigned()
+            .and_then(|pid| u32::try_from(pid).ok())
+            .ok_or_else(|| format!("the reply's pid, {pid:?}, is not a pid"));
+    }
+    Err(reply
+        .raw_data
+        .as_deref()
+        .and_then(ns_error)
+        .unwrap_or_else(|| format!("the reply carried {:?}, not a pid", reply.data)))
 }
 
 /// The processes a `runningProcesses` reply lists.
 pub(crate) fn processes(reply: &Message) -> Result<Vec<Process>, String> {
-    let _ = (reply, Value::as_array);
-    todo!()
+    let entries = reply
+        .data
+        .as_ref()
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("the reply carried {:?}, not a list", reply.data))?;
+    Ok(entries
+        .iter()
+        .filter_map(Value::as_dictionary)
+        .filter_map(|entry| {
+            let pid = entry
+                .get("pid")
+                .and_then(Value::as_unsigned_integer)
+                .and_then(|pid| u32::try_from(pid).ok())?;
+            let text = |key: &str| entry.get(key).and_then(Value::as_string).map(str::to_owned);
+            Some(Process {
+                pid,
+                name: text("name").unwrap_or_default(),
+                bundle_id: text("bundleIdentifier"),
+                is_application: entry
+                    .get("isApplication")
+                    .and_then(Value::as_boolean)
+                    .unwrap_or(false),
+            })
+        })
+        .collect())
 }
 
 /// An archived `NSError`'s domain, code and description, from the archive's
 /// bytes: `idevice`'s decoder leaves its fields as unresolved references.
 pub(crate) fn ns_error(archive: &[u8]) -> Option<String> {
-    let _ = archive;
-    todo!()
+    let archive: Dictionary = plist::from_bytes(archive).ok()?;
+    let objects = archive.get("$objects")?.as_array()?;
+    let root = archive
+        .get("$top")?
+        .as_dictionary()?
+        .get("root")
+        .map(|root| resolve(objects, root, 0))?;
+    let error = root.as_dictionary()?;
+    let domain = error.get("NSDomain")?.as_string()?;
+    let code = error.get("NSCode")?.as_signed_integer()?;
+    let info = error.get("NSUserInfo").and_then(Value::as_dictionary);
+    let detail = [
+        "NSLocalizedDescription",
+        "NSDebugDescription",
+        "NSLocalizedFailureReason",
+    ]
+    .iter()
+    .find_map(|key| info?.get(*key)?.as_string());
+    Some(match detail {
+        Some(detail) => format!("{domain} {code}: {detail}"),
+        None => format!("{domain} {code}"),
+    })
+}
+
+/// `value` with an archive's references followed, `NSDictionary` and
+/// `NSArray` shapes read as dictionaries and arrays, `$null` as nothing,
+/// and other objects as their fields, at most 16 levels deep.
+fn resolve(objects: &[Value], value: &Value, depth: usize) -> Value {
+    if depth > 16 {
+        return Value::String(String::new());
+    }
+    match value {
+        Value::Uid(uid) => match usize::try_from(uid.get())
+            .ok()
+            .and_then(|index| objects.get(index))
+        {
+            Some(object) => resolve(objects, object, depth + 1),
+            None => Value::String(String::new()),
+        },
+        Value::String(text) if text == "$null" => Value::String(String::new()),
+        Value::Dictionary(fields) => {
+            let keys = fields.get("NS.keys").and_then(Value::as_array);
+            let values = fields.get("NS.objects").and_then(Value::as_array);
+            match (keys, values) {
+                (Some(keys), Some(values)) => Value::Dictionary(
+                    keys.iter()
+                        .zip(values)
+                        .filter_map(|(key, value)| {
+                            let key = resolve(objects, key, depth + 1);
+                            Some((
+                                key.as_string()?.to_owned(),
+                                resolve(objects, value, depth + 1),
+                            ))
+                        })
+                        .collect(),
+                ),
+                (None, Some(values)) => Value::Array(
+                    values
+                        .iter()
+                        .map(|value| resolve(objects, value, depth + 1))
+                        .collect(),
+                ),
+                _ => match fields.get("NS.string") {
+                    Some(text) => resolve(objects, text, depth + 1),
+                    None => Value::Dictionary(
+                        fields
+                            .iter()
+                            .filter(|(key, _)| *key != "$class")
+                            .map(|(key, value)| (key.clone(), resolve(objects, value, depth + 1)))
+                            .collect(),
+                    ),
+                },
+            }
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| resolve(objects, item, depth + 1))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 /// Why a call failed.
@@ -119,19 +265,50 @@ impl DvtChannel {
         identifier: &'static str,
         wait: Duration,
     ) -> Result<DvtChannel, String> {
-        let _ = (client, identifier, wait);
-        todo!()
+        let (requests, waiting) = mpsc::channel(8);
+        let (opened, ready) = oneshot::channel();
+        let task = tokio::spawn(serve(client, identifier, opened, waiting));
+        match timeout(wait, ready).await {
+            Ok(Ok(Ok(()))) => Ok(DvtChannel {
+                identifier,
+                requests,
+                task,
+            }),
+            Ok(Ok(Err(reason))) => Err(reason),
+            Ok(Err(_)) => Err(format!("{identifier}'s task ended before it opened")),
+            Err(_) => {
+                task.abort();
+                Err(format!("DVT did not open {identifier} within {wait:?}"))
+            }
+        }
     }
 
-    /// Sends `call` and waits up to `wait` for its reply.
+    /// Sends `call` and waits up to `wait` for its reply. A reply that does
+    /// not come ends the channel, so that it cannot answer a later call.
     pub(crate) async fn call(&self, call: Call, wait: Duration) -> Result<Message, CallError> {
-        let _ = (call, wait, &self.requests);
-        todo!()
+        let (reply, answer) = oneshot::channel();
+        if self.requests.send(Request { call, reply }).await.is_err() {
+            return Err(CallError::NotSent(format!(
+                "{}'s connection is closed",
+                self.identifier
+            )));
+        }
+        match timeout(wait, answer).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(CallError::Closed(format!(
+                "{}'s task ended",
+                self.identifier
+            ))),
+            Err(_) => {
+                self.task.abort();
+                Err(CallError::TimedOut(wait))
+            }
+        }
     }
 
     /// Whether the channel's connection still serves.
     pub(crate) fn alive(&self) -> bool {
-        todo!()
+        !self.task.is_finished() && !self.requests.is_closed()
     }
 
     pub(crate) fn identifier(&self) -> &'static str {
@@ -145,11 +322,53 @@ impl Drop for DvtChannel {
     }
 }
 
+/// The channel's task: opens the channel on the connection it owns, says
+/// so, then sends each call and waits for its reply, in order. A call that
+/// cannot be written, or a reply that cannot be read, ends it with the
+/// connection.
+async fn serve(
+    mut client: RemoteServerClient<Box<dyn ReadWrite>>,
+    identifier: &'static str,
+    opened: oneshot::Sender<Result<(), String>>,
+    mut requests: mpsc::Receiver<Request>,
+) {
+    let mut channel = match client.make_channel(identifier).await {
+        Ok(channel) => channel,
+        Err(error) => {
+            let _ = opened.send(Err(format!(
+                "DVT did not open {identifier}: {}",
+                describe(&error)
+            )));
+            return;
+        }
+    };
+    if opened.send(Ok(())).is_err() {
+        return;
+    }
+    while let Some(Request { call, reply }) = requests.recv().await {
+        let args = (!call.args.is_empty()).then_some(call.args);
+        let sent = channel
+            .call_method(Some(Value::String(call.selector.into())), args, true)
+            .await;
+        if let Err(error) = sent {
+            let _ = reply.send(Err(CallError::NotSent(describe(&error))));
+            return;
+        }
+        match channel.read_message().await {
+            Ok(message) => {
+                let _ = reply.send(Ok(message));
+            }
+            Err(error) => {
+                let _ = reply.send(Err(CallError::Closed(describe(&error))));
+                return;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-
-    use plist::Dictionary;
 
     use super::*;
     use crate::macos::fake::{Arg, FakeDevice, ns_error_archive, serve_dvt};
