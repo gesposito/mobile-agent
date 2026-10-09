@@ -102,7 +102,7 @@ contract (`crates/daemon/src/driver.rs`) and the mirror's backend
 | Daemon or mirror | This crate |
 |---|---|
 | `Driver::discover` | `Devices::devices`: a `TargetInfo` per device, its state the readiness code and its advice the readiness message |
-| `Driver::attach` | `Devices::connect`, then `Session::attach` with the runner the daemon built (`RunnerSpec`: the version, the bundle to install in its place) |
+| `Driver::attach` | `Devices::connect`, then `Session::attach` with the runner the daemon built (`RunnerSpec`: the version, the bundle to install in its place) and the way input goes (`InputChoice`, by the iOS version by default) |
 | detach, daemon stop | `Session::release` |
 | `AppControl::launch` | `Lifecycle::launch`, `relaunch` as `terminate_running` |
 | `AppControl::terminate` | `Lifecycle::terminate` |
@@ -373,8 +373,18 @@ unless a display stream runs (pymobiledevice3, `idevice`), which this
 driver does not open; iOS 26.6.2 took them with none (S11). Outside that
 range the input goes through the attached runner's synthesis (`tap`,
 `swipe` and `key` calls at device pixels, the buttons as `key` with the
-Consumer page in the high half), which group 4 provides, and without a
-runner fails as `input_unavailable`, naming the version.
+Consumer page in the high half, `agent-ios`'s README), and without a
+runner fails as `input_unavailable`, naming the version. That is
+`AttachOptions::input`'s default, `InputChoice::Auto`; a session attached
+with `InputChoice::Only(InputPath::Runner)` sends every touch, button and
+key through the runner's synthesis whatever the version, as a fallback where
+`dtuhidd` misbehaves, and one with `Only(InputPath::Hid)` through `dtuhidd`
+alone, refused as `input_unavailable` where it takes no report. The
+runner's synthesis misses D22's 150 ms: on the phone (task 4.5, functional,
+load about 10) a tap was acknowledged in 313 ms, a 600 ms press in 831 ms
+and a resting swipe of 400 px in 661 ms, which moved the list 347 px and
+stopped; the measured series is in Numbers. The runner presses home and the
+volume buttons but not the lock button, which `XCUIDevice` lacks.
 
 On the phone, in the device test's functional run (load about 6): a tap on
 the SwiftUI fixture's `row-1` was acknowledged in 84 ms, the first input

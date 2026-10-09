@@ -100,6 +100,7 @@ pub fn call_sites() -> Vec<CallSite> {
     const KEYS: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S11 (typed into Safari's address field)";
     const FRAMES: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spikes S9 and S11, and tests/frames.rs";
     const TREE: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0 (XCTest 25228), macOS 26.6.2: spike S10, task 4.4 and tests/tree.rs, in agent-ios's runner";
+    const RUNNER_INPUT: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0 (XCTest 25228), macOS 26.6.2: spike S10, task 4.5 and tests/input.rs, in agent-ios's runner";
     let site = |call, service, validated_on, note| CallSite {
         call,
         service,
@@ -282,6 +283,48 @@ pub fn call_sites() -> Vec<CallSite> {
             "the reader's attribute names with the visible frame and scroll areas, without XC_kAXXCAttributeChildren, whose array the runner's decoder refuses so that no reply arrives (timed out after 65 s in S10 and task 4.4); XC_kAXXCAttributeElementType is never returned, so the platform class is XC_kAXXCAttributeElementBaseType's (UIRemoteKeyboardWindow, _UIAlertControllerPhoneTVMacView, UIResponder for a SwiftUI element); the content an alert covers is read too; 546 nodes in 550 ms at p50, where the same request with XCTest's own 22 names took 526 ms and asking a scroll view's areas element by element 107 ms each; the Simulator reader's userTestingSnapshotForElement: is refused by the runner's sandbox (S10)",
         ),
         site(
+            "-[XCUIApplicationProcess waitForQuiescenceIncludingAnimationsIdle:isPreEvent:], -waitForQuiescenceIncludingAnimationsIdle:usingActivity:isPreEvent:, -[XCAXClient_iOS waitForQuiescenceOnAllForegroundApplicationsAsPreEvent:], each replaced by a no-op at load",
+            "XCUIAutomation in the runner",
+            RUNNER_INPUT,
+            "XCTest's idle waits before an event or a query; XCTest 25228 has no waitForQuiescenceIncludingAnimationsIdle:, the selector WebDriverAgent replaces, and the runner logs those it replaced",
+        ),
+        site(
+            "-[XCUIDevice eventSynthesizer], -synthesizeEvent:completion: with XCSynthesizedEventRecord -initWithName:interfaceOrientation:, -addPointerEventPath: and XCPointerEventPath -initForTouchAtPoint:offset:, -moveToPoint:atOffset:, -liftUpAtOffset:",
+            "testmanagerd (_XCT_synthesizeEvent:implicitConfirmationInterval:completion:), through XCTestCore in the runner",
+            RUNNER_INPUT,
+            "the fallback of dtuhidd, by the device's iOS or when the session asks for it; the completion comes about 240 ms after a 50 ms touch (S10), so a tap is acknowledged at about 280 ms and misses D22's 150 ms; a resting swipe stops the content as the host's does",
+        ),
+        site(
+            "daemon proxy _XCT_sendString:maximumFrequency:completion: at 60 characters a second",
+            "testmanagerd, through XCTestCore's daemon session in the runner",
+            RUNNER_INPUT,
+            "text typed into the element with keyboard focus, and keys of the HID Keyboard page as their US characters with shift; the harness's 36 characters in about 810 ms, whole",
+        ),
+        site(
+            "daemon proxy _XCT_setAttribute:value:element:reply: with the value attribute's number, 2006, on the focused element of -[XCUIElement snapshotWithError:]",
+            "testmanagerd, through XCTestCore's daemon session in the runner",
+            RUNNER_INPUT,
+            "text set on the element with keyboard focus, and where typing fails; the 36 characters in about 200 ms, whole; -[XCAXClient_iOS setAttribute:value:element:outError:] takes the attribute's name instead, and with the number fails as _XCT_performAccessibilityAction:onElement:withValue:reply: does, with kAXErrorIllegalArgument (S10)",
+        ),
+        site(
+            "-[XCUIDevice pressButton:] with home, volume up and volume down",
+            "XCUIAutomation in the runner",
+            RUNNER_INPUT,
+            "the hardware buttons where the runner synthesizes input; home was acknowledged after 502 ms (S10); XCUIDevice has no lock button, which dtuhidd alone presses",
+        ),
+        site(
+            "-[XCUIScreen screenshot], -PNGRepresentation",
+            "XCUIAutomation in the runner",
+            RUNNER_INPUT,
+            "the runner's screenshot, 39 ms for the SE's 750x1334 PNG; the daemon proxy's _XCT_requestScreenshotOfScreenWithID:withRect:uti:compressionQuality:withReply: is refused as a legacy request (S10); the driver's screenshots come from DVT",
+        ),
+        site(
+            "XCUICoordinate -pressForDuration:, -pressForDuration:thenDragToCoordinate:withVelocity:thenHoldForDuration: in SpringBoard's coordinate space",
+            "XCUIAutomation in the runner",
+            "iOS 26.6.2, Xcode 27.0: not exercised, since XCTest 25228 has the event synthesizer; S10 timed -[XCUICoordinate tap] at 795 ms at p95",
+            "the last resort for taps and swipes, where XCTest has no event synthesizer or no event classes",
+        ),
+        site(
             "XCAXAccessibilityAttributesForStringAttributes",
             "XCTAutomationSupport in the runner",
             TREE,
@@ -401,6 +444,13 @@ mod tests {
             "XCAXAccessibilityAttributesForStringAttributes",
             "activeApplications",
             "requestApplicationSpecifierForPID:reply:",
+            "waitForQuiescenceIncludingAnimationsIdle",
+            "eventSynthesizer",
+            "_XCT_sendString:maximumFrequency:completion:",
+            "_XCT_setAttribute:value:element:reply:",
+            "pressButton:",
+            "XCUIScreen",
+            "XCUICoordinate",
         ] {
             assert!(
                 sites
