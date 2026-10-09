@@ -333,9 +333,12 @@ kept for the target's lifetime:
   `ScreenHeight`, `ScreenScaleFactor`: 750, 1334 and 2.0 on the SE). A tap
   is a contact held 50 ms, then the release; a press holds its hold. A
   swipe reports every 16 ms along its line; a resting swipe stays at its
-  end, reporting, for 60 ms, moves one pixel on along each axis it went,
-  and lifts there, the Android `rest_ms` semantics, so the content stops
-  where the finger left it. A point off the screen is refused
+  end, reporting, for 60 ms, the Android `rest_ms`, then creeps on along
+  its line three moves of a point 16 ms apart and lifts at the last, as the
+  Simulator driver's does, so the content stops where the finger left it.
+  UIKit takes a drag's velocity from its last moves: a rest followed by one
+  pixel on, the Android shape, still flung the fixture's list 917 px for a
+  400 px stroke on the SE. A point off the screen is refused
   (`invalid_argument`) before anything is sent;
 - hardware buttons as Indigo button events on the Consumer page to
   `com.apple.coredevice.hid.indigo`, held 80 ms: home 0x40, lock 0x30,
@@ -365,7 +368,10 @@ On the phone, in the device test's functional run (load about 6): a tap on
 the SwiftUI fixture's `row-1` was acknowledged in 84 ms, the first input
 also opening the HID connection, and `detail-1` was in the runner's tree
 259 ms later; the home button was acknowledged in 86 ms and the fixture
-left the foreground. The measured series is in Numbers.
+left the foreground. The measured series is in Numbers: taps acknowledged
+in 57.1 ms at p95, every one reaching the screen, a resting swipe moving
+the list 364 px for a 400 px stroke, and volume up and down showing the
+volume HUD.
 
 ## Frames and screenshots
 
@@ -461,14 +467,38 @@ at 19:05, the guard's first check quiet:
 
 | Series | Window | Captures a second (DVT, CoreDevice) | Identical, decoded, unchanged | Frames after the first | CPU, this process | CPU, usbmuxd | Load before / after |
 |---|---:|---:|---|---:|---:|---:|---|
-| frames, still screen | 60.0 s | 19.0 (570, 570) | 1138, 2, 2 | 0 | 15.3% | 13.0% | 2.58, 2.71, 3.69 / 2.51, 2.72, 3.63 |
+| frames, still screen, debug build | 60.0 s | 19.0 (570, 570) | 1138, 2, 2 | 0 | 15.3% | 13.0% | 2.58, 2.71, 3.69 / 2.51, 2.72, 3.63 |
+| frames, still screen, release build | 60.0 s | 19.2 (575, 575) | 1148, 2, 2 | 0 | 4.0% | 7.5% | 2.92, 2.79, 2.79 / 4.43, 3.22, 2.95 |
 
-The rate passes task 3.5's 15 a second and this process's CPU its quarter
-of a core; usbmuxd, which relays the PNGs, adds 13.0%, 28.3% together. S11
+The rate passes task 3.5's 15 a second and the CPU its quarter of a core:
+in the release build, as the daemon runs, 4.0% in this process and 7.5% in
+usbmuxd, which relays the PNGs, 11.5% together (28.3% in the debug build,
+whose TCP stack is unoptimized). The release series started at 19:27 after
+one busy check; the load rose to 4.43 from other sessions by its end. S11
 measured 16.8 a second from two pollers on a busy phone, and 6.5 to 15.5%
 in its process with usbmuxd's 3.2 to 7.4% beside it.
 
-The input series (`input::input_series`): PENDING-INPUT-SERIES
+The input series (`input::input_series`, debug build) at 19:34, the
+guard's first check quiet: 20 taps after 2 warm-up taps, alternating the
+fixture's Login and List tabs, each after the screen had been still for
+400 ms, counted as reaching the screen when a frame captured after the
+request showed a change; a resting swipe up the List tab, its travel the
+best-matching shift of the rows between two screenshots; and the volume
+buttons, each pressed once.
+
+| Series | n | p50 | p95 | min | max | Load before / after |
+|---|---:|---:|---:|---:|---:|---|
+| tap, request to acknowledgement (the 50 ms hold included) | 20 | 54.5 ms | 57.1 ms | 52.6 ms | 57.8 ms | 2.13, 2.22, 2.50 / 1.97, 2.15, 2.44 |
+| tap, request to the first changed frame | 20 | 190 ms | 240 ms | | | |
+
+Every tap reached the screen, none missed. The resting swipe, 200 points
+(400 px) up over 300 ms, was acknowledged in 397 ms and moved the list
+364 px, 91% of the stroke, and stopped. Volume up and down were
+acknowledged in 86 ms each, their 80 ms hold included, and each showed the
+volume HUD in a frame captured after the press; each was pressed once, so
+the volume came back to where it was. The lock button: PENDING-LOCK.
+S11 acknowledged its taps in 53.7 ms at p95 and S10 in 53.5 ms, the same
+50 ms hold.
 
 ## Compatibility
 
@@ -503,7 +533,7 @@ range and the table below, which `ios::call_sites()` returns for `doctor`:
 | `Connect` to the runner's loopback port 27183; the device protocol's hello | usbmuxd, the runner's `AgentSession` | iOS 26.6.2, Xcode 27.0: S10, `tests/runner.rs` | the hello names `mobile-agent-ios-runner` and its version |
 | `GetValue` `ScreenWidth`, `ScreenHeight`, `ScreenScaleFactor` in `com.apple.mobile.iTunes` | lockdownd | iOS 26.6.2, Xcode 27.0: `tests/input.rs`, `tests/frames.rs` | 750, 1334 and 2.0 on the SE |
 | `send` with a 58-byte `mainTouchscreen` report (0x09, the contact count, 5, state 0xC2 touching or 0x02 lifted, x and y over 0 to 65535) to surface 257 | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | no display stream on iOS 26.6.2; gated to iOS 18 up to 27 |
-| `IndigoButtonEvent` (Consumer page; home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA; state 1 down, 2 up) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | home reaches the home screen; PENDING-BUTTONS |
+| `IndigoButtonEvent` (Consumer page; home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA; state 1 down, 2 up) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | home reaches the home screen; volume up and down show the volume HUD; lock: PENDING-LOCK |
 | `IndigoKeyboardButtonEvent` (keyboard-page usage, state) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | typed one key into Safari's address field |
 | `createService` (a virtual `mainKeyboard`), `connectedServices`, `send` with a 39-byte keyboard report, `resetGestureState`, `removeService` | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | removed after typing: a device may stay in hardware keyboard mode for two minutes (Xcode 27's notes) |
 | `takeScreenshot` | DVT's screenshot service | iOS 26.6.2, Xcode 27.0: S9, S11, `tests/frames.rs` | 8-bit PNGs, 16-bit with an ICC profile for the home screen's wallpaper (S11) |
