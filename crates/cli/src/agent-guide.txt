@@ -56,9 +56,9 @@ Acting
   element_covered names what lies over it: act on a dialog first, but
   scroll the element out from under a view drawn over it instead of
   tapping the view, which could press it (a consent footer's Accept button).
-  element_offscreen means none of it is in view, even after a fresh read:
-  close the keyboard or scroll --until it, since click never scrolls. A
-  click on an element not mostly in view taps its centre and warns.
+  element_offscreen means none of it is in view, as a click checks after a
+  fresh read: close the keyboard or scroll --until it; click never scrolls.
+  A click on an element not mostly in view taps its centre and warns.
   fill's reply says what it read back: verified: text, or length for a
   masked field, from the field's value or, with readFrom: descendants,
   from what lies inside it, as a code field's boxes; verified: false with
