@@ -1,15 +1,18 @@
 //! The device drivers end to end (task 8.8): a daemon started without fake
 //! targets registers the Simulator and Android drivers, or those
 //! `MOBILE_AGENT_DRIVERS` names, and the `mobile-agent` CLI drives the
-//! reference fixtures through them on a booted Simulator and a running
-//! emulator.
+//! reference fixtures through them on a booted Simulator, a running emulator
+//! and an iPhone attached over USB (physical-ios, task 5.1 to 5.3).
 //!
 //! The Simulator tests run only when `MOBILE_AGENT_SIM_UDID` names a booted
 //! Simulator with the SwiftUI and Expo fixtures installed, the Android tests
 //! only when `MOBILE_AGENT_ANDROID_SERIAL` names an emulator or device with
 //! the Compose fixture installed and the agent jar built
-//! (`agent-android/build.sh`); without them each test prints why it skipped
-//! and passes. For a run on the Simulator alone,
+//! (`agent-android/build.sh`), and the iPhone test only when
+//! `MOBILE_AGENT_IOS_UDID` names a ready iPhone with the SwiftUI fixture
+//! installed, `MOBILE_AGENT_IOS_TEAM` the team its runner is signed for and
+//! the runner bundle built (`agent-ios/build.sh`); without them each test
+//! prints why it skipped and passes. For a run on the Simulator alone,
 //! `MOBILE_AGENT_DRIVERS=simulator` starts the daemons without the Android
 //! driver. The tests take the devices one at a time, each with a daemon of
 //! its own on a private socket directory, and print what they measured.
@@ -29,6 +32,7 @@ use support::{Daemon, TempDir};
 
 const SIM_VAR: &str = "MOBILE_AGENT_SIM_UDID";
 const SERIAL_VAR: &str = "MOBILE_AGENT_ANDROID_SERIAL";
+const IOS_VAR: &str = "MOBILE_AGENT_IOS_UDID";
 
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
 const EXPO: &str = "dev.mobileagent.fixture.expo";
@@ -162,8 +166,14 @@ impl Env {
     }
 
     fn cli(&self, args: &[&str]) -> Run {
+        self.cli_with(args, &[])
+    }
+
+    /// Runs `args` with `vars` in the CLI's environment as well.
+    fn cli_with(&self, args: &[&str], vars: &[(&str, &str)]) -> Run {
         let mut command = Command::new(cli_bin());
         support::clean_env(&mut command);
+        command.envs(vars.iter().copied());
         command
             .args(args)
             .env("HOME", self.home.path())
@@ -998,6 +1008,172 @@ fn doctor_shows_the_xcode_compatibility_table_the_simulator_driver_fills() {
         "{}",
         human.stdout
     );
+}
+
+/// Physical-ios, tasks 5.1 to 5.3, on the phone: a daemon that registers the
+/// `ios` driver alone lists the iPhone ready, doctor shows its checks and
+/// the device's compatibility rows, and the CLI drives the SwiftUI fixture:
+/// `open` relaunched on the Login tab, `snapshot -i`, a click on the List
+/// tab, `wait --settle`, a fill of the username read back, the login
+/// submitted and its welcome waited for, a screenshot, `status` naming
+/// `dtuhidd`, the screenshots and the runner with no restart, and a
+/// shutdown that releases the runner. The fixture is left running on its
+/// Login tab.
+#[test]
+fn the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone() {
+    let test = "the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone";
+    let Some(udid) = gate(IOS_VAR, test) else {
+        return;
+    };
+    let _devices = devices_lock();
+    let dir = TempDir::new();
+    // The daemon's and the CLI's environments: the driver alone, the team,
+    // and the runner bundle when the run names one.
+    let mut vars = vec![("MOBILE_AGENT_DRIVERS".to_owned(), "ios".to_owned())];
+    for key in ["MOBILE_AGENT_IOS_TEAM", "MOBILE_AGENT_IOS_RUNNER_APP"] {
+        if let Ok(value) = std::env::var(key) {
+            vars.push((key.to_owned(), value));
+        }
+    }
+    let vars: Vec<(&str, &str)> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let mut env = Env::start_with(&vars);
+    let on = |args: &[&str]| {
+        let mut all = vec!["--json", "--device", udid.as_str()];
+        all.extend_from_slice(args);
+        env.cli_with(&all, &vars)
+    };
+    let mut times: Vec<(&str, f64)> = Vec::new();
+
+    let run = env.cli_with(&["--json", "devices"], &vars);
+    times.push(("devices", ms(run.elapsed)));
+    let listed = run.data();
+    let phone = listed["devices"]
+        .as_array()
+        .and_then(|devices| devices.iter().find(|d| d["id"] == udid.as_str()))
+        .cloned()
+        .unwrap_or_else(|| panic!("devices does not list the phone"));
+    assert_eq!(phone["class"], "ios-device", "{phone}");
+    assert_eq!(phone["platform"], "ios", "{phone}");
+    assert_eq!(phone["state"], "ready", "{phone}");
+    assert!(
+        phone["os"]
+            .as_str()
+            .is_some_and(|os| os.starts_with("iOS ")),
+        "{phone}"
+    );
+
+    let run = env.cli_with(&["--json", "doctor"], &vars);
+    times.push(("doctor", ms(run.elapsed)));
+    let doctor = run.data();
+    let check = |name: &str| {
+        doctor["checks"]
+            .as_array()
+            .and_then(|checks| checks.iter().find(|c| c["name"] == name))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {name} check"))
+    };
+    assert_eq!(
+        check("ios-devices")["status"],
+        "ok",
+        "{}",
+        check("ios-devices")
+    );
+    assert_eq!(
+        check("ios-signing")["status"],
+        "ok",
+        "{}",
+        check("ios-signing")
+    );
+    assert!(
+        doctor["compatibility"]["rows"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["feature"]
+                .as_str()
+                .is_some_and(|f| f.contains("mainTouchscreen")))),
+        "the device's call sites in the table"
+    );
+
+    let run = on(&[
+        "open",
+        SWIFTUI,
+        "--relaunch",
+        "--env",
+        "FIXTURE_INITIAL_TAB=login",
+    ]);
+    times.push(("open, attaching first", ms(run.elapsed)));
+    let opened = run.data();
+    assert_eq!(opened["settled"], true, "{opened}");
+
+    let run = on(&["snapshot", "-i"]);
+    times.push(("snapshot -i", ms(run.elapsed)));
+    let login = listing(&run.data());
+    assert!(login.contains("id=login-username,"), "{login}");
+
+    let run = on(&["click", &ref_of(&login, "tab-list")]);
+    times.push(("click on the List tab", ms(run.elapsed)));
+    let clicked = run.data();
+    assert_eq!(clicked["accepted"], true, "{clicked}");
+    assert!(
+        clicked["frameChangeMs"].as_f64().is_some(),
+        "the click saw its first frame change: {clicked}"
+    );
+
+    let run = on(&["wait", "--settle"]);
+    times.push(("wait --settle", ms(run.elapsed)));
+    let settled = run.data();
+    assert_eq!(settled["settled"], true, "{settled}");
+
+    let run = on(&["snapshot", "-i"]);
+    times.push(("snapshot -i of the List tab", ms(run.elapsed)));
+    let rows = listing(&run.data());
+    assert!(rows.contains("id=row-1,"), "the List tab is shown:\n{rows}");
+
+    let back = on(&["click", &ref_of(&rows, "tab-login")]).data();
+    assert_eq!(back["accepted"], true, "{back}");
+    let login = listing(&on(&["snapshot", "-i"]).data());
+    let run = on(&["fill", &ref_of(&login, "login-username"), "agent"]);
+    times.push(("fill of the username", ms(run.elapsed)));
+    let filled = run.data();
+    assert_eq!(filled["verified"], "text", "{filled}");
+    let login = listing(&on(&["snapshot", "-i"]).data());
+    let password = on(&["fill", &ref_of(&login, "login-password"), "hunter2"]).data();
+    assert!(password["verified"] != false, "{password}");
+    let login = listing(&on(&["snapshot", "-i"]).data());
+    let submitted = on(&["click", &ref_of(&login, "login-submit")]).data();
+    assert_eq!(submitted["accepted"], true, "{submitted}");
+    let run = on(&["wait", "--text", "Welcome, agent"]);
+    times.push(("wait --text after the submit", ms(run.elapsed)));
+    run.data();
+
+    let path = dir.path().join("screen.jpg");
+    let path_text = path.to_string_lossy().into_owned();
+    let run = on(&["screenshot", &path_text]);
+    times.push(("screenshot", ms(run.elapsed)));
+    let shot = run.data();
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("no screenshot: {e}"));
+    let size = image_size(&bytes).unwrap_or_else(|| panic!("the screenshot is no image: {shot}"));
+    assert!(size.1 > size.0, "a portrait image: {size:?}");
+
+    let status = env.cli_with(&["--json", "status"], &vars).data();
+    let target = status_of(&status, &udid);
+    let driver = &target["driver"];
+    assert_eq!(driver["input"], "dtuhidd", "{driver}");
+    assert_eq!(driver["frames"], "screenshots", "{driver}");
+    assert_eq!(driver["runner"]["state"], "ready", "{driver}");
+    assert_eq!(driver["runner"]["restarts"], 0, "{driver}");
+    assert!(
+        driver["runner"]["agent"]
+            .as_str()
+            .is_some_and(|agent| agent.starts_with("mobile-agent-ios-runner ")),
+        "{driver}"
+    );
+
+    times.push(("shutdown", ms(env.shutdown())));
+    let summary: Vec<String> = times
+        .iter()
+        .map(|(what, ms)| format!("{what} {ms:.0} ms"))
+        .collect();
+    eprintln!("iPhone: {}", summary.join("; "));
 }
 
 /// Stops the fixture apps `.1` now and when dropped.
