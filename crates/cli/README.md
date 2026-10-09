@@ -50,7 +50,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `diff snapshot` | compares the screen with this session's last snapshot |
 | `batch [--bail] [command]...` | runs commands in order |
 | `status` | reports the daemon, its targets with what each attached target's driver reports, and its sessions |
-| `doctor` | checks toolchains, the adb server, emulators and the daemon |
+| `doctor` | checks toolchains, the adb server, emulators, the iPhone's signing, runner and readiness, and the daemon |
 | `set timeout <ms>` | sets this session's default timeout |
 | `shutdown` | stops the daemon, returning once it has let go of its targets |
 | `help [agent \| <command>]` | prints help, a command's help, or the agent guide |
@@ -314,11 +314,14 @@ compatibility table. Only the daemon check fails doctor.
 | `drivers` | the daemon's registered drivers |
 | `xcode` | `xcode-select -p` and `xcodebuild -version`; macOS only |
 | `simulator-runtimes` | the available iOS runtimes in `xcrun simctl list runtimes --json` |
+| `ios-signing` | `MOBILE_AGENT_IOS_TEAM` and the valid Apple Development identities `security find-identity -v -p codesigning` lists, naming neither; a warning with the step (the team's certificate in Xcode, the variable exported) when either is missing; macOS only |
+| `ios-runner` | the runner bundle the daemon installs on a phone, as its `doctor` names it (`iosRunner`: the bundle and the version it expects), present with that version (`plutil` reads its `CFBundleShortVersionString`); a warning with `just agent-ios-build` when it is missing or of another version |
+| `ios-devices` | each iPhone the daemon's `devices` lists (class `ios-device`) in its readiness state; for a phone that is not ready, the hint carries the daemon's advice, the step `crates/ios`'s readiness states name (trust, Developer Mode, the disk image, the lock, the signing identity); a warning when no iPhone is attached |
 | `android-sdk` | `ANDROID_HOME`, `ANDROID_SDK_ROOT` or the default location, and `adb version` |
 | `adb-server` | `host:version` on `ANDROID_ADB_SERVER_PORT` or 5037 |
 | `emulator-control` | each running emulator's gRPC control endpoint in its discovery file; the `-grpc`, `-grpc-use-token` and `emu grpc` hint when it has none; a warning, with how to turn it back on, when the daemon's emulator controller setting is off |
 | `sfw`, `just` | on `PATH`, with the install commands through Socket Firewall |
-| `xcode-compatibility` | the table's rows, which the Simulator driver supplies through `Driver::compatibility` |
+| `xcode-compatibility` | the table's rows, which the Simulator driver and the physical iPhone driver supply through `Driver::compatibility`: the Simulator's components and private calls, the iPhone's supported iOS range and its call sites, each with the iOS and Xcode it was validated on |
 
 On this machine every check reports a status, and the Simulator driver
 fills the table with the host's components and every private call it
@@ -353,10 +356,14 @@ The checks of a device driver that the run's `MOBILE_AGENT_DRIVERS` leaves
 out ask the host nothing: both outputs keep them in place as skips whose
 message says they were not consulted. They are `xcode`,
 `simulator-runtimes` and `xcode-compatibility` for the Simulator's driver,
-and `android-sdk`, `adb-server` and `emulator-control` for Android's.
-doctor reads the variable as the daemon does (a daemon the CLI starts
-inherits it): comma-separated names, `ios` for `simulator`, or `none`;
-unset or blank, every check runs. With `MOBILE_AGENT_DRIVERS=simulator` no
+`ios-signing`, `ios-runner` and `ios-devices` for the physical iPhone's
+(`xcode-compatibility` runs for it too), and `android-sdk`, `adb-server` and
+`emulator-control` for Android's. doctor reads the variable as the daemon
+does (a daemon the CLI starts inherits it): comma-separated names,
+`simulator`, `ios` (physical iPhones) and `android`, or `none`; unset or
+blank, every check runs but the iPhone's, whose driver registers only when
+named (`not consulted: the physical iOS driver registers only when
+MOBILE_AGENT_DRIVERS names ios`). With `MOBILE_AGENT_DRIVERS=simulator` no
 adb runs and the adb server is not asked:
 
 ```
@@ -364,6 +371,9 @@ adb runs and the adb server is not asked:
 ✓ drivers              simulator
 ✓ xcode                Xcode 27.0 (27A266a) at /Applications/Xcode.app/Contents/Developer
 ✓ simulator-runtimes   iOS 26.5
+- ios-signing          not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the physical iOS driver
+- ios-runner           not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the physical iOS driver
+- ios-devices          not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the physical iOS driver
 - android-sdk          not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
 - adb-server           not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
 - emulator-control     not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the Android driver
@@ -375,6 +385,36 @@ adb runs and the adb server is not asked:
 In `--json` each such check reads `{"name": "adb-server", "status": "skip",
 "message": "not consulted: MOBILE_AGENT_DRIVERS=simulator leaves out the
 Android driver", "hint": null}`.
+
+With `MOBILE_AGENT_DRIVERS=ios`, the runner bundle built and the iPhone SE
+(3rd generation) attached, ready (2026-10-10; the identifier stands in for
+the phone's, and the 37 call rows are cut):
+
+```
+✓ daemon               running, pid 98802, version 0.1.0+e7d530.18dcfc48e4f67822
+✓ drivers              ios
+- xcode                not consulted: MOBILE_AGENT_DRIVERS=ios leaves out the Simulator driver
+- simulator-runtimes   not consulted: MOBILE_AGENT_DRIVERS=ios leaves out the Simulator driver
+✓ ios-signing          MOBILE_AGENT_IOS_TEAM is set, and the keychain holds 1 valid Apple Development identity; each iPhone's readiness below tells whether one is the team's
+✓ ios-runner           <workspace>/agent-ios/dist/MobileAgentRunner-Runner.app, version 0.2.0
+✓ ios-devices          <udid> (iPhone14,6, iOS 26.6.2): ready
+- android-sdk          not consulted: MOBILE_AGENT_DRIVERS=ios leaves out the Android driver
+- adb-server           not consulted: MOBILE_AGENT_DRIVERS=ios leaves out the Android driver
+- emulator-control     not consulted: MOBILE_AGENT_DRIVERS=ios leaves out the Android driver
+✓ sfw                  Socket Firewall Free, version 1.15.4
+✓ just                 just 1.58.0
+✓ xcode-compatibility  38 validated combinations, listed below
+
+Xcode compatibility:
+  iOS 26.6.2, Xcode 27.0  physical iPhones: iOS 17.4 up to but not including 27, validated on 26.6.2, through idevice 0.1.68  supported  host input through dtuhidd from iOS 18; another iOS is refused with unsupported_ios
+  iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/discovery.rs  ListDevices, ReadPairRecord, Connect (usbmuxd (/var/run/usbmuxd))  validated
+  ...
+```
+
+A phone that is not ready turns `ios-devices` into a warning whose hint
+names the step, as the daemon's `devices` gives it, such as `<udid>: it is
+locked: unlock it, and set Settings > Display & Brightness > Auto-Lock to
+Never for long runs`.
 
 ## Help
 
@@ -525,7 +565,16 @@ outputs, and
 and `doctor::the_simulator_checks_are_not_consulted_when_the_run_names_android_alone`,
 which run the command against fake tools: `xcode-select`, `xcodebuild` and
 `xcrun` alone on `PATH`, an SDK whose `adb` logs its arguments, and an adb
-server on a port of its own that counts its connections.
+server on a port of its own that counts its connections. Task 5.1 of
+physical-ios adds the physical iPhone's checks, spec `ios-device-driver`
+"Device not ready" and "Table lists the device paths", over scripted
+outputs and a scripted daemon:
+`doctor::the_signing_check_reads_the_team_and_the_development_identities`,
+`doctor::the_runner_check_finds_the_bundle_the_daemon_installs_and_its_version`,
+`doctor::each_iphone_is_listed_in_its_readiness_state_with_the_daemons_step`,
+`doctor::the_iphone_checks_need_macos_and_the_device_rows_fill_the_table`,
+and `ios` naming that driver rather than the Simulator's in
+`doctor::the_run_s_drivers_choose_which_checks_ask_the_host`.
 
 The tests start their daemons with fake targets and
 `MOBILE_AGENT_DRIVERS=none` and give every CLI run the same, so a Simulator

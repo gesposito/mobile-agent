@@ -95,7 +95,8 @@ its own beside the pollers' tasks.
 
 ## Driver contract
 
-The daemon registers the driver in task 5.1. The traits map onto its
+The daemon registers the driver as `ios` when `MOBILE_AGENT_DRIVERS` names
+it (`crates/daemon/src/devices/ios.rs`, task 5.1). The traits map onto its
 contract (`crates/daemon/src/driver.rs`) and the mirror's backend
 (`crates/mirror/src/backend.rs`) as the Simulator driver's do:
 

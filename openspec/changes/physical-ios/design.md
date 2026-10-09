@@ -183,7 +183,7 @@ crates/ios          discovery, readiness, tunnel, lifecycle, runner session, hos
 agent-ios/          the runner bundle: Rust static library and ObjC shim linked with clang -bundle into PlugIns/<Name>.xctest inside a thinned copy of XCTRunner.app, Info.plists, the build and sign script (codesign with the installed profile, no xcodebuild project), VERSION
 crates/simulator/reader/   gains a library target for the element conversion (elements.rs) both binaries share; the snapshot call stays the Simulator's
 ```
-The driver registers as `ios` in the daemon's driver list; `MOBILE_AGENT_DRIVERS=ios` runs it alone. The daemon's fake targets gain nothing: the fake already stands in for a target without events.
+The driver registers as `ios` in the daemon's driver list when `MOBILE_AGENT_DRIVERS` names it, and only then, since its listing asks the keychain for the signing identity on every listing and waits on a phone whose lockdown does not answer (task 5.1); `MOBILE_AGENT_DRIVERS=ios` runs it alone. The daemon's fake targets gain an `ios-device` stand-in: an iOS fake in the `ios-device` class whose frames are screenshots and whose status names the device's paths, listed in a readiness state when a test asks.
 
 ## Delivery process
 

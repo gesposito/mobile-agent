@@ -22,9 +22,10 @@ none (the CI jobs without the Android SDK set it), leaving a daemon that
 deploys an agent only from the jar `MOBILE_AGENT_JAR` names at run time.
 `MOBILE_AGENT_JAR` at run time takes precedence over the embedded jar, for
 development. The library holds the server, the target registry, the driver
-contract, the device drivers (the Simulator driver of `crates/simulator`
-and the Android driver of `crates/android` behind the mirror's backend
-traits) and the fake driver every test without a device runs on.
+contract, the device drivers (the Simulator driver of `crates/simulator`,
+the physical iPhone driver of `crates/ios` and the Android driver of
+`crates/android` behind the mirror's backend traits) and the fake driver
+every test without a device runs on.
 
 ## Layout
 
@@ -42,11 +43,12 @@ src/
   keys.rs       key names to Android key codes and iOS HID usages
   signals.rs    the signal a settle ended on, from the changes the mirror timed
   driver.rs     the Driver factory contract and the registration point
-  devices/      the device drivers: simulator (Simulator driver), android (Android driver)
+  devices/      the device drivers: simulator (Simulator driver), ios (physical iPhones),
+                android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          claims, controller, idle and lifecycle, over the socket against the binary;
-                bench_inputs, the same for the screen the benches time; devices, the CLI
-                against a real Simulator and emulator
+tests/          claims, controller, idle, ios_device and lifecycle, over the socket against
+                the binary; bench_inputs, the same for the screen the benches time; devices,
+                the CLI against a real Simulator, emulator and iPhone
 benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
                 Request::parse of the line the CLI sends for snapshot -i, reply_line of the
                 reply to it on the fake fixture's Big tab (500 cells), with their
@@ -75,7 +77,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 |---|---|---|
 | `--socket-dir` | `MOBILE_AGENT_SOCKET_DIR` | `$XDG_RUNTIME_DIR/mobile-agent`, else `~/.mobile-agent`, else `mobile-agent` in the temporary directory |
 | `--idle-timeout` | `MOBILE_AGENT_IDLE_TIMEOUT_MS` | `1h`; raw milliseconds or a whole number with `s`, `m` or `h`; `0` never exits |
-| `--drivers` | `MOBILE_AGENT_DRIVERS` | every device driver the host runs: `simulator` (macOS only) and `android`; none when fake targets are named. Comma-separated names, `ios` for `simulator`, or `none` |
+| `--drivers` | `MOBILE_AGENT_DRIVERS` | the device drivers the host runs by default: `simulator` (macOS only) and `android`; none when fake targets are named. Comma-separated names, `simulator`, `ios` (physical iPhones, macOS only, registered only when named) and `android`, or `none` |
 | `--emulator-controller` | `MOBILE_AGENT_EMULATOR_CONTROLLER` | `auto`: taps, swipes and frames on an Android emulator go through its gRPC controller when it answers. `off` sends them through the agent on every emulator, as on a device, with no frame stream; fake emulators then have no frame source either. Any other value is a usage error |
 | `--fake` | `MOBILE_AGENT_FAKE_TARGETS` | none |
 | `--fake-latency` | `MOBILE_AGENT_FAKE_LATENCY_MS` | `0`; how long fake targets take to show a change, in the same forms |
@@ -544,12 +546,22 @@ lock; `screenshot` takes the driver's `Capture` when there is one and
 the mirror's latest frame otherwise.
 
 `driver::registered` is the registration point. A daemon registers the
-device drivers this host runs, the Simulator driver on macOS and the
-Android driver everywhere, unless fake targets are named, which stand in
-for them (`--drivers` names drivers to register beside fakes, or `none`).
-Discovery merges every driver's targets, device drivers first; the
-Simulator driver fills `doctor`'s Xcode compatibility table through
-`Driver::compatibility`.
+device drivers this host runs by default, the Simulator driver on macOS and
+the Android driver everywhere, unless fake targets are named, which stand
+in for them (`--drivers` names drivers to register beside fakes, or
+`none`). The physical iPhone driver registers on macOS only when
+`--drivers` names `ios` (`devices::OPT_IN`): with the team exported, its
+listing runs `security` for the runner's signing identity on every
+listing, 45 ms at p50 and 53 ms at p95 with no phone attached (84 ms the
+first time), and probes each phone through lockdown, 163 ms at p50 with the
+SE attached, while a phone whose lockdown never answers holds the listing
+for the probe's 10 s timeout, the target registry waiting on it
+(2026-10-10, task 5.1, a throwaway program against a fake usbmuxd socket
+and the real one, load about 4). Discovery merges every driver's targets,
+device drivers first; the Simulator and iPhone drivers fill `doctor`'s
+Xcode compatibility table through `Driver::compatibility`, and a driver adds
+fields of its own to `doctor`'s reply through `Driver::doctor`, as the
+iPhone driver's `iosRunner`.
 
 ### The Simulator driver
 
@@ -614,6 +626,91 @@ are its lines; the JSON fields beside them are `input`, `inputReason`,
 {name, pid, path, readyMs, state, spawns}`, `framesReceived`, `frameError`
 and `unavailable {call, failure, host}`.
 
+### The physical iPhone driver
+
+`devices/ios.rs` puts the driver of `crates/ios` (design D18 to D25) behind
+the contract, as that crate's README maps its traits. It opens the driver
+on first use and lists every iPhone attached over USB, in the `ios-device`
+class, its state the readiness code: `ready`, or the first state it has not
+passed (`not_trusted`, `developer_mode_off`, `disk_image_unmounted`,
+`device_locked`, `no_signing_identity`, `unsupported_ios`), the state's
+message from `crates/ios` as the advice, which names the step. Its `os` is
+`iOS <version>` and its `model` the `ProductType`, such as `iPhone14,6`.
+Attaching connects the device (its readiness, the developer disk image,
+the CoreDevice tunnel; a phone that is not ready fails with its state's
+code), starts the runner `agent-ios` builds, of the workspace's
+`agent-ios/VERSION`, through the test manager, reads the screen's pixels
+and scale from lockdown, and subscribes to the screen:
+
+- tree: every read is the runner's snapshot of the foreground, in pixels,
+  put into points by the screen's scale (2 on the SE); `window_changed`, a
+  foreground that changed during the read, is retried for 5 s. Every
+  window sends no change events, so the mirror re-reads after input, when
+  frames change and on its poll. The verdict's backend is `ios-runner`.
+- events: frames from screenshots polled on DVT and CoreDevice, about 19 a
+  second, a frame each time a pixel below the status bar moves more than
+  two levels (design D23), its time the capture's arrival; encoded frames
+  are those the stream holds, scaled.
+- input: taps, long presses, swipes (a resting release creeps on as UIKit
+  needs), hardware buttons and keys through the disk image's `dtuhidd`
+  from the host where the device's iOS takes its reports (iOS 18 up to
+  27), else through the runner's synthesis; `MOBILE_AGENT_IOS_INPUT` set to
+  `dtuhidd` or `runner` takes one way alone, `auto` (the default) by the
+  iOS. Key codes are keyboard usages with the HID modifier byte or the
+  consumer page's Home, Power, VolumeUp and VolumeDown. Text goes through
+  the runner into the field with keyboard focus: a field a ref names is
+  tapped first, unless the latest read shows it focused, and the text waits
+  up to 1.5 s for an editable node to take the focus; `keys` types it,
+  `direct` sets the field's value, and text whose method is left to the
+  driver is typed into an empty field and set into one that holds text, so
+  it replaces what the field held, the runner setting it where typing
+  fails. The reply names the method the runner used.
+- apps: launched through DVT's process control with the launch environment
+  (`--env K=V` reaches the app as `K`); `--relaunch` ends the running
+  instance first; a running app otherwise keeps its process.
+  `app_not_found` for an app that is not installed.
+- screenshots come from DVT's screenshot channel, at the long edge asked
+  for, as JPEG.
+- status: the input path (`dtuhidd` or `runner`) and why, the last input's
+  acknowledgement, text through the runner; the frames, `screenshots` with
+  their capture rate and the count received, or why the screen could not
+  be subscribed to; the runner, its agent, state, restarts, how long its
+  hello took and the runners of a lost session its start ended; the
+  tunnel; the disk image; the runner bundle.
+- doctor: `iosRunner`, the runner bundle an attach installs (`bundle`) and
+  the version its hello must name (`version`); the compatibility table's
+  device rows, the supported range (iOS 17.4 up to but not including 27,
+  validated on 26.6.2 under Xcode 27.0) then every call site of
+  `ios::call_sites` with the iOS and Xcode it was validated on, `validated`,
+  or `supported` where it was not exercised.
+
+The runner bundle an attach installs, when the phone's runner is missing or
+says hello with another version, is `agent-ios/dist/MobileAgentRunner-Runner.app`
+in the workspace this daemon was built in, as the Android driver finds its
+jar, or the one `MOBILE_AGENT_IOS_RUNNER_APP` names, a relative path taken
+from the workspace's root; a failure about the runner while no bundle is
+built there names `just agent-ios-build`. Dropping the attachment releases
+the runner, which ends its process, and closes what the driver opened for
+the device.
+
+`status` for the SE after an `open` (2026-10-10, the identifier and the home
+directory cut):
+
+```
+input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream); text through the runner, typed or set
+frames: screenshots polled on DVT and CoreDevice, 19.8 captures a second, 11 received
+runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 765 ms after its start
+tunnel: 82 RSD services, none missing, opened in 65.5 ms, 1 open
+disk image: Personalized at /System/Developer
+runner bundle: ~/<workspace>/agent-ios/dist/MobileAgentRunner-Runner.app
+```
+
+are its lines; the JSON fields beside them are `input`, `inputReason`,
+`lastInputMs`, `frames`, `captureRate`, `framesReceived`, `frameError`,
+`runner {agent, state, restarts, handshakeRetries, replaced, leftovers,
+startedMs, lastDeath}`, `tunnel {opens, openedMs, services, missing}`,
+`diskImage {type, path}` and `runnerBundle`.
+
 ### The Android driver
 
 `devices/android.rs` lists every target the local adb server knows, in
@@ -677,8 +774,9 @@ if it still runs.
 
 `MOBILE_AGENT_FAKE_TARGETS` (or `--fake`) lists `platform[:id]` entries:
 `android` alone becomes `emulator-5554`, then `emulator-5556`; `ios` alone
-`FAKE-IOS-1`, then `FAKE-IOS-2`; an Android id not starting `emulator-` is a
-device. Each target is the mirror's scripted `FakeTarget` behind a
+`FAKE-IOS-1`, then `FAKE-IOS-2`; `ios-device` alone, a physical iPhone's
+stand-in, `FAKE-IOS-DEVICE-1`, then `FAKE-IOS-DEVICE-2`; an Android id not
+starting `emulator-` is a device. Each target is the mirror's scripted `FakeTarget` behind a
 real-time adapter, whose clock follows the system clock so waits, polls and
 settle windows take real time, and a device model:
 
@@ -735,9 +833,18 @@ on Android. The keyboard comes up with the focus; the tests' fakes can
 have it come up some time after the focus, an iOS field losing the text
 that reaches it sooner, typed or pasted, or never (`Slide`). Their states
 are `device`
-and `booted`; they have neither a capture nor a report. Emulators and
-Simulators have a frame source; Android devices have none, as design D7
-has it, so `screenshot` answers them with `no_frame`. Every change shows
+and `booted`; they have neither a capture nor a report. A fake iPhone
+(`ios-device`) is an iOS fake in the `ios-device` class, on iOS 26.6.2,
+`ready`, whose frames are the screenshots a physical iPhone's are and whose
+`status` is the physical iPhone driver's report of a phone whose runner
+said hello: its input through `dtuhidd`, its frames `screenshots` at 19 a
+second with the count delivered, the runner `mobile-agent-ios-runner` of
+`agent-ios/VERSION` with no restart. `FakeDriver::with_readiness` lists one
+in a readiness state with its advice, `crates/ios`'s message, and an
+attach to it then fails with the state's code, as the driver's does.
+Emulators, Simulators and fake iPhones have a frame source; Android devices
+have none, as design D7 has it, so `screenshot` answers them with
+`no_frame`. Every change shows
 after `--fake-latency`, together with its window event and frame; a move to
 another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
@@ -808,7 +915,15 @@ The mirror's codes pass through: `stale_ref`, `unknown_ref`,
 its window was read again (see Tap spans and settle signals). The Simulator driver's keep its
 names (`unsupported_xcode`, `target_unavailable`, `no_foreground`,
 `no_input_transport`, `framework_error` and the rest in
-`crates/simulator/src/error.rs`); the Android adapter's are:
+`crates/simulator/src/error.rs`). The physical iPhone driver's keep theirs
+too (`crates/ios/src/error.rs`): a readiness state's code for a phone that
+is not ready (`device_locked`, `developer_mode_off`, `disk_image_unmounted`,
+`not_trusted`, `no_signing_identity`, `unsupported_ios`,
+`automation_not_enabled`), `disconnected` with the cause, `runner_died`,
+`runner_start_failed`, `runner_version_mismatch`, `invalid_bundle` and the
+rest, an app that is not installed being `app_not_found`; the adapter adds
+`invalid_argument` for a `MOBILE_AGENT_IOS_INPUT` other than `auto`,
+`dtuhidd` or `runner`. The Android adapter's are:
 
 | Code | When |
 |---|---|
@@ -886,6 +1001,10 @@ Worked around here without changing `crates/mirror`:
 | (task 8.8, registration) | (device drivers, fakes) | `driver::tests::every_device_driver_the_host_runs_registers_unless_fake_targets_are_named`, `driver::tests::named_drivers_register_alone_or_beside_fake_targets`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `server::tests::the_drivers_flag_names_the_device_drivers_to_register` |
 | (task 8.8, Simulator adapter) | (listing, keys, errors, doctor table, status, display, text) | `devices::simulator::tests::*` |
 | (task 8.8, Android adapter) | (listing, readiness, display, launch, status, errors) | `devices::android::tests::*` |
+| Device discovery and readiness, spec `ios-device-driver` (task 5.1 of physical-ios) | Ready device listed; Device not ready | `devices::ios::tests::a_ready_iphone_is_listed_with_its_name_model_and_ios_version`, `devices::ios::tests::an_unready_iphone_is_listed_in_its_state_with_the_step_as_advice`, `fake::tests::ios_device_fakes_take_default_ids_and_the_ios_device_class`, `fake::tests::an_unready_fake_iphone_is_listed_in_its_state_and_refuses_an_attach`, `ios_device::devices_lists_a_fake_iphone_in_the_ios_device_class`; the CLI's `doctor::each_iphone_is_listed_in_its_readiness_state_with_the_daemons_step`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone` |
+| One resident runner per session, spec `ios-device-driver` (task 5.1) | Runner stays up (the status names the runner's agent and restarts) | `devices::ios::tests::the_status_names_the_input_path_the_frames_with_their_rate_and_the_runner`, `fake::tests::a_fake_iphone_reports_dtuhidd_screenshots_and_its_runner`, `ios_device::status_names_a_fake_iphones_input_frames_and_runner` |
+| Compatibility statement, spec `ios-device-driver` (task 5.1) | Table lists the device paths | `devices::ios::tests::the_compatibility_rows_are_the_supported_range_then_every_call_site`, `ios_device::a_daemon_with_the_ios_driver_names_its_runner_bundle_and_the_device_rows`; the CLI's `doctor::the_iphone_checks_need_macos_and_the_device_rows_fill_the_table` |
+| (task 5.1, the iPhone driver's registration and adapter) | (`ios` registered only when named, the runner bundle, the input variable, errors, keys) | `driver::tests::the_ios_driver_registers_only_when_named`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `devices::ios::tests::the_runner_bundle_is_the_built_one_or_the_one_the_variable_names`, `devices::ios::tests::the_input_variable_takes_auto_dtuhidd_or_runner`, `devices::ios::tests::driver_errors_keep_their_code_and_retryable_flag`, `devices::ios::tests::keyboard_codes_become_keys_and_consumer_codes_buttons`; the driver's screen in `crates/ios`, `macos::driver::tests::the_screen_is_the_devices_pixels_and_scale_from_lockdown` |
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
 | (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
