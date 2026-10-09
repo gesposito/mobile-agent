@@ -55,7 +55,7 @@ use mirror::backend::{
     InputAck, InputSink, NodeHandle, ReadRequest, Release, StreamItem, SystemClock, Timed,
     TreeRead, TreeSource,
 };
-use mirror::{MirrorConfig, Point};
+use mirror::{MirrorConfig, Point, SlowFrames};
 use protocol::message::{Call, Reply, Rotation, SnapshotParams, TextMethod, TextParams};
 use protocol::snapshot::{Node, NodeFlags, Snapshot};
 use serde_json::{Map, Value, json};
@@ -328,7 +328,13 @@ fn attach(driver: Arc<IosDriver>, udid: &str) -> Result<Attachment, DriverError>
             _detach: detach,
         }),
         display: Box::new(FixedScreen(Size { width, height })),
-        config: MirrorConfig::default(),
+        // The screenshots come slowly (design D23): settle waits two
+        // captures without a change and holds after input for its first
+        // changed frame, as the re-read after input does.
+        config: MirrorConfig {
+            slow_frames: Some(SlowFrames::every(CAPTURE_INTERVAL)),
+            ..MirrorConfig::default()
+        },
         capture: Some(Box::new(part())),
         report: Some(Arc::new(part())),
         input_notes: None,

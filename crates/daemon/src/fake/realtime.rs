@@ -29,12 +29,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use mirror::MirrorConfig;
 use mirror::backend::{
     Backend, BackendError, Clock, EncodeRequest, EventStream, FrameMeta, FrameSource, Input,
     InputAck, InputSink, ReadRequest, Release, StreamItem, Timed, TreeRead, TreeSource,
 };
 use mirror::testing::{FakeTarget, Step};
+use mirror::{MirrorConfig, SlowFrames};
 use protocol::event::{EventPayload, WindowChange, WindowChangeKind};
 use protocol::message::{Rotation, TextMethod};
 
@@ -141,6 +141,36 @@ struct Shared {
     lift_due: Mutex<Option<Instant>>,
     /// Frames the event stream delivered.
     delivered: AtomicU64,
+    /// For a fake iPhone, its screenshots: when the captures started and
+    /// their interval, frames showing only at captures; `None` for a
+    /// stream. Its frames off, the screenshots could not be subscribed to.
+    captures: Option<Captures>,
+}
+
+/// A fake iPhone's screenshots.
+#[derive(Clone, Copy)]
+struct Captures {
+    from: Instant,
+    every: Duration,
+    subscribed: bool,
+}
+
+impl Captures {
+    /// The capture at or after `at`.
+    fn at_or_after(self, at: Instant) -> Instant {
+        let since = at.saturating_duration_since(self.from).as_nanos();
+        let every = self.every.as_nanos().max(1);
+        let n = u32::try_from(since.div_ceil(every)).unwrap_or(u32::MAX);
+        self.from + self.every * n
+    }
+
+    /// The capture at or before `at`.
+    fn at_or_before(self, at: Instant) -> Instant {
+        let since = at.saturating_duration_since(self.from).as_nanos();
+        let every = self.every.as_nanos().max(1);
+        let n = u32::try_from(since / every).unwrap_or(u32::MAX);
+        self.from + self.every * n
+    }
 }
 
 impl Drop for Shared {
@@ -303,17 +333,26 @@ impl Shared {
         }
     }
 
-    /// The next frame, once a frame interval has passed: a transition's,
-    /// ending with the screen's final frame, or the turning spinner's.
+    /// The next frame, once a frame interval has passed, or for a fake
+    /// iPhone at its next capture: a transition's, ending with the screen's
+    /// final frame, or the turning spinner's.
     fn animate(&self, now: Instant) {
         if !self.frames {
             return;
         }
         let spinning = lock(&self.device).animating();
         let mut visual = lock(&self.visual);
-        if visual.last.is_some_and(|last| now < last + FRAME_INTERVAL) {
-            return;
-        }
+        let shown = match self.captures {
+            Some(captures) => {
+                let capture = captures.at_or_before(now);
+                if visual.last.is_some_and(|last| capture <= last) {
+                    return;
+                }
+                capture
+            }
+            None if visual.last.is_some_and(|last| now < last + FRAME_INTERVAL) => return,
+            None => now,
+        };
         let hash = match visual.transition {
             Some(transition) if now < transition.from => return,
             Some(transition) if now >= transition.until => {
@@ -330,8 +369,22 @@ impl Shared {
             }
             None => return,
         };
-        visual.last = Some(now);
+        visual.last = Some(shown);
         self.target.after(Duration::ZERO, Step::Frame(hash));
+    }
+
+    /// How long from now until the frame that shows a change `delay` from
+    /// now: then on a stream, at the next capture on a fake iPhone.
+    fn frame_delay(&self, delay: Duration) -> Duration {
+        match self.captures {
+            Some(captures) => {
+                let now = self.target.clock().now();
+                captures
+                    .at_or_after(now + delay)
+                    .saturating_duration_since(now)
+            }
+            None => delay,
+        }
     }
 
     /// Shows the device's screen after the latency: the tree, on Android a
@@ -370,6 +423,7 @@ impl Shared {
         }
         let mut visual = lock(&self.visual);
         visual.screen = hash;
+        let shown = self.frame_delay(delay);
         let first = match change {
             Change::Content | Change::Layout => {
                 visual.transition = None;
@@ -381,12 +435,15 @@ impl Shared {
                     from,
                     until: from + TRANSITION,
                 });
-                visual.last = Some(from);
+                visual.last = Some(self.target.clock().now() + shown);
                 visual.count += 1;
                 mix(hash, visual.count)
             }
         };
-        self.target.after(delay, Step::Frame(first));
+        if self.captures.is_some() {
+            visual.last = Some(self.target.clock().now() + shown);
+        }
+        self.target.after(shown, Step::Frame(first));
     }
 
     /// Starts the input session if it has not started; says how long input
@@ -463,10 +520,12 @@ impl Report for DeviceReport {
             runner: Some(runner),
             ..ios::TargetStatus::default()
         };
+        let subscribed = self.0.captures.is_some_and(|captures| captures.subscribed);
         let facts = Facts {
             ios_version: Some(ios::VALIDATED_IOS.to_owned()),
             frames: self.0.delivered.load(Ordering::Relaxed),
-            capture_rate: Some(f64::from(device::CAPTURES_A_SECOND)),
+            capture_rate: subscribed.then_some(f64::from(device::CAPTURES_A_SECOND)),
+            frame_error: (!subscribed).then(|| "the fake iPhone's screenshots are off".to_owned()),
             ..Facts::default()
         };
         device::status_report(&status, &facts)
@@ -490,7 +549,10 @@ pub(crate) fn attach(
     typing: Typing,
     keyboard: bool,
 ) -> Attachment {
-    let polled = matches!(frames, Frames::Screenshots { .. });
+    let subscribed = match frames {
+        Frames::Screenshots { subscribed } => Some(subscribed),
+        Frames::None | Frames::Stream => None,
+    };
     let frames = frames.any();
     let Timing {
         latency,
@@ -527,6 +589,11 @@ pub(crate) fn attach(
         keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
         delivered: AtomicU64::new(0),
+        captures: subscribed.map(|subscribed| Captures {
+            from: target.clock().now(),
+            every: device::CAPTURE_INTERVAL,
+            subscribed,
+        }),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -546,9 +613,13 @@ pub(crate) fn attach(
             width: kit.width(),
             height: kit.height(),
         })),
-        config: MirrorConfig::default(),
+        // A fake iPhone's frames come as slowly as a physical one's.
+        config: MirrorConfig {
+            slow_frames: subscribed.map(|_| SlowFrames::every(device::CAPTURE_INTERVAL)),
+            ..MirrorConfig::default()
+        },
         capture: None,
-        report: polled.then(|| Arc::new(DeviceReport(Arc::clone(&shared))) as Arc<dyn Report>),
+        report: subscribed.map(|_| Arc::new(DeviceReport(Arc::clone(&shared))) as Arc<dyn Report>),
         input_notes: (!activation.is_zero())
             .then(|| Arc::new(FakeSession(Arc::clone(&shared))) as Arc<dyn InputNotes>),
         input_session: (!activation.is_zero())
@@ -723,7 +794,6 @@ impl AppControl for Part {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mirror::SlowFrames;
 
     /// Task 10.23: text whose method the target may choose is typed key by
     /// key in a field's place under a typing mode that types keys, up to the
