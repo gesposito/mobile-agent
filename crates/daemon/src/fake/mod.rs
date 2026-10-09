@@ -177,7 +177,7 @@ impl FakeDriver {
             } else {
                 Platform::parse(platform).ok_or_else(|| {
                     format!(
-                        "fake target {entry:?}: the platform must be android, ios or ios-device"
+                        "fake target {entry:?}: the platform must be android or ios, or ios-device for a physical iPhone"
                     )
                 })?
             };
