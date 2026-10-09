@@ -548,6 +548,41 @@ process; the phone was unlocked by hand 33 s after the test asked.
 S11 acknowledged its taps in 53.7 ms at p95 and S10 in 53.5 ms, the same
 50 ms hold.
 
+The tree series (`tree::tree_series`, debug build) at 22:39, after the
+guard's fifth check: each Big tab read through `agent-ios`'s runner 20
+times after 2 warm-up reads, from the request to the reply.
+
+| Series | n | Nodes | p50 | p95 | min | max | Load before / after |
+|---|---:|---:|---:|---:|---:|---:|---|
+| tree, SwiftUI Big tab | 20 | 546 | 550.3 ms | 554.3 ms | 539.0 ms | 554.5 ms | 3.80, 7.18, 8.35 / 3.52, 7.01, 8.28 |
+| tree, Expo Big tab | 20 | 529 | 445.6 ms | 451.9 ms | 443.2 ms | 453.8 ms | 3.64, 6.98, 8.26 / 4.17, 6.98, 8.24 |
+
+Both pass D20's 1 s at p95; S10's `snapshotWithError:` took 476 and 527 ms
+without platform classes or scroll areas.
+
+The runner's input series (`input::runner_input_series`, debug build), the
+session asking for the runner's synthesis, run three times at 23:04, 23:07
+and 23:09: 20 taps after 2 warm-up taps alternating the fixture's Login and
+List tabs, checked by changed frames as `input_series` checks `dtuhidd`'s,
+then the harness's 36 characters typed 20 times and set 20 times into
+`login-username`, each read back.
+
+| Series | n | p50 | p95 | min | max | Load before / after |
+|---|---:|---:|---:|---:|---:|---|
+| tap through the runner, request to acknowledgement, run 1 | 20 | 292.2 ms | 300.0 ms | 287.6 ms | 302.0 ms | 3.12, 8.27, 9.35 / 2.91, 6.99, 8.74 |
+| the same, run 2 | 20 | 295.2 ms | 299.2 ms | 283.8 ms | 303.2 ms | 3.48, 6.34, 8.37 / 2.13, 5.01, 7.61 |
+| the same, run 3 | 20 | 292.2 ms | 298.4 ms | 286.5 ms | 301.1 ms | 1.66, 4.76, 7.48 / 2.73, 4.22, 6.96 |
+| tap, request to the first changed frame, runs 1 to 3 | 20 each | 203, 198, 210 ms | 272, 246, 278 ms | | | |
+| 36 characters typed, runs 1 to 3 | 20 each | 812, 810, 809 ms | 817, 813, 813 ms | | | |
+| 36 characters set, runs 1 to 3 | 20 each | 216, 216, 215 ms | 237, 225, 228 ms | | | |
+
+The runner's taps miss D22's 150 ms at p95 by about 150 ms, as S10's did at
+294 ms, which is why `dtuhidd`'s 57 ms are the default. In the first run
+3 of the 20 taps showed no changed frame within 2 s, after the guard had
+waited 8 minutes through loads of 7 to 17; the next two runs, which name the
+tab selected after such a tap, saw none in 40. Every text entry was read
+back whole, 120 of 120.
+
 ## Compatibility
 
 The driver supports iOS 17.4 up to but not including 27 and refuses other
