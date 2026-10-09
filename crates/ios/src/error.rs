@@ -61,6 +61,31 @@ pub enum Error {
         attempts: Vec<MountAttempt>,
         offline: bool,
     },
+    /// The runner app is not installed and no built bundle was given.
+    RunnerNotInstalled { target: String, bundle_id: String },
+    /// The runner said hello with another version and no built bundle was
+    /// given to replace it, or the bundle installed said hello with another
+    /// version too.
+    RunnerVersion {
+        target: String,
+        reported: String,
+        expected: String,
+    },
+    /// The test manager's session did not bring the runner to its hello;
+    /// why.
+    RunnerStart { target: String, reason: String },
+    /// The runner died again after its restart, or its restart failed.
+    RunnerDied { target: String, cause: String },
+    /// No runner session is attached to the target.
+    NotAttached { target: String },
+    /// The device's RSD handshake does not list the test manager, which the
+    /// developer disk image carries; `listed` services were.
+    TestManagerMissing { target: String, listed: usize },
+    /// The runner answered a request with an error.
+    Runner {
+        method: String,
+        error: protocol::Error,
+    },
 }
 
 impl Error {
@@ -82,13 +107,31 @@ impl Error {
             Error::AppNotInstalled { .. } => "app_not_installed",
             Error::LaunchFailed { .. } => "launch_failed",
             Error::DiskImage { .. } => Readiness::DiskImageUnmounted.code(),
+            Error::RunnerNotInstalled { .. } => "runner_not_installed",
+            Error::RunnerVersion { .. } => "runner_version_mismatch",
+            Error::RunnerStart { .. } => "runner_start_failed",
+            Error::RunnerDied { .. } => "runner_died",
+            Error::NotAttached { .. } => "not_attached",
+            Error::TestManagerMissing { .. } => Readiness::DiskImageUnmounted.code(),
+            // The protocol's own codes pass through; a code this protocol
+            // version does not define is the runner's.
+            Error::Runner { error, .. } => protocol::code::ALL
+                .iter()
+                .find(|code| **code == error.code)
+                .copied()
+                .unwrap_or("runner_error"),
         }
     }
 
     /// Whether repeating the same request can succeed without a person
-    /// changing anything: a wait that ran out.
+    /// changing anything: a wait that ran out, or a runner error it says so
+    /// of.
     pub fn retryable(&self) -> bool {
-        matches!(self, Error::Timeout { .. })
+        match self {
+            Error::Timeout { .. } => true,
+            Error::Runner { error, .. } => error.retryable,
+            _ => false,
+        }
     }
 }
 
@@ -165,6 +208,44 @@ impl fmt::Display for Error {
                     f.write_str("; no way of mounting it could be tried")?;
                 }
                 Ok(())
+            }
+            Error::RunnerNotInstalled { target, bundle_id } => write!(
+                f,
+                "the runner {bundle_id} is not installed on iOS device {target}; build agent-ios \
+                 and attach with its bundle, which the driver installs"
+            ),
+            Error::RunnerVersion {
+                target,
+                reported,
+                expected,
+            } => write!(
+                f,
+                "the runner on iOS device {target} says hello as {reported:?}, and this driver \
+                 expects {expected:?}; attach with the bundle built beside the daemon, which \
+                 the driver installs in its place"
+            ),
+            Error::RunnerStart { target, reason } => write!(
+                f,
+                "the test manager did not start the runner on iOS device {target}: {reason}"
+            ),
+            Error::RunnerDied { target, cause } => write!(
+                f,
+                "the runner on iOS device {target} died and could not be started again ({cause}); \
+                 attach again, which starts a new session"
+            ),
+            Error::NotAttached { target } => write!(
+                f,
+                "no runner session is attached to iOS device {target}; attach first"
+            ),
+            Error::TestManagerMissing { target, listed } => write!(
+                f,
+                "iOS device {target} does not list com.apple.dt.testmanagerd.remote among its \
+                 {listed} RSD services, so the developer disk image that carries it is not \
+                 mounted: {}",
+                Readiness::DiskImageUnmounted.message()
+            ),
+            Error::Runner { method, error } => {
+                write!(f, "the runner refused {method}: {}", error.message)
             }
         }
     }

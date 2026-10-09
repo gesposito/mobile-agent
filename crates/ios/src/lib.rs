@@ -21,6 +21,7 @@ mod error;
 mod identity;
 mod model;
 mod readiness;
+mod runner;
 mod services;
 mod version;
 
@@ -34,13 +35,14 @@ pub use compat::{
     CallSite, FIRST_SUPPORTED_IOS, FIRST_UNSUPPORTED_IOS, IDEVICE, VALIDATED_IOS, VALIDATED_XCODE,
     call_sites, render as render_compatibility, supported_ios, supported_range,
 };
-pub use driver::{Devices, Lifecycle};
+pub use driver::{Devices, Lifecycle, Session};
 pub use error::{Error, Result};
 pub use identity::{IdentityCheck, host_identity};
 pub use model::{
-    Connected, Connection, DeviceInfo, DiskImage, Installed, LaunchOptions, Launched, MountAttempt,
-    MountPath, MountReport, MuxEntry, Probe, TEAM_VARIABLE, TargetStatus, Terminated, Trust,
-    TunnelStatus,
+    ATTACH_TIMEOUT, AttachOptions, Attached, Connected, Connection, DeviceInfo, DiskImage,
+    Installed, LaunchOptions, Launched, MountAttempt, MountPath, MountReport, MuxEntry, Probe,
+    RUNNER_BUNDLE_ID, RUNNER_NAME, RUNNER_PORT, Released, RunnerSpec, RunnerState, RunnerStatus,
+    TEAM_VARIABLE, TargetStatus, Terminated, Trust, TunnelStatus,
 };
 pub use readiness::{Need, Readiness};
 pub use services::{NEEDED, Needed};

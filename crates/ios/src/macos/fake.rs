@@ -34,7 +34,11 @@ use super::host::Link;
 use super::image::Mounter;
 use super::tunnel::Opener;
 use crate::discovery::tests::recorded_images;
+use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT};
 use crate::services;
+
+/// The fake runner's executable, as S10's runner names it.
+pub(crate) const RUNNER_EXECUTABLE: &str = "MobileAgentRunner-Runner";
 
 /// The port the fake RSD answers on.
 const RSD_PORT: u16 = 58783;
@@ -114,6 +118,28 @@ struct LinkState {
     installs: Vec<PathBuf>,
 }
 
+/// The runner on the fake device: the version installed, which its hello
+/// names, and the process serving its port.
+#[derive(Default)]
+pub(crate) struct RunnerState {
+    pub(crate) installed: Option<String>,
+    pub(crate) running: Option<RunningRunner>,
+    /// Connections to the runner's port so far.
+    pub(crate) connections: u32,
+    /// The requests the runner served, by method name.
+    pub(crate) served: Vec<String>,
+}
+
+/// A runner process of the fake device.
+#[derive(Clone, Debug)]
+pub(crate) struct RunningRunner {
+    pub(crate) pid: u32,
+    pub(crate) version: String,
+    /// Left from a lost session: it says hello and closes the connection,
+    /// as S10's runner did after a cable pull.
+    pub(crate) stale: bool,
+}
+
 /// One argument of a DTX call, as the fake DVT decoded it.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Arg {
@@ -147,6 +173,10 @@ pub(crate) struct FakeDevice {
     handlers: Mutex<HashMap<u16, Handler>>,
     dvt: Mutex<Dvt>,
     link: Mutex<LinkState>,
+    runner: Mutex<RunnerState>,
+    /// Bumped when the runner process ends, which closes its connections
+    /// and ends the test manager's session that started it.
+    pub(crate) runner_deaths: tokio::sync::watch::Sender<u64>,
 }
 
 impl fmt::Debug for FakeDevice {
@@ -198,7 +228,75 @@ impl FakeDevice {
             handlers: Mutex::new(HashMap::new()),
             dvt: Mutex::new(Dvt::default()),
             link: Mutex::new(LinkState::default()),
+            runner: Mutex::new(RunnerState::default()),
+            runner_deaths: tokio::sync::watch::Sender::new(0),
         })
+    }
+
+    pub(crate) fn runner_state(&self) -> MutexGuard<'_, RunnerState> {
+        self.runner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Installs the runner of `version`, as the installation proxy would.
+    pub(crate) fn install_runner(&self, version: &str) {
+        self.install_app(RUNNER_BUNDLE_ID, RUNNER_EXECUTABLE);
+        self.runner_state().installed = Some(version.to_owned());
+    }
+
+    /// Starts the installed runner's process, as the test manager does, and
+    /// returns its pid; `None` when no runner is installed.
+    pub(crate) fn launch_runner(&self) -> Option<u32> {
+        let version = self.runner_state().installed.clone()?;
+        Some(self.spawn_runner(&version, false))
+    }
+
+    /// Leaves a runner process of `version` running, as a lost session
+    /// does, and returns its pid.
+    pub(crate) fn leave_runner(&self, version: &str) -> u32 {
+        self.spawn_runner(version, true)
+    }
+
+    fn spawn_runner(&self, version: &str, stale: bool) -> u32 {
+        let mut dvt = self.dvt();
+        let pid = dvt.next_pid;
+        dvt.next_pid += 1;
+        dvt.processes.push(FakeProcess {
+            pid,
+            name: RUNNER_EXECUTABLE.into(),
+            bundle_id: Some(RUNNER_BUNDLE_ID.into()),
+            path: format!(
+                "/var/containers/Bundle/Application/PLACEHOLDER/{RUNNER_EXECUTABLE}.app/{RUNNER_EXECUTABLE}"
+            ),
+        });
+        drop(dvt);
+        self.runner_state().running = Some(RunningRunner {
+            pid,
+            version: version.to_owned(),
+            stale,
+        });
+        pid
+    }
+
+    /// The runner process serving, if any.
+    pub(crate) fn runner(&self) -> Option<RunningRunner> {
+        self.runner_state().running.clone()
+    }
+
+    /// Ends the runner process, as a crash or SIGKILL does: its connections
+    /// close and the test manager's session ends.
+    pub(crate) fn kill_runner(&self) {
+        let pid = self.runner_state().running.take().map(|runner| runner.pid);
+        if let Some(pid) = pid {
+            self.dvt().processes.retain(|process| process.pid != pid);
+        }
+        self.runner_deaths.send_modify(|deaths| *deaths += 1);
+    }
+
+    /// The requests the runner served, by method name.
+    pub(crate) fn runner_served(&self) -> Vec<String> {
+        self.runner_state().served.clone()
     }
 
     fn dvt(&self) -> MutexGuard<'_, Dvt> {
@@ -218,6 +316,11 @@ impl FakeDevice {
         self.dvt()
             .apps
             .insert(bundle_id.to_owned(), executable.to_owned());
+    }
+
+    /// Whether the app `bundle_id` is installed.
+    pub(crate) fn is_installed(&self, bundle_id: &str) -> bool {
+        self.dvt().apps.contains_key(bundle_id)
     }
 
     /// The pids of `bundle_id`'s processes.
@@ -339,6 +442,11 @@ impl FakeDevice {
                     let pid = pid.as_unsigned().unwrap_or_default();
                     dvt.processes
                         .retain(|process| u64::from(process.pid) != pid);
+                    drop(dvt);
+                    let runner = self.runner_state().running.as_ref().map(|r| r.pid);
+                    if runner.is_some_and(|runner| u64::from(runner) == pid) {
+                        self.kill_runner();
+                    }
                     Reply::Data(None)
                 }
                 // A pid sent as a primitive stalled the phone's DVT service
@@ -912,11 +1020,46 @@ impl Link for FakeLink {
         let bundle = crate::bundle::inspect(app)?;
         self.device
             .install_app(&bundle.bundle_id, &bundle.executable);
+        if bundle.bundle_id == RUNNER_BUNDLE_ID {
+            // The fake runner says hello with the version its bundle names.
+            let info: Dictionary = plist::from_file(app.join("Info.plist"))
+                .map_err(|error| format!("the runner's Info.plist: {error}"))?;
+            let version = info
+                .get("CFBundleShortVersionString")
+                .and_then(Value::as_string)
+                .unwrap_or("0.0.0")
+                .to_owned();
+            self.device.runner_state().installed = Some(version);
+        }
         self.device.link().installs.push(app.to_owned());
         Ok(())
     }
 
     async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String> {
         Ok(self.device.dvt().apps.contains_key(bundle_id))
+    }
+
+    async fn connect(&self, port: u16) -> std::result::Result<Box<dyn ReadWrite>, String> {
+        if self.device.state().gone {
+            return Err(format!(
+                "usbmuxd's Connect to port {port}: the device is not in usbmuxd's listing"
+            ));
+        }
+        let runner = self.device.runner();
+        match runner {
+            Some(runner) if port == RUNNER_PORT => {
+                self.device.runner_state().connections += 1;
+                let (client, server) = tokio::io::duplex(1 << 20);
+                tokio::spawn(crate::macos::fake_runner::serve_runner(
+                    Arc::clone(&self.device),
+                    server,
+                    runner,
+                ));
+                Ok(Box::new(client))
+            }
+            _ => Err(format!(
+                "usbmuxd's Connect to port {port}: the device refused the connection"
+            )),
+        }
     }
 }

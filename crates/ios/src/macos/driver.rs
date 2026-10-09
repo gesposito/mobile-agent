@@ -18,22 +18,24 @@ use std::time::{Duration, Instant};
 use idevice::ReadWrite;
 use idevice::dvt::message::Message;
 use idevice::dvt::remote_server::RemoteServerClient;
+use protocol::message::{Call, Reply};
 use tokio::time::timeout;
 
 use crate::bundle;
 use crate::discovery::{self, usb_entries};
-use crate::driver::{Devices, Lifecycle};
+use crate::driver::{Devices, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::model::{
-    Connected, DeviceInfo, DiskImage, Installed, LaunchOptions, Launched, MountReport, MuxEntry,
-    TargetStatus, Terminated,
+    AttachOptions, Attached, Connected, DeviceInfo, DiskImage, Installed, LaunchOptions, Launched,
+    MountReport, MuxEntry, Released, TargetStatus, Terminated,
 };
 use crate::readiness::{self, Need, Readiness};
 
 use super::dvt::{self, CallError, DvtChannel};
 use super::host::{Host, Link, UsbHost, describe};
 use super::image::{self, MountLimits};
-use super::tunnel::{Limits, Opener, Tunnel};
+use super::runner::{self, RunnerSession, SessionLimits};
+use super::tunnel::{Limits, Tunnel};
 
 /// How long `terminate` waits for the processes to leave DVT's list: 22 ms
 /// after the request in spike S9.
@@ -84,6 +86,20 @@ impl Devices for IosDriver {
     }
 }
 
+impl Session for IosDriver {
+    fn attach(&self, target: &str, options: &AttachOptions) -> Result<Attached> {
+        self.core.attach(target, options)
+    }
+
+    fn call(&self, target: &str, call: Call, timeout: Duration) -> Result<Reply> {
+        self.core.call(target, call, timeout)
+    }
+
+    fn release(&self, target: &str) -> Result<Released> {
+        self.core.release(target)
+    }
+}
+
 impl Lifecycle for IosDriver {
     fn install(&self, target: &str, app: &Path) -> Result<Installed> {
         self.core.install(target, app)
@@ -103,23 +119,25 @@ impl Lifecycle for IosDriver {
 }
 
 /// What the driver keeps for one device.
-pub(crate) struct Target<O: Opener, L: Link> {
-    target: String,
-    tunnel: Tunnel<O>,
-    link: L,
+pub(crate) struct Target<H: Host> {
+    pub(crate) target: String,
+    pub(crate) tunnel: Tunnel<H::Opener>,
+    pub(crate) link: H::Link,
+    pub(crate) test_manager: H::TestManager,
     disk_image: Option<MountReport>,
     /// DVT's channels by identifier, each on a connection of its own, kept
     /// for the target's lifetime: a new connection costs 25 to 37 ms (S9).
     channels: BTreeMap<&'static str, DvtChannel>,
 }
 
-impl<O: Opener, L: Link> Target<O, L> {
+impl<H: Host> Target<H> {
     /// What `status` reports of the target.
     fn snapshot(&self) -> TargetStatus {
         TargetStatus {
             tunnel: self.tunnel.status(),
             disk_image: self.disk_image.clone(),
             services_open: self.channels.keys().copied().collect(),
+            runner: None,
         }
     }
 
@@ -217,18 +235,16 @@ impl<O: Opener, L: Link> Target<O, L> {
     /// with its bundle identifier on iOS 26.6.2, and not its extensions',
     /// which have identifiers of their own.
     async fn pids(&mut self, bundle_id: &str, limits: Limits) -> Result<Vec<u32>> {
-        Ok(self
-            .processes(limits)
-            .await?
-            .into_iter()
-            .filter(|process| process.bundle_id.as_deref() == Some(bundle_id))
-            .map(|process| process.pid)
-            .collect())
+        // The list is taken in a statement of its own, so that no closure
+        // over `bundle_id` lives across the wait, which would keep the
+        // future from being `Send` for the runner's supervisor.
+        let processes = self.processes(limits).await?;
+        Ok(pids_of(&processes, bundle_id))
     }
 
     /// Ends `bundle_id`'s processes with SIGKILL and waits until they left
     /// the process list; returns the pids signalled.
-    async fn terminate(&mut self, bundle_id: &str, limits: Limits) -> Result<Vec<u32>> {
+    pub(crate) async fn terminate(&mut self, bundle_id: &str, limits: Limits) -> Result<Vec<u32>> {
         let pids = self.pids(bundle_id, limits).await?;
         for pid in &pids {
             // A signal is not sent twice: the pid could belong to another
@@ -270,14 +286,33 @@ impl<O: Opener, L: Link> Target<O, L> {
     }
 }
 
+/// The pids of `bundle_id`'s processes in `processes`.
+fn pids_of(processes: &[dvt::Process], bundle_id: &str) -> Vec<u32> {
+    processes
+        .iter()
+        .filter(|process| process.bundle_id.as_deref() == Some(bundle_id))
+        .map(|process| process.pid)
+        .collect()
+}
+
 /// The slots of a host's devices.
-type Slots<H> = HashMap<String, Arc<Slot<<H as Host>::Opener, <H as Host>::Link>>>;
+type Slots<H> = HashMap<String, Arc<Slot<H>>>;
 
 /// A device's state, behind the lock its commands take, and what `status`
 /// reports, which it reads without that lock while a command runs.
-pub(crate) struct Slot<O: Opener, L: Link> {
-    state: tokio::sync::Mutex<Target<O, L>>,
+pub(crate) struct Slot<H: Host> {
+    pub(crate) state: tokio::sync::Mutex<Target<H>>,
     snapshot: Mutex<TargetStatus>,
+    /// The runner's session, from `attach` until `release`, outside the
+    /// target's lock so that a call to the runner leaves the lock free.
+    runner: Mutex<Option<Arc<RunnerSession>>>,
+}
+
+impl<H: Host> Slot<H> {
+    /// The runner's session, when one is attached.
+    pub(crate) fn runner(&self) -> Option<Arc<RunnerSession>> {
+        lock(&self.runner).clone()
+    }
 }
 
 /// The driver's state and logic over a host.
@@ -285,10 +320,23 @@ pub(crate) struct Core<H: Host> {
     /// Declared before the runtime, so that what the targets keep open is
     /// dropped while the tasks serving it can still end on their own.
     targets: Mutex<Slots<H>>,
-    host: H,
+    pub(crate) host: H,
     runtime: tokio::runtime::Runtime,
     limits: Limits,
     mount_limits: MountLimits,
+    session_limits: SessionLimits,
+}
+
+impl<H: Host> Drop for Core<H> {
+    /// Ends every runner's supervisor before the runtime it drives goes.
+    fn drop(&mut self) {
+        let slots: Vec<_> = lock(&self.targets).values().cloned().collect();
+        for slot in slots {
+            if let Some(supervisor) = slot.runner().and_then(|session| session.stop()) {
+                let _ = supervisor.join();
+            }
+        }
+    }
 }
 
 impl<H: Host> Core<H> {
@@ -308,6 +356,7 @@ impl<H: Host> Core<H> {
             runtime,
             limits: Limits::default(),
             mount_limits: MountLimits::default(),
+            session_limits: SessionLimits::default(),
         })
     }
 
@@ -316,6 +365,13 @@ impl<H: Host> Core<H> {
     pub(crate) fn with_limits(mut self, limits: Limits, mount_limits: MountLimits) -> Core<H> {
         self.limits = limits;
         self.mount_limits = mount_limits;
+        self
+    }
+
+    /// Shorter waits of the runner's start, for the tests.
+    #[cfg(test)]
+    pub(crate) fn with_session_limits(mut self, limits: SessionLimits) -> Core<H> {
+        self.session_limits = limits;
         self
     }
 
@@ -363,10 +419,7 @@ impl<H: Host> Core<H> {
             .map(|(_, connected)| connected)
     }
 
-    async fn connect_target(
-        &self,
-        target: &str,
-    ) -> Result<(Arc<Slot<H::Opener, H::Link>>, Connected)> {
+    async fn connect_target(&self, target: &str) -> Result<(Arc<Slot<H>>, Connected)> {
         let entry = self.entry(target).await?;
         let identity = self.host.identity();
         let not_ready = |readiness| Error::NotReady {
@@ -434,7 +487,7 @@ impl<H: Host> Core<H> {
 
     /// The state of `target`, connecting it first when the driver holds
     /// none for it.
-    async fn connected(&self, target: &str) -> Result<Arc<Slot<H::Opener, H::Link>>> {
+    async fn connected(&self, target: &str) -> Result<Arc<Slot<H>>> {
         let held = lock(&self.targets).get(target).cloned();
         match held {
             Some(slot) => Ok(slot),
@@ -549,19 +602,141 @@ impl<H: Host> Core<H> {
         })
     }
 
+    /// Starts the runner's session on `target` (design D20): connects the
+    /// device, checks it is unlocked with a signing identity on the host,
+    /// starts the runner and hands it to a supervisor. A session that
+    /// serves, or is on its way to, is kept.
+    pub(crate) fn attach(&self, target: &str, options: &AttachOptions) -> Result<Attached> {
+        self.runtime.block_on(async {
+            let started = Instant::now();
+            let (slot, connected) = self.connect_target(target).await?;
+            let identity = self.host.identity();
+            let device = &connected.device;
+            readiness::assess(
+                device.ios_version.as_deref(),
+                &device.probe,
+                &identity,
+                Need::Session,
+            )
+            .map_err(|readiness| Error::NotReady {
+                target: target.to_owned(),
+                readiness,
+            })?;
+            if let Some(session) = slot.runner()
+                && session.serving()
+            {
+                return Ok(Attached {
+                    runner: session.status(),
+                    elapsed: started.elapsed(),
+                });
+            }
+            let session = RunnerSession::new(target, options);
+            *lock(&slot.runner) = Some(Arc::clone(&session));
+            let deadline = started + options.timeout;
+            let live = {
+                let mut state = slot.state.lock().await;
+                let live = runner::start(
+                    &mut state,
+                    &session,
+                    self.session_limits,
+                    self.limits,
+                    deadline,
+                )
+                .await;
+                *lock(&slot.snapshot) = state.snapshot();
+                live
+            };
+            match live {
+                Ok(live) => {
+                    session.ready(&live);
+                    let handle = self.runtime.handle().clone();
+                    let (watched, supervised) = (Arc::downgrade(&slot), Arc::clone(&session));
+                    let (session_limits, limits) = (self.session_limits, self.limits);
+                    let supervisor = std::thread::Builder::new()
+                        .name("ios-runner".into())
+                        .spawn(move || {
+                            handle.block_on(runner::supervise(
+                                watched,
+                                supervised,
+                                live,
+                                session_limits,
+                                limits,
+                            ));
+                        })
+                        .map_err(|error| Error::Io {
+                            what: "starting the runner's supervisor".into(),
+                            reason: error.to_string(),
+                        })?;
+                    session.set_supervisor(supervisor);
+                    Ok(Attached {
+                        runner: session.status(),
+                        elapsed: started.elapsed(),
+                    })
+                }
+                Err(error) => {
+                    session.fail(&error);
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    /// Sends `call` to the runner of `target`, within `timeout`.
+    pub(crate) fn call(&self, target: &str, call: Call, timeout: Duration) -> Result<Reply> {
+        let session = lock(&self.targets)
+            .get(target)
+            .and_then(|slot| slot.runner())
+            .ok_or_else(|| Error::NotAttached {
+                target: target.to_owned(),
+            })?;
+        self.runtime.block_on(runner::call(&session, call, timeout))
+    }
+
+    /// Ends the runner's session on `target`.
+    pub(crate) fn release(&self, target: &str) -> Result<Released> {
+        let started = Instant::now();
+        let not_attached = || Error::NotAttached {
+            target: target.to_owned(),
+        };
+        let slot = lock(&self.targets)
+            .get(target)
+            .cloned()
+            .ok_or_else(not_attached)?;
+        let session = lock(&slot.runner).take().ok_or_else(not_attached)?;
+        if let Some(supervisor) = session.stop() {
+            let _ = supervisor.join();
+        }
+        self.runtime.block_on(async {
+            let ended = runner::stop(&slot, &session, self.limits).await?;
+            Ok(Released {
+                ended,
+                elapsed: started.elapsed(),
+            })
+        })
+    }
+
     /// What the driver holds for `target`; nothing for a device it has not
     /// connected to. It reads a snapshot, so it answers while a command on
     /// the target runs.
     pub(crate) fn status(&self, target: &str) -> Result<TargetStatus> {
         let slot = lock(&self.targets).get(target).cloned();
-        Ok(slot.map_or_else(TargetStatus::default, |slot| lock(&slot.snapshot).clone()))
+        Ok(slot.map_or_else(TargetStatus::default, |slot| {
+            let mut status = lock(&slot.snapshot).clone();
+            status.runner = slot.runner().map(|session| session.status());
+            status
+        }))
     }
 
-    /// Closes what the driver opened for `target`.
+    /// Closes what the driver opened for `target`, the runner's session
+    /// with its supervisor included; the runner process is left to the next
+    /// attach, which ends it first.
     pub(crate) fn reset_target(&self, target: &str) -> Result<()> {
         let Some(slot) = lock(&self.targets).remove(target) else {
             return Ok(());
         };
+        if let Some(supervisor) = lock(&slot.runner).take().and_then(|session| session.stop()) {
+            let _ = supervisor.join();
+        }
         self.runtime.block_on(async {
             let mut state = slot.state.lock().await;
             state.channels.clear();
@@ -572,7 +747,7 @@ impl<H: Host> Core<H> {
 
     /// The state the driver keeps for the device of `entry`, made on first
     /// use.
-    fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H::Opener, H::Link>> {
+    fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H>> {
         let mut targets = lock(&self.targets);
         let slot = targets.entry(entry.udid.clone()).or_insert_with(|| {
             Arc::new(Slot {
@@ -580,10 +755,12 @@ impl<H: Host> Core<H> {
                     target: entry.udid.clone(),
                     tunnel: Tunnel::new(&entry.udid, self.host.opener(entry), self.limits),
                     link: self.host.link(entry),
+                    test_manager: self.host.test_manager(entry),
                     disk_image: None,
                     channels: BTreeMap::new(),
                 }),
                 snapshot: Mutex::new(TargetStatus::default()),
+                runner: Mutex::new(None),
             })
         });
         Arc::clone(slot)
@@ -601,7 +778,7 @@ impl<H: Host> Core<H> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -613,6 +790,7 @@ mod tests {
     use crate::identity::IdentityCheck;
     use crate::macos::dvt::{IS_RUNNING_PID, LAUNCH, PROCESS_CONTROL, SEND_SIGNAL};
     use crate::macos::fake::{Arg, FakeDevice, FakeLink, FakeMounter, FakeOpener};
+    use crate::macos::fake_runner::FakeTestManager;
     use crate::model::{Connection, DiskImage, MountPath, Probe, Trust};
     use crate::readiness::Readiness;
     use crate::services;
@@ -640,13 +818,16 @@ mod tests {
         pub(crate) device: Arc<FakeDevice>,
         pub(crate) mounter: FakeMounter,
         pub(crate) probed: Mutex<Vec<MuxEntry>>,
+        pub(crate) test_manager: FakeTestManager,
     }
 
     impl FakeHost {
         /// The recorded phone, ready, listed on the network and on USB as
         /// Wi-Fi sync lists it.
         pub(crate) fn ready() -> FakeHost {
+            let device = FakeDevice::recorded();
             FakeHost {
+                test_manager: FakeTestManager::new(&device),
                 listing: Ok(vec![
                     MuxEntry {
                         udid: PHONE.into(),
@@ -663,7 +844,7 @@ mod tests {
                 trust: Trust::Trusted,
                 images: Images::Fixed(Some(Ok(recorded_images()))),
                 identity: identity(),
-                device: FakeDevice::recorded(),
+                device,
                 mounter: FakeMounter::new(true, Err("not called".into()), Err("not called".into())),
                 probed: Mutex::new(Vec::new()),
             }
@@ -687,6 +868,16 @@ mod tests {
             }
         }
 
+        /// The recorded phone as `device`, its test manager starting the
+        /// runners of `device`.
+        pub(crate) fn with_device(device: Arc<FakeDevice>) -> FakeHost {
+            FakeHost {
+                test_manager: FakeTestManager::new(&device),
+                device,
+                ..FakeHost::ready()
+            }
+        }
+
         /// The recorded phone without the disk image, which `mounter`
         /// mounts as it says.
         pub(crate) fn unmounted(mounter: FakeMounter) -> FakeHost {
@@ -702,6 +893,7 @@ mod tests {
         type Opener = FakeOpener;
         type Mounter = FakeMounter;
         type Link = FakeLink;
+        type TestManager = FakeTestManager;
 
         async fn list(&self) -> Result<Vec<MuxEntry>> {
             self.listing
@@ -740,6 +932,10 @@ mod tests {
         fn link(&self, _entry: &MuxEntry) -> FakeLink {
             FakeLink::new(&self.device)
         }
+
+        fn test_manager(&self, _entry: &MuxEntry) -> FakeTestManager {
+            self.test_manager.clone()
+        }
     }
 
     pub(crate) const SHORT: Limits = Limits {
@@ -753,10 +949,18 @@ mod tests {
         devicectl: Duration::from_millis(200),
     };
 
+    pub(crate) const SHORT_SESSION: SessionLimits = SessionLimits {
+        poll: Duration::from_millis(5),
+        hello: Duration::from_millis(500),
+        approval_grace: Duration::from_millis(100),
+        retry_pause: Duration::from_millis(10),
+    };
+
     pub(crate) fn core(host: FakeHost) -> Core<FakeHost> {
         Core::new(host)
             .expect("the runtime starts")
             .with_limits(SHORT, SHORT_MOUNTS)
+            .with_session_limits(SHORT_SESSION)
     }
 
     #[test]
@@ -999,10 +1203,10 @@ mod tests {
 
     #[test]
     fn missing_services_are_reported_with_the_tunnel() {
-        let host = FakeHost {
-            device: FakeDevice::without(&[services::HID_INDIGO, services::HID_UNIVERSAL]),
-            ..FakeHost::ready()
-        };
+        let host = FakeHost::with_device(FakeDevice::without(&[
+            services::HID_INDIGO,
+            services::HID_UNIVERSAL,
+        ]));
         let connected = core(host).connect(PHONE).expect("connects");
         assert_eq!(
             connected.tunnel.missing,

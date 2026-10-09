@@ -3,6 +3,7 @@
 //! record, which usbmuxd hands over (`ReadPairRecord`), so nothing reads
 //! `/var/db/lockdown`.
 
+use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use idevice::lockdown::LockdownClient;
 use idevice::mobile_image_mounter::ImageMounter;
 use idevice::provider::{IdeviceProvider, UsbmuxdProvider};
 use idevice::usbmuxd::{Connection as MuxConnection, UsbmuxdAddr, UsbmuxdConnection};
-use idevice::{IdeviceError, IdeviceService};
+use idevice::{IdeviceError, IdeviceService, ReadWrite};
 use plist::{Dictionary, Value};
 use tokio::time::timeout;
 
@@ -23,6 +24,7 @@ use crate::identity::IdentityCheck;
 use crate::model::{Connection, DeviceInfo, MuxEntry, Probe, Trust};
 
 use super::image::{DDI_DIRECTORY, Mounter, UsbMounter};
+use super::runner::{TestManager, UsbTestManager};
 use super::tunnel::{Opener, UsbTunnel};
 
 /// How long usbmuxd gets to answer: 0.4 ms at p50 in spike S9.
@@ -61,18 +63,31 @@ pub(crate) fn describe(error: &dyn std::error::Error) -> String {
 }
 
 /// What the driver asks of one device over usbmuxd rather than the tunnel:
-/// lockdown's lock and the installation proxy, whose uploads go faster
-/// through usbmuxd than through jktcp's one segment at a time.
+/// lockdown's lock, the installation proxy, whose uploads go faster through
+/// usbmuxd than through jktcp's one segment at a time, and the runner's
+/// socket, reached through usbmuxd's `Connect` for the same reason (D18).
+/// Its futures are `Send`, so the runner's supervisor can await them on a
+/// task of its own.
 pub(crate) trait Link: Send + Sync + 'static {
     /// Lockdown's `PasswordProtected`, which follows the lock (S9).
-    async fn password_protected(&self) -> std::result::Result<bool, String>;
+    fn password_protected(&self) -> impl Future<Output = std::result::Result<bool, String>> + Send;
 
     /// Uploads the bundle at `app` to the device's `PublicStaging` through
     /// AFC and installs it through the installation proxy.
-    async fn install(&self, app: &Path) -> std::result::Result<(), String>;
+    fn install(&self, app: &Path) -> impl Future<Output = std::result::Result<(), String>> + Send;
 
     /// Whether the installation proxy lists `bundle_id`.
-    async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String>;
+    fn installed(
+        &self,
+        bundle_id: &str,
+    ) -> impl Future<Output = std::result::Result<bool, String>> + Send;
+
+    /// A connection to the device's loopback `port` through usbmuxd's
+    /// `Connect`; refused while nothing listens there.
+    fn connect(
+        &self,
+        port: u16,
+    ) -> impl Future<Output = std::result::Result<Box<dyn ReadWrite>, String>> + Send;
 }
 
 /// What the driver needs from the host: the seam the tests replace.
@@ -83,13 +98,15 @@ pub(crate) trait Host: Send + Sync + 'static {
     type Mounter: Mounter;
     /// Lockdown and the installation proxy of one device.
     type Link: Link;
+    /// Starts runners through the test manager of one device.
+    type TestManager: TestManager;
 
     /// usbmuxd's listing, every entry as it comes.
-    async fn list(&self) -> Result<Vec<MuxEntry>>;
+    fn list(&self) -> impl Future<Output = Result<Vec<MuxEntry>>> + Send;
 
     /// What lockdown and the image mounter say about the device of `entry`:
     /// the values read, under their keys, and the probe.
-    async fn probe(&self, entry: &MuxEntry) -> (Dictionary, Probe);
+    fn probe(&self, entry: &MuxEntry) -> impl Future<Output = (Dictionary, Probe)> + Send;
 
     /// The host's signing identity for the runner.
     fn identity(&self) -> IdentityCheck;
@@ -102,6 +119,9 @@ pub(crate) trait Host: Send + Sync + 'static {
 
     /// Lockdown and the installation proxy of the device of `entry`.
     fn link(&self, entry: &MuxEntry) -> Self::Link;
+
+    /// The test manager of the device of `entry`.
+    fn test_manager(&self, entry: &MuxEntry) -> Self::TestManager;
 }
 
 /// The real host: usbmuxd at its default socket, or the one
@@ -135,6 +155,7 @@ impl Host for UsbHost {
     type Opener = UsbTunnel;
     type Mounter = UsbMounter;
     type Link = UsbLink;
+    type TestManager = UsbTestManager;
 
     async fn list(&self) -> Result<Vec<MuxEntry>> {
         let unavailable = |reason: String| Error::Usbmuxd { reason };
@@ -187,6 +208,12 @@ impl Host for UsbHost {
         UsbLink {
             provider: self.provider(entry),
             lockdown: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    fn test_manager(&self, entry: &MuxEntry) -> UsbTestManager {
+        UsbTestManager {
+            provider: self.provider(entry),
         }
     }
 }
@@ -249,6 +276,16 @@ impl Link for UsbLink {
             .map_err(|_| format!("the installation proxy did not answer within {LINK_TIMEOUT:?}"))?
             .map_err(|error| describe(&error))?;
         Ok(apps.contains_key(bundle_id))
+    }
+
+    async fn connect(&self, port: u16) -> std::result::Result<Box<dyn ReadWrite>, String> {
+        let device = timeout(LINK_TIMEOUT, self.provider.connect(port))
+            .await
+            .map_err(|_| format!("usbmuxd did not connect port {port} within {LINK_TIMEOUT:?}"))?
+            .map_err(|error| format!("usbmuxd's Connect to port {port}: {}", describe(&error)))?;
+        device
+            .get_socket()
+            .ok_or_else(|| format!("usbmuxd gave no socket for port {port}"))
     }
 }
 

@@ -906,6 +906,7 @@ dependencies = [
  "idevice",
  "ns-keyed-archive",
  "plist",
+ "protocol",
  "tokio",
 ]
 

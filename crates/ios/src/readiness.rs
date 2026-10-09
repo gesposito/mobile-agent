@@ -55,6 +55,11 @@ pub enum Readiness {
     NoSigningIdentity {
         reason: String,
     },
+    /// The runner's start waits in XCTest's "enabling automation mode" for
+    /// the device owner to approve "Enable UI Automation". No probe reads
+    /// it: the test manager's session shows it, so it is reported while a
+    /// start waits and when a start fails on it, never by `devices`.
+    AutomationNotApproved,
 }
 
 impl Readiness {
@@ -69,6 +74,7 @@ impl Readiness {
             Readiness::DiskImageUnmounted => "disk_image_unmounted",
             Readiness::Locked => "device_locked",
             Readiness::NoSigningIdentity { .. } => "no_signing_identity",
+            Readiness::AutomationNotApproved => "automation_not_enabled",
         }
     }
 
@@ -109,6 +115,11 @@ impl Readiness {
                  Accounts, Manage Certificates) with the team's account, and export \
                  {TEAM_VARIABLE} with the team's identifier"
             ),
+            Readiness::AutomationNotApproved => "XCTest waits in \"enabling automation mode\" for \
+                 the device owner: on the phone, approve \"Enable UI Automation\" with Touch ID or \
+                 the passcode; it is asked once after the phone restarts, and XCTest waits 60 s \
+                 for it"
+                .to_owned(),
         }
     }
 }

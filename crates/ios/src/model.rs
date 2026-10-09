@@ -2,6 +2,7 @@
 //! `idevice` crate, so these types exist on every platform.
 
 use std::fmt;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::readiness::Readiness;
@@ -185,6 +186,174 @@ pub struct TargetStatus {
     pub disk_image: Option<MountReport>,
     /// The service connections kept open over the tunnel, by RSD name.
     pub services_open: Vec<&'static str>,
+    /// The runner's session, from `attach` until `release`.
+    pub runner: Option<RunnerStatus>,
+}
+
+/// The bundle identifier of the runner app (design D20).
+pub const RUNNER_BUNDLE_ID: &str = "dev.mobileagent.runner";
+/// The name the runner's hello puts before its version.
+pub const RUNNER_NAME: &str = "mobile-agent-ios-runner";
+/// The loopback port the runner listens on, which the host reaches through
+/// usbmuxd's `Connect`.
+pub const RUNNER_PORT: u16 = 27183;
+
+/// The runner a session starts: the installed app, what its hello must
+/// say, and the built bundle that replaces a runner of another version.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunnerSpec {
+    pub bundle_id: String,
+    /// The name its hello puts before its version.
+    pub name: String,
+    /// The version its hello must name: that of the bundle built beside the
+    /// daemon.
+    pub version: String,
+    /// The built bundle, installed when the runner is missing or says hello
+    /// with another version; without it either fails.
+    pub bundle: Option<PathBuf>,
+    pub port: u16,
+}
+
+impl RunnerSpec {
+    /// The runner `dev.mobileagent.runner` of `version` on port 27183, with
+    /// no bundle to install.
+    pub fn new(version: impl Into<String>) -> RunnerSpec {
+        RunnerSpec {
+            bundle_id: RUNNER_BUNDLE_ID.to_owned(),
+            name: RUNNER_NAME.to_owned(),
+            version: version.into(),
+            bundle: None,
+            port: RUNNER_PORT,
+        }
+    }
+
+    /// The bundle built beside the daemon, installed when needed.
+    pub fn with_bundle(mut self, bundle: impl Into<PathBuf>) -> RunnerSpec {
+        self.bundle = Some(bundle.into());
+        self
+    }
+
+    /// The agent its hello must name: its name and version.
+    pub fn agent(&self) -> String {
+        format!("{} {}", self.name, self.version)
+    }
+}
+
+/// How long an attach may take by default: the runner's hello comes 0.8 s
+/// after the start at p50 (S10), but XCTest waits 60 s for an approval of
+/// "Enable UI Automation", and the test manager stopped answering its
+/// handshake for a minute or two after runners were ended mid-start.
+pub const ATTACH_TIMEOUT: Duration = Duration::from_secs(150);
+
+/// How a runner session starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttachOptions {
+    pub runner: RunnerSpec,
+    /// The application under test the test manager names to the runner, or
+    /// none: the runner reads whatever is in front either way.
+    pub target_app: Option<String>,
+    /// The longest the start may take, every retry included.
+    pub timeout: Duration,
+}
+
+impl AttachOptions {
+    pub fn new(runner: RunnerSpec) -> AttachOptions {
+        AttachOptions {
+            runner,
+            target_app: None,
+            timeout: ATTACH_TIMEOUT,
+        }
+    }
+}
+
+/// Where a runner session is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RunnerState {
+    /// The test manager is starting it; what the start waits for.
+    Starting { step: String },
+    /// XCTest waits in "enabling automation mode" for the device owner to
+    /// approve "Enable UI Automation" (readiness `automation_not_enabled`).
+    AwaitingApproval,
+    /// It said hello with the expected version and serves.
+    Ready,
+    /// It died, and the driver starts it again; why it died.
+    Restarting { cause: String },
+    /// It cannot serve until a new attach: the error's code and message.
+    Failed { code: &'static str, message: String },
+    /// It was released.
+    Stopped,
+}
+
+impl RunnerState {
+    /// A stable name for the state.
+    pub fn name(&self) -> &'static str {
+        match self {
+            RunnerState::Starting { .. } => "starting",
+            RunnerState::AwaitingApproval => "awaiting_approval",
+            RunnerState::Ready => "ready",
+            RunnerState::Restarting { .. } => "restarting",
+            RunnerState::Failed { .. } => "failed",
+            RunnerState::Stopped => "stopped",
+        }
+    }
+}
+
+/// What the driver knows of a target's runner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunnerStatus {
+    pub state: RunnerState,
+    /// The agent its hello named, its name and version, once it said hello.
+    pub agent: Option<String>,
+    /// What its hello advertised.
+    pub capabilities: protocol::Capabilities,
+    /// Times it died and was started again in this session.
+    pub restarts: u32,
+    /// Starts repeated because the test manager did not answer its
+    /// handshake.
+    pub handshake_retries: u32,
+    /// Whether the built bundle was installed: the runner was missing or
+    /// said hello with another version.
+    pub replaced: bool,
+    /// Runner processes of an earlier session ended before a start, by pid.
+    pub leftovers: Vec<u32>,
+    /// From the last start's request to the runner's hello.
+    pub started_in: Option<Duration>,
+    /// Why it died last.
+    pub last_death: Option<String>,
+}
+
+impl RunnerStatus {
+    /// A session whose start is under way.
+    pub fn starting(step: impl Into<String>) -> RunnerStatus {
+        RunnerStatus {
+            state: RunnerState::Starting { step: step.into() },
+            agent: None,
+            capabilities: protocol::Capabilities::NONE,
+            restarts: 0,
+            handshake_retries: 0,
+            replaced: false,
+            leftovers: Vec::new(),
+            started_in: None,
+            last_death: None,
+        }
+    }
+}
+
+/// A started runner session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attached {
+    pub runner: RunnerStatus,
+    /// From the request to the hello: the device's readiness, ending
+    /// leftover runners, any install and the start.
+    pub elapsed: Duration,
+}
+
+/// What `release` ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Released {
+    /// Runner processes that were still running and were signalled, by pid.
+    pub ended: Vec<u32>,
+    pub elapsed: Duration,
 }
 
 /// Arguments and environment for a launch (design D19).

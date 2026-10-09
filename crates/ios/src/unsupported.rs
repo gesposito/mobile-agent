@@ -3,11 +3,15 @@
 //! has no values, so none of its methods can run.
 
 use std::path::Path;
+use std::time::Duration;
 
-use crate::driver::{Devices, Lifecycle};
+use protocol::message::{Call, Reply};
+
+use crate::driver::{Devices, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::model::{
-    Connected, DeviceInfo, Installed, LaunchOptions, Launched, TargetStatus, Terminated,
+    AttachOptions, Attached, Connected, DeviceInfo, Installed, LaunchOptions, Launched, Released,
+    TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -39,6 +43,20 @@ impl Devices for IosDriver {
     }
 
     fn status(&self, _target: &str) -> Result<TargetStatus> {
+        match *self {}
+    }
+}
+
+impl Session for IosDriver {
+    fn attach(&self, _target: &str, _options: &AttachOptions) -> Result<Attached> {
+        match *self {}
+    }
+
+    fn call(&self, _target: &str, _call: Call, _timeout: Duration) -> Result<Reply> {
+        match *self {}
+    }
+
+    fn release(&self, _target: &str) -> Result<Released> {
         match *self {}
     }
 }

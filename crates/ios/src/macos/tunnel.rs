@@ -6,6 +6,7 @@
 //! finds it dropped opens a new one, once, and a device that is gone is
 //! reported disconnected.
 
+use std::future::Future;
 use std::time::{Duration, Instant};
 
 use idevice::core_device_proxy::CoreDeviceProxy;
@@ -23,17 +24,19 @@ use crate::services;
 use super::host::describe;
 
 /// Opens tunnels to one device: the seam the tests replace with a fake
-/// endpoint.
+/// endpoint. Its futures are `Send`, so a task of its own can reopen one.
 pub(crate) trait Opener: Send + Sync + 'static {
     /// Reaches the device's service ports once the tunnel is open.
     type Provider: RsdProvider + Send + Sync + 'static;
 
     /// Opens a tunnel: a provider of connections to the device's ports, and
     /// the port RSD answers on.
-    async fn open(&self) -> std::result::Result<(Self::Provider, u16), String>;
+    fn open(
+        &self,
+    ) -> impl Future<Output = std::result::Result<(Self::Provider, u16), String>> + Send;
 
     /// Closes the tunnel `provider` reaches.
-    async fn close(&self, provider: &mut Self::Provider);
+    fn close(&self, provider: &mut Self::Provider) -> impl Future<Output = ()> + Send;
 }
 
 /// How long the tunnel's steps get.
@@ -109,12 +112,8 @@ impl<O: Opener> Tunnel<O> {
                 });
             }
         };
-        let handshake = async {
-            let stream = provider.connect_to_service_port(rsd_port).await?;
-            RsdHandshake::new(stream).await
-        };
         let left = self.limits.open.saturating_sub(started.elapsed());
-        let handshake = timeout(left, handshake).await;
+        let handshake = timeout(left, rsd_handshake(&mut provider, rsd_port)).await;
         let error = match handshake {
             Ok(Ok(handshake)) => {
                 self.opens += 1;
@@ -213,6 +212,17 @@ impl<O: Opener> Tunnel<O> {
             self.opener.close(&mut link.provider).await;
         }
     }
+}
+
+/// RSD's handshake on `port` through `provider`. A function of its own
+/// rather than a block, since a block borrowing the port would keep the
+/// tunnel's futures from being `Send` for every lifetime.
+async fn rsd_handshake<P: RsdProvider>(
+    provider: &mut P,
+    port: u16,
+) -> std::result::Result<RsdHandshake, IdeviceError> {
+    let stream = provider.connect_to_service_port(port).await?;
+    RsdHandshake::new(stream).await
 }
 
 /// Whether `error` says the tunnel itself is gone, so that a new one may

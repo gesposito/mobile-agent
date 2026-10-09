@@ -6,10 +6,14 @@
 //! `devices` lists: names are not unique, so no method takes one.
 
 use std::path::Path;
+use std::time::Duration;
+
+use protocol::message::{Call, Reply};
 
 use crate::error::Result;
 use crate::model::{
-    Connected, DeviceInfo, Installed, LaunchOptions, Launched, TargetStatus, Terminated,
+    AttachOptions, Attached, Connected, DeviceInfo, Installed, LaunchOptions, Launched, Released,
+    TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -58,4 +62,26 @@ pub trait Lifecycle {
 
     /// The pid of the app's process, from DVT's process list, when it runs.
     fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>>;
+}
+
+/// The runner's session (spec `ios-device-driver`, "One resident runner per
+/// session"; design D20): one runner per target, started once through the
+/// test manager and kept for every command until the target is released.
+pub trait Session {
+    /// Starts the runner on `target` and returns once it said hello with
+    /// the version `options.runner` names. Runner processes left from a lost
+    /// session are ended first; a runner that is missing, or says hello with
+    /// another version, is replaced by the bundle `options.runner` names. A
+    /// session that serves is kept and reported as it is.
+    fn attach(&self, target: &str, options: &AttachOptions) -> Result<Attached>;
+
+    /// Sends `call` to the runner over the device protocol and returns its
+    /// reply, waiting at most `timeout` in all. A runner that died is
+    /// started again once, and a call made meanwhile waits for it within
+    /// its timeout.
+    fn call(&self, target: &str, call: Call, timeout: Duration) -> Result<Reply>;
+
+    /// Ends the session: closes the runner's connection, ends the test
+    /// manager's session and signals any runner process still running.
+    fn release(&self, target: &str) -> Result<Released>;
 }
