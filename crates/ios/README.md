@@ -179,9 +179,10 @@ and unmounting it is not this driver's to do.
   with the arguments and environment archived, the app started running and
   `KillExisting` as `terminate_running` asks, and returns the pid of the
   reply. Without `terminate_running` a running app keeps its process: DVT
-  answered the running instance's pid, in 55 ms. A refusal is `app_not_installed` when the installation proxy does
-  not list the app, `launch_failed` with DVT's `NSError` otherwise, read
-  from the reply's archive since `idevice`'s decoder leaves it unresolved.
+  answered the running instance's pid, in 55 ms. A refusal is
+  `app_not_installed` when the installation proxy does not list the app,
+  `launch_failed` with DVT's `NSError` otherwise, read from the reply's
+  archive since `idevice`'s decoder leaves it unresolved.
 - **running** reads DVT's process list for the app's bundle identifier,
   which iOS 26.6.2 gives application processes; an app's extensions have
   identifiers of their own.

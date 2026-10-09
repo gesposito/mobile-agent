@@ -305,6 +305,9 @@ impl FakeDevice {
                             .find(|process| process.bundle_id.as_deref() == Some(&bundle))
                             .map(|process| process.pid);
                         match running {
+                            // A launch without KillExisting keeps a running
+                            // instance and answers its pid, as DVT did on
+                            // iOS 26.6.2.
                             Some(pid) if !kill_existing => Reply::Data(Some(pid_value(pid))),
                             _ => {
                                 dvt.processes.retain(|process| {
