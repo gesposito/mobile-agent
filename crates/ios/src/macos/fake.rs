@@ -30,11 +30,14 @@ use idevice::{IdeviceError, ReadWrite};
 use plist::{Dictionary, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
+use super::fake_xpc::{
+    HidEvent, TimedHid, XpcService, keyboard_surface, recorded_surfaces, serve_xpc,
+};
 use super::host::Link;
 use super::image::Mounter;
 use super::tunnel::Opener;
 use crate::discovery::tests::recorded_images;
-use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT};
+use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT, Screen};
 use crate::services;
 
 /// The fake runner's executable, as S10's runner names it.
@@ -177,6 +180,10 @@ pub(crate) struct FakeDevice {
     /// Bumped when the runner process ends, which closes its connections
     /// and ends the test manager's session that started it.
     pub(crate) runner_deaths: tokio::sync::watch::Sender<u64>,
+    /// What `dtuhidd` took, in order.
+    hid: Mutex<Vec<TimedHid>>,
+    /// The virtual keyboards registered, with what they were created with.
+    keyboards: Mutex<Vec<(u64, Dictionary)>>,
 }
 
 impl fmt::Debug for FakeDevice {
@@ -230,7 +237,63 @@ impl FakeDevice {
             link: Mutex::new(LinkState::default()),
             runner: Mutex::new(RunnerState::default()),
             runner_deaths: tokio::sync::watch::Sender::new(0),
+            hid: Mutex::new(Vec::new()),
+            keyboards: Mutex::new(Vec::new()),
         })
+    }
+
+    pub(crate) fn record_hid(&self, event: HidEvent) {
+        self.hid
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(TimedHid {
+                at: std::time::Instant::now(),
+                event,
+            });
+    }
+
+    /// What `dtuhidd` took, in order, with when.
+    pub(crate) fn hid_events(&self) -> Vec<TimedHid> {
+        self.hid
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn keyboards(&self) -> MutexGuard<'_, Vec<(u64, Dictionary)>> {
+        self.keyboards
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The virtual keyboard `id`, when it is registered.
+    pub(crate) fn keyboard(&self, id: u64) -> Option<Dictionary> {
+        self.keyboards()
+            .iter()
+            .find(|(registered, _)| *registered == id)
+            .map(|(_, created)| created.clone())
+    }
+
+    pub(crate) fn register_keyboard(&self, id: u64, created: Dictionary) {
+        self.keyboards().push((id, created));
+        self.record_hid(HidEvent::KeyboardCreated(id));
+    }
+
+    pub(crate) fn remove_keyboard(&self, id: u64) {
+        self.keyboards().retain(|(registered, _)| *registered != id);
+        self.record_hid(HidEvent::KeyboardRemoved(id));
+    }
+
+    /// The surfaces the universal HID service lists: the phone's and the
+    /// keyboards registered.
+    pub(crate) fn hid_surfaces(&self) -> Vec<Value> {
+        let mut surfaces = recorded_surfaces();
+        surfaces.extend(
+            self.keyboards()
+                .iter()
+                .map(|(id, created)| keyboard_surface(*id, created)),
+        );
+        surfaces
     }
 
     pub(crate) fn runner_state(&self) -> MutexGuard<'_, RunnerState> {
@@ -876,6 +939,12 @@ impl RsdProvider for FakeProvider {
                 None if Some(port) == self.device.port(services::DVT) => {
                     Box::pin(serve_dvt(Arc::clone(&self.device), server))
                 }
+                None if Some(port) == self.device.port(services::HID_UNIVERSAL) => Box::pin(
+                    serve_xpc(Arc::clone(&self.device), server, XpcService::HidUniversal),
+                ),
+                None if Some(port) == self.device.port(services::HID_INDIGO) => Box::pin(
+                    serve_xpc(Arc::clone(&self.device), server, XpcService::HidIndigo),
+                ),
                 None => Box::pin(drain(server)),
             }
         };
@@ -1037,6 +1106,15 @@ impl Link for FakeLink {
 
     async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String> {
         Ok(self.device.dvt().apps.contains_key(bundle_id))
+    }
+
+    async fn screen(&self) -> std::result::Result<Screen, String> {
+        // The iPhone SE (3rd generation)'s, as lockdown gave them.
+        Ok(Screen {
+            width: 750,
+            height: 1334,
+            scale: 2.0,
+        })
     }
 
     async fn connect(&self, port: u16) -> std::result::Result<Box<dyn ReadWrite>, String> {

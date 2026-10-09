@@ -23,6 +23,7 @@ mod model;
 mod readiness;
 mod runner;
 mod services;
+mod touch;
 mod version;
 
 #[cfg(target_os = "macos")]
@@ -32,20 +33,23 @@ mod unsupported;
 
 pub use bundle::{Bundle, inspect as inspect_bundle};
 pub use compat::{
-    CallSite, FIRST_SUPPORTED_IOS, FIRST_UNSUPPORTED_IOS, IDEVICE, VALIDATED_IOS, VALIDATED_XCODE,
-    call_sites, render as render_compatibility, supported_ios, supported_range,
+    CallSite, FIRST_HID_IOS, FIRST_STREAM_HID_IOS, FIRST_SUPPORTED_IOS, FIRST_UNSUPPORTED_IOS,
+    IDEVICE, VALIDATED_IOS, VALIDATED_XCODE, call_sites, hid_input, render as render_compatibility,
+    supported_ios, supported_range,
 };
-pub use driver::{Devices, Lifecycle, Session};
+pub use driver::{Devices, Input, Lifecycle, Session};
 pub use error::{Error, Result};
 pub use identity::{IdentityCheck, host_identity};
 pub use model::{
-    ATTACH_TIMEOUT, AttachOptions, Attached, Connected, Connection, DeviceInfo, DiskImage,
-    Installed, LaunchOptions, Launched, MountAttempt, MountPath, MountReport, MuxEntry, Probe,
-    RUNNER_BUNDLE_ID, RUNNER_NAME, RUNNER_PORT, Released, RunnerSpec, RunnerState, RunnerStatus,
-    TEAM_VARIABLE, TargetStatus, Terminated, Trust, TunnelStatus,
+    ATTACH_TIMEOUT, AttachOptions, Attached, Button, Connected, Connection, DeviceInfo, DiskImage,
+    Dispatch, InputPath, Installed, Key, LaunchOptions, Launched, Modifiers, MountAttempt,
+    MountPath, MountReport, MuxEntry, Point, Probe, RUNNER_BUNDLE_ID, RUNNER_NAME, RUNNER_PORT,
+    Release, Released, RunnerSpec, RunnerState, RunnerStatus, Screen, Swipe, TEAM_VARIABLE,
+    TargetStatus, Terminated, Trust, TunnelStatus,
 };
 pub use readiness::{Need, Readiness};
 pub use services::{NEEDED, Needed};
+pub use touch::{REPORT_EVERY, REST, TAP_HOLD};
 
 #[cfg(target_os = "macos")]
 pub use macos::IosDriver;

@@ -12,8 +12,8 @@ use protocol::message::{Call, Reply};
 
 use crate::error::Result;
 use crate::model::{
-    AttachOptions, Attached, Connected, DeviceInfo, Installed, LaunchOptions, Launched, Released,
-    TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, Installed, Key,
+    LaunchOptions, Launched, Point, Released, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -84,4 +84,32 @@ pub trait Session {
     /// Ends the session: closes the runner's connection, ends the test
     /// manager's session and signals any runner process still running.
     fn release(&self, target: &str) -> Result<Released>;
+}
+
+/// Touches, hardware buttons and keys (spec `ios-device-driver`, "Input
+/// actions without idle waits"; design D22). They go through the developer
+/// disk image's `dtuhidd` from the host where the device's iOS takes its
+/// reports without a display stream, from iOS 18 up to 27, and through the
+/// runner's synthesis otherwise when a runner is attached. Each is
+/// acknowledged once its last report is written, with no idle wait. Points
+/// are in points on the portrait screen.
+pub trait Input {
+    /// A tap: a contact held 50 ms, then the release.
+    fn tap(&self, target: &str, point: Point) -> Result<Dispatch>;
+
+    /// A contact held for `hold`: a long press when it is long enough.
+    fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch>;
+
+    /// A one-finger stroke, which rests before it lifts when it says so.
+    fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch>;
+
+    /// A short press of a hardware button, as an Indigo button event.
+    fn button(&self, target: &str, button: Button) -> Result<Dispatch>;
+
+    /// A key with its modifiers held around it, as Indigo keyboard events.
+    fn key(&self, target: &str, key: Key) -> Result<Dispatch>;
+
+    /// Keys typed one after another on a virtual keyboard the driver
+    /// registers for them and removes afterwards.
+    fn keys(&self, target: &str, keys: &[Key]) -> Result<Dispatch>;
 }

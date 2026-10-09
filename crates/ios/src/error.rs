@@ -86,6 +86,11 @@ pub enum Error {
         method: String,
         error: protocol::Error,
     },
+    /// An argument the device cannot take, such as a point off the screen.
+    InvalidArgument { reason: String },
+    /// No input path serves the device: its `dtuhidd` takes no report from
+    /// the host and no runner is attached to synthesize the input; why.
+    InputUnavailable { target: String, reason: String },
 }
 
 impl Error {
@@ -113,6 +118,8 @@ impl Error {
             Error::RunnerDied { .. } => "runner_died",
             Error::NotAttached { .. } => "not_attached",
             Error::TestManagerMissing { .. } => Readiness::DiskImageUnmounted.code(),
+            Error::InvalidArgument { .. } => "invalid_argument",
+            Error::InputUnavailable { .. } => "input_unavailable",
             // The protocol's own codes pass through; a code this protocol
             // version does not define is the runner's.
             Error::Runner { error, .. } => protocol::code::ALL
@@ -247,6 +254,12 @@ impl fmt::Display for Error {
             Error::Runner { method, error } => {
                 write!(f, "the runner refused {method}: {}", error.message)
             }
+            Error::InvalidArgument { reason } => f.write_str(reason),
+            Error::InputUnavailable { target, reason } => write!(
+                f,
+                "no input path serves iOS device {target}: {reason}; attach the runner, whose \
+                 event synthesis takes the input there"
+            ),
         }
     }
 }

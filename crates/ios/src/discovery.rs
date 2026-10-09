@@ -25,6 +25,32 @@ pub const DEVELOPER_MODE_KEY: &str = "DeveloperModeStatus";
 pub const DEVELOPER_MODE_DOMAIN: &str = "com.apple.security.mac.amfi";
 /// Lockdown's `PasswordProtected`, which follows the lock (spike S9).
 pub const LOCK_KEY: &str = "PasswordProtected";
+/// The lockdown domain that gives the screen's pixels and scale.
+pub const SCREEN_DOMAIN: &str = "com.apple.mobile.iTunes";
+
+/// The screen `values`, lockdown's `com.apple.mobile.iTunes` domain, give:
+/// `ScreenWidth` and `ScreenHeight` in pixels and `ScreenScaleFactor`, 750,
+/// 1334 and 2.0 on the iPhone SE (3rd generation).
+pub fn screen(values: &Value) -> Option<crate::model::Screen> {
+    let values = values.as_dictionary()?;
+    let pixels = |key: &str| {
+        values
+            .get(key)?
+            .as_unsigned_integer()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+    };
+    let scale = match values.get("ScreenScaleFactor")? {
+        Value::Real(scale) => *scale,
+        Value::Integer(scale) => scale.as_unsigned()? as f64,
+        _ => return None,
+    };
+    (scale > 0.0).then_some(crate::model::Screen {
+        width: pixels("ScreenWidth")?,
+        height: pixels("ScreenHeight")?,
+        scale,
+    })
+}
 
 /// One entry per device attached over USB, in usbmuxd's order. A phone with
 /// Wi-Fi sync on is listed twice, on USB and on the network; its USB entry is

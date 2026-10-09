@@ -5,7 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
-# The runner speaks the device protocol (`protocol`).
+# The runner speaks the device protocol (`protocol`). `idevice`'s HID clients
+# come with its `display_stream` feature, though they open no stream.
 [dependencies]
 plist = "1.10.1"
 protocol = { version = "0.1.0", path = "../protocol" }
@@ -14,7 +15,7 @@ protocol = { version = "0.1.0", path = "../protocol" }
 workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-idevice = { version = "=0.1.68", features = ["usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "rsd", "xpc", "mobile_image_mounter", "tss", "installation_proxy", "afc", "dvt", "xctest"] }
+idevice = { version = "=0.1.68", features = ["usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "rsd", "xpc", "mobile_image_mounter", "tss", "installation_proxy", "afc", "dvt", "xctest", "core_device", "display_stream"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "time", "sync", "macros", "io-util", "process"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]

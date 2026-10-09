@@ -18,20 +18,24 @@ use std::time::{Duration, Instant};
 use idevice::ReadWrite;
 use idevice::dvt::message::Message;
 use idevice::dvt::remote_server::RemoteServerClient;
-use protocol::message::{Call, Reply};
+use protocol::message::{Call, KeyParams, Reply, SwipeParams, TapParams};
 use tokio::time::timeout;
 
 use crate::bundle;
+use crate::compat;
 use crate::discovery::{self, usb_entries};
-use crate::driver::{Devices, Lifecycle, Session};
+use crate::driver::{Devices, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::model::{
-    AttachOptions, Attached, Connected, DeviceInfo, DiskImage, Installed, LaunchOptions, Launched,
-    MountReport, MuxEntry, Released, TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, DiskImage, Dispatch, InputPath,
+    Installed, Key, LaunchOptions, Launched, MountReport, MuxEntry, Point, Release, Released,
+    Screen, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::{self, Need, Readiness};
+use crate::touch;
 
 use super::dvt::{self, CallError, DvtChannel};
+use super::hid::{HidClients, HidInput};
 use super::host::{Host, Link, UsbHost, describe};
 use super::image::{self, MountLimits};
 use super::runner::{self, RunnerSession, SessionLimits};
@@ -100,6 +104,33 @@ impl Session for IosDriver {
     }
 }
 
+impl Input for IosDriver {
+    fn tap(&self, target: &str, point: Point) -> Result<Dispatch> {
+        self.core
+            .input(target, Gesture::Press(point, touch::TAP_HOLD))
+    }
+
+    fn press(&self, target: &str, point: Point, hold: Duration) -> Result<Dispatch> {
+        self.core.input(target, Gesture::Press(point, hold))
+    }
+
+    fn swipe(&self, target: &str, swipe: &Swipe) -> Result<Dispatch> {
+        self.core.input(target, Gesture::Swipe(*swipe))
+    }
+
+    fn button(&self, target: &str, button: Button) -> Result<Dispatch> {
+        self.core.input(target, Gesture::Button(button))
+    }
+
+    fn key(&self, target: &str, key: Key) -> Result<Dispatch> {
+        self.core.input(target, Gesture::Key(key))
+    }
+
+    fn keys(&self, target: &str, keys: &[Key]) -> Result<Dispatch> {
+        self.core.input(target, Gesture::Keys(keys.to_vec()))
+    }
+}
+
 impl Lifecycle for IosDriver {
     fn install(&self, target: &str, app: &Path) -> Result<Installed> {
         self.core.install(target, app)
@@ -124,6 +155,13 @@ pub(crate) struct Target<H: Host> {
     pub(crate) tunnel: Tunnel<H::Opener>,
     pub(crate) link: H::Link,
     pub(crate) test_manager: H::TestManager,
+    /// The device as the last `connect` read it: its iOS version gates the
+    /// input path.
+    device: Option<DeviceInfo>,
+    /// The screen, read from lockdown on first use.
+    screen: Option<Screen>,
+    /// The connections to `dtuhidd`.
+    pub(crate) hid: HidClients,
     disk_image: Option<MountReport>,
     /// DVT's channels by identifier, each on a connection of its own, kept
     /// for the target's lifetime: a new connection costs 25 to 37 ms (S9).
@@ -136,9 +174,32 @@ impl<H: Host> Target<H> {
         TargetStatus {
             tunnel: self.tunnel.status(),
             disk_image: self.disk_image.clone(),
-            services_open: self.channels.keys().copied().collect(),
+            services_open: self
+                .channels
+                .keys()
+                .copied()
+                .chain(self.hid.open())
+                .collect(),
             runner: None,
         }
+    }
+
+    /// The device's screen, read from lockdown once.
+    async fn screen(&mut self) -> Result<Screen> {
+        if let Some(screen) = self.screen {
+            return Ok(screen);
+        }
+        let screen = self.link.screen().await.map_err(|reason| Error::Device {
+            call: "lockdown's com.apple.mobile.iTunes screen values".into(),
+            reason,
+        })?;
+        self.screen = Some(screen);
+        Ok(screen)
+    }
+
+    /// The device's iOS version, as `connect` read it.
+    fn ios_version(&self) -> Option<&str> {
+        self.device.as_ref()?.ios_version.as_deref()
     }
 
     /// The channel `identifier`, opened on a DVT connection of its own unless
@@ -284,6 +345,110 @@ impl<H: Host> Target<H> {
             reason,
         })
     }
+}
+
+/// How long the runner gets for one input it synthesizes.
+const SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// An input the [`Input`] trait takes.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Gesture {
+    Press(Point, Duration),
+    Swipe(Swipe),
+    Button(Button),
+    Key(Key),
+    Keys(Vec<Key>),
+}
+
+impl Gesture {
+    /// The gesture as `dtuhidd` takes it on `screen`.
+    fn hid(&self, screen: &Screen) -> Result<HidInput> {
+        let invalid = |reason| Error::InvalidArgument { reason };
+        Ok(match self {
+            Gesture::Press(point, hold) => {
+                HidInput::Touches(touch::press(screen, *point, *hold).map_err(invalid)?)
+            }
+            Gesture::Swipe(swipe) => {
+                HidInput::Touches(touch::swipe(screen, swipe).map_err(invalid)?)
+            }
+            Gesture::Button(button) => HidInput::Button(*button),
+            Gesture::Key(key) => HidInput::Key(*key),
+            Gesture::Keys(keys) => HidInput::Keys(keys.clone()),
+        })
+    }
+
+    /// The gesture as the runner's protocol calls, at device pixels.
+    fn calls(&self, screen: &Screen) -> Vec<Call> {
+        let pixels = |point: &Point| {
+            (
+                (point.x * screen.scale).round() as i32,
+                (point.y * screen.scale).round() as i32,
+            )
+        };
+        let millis = |duration: &Duration| u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
+        let key = |key: &Key| {
+            let modifiers = key.modifiers;
+            let meta = u32::from(modifiers.shift)
+                | u32::from(modifiers.control) << 1
+                | u32::from(modifiers.option) << 2
+                | u32::from(modifiers.command) << 3;
+            Call::Key(KeyParams {
+                code: u32::from(key.usage),
+                meta: (meta != 0).then_some(meta),
+            })
+        };
+        match self {
+            Gesture::Press(point, hold) => {
+                let (x, y) = pixels(point);
+                vec![Call::Tap(TapParams {
+                    x,
+                    y,
+                    duration_ms: (*hold != touch::TAP_HOLD).then(|| millis(hold)),
+                })]
+            }
+            Gesture::Swipe(swipe) => {
+                let ((x1, y1), (x2, y2)) = (pixels(&swipe.from), pixels(&swipe.to));
+                vec![Call::Swipe(SwipeParams {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    duration_ms: millis(&swipe.duration),
+                    rest_ms: (swipe.release == Release::Resting).then(|| millis(&touch::REST)),
+                })]
+            }
+            // The runner presses a hardware button for its Consumer-page
+            // usage under the page, as S10's took home.
+            Gesture::Button(button) => vec![Call::Key(KeyParams {
+                code: 0x000C_0000 | button.usage() as u32,
+                meta: None,
+            })],
+            Gesture::Key(one) => vec![key(one)],
+            Gesture::Keys(keys) => keys.iter().map(key).collect(),
+        }
+    }
+}
+
+/// Delivers `gesture` through the runner's synthesis, acknowledged as the
+/// runner answers each call.
+async fn synthesize(
+    session: &RunnerSession,
+    gesture: &Gesture,
+    screen: &Screen,
+    requested: Instant,
+) -> Result<Dispatch> {
+    let calls = gesture.calls(screen);
+    let mut first = None;
+    for call in &calls {
+        runner::call(session, call.clone(), SYNTHESIS_TIMEOUT).await?;
+        first.get_or_insert_with(|| requested.elapsed());
+    }
+    Ok(Dispatch {
+        path: InputPath::Runner,
+        reports: calls.len(),
+        first: first.unwrap_or_default(),
+        acknowledged: requested.elapsed(),
+    })
 }
 
 /// The pids of `bundle_id`'s processes in `processes`.
@@ -464,6 +629,7 @@ impl<H: Host> Core<H> {
         let slot = self.slot(&entry);
         let mut state = slot.state.lock().await;
         state.disk_image = Some(disk_image.clone());
+        state.device = Some(device.clone());
         let opened = match state.tunnel.open().await {
             Ok(()) => state
                 .channel(dvt::PROCESS_CONTROL, self.limits)
@@ -751,9 +917,36 @@ impl<H: Host> Core<H> {
         self.runtime.block_on(async {
             let mut state = slot.state.lock().await;
             state.channels.clear();
+            state.hid.close();
             state.tunnel.close().await;
         });
         Ok(())
+    }
+
+    /// Delivers `gesture` to `target`: through `dtuhidd` where the device's
+    /// iOS takes its reports without a display stream, through the runner's
+    /// synthesis otherwise when a runner is attached.
+    pub(crate) fn input(&self, target: &str, gesture: Gesture) -> Result<Dispatch> {
+        self.runtime.block_on(async {
+            let requested = Instant::now();
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            let screen = state.screen().await?;
+            if let Err(reason) = compat::hid_input(state.ios_version()) {
+                drop(state);
+                let Some(session) = slot.runner() else {
+                    return Err(Error::InputUnavailable {
+                        target: target.to_owned(),
+                        reason,
+                    });
+                };
+                return synthesize(&session, &gesture, &screen, requested).await;
+            }
+            let input = gesture.hid(&screen)?;
+            let dispatched = state.send_hid(&input, requested).await;
+            *lock(&slot.snapshot) = state.snapshot();
+            dispatched
+        })
     }
 
     /// The state the driver keeps for the device of `entry`, made on first
@@ -767,6 +960,9 @@ impl<H: Host> Core<H> {
                     tunnel: Tunnel::new(&entry.udid, self.host.opener(entry), self.limits),
                     link: self.host.link(entry),
                     test_manager: self.host.test_manager(entry),
+                    device: None,
+                    screen: None,
+                    hid: HidClients::default(),
                     disk_image: None,
                     channels: BTreeMap::new(),
                 }),

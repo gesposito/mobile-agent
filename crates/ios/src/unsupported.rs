@@ -7,11 +7,11 @@ use std::time::Duration;
 
 use protocol::message::{Call, Reply};
 
-use crate::driver::{Devices, Lifecycle, Session};
+use crate::driver::{Devices, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::model::{
-    AttachOptions, Attached, Connected, DeviceInfo, Installed, LaunchOptions, Launched, Released,
-    TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, Installed, Key,
+    LaunchOptions, Launched, Point, Released, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -57,6 +57,32 @@ impl Session for IosDriver {
     }
 
     fn release(&self, _target: &str) -> Result<Released> {
+        match *self {}
+    }
+}
+
+impl Input for IosDriver {
+    fn tap(&self, _target: &str, _point: Point) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn press(&self, _target: &str, _point: Point, _hold: Duration) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn swipe(&self, _target: &str, _swipe: &Swipe) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn button(&self, _target: &str, _button: Button) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn key(&self, _target: &str, _key: Key) -> Result<Dispatch> {
+        match *self {}
+    }
+
+    fn keys(&self, _target: &str, _keys: &[Key]) -> Result<Dispatch> {
         match *self {}
     }
 }

@@ -418,3 +418,161 @@ pub struct Terminated {
     /// From the request until the processes left DVT's process list.
     pub elapsed: Duration,
 }
+
+/// A position on the screen in points, from the top left, portrait.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub fn new(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+}
+
+/// How the finger of a swipe leaves the screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Release {
+    /// It lifts at the end of its path, still moving, and the content
+    /// flings on at its speed.
+    #[default]
+    Moving,
+    /// It rests at the end of its path, then moves one pixel on and lifts
+    /// there, the Android `rest_ms` semantics (task 10.16), so the content
+    /// stops where it left it.
+    Resting,
+}
+
+/// A one-finger stroke from `from` to `to` over `duration`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Swipe {
+    pub from: Point,
+    pub to: Point,
+    pub duration: Duration,
+    pub release: Release,
+}
+
+impl Swipe {
+    pub fn new(from: Point, to: Point, duration: Duration) -> Swipe {
+        Swipe {
+            from,
+            to,
+            duration,
+            release: Release::Moving,
+        }
+    }
+
+    /// The same stroke, resting before it lifts.
+    pub fn resting(mut self) -> Swipe {
+        self.release = Release::Resting;
+        self
+    }
+}
+
+/// A hardware button, sent as an Indigo button event on the HID Consumer
+/// page (0x0C), with the usages the Simulator's dtuhidd takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    Home,
+    Lock,
+    VolumeUp,
+    VolumeDown,
+}
+
+impl Button {
+    /// Its usage on the Consumer page.
+    pub fn usage(self) -> u64 {
+        match self {
+            Button::Home => 0x40,
+            Button::Lock => 0x30,
+            Button::VolumeUp => 0xE9,
+            Button::VolumeDown => 0xEA,
+        }
+    }
+}
+
+/// Modifier keys held around a key.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub option: bool,
+    pub command: bool,
+}
+
+impl Modifiers {
+    /// Their usages on the HID Keyboard page: the left-hand keys.
+    pub fn usages(self) -> Vec<u16> {
+        [
+            (self.control, 0xE0),
+            (self.shift, 0xE1),
+            (self.option, 0xE2),
+            (self.command, 0xE3),
+        ]
+        .into_iter()
+        .filter_map(|(held, usage)| held.then_some(usage))
+        .collect()
+    }
+}
+
+/// A key of the HID Keyboard page (0x07).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Key {
+    pub usage: u16,
+    pub modifiers: Modifiers,
+}
+
+impl Key {
+    /// A usage with no modifier.
+    pub fn usage(usage: u16) -> Key {
+        Key {
+            usage,
+            modifiers: Modifiers::default(),
+        }
+    }
+}
+
+/// The way an input reached the device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputPath {
+    /// The developer disk image's `dtuhidd` over RSD, from the host (D22).
+    Hid,
+    /// The runner's event synthesis, the fallback where the device's iOS
+    /// takes no report without a display stream.
+    Runner,
+}
+
+/// An input delivered: acknowledged once its last report was written, or
+/// the runner answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dispatch {
+    pub path: InputPath,
+    /// Reports and events written.
+    pub reports: usize,
+    /// From the request until the first report was written.
+    pub first: Duration,
+    /// From the request until the last was written: the acknowledgement,
+    /// a tap's 50 ms hold included.
+    pub acknowledged: Duration,
+}
+
+/// The device's screen as lockdown's `com.apple.mobile.iTunes` domain
+/// reports it: its pixels and the scale from points to pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Screen {
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+}
+
+impl Screen {
+    /// The size in points.
+    pub fn points(&self) -> (f64, f64) {
+        (
+            f64::from(self.width) / self.scale,
+            f64::from(self.height) / self.scale,
+        )
+    }
+}

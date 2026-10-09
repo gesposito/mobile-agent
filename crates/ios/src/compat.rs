@@ -34,6 +34,39 @@ pub fn supported_ios(version: &str) -> bool {
     Version::parse(version).is_some_and(|version| version >= first && version < past)
 }
 
+/// The first iOS whose `dtuhidd` takes input from the host, by Xcode 27's
+/// release notes ("input works from iOS 18.0 only").
+pub const FIRST_HID_IOS: &str = "18";
+/// The first iOS whose `dtuhidd` drops reports unless a display stream runs,
+/// as pymobiledevice3 and `idevice` report; iOS 26.6.2 took them without one
+/// (S11), and this driver opens no stream yet.
+pub const FIRST_STREAM_HID_IOS: &str = "27";
+
+/// Whether the device's `dtuhidd` takes reports from the host without a
+/// display stream on iOS `version`; why not otherwise.
+pub fn hid_input(version: Option<&str>) -> Result<(), String> {
+    let Some(text) = version else {
+        return Err("the device's iOS version is unknown, so its dtuhidd is not used".into());
+    };
+    let parsed = Version::parse(text)
+        .ok_or_else(|| format!("iOS {text:?} is not a version this driver reads"))?;
+    let first = Version::parse(FIRST_HID_IOS).expect("a dotted version");
+    let streamed = Version::parse(FIRST_STREAM_HID_IOS).expect("a dotted version");
+    if parsed < first {
+        return Err(format!(
+            "the device runs iOS {text}, and dtuhidd takes input from the host from iOS \
+             {FIRST_HID_IOS}"
+        ));
+    }
+    if parsed >= streamed {
+        return Err(format!(
+            "the device runs iOS {text}, whose dtuhidd drops reports unless a display stream \
+             runs, which this driver does not open yet"
+        ));
+    }
+    Ok(())
+}
+
 /// The supported range in words.
 pub fn supported_range() -> String {
     format!(
@@ -213,6 +246,23 @@ mod tests {
         for version in ["16.7.10", "17.3.1", "17", "27.0", "27", "28.1", "", "beta"] {
             assert!(!supported_ios(version), "{version}");
         }
+    }
+
+    #[test]
+    fn host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream() {
+        for version in ["18.0", "18.4", "26.6.2", "26.9"] {
+            assert_eq!(hid_input(Some(version)), Ok(()), "{version}");
+        }
+        let early = hid_input(Some("17.6")).expect_err("before iOS 18");
+        assert!(early.contains("17.6") && early.contains("18"), "{early}");
+        for version in ["27.0", "27.1", "28"] {
+            let refused = hid_input(Some(version)).expect_err(version);
+            assert!(
+                refused.contains(version) && refused.contains("display stream"),
+                "{refused}"
+            );
+        }
+        assert!(hid_input(None).is_err());
     }
 
     #[test]

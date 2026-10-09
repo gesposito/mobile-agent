@@ -8,6 +8,9 @@ mod dvt;
 mod fake;
 #[cfg(test)]
 mod fake_runner;
+#[cfg(test)]
+mod fake_xpc;
+mod hid;
 mod host;
 mod image;
 mod runner;

@@ -17,11 +17,11 @@ use plist::{Dictionary, Value};
 use tokio::time::timeout;
 
 use crate::discovery::{
-    self, DESCRIPTION_KEYS, DEVELOPER_MODE_DOMAIN, DEVELOPER_MODE_KEY, LOCK_KEY,
+    self, DESCRIPTION_KEYS, DEVELOPER_MODE_DOMAIN, DEVELOPER_MODE_KEY, LOCK_KEY, SCREEN_DOMAIN,
 };
 use crate::error::{Error, Result};
 use crate::identity::IdentityCheck;
-use crate::model::{Connection, DeviceInfo, MuxEntry, Probe, Trust};
+use crate::model::{Connection, DeviceInfo, MuxEntry, Probe, Screen, Trust};
 
 use super::image::{DDI_DIRECTORY, Mounter, UsbMounter};
 use super::runner::{TestManager, UsbTestManager};
@@ -88,6 +88,10 @@ pub(crate) trait Link: Send + Sync + 'static {
         &self,
         port: u16,
     ) -> impl Future<Output = std::result::Result<Box<dyn ReadWrite>, String>> + Send;
+
+    /// The screen's pixels and scale, from lockdown's
+    /// `com.apple.mobile.iTunes` domain.
+    fn screen(&self) -> impl Future<Output = std::result::Result<Screen, String>> + Send;
 }
 
 /// What the driver needs from the host: the seam the tests replace.
@@ -276,6 +280,29 @@ impl Link for UsbLink {
             .map_err(|_| format!("the installation proxy did not answer within {LINK_TIMEOUT:?}"))?
             .map_err(|error| describe(&error))?;
         Ok(apps.contains_key(bundle_id))
+    }
+
+    async fn screen(&self) -> std::result::Result<Screen, String> {
+        let mut session = self.lockdown.lock().await;
+        if session.is_none() {
+            *session = Some(lockdown_session(&self.provider).await?);
+        }
+        let lockdown = session.as_mut().expect("a session");
+        let values = timeout(LINK_TIMEOUT, lockdown.get_value(None, Some(SCREEN_DOMAIN)))
+            .await
+            .map_err(|_| format!("lockdown did not answer within {LINK_TIMEOUT:?}"))?;
+        let values = match values {
+            Ok(values) => values,
+            Err(error) => {
+                // A session the device closed answers no more; the next read
+                // starts another.
+                *session = None;
+                return Err(describe(&error));
+            }
+        };
+        discovery::screen(&values).ok_or_else(|| {
+            format!("{SCREEN_DOMAIN} gives no ScreenWidth, ScreenHeight and ScreenScaleFactor")
+        })
     }
 
     async fn connect(&self, port: u16) -> std::result::Result<Box<dyn ReadWrite>, String> {
