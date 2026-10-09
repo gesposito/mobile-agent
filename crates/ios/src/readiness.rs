@@ -22,7 +22,8 @@ use crate::model::{DiskImage, Probe, TEAM_VARIABLE, Trust};
 pub enum Need {
     /// A lockdown session with the host's pairing record, on a supported iOS.
     Trust,
-    /// Developer Mode on: installing a development-signed app.
+    /// Developer Mode on, which a development-signed app needs to install
+    /// and run.
     DeveloperMode,
     /// The developer disk image mounted: the developer services over the
     /// tunnel, such as DVT's process control and the test manager.
