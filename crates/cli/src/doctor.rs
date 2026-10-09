@@ -4,11 +4,16 @@
 //! one platform is a warning, since the other platform may be all a user
 //! drives. The checks of a device driver the run's `MOBILE_AGENT_DRIVERS`
 //! leaves out ask the host nothing and are skipped as not consulted, so a
-//! run that names the Simulator's driver alone runs no adb.
+//! run that names the Simulator's driver alone runs no adb. The physical
+//! iPhone driver registers only when the variable names `ios`, so its
+//! checks are consulted only then: the signing identity and the team, the
+//! runner bundle the daemon installs, and each attached iPhone's readiness
+//! as the daemon's `devices` lists it, with the step the daemon names.
 //!
 //! The checks ask the host through a [`Probe`], which tests script. The
 //! Xcode compatibility table comes from the daemon, whose drivers supply
-//! its rows ([`System::daemon`]), so the CLI links no driver code.
+//! its rows ([`System::daemon`]), the Simulator's and the iPhone's, so the
+//! CLI links no driver code.
 
 use std::fmt::Write as _;
 use std::io::{Read, Write as _};
@@ -35,22 +40,35 @@ const GRPC_OFFSET: u16 = 3000;
 /// the CLI starts inherits it.
 const DRIVERS: &str = "MOBILE_AGENT_DRIVERS";
 
+/// The variable that names the team the iPhone runner is signed for.
+const TEAM: &str = "MOBILE_AGENT_IOS_TEAM";
+
 /// A device driver as [`DRIVERS`] names it.
 struct DeviceDriver {
     /// The names the variable gives it.
     names: &'static [&'static str],
     /// Its name in doctor's messages.
     title: &'static str,
+    /// Whether it registers only when the variable names it.
+    opt_in: bool,
 }
 
 const SIMULATOR: DeviceDriver = DeviceDriver {
-    names: &["simulator", "ios"],
+    names: &["simulator"],
     title: "Simulator",
+    opt_in: false,
+};
+
+const IOS_DEVICE: DeviceDriver = DeviceDriver {
+    names: &["ios"],
+    title: "physical iOS",
+    opt_in: true,
 };
 
 const ANDROID: DeviceDriver = DeviceDriver {
     names: &["android"],
     title: "Android",
+    opt_in: false,
 };
 
 /// What a command printed.
@@ -247,6 +265,17 @@ pub fn run_checks(probe: &dyn Probe) -> Report {
         checks.push(xcode);
         checks.push(runtimes_check(probe, has_xcode));
     }
+    let iphones = left_out(probe, &IOS_DEVICE);
+    if let Some(reason) = &iphones {
+        checks.extend(skipped(
+            &["ios-signing", "ios-runner", "ios-devices"],
+            reason,
+        ));
+    } else {
+        checks.push(signing_check(probe));
+        checks.push(runner_check(probe, &daemon));
+        checks.push(iphones_check(probe));
+    }
     if let Some(reason) = left_out(probe, &ANDROID) {
         checks.extend(skipped(
             &["android-sdk", "adb-server", "emulator-control"],
@@ -274,9 +303,10 @@ pub fn run_checks(probe: &dyn Probe) -> Report {
         "install it with sfw cargo install just",
     ));
     let compatibility = compatibility(&daemon);
-    checks.push(match &simulator {
-        Some(reason) => check("xcode-compatibility", Status::Skip, reason.as_str()),
-        None => compatibility_check(probe, &compatibility),
+    // The Simulator's driver and the iPhone's both fill the table.
+    checks.push(match (&simulator, &iphones) {
+        (Some(reason), Some(_)) => check("xcode-compatibility", Status::Skip, reason.as_str()),
+        _ => compatibility_check(probe, &compatibility),
     });
     Report {
         checks,
@@ -287,9 +317,16 @@ pub fn run_checks(probe: &dyn Probe) -> Report {
 /// Why the checks of `driver` are not consulted: the run's
 /// `MOBILE_AGENT_DRIVERS` leaves it out. The variable is read as the daemon
 /// reads it, comma-separated names in any case or `none`; unset or blank,
-/// it leaves no driver out.
+/// it leaves out only a driver that registers when named.
 fn left_out(probe: &dyn Probe, driver: &DeviceDriver) -> Option<String> {
-    let list = probe.env(DRIVERS).filter(|list| !list.trim().is_empty())?;
+    let Some(list) = probe.env(DRIVERS).filter(|list| !list.trim().is_empty()) else {
+        return driver.opt_in.then(|| {
+            format!(
+                "not consulted: the {} driver registers only when {DRIVERS} names {}",
+                driver.title, driver.names[0]
+            )
+        });
+    };
     let named = list
         .split(',')
         .map(|entry| entry.trim().to_ascii_lowercase())
@@ -445,6 +482,194 @@ fn runtimes_check(probe: &dyn Probe, has_xcode: bool) -> Check {
         );
     }
     check(NAME, Status::Ok, ios.join(", "))
+}
+
+const NEEDS_MACOS: &str = "physical iPhones need macOS";
+
+/// The step that gives the runner a signing identity: the team's
+/// development certificate and the team's identifier in the environment.
+const SIGNING_STEP: &str = "create the team's Apple Development certificate in Xcode (Settings > Accounts, Manage Certificates), then export MOBILE_AGENT_IOS_TEAM with the team's identifier";
+
+/// Whether this Mac can sign the iPhone runner: `MOBILE_AGENT_IOS_TEAM` set
+/// and a valid Apple Development identity in the keychain. Neither the team
+/// nor the identity is named; which team an identity belongs to each
+/// phone's readiness tells (`no_signing_identity`).
+fn signing_check(probe: &dyn Probe) -> Check {
+    const NAME: &str = "ios-signing";
+    if probe.os() != "macos" {
+        return check(NAME, Status::Skip, NEEDS_MACOS);
+    }
+    if probe.env(TEAM).is_none_or(|team| team.trim().is_empty()) {
+        return hinted(
+            NAME,
+            Status::Warn,
+            format!("{TEAM} is not set, so the runner cannot be signed"),
+            SIGNING_STEP,
+        );
+    }
+    match probe.run("security", &["find-identity", "-v", "-p", "codesigning"]) {
+        Some(out) if out.success => {
+            let identities = out
+                .stdout
+                .lines()
+                .filter(|line| line.contains("\"Apple Development:"))
+                .count();
+            match identities {
+                0 => hinted(
+                    NAME,
+                    Status::Warn,
+                    format!(
+                        "{TEAM} is set, and the keychain holds no valid Apple Development identity to sign the runner with"
+                    ),
+                    SIGNING_STEP,
+                ),
+                count => check(
+                    NAME,
+                    Status::Ok,
+                    format!(
+                        "{TEAM} is set, and the keychain holds {count} valid Apple Development {}; each iPhone's readiness below tells whether one is the team's",
+                        if count == 1 { "identity" } else { "identities" }
+                    ),
+                ),
+            }
+        }
+        out => hinted(
+            NAME,
+            Status::Warn,
+            format!(
+                "security find-identity failed: {}",
+                out.map(|o| first_line(&o.stderr))
+                    .unwrap_or_else(|| "not found".to_owned())
+            ),
+            SIGNING_STEP,
+        ),
+    }
+}
+
+/// How the runner bundle is built and reaches a phone.
+const RUNNER_STEP: &str = "build it with just agent-ios-build (agent-ios/build.sh, with MOBILE_AGENT_IOS_TEAM set); an attach installs it on a phone whose runner is missing or of another version";
+
+/// Whether the runner bundle the daemon installs (its `iosRunner`) is
+/// built, and of the version the daemon expects.
+fn runner_check(probe: &dyn Probe, daemon: &Result<Value, String>) -> Check {
+    const NAME: &str = "ios-runner";
+    if probe.os() != "macos" {
+        return check(NAME, Status::Skip, NEEDS_MACOS);
+    }
+    let Ok(data) = daemon else {
+        return check(NAME, Status::Skip, "needs the daemon");
+    };
+    let runner = &data["iosRunner"];
+    let (Some(bundle), Some(expected)) = (runner["bundle"].as_str(), runner["version"].as_str())
+    else {
+        return check(
+            NAME,
+            Status::Skip,
+            "the daemon does not register the physical iOS driver",
+        );
+    };
+    let plist = Path::new(bundle).join("Info.plist");
+    if !probe.is_file(&plist) {
+        return hinted(
+            NAME,
+            Status::Warn,
+            format!("no runner bundle is built at {bundle}"),
+            RUNNER_STEP,
+        );
+    }
+    let plist = plist.to_string_lossy();
+    let version = probe
+        .run(
+            "plutil",
+            &[
+                "-extract",
+                "CFBundleShortVersionString",
+                "raw",
+                "-o",
+                "-",
+                &plist,
+            ],
+        )
+        .filter(|out| out.success)
+        .map(|out| out.stdout.trim().to_owned());
+    match version {
+        Some(version) if version == expected => {
+            check(NAME, Status::Ok, format!("{bundle}, version {version}"))
+        }
+        Some(version) => hinted(
+            NAME,
+            Status::Warn,
+            format!(
+                "the runner bundle at {bundle} is version {version}, and the daemon expects {expected}"
+            ),
+            RUNNER_STEP,
+        ),
+        None => hinted(
+            NAME,
+            Status::Warn,
+            format!("the version of the runner bundle at {bundle} cannot be read"),
+            RUNNER_STEP,
+        ),
+    }
+}
+
+/// Each iPhone the daemon's `devices` lists, in its readiness state, with
+/// the step the daemon names for a state that keeps it from a session.
+fn iphones_check(probe: &dyn Probe) -> Check {
+    const NAME: &str = "ios-devices";
+    if probe.os() != "macos" {
+        return check(NAME, Status::Skip, NEEDS_MACOS);
+    }
+    let listing = match probe.devices() {
+        Ok(listing) => listing,
+        Err(error) => {
+            return check(
+                NAME,
+                Status::Skip,
+                format!("needs the daemon's devices: {error}"),
+            );
+        }
+    };
+    let phones: Vec<&Value> = listing["devices"]
+        .as_array()
+        .map(|all| all.iter().filter(|d| d["class"] == "ios-device").collect())
+        .unwrap_or_default();
+    if phones.is_empty() {
+        return hinted(
+            NAME,
+            Status::Warn,
+            "no iPhone is attached over USB",
+            "connect one over USB, unlocked; devices lists it in its readiness state",
+        );
+    }
+    let text = |phone: &Value, key: &str| phone[key].as_str().unwrap_or_default().to_owned();
+    let listed: Vec<String> = phones
+        .iter()
+        .map(|phone| {
+            format!(
+                "{} ({}, {}): {}",
+                text(phone, "id"),
+                text(phone, "model"),
+                text(phone, "os"),
+                text(phone, "state")
+            )
+        })
+        .collect();
+    let steps: Vec<String> = phones
+        .iter()
+        .filter(|phone| phone["state"] != "ready")
+        .map(|phone| {
+            let advice = phone["advice"]
+                .as_str()
+                .unwrap_or("devices names what stands in the way");
+            format!("{}: {advice}", text(phone, "id"))
+        })
+        .collect();
+    if steps.is_empty() {
+        check(NAME, Status::Ok, listed.join("; "))
+    } else {
+        hinted(NAME, Status::Warn, listed.join("; "), steps.join("; "))
+    }
 }
 
 /// The Android SDK check and the SDK's adb.
