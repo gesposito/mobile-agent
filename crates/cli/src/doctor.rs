@@ -75,6 +75,8 @@ pub trait Probe {
     fn adb_server(&self, port: u16) -> Result<u32, String>;
     /// The daemon's `doctor` data, starting the daemon if needed.
     fn daemon(&self) -> Result<Value, String>;
+    /// The daemon's `devices` data: every target its drivers list now.
+    fn devices(&self) -> Result<Value, String>;
 }
 
 /// A check's outcome.
@@ -809,8 +811,19 @@ impl Probe for System {
     }
 
     fn daemon(&self) -> Result<Value, String> {
+        self.ask("doctor")
+    }
+
+    fn devices(&self) -> Result<Value, String> {
+        self.ask("devices")
+    }
+}
+
+impl System {
+    /// The daemon's data for `action`, a request without parameters.
+    fn ask(&self, action: &str) -> Result<Value, String> {
         let mut request = serde_json::Map::new();
-        request.insert("action".into(), "doctor".into());
+        request.insert("action".into(), action.into());
         request.insert("id".into(), client::request_id().into());
         request.insert("session".into(), self.session.clone().into());
         match client::call(&self.endpoint, &request) {

@@ -26,8 +26,10 @@ struct Host {
     dirs: HashMap<PathBuf, Vec<(PathBuf, String)>>,
     adb: Result<u32, String>,
     daemon: Result<Value, String>,
-    /// Each command line run, and `adb-server <port>` for each question to
-    /// the adb server.
+    /// The daemon's `devices` data.
+    devices: Result<Value, String>,
+    /// Each command line run, `adb-server <port>` for each question to the
+    /// adb server, and `devices` for each listing asked of the daemon.
     asked: RefCell<Vec<String>>,
 }
 
@@ -69,6 +71,7 @@ impl Host {
                 "drivers": ["fake"],
                 "compatibility": {"rows": [], "note": "the Simulator driver fills this table"}
             })),
+            devices: Ok(json!({"devices": []})),
             asked: RefCell::default(),
         };
         host.command(
@@ -147,6 +150,11 @@ impl Probe for Host {
 
     fn daemon(&self) -> Result<Value, String> {
         self.daemon.clone()
+    }
+
+    fn devices(&self) -> Result<Value, String> {
+        self.asked.borrow_mut().push("devices".to_owned());
+        self.devices.clone()
     }
 }
 
@@ -462,45 +470,63 @@ const SIMULATOR_CHECKS: [&str; 3] = ["xcode", "simulator-runtimes", "xcode-compa
 /// The checks of Android's driver.
 const ANDROID_CHECKS: [&str; 3] = ["android-sdk", "adb-server", "emulator-control"];
 
+/// The checks of the physical iPhone driver.
+const IOS_CHECKS: [&str; 3] = ["ios-signing", "ios-runner", "ios-devices"];
+
 /// Task 10.24: doctor reads the run's `MOBILE_AGENT_DRIVERS` as the daemon
-/// does, comma-separated names in any case with `ios` for `simulator`, or
-/// `none`, and asks the host nothing for a driver it leaves out, whose
-/// checks it skips as not consulted; unset or blank, it leaves none out.
+/// does, comma-separated names in any case, or `none`, and asks the host
+/// nothing for a driver it leaves out, whose checks it skips as not
+/// consulted; unset or blank, it leaves none of the default drivers out.
+/// Task 5.1: `ios` names the physical iPhone driver, which registers only
+/// when named, so its checks are consulted only then, and unset they say
+/// so.
 #[test]
 fn the_run_s_drivers_choose_which_checks_ask_the_host() {
-    for (drivers, simulator, android) in [
-        (None, true, true),
-        (Some("  "), true, true),
-        (Some("simulator"), true, false),
-        (Some(" iOS "), true, false),
-        (Some("android"), false, true),
-        (Some("Android, simulator"), true, true),
-        (Some("none"), false, false),
+    for (drivers, simulator, android, ios) in [
+        (None, true, true, false),
+        (Some("  "), true, true, false),
+        (Some("simulator"), true, false, false),
+        (Some(" iOS "), false, false, true),
+        (Some("android"), false, true, false),
+        (Some("Android, simulator"), true, true, false),
+        (Some("ios,android"), false, true, true),
+        (Some("none"), false, false, false),
     ] {
         let mut host = Host::healthy();
         if let Some(value) = drivers {
             host.env.insert("MOBILE_AGENT_DRIVERS", value.to_owned());
         }
         let report = run_checks(&host);
-        for (names, named) in [(SIMULATOR_CHECKS, simulator), (ANDROID_CHECKS, android)] {
+        for (names, named) in [
+            (SIMULATOR_CHECKS, simulator),
+            (ANDROID_CHECKS, android),
+            (IOS_CHECKS, ios),
+        ] {
             for name in names {
                 let check = report
                     .checks
                     .iter()
                     .find(|c| c.name == name)
                     .unwrap_or_else(|| panic!("no {name} check"));
+                // The compatibility table serves the Simulator's and the
+                // iPhone's drivers alike.
+                let consulted = named || (name == "xcode-compatibility" && ios);
                 assert_eq!(
                     check.message.contains("not consulted"),
-                    !named,
+                    !consulted,
                     "{drivers:?}: {check:?}"
                 );
-                if !named {
-                    assert_eq!(check.status, Status::Skip, "{drivers:?}: {check:?}");
-                    assert!(
-                        check.message.contains("MOBILE_AGENT_DRIVERS="),
-                        "{drivers:?}: {check:?}"
-                    );
+                if consulted {
+                    continue;
                 }
+                assert_eq!(check.status, Status::Skip, "{drivers:?}: {check:?}");
+                let unset = drivers.is_none_or(|value| value.trim().is_empty());
+                let says = if unset {
+                    "names ios"
+                } else {
+                    "MOBILE_AGENT_DRIVERS="
+                };
+                assert!(check.message.contains(says), "{drivers:?}: {check:?}");
             }
         }
         let asked = host.asked.borrow();
@@ -514,6 +540,210 @@ fn the_run_s_drivers_choose_which_checks_ask_the_host() {
             simulator,
             "{drivers:?} asked {asked:?}"
         );
+        assert_eq!(
+            asked
+                .iter()
+                .any(|line| line.starts_with("security") || line == "devices"),
+            ios,
+            "{drivers:?} asked {asked:?}"
+        );
+    }
+}
+
+/// The healthy host with a daemon that registers the physical iPhone
+/// driver alone, as `MOBILE_AGENT_DRIVERS=ios` makes it, its runner bundle
+/// built and the team's identity in the keychain.
+fn iphone_host() -> Host {
+    let mut host = Host::healthy();
+    host.env.insert("MOBILE_AGENT_DRIVERS", "ios".to_owned());
+    host.env
+        .insert("MOBILE_AGENT_IOS_TEAM", "TEAMPLACE1".to_owned());
+    host.daemon = Ok(json!({
+        "pid": 42,
+        "version": "0.1.0+abc",
+        "drivers": ["ios"],
+        "compatibility": {"rows": [
+            {"subject": "iOS 26.6.2, Xcode 27.0", "feature": "physical iPhones: iOS 17.4 up to but not including 27", "status": "supported", "note": null},
+            {"subject": "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0", "feature": "ListDevices (usbmuxd)", "status": "validated", "note": null}
+        ]},
+        "iosRunner": {"bundle": RUNNER, "version": "0.2.0", "variable": "MOBILE_AGENT_IOS_RUNNER_APP"}
+    }));
+    host.files.push(PathBuf::from(RUNNER).join("Info.plist"));
+    host.command(
+        &format!("plutil -extract CFBundleShortVersionString raw -o - {RUNNER}/Info.plist"),
+        ok("0.2.0\n"),
+    );
+    host.command(
+        "security find-identity -v -p codesigning",
+        ok("  1) 0123456789ABCDEF0123456789ABCDEF01234567 \"Apple Development: placeholder-developer (PLACEHOLD0)\"\n     1 valid identities found\n"),
+    );
+    host.devices = Ok(json!({"devices": [
+        {"id": "FAKE-IOS-DEVICE-1", "platform": "ios", "class": "ios-device", "name": "placeholder-iphone",
+         "model": "iPhone14,6", "os": "iOS 26.6.2", "state": "ready", "claimedBy": null},
+        {"id": "emulator-5554", "platform": "android", "class": "android-emulator", "name": "Fake Android emulator",
+         "model": "fake", "os": "Android 16", "state": "device", "claimedBy": null}
+    ]}));
+    host
+}
+
+/// Where the scripted daemon says its runner bundle is.
+const RUNNER: &str = "/placeholder/agent-ios/dist/MobileAgentRunner-Runner.app";
+
+/// Task 5.1: the signing check reads `MOBILE_AGENT_IOS_TEAM` and the
+/// keychain's valid Apple Development identities, naming neither the team
+/// nor the identity, and warns with the step when either is missing; which
+/// team an identity belongs to each phone's readiness tells.
+#[test]
+fn the_signing_check_reads_the_team_and_the_development_identities() {
+    let host = iphone_host();
+    let (status, message, _) = host.check("ios-signing");
+    assert_eq!(status, Status::Ok, "{message}");
+    assert!(
+        message.contains("MOBILE_AGENT_IOS_TEAM")
+            && message.contains("1 valid Apple Development identity"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("TEAMPLACE1") && !message.contains("placeholder-developer"),
+        "{message}"
+    );
+
+    let mut no_team = iphone_host();
+    no_team.env.remove("MOBILE_AGENT_IOS_TEAM");
+    let (status, message, hint) = no_team.check("ios-signing");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(message.contains("MOBILE_AGENT_IOS_TEAM"), "{message}");
+    let hint = hint.unwrap_or_default();
+    assert!(
+        hint.contains("MOBILE_AGENT_IOS_TEAM") && hint.contains("Xcode"),
+        "{hint}"
+    );
+
+    let mut no_identity = iphone_host();
+    no_identity.command(
+        "security find-identity -v -p codesigning",
+        ok("     0 valid identities found\n"),
+    );
+    let (status, message, hint) = no_identity.check("ios-signing");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(message.contains("Apple Development"), "{message}");
+    assert!(hint.unwrap_or_default().contains("Xcode"));
+
+    let mut unreadable = iphone_host();
+    unreadable.command(
+        "security find-identity -v -p codesigning",
+        failed("security: SecKeychainSearchCopyNext: The specified item could not be found"),
+    );
+    let (status, message, _) = unreadable.check("ios-signing");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(message.contains("security"), "{message}");
+}
+
+/// Task 5.1: the runner check finds the bundle the daemon installs and its
+/// version, and names `just agent-ios-build` when it is missing or of
+/// another version than the daemon expects.
+#[test]
+fn the_runner_check_finds_the_bundle_the_daemon_installs_and_its_version() {
+    let (status, message, _) = iphone_host().check("ios-runner");
+    assert_eq!(status, Status::Ok, "{message}");
+    assert!(
+        message.contains(RUNNER) && message.contains("0.2.0"),
+        "{message}"
+    );
+
+    let mut older = iphone_host();
+    older.command(
+        &format!("plutil -extract CFBundleShortVersionString raw -o - {RUNNER}/Info.plist"),
+        ok("0.1.0\n"),
+    );
+    let (status, message, hint) = older.check("ios-runner");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(
+        message.contains("0.1.0") && message.contains("0.2.0"),
+        "{message}"
+    );
+    assert!(hint.unwrap_or_default().contains("just agent-ios-build"));
+
+    let mut missing = iphone_host();
+    missing.files.retain(|file| !file.starts_with(RUNNER));
+    let (status, message, hint) = missing.check("ios-runner");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(message.contains(RUNNER), "{message}");
+    assert!(hint.unwrap_or_default().contains("just agent-ios-build"));
+
+    let mut no_daemon = iphone_host();
+    no_daemon.daemon = Err("cannot start the daemon".to_owned());
+    assert_eq!(no_daemon.check("ios-runner").0, Status::Skip);
+}
+
+/// Task 5.1, spec `ios-device-driver` "Device not ready": doctor lists each
+/// attached iPhone in the readiness state the daemon's `devices` gives it,
+/// with the step the daemon names for a state that keeps it from a
+/// session, word for word.
+#[test]
+fn each_iphone_is_listed_in_its_readiness_state_with_the_daemons_step() {
+    let (status, message, hint) = iphone_host().check("ios-devices");
+    assert_eq!(status, Status::Ok, "{message}");
+    assert!(
+        message.contains("FAKE-IOS-DEVICE-1") && message.contains("ready"),
+        "{message}"
+    );
+    assert!(!message.contains("emulator-5554"), "{message}");
+    assert_eq!(hint, None);
+
+    let advice =
+        "Developer Mode is off: on the device open Settings > Privacy & Security > Developer Mode";
+    let mut unready = iphone_host();
+    unready.devices = Ok(json!({"devices": [
+        {"id": "FAKE-IOS-DEVICE-1", "platform": "ios", "class": "ios-device", "name": "placeholder-iphone",
+         "model": "iPhone14,6", "os": "iOS 26.6.2", "state": "ready", "claimedBy": null},
+        {"id": "FAKE-IOS-DEVICE-2", "platform": "ios", "class": "ios-device", "name": "placeholder-other",
+         "model": "iPhone17,5", "os": "iOS 26.6.2", "state": "developer_mode_off", "advice": advice, "claimedBy": null}
+    ]}));
+    let (status, message, hint) = unready.check("ios-devices");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(
+        message.contains("FAKE-IOS-DEVICE-2") && message.contains("developer_mode_off"),
+        "{message}"
+    );
+    let hint = hint.unwrap_or_default();
+    assert!(
+        hint.contains("FAKE-IOS-DEVICE-2") && hint.contains(advice),
+        "{hint}"
+    );
+    assert!(!hint.contains("FAKE-IOS-DEVICE-1"), "{hint}");
+
+    let mut none = iphone_host();
+    none.devices = Ok(json!({"devices": []}));
+    let (status, message, _) = none.check("ios-devices");
+    assert_eq!(status, Status::Warn, "{message}");
+    assert!(message.contains("no iPhone"), "{message}");
+
+    let mut no_daemon = iphone_host();
+    no_daemon.devices = Err("cannot start the daemon".to_owned());
+    assert_eq!(no_daemon.check("ios-devices").0, Status::Skip);
+}
+
+/// Task 5.1: the iPhone checks need macOS, and the compatibility table's
+/// device rows come from the daemon, which the check counts.
+#[test]
+fn the_iphone_checks_need_macos_and_the_device_rows_fill_the_table() {
+    let report = run_checks(&iphone_host());
+    let compatibility = report
+        .checks
+        .iter()
+        .find(|c| c.name == "xcode-compatibility")
+        .expect("a compatibility check");
+    assert_eq!(compatibility.status, Status::Ok, "{compatibility:?}");
+    assert!(compatibility.message.contains('2'), "{compatibility:?}");
+    assert!(report.to_text().contains("ListDevices (usbmuxd)"));
+
+    let mut linux = iphone_host();
+    linux.os = "linux";
+    for name in IOS_CHECKS {
+        let (status, message, _) = linux.check(name);
+        assert_eq!(status, Status::Skip, "{name}: {message}");
+        assert!(message.contains("macOS"), "{name}: {message}");
     }
 }
 
@@ -526,6 +756,9 @@ fn doctor_lists_every_check_with_a_status_in_both_outputs() {
         "drivers",
         "xcode",
         "simulator-runtimes",
+        "ios-signing",
+        "ios-runner",
+        "ios-devices",
         "android-sdk",
         "adb-server",
         "emulator-control",
