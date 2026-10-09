@@ -18,7 +18,9 @@ bench = false
 workspace = true
 
 [dependencies]
+agent-ios = { version = "0.1.0", path = "../../agent-ios" }
 android = { version = "0.1.0", path = "../android" }
+ios = { version = "0.1.0", path = "../ios" }
 libc = "0.2"
 mirror = { version = "0.1.0", path = "../mirror" }
 protocol = { version = "0.1.0", path = "../protocol" }

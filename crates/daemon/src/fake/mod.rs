@@ -285,6 +285,12 @@ impl FakeDriver {
         self.timing.slide = slide;
         self
     }
+
+    /// These targets, the fake iPhone `id` listed in the readiness state
+    /// `code` with `advice`.
+    pub fn with_readiness(self, _id: &str, _code: &str, _advice: &str) -> FakeDriver {
+        self
+    }
 }
 
 /// What `status` shows about a fake Android emulator the switch keeps off
@@ -325,7 +331,7 @@ impl Driver for FakeDriver {
         _options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
         let frames = match target.class {
-            TargetClass::Simulator => true,
+            TargetClass::Simulator | TargetClass::IosDevice => true,
             TargetClass::AndroidEmulator => self.controller == EmulatorController::Auto,
             TargetClass::AndroidDevice => false,
         };
@@ -416,5 +422,83 @@ mod tests {
             assert!(simulator.backend.frames.is_some(), "{controller:?}");
             assert!(simulator.report.is_none());
         }
+    }
+
+    /// Task 5.1: `ios-device` stands in for a physical iPhone, its ids
+    /// `FAKE-IOS-DEVICE-1`, `FAKE-IOS-DEVICE-2` unless given, listed in the
+    /// `ios-device` class, ready, on the iOS the physical driver was
+    /// validated on.
+    #[test]
+    fn ios_device_fakes_take_default_ids_and_the_ios_device_class() {
+        let driver =
+            FakeDriver::parse("ios-device, ios, ios-device:FAKE-IOS-DEVICE-9, ios-device").unwrap();
+        let ids: Vec<(&str, TargetClass)> = driver
+            .targets
+            .iter()
+            .map(|t| (t.id.as_str(), t.class))
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ("FAKE-IOS-DEVICE-1", TargetClass::IosDevice),
+                ("FAKE-IOS-1", TargetClass::Simulator),
+                ("FAKE-IOS-DEVICE-9", TargetClass::IosDevice),
+                ("FAKE-IOS-DEVICE-2", TargetClass::IosDevice),
+            ]
+        );
+        let device = &driver.targets[0];
+        assert_eq!(device.platform, Platform::Ios);
+        assert_eq!(device.state, "ready");
+        assert_eq!(device.os.as_deref(), Some("iOS 26.6.2"));
+        assert_eq!(device.advice, None);
+        let refused = FakeDriver::parse("ios-devices").unwrap_err();
+        assert!(refused.contains("ios-device"), "{refused}");
+    }
+
+    /// Task 5.1, spec `ios-device-driver` "Device not ready": a fake iPhone
+    /// can be listed in a readiness state with its advice, and an attach
+    /// to it fails with the state's code, as the driver's commands do.
+    #[test]
+    fn an_unready_fake_iphone_is_listed_in_its_state_and_refuses_an_attach() {
+        let advice = ios::Readiness::DeveloperModeOff.message();
+        let driver = FakeDriver::parse("ios-device,ios-device")
+            .unwrap()
+            .with_readiness("FAKE-IOS-DEVICE-2", "developer_mode_off", &advice);
+        let listed = driver.discover().unwrap();
+        assert_eq!(listed[0].state, "ready");
+        assert_eq!(listed[1].state, "developer_mode_off");
+        assert_eq!(listed[1].advice.as_deref(), Some(advice.as_str()));
+        match driver.attach(&listed[1], &AttachOptions::default()) {
+            Ok(_) => panic!("an unready iPhone attaches"),
+            Err(refused) => {
+                assert_eq!(refused.code, "developer_mode_off");
+                assert!(refused.message.contains("Developer Mode"), "{refused:?}");
+            }
+        }
+        assert!(driver.attach(&listed[0], &AttachOptions::default()).is_ok());
+    }
+
+    /// Task 5.1: a fake iPhone's status names its input path, `dtuhidd`, its
+    /// frames, screenshots polled at the device's rate, and the runner by its
+    /// agent and restarts, as the physical driver's status does.
+    #[test]
+    fn a_fake_iphone_reports_dtuhidd_screenshots_and_its_runner() {
+        let driver = FakeDriver::parse("ios-device").unwrap();
+        let target = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&target, &AttachOptions::default()).unwrap();
+        assert!(attachment.backend.frames.is_some());
+        let report = attachment.report.expect("a report").report();
+        let data = Value::Object(report.data.clone());
+        assert_eq!(data["input"], "dtuhidd", "{data}");
+        assert_eq!(data["frames"], "screenshots", "{data}");
+        assert_eq!(data["runner"]["agent"], agent_ios::AGENT, "{data}");
+        assert_eq!(data["runner"]["restarts"], 0, "{data}");
+        let text = report.lines.join("\n");
+        assert!(
+            text.contains("input: dtuhidd")
+                && text.contains("frames: screenshots")
+                && text.contains(agent_ios::AGENT),
+            "{text}"
+        );
     }
 }

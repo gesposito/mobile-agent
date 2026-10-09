@@ -76,6 +76,8 @@ pub enum TargetClass {
     Simulator,
     AndroidEmulator,
     AndroidDevice,
+    /// A physical iPhone attached over USB (design D24).
+    IosDevice,
 }
 
 impl TargetClass {
@@ -84,6 +86,7 @@ impl TargetClass {
             TargetClass::Simulator => "simulator",
             TargetClass::AndroidEmulator => "android-emulator",
             TargetClass::AndroidDevice => "android-device",
+            TargetClass::IosDevice => "ios-device",
         }
     }
 }
@@ -449,7 +452,7 @@ mod tests {
         assert!(device_drivers(Some("none"), false).unwrap().is_empty());
         if cfg!(target_os = "macos") {
             assert_eq!(
-                device_drivers(Some("android,ios"), false).unwrap(),
+                device_drivers(Some("android,simulator"), false).unwrap(),
                 ["android", "simulator"]
             );
         } else {
@@ -460,10 +463,32 @@ mod tests {
         assert!(
             unknown.contains("windows")
                 && unknown.contains("simulator")
+                && unknown.contains("ios")
                 && unknown.contains("none"),
             "{unknown}"
         );
         assert!(device_drivers(Some("none,android"), false).is_err());
+    }
+
+    /// Task 5.1, design D25: `ios` names the physical iPhone driver, which
+    /// registers only when the run names it, alone or beside the others,
+    /// never by default: its listing asks the keychain for the signing
+    /// identity and lockdown for each phone, and waits on a phone that does
+    /// not answer. Off macOS it is refused.
+    #[test]
+    fn the_ios_driver_registers_only_when_named() {
+        assert!(!device_drivers(None, false).unwrap().contains(&"ios"));
+        if cfg!(target_os = "macos") {
+            assert_eq!(device_drivers(Some("ios"), false).unwrap(), ["ios"]);
+            assert_eq!(
+                device_drivers(Some(" IOS , simulator, ios"), false).unwrap(),
+                ["ios", "simulator"]
+            );
+            assert_eq!(device_drivers(Some("ios"), true).unwrap(), ["ios"]);
+        } else {
+            let refused = device_drivers(Some("ios"), false).unwrap_err();
+            assert!(refused.contains("macOS"), "{refused}");
+        }
     }
 
     #[test]
@@ -492,6 +517,9 @@ mod tests {
         assert_eq!(names(Some("ios"), Some("android")), ["android", "fake"]);
         assert_eq!(names(None, Some("none")), Vec::<String>::new());
         assert_eq!(names(Some(" "), Some("android")), ["android"]);
+        if cfg!(target_os = "macos") {
+            assert_eq!(names(Some("ios-device"), Some("ios")), ["ios", "fake"]);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

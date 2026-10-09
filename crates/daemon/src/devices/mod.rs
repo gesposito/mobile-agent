@@ -13,6 +13,7 @@
 //!   with string extras, and the agent stopped when the target is detached.
 
 pub(crate) mod android;
+pub(crate) mod ios;
 pub(crate) mod simulator;
 
 use std::path::Path;
