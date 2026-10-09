@@ -206,7 +206,7 @@ pub(crate) mod tests {
     #[derive(Clone, Debug, PartialEq)]
     pub enum Act {
         Bundle(i32),
-        Tree(String),
+        Tree(i32),
         Tap((f64, f64), f64),
         Swipe((f64, f64), (f64, f64), f64, f64),
         Button(Button),
@@ -279,8 +279,8 @@ pub(crate) mod tests {
             self.state().bundles.get(&pid).cloned()
         }
 
-        fn tree(&self, bundle: &str) -> Result<String, String> {
-            self.act(Act::Tree(bundle.to_owned()));
+        fn tree(&self, pid: i32) -> Result<String, String> {
+            self.act(Act::Tree(pid));
             self.state()
                 .tree
                 .clone()
@@ -353,11 +353,7 @@ pub(crate) mod tests {
         dispatcher.handle(snapshot()).expect("a second snapshot");
         assert_eq!(
             fake.acts(),
-            vec![
-                Act::Bundle(812),
-                Act::Tree(SWIFTUI.into()),
-                Act::Tree(SWIFTUI.into())
-            ],
+            vec![Act::Bundle(812), Act::Tree(812), Act::Tree(812)],
             "the bundle is asked once per pid"
         );
     }
@@ -374,9 +370,10 @@ pub(crate) mod tests {
         };
         assert_eq!(home.windows[0].kind, WindowType::SYSTEM);
         assert_eq!(home.windows[0].id, 34);
+        assert!(fake.acts().contains(&Act::Tree(34)));
         assert!(
-            fake.acts()
-                .contains(&Act::Tree("com.apple.springboard".into()))
+            fake.acts().contains(&Act::Bundle(34)),
+            "SpringBoard's bundle"
         );
     }
 

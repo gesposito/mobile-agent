@@ -32,9 +32,9 @@ pub trait Shim: Send + 'static {
     /// session's `requestApplicationSpecifierForPID:reply:`.
     fn bundle(&self, pid: i32) -> Option<String>;
 
-    /// `-[XCUIElement snapshotWithError:]` of `bundle`'s application, as the
-    /// JSON `xctree` reads.
-    fn tree(&self, bundle: &str) -> Result<String, String>;
+    /// XCTest's snapshot of the application element of `pid`, everything
+    /// under it included, as the JSON `xctree` reads.
+    fn tree(&self, pid: i32) -> Result<String, String>;
 
     /// A touch at `point` held for `hold` seconds.
     fn tap(&self, point: (f64, f64), hold: f64) -> Result<(), String>;
@@ -77,8 +77,7 @@ mod ffi {
         pub fn ma_screen_scale() -> f64;
         pub fn ma_foreground() -> *mut c_char;
         pub fn ma_bundle_for_pid(pid: i32) -> *mut c_char;
-        pub fn ma_tree(bundle: *const c_char, json: *mut *mut c_char, err: *mut *mut c_char)
-        -> i32;
+        pub fn ma_tree(pid: i32, json: *mut *mut c_char, err: *mut *mut c_char) -> i32;
         pub fn ma_tap(x: f64, y: f64, hold: f64, err: *mut *mut c_char) -> i32;
         pub fn ma_swipe(
             x1: f64,
@@ -168,11 +167,10 @@ impl Shim for Xct {
         calls::take(unsafe { ffi::ma_bundle_for_pid(pid) })
     }
 
-    fn tree(&self, bundle: &str) -> Result<String, String> {
-        let bundle = calls::c(bundle);
+    fn tree(&self, pid: i32) -> Result<String, String> {
         let (mut json, mut err) = (std::ptr::null_mut(), std::ptr::null_mut());
-        // SAFETY: a valid C string and out pointers.
-        let status = unsafe { ffi::ma_tree(bundle.as_ptr(), &mut json, &mut err) };
+        // SAFETY: valid out pointers.
+        let status = unsafe { ffi::ma_tree(pid, &mut json, &mut err) };
         calls::status(status, err)?;
         calls::take(json).ok_or_else(|| "the shim returned no tree".to_owned())
     }
@@ -253,7 +251,7 @@ impl Shim for Xct {
         None
     }
 
-    fn tree(&self, _bundle: &str) -> Result<String, String> {
+    fn tree(&self, _pid: i32) -> Result<String, String> {
         Err(UNAVAILABLE.into())
     }
 

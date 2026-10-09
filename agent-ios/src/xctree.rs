@@ -3,22 +3,31 @@
 //! [`simulator_reader::elements::snapshot`], builds the same snapshot payload
 //! from a device as from a Simulator.
 //!
-//! The shim serializes `-[XCUIElement snapshotWithError:]` as JSON, one
-//! object a node: `t` the element type, `tr` the traits, `f` the frame
-//! `[x, y, width, height]` in points, `i` the identifier, `l` the label, `v`
-//! the value, `p` the placeholder, `kf` true on the node with keyboard focus,
-//! and `c` the children; strings only when present.
+//! The shim serializes the snapshot `-[XCAXClient_iOS
+//! requestSnapshotForElement:attributes:parameters:error:]` returns for the
+//! foreground's application element as JSON, one object a node: `t` the
+//! element type, `tr` the traits, `f` the frame `[x, y, width, height]` in
+//! points, `i` the identifier, `l` the label, `v` the value, `p` the
+//! placeholder, `kf` true on the node with keyboard focus, `cl` the platform
+//! class, `ui` whether it takes touches, `sv` and `sh` where the edges of a
+//! scrolling element's frame fall in its content along each axis, `vf` the
+//! part of its frame that shows content, and `c` the children; strings only
+//! when present.
 //!
-//! XCTest's snapshot names no platform class (`XC_kAXXCAttributeElementType`)
-//! and no scroll area, so every element's `class` and `scroll_area` stay
-//! empty, and the conversion's rules that need a class see none (spike S10).
-//! Keyboard focus becomes the editing trait the conversion reads for it.
+//! The platform class is `XC_kAXXCAttributeElementType` where testmanagerd
+//! returns it, which it does not on iOS 26.6.2, and
+//! `XC_kAXXCAttributeElementBaseType` otherwise: `UIRemoteKeyboardWindow`,
+//! `_UIAlertControllerPhoneTVMacView` or `UIDimmingView` as the Simulator
+//! reader names them, where a SwiftUI element's base type is `UIResponder`.
+//! A scroll view keeps its areas and a dimming view whether it takes
+//! touches, as the Simulator reader reads them for those alone; keyboard
+//! focus becomes the editing trait the conversion reads for it.
 
 use std::collections::HashMap;
 
 use serde_json::Value;
 use simulator_reader::codes;
-use simulator_reader::elements::{self, Element, Limits, Owner, Read, traits};
+use simulator_reader::elements::{self, Element, Limits, Owner, Read, ScrollArea, traits};
 
 use crate::shim::Shim;
 
@@ -71,9 +80,9 @@ pub fn bundle<S: Shim>(
 }
 
 /// Reads the tree of the process in front through XCTest's snapshot of its
-/// application, at `scale` pixels a point, and checks the process in front
-/// again afterwards: a change during the read is `window_changed`, which
-/// the host repeats.
+/// application element, at `scale` pixels a point, and checks the process
+/// in front again afterwards: a change during the read is `window_changed`,
+/// which the host repeats.
 pub fn read<S: Shim>(
     shim: &S,
     bundles: &mut HashMap<i32, String>,
@@ -83,7 +92,7 @@ pub fn read<S: Shim>(
     let pid = foreground_pid(shim)?;
     let bundle = bundle(shim, bundles, pid)?;
     let tree = shim
-        .tree(&bundle)
+        .tree(pid)
         .map_err(|reason| error(codes::SNAPSHOT_FAILED, format!("{bundle}: {reason}"), true))?;
     let parsed: Value = serde_json::from_str(&tree).map_err(|reason| {
         error(
@@ -116,15 +125,7 @@ pub fn read<S: Shim>(
 /// One node of the shim's JSON, with its children, as an [`Element`].
 pub fn element(node: &Value) -> Element {
     let text = |key: &str| node.get(key).and_then(Value::as_str).map(str::to_owned);
-    let frame = node.get("f").and_then(Value::as_array).and_then(|values| {
-        let numbers: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
-        match numbers[..] {
-            [x, y, width, height] if numbers.iter().all(|n| n.is_finite()) => {
-                Some([x, y, width, height])
-            }
-            _ => None,
-        }
-    });
+    let frame = numbers::<4>(node, "f");
     let mut traits = node.get("tr").and_then(Value::as_u64).unwrap_or(0);
     if node.get("kf").and_then(Value::as_bool) == Some(true) {
         traits |= traits::IS_EDITING;
@@ -134,9 +135,21 @@ pub fn element(node: &Value) -> Element {
         .and_then(Value::as_array)
         .map(|children| children.iter().map(element).collect())
         .unwrap_or_default();
+    let automation_type = node.get("t").and_then(Value::as_u64);
+    let class = text("cl");
+    let scroll_area = elements::is_scroll_view(automation_type)
+        .then(|| ScrollArea {
+            vertical: numbers::<2>(node, "sv"),
+            horizontal: numbers::<2>(node, "sh"),
+            visible_frame: numbers::<4>(node, "vf"),
+        })
+        .filter(|area| area.vertical.is_some() || area.horizontal.is_some());
+    let user_interaction = (class.as_deref() == Some(elements::DIMMING_CLASS))
+        .then(|| node.get("ui").and_then(Value::as_bool))
+        .flatten();
     Element {
-        automation_type: node.get("t").and_then(Value::as_u64),
-        class: None,
+        automation_type,
+        class,
         label: text("l"),
         identifier: text("i"),
         value: text("v"),
@@ -145,10 +158,18 @@ pub fn element(node: &Value) -> Element {
         frame,
         children_count: Some(children.len() as u64),
         children,
-        scroll_area: None,
-        user_interaction: None,
+        scroll_area,
+        user_interaction,
         modal: false,
     }
+}
+
+/// The `N` finite numbers under `key`, when it holds exactly those.
+fn numbers<const N: usize>(node: &Value, key: &str) -> Option<[f64; N]> {
+    let values = node.get(key)?.as_array()?;
+    let numbers: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
+    (values.len() == N && numbers.len() == N && numbers.iter().all(|n| n.is_finite()))
+        .then(|| std::array::from_fn(|index| numbers[index]))
 }
 
 /// The process whose tree was read, from its pid, its bundle identifier and
@@ -171,8 +192,10 @@ pub fn owner(pid: i32, bundle: &str, root: &Element) -> Owner {
 
 #[cfg(test)]
 mod tests {
-    use protocol::snapshot::{Bounds, Node, NodeFlags, WindowType};
-    use simulator_reader::elements::{self, Limits, Read, SPRINGBOARD, traits};
+    use protocol::snapshot::{Bounds, Node, NodeFlags, ScrollAxis, ScrollFlags, WindowType};
+    use simulator_reader::elements::{
+        self, ALERT_WINDOW, KEYBOARD_WINDOW, Limits, Read, SPRINGBOARD, ScrollArea, traits,
+    };
 
     use super::*;
 
@@ -308,6 +331,111 @@ mod tests {
         assert_eq!(class(header), "XCUIElementTypeHeading");
         let tab = find(app, "tab-big").expect("the tab");
         assert!(tab.flags.contains(NodeFlags::SELECTED));
+    }
+
+    /// The read of `root` by pid 812, the SwiftUI fixture, at scale 2.
+    fn read_of(root: Element) -> Read {
+        Read {
+            owner: owner(812, "dev.mobileagent.fixture.swiftui", &root),
+            root,
+            scale: 2.0,
+            limits: Limits::default(),
+            depth_cut: false,
+        }
+    }
+
+    /// The request names the platform class (`cl`), a scroll view's areas
+    /// (`sv`, `sh`, `vf`) and whether a view takes touches (`ui`); a scroll
+    /// view keeps its areas and a dimming view its interaction, as the
+    /// Simulator reader reads them for those alone.
+    #[test]
+    fn the_platform_class_scroll_areas_and_interaction_become_the_elements() {
+        let root = element(&json(
+            r#"{"t":2,"f":[0,0,375,667],"cl":"UIApplication","c":[
+                {"t":46,"f":[0,64,375,547],"cl":"RCTScrollView","sv":[0,1.25],"sh":[0,1],"vf":[0,64,375,547]},
+                {"t":1,"f":[0,0,375,667],"cl":"UIDimmingView","ui":false},
+                {"t":1,"f":[0,0,10,10],"cl":"UIView","sv":[0,1],"vf":[0,0,10,10],"ui":false}]}"#,
+        ));
+        assert_eq!(root.class.as_deref(), Some("UIApplication"));
+        assert_eq!(
+            root.children[0].scroll_area,
+            Some(ScrollArea {
+                vertical: Some([0.0, 1.25]),
+                horizontal: Some([0.0, 1.0]),
+                visible_frame: Some([0.0, 64.0, 375.0, 547.0]),
+            })
+        );
+        assert_eq!(root.children[1].user_interaction, Some(false));
+        let view = &root.children[2];
+        assert_eq!(view.class.as_deref(), Some("UIView"));
+        assert_eq!(view.scroll_area, None, "a view that does not scroll");
+        assert_eq!(view.user_interaction, None, "read for dimming views alone");
+    }
+
+    /// The keyboard's window, which XCTest's request names by its class,
+    /// leaves the application's window for an input method window bounded
+    /// by what it draws.
+    #[test]
+    fn the_keyboard_window_becomes_an_input_method_window_bounded_by_its_keys() {
+        let root = element(&json(
+            r#"{"t":2,"f":[0,0,375,667],"cl":"UIApplication","l":"FixtureSwiftUI","c":[
+                {"t":4,"f":[0,0,375,667],"cl":"UIWindow","c":[
+                    {"t":49,"f":[16,36,343,34],"cl":"UITextField","i":"login-username","p":"Username","kf":true}]},
+                {"t":4,"f":[0,0,375,667],"cl":"UIRemoteKeyboardWindow","c":[
+                    {"t":1,"f":[0,0,375,667],"cl":"UIInputSetContainerView","c":[
+                        {"t":1,"f":[0,407,375,260],"cl":"UIInputSetHostView","c":[
+                            {"t":19,"f":[0,451,375,216],"cl":"UIKeyboardAutomatic"}]}]}]}]}"#,
+        ));
+        let snapshot = elements::snapshot(&read_of(root));
+        assert_eq!(snapshot.windows.len(), 2);
+        let keyboard = &snapshot.windows[0];
+        assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
+        assert_eq!(keyboard.id, 812 | KEYBOARD_WINDOW);
+        assert_eq!(keyboard.bounds, Bounds::new(0, 814, 750, 1334));
+        assert_eq!(snapshot.windows[1].kind, WindowType::APPLICATION);
+    }
+
+    /// An alert, which XCTest types as one, moves with the view that presents
+    /// it to a modal window above the application's.
+    #[test]
+    fn an_alert_moves_to_a_modal_window_above_the_application() {
+        let root = element(&json(
+            r#"{"t":2,"f":[0,0,375,667],"cl":"UIApplication","l":"FixtureSwiftUI","c":[
+                {"t":4,"f":[0,0,375,667],"cl":"UIWindow","c":[
+                    {"t":1,"f":[0,0,375,667],"cl":"UILayoutContainerView","c":[
+                        {"t":9,"tr":1,"f":[16,123,158,34],"i":"system-alert","l":"Show in-app alert"}]},
+                    {"t":1,"f":[0,0,375,667],"cl":"UITransitionView","c":[
+                        {"t":7,"f":[28,268,320,152],"cl":"_UIAlertControllerPhoneTVMacView","l":"In-app alert","c":[
+                            {"t":9,"tr":1,"f":[44,356,288,48],"i":"inapp-alert-ok","l":"OK"}]}]}]}]}"#,
+        ));
+        let snapshot = elements::snapshot(&read_of(root));
+        assert_eq!(snapshot.windows.len(), 2);
+        let alert = &snapshot.windows[0];
+        assert_eq!(alert.id, 812 | ALERT_WINDOW);
+        assert!(alert.modal);
+        assert_eq!(alert.title.as_deref(), Some("In-app alert"));
+        let app = &snapshot.windows[1];
+        assert!(!app.modal);
+        assert!(find(app.root.as_ref().expect("the app"), "system-alert").is_some());
+    }
+
+    /// A scroll view's areas give its scroll semantics: here a quarter of
+    /// its content, from halfway down.
+    #[test]
+    fn a_scroll_view_reports_where_its_viewport_is_in_its_content() {
+        let root = element(&json(
+            r#"{"t":2,"f":[0,0,375,667],"cl":"UIApplication","c":[
+                {"t":46,"f":[0,64,375,547],"cl":"UIScrollView","i":"list","sv":[0.5,0.75],"sh":[0,1],"vf":[0,64,375,547]}]}"#,
+        ));
+        let snapshot = elements::snapshot(&read_of(root));
+        let app = snapshot.windows[0].root.as_ref().expect("the app");
+        let scroll = find(app, "list")
+            .and_then(|node| node.scroll)
+            .expect("its semantics");
+        assert_eq!(scroll.axis, ScrollAxis::VERTICAL);
+        assert_eq!(scroll.flags, ScrollFlags::BACK | ScrollFlags::FORWARD);
+        let position = scroll.position.expect("a position");
+        assert_eq!((position.first, position.last), (50, 75));
     }
 
     #[test]

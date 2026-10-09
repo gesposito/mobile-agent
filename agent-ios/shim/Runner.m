@@ -11,8 +11,9 @@
 //   XCUIApplicationProcess and waitForQuiescenceOnAllForegroundApplicationsAsPreEvent:
 //   on XCAXClient_iOS; the test logs which it replaced.
 // - The C functions below are the XCTest calls the agent makes (src/shim.rs):
-//   the foreground's pid and bundle, XCTest's snapshot of an application as
-//   JSON, taps and swipes as an XCSynthesizedEventRecord sent to XCUIDevice's
+//   the foreground's pid and bundle, the snapshot XCTest's accessibility
+//   client asks testmanagerd for, as JSON, taps and swipes as an
+//   XCSynthesizedEventRecord sent to XCUIDevice's
 //   event synthesizer, the hardware buttons, typing through the daemon proxy's
 //   _XCT_sendString:maximumFrequency:completion:, setting the focused
 //   element's value through its _XCT_setAttribute:value:element:reply:, and
@@ -30,6 +31,7 @@
 #import <XCTest/XCTest.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#include <dlfcn.h>
 #include <stdatomic.h>
 
 // ---------------------------------------------------------------------------
@@ -56,8 +58,21 @@
 @end
 
 @interface XCAccessibilityElement : NSObject
++ (instancetype)elementWithProcessIdentifier:(int)pid;
 - (int)processIdentifier;
 @end
+
+@protocol MAAXClient <NSObject>
+- (NSDictionary *)defaultParameters;
+- (id)requestSnapshotForElement:(XCAccessibilityElement *)element
+                     attributes:(NSArray<NSString *> *)attributes
+                     parameters:(NSDictionary *)parameters
+                          error:(NSError **)error;
+@end
+
+// XCTAutomationSupport's names to numbers, which key a snapshot's
+// additionalAttributes.
+typedef id (*MAAttributesForNames)(id names);
 
 @protocol MADaemonProxy <NSObject>
 - (void)_XCT_sendString:(NSString *)string
@@ -253,11 +268,68 @@ static XCUIApplication *ma_app(NSString *bundle) {
   return app;
 }
 
-// One node of XCTest's snapshot as src/xctree.rs reads it: {"t": elementType,
+// What the tree asks testmanagerd for: the Simulator reader's attributes,
+// with XC_kAXXCAttributeVisibleFrame and the scroll areas in the same request
+// (asked element by element, a scroll view's took 107 ms), and without
+// XC_kAXXCAttributeChildren, whose array the runner's decoder refuses, so that
+// the reply never arrives ("Timed out while fetching snapshot from
+// testmanagerd" after 65 s; spike S10 and task 4.4).
+static NSArray<NSString *> *ma_tree_attributes(void) {
+  return @[
+    @"XC_kAXXCAttributeElementType", @"XC_kAXXCAttributeElementBaseType", @"XC_kAXXCAttributeAutomationType",
+    @"XC_kAXXCAttributeLabel", @"XC_kAXXCAttributeValue", @"XC_kAXXCAttributePlaceholderValue",
+    @"XC_kAXXCAttributeIdentifier", @"XC_kAXXCAttributeFrame", @"XC_kAXXCAttributeTraits",
+    @"XC_kAXXCAttributeIsUserInteractionEnabled", @"XC_kAXXCAttributeVisibleVerticalScrollArea",
+    @"XC_kAXXCAttributeVisibleHorizontalScrollArea", @"XC_kAXXCAttributeVisibleFrame"
+  ];
+}
+
+// The number of each attribute of the tree, as testmanagerd keys a
+// snapshot's additionalAttributes with it; nil without XCTAutomationSupport's
+// XCAXAccessibilityAttributesForStringAttributes.
+static NSDictionary<NSString *, id> *ma_attribute_numbers(void) {
+  static NSDictionary *numbers;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    MAAttributesForNames convert = (MAAttributesForNames)dlsym(RTLD_DEFAULT, "XCAXAccessibilityAttributesForStringAttributes");
+    if (!convert) return;
+    NSArray *names = ma_tree_attributes();
+    id converted = convert(names);
+    NSArray *values = [converted isKindOfClass:NSArray.class] ? converted : nil;
+    if (values.count != names.count) return;
+    numbers = [NSDictionary dictionaryWithObjects:values forKeys:names];
+  });
+  return numbers;
+}
+
+// A {X, Y} dictionary as [x, y], nil for the X a non-scrolling element has.
+static NSArray *ma_point(id value) {
+  if (![value isKindOfClass:NSDictionary.class]) return nil;
+  NSNumber *x = value[@"X"], *y = value[@"Y"];
+  if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class]) return nil;
+  if (x.longLongValue == INT_MAX) return nil;
+  return @[ x, y ];
+}
+
+// A {X, Y, Width, Height} dictionary as [x, y, width, height].
+static NSArray *ma_rect(id value) {
+  if (![value isKindOfClass:NSDictionary.class]) return nil;
+  NSArray *keys = @[ @"X", @"Y", @"Width", @"Height" ];
+  NSMutableArray *rect = [NSMutableArray arrayWithCapacity:4];
+  for (NSString *key in keys) {
+    if (![value[key] isKindOfClass:NSNumber.class]) return nil;
+    [rect addObject:value[key]];
+  }
+  return rect;
+}
+
+// One node of the snapshot as src/xctree.rs reads it: {"t": elementType,
 // "tr": traits, "f": [x, y, width, height], "i": identifier, "l": label, "v":
-// value, "p": placeholder, "kf": true for keyboard focus, "c": [children]},
-// strings only when present.
-static NSDictionary *ma_node(id<XCUIElementSnapshot> snap) {
+// value, "p": placeholder, "kf": true for keyboard focus, "cl": the platform
+// class, "ui": whether it takes touches, "sv" and "sh": its scroll areas,
+// "vf": its visible frame, "c": [children]}, strings only when present, the
+// scroll areas only for an element that scrolls.
+static NSDictionary *ma_node(id<XCUIElementSnapshot> snap, NSDictionary<NSString *, id> *numbers) {
   NSMutableDictionary *d = [NSMutableDictionary dictionary];
   d[@"t"] = @(snap.elementType);
   if ([(id)snap respondsToSelector:@selector(traits)]) {
@@ -275,39 +347,64 @@ static NSDictionary *ma_node(id<XCUIElementSnapshot> snap) {
       ((BOOL (*)(id, SEL))objc_msgSend)(snap, @selector(hasKeyboardFocus))) {
     d[@"kf"] = @YES;
   }
+  NSDictionary *extra = [(id)snap respondsToSelector:NSSelectorFromString(@"additionalAttributes")]
+                            ? [(id)snap valueForKey:@"additionalAttributes"]
+                            : nil;
+  if ([extra isKindOfClass:NSDictionary.class] && numbers) {
+    id cls = extra[numbers[@"XC_kAXXCAttributeElementType"]] ?: extra[numbers[@"XC_kAXXCAttributeElementBaseType"]];
+    if ([cls isKindOfClass:NSString.class] && [(NSString *)cls length]) d[@"cl"] = cls;
+    id touches = extra[numbers[@"XC_kAXXCAttributeIsUserInteractionEnabled"]];
+    if ([touches isKindOfClass:NSNumber.class]) d[@"ui"] = @([touches boolValue]);
+    NSArray *vertical = ma_point(extra[numbers[@"XC_kAXXCAttributeVisibleVerticalScrollArea"]]);
+    NSArray *horizontal = ma_point(extra[numbers[@"XC_kAXXCAttributeVisibleHorizontalScrollArea"]]);
+    if (vertical || horizontal) {
+      if (vertical) d[@"sv"] = vertical;
+      if (horizontal) d[@"sh"] = horizontal;
+      NSArray *visible = ma_rect(extra[numbers[@"XC_kAXXCAttributeVisibleFrame"]]);
+      if (visible) d[@"vf"] = visible;
+    }
+  }
   NSArray *children = snap.children;
   if (children.count) {
     NSMutableArray *c = [NSMutableArray arrayWithCapacity:children.count];
-    for (id<XCUIElementSnapshot> child in children) [c addObject:ma_node(child)];
+    for (id<XCUIElementSnapshot> child in children) [c addObject:ma_node(child, numbers)];
     d[@"c"] = c;
   }
   return d;
 }
 
-// -[XCUIElement snapshotWithError:] of bundle's application, as JSON, which
-// testmanagerd fetches with its own privileges.
-int ma_tree(const char *bundle, char **json, char **err) {
+// The tree of pid's application element, as JSON: -[XCAXClient_iOS
+// requestSnapshotForElement:attributes:parameters:error:], which asks
+// testmanagerd, which reads it with its own privileges, since the runner's
+// sandbox denies it the application's accessibility server. Modal views are
+// not honoured, so that what an alert covers is read too, as the Simulator
+// reader's last read keeps it. Off the main thread: the call waits for
+// testmanagerd's reply.
+int ma_tree(int pid, char **json, char **err) {
   @autoreleasepool {
-    NSString *bid = [NSString stringWithUTF8String:bundle ?: ""];
-    __block NSString *failure = nil;
-    __block NSString *text = nil;
-    ma_on_main(^{
-      @try {
-        NSError *error = nil;
-        id<XCUIElementSnapshot> snap = [ma_app(bid) snapshotWithError:&error];
-        if (!snap) {
-          failure = ma_describe(error);
-          return;
-        }
-        text = ma_json(ma_node(snap));
-        if (!text) failure = @"the snapshot did not serialize as JSON";
-      } @catch (NSException *e) {
-        failure = ma_exception(e);
+    @try {
+      id<MAAXClient> client = [XCUIDevice.sharedDevice accessibilityInterface];
+      if (![client respondsToSelector:@selector(requestSnapshotForElement:attributes:parameters:error:)]) {
+        return ma_fail(err, [NSString stringWithFormat:@"%@ has no requestSnapshotForElement:attributes:parameters:error:", NSStringFromClass([client class])]);
       }
-    });
-    if (failure) return ma_fail(err, failure);
-    *json = ma_strdup(text);
-    return 0;
+      NSDictionary<NSString *, id> *numbers = ma_attribute_numbers();
+      if (!numbers) return ma_fail(err, @"XCAXAccessibilityAttributesForStringAttributes is missing or names no number");
+      XCAccessibilityElement *element = [NSClassFromString(@"XCAccessibilityElement") elementWithProcessIdentifier:pid];
+      NSMutableDictionary *parameters = [NSMutableDictionary dictionary];
+      if ([client respondsToSelector:@selector(defaultParameters)]) [parameters addEntriesFromDictionary:[client defaultParameters] ?: @{}];
+      parameters[@"snapshotKeyHonorModalViews"] = @NO;
+      NSError *error = nil;
+      id result = [client requestSnapshotForElement:element attributes:ma_tree_attributes() parameters:parameters error:&error];
+      if (!result) return ma_fail(err, ma_describe(error));
+      id root = [result valueForKey:@"_rootElementSnapshot"];
+      if (!root) return ma_fail(err, [NSString stringWithFormat:@"the %@ holds no root snapshot", NSStringFromClass([result class])]);
+      NSString *text = ma_json(ma_node(root, numbers));
+      if (!text) return ma_fail(err, @"the snapshot did not serialize as JSON");
+      *json = ma_strdup(text);
+      return 0;
+    } @catch (NSException *e) {
+      return ma_fail(err, ma_exception(e));
+    }
   }
 }
 
