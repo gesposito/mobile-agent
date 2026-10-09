@@ -14,7 +14,7 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, visibility, scroll_viewport, uncovered
+                timestamps, note_window_change, visibility, covered_by, scroll_viewport, uncovered
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, modal cutting, scroll hints
@@ -381,6 +381,11 @@ the reasons in this order, each with advice:
   them can scroll further, as its scroll semantics say, is `cut` there,
   and how much of it lies beyond is unknown. A container without scroll
   semantics cannot tell, and cuts nothing.
+- `covered_by` tells, the same way, what covers an element: the top-most
+  modal, a view marked modal or a view drawn over it, named as an action
+  on its ref names it when it fails with `element_covered`. A covered
+  element is not in view whatever share of it `visibility` finds inside
+  its visible bounds, which leave covers out.
 - `scroll_viewport` tells, the same way, the visible bounds of the scroll
   container a stroke through a point moves (task 10.16): the innermost
   node on screen and not covered that scrolls along the stroke's axis, or
@@ -577,6 +582,7 @@ cargo test -p mirror
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
 | Replica maintained from device events | (task 7.10: timing and draining for the daemon) | `timestamps::nothing_has_happened_before_the_first_read_and_the_first_read_gives_its_span`, `timestamps::the_last_frame_and_frame_change_come_from_the_frames_the_mirror_took_in`, `timestamps::only_the_latest_1024_frame_changes_are_kept`, `timestamps::the_last_tree_change_is_an_event_arrival_or_the_end_of_a_read_that_found_a_delta`, `timestamps::the_last_action_is_when_the_mirror_injected_input`, `timestamps::drain_takes_in_what_arrived_without_reading_the_tree` |
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
+| (what covers an element) | (named as `element_covered` names it) | `visibility::what_covers_an_element_is_named_as_an_action_on_its_ref_names_it` |
 | (task 10.15, how much of an element is in view) | (the share in view, the cut edge, the bars) | `visibility::a_row_inside_its_list_is_wholly_in_view_within_the_list_s_bounds`, `visibility::a_row_android_clips_at_the_bottom_edge_of_a_list_that_scrolls_on_is_cut_there`, `visibility::a_row_android_clips_at_the_top_edge_of_a_list_that_scrolls_back_is_cut_there`, `visibility::a_row_at_the_edge_of_a_list_that_cannot_scroll_that_way_is_whole`, `visibility::without_scroll_semantics_an_edge_is_no_cut`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds`, `visibility::an_element_outside_any_scroll_container_is_measured_against_its_window`, and the unit tests `visibility::tests::*` |
 | (task 10.16, the scroll container a stroke moves) | (its visible bounds, the bars, the axis) | `visibility::a_stroke_through_a_list_moves_the_list_and_its_visible_bounds_are_its_own`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, `visibility::a_stroke_moves_the_innermost_container_that_scrolls_along_its_axis`, `visibility::a_point_outside_every_scroll_container_has_none` |
 | (task 10.21, the keyboard over an iOS app) | (only what its input views cover is cut) | `visibility::the_ios_keyboard_cuts_from_its_prediction_bar_down`, and in the Simulator's reader `elements::tests::the_keyboard_window_covers_the_input_views_it_holds_not_the_screen`, `elements::tests::a_keyboard_sliding_in_covers_only_its_part_on_screen`, `elements::tests::a_keyboard_window_that_shows_nothing_covers_nothing` |

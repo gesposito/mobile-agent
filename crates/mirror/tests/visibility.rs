@@ -18,13 +18,14 @@ mod support;
 
 use std::time::Duration;
 
-use mirror::testing::FakeTarget;
+use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Condition, Direction, ElementId, Mirror, MirrorConfig, Point, Rect, Selector, Uncovered,
-    Visibility,
+    Condition, Direction, ElementId, Mirror, MirrorConfig, Point, Rect, Selector, SnapshotOptions,
+    Uncovered, Visibility,
 };
+use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
 use serde_json::{Value, json};
-use support::Screen;
+use support::{Screen, ms};
 
 /// The rows of a list at `[left, top, right, bottom]`, as wide as the list
 /// and 48 points tall, the first at `first_top`, cut to the list as Android
@@ -417,6 +418,87 @@ fn an_element_outside_any_scroll_container_is_measured_against_its_window() {
     assert_eq!(button.fraction, 1.0, "{button:?}");
     assert_eq!(button.cut, None, "{button:?}");
     assert_eq!(mirror.visibility(ElementId(u64::MAX)), None);
+}
+
+/// A mirror that read `before`, where the element `identifier` names is
+/// listed, and then `after`, which a content change in window `window`
+/// brought in 100 ms later, with that element's id: a ref issued on
+/// `before` still names it once something covers it.
+fn read_then_covered(
+    before: &Screen,
+    after: &Screen,
+    window: u32,
+    identifier: &str,
+) -> (FakeTarget, Mirror, ElementId) {
+    let target = FakeTarget::new(before.read());
+    target.at(ms(100), Step::Show(after.read()));
+    target.at(
+        ms(100),
+        Step::Event(EventPayload::Tree(TreeChange {
+            change: TreeChangeKind::CONTENT,
+            window,
+            path: vec![0],
+        })),
+    );
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let reference = mirror
+        .snapshot(&SnapshotOptions::interactive())
+        .unwrap()
+        .by_identifier(identifier)
+        .unwrap_or_else(|| panic!("{identifier} is listed before anything covers it"))
+        .reference
+        .expect("a ref");
+    mirror.run_until(target.instant(ms(200))).unwrap();
+    let id = mirror
+        .resolve(reference)
+        .expect("the ref still names it")
+        .id;
+    (target, mirror, id)
+}
+
+/// What covers an element is named as an action on its ref names it when
+/// it fails with `element_covered`: an alert by its role and name, a modal
+/// window as a dialog with its title. An element that nothing covers has
+/// no cover, and neither has one the replica no longer holds.
+#[test]
+fn what_covers_an_element_is_named_as_an_action_on_its_ref_names_it() {
+    let (_, mirror, submit) = read_then_covered(
+        &Screen::load("login-ios"),
+        &Screen::load("alert"),
+        1,
+        "login-submit",
+    );
+    assert_eq!(
+        mirror.covered_by(submit).as_deref(),
+        Some("alert \"In-app alert\"")
+    );
+
+    let login = Screen::load("login");
+    let dialog = login.patched(json!([{"add_window": {
+        "id": 7, "kind": "application", "layer": 2, "package": "dev.mobileagent.fixture.expo",
+        "title": "In-app alert", "bounds": [10, 300, 398, 560], "flags": ["active", "focused"],
+        "modal": true,
+        "root": {"class": "android.widget.FrameLayout", "bounds": [10, 300, 398, 560], "children": [
+            {"class": "android.widget.Button", "text": "OK", "bounds": [300, 500, 382, 548], "flags": ["clickable", "focusable"]}
+        ]}
+    }}]));
+    let (_, mut mirror, submit) = read_then_covered(&login, &dialog, 7, "login-submit");
+    assert_eq!(
+        mirror.covered_by(submit).as_deref(),
+        Some("dialog \"In-app alert\"")
+    );
+
+    let (_, mut uncovered) = support::mirror_on("login");
+    let username = element(&mut uncovered, "login-username");
+    assert_eq!(uncovered.covered_by(username), None);
+    assert_eq!(mirror.covered_by(ElementId(u64::MAX)), None);
+    let ok = mirror
+        .wait(&Selector::text("OK"), Condition::Appear, Duration::ZERO)
+        .expect("the dialog's button is on screen")
+        .element
+        .expect("the element")
+        .id;
+    assert_eq!(mirror.covered_by(ok), None);
 }
 
 /// Task 10.16: a stroke through the middle of the Expo list moves the list,

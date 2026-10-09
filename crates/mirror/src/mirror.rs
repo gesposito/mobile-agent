@@ -536,6 +536,18 @@ impl Mirror {
         Some(visibility::of(&self.replica, &view, w, i))
     }
 
+    /// What covers `element` as the replica has it now, without reading the
+    /// target: the top-most modal, a view marked modal or a view drawn over
+    /// it, named as an action on its ref names it when it fails with
+    /// `element_covered`. An element that is covered is not in view however
+    /// much of it [`Mirror::visibility`] finds inside its visible bounds.
+    /// `None` when nothing covers it or the replica no longer holds it.
+    pub fn covered_by(&self, element: ElementId) -> Option<String> {
+        let (w, i) = self.replica.locate(element)?;
+        let view = View::build(&self.replica);
+        (view.windows[w][i].hidden == Hidden::Covered).then(|| cover_name(&view))
+    }
+
     /// The visible bounds of the scroll container that a stroke along the
     /// vertical axis, or the horizontal one, through `at` moves, as the
     /// replica has it now, without reading the target: the innermost node on
@@ -621,7 +633,7 @@ impl Mirror {
         if facts.hidden == Hidden::Covered {
             return Err(MirrorError::Covered {
                 reference,
-                by: view.modal.clone().unwrap_or_else(|| "modal".to_owned()),
+                by: cover_name(&view),
             });
         }
         if !facts.visible {
@@ -1178,6 +1190,11 @@ impl Mirror {
     pub fn dump(&self) -> String {
         self.replica.dump()
     }
+}
+
+/// How errors name what covers the screen of `view`.
+fn cover_name(view: &View) -> String {
+    view.modal.clone().unwrap_or_else(|| "modal".to_owned())
 }
 
 /// An element as snapshots list it.
