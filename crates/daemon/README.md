@@ -265,8 +265,8 @@ as an app that owns its field's value can set it again between the keys
 and after them: shown by a read that began that late, or by an earlier one
 after which neither the tree nor, on a target whose windows are read again
 as frames change, a frame changed. Text that went in in one piece, pasted
-on a Simulator, set through the runner on a physical iPhone or set
-directly on Android, leaves such an app no keys to
+on a Simulator, set through the runner on a physical iPhone or set directly
+on Android, leaves such an app no keys to
 interleave with, so `fill` takes it at the first read that shows it: one
 that began after the entry, or an earlier one after which nothing changed
 (task 10.30: a hold after such text was 200 of the 224 ms a text entry took
@@ -280,9 +280,10 @@ field does, or nothing while it is named as the text, since the
 Simulator's reader leaves out a value that repeats the placeholder. Other
 text at the bound gets the text again in one piece, `direct`: pasted on a
 Simulator, the field's value set through the runner on a physical iPhone,
-which leaves the pasteboard alone, set with `ACTION_SET_TEXT` on Android, as Playwright's and
-agent-browser's single `Input.insertText` and UiAutomator2's set text are,
-rather than typed again into a field that can reorder keys again; the reply
+which leaves the pasteboard alone, set with `ACTION_SET_TEXT` on Android,
+as Playwright's and agent-browser's single `Input.insertText` and
+UiAutomator2's set text are, rather than typed again into a field that can
+reorder keys again; the reply
 then has `retried` and a warning naming what the field showed. Still other
 text fails with `text_mismatch`, naming what the field holds and the text
 entered (by its length where the field shows nothing or mask characters).
