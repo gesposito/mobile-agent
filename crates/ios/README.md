@@ -3,16 +3,19 @@
 Drives a physical iPhone over USB from the host (design D18 to D25, spec
 `ios-device-driver`): discovery and readiness over usbmuxd and lockdown,
 the CoreDevice tunnel and the developer services over it, the developer
-disk image mounted when it is missing, and app lifecycle through DVT and
-the installation proxy. Everything runs in the caller's process through the
-`idevice` crate: no root, no TUN interface, no helper process in another
-language, and no `devicectl` except as the disk image mount's fallback.
-The runner session, tree reads, input and frames come with tasks 3.4 to
-3.8.
+disk image mounted when it is missing, app lifecycle through DVT and the
+installation proxy, the runner's session through the test manager, input
+through the disk image's `dtuhidd`, frames from screenshots polled on two
+connections, and the containment of a phone that drops. Everything runs in
+the caller's process through the `idevice` crate: no root, no TUN
+interface, no helper process in another language, and no `devicectl`
+except as the disk image mount's fallback. The tree is the runner's to read
+(group 4); this crate carries its calls.
 
-`IosDriver` implements the driver traits, `Devices` and `Lifecycle`. They
-carry no `idevice` types, so the daemon can hold the driver behind them
-and adapt it to its own driver contract, as it does the Simulator driver
+`IosDriver` implements the driver traits, `Devices`, `Lifecycle`,
+`Session`, `Input` and `Frames`. They carry no `idevice` types, so the
+daemon can hold the driver behind them and adapt it to its own driver
+contract and the mirror's backend traits, as it does the Simulator driver
 (Driver contract). On hosts other than macOS the crate still builds:
 `IosDriver` exists there, and `open` fails with `platform_unsupported`.
 
@@ -20,29 +23,45 @@ and adapt it to its own driver contract, as it does the Simulator driver
 
 ```
 src/
-  driver.rs        the driver traits: Devices, Lifecycle
+  driver.rs        the driver traits: Devices, Lifecycle, Session, Input, Frames
   model.rs         the values they take and return
   error.rs         errors, each with a stable code
   readiness.rs     the readiness states, their codes and steps, and what each operation needs
-  discovery.rs     usbmuxd's listing to USB entries, lockdown's values to a device and its probe
+  discovery.rs     usbmuxd's listing to USB entries, lockdown's values to a device, its probe and its screen
   identity.rs      the host's signing identity for the runner, through security
   bundle.rs        the app bundle an install takes, checked on the host
   services.rs      the RSD services the driver needs
-  compat.rs        the supported iOS range and the call-site table
+  compat.rs        the supported iOS range, the input path's gate and the call-site table
+  runner.rs        what the runner's hello must name, and how the test manager's failures read
+  touch.rs         touches as timed mainTouchscreen reports: taps, presses, swipes that rest
+  frames.rs        the frame pipeline: PNG decode, the change below the status bar, FrameStream
   version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
   macos/
-    host.rs        the Host and Link seams: usbmuxd, the lockdown probe, the lock, the installation proxy
+    host.rs        the Host and Link seams: usbmuxd, the lockdown probe, the lock, the screen,
+                   the installation proxy, the runner's port
     tunnel.rs      the Opener seam and the Tunnel: CoreDeviceProxy, jktcp, RSD, reconnection
     image.rs       the Mounter seam: the disk image's check and mount, idevice then devicectl
     dvt.rs         DVT's channels on connections of their own, the calls written by hand
-    driver.rs      IosDriver over Core, which keeps each target's tunnel, channels and lock session
-    fake.rs        the tests' fake device: RSD, DVT over DTX, the link and the mounter
+    runner.rs      the TestManager seam and the runner's session: start, supervisor, calls, stop
+    connection.rs  the protocol's HostSession over the runner's socket, on a task of its own
+    hid.rs         dtuhidd's two connections and the reports and events each input writes
+    capture.rs     the two screenshot pollers, the pipeline's thread, screenshots, frame paths
+    driver.rs      IosDriver over Core, which keeps each target's tunnel, channels, runner,
+                   HID connections and lock session, and contains a phone that drops
+    fake.rs        the tests' fake device: RSD, DVT over DTX, the link, the mounter, the screen
+    fake_runner.rs the tests' fake test manager and runner (the protocol's AgentSession)
+    fake_xpc.rs    the tests' RemoteXPC services: dtuhidd, screen capture, the display service
+    containment.rs failure containment's tests
 tests/
-  common/          gating on MOBILE_AGENT_IOS_UDID
+  common/          gating on MOBILE_AGENT_IOS_UDID, the quiet-host guard
   discovery.rs     task 3.1 on the device
   tunnel.rs        task 3.2 on the device
   lifecycle.rs     task 3.3 on the device, and the install series (ignored)
+  runner.rs        task 3.4 on the device: fifty commands, one runner process
+  input.rs         task 3.8 on the device, the input series and the lock button (ignored)
+  frames.rs        task 3.5 on the device, and the measured minute (ignored)
+  containment.rs   tasks 3.4 and 3.6 on the device: the pulled cable (ignored)
   fixtures/        recorded values: usbmuxd's listing, lockdown's values, CopyDevices,
                    RSD's handshake, and the disk image's build manifest cut down
 ```
@@ -53,29 +72,52 @@ tests/
 come with every point release before 0.2. Its features are `usbmuxd`,
 `core_device_proxy`, `tunnel_tcp_stack`, `rsd`, `xpc`,
 `mobile_image_mounter`, `tss` (the signing server's ticket for the mount),
-`installation_proxy`, `afc` (the install's upload) and `dvt`, with its
-default TLS, rustls on aws-lc-rs. Lockdown needs no feature, and pairing
-(`pair`) is not used: the person at the phone trusts the Mac. `idevice` and
-tokio are macOS-only dependencies; `plist` builds everywhere, for the
-platform-neutral parts and their tests.
+`installation_proxy`, `afc` (the install's upload), `dvt`, `xctest` (the
+runner's session), `core_device` (screen capture, the display service) and
+`display_stream`, which carries the HID clients though no stream is
+opened; its default TLS is rustls on aws-lc-rs. Lockdown needs no feature,
+and pairing (`pair`) is not used: the person at the phone trusts the Mac.
+`idevice` and tokio are macOS-only dependencies. Built everywhere: `plist`,
+`protocol` (the runner speaks the device protocol), `png` (the device's
+screenshots) and `simulator`, for the frame pipeline's `scale_bgra`,
+`pixels_hash`, `fit_within` and JPEG encoder, without its default features
+and with its dependency-free `jpeg-encoder`, so the crate builds without
+libjpeg-turbo; in the workspace the daemon's turbojpeg comes in beside it.
+`libc` is a dev-dependency, for the frames series' CPU time.
 
 The driver owns a tokio runtime of two worker threads, as the Android
 driver's emulator controller owns one; its traits are synchronous and each
-call blocks on that runtime from a thread outside it.
+call blocks on that runtime from a thread outside it. Each runner session's
+supervisor runs on a thread of its own, driving its future with the
+runtime's handle, since rustc cannot show the generic restart's future
+`Send` for every lifetime it borrows; the frame pipeline runs on a thread of
+its own beside the pollers' tasks.
 
 ## Driver contract
 
 The daemon registers the driver in task 5.1. The traits map onto its
-contract (`crates/daemon/src/driver.rs`) as the Simulator driver's do:
+contract (`crates/daemon/src/driver.rs`) and the mirror's backend
+(`crates/mirror/src/backend.rs`) as the Simulator driver's do:
 
-| Daemon | This crate |
+| Daemon or mirror | This crate |
 |---|---|
 | `Driver::discover` | `Devices::devices`: a `TargetInfo` per device, its state the readiness code and its advice the readiness message |
-| `Driver::attach` | `Devices::connect`, then the runner's session (task 3.4) |
+| `Driver::attach` | `Devices::connect`, then `Session::attach` with the runner the daemon built (`RunnerSpec`: the version, the bundle to install in its place) |
+| detach, daemon stop | `Session::release` |
 | `AppControl::launch` | `Lifecycle::launch`, `relaunch` as `terminate_running` |
 | `AppControl::terminate` | `Lifecycle::terminate` |
-| `Report::report` | `Devices::status` |
+| `Report::report` | `Devices::status`: the tunnel, the disk image, the connections open and `runner` (state, agent, restarts, handshake retries, leftovers ended, start time) |
 | `Driver::compatibility` | `ios::call_sites` and the supported range |
+| `TreeSource::read` | `Session::call` with `Call::Snapshot`; the runner's reply is the protocol's snapshot (group 4) |
+| `InputSink::perform`: `Input::Tap` | `Input::tap`, or `Input::press` with its hold |
+| `Input::Swipe` | `Input::swipe`, `Release::Resting` as `Swipe::resting` |
+| `Input::Key` | `Input::key` (an Indigo keyboard event), `Input::button` for the hardware buttons |
+| `Input::Text` | `Session::call` with `Call::TextSet` through the runner (D22); `Input::keys` types on a virtual keyboard |
+| `InputAck` | `Dispatch`: acknowledged when the last report is written, the path taken |
+| `EventStream::next` with `StreamItem::Frame` | `FrameStream::next`; `FrameMeta { seq, at, hash, width, height }` from `Frame { sequence, arrived, hash, width, height }`, rotation R0 |
+| `FrameSource::latest` | `FrameStream::latest` |
+| `FrameSource::encode` | `FrameStream::encode(sequence, width, height, quality)`, a held frame as JPEG |
+| the daemon's screenshot | `Frames::screenshot` |
 
 Every method names its device by identifier: names are not unique, so no
 method takes one, and a name fails as `not_found`.
@@ -94,9 +136,10 @@ listed only on the network is not listed.
 | unsupported iOS | `unsupported_ios` | lockdown's `ProductVersion` is outside iOS 17.4 up to but not including 27 | none; the version and this README's Compatibility section |
 | not trusted | `not_trusted` | usbmuxd holds no pairing record (`ReadPairRecord`), the device refuses it (`InvalidHostID`), or lockdown starts no session | unlock it, connect it over USB, tap Trust and enter the passcode; Finder starts the pairing when nothing else asks |
 | Developer Mode off | `developer_mode_off` | `DeveloperModeStatus` in `com.apple.security.mac.amfi` is not true | Settings > Privacy & Security > Developer Mode, restart, confirm with the passcode |
-| disk image unmounted | `disk_image_unmounted` | the image mounter's `CopyDevices` lists no developer image | connecting mounts the selected Xcode's, which needs this Mac online for Apple's signing server; `xcrun devicectl device info ddiServices --device <identifier>` mounts it by hand |
+| disk image unmounted | `disk_image_unmounted` | the image mounter's `CopyDevices` lists no developer image, or RSD lists no `com.apple.dt.testmanagerd.remote` when the runner starts | connecting mounts the selected Xcode's, which needs this Mac online for Apple's signing server; `xcrun devicectl device info ddiServices --device <identifier>` mounts it by hand |
 | locked | `device_locked` | `PasswordProtected` is not false | unlock it, and set Auto-Lock to Never for long runs |
 | no signing identity | `no_signing_identity` | no valid Apple Development identity of the team `MOBILE_AGENT_IOS_TEAM` names in the keychain | create the development certificate in Xcode with the team's account and export the team's identifier |
+| UI automation not approved | `automation_not_enabled` | a runner's start: XCTest logged "enabling automation mode" and no hello followed within 3 s, or the session ended after it | on the phone, approve "Enable UI Automation" with Touch ID or the passcode; XCTest waits 60 s for it |
 | ready | `ready` | none of the above | |
 
 A value that could not be read does not pass its check. The device's state
@@ -112,9 +155,12 @@ code of the first state it needs that the device has not passed;
 level. A command connects the device on its first use of it, which needs
 what the developer services need: trust, Developer Mode and the disk image,
 which it mounts when missing. A launch also needs the device unlocked,
-read before every launch, and the runner's session (task 3.4) the signing
-identity: a locked phone still connects, installs and lists its processes,
-and a launch on it fails with `device_locked`.
+read before every launch, and the runner's session the signing identity: a
+locked phone still connects, installs and lists its processes, and a launch
+on it fails with `device_locked`. The approval of "Enable UI Automation" is
+no probe's to read: only a start shows it, so `devices` never lists it, and
+the target's status reports the runner `awaiting_approval` while a start
+waits for it.
 
 ## Transport
 
@@ -126,8 +172,8 @@ they are open, and keeps them for the target's lifetime: lockdown's
 process, and RSD's handshake over it lists the services by name and port.
 `status` reports what is kept, the tunnel's opens, how long the last took,
 the services listed and those needed but missing, the disk image and the
-DVT channels open, from a snapshot it reads while a command runs.
-`reset_target` closes them.
+connections open, from a snapshot it reads while a command runs.
+`reset_target` closes them, the runner's session with them.
 
 The services the driver needs are the test manager
 (`com.apple.dt.testmanagerd.remote`), DVT
@@ -174,15 +220,19 @@ and unmounting it is not this driver's to do.
   session kept for it, and fails with `device_locked` without trying a
   launch: on a locked phone DVT refuses without saying why, and CoreDevice's
   app service refused at some moments and launched behind the lock screen
-  at others (S9). It then sends
+  at others (S9). With `terminate_running` it then ends the running
+  instance as `terminate` does, and launches without DVT's `KillExisting`:
+  an app relaunched with it kept a black window on iOS 26.6.2, Settings in
+  S11 and the SwiftUI fixture in task 3.8's device check, whose taps then
+  reached nothing, where a launch after the instance ended drew. It sends
   `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:`
   with the arguments and environment archived, the app started running and
-  `KillExisting` as `terminate_running` asks, and returns the pid of the
-  reply. Without `terminate_running` a running app keeps its process: DVT
-  answered the running instance's pid, in 55 ms. A refusal is
-  `app_not_installed` when the installation proxy does not list the app,
-  `launch_failed` with DVT's `NSError` otherwise, read from the reply's
-  archive since `idevice`'s decoder leaves it unresolved.
+  `KillExisting` false, and returns the pid of the reply. Without
+  `terminate_running` a running app keeps its process: DVT answered the
+  running instance's pid, in 55 ms. A refusal is `app_not_installed` when
+  the installation proxy does not list the app, `launch_failed` with DVT's
+  `NSError` otherwise, read from the reply's archive since `idevice`'s
+  decoder leaves it unresolved.
 - **running** reads DVT's process list for the app's bundle identifier,
   which iOS 26.6.2 gives application processes; an app's extensions have
   identifiers of their own.
@@ -198,19 +248,205 @@ functional runs (the host's 1-minute load 8 to 13 from other sessions, so
 these are not measurements): the first launch after an install took 2.2 s
 three times out of three and a relaunch 26 to 41 ms with the lock read; one
 read of the process list, about 580 processes through the tunnel, 474 to
-728 ms; terminate 526 ms, nearly all of it that read. The install is timed
-in Numbers.
+728 ms; terminate 526 ms, nearly all of it that read. With the running
+instance ended first, a relaunch took 580 ms and a first launch 865 ms
+(load about 6), the list's read included. The install is timed in Numbers.
+
+## Runner session
+
+`Session::attach` starts the runner (design D20) and returns once it said
+hello with the version the daemon asks for:
+
+1. The device is connected and must be ready for a session: unlocked, with
+   a signing identity on the host. RSD must list
+   `com.apple.dt.testmanagerd.remote`, which the disk image carries;
+   without it the attach fails with `disk_image_unmounted`.
+2. Runner processes left from a lost session are ended first, found in
+   DVT's process list by the runner's bundle identifier and signalled as
+   `terminate` signals: after S10's pulled cable the runner outlived the
+   test manager's session and answered the next attach's hello from the
+   stale process, then closed the connection. The pids are reported as
+   `leftovers`.
+3. The installation proxy looks the runner up; a missing runner is
+   installed from the bundle the `RunnerSpec` names, or reported as
+   `runner_not_installed`. `idevice`'s `XCUITestService::run` starts the
+   xctest session on a task kept for the session: two testmanagerd
+   connections, the IDE sessions, the runner launched through process
+   control and authorized, the test plan started. A listener writes what
+   XCTest reports to the session's log.
+4. The driver connects to the runner's loopback port 27183 through
+   usbmuxd's `Connect` every 25 ms until the protocol's `HostSession` gets
+   the hello. A hello naming another version stops the session, ends the
+   runner, installs the bundle given and starts again, once; without a
+   bundle the attach fails with `runner_version_mismatch`, naming both.
+5. When the session ends before the hello, its error says why: "service not
+   found" is the missing test manager; a handshake that timed out is made
+   again after 2 s while the attach's time lasts (150 s by default: the
+   test manager stopped answering for a minute or two after runners were
+   ended mid-start); XCTest's error 103, which `idevice` calls an untrusted
+   certificate, is a test bundle that did not load, an arm64e executable in
+   S10; anything else is `runner_start_failed` with the reason. A session
+   that asked for automation mode and ended without the hello is
+   `automation_not_enabled`; while it waits the status says
+   `awaiting_approval`, 3 s after the request, where the hello came 430 ms
+   after it in S10.
+
+A session that serves is kept: `attach` again reports it. A supervisor
+watches the runner's connection and the test manager's session: when
+either ends, the runner died, and it is started again once, through the
+same steps, the restart counted in the status; a runner that dies again,
+or whose restart fails, fails the session (`runner_died`, or `disconnected`
+when the device went away), and a new attach starts over. `Session::call`
+sends a protocol call and waits within its timeout; a call made while the
+runner starts again waits for it, and fails with `timeout`, which can be
+repeated, when its time runs out first. A call whose request was written
+before the connection closed fails with `disconnected`, since the runner
+may have acted on it. The runner's own errors pass through with the
+protocol's codes (`deadline_exceeded`, `busy`, `window_changed`, which can
+be repeated). `Session::release` ends the supervisor, which closes the
+connection and the test manager's session; XCTest ends the runner, and any
+runner process still running is signalled.
+
+On the phone, with spike S10's runner (`mobile-agent-ios-runner 0.1.0`,
+installed as `dev.mobileagent.runner`, until `agent-ios` replaces it), in
+the device test's functional run (a debug build, load 4.1, so not a
+measurement): the attach took 3.2 s, the hello 2.2 s after the start;
+fifty mixed commands (17 snapshots at 150 and 232 ms p50 and p95, 17
+screenshots at 71 and 98 ms, 16 taps at 276 and 282 ms) were served by one
+runner process with no restart; release took 476 ms and left no runner
+process. Later the same day iOS asked for the approval of "Enable UI
+Automation" again without a restart: the start waited 60 s in "enabling
+automation mode" with the passcode prompt on screen, and the driver
+reported `automation_not_enabled`.
+
+## Input
+
+`Input` sends taps, presses, swipes, hardware buttons and keys from the
+host through the disk image's `dtuhidd` over RSD (design D22), the
+driver's default input, with `idevice`'s HID clients on two connections
+kept for the target's lifetime:
+
+- touches as 58-byte `mainTouchscreen` reports to
+  `com.apple.coredevice.hid.universalhidservice`, at the touchscreen's
+  coordinates, 0 to 65535 across the screen in points, which come from
+  lockdown's `com.apple.mobile.iTunes` domain (`ScreenWidth`,
+  `ScreenHeight`, `ScreenScaleFactor`: 750, 1334 and 2.0 on the SE). A tap
+  is a contact held 50 ms, then the release; a press holds its hold. A
+  swipe reports every 16 ms along its line; a resting swipe stays at its
+  end, reporting, for 60 ms, moves one pixel on along each axis it went,
+  and lifts there, the Android `rest_ms` semantics, so the content stops
+  where the finger left it. A point off the screen is refused
+  (`invalid_argument`) before anything is sent;
+- hardware buttons as Indigo button events on the Consumer page to
+  `com.apple.coredevice.hid.indigo`, held 80 ms: home 0x40, lock 0x30,
+  volume up 0xE9, volume down 0xEA;
+- keys as Indigo keyboard events, held 30 ms, their modifiers' events
+  around them; `keys` types on a virtual keyboard registered on the
+  universal service for them and removed afterwards, whatever happened.
+
+Each input is acknowledged when its last report is written to the tunnel,
+with no idle wait, and `Dispatch` says when the first and the last went
+out. A write that fails before any report reached the device goes again on
+new connections; one that fails after does not, since the device saw part
+of it. Input reads the lock first, one value on lockdown's kept session,
+and on a locked phone fails as `disconnected` (locked), since its reports
+would reach the lock screen.
+
+The path is gated on the device's iOS version: `dtuhidd` takes input from
+the host from iOS 18 (Xcode 27's notes), and iOS 27 drops its reports
+unless a display stream runs (pymobiledevice3, `idevice`), which this
+driver does not open; iOS 26.6.2 took them with none (S11). Outside that
+range the input goes through the attached runner's synthesis (`tap`,
+`swipe` and `key` calls at device pixels, the buttons as `key` with the
+Consumer page in the high half), which group 4 provides, and without a
+runner fails as `input_unavailable`, naming the version.
+
+On the phone, in the device test's functional run (load about 6): a tap on
+the SwiftUI fixture's `row-1` was acknowledged in 84 ms, the first input
+also opening the HID connection, and `detail-1` was in the runner's tree
+259 ms later; the home button was acknowledged in 86 ms and the fixture
+left the foreground. The measured series is in Numbers.
+
+## Frames and screenshots
+
+`Frames::frames` subscribes to the screen (design D23): DVT's
+`takeScreenshot` and CoreDevice's `capturescreenshot` (PNG) polled side by
+side, each on a connection of its own, at most `max_fps` a second over
+both, the connections staggered. The pipeline, on a thread of its own:
+
+- skips a PNG known to show the last frame before decoding it, by a hash of
+  its bytes: the one delivered and those decoded since and found unchanged,
+  whichever connection they came on;
+- decodes the rest (8 or 16 bits a channel, RGB or RGBA) to BGRA and scales
+  it with the Simulator pipeline's `scale_bgra` to `max_dimension` (1000:
+  562x1000 on the SE);
+- counts it as a frame when a pixel below the status bar moved more than
+  two levels in a channel from the last frame, S11's tolerance, which
+  counted none of 1,283 still-screen frames and caught every tap and drag
+  on its first changed frame. A slow drift is measured from the last frame
+  delivered, not the capture before;
+- leaves out the device's status bar: 20 points on a home-button screen,
+  under twice as tall as wide, as on the SE; 7.5% of the height on others,
+  which covers their bars of 44 to 62 points. `FrameOptions::status_bar`
+  takes another height;
+- delivers the first frame and each change, with its sequence, when its
+  capture was requested and arrived, its size, a hash of its pixels below
+  the status bar, and its connection; keeps the last four for `encode`,
+  which scales one down and encodes it as JPEG; drops the oldest when the
+  consumer falls 16 behind.
+
+A capture that fails ends its poller and is recorded in the stats; the
+stream ends when both pollers did. `Frames::screenshot` takes the screen
+through DVT's kept screenshot channel: the device's PNG at the native
+size, or decoded, scaled to `max_dimension` and encoded as JPEG (the
+Simulator pipeline's encoder) or PNG. `Frames::frame_paths` says which
+path serves: screenshots; the display stream off, the display service's
+`getmediasupportinfo` listing no media features on iOS 26.6.2, which
+refuses the stream until iOS 27, and a later addition where it lists some;
+AVFoundation's capture off, a later addition behind CoreMediaIO's
+screen-capture allowance and the macOS camera permission.
+
+On the phone, in the device test's functional run (load 3.1): a native
+PNG of 127 KB in 199 ms and a JPEG at 1000 pixels in 224 ms, each opening
+its channel first; about 20 captures a second over the two connections;
+after a tap acknowledged in 61 ms, the first changed frame arrived 175 ms
+later. The measured minute is in Numbers.
+
+## Failure containment
+
+A command that meets a disconnect (spec "Failure containment") tells the
+cause from usbmuxd's listing and one probe of lockdown and the image
+mounter, about 50 ms on failure paths only:
+
+| Cause (`Disconnect`) | Told by | Then |
+|---|---|---|
+| `unplugged` | the phone left usbmuxd's listing: the cable was pulled, or it is restarting | its tunnel, channels, HID connections and runner session close |
+| `rebooted` | it is back without the disk image, or refuses lockdown until its first unlock | the same; the next attach mounts the image again, once the phone is unlocked |
+| `locked` | `PasswordProtected` reads true, as input reads it first | nothing closes; input goes on once it is unlocked |
+| `lost` | the connection failed while the phone stays listed and ready | its connections close |
+
+The error's code stays `disconnected`; its `kind` and message name the
+cause and the step. No other target is touched: each has its own tunnel,
+connections and session. After a disconnect the next attach starts over: a
+new tunnel, the runner's leftover process ended, a new session with no
+restart counted. The process list, whose read costs 474 to 728 ms on the
+phone, is read only by `running`, `terminate`, a relaunch and a runner's
+start and stop, never by input, frames, screenshots or the runner's calls.
 
 ## Numbers
 
-One series, the install of the SwiftUI fixture's Debug device build (664 KB
-in 7 files), ten times in a row through `install` with the connection open
-(`lifecycle::install_series`), on 2026-10-09 at 17:15. Host: Apple M1 Max,
-macOS 26.6.2, Xcode 27.0 (27A266a); device: iPhone SE (3rd generation),
-iOS 26.6.2, on USB, unlocked. The series waited 15 minutes for a quiet host,
-a 1-minute load under 4 and no cargo, rustc, xcodebuild, gradle, kotlinc or
-java process above 5% of a core, checked every 30 s, as the spikes' guard
-did; the check that let it start read 3.99.
+Measured series on 2026-10-09. Host: Apple M1 Max, macOS 26.6.2, Xcode 27.0
+(27A266a); device: iPhone SE (3rd generation), iOS 26.6.2, on USB,
+unlocked, Auto-Lock Never, battery on USB power. Each series waited for a
+quiet host, a 1-minute load under 4 and no cargo, rustc, xcodebuild,
+gradle, kotlinc, java or emulator process above 5% of a core, checked
+every 30 s and logged, as the spikes' guard did (`tests/common`); device
+tests are debug builds.
+
+The install of the SwiftUI fixture's Debug device build (664 KB in 7
+files), ten times in a row through `install` with the connection open
+(`lifecycle::install_series`), at 17:15. The series waited 15 minutes; the
+check that let it start read 3.99.
 
 | Series | n | p50 | p95 | min | max | Load before / after (1, 5, 15 minutes) |
 |---|---:|---:|---:|---:|---:|---|
@@ -220,23 +456,37 @@ Percentiles are nearest rank. Spike S10 installed its 3.7 MB runner the same
 way in 1118 and 1290 ms at p50 and p95, and this fixture once in 1.6 to
 1.7 s.
 
+A minute of frames on the fixture's still List tab (`frames::frames_series`),
+at 19:05, the guard's first check quiet:
+
+| Series | Window | Captures a second (DVT, CoreDevice) | Identical, decoded, unchanged | Frames after the first | CPU, this process | CPU, usbmuxd | Load before / after |
+|---|---:|---:|---|---:|---:|---:|---|
+| frames, still screen | 60.0 s | 19.0 (570, 570) | 1138, 2, 2 | 0 | 15.3% | 13.0% | 2.58, 2.71, 3.69 / 2.51, 2.72, 3.63 |
+
+The rate passes task 3.5's 15 a second and this process's CPU its quarter
+of a core; usbmuxd, which relays the PNGs, adds 13.0%, 28.3% together. S11
+measured 16.8 a second from two pollers on a busy phone, and 6.5 to 15.5%
+in its process with usbmuxd's 3.2 to 7.4% beside it.
+
+The input series (`input::input_series`): PENDING-INPUT-SERIES
+
 ## Compatibility
 
 The driver supports iOS 17.4 up to but not including 27 and refuses other
 versions with `unsupported_ios`, naming the version: lockdown's
 `CoreDeviceProxy` carries the tunnel from iOS 17.4, and iOS 27 drops
 `dtuhidd`'s reports unless a display stream runs, a path gated for later.
-Only iOS 26.6.2 on an iPhone SE (3rd generation) under Xcode 27.0 (27A266a)
-and macOS 26.6.2 was exercised, with `idevice` 0.1.68.
-`ios::render_compatibility()` prints the range and the table below, which
-`ios::call_sites()` returns for `doctor`:
+Host input is gated further to iOS 18 and later. Only iOS 26.6.2 on an
+iPhone SE (3rd generation) under Xcode 27.0 (27A266a) and macOS 26.6.2 was
+exercised, with `idevice` 0.1.68. `ios::render_compatibility()` prints the
+range and the table below, which `ios::call_sites()` returns for `doctor`:
 
 | Call | Service | Validated on | Note |
 |---|---|---|---|
 | `ListDevices`, `ReadPairRecord`, `Connect` | usbmuxd | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | the USB entry of a twice-listed phone; the pairing record from usbmuxd, not `/var/db/lockdown` |
 | `GetValue` `DeviceName`, `ProductType`, `ProductVersion`, `BuildVersion` without a session; `StartSession` | lockdownd | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | |
 | `GetValue` `DeveloperModeStatus` in `com.apple.security.mac.amfi` | lockdownd | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | |
-| `GetValue` `PasswordProtected` | lockdownd | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | read before every launch; CoreDevice's `getlockstate` is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked |
+| `GetValue` `PasswordProtected` | lockdownd | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | read before every launch and every input; CoreDevice's `getlockstate` is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked |
 | `CopyDevices` | image mounter (lockdown) | iOS 26.6.2, Xcode 27.0: S9, `tests/discovery.rs` | the personalized image at `/System/Developer`; the Cryptex1 form is not listed here |
 | `StartService` `com.apple.internal.devicecompute.CoreDeviceProxy`, CDTunnel's handshake | lockdownd, jktcp in this process | iOS 26.6.2, Xcode 27.0: S9, `tests/tunnel.rs` | no root, no TUN interface |
 | RSD's handshake (RemoteXPC over HTTP/2, protocol version 7) | remoted, in the tunnel | iOS 26.6.2, Xcode 27.0: S9, `tests/tunnel.rs` | 82 services with the image mounted, 61 without (S10) |
@@ -244,10 +494,21 @@ and macOS 26.6.2 was exercised, with `idevice` 0.1.68.
 | `QueryPersonalizationManifest`, `QueryNonce`, `QueryPersonalizationIdentifiers`, `UploadImage`, `MountImage` `Personalized`; TSS | image mounter, Apple's signing server | iOS 26.6.2, Xcode 27.0: not exercised; the image stayed mounted, and S10's call never returned | first, within 60 s; needs this Mac online |
 | `xcrun devicectl device info ddiServices --auto-mount-ddis` | CoreDevice 642.16 on the host | iOS 26.6.2, Xcode 27.0: not exercised | the fallback, within 120 s |
 | `_requestChannelWithCode:identifier:` | DVT | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs` | a channel per connection, kept |
-| `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:` with `KillExisting` | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs` | written by hand: `launch_app` drops a refusal's reason |
+| `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:` with `KillExisting` false | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs`, `tests/input.rs` | written by hand: `launch_app` drops a refusal's reason; a running instance is signalled first, since a `KillExisting` relaunch kept a black window (S11, task 3.8) |
 | `sendSignal:toPid:` with SIGKILL and the pid archived | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs` | written by hand: `kill_app`'s primitive pid stalled the phone's DVT service (S9) |
-| `runningProcesses`, `isRunningPid:` | DVT's device information | iOS 26.6.2, Xcode 27.0: `tests/lifecycle.rs` | `bundleIdentifier` for application processes; the list takes 480 to 710 ms |
+| `runningProcesses`, `isRunningPid:` | DVT's device information | iOS 26.6.2, Xcode 27.0: `tests/lifecycle.rs`, `tests/runner.rs` | `bundleIdentifier` for application processes, the runner's included; the list takes 480 to 710 ms |
 | AFC upload to `PublicStaging`; installation proxy `Upgrade`, `Lookup` | AFC, installation proxy (lockdown) | iOS 26.6.2, Xcode 27.0: S10, `tests/lifecycle.rs` | over usbmuxd, not the tunnel |
+| installation proxy `Lookup` of the runner (`Path`, `Container`, `CFBundleExecutable` ending in `-Runner`) | installation proxy (lockdown) | iOS 26.6.2, Xcode 27.0: S10, `tests/runner.rs` | a missing runner is installed from the bundle given |
+| the xctest session: the DTX handshake on two testmanagerd connections, `_IDE_initiateControlSessionWithCapabilities:`, `_IDE_initiateSessionWithIdentifier:capabilities:`, the runner launched through process control (`XCTestBundlePath`, `XCTestSessionIdentifier`, `XCTestManagerVariant` DDI), `_IDE_authorizeTestSessionWithProcessID:`, `_XCT_testRunnerReadyWithCapabilities:` answered with the configuration, `_IDE_startExecutingTestPlanWithProtocolVersion:` | `com.apple.dt.testmanagerd.remote` and DVT, through `idevice`'s `XCUITestService` | iOS 26.6.2, Xcode 27.0 (XCTest 25228): S10, `tests/runner.rs` | kept for the session; the 60 s wait for "Enable UI Automation" is `automation_not_enabled`; an unanswered handshake is made again; error 103 is reported by `idevice` as an untrusted certificate |
+| `Connect` to the runner's loopback port 27183; the device protocol's hello | usbmuxd, the runner's `AgentSession` | iOS 26.6.2, Xcode 27.0: S10, `tests/runner.rs` | the hello names `mobile-agent-ios-runner` and its version |
+| `GetValue` `ScreenWidth`, `ScreenHeight`, `ScreenScaleFactor` in `com.apple.mobile.iTunes` | lockdownd | iOS 26.6.2, Xcode 27.0: `tests/input.rs`, `tests/frames.rs` | 750, 1334 and 2.0 on the SE |
+| `send` with a 58-byte `mainTouchscreen` report (0x09, the contact count, 5, state 0xC2 touching or 0x02 lifted, x and y over 0 to 65535) to surface 257 | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | no display stream on iOS 26.6.2; gated to iOS 18 up to 27 |
+| `IndigoButtonEvent` (Consumer page; home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA; state 1 down, 2 up) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | home reaches the home screen; PENDING-BUTTONS |
+| `IndigoKeyboardButtonEvent` (keyboard-page usage, state) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | typed one key into Safari's address field |
+| `createService` (a virtual `mainKeyboard`), `connectedServices`, `send` with a 39-byte keyboard report, `resetGestureState`, `removeService` | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | removed after typing: a device may stay in hardware keyboard mode for two minutes (Xcode 27's notes) |
+| `takeScreenshot` | DVT's screenshot service | iOS 26.6.2, Xcode 27.0: S9, S11, `tests/frames.rs` | 8-bit PNGs, 16-bit with an ICC profile for the home screen's wallpaper (S11) |
+| `capturescreenshot`, `requestedFormat` `png` | `com.apple.coredevice.screencaptureservice` | iOS 26.6.2, Xcode 27.0: S9, S11, `tests/frames.rs` | JPEG is refused (S9) |
+| `getmediasupportinfo` | `com.apple.coredevice.displayservice` | iOS 26.6.2, Xcode 27.0: S11, `tests/frames.rs` | `supportedFeatures` 0; the stream is refused with CoreDeviceError 9021 until iOS 27 (S11) |
 
 ## Tests
 
@@ -260,30 +521,55 @@ and a cut of the disk image's build manifest (`tests/fixtures/`). The fake
 device (`src/macos/fake.rs`) answers `idevice`'s own RSD client with an
 HTTP/2 frame carrying the XPC handshake, and its own DVT client in DTX: it
 opens channels, launches, signals and lists processes, refuses a launch
-with an archived `NSError`, records every call with its arguments
-unarchived, and drops the connection on a primitive pid as the phone did.
-Its tunnel drops, closing the connections over it, and the device goes
-away and comes back. On hosts other than macOS only the platform-neutral
-tests run.
+with an archived `NSError`, takes screenshots of a screen the test sets,
+records every call with its arguments unarchived, and drops the connection
+on a primitive pid as the phone did. Its tunnel drops, closing the
+connections over it; the device goes away and comes back, locks, and
+reboots, losing its disk image and its runner's process. A fake host holds
+two phones.
+
+`src/macos/fake_xpc.rs` serves `idevice`'s own RemoteXPC clients at the
+wire, HTTP/2 frames carrying XPC messages: `dtuhidd`'s universal service
+decodes each `mainTouchscreen` report and records it with when it
+arrived, registers, lists and removes the virtual keyboard (whose identity
+`idevice` checks), and the Indigo service decodes button and keyboard
+events; CoreDevice's screen capture and display services answer in
+CoreDevice's output envelope. `src/macos/fake_runner.rs` stands for the
+test manager and the runner: its session refuses a runner not installed,
+reports XCTest's events, starts the runner's process on the fake device and
+lasts as long as it and the cable; scripted starts fail the handshake, miss
+the test manager, wait for an approval or start slowly. The runner serves
+the protocol's `AgentSession` on its port, saying hello with the installed
+version (an installed bundle's `CFBundleShortVersionString`); one left from
+a lost session says hello and closes the connection, as S10's did.
 
 The tests in `tests/` drive the phone. Each checks `MOBILE_AGENT_IOS_UDID`
 first; when it is unset, as in CI, the test prints why it skipped and
 passes. To run them, attach an iPhone over USB, trusted, unlocked, with
-Developer Mode on and Auto-Lock at Never, and name the team its runner is
-signed for and the SwiftUI fixture's device build:
+Developer Mode on and Auto-Lock at Never, the runner and the SwiftUI
+fixture installed, and name the team its runner is signed for and the
+fixture's device build:
 
 ```sh
 spikes/s10-ios-runner/fixtures.sh swiftui     # prints the bundle's path; task 6.1 moves this into fixtures/
 MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
   MOBILE_AGENT_IOS_SWIFTUI_APP=<path to FixtureSwiftUI.app> cargo test -p ios
-cargo test -p ios --test lifecycle -- --ignored --nocapture install_series   # on a quiet host
+# measurements, on a quiet host (each waits for the guard)
+cargo test -p ios --test lifecycle -- --ignored --nocapture install_series
+cargo test -p ios --test frames -- --ignored --nocapture frames_series
+cargo test -p ios --test input -- --ignored --nocapture input_series
+# with a person at the phone
+cargo test -p ios --test input -- --ignored --nocapture the_lock_button
+cargo test -p ios --test containment -- --ignored --nocapture
 ```
 
-Neither the identifier nor the team enters a tracked file, and no test
-prints them. Without `MOBILE_AGENT_IOS_TEAM` the phone is listed as
-`no_signing_identity`, which the discovery test accepts; without the
+`MOBILE_AGENT_IOS_RUNNER_VERSION` names the runner's version when it is not
+S10's `0.1.0`. Neither the identifier nor the team enters a tracked file,
+and no test prints them. Without `MOBILE_AGENT_IOS_TEAM` the phone is listed
+as `no_signing_identity`, which the discovery test accepts; without the
 fixture's bundle the lifecycle tests skip. The lifecycle test installs the
-fixture, which stays installed, launches and terminates it; nothing else is
+fixture, which stays installed, launches and terminates it; the runner and
+input tests launch it, press home and leave it running; nothing else is
 installed and no setting is changed.
 
 ## Spec requirements and their tests
@@ -291,9 +577,13 @@ installed and no setting is changed.
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Device discovery and readiness | Ready device listed | `discovery::the_phone_is_listed_once_with_its_identifier_name_model_and_ios_version`, `macos::driver::tests::a_ready_phone_is_listed_once_with_its_identifier_name_model_and_version`, `macos::host::tests::the_recorded_listing_goes_through_usbmuxds_parser_to_the_phones_usb_entry`, `discovery::tests::a_phone_listed_on_usb_and_the_network_is_kept_once_by_its_usb_entry`, `discovery::tests::the_recorded_values_describe_the_phone_and_make_it_ready`, `identity::tests::the_identity_of_the_named_team_is_found` |
-| Device discovery and readiness | Device not ready | `macos::driver::tests::an_unready_phone_is_listed_in_its_state_with_the_step_to_take`, `macos::driver::tests::a_command_on_an_unready_phone_fails_with_a_code_naming_the_state`, `macos::driver::tests::a_command_needs_only_what_its_operation_needs`, `macos::driver::tests::a_command_on_a_phone_that_is_not_ready_fails_with_its_state`, `readiness::tests::every_unready_state_has_a_code_and_a_message_naming_its_step`, `readiness::tests::each_unready_state_is_the_first_check_the_device_has_not_passed`, `readiness::tests::an_operation_fails_only_on_the_states_it_needs`, `discovery::tests::each_recorded_value_that_changes_gives_its_state`, `macos::host::tests::a_failed_pairing_record_or_session_says_what_stands_in_the_way`, `identity::tests::a_missing_team_identity_or_team_says_which`, `discovery::a_command_reads_the_phone_again_and_an_unknown_identifier_is_not_found` |
-| Transport without root or helpers | Services reached from the daemon (the launch; the screenshot comes with task 3.5) | `tunnel::the_tunnel_opens_in_this_unprivileged_process_and_lists_the_developer_services`, `lifecycle::the_fixture_is_installed_launched_with_an_environment_found_running_and_terminated`, `macos::tunnel::tests::the_handshake_lists_the_recorded_services_and_a_service_is_found_by_name`, `macos::tunnel::tests::the_services_a_device_without_the_disk_image_lacks_are_named_missing`, `macos::tunnel::tests::a_service_the_handshake_does_not_list_is_missing_and_the_tunnel_stays`, `macos::tunnel::tests::a_handshake_that_never_comes_times_out_and_leaves_nothing_open`, `macos::driver::tests::connecting_a_ready_phone_opens_the_tunnel_and_lists_its_services`, `macos::driver::tests::reset_closes_the_tunnel_and_the_next_connect_opens_a_new_one` |
-| Transport without root or helpers | The disk image mounted when the device lacks one | `macos::driver::tests::a_phone_without_the_disk_image_has_it_mounted_before_the_tunnel_opens`, `macos::driver::tests::a_mount_that_fails_offline_fails_naming_the_signing_server_and_opens_nothing`, `macos::image::tests::a_missing_image_is_mounted_through_idevice_and_checked`, `macos::image::tests::idevice_hanging_or_failing_falls_back_to_devicectl`, `macos::image::tests::a_success_the_image_mounter_does_not_confirm_falls_back_too`, `macos::image::tests::both_failing_offline_say_the_signing_server_is_needed`, `macos::image::tests::the_manifest_names_the_image_and_trust_cache_of_the_devices_identity` (not on the device: the image stayed mounted) |
-| App lifecycle | Fixture launched (the launch and the process; the tree read comes with task 3.4) | `lifecycle::the_fixture_is_installed_launched_with_an_environment_found_running_and_terminated`, `macos::driver::tests::install_checks_the_bundle_uploads_it_and_reports_its_identifier_and_time`, `macos::driver::tests::a_launch_reads_the_lock_then_launches_through_process_control_and_returns_the_pid`, `macos::driver::tests::a_launch_on_a_locked_phone_is_refused_without_being_tried`, `macos::driver::tests::launching_an_app_that_is_not_installed_fails_as_not_installed`, `macos::driver::tests::a_refused_launch_of_an_installed_app_says_why`, `macos::driver::tests::terminate_signals_the_apps_process_and_returns_once_it_is_gone`, `macos::driver::tests::terminating_an_app_that_is_not_running_signals_nothing`, `macos::dvt::tests::a_launch_sends_the_bundle_its_environment_arguments_and_kill_existing_and_reads_the_pid`, `macos::dvt::tests::a_kill_is_send_signal_to_pid_with_sigkill_and_the_pid_both_archived`, `macos::dvt::tests::the_process_list_gives_each_application_its_bundle_identifier`, `macos::dvt::tests::whether_a_pid_runs_is_asked_with_the_pid_archived`, `macos::dvt::tests::a_refused_launch_reads_the_errors_domain_code_and_description`, `bundle::tests::a_simulator_build_is_refused_naming_the_device_destination`, `macos::driver::tests::a_bundle_a_device_does_not_take_is_refused_before_anything_is_asked_of_it` |
-| Failure containment | Cable pulled (the transport's part; the cable itself comes with task 3.6) | `macos::tunnel::tests::a_tunnel_that_dropped_is_opened_again_once`, `macos::tunnel::tests::a_device_that_is_gone_is_disconnected_with_the_cause`, `macos::driver::tests::a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel`, `macos::dvt::tests::a_call_on_a_connection_that_closed_fails_and_the_channel_is_done`, `macos::dvt::tests::a_call_without_a_reply_times_out_and_ends_the_channel`, `macos::driver::tests::a_launch_whose_dvt_never_answers_times_out` |
-| Compatibility statement | Table lists the device paths | `compat::tests::every_call_site_names_the_ios_and_xcode_it_was_validated_on`, `compat::tests::the_table_renders_the_range_and_every_call_site`, `compat::tests::ios_17_4_up_to_27_is_supported`, `readiness::tests::an_ios_outside_the_supported_range_is_refused_naming_the_version` |
+| Device discovery and readiness | Device not ready | `macos::driver::tests::an_unready_phone_is_listed_in_its_state_with_the_step_to_take`, `macos::driver::tests::a_command_on_an_unready_phone_fails_with_a_code_naming_the_state`, `macos::driver::tests::a_command_needs_only_what_its_operation_needs`, `macos::driver::tests::a_command_on_a_phone_that_is_not_ready_fails_with_its_state`, `readiness::tests::every_unready_state_has_a_code_and_a_message_naming_its_step`, `readiness::tests::each_unready_state_is_the_first_check_the_device_has_not_passed`, `readiness::tests::an_operation_fails_only_on_the_states_it_needs`, `discovery::tests::each_recorded_value_that_changes_gives_its_state`, `macos::host::tests::a_failed_pairing_record_or_session_says_what_stands_in_the_way`, `identity::tests::a_missing_team_identity_or_team_says_which`, `discovery::a_command_reads_the_phone_again_and_an_unknown_identifier_is_not_found`, `macos::runner::tests::a_start_waiting_for_the_automation_approval_is_reported_as_that_state`, `macos::runner::tests::a_start_whose_approval_never_comes_fails_naming_the_step`, `macos::runner::tests::a_device_whose_rsd_lists_no_test_manager_fails_as_the_disk_image`, `macos::runner::tests::a_locked_phone_does_not_attach` |
+| Transport without root or helpers | Services reached from the daemon | `tunnel::the_tunnel_opens_in_this_unprivileged_process_and_lists_the_developer_services`, `lifecycle::the_fixture_is_installed_launched_with_an_environment_found_running_and_terminated`, `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `macos::tunnel::tests::the_handshake_lists_the_recorded_services_and_a_service_is_found_by_name`, `macos::tunnel::tests::the_services_a_device_without_the_disk_image_lacks_are_named_missing`, `macos::tunnel::tests::a_service_the_handshake_does_not_list_is_missing_and_the_tunnel_stays`, `macos::tunnel::tests::a_handshake_that_never_comes_times_out_and_leaves_nothing_open`, `macos::driver::tests::connecting_a_ready_phone_opens_the_tunnel_and_lists_its_services`, `macos::driver::tests::reset_closes_the_tunnel_and_the_next_connect_opens_a_new_one`, `macos::capture::tests::the_screenshot_is_the_devices_png_at_full_size_or_scaled_to_a_long_edge` |
+| Transport without root or helpers | The disk image mounted when the device lacks one | `macos::driver::tests::a_phone_without_the_disk_image_has_it_mounted_before_the_tunnel_opens`, `macos::driver::tests::a_mount_that_fails_offline_fails_naming_the_signing_server_and_opens_nothing`, `macos::image::tests::a_missing_image_is_mounted_through_idevice_and_checked`, `macos::image::tests::idevice_hanging_or_failing_falls_back_to_devicectl`, `macos::image::tests::a_success_the_image_mounter_does_not_confirm_falls_back_too`, `macos::image::tests::both_failing_offline_say_the_signing_server_is_needed`, `macos::image::tests::the_manifest_names_the_image_and_trust_cache_of_the_devices_identity`, `macos::containment::a_rebooted_phone_is_told_apart_and_attaches_again_once_unlocked` (not on the device: the image stayed mounted) |
+| One resident runner per session | Runner stays up | `runner::the_runner_serves_fifty_commands_with_one_process_and_no_restart`, `macos::runner::tests::fifty_commands_are_served_by_one_runner_with_no_restart`, `macos::runner::tests::the_runner_starts_through_the_test_manager_and_says_hello_with_its_version`, `macos::runner::tests::a_runner_that_dies_is_started_again_once_and_the_restart_is_reported`, `macos::runner::tests::release_stops_the_runner_and_its_session`, `macos::runner::tests::a_runner_left_from_a_lost_session_is_ended_before_the_start`, `macos::runner::tests::a_start_the_test_manager_does_not_answer_is_made_again`, `macos::runner::tests::a_session_the_test_manager_ends_for_want_of_its_service_is_the_disk_image`, `macos::runner::tests::a_call_before_attaching_fails_as_not_attached`, `runner::tests::the_hello_names_the_runner_and_its_version`, `runner::tests::the_test_managers_failures_say_what_stands_in_the_way` |
+| One resident runner per session | Runner replaced on version change | `macos::runner::tests::a_runner_of_another_version_is_replaced_by_the_bundle_given`, `macos::runner::tests::a_runner_of_another_version_without_a_bundle_fails_naming_both_versions`, `macos::runner::tests::a_missing_runner_is_installed_from_the_bundle_or_reported` (not on the device: only S10's runner is installed) |
+| App lifecycle | Fixture launched (the launch and the process; the tree read is the runner's, group 4) | `lifecycle::the_fixture_is_installed_launched_with_an_environment_found_running_and_terminated`, `macos::driver::tests::install_checks_the_bundle_uploads_it_and_reports_its_identifier_and_time`, `macos::driver::tests::a_launch_reads_the_lock_then_launches_through_process_control_and_returns_the_pid`, `macos::driver::tests::a_relaunch_ends_the_running_instance_itself_rather_than_with_kill_existing`, `macos::driver::tests::a_launch_on_a_locked_phone_is_refused_without_being_tried`, `macos::driver::tests::launching_an_app_that_is_not_installed_fails_as_not_installed`, `macos::driver::tests::a_refused_launch_of_an_installed_app_says_why`, `macos::driver::tests::terminate_signals_the_apps_process_and_returns_once_it_is_gone`, `macos::driver::tests::terminating_an_app_that_is_not_running_signals_nothing`, `macos::dvt::tests::a_launch_sends_the_bundle_its_environment_arguments_and_kill_existing_and_reads_the_pid`, `macos::dvt::tests::a_kill_is_send_signal_to_pid_with_sigkill_and_the_pid_both_archived`, `macos::dvt::tests::the_process_list_gives_each_application_its_bundle_identifier`, `macos::dvt::tests::whether_a_pid_runs_is_asked_with_the_pid_archived`, `macos::dvt::tests::a_refused_launch_reads_the_errors_domain_code_and_description`, `bundle::tests::a_simulator_build_is_refused_naming_the_device_destination`, `macos::driver::tests::a_bundle_a_device_does_not_take_is_refused_before_anything_is_asked_of_it` |
+| Input actions without idle waits | Tap dispatched | `input::a_tap_reaches_the_screen_and_the_home_button_the_home_screen`, `input::input_series`, `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `macos::hid::tests::a_tap_is_a_main_touchscreen_contact_held_then_released_and_acknowledged_at_the_release`, `macos::hid::tests::a_long_press_holds_its_contact_for_its_hold`, `macos::hid::tests::a_resting_swipe_rests_before_it_moves_one_pixel_on_and_lifts`, `macos::hid::tests::a_moving_swipe_lifts_at_the_end_of_its_path`, `macos::hid::tests::the_home_button_is_an_indigo_button_event_down_held_then_up`, `macos::hid::tests::lock_and_volume_take_their_consumer_usages`, `macos::hid::tests::a_key_is_an_indigo_keyboard_event_with_its_modifiers_held_around_it`, `macos::hid::tests::keys_are_typed_on_a_virtual_keyboard_registered_then_removed`, `macos::hid::tests::a_point_off_the_screen_is_refused_before_any_report`, `macos::hid::tests::the_connections_to_dtuhidd_are_kept_and_opened_again_after_the_tunnel_dropped`, `macos::hid::tests::an_ios_whose_dtuhidd_takes_no_report_goes_through_the_runner_or_is_refused`, `touch::tests::points_map_to_the_touchscreen_space_and_off_screen_points_are_refused`, `touch::tests::a_tap_is_a_contact_held_50_ms_then_a_release_at_the_same_point`, `touch::tests::a_moving_swipe_reports_every_16_ms_along_its_line_and_lifts_at_its_end`, `touch::tests::a_resting_swipe_stays_still_60_ms_then_moves_one_pixel_on_and_lifts_there`, `touch::tests::a_swipe_that_leaves_the_screen_is_refused`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream` |
+| Frames and screenshots from the host | Frame change after a tap | `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `frames::frames_series`, `macos::capture::tests::frames_are_polled_on_dvt_and_coredevice_side_by_side`, `macos::capture::tests::a_still_screen_counts_no_frame_after_the_first`, `macos::capture::tests::a_change_on_screen_is_the_next_frame`, `macos::capture::tests::frames_are_throttled_to_the_rate_asked_for`, `macos::capture::tests::a_held_frame_encodes_as_a_jpeg_of_the_size_asked_for`, `macos::capture::tests::the_screenshot_is_the_devices_png_at_full_size_or_scaled_to_a_long_edge`, `macos::capture::tests::the_display_stream_and_avfoundation_say_why_they_are_off`, `macos::capture::tests::the_pace_spreads_the_rate_over_the_connections`, `frames::tests::identical_pngs_are_skipped_before_decoding`, `frames::tests::a_frame_is_a_pixel_below_the_status_bar_more_than_two_levels_from_the_last_frame`, `frames::tests::a_change_inside_the_devices_status_bar_is_no_frame`, `frames::tests::the_status_bar_comes_from_the_devices_screen`, `frames::tests::no_still_frame_is_counted_through_one_level_noise_and_drift_is_measured_from_the_last_frame`, `frames::tests::frames_are_scaled_to_the_long_edge_asked_for_and_held_for_encoding`, `frames::tests::eight_and_sixteen_bit_pngs_become_bgra`, `frames::tests::a_png_that_does_not_decode_is_a_failure_not_a_frame` (settle on these frames is the mirror's, task 5.2) |
+| Failure containment | Cable pulled | `containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, `macos::containment::a_pulled_cable_fails_the_phones_commands_as_unplugged_and_spares_the_other_phone`, `macos::containment::a_replugged_phone_attaches_again_and_starts_over`, `macos::containment::a_locked_phone_fails_input_as_locked_and_keeps_its_connections`, `macos::containment::a_rebooted_phone_is_told_apart_and_attaches_again_once_unlocked`, `macos::containment::a_command_made_while_the_runner_starts_again_waits_for_it_within_its_timeout`, `macos::containment::no_hot_path_reads_the_process_list`, `macos::containment::a_device_that_refuses_lockdown_until_its_first_unlock_reads_as_rebooted`, `macos::tunnel::tests::a_tunnel_that_dropped_is_opened_again_once`, `macos::tunnel::tests::a_device_that_is_gone_is_disconnected_with_the_cause`, `macos::driver::tests::a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel`, `macos::dvt::tests::a_call_on_a_connection_that_closed_fails_and_the_channel_is_done`, `macos::dvt::tests::a_call_without_a_reply_times_out_and_ends_the_channel`, `macos::driver::tests::a_launch_whose_dvt_never_answers_times_out` |
+| Compatibility statement | Table lists the device paths | `compat::tests::every_call_site_names_the_ios_and_xcode_it_was_validated_on`, `compat::tests::the_table_renders_the_range_and_every_call_site`, `compat::tests::ios_17_4_up_to_27_is_supported`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream`, `readiness::tests::an_ios_outside_the_supported_range_is_refused_naming_the_version` |
