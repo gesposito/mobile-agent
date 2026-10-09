@@ -744,6 +744,44 @@ fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
     }
 }
 
+/// Rn-app-fixes D35: XCTest reports a React Native text as a text whose
+/// only child is its own text, a heading likewise without its identifier,
+/// and UIKit's scroll bars as elements whose only child repeats them. The
+/// full listing shows each once, and the heading's repeat gets no ref.
+#[test]
+fn a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once() {
+    let (_, mut mirror) = mirror_on("members-ios");
+    assert_eq!(
+        mirror.snapshot(&full()).unwrap().text,
+        lines(&[
+            "- button \"Placeholder back\" [ref=e1]",
+            "- heading \"Placeholder members\" [id=placeholder-members-title, ref=e2]",
+            "- text \"Placeholder 2 selected\"",
+            "- generic [id=placeholder-members-list]",
+            "  - checkbox \"Placeholder member 1\" [checked=true, ref=e3]",
+            "    - text \"Placeholder member 1\"",
+            "  - checkbox \"Placeholder member 2\" [checked=true, ref=e4]",
+            "    - text \"Placeholder member 2\"",
+            "  - checkbox \"Placeholder member 3\" [checked=false, ref=e5]",
+            "    - text \"Placeholder member 3\"",
+            "  - checkbox \"Placeholder member 4\" [checked=false, ref=e6]",
+            "  - text \"Vertical scroll bar, 1 page\": 0%",
+            "  - text \"Horizontal scroll bar, 1 page\": 0%",
+            "- button \"Placeholder add members\" [ref=e7]",
+        ])
+    );
+    let (_, mut tabs) = mirror_on("tabbar-ios");
+    let listing = tabs.snapshot(&full()).unwrap().text;
+    assert_eq!(
+        listing
+            .lines()
+            .filter(|line| line.trim_start() == "- text \"Placeholder tab 2\"")
+            .count(),
+        1,
+        "{listing}"
+    );
+}
+
 #[test]
 fn a_system_alert_reports_system_ui_as_the_foreground() {
     let (_, mut mirror) = mirror_on("system-alert");

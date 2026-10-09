@@ -308,6 +308,68 @@ fn a_labelled_control_under_an_alert_is_covered() {
     assert!(target.inputs().is_empty());
 }
 
+/// Rn-app-fixes D35, scenario "Selected tab keeps its ref": React Native
+/// exposes a tab as a labelled node without traits but `selected`, and the
+/// selected one of the tab bar the smoke test found holds more than static
+/// text, its label shown under its icon. All three tabs get refs, the
+/// selected one with its state, as UIKit's tab bar buttons do, selected or
+/// not.
+#[test]
+fn a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so() {
+    let (_, mut mirror) = mirror_on("tabbar-ios");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- heading \"Placeholder home\" [ref=e1]",
+            "- button \"Placeholder action\" [ref=e2]",
+            "- generic \"Placeholder tab 1\" [id=placeholder-tab-1, ref=e3]",
+            "- generic \"Placeholder tab 2\" [selected, id=placeholder-tab-2, ref=e4]",
+            "- generic \"Placeholder tab 3\" [id=placeholder-tab-3, ref=e5]",
+        ])
+    );
+    assert!(
+        snapshot
+            .by_identifier("placeholder-tab-2")
+            .unwrap()
+            .selected
+    );
+
+    let (_, mut uikit) = mirror_on("login-ios");
+    let snapshot = uikit.snapshot(&interactive()).unwrap();
+    for tab in ["tab-login", "tab-list", "tab-big", "tab-anim", "tab-system"] {
+        let element = snapshot.by_identifier(tab).unwrap();
+        assert!(element.reference.is_some(), "{tab}");
+        assert_eq!(element.selected, tab == "tab-login", "{tab}");
+    }
+}
+
+/// D35: React Native says a view is a checkbox, and whether it is checked,
+/// only in its value on iOS (`checkbox, checked`), where no trait says so.
+/// Such a view lists as a checkbox with its state, as a switch does, and
+/// gets a ref whatever it holds; the value is no longer shown.
+#[test]
+fn a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state() {
+    let (_, mut mirror) = mirror_on("members-ios");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        snapshot.text,
+        lines(&[
+            "- button \"Placeholder back\" [ref=e1]",
+            "- heading \"Placeholder members\" [id=placeholder-members-title, ref=e2]",
+            "- checkbox \"Placeholder member 1\" [checked=true, ref=e3]",
+            "- checkbox \"Placeholder member 2\" [checked=true, ref=e4]",
+            "- checkbox \"Placeholder member 3\" [checked=false, ref=e5]",
+            "- checkbox \"Placeholder member 4\" [checked=false, ref=e6]",
+            "- button \"Placeholder add members\" [ref=e7]",
+        ])
+    );
+    let member = snapshot.by_name("Placeholder member 1").unwrap();
+    assert_eq!(member.checked, Some(true));
+    assert_eq!(member.value, None);
+    assert!(member.actionable);
+}
+
 /// A mirror over one Simulator application window holding `children`.
 fn ios(children: Value) -> (FakeTarget, Mirror) {
     let screen = Screen::from_json(json!({

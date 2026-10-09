@@ -1,0 +1,48 @@
+{
+  "description": "A React Native members screen on iOS, synthetic, in the shape the first smoke test of a production app found (rn-app-fixes, design D35): a heading whose only child repeats it without its identifier, a text whose only child is its own text, and a list of members, each a pressable with accessibilityRole checkbox, which XCTest types Other with no trait: React Native says what it is and whether it is checked only in its value (checkbox, checked or checkbox, unchecked), the reader passing its React Native class, its label and that value. Most hold an avatar and their name; one holds nothing. UIKit's two scroll bars on the list, vertical and horizontal, each an element whose only child repeats its label and value. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 118], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder back", "bounds": [8, 70, 48, 110], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "id": "placeholder-members-title", "desc": "Placeholder members", "bounds": [56, 74, 346, 106], "children": [
+                {"class": "XCUIElementTypeHeading", "desc": "Placeholder members", "bounds": [56, 74, 346, 106]}
+              ]}
+            ]},
+            {"class": "XCUIElementTypeStaticText", "desc": "Placeholder 2 selected", "bounds": [24, 126, 378, 150], "children": [
+              {"class": "XCUIElementTypeStaticText", "desc": "Placeholder 2 selected", "bounds": [24, 126, 378, 150]}
+            ]},
+            {"class": "XCUIElementTypeScrollView", "id": "placeholder-members-list", "bounds": [0, 158, 402, 790], "flags": ["scrollable"], "children": [
+              {"class": "RCTViewComponentView", "desc": "Placeholder member 1", "text": "checkbox, checked", "bounds": [16, 166, 386, 222], "children": [
+                {"class": "XCUIElementTypeImage", "bounds": [24, 174, 64, 214]},
+                {"class": "XCUIElementTypeStaticText", "desc": "Placeholder member 1", "bounds": [76, 182, 378, 206]}
+              ]},
+              {"class": "RCTViewComponentView", "desc": "Placeholder member 2", "text": "checkbox, checked", "bounds": [16, 230, 386, 286], "children": [
+                {"class": "XCUIElementTypeImage", "bounds": [24, 238, 64, 278]},
+                {"class": "XCUIElementTypeStaticText", "desc": "Placeholder member 2", "bounds": [76, 246, 378, 270]}
+              ]},
+              {"class": "RCTViewComponentView", "desc": "Placeholder member 3", "text": "checkbox, unchecked", "bounds": [16, 294, 386, 350], "children": [
+                {"class": "XCUIElementTypeImage", "bounds": [24, 302, 64, 342]},
+                {"class": "XCUIElementTypeStaticText", "desc": "Placeholder member 3", "bounds": [76, 310, 378, 334]}
+              ]},
+              {"class": "RCTViewComponentView", "desc": "Placeholder member 4", "text": "checkbox, unchecked", "bounds": [16, 358, 386, 414]},
+              {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 1 page", "text": "0%", "bounds": [395, 162, 398, 786], "children": [
+                {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 1 page", "text": "0%", "bounds": [395, 162, 398, 786]}
+              ]},
+              {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [4, 783, 391, 786], "children": [
+                {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [4, 783, 391, 786]}
+              ]}
+            ]},
+            {"class": "XCUIElementTypeButton", "desc": "Placeholder add members", "bounds": [16, 798, 386, 846], "flags": ["clickable"]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

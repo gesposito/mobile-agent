@@ -1,0 +1,35 @@
+{
+  "description": "A React Native app's own tab bar on iOS, synthetic, in the shape the first smoke test of a production app found (rn-app-fixes, design D35): three tabs, each a pressable with accessibilityRole tab, which XCTest types Other with no trait but selected, so the Simulator's reader gives them their React Native class, a label and the selected flag on the middle one. Each holds its icon, a text XCTest reports without a label; the selected one also shows its label, a text whose only child is its own text, as XCTest reports React Native's text. The screen's content ends where the tab bar starts. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 791], "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder home", "bounds": [24, 70, 378, 106]},
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder action", "bounds": [24, 126, 378, 174], "flags": ["clickable"]}
+            ]},
+            {"class": "RCTViewComponentView", "bounds": [0, 791, 402, 874], "children": [
+              {"class": "RCTViewComponentView", "id": "placeholder-tab-1", "desc": "Placeholder tab 1", "bounds": [0, 791, 134, 874], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [50, 800, 84, 834]}
+              ]},
+              {"class": "RCTViewComponentView", "id": "placeholder-tab-2", "desc": "Placeholder tab 2", "bounds": [134, 791, 268, 874], "flags": ["selected"], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [184, 800, 218, 834]},
+                {"class": "XCUIElementTypeStaticText", "desc": "Placeholder tab 2", "bounds": [150, 838, 252, 856], "children": [
+                  {"class": "XCUIElementTypeStaticText", "desc": "Placeholder tab 2", "bounds": [150, 838, 252, 856]}
+                ]}
+              ]},
+              {"class": "RCTViewComponentView", "id": "placeholder-tab-3", "desc": "Placeholder tab 3", "bounds": [268, 791, 402, 874], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [318, 800, 352, 834]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
