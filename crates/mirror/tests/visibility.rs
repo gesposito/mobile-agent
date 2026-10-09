@@ -501,6 +501,35 @@ fn what_covers_an_element_is_named_as_an_action_on_its_ref_names_it() {
     assert_eq!(mirror.covered_by(ok), None);
 }
 
+/// Rn-app-fixes D31, scenario "Card under a sticky header": on iOS what a
+/// view drawn after it covers is covered, not out of view. Its bounds lie
+/// inside its visible bounds, in view as far as `visibility` measures,
+/// and `covered_by` names the view over it as a refused action does. What
+/// lies beside a cover, as the link above the consent screen's footer and
+/// the post that touches the feed header's edge, is not covered.
+#[test]
+fn what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view() {
+    for (fixture, covered, cover, named) in support::DRAWN_OVER_ON_IOS {
+        let screen = Screen::load(fixture);
+        let before = screen.patched(json!([{"remove": cover}]));
+        let (_, mirror, id) = read_then_covered(&before, &screen, 1, covered);
+        assert_eq!(
+            mirror.covered_by(id).as_deref(),
+            Some(named),
+            "{fixture}: {covered}"
+        );
+        let seen = mirror.visibility(id).expect("the replica holds it");
+        assert_eq!(seen.fraction, 1.0, "{fixture}: {seen:?}");
+    }
+
+    let (_, mut consent) = support::mirror_on("consent-ios");
+    let policy = element(&mut consent, "placeholder-policy");
+    assert_eq!(consent.covered_by(policy), None);
+    let (_, mut feed) = support::mirror_on("feed-ios");
+    let below = element(&mut feed, "placeholder-post-3");
+    assert_eq!(feed.covered_by(below), None);
+}
+
 /// Task 10.16: a stroke through the middle of the Expo list moves the list,
 /// whose visible bounds are its own inside its window.
 #[test]

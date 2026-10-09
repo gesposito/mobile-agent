@@ -43,6 +43,31 @@ fn read_json(name: &str) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("fixture {name} is not JSON: {e}"))
 }
 
+/// The iOS fixtures of rn-app-fixes D31, each with an element a view drawn
+/// after it covers, by identifier, the view whose removal uncovers it, and
+/// how a refused action names the cover: by the role and name of what lies
+/// over the element, or as an overlay.
+pub const DRAWN_OVER_ON_IOS: [(&str, &str, &str, &str); 3] = [
+    (
+        "consent-ios",
+        "placeholder-section-3",
+        "placeholder-consent-footer",
+        "button \"Accept and continue\"",
+    ),
+    (
+        "create-ios",
+        "placeholder-option-10",
+        "placeholder-generate",
+        "button \"Placeholder generate\"",
+    ),
+    (
+        "feed-ios",
+        "placeholder-post-2",
+        "placeholder-feed-header",
+        "overlay",
+    ),
+];
+
 /// The `TreeRead` of fixture `name`.
 pub fn fixture(name: &str) -> TreeRead {
     Screen::load(name).read()

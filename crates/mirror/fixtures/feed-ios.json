@@ -1,0 +1,34 @@
+{
+  "description": "A feed of a React Native app on iOS, synthetic, in the shape the first smoke test of a production app found (rn-app-fixes, design D31): the feed's list runs the height of the screen, and a sticky header drawn after it over its top holds the feed's title and a compose button; the list is scrolled so that its first post lies above the screen and its second wholly under the header. XCTest lists a view's subviews in the order UIKit draws them and reports no occlusion, so only that order and the bounds say the header is drawn over the post. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeScrollView", "id": "placeholder-feed-list", "bounds": [0, 0, 402, 874], "flags": ["scrollable"],
+             "scroll": {"axis": "vertical", "back": true, "forward": true}, "children": [
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-1", "desc": "Placeholder post 1", "bounds": [16, -108, 386, -4], "flags": ["clickable"], "off": ["visible"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-2", "desc": "Placeholder post 2", "bounds": [16, 6, 386, 110], "flags": ["clickable"], "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "Placeholder post 2 text", "bounds": [32, 22, 370, 94]}
+              ]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-3", "desc": "Placeholder post 3", "bounds": [16, 118, 386, 222], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-4", "desc": "Placeholder post 4", "bounds": [16, 230, 386, 334], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-5", "desc": "Placeholder post 5", "bounds": [16, 342, 386, 446], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-6", "desc": "Placeholder post 6", "bounds": [16, 454, 386, 558], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-7", "desc": "Placeholder post 7", "bounds": [16, 566, 386, 670], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-post-8", "desc": "Placeholder post 8", "bounds": [16, 678, 386, 782], "flags": ["clickable"]}
+            ]},
+            {"class": "RCTViewComponentView", "id": "placeholder-feed-header", "bounds": [0, 0, 402, 118], "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder feed", "bounds": [24, 70, 300, 106]},
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder compose", "bounds": [346, 70, 386, 110], "flags": ["clickable"]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

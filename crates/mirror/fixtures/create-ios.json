@@ -1,0 +1,27 @@
+{
+  "description": "A create screen of a React Native app on iOS, synthetic, in the shape the first smoke test of a production app found (rn-app-fixes, design D31): below its header a list of ten options scrolled to its end, and a floating generate button drawn after the list over its bottom, which covers the list's last row. React Native flattens the layout-only view that positions the button, so the button itself is the list's later sibling. XCTest lists a view's subviews in the order UIKit draws them and reports no occlusion, so only that order and the bounds say the button is drawn over the row. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 118], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder close", "bounds": [8, 70, 48, 110], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder create", "bounds": [56, 74, 346, 106]}
+            ]},
+            {"class": "XCUIElementTypeScrollView", "id": "placeholder-create-list", "bounds": [0, 118, 402, 874], "flags": ["scrollable"],
+             "scroll": {"axis": "vertical", "back": true, "forward": false}, "children": [
+              {"repeat": [1, 10], "layout": {"rows": {"left": 16, "top": 126, "right": 386, "height": 64}},
+               "node": {"class": "XCUIElementTypeButton", "id": "placeholder-option-{n}", "desc": "Placeholder option {n}", "flags": ["clickable"]}}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "placeholder-generate", "desc": "Placeholder generate", "bounds": [16, 694, 386, 774], "flags": ["clickable"]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

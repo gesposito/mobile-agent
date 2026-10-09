@@ -1,0 +1,34 @@
+{
+  "description": "A consent screen of a React Native app on iOS, synthetic, in the shape the first smoke test of a production app found (rn-app-fixes, design D31): below its header the screen's scroll view runs to the bottom of the screen, and a fixed footer drawn after it over its bottom holds Accept and continue and a decline button; the content is scrolled so that its last section's heading lies inside Accept and continue's bounds. XCTest lists a view's subviews in the order UIKit draws them and reports no occlusion, so only that order and the bounds say the footer is drawn over the heading. Elements XCTest types Other carry their React Native class, as the Simulator's reader passes it. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 118], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder back", "bounds": [8, 70, 48, 110], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder consent", "bounds": [56, 74, 346, 106]}
+            ]},
+            {"class": "XCUIElementTypeScrollView", "id": "placeholder-consent-scroll", "bounds": [0, 118, 402, 874], "flags": ["scrollable"],
+             "scroll": {"axis": "vertical", "back": true, "forward": true}, "children": [
+              {"class": "XCUIElementTypeStaticText", "desc": "Placeholder paragraph 1", "bounds": [24, 126, 378, 326]},
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder section 2", "bounds": [24, 342, 378, 374]},
+              {"class": "XCUIElementTypeStaticText", "desc": "Placeholder paragraph 2", "bounds": [24, 382, 378, 582]},
+              {"class": "XCUIElementTypeLink", "id": "placeholder-policy", "desc": "Placeholder policy", "bounds": [24, 598, 378, 630], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "id": "placeholder-section-3", "desc": "Placeholder section 3", "bounds": [24, 764, 378, 796]},
+              {"class": "XCUIElementTypeStaticText", "desc": "Placeholder paragraph 3", "bounds": [24, 804, 378, 1004]}
+            ]},
+            {"class": "RCTViewComponentView", "id": "placeholder-consent-footer", "bounds": [0, 740, 402, 874], "children": [
+              {"class": "XCUIElementTypeButton", "id": "placeholder-accept", "desc": "Accept and continue", "bounds": [16, 752, 386, 804], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "desc": "Placeholder decline", "bounds": [16, 812, 386, 852], "flags": ["clickable"]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

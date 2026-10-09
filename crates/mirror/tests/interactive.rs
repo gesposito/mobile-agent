@@ -15,7 +15,7 @@ use mirror::{
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChangeKind};
 use serde_json::json;
-use support::{Screen, mirror_on, ms, timeline, window_event};
+use support::{DRAWN_OVER_ON_IOS, Screen, mirror_on, ms, timeline, window_event};
 
 fn full() -> SnapshotOptions {
     SnapshotOptions::full()
@@ -620,6 +620,126 @@ fn a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing() {
         mirror.snapshot(&interactive()).unwrap().text,
         "- button \"Play video\" [ref=e1]"
     );
+}
+
+/// Rn-app-fixes D31, scenario "Heading under a fixed footer on iOS": XCTest
+/// lists a view's subviews in the order UIKit draws them and reports no
+/// occlusion, so on the consent screen only the order and the bounds say
+/// that the footer, drawn after the scroll view, lies over the heading
+/// scrolled inside Accept and continue's bounds. The heading is left out;
+/// the link above the footer and the footer's buttons stay, and so do the
+/// scroll view's hints.
+#[test]
+fn a_footer_drawn_after_a_heading_on_ios_hides_it() {
+    let (_, mut mirror) = mirror_on("consent-ios");
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- button \"Placeholder back\" [ref=e1]",
+            "- heading \"Placeholder consent\" [ref=e2]",
+            "(more items above, scroll up to reveal)",
+            "- heading \"Placeholder section 2\" [ref=e3]",
+            "- link \"Placeholder policy\" [id=placeholder-policy, ref=e4]",
+            "(more items below, scroll down to reveal)",
+            "- button \"Accept and continue\" [id=placeholder-accept, ref=e5]",
+            "- button \"Placeholder decline\" [ref=e6]",
+        ])
+    );
+}
+
+/// D31: on the create screen a floating button drawn after the list lies
+/// over its last row, which is left out; the row it only overlaps stays.
+#[test]
+fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
+    let (_, mut mirror) = mirror_on("create-ios");
+    let mut expected = vec![
+        "- button \"Placeholder close\" [ref=e1]".to_owned(),
+        "- heading \"Placeholder create\" [ref=e2]".to_owned(),
+        "(more items above, scroll up to reveal)".to_owned(),
+    ];
+    expected.extend((1..=9).map(|n| {
+        format!(
+            "- button \"Placeholder option {n}\" [id=placeholder-option-{n}, ref=e{}]",
+            n + 2
+        )
+    }));
+    expected
+        .push("- button \"Placeholder generate\" [id=placeholder-generate, ref=e12]".to_owned());
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        expected.join("\n")
+    );
+}
+
+/// D31, scenario "Card under a sticky header": on the feed the header,
+/// drawn after the list, lies over the post scrolled under it, which is
+/// left out and not counted in the list's hints; the post that only
+/// touches the header's edge stays.
+#[test]
+fn a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it() {
+    let (_, mut mirror) = mirror_on("feed-ios");
+    let mut expected = vec!["(1 more actionable item above, scroll up to reveal)".to_owned()];
+    expected.extend((3..=8).map(|n| {
+        format!(
+            "- button \"Placeholder post {n}\" [id=placeholder-post-{n}, ref=e{}]",
+            n - 2
+        )
+    }));
+    expected.extend(
+        [
+            "(more items below, scroll down to reveal)",
+            "- heading \"Placeholder feed\" [ref=e7]",
+            "- button \"Placeholder compose\" [ref=e8]",
+        ]
+        .map(str::to_owned),
+    );
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        expected.join("\n")
+    );
+}
+
+/// D31: a ref taken while nothing covered its element is refused once a
+/// view drawn after it covers it, naming the view, and no tap goes out: a
+/// tap on the consent screen's heading would accept the consent. The
+/// refusal does not advise acting on what covers it.
+#[test]
+fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
+    for (fixture, covered, cover, named) in DRAWN_OVER_ON_IOS {
+        let screen = Screen::load(fixture);
+        let target = FakeTarget::new(screen.patched(json!([{"remove": cover}])).read());
+        target.at(ms(100), Step::Show(screen.read()));
+        target.at(ms(100), Step::Frame(1));
+        target.at(ms(120), Step::Frame(2));
+        let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+        let before = mirror.snapshot(&interactive()).unwrap();
+        let reference = before
+            .by_identifier(covered)
+            .unwrap_or_else(|| panic!("{fixture}: {covered} is listed while nothing covers it"))
+            .reference
+            .unwrap();
+
+        mirror.run_until(target.instant(ms(600))).unwrap();
+        let error = mirror
+            .act(&Action::Tap {
+                target: Target::Ref(reference),
+                hold: None,
+            })
+            .expect_err(fixture);
+        assert_eq!(error.code(), code::ELEMENT_COVERED, "{fixture}: {error}");
+        let message = error.to_string();
+        assert!(message.contains(named), "{fixture}: {message}");
+        assert!(
+            !message.contains(&format!("act on the {named}")),
+            "{fixture}: {message}"
+        );
+        assert_eq!(
+            mirror.resolve(reference).unwrap().identifier.as_deref(),
+            Some(covered),
+            "{fixture}: the covered element keeps its ref"
+        );
+        assert!(target.inputs().is_empty(), "{fixture}");
+    }
 }
 
 #[test]
