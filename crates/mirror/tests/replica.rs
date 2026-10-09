@@ -14,7 +14,8 @@ use std::time::Duration;
 use mirror::backend::{ReadReason, ReadRequest};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, Mirror, MirrorConfig, Point, Rect, Ref, RefreshMode, SnapshotOptions, Target,
+    Action, DEFAULT_FIRST_FRAME_WAIT, Mirror, MirrorConfig, Point, Rect, Ref, RefreshMode,
+    SlowFrames, SnapshotOptions, Target,
 };
 use protocol::event::{TreeChangeKind, WindowChangeKind};
 use protocol::message::TextMethod;
@@ -722,4 +723,115 @@ fn a_window_change_reads_every_window() {
         "the new window is in the replica"
     );
     assert_eq!(mirror.deltas().last().unwrap().window, 9);
+}
+
+/// The SwiftUI login screen as a physical iPhone's runner reads it, every
+/// window sending no change events and each read costing 500 ms, under the
+/// mirror's settings for frames captured every 50 ms (`slow`), or the
+/// defaults; with or without a frame source. A tap on the List tab removes
+/// the Sign in button 150 ms later, which a frame shows 200 ms after the
+/// tap, as the device's first changed frame comes some 200 ms after a tap
+/// (design D23).
+fn device_login(slow: bool, frames: bool) -> (FakeTarget, Mirror) {
+    let screen = Screen::load("login-ios");
+    let changed = screen.patched(json!([{"remove": "login-submit"}]));
+    let target = FakeTarget::new(screen.read());
+    target.read_cost(ms(500));
+    target.at(ms(0), Step::Frame(1));
+    target.on_tap(
+        "tab-list",
+        vec![
+            (ms(150), Step::Show(changed.read())),
+            (ms(200), Step::Frame(2)),
+        ],
+    );
+    let config = MirrorConfig {
+        slow_frames: slow.then(|| SlowFrames::every(ms(50))),
+        ..MirrorConfig::default()
+    };
+    let backend = if frames {
+        target.backend()
+    } else {
+        target.backend_without_frames()
+    };
+    (target.clone(), Mirror::new(backend, config))
+}
+
+/// Taps the element `identifier` names, as a snapshot lists it, and says
+/// when, from the start of the script.
+fn tap_identified(target: &FakeTarget, mirror: &mut Mirror, identifier: &str) -> Duration {
+    let snapshot = mirror.snapshot(&full()).unwrap();
+    let element = snapshot.by_identifier(identifier).unwrap();
+    let at = element.bounds.center();
+    let tapped = target.elapsed();
+    mirror
+        .act(&Action::Tap {
+            target: Target::Point(at),
+            hold: None,
+        })
+        .unwrap();
+    tapped
+}
+
+/// Physical-ios, task 5.2 (design D23): on a target whose frames come
+/// slowly, the re-read a tap calls for waits for the first frame that
+/// changed after the tap, so it reads what the tap did rather than the
+/// screen before it; with the defaults it reads at once, before the app
+/// changed.
+#[test]
+fn with_slow_frames_a_re_read_after_input_waits_for_the_first_changed_frame() {
+    let (target, mut mirror) = device_login(true, true);
+    let tapped = tap_identified(&target, &mut mirror, "tab-list");
+    let after = mirror.snapshot(&full()).unwrap();
+    let reads = target.reads();
+    assert_eq!(reads.len(), 2, "{reads:?}");
+    assert_eq!(reads[1].request.reason, ReadReason::Action);
+    assert_eq!(
+        reads[1].at - tapped,
+        ms(200),
+        "the re-read began at the first changed frame"
+    );
+    assert!(
+        after.by_identifier("login-submit").is_none(),
+        "the re-read shows what the tap did:\n{}",
+        after.text
+    );
+
+    let (target, mut mirror) = device_login(false, true);
+    let tapped = tap_identified(&target, &mut mirror, "tab-list");
+    let after = mirror.snapshot(&full()).unwrap();
+    let reads = target.reads();
+    assert_eq!(reads[1].at - tapped, ms(0), "the defaults read at once");
+    assert!(
+        after.by_identifier("login-submit").is_some(),
+        "a read at once shows the screen before the tap's change"
+    );
+}
+
+/// Physical-ios, task 5.2: a tap that changes no frame holds the re-read it
+/// calls for the whole first-frame wait, 500 ms by default, then reads.
+#[test]
+fn with_slow_frames_a_re_read_after_input_that_changes_no_frame_waits_out_the_wait() {
+    assert_eq!(DEFAULT_FIRST_FRAME_WAIT, ms(500));
+    let (target, mut mirror) = device_login(true, true);
+    let tapped = tap_identified(&target, &mut mirror, "login-status");
+    mirror.snapshot(&full()).unwrap();
+    let reads = target.reads();
+    assert_eq!(reads.len(), 2, "{reads:?}");
+    assert_eq!(reads[1].request.reason, ReadReason::Action);
+    assert_eq!(reads[1].at - tapped, DEFAULT_FIRST_FRAME_WAIT);
+}
+
+/// Physical-ios, task 5.2 (design D23, "without any frames"): with no frame
+/// source there is no frame to wait for, so the re-read after input reads
+/// at once, as on any target without frames.
+#[test]
+fn with_slow_frames_but_no_frame_source_a_re_read_after_input_reads_at_once() {
+    let (target, mut mirror) = device_login(true, false);
+    let tapped = tap_identified(&target, &mut mirror, "tab-list");
+    mirror.snapshot(&full()).unwrap();
+    let reads = target.reads();
+    assert_eq!(reads.len(), 2, "{reads:?}");
+    assert_eq!(reads[1].request.reason, ReadReason::Action);
+    assert_eq!(reads[1].at - tapped, ms(0));
 }

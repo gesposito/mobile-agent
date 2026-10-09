@@ -67,6 +67,29 @@ pub const DEFAULT_PROBE_ANCHORS: usize = 4;
 /// opened nothing; the hold leaves 117 ms beyond the longest stretch.
 pub const DEFAULT_OVERSCROLL: Duration = Duration::from_millis(500);
 
+/// How long a re-read after input waits for the first changed frame on a
+/// target whose frames come slowly.
+pub const DEFAULT_FIRST_FRAME_WAIT: Duration = Duration::from_millis(500);
+
+/// Frames that come slowly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlowFrames {
+    /// The time between two captures.
+    pub capture_interval: Duration,
+    /// How long a re-read after input waits for the first changed frame.
+    pub first_frame_wait: Duration,
+}
+
+impl SlowFrames {
+    /// Frames captured every `capture_interval`.
+    pub fn every(capture_interval: Duration) -> SlowFrames {
+        SlowFrames {
+            capture_interval,
+            first_frame_wait: DEFAULT_FIRST_FRAME_WAIT,
+        }
+    }
+}
+
 /// Tuning for one mirror.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MirrorConfig {
@@ -80,6 +103,8 @@ pub struct MirrorConfig {
     /// leaves the content under it at an end of its range, for the
     /// overscroll effect the platform draws there; zero holds none.
     pub overscroll: Duration,
+    /// Frames that come slowly.
+    pub slow_frames: Option<SlowFrames>,
 }
 
 impl Default for MirrorConfig {
@@ -90,6 +115,7 @@ impl Default for MirrorConfig {
             probe_interval: DEFAULT_PROBE_INTERVAL,
             probe_anchors: DEFAULT_PROBE_ANCHORS,
             overscroll: DEFAULT_OVERSCROLL,
+            slow_frames: None,
         }
     }
 }

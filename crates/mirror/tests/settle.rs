@@ -17,9 +17,9 @@ use std::time::Duration;
 use mirror::backend::{Input, NodeHandle, ReadReason, Release, TreeRead};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, DEFAULT_OVERSCROLL, DEFAULT_PROBE_ANCHORS, DEFAULT_PROBE_INTERVAL,
-    DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Mirror, MirrorConfig, Point, Rect, SettleOptions,
-    Signal, Signals, SnapshotOptions, Target,
+    Action, DEFAULT_FIRST_FRAME_WAIT, DEFAULT_OVERSCROLL, DEFAULT_PROBE_ANCHORS,
+    DEFAULT_PROBE_INTERVAL, DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Mirror, MirrorConfig, Point,
+    Rect, SettleOptions, Signal, Signals, SlowFrames, SnapshotOptions, Target,
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChange, WindowChangeKind};
 use protocol::snapshot::{Bounds, Node, WindowFlags};
@@ -1043,4 +1043,125 @@ fn with_frames_a_stroke_to_a_list_s_end_leaves_the_wait_to_the_frames() {
         settle.elapsed, DEFAULT_QUIET_WINDOW,
         "a quiet window after the read, no frame having changed: {settle:?}"
     );
+}
+
+/// The mirror's settings for frames captured every `interval`, as a
+/// physical iPhone's screenshots come (design D23).
+fn slow(interval: u64) -> MirrorConfig {
+    MirrorConfig {
+        slow_frames: Some(SlowFrames::every(ms(interval))),
+        ..MirrorConfig::default()
+    }
+}
+
+/// Physical-ios, task 5.2 (design D23): on a target whose frames come
+/// slowly, settle waits at least two capture intervals without a change,
+/// whatever shorter quiet window it is given, since a change can take a
+/// capture interval to show; the defaults keep the window given.
+#[test]
+fn with_slow_frames_settle_waits_at_least_two_capture_intervals_without_a_change() {
+    for (config, settled_at) in [(slow(150), 340), (MirrorConfig::default(), 140)] {
+        let target = FakeTarget::new(Screen::load("login-ios").read());
+        target.at(ms(0), Step::Frame(1));
+        target.at(ms(40), Step::Frame(2));
+        let mut mirror = Mirror::new(target.backend(), config.clone());
+        let settle = mirror.settle(&quiet(100)).unwrap();
+        assert!(settle.settled, "{config:?}: {settle:?}");
+        assert_eq!(settle.frame_changes, 1, "{config:?}: {settle:?}");
+        assert_eq!(settle.elapsed, ms(settled_at), "{config:?}: {settle:?}");
+    }
+    // A window longer than two intervals stands.
+    let target = FakeTarget::new(Screen::load("login-ios").read());
+    target.at(ms(0), Step::Frame(1));
+    target.at(ms(40), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), slow(50));
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert_eq!(settle.elapsed, ms(240), "{settle:?}");
+}
+
+/// Physical-ios, task 5.2 (design D23): on a target whose frames come
+/// slowly, a tap's first changed frame can come after the quiet window
+/// (S11: 274 and 439 ms at p50 and p95 for a row that opens a page), so
+/// settle after input holds until that frame, up to the first-frame wait,
+/// then waits its quiet window after it; a tap that changes no frame
+/// settles once the wait is over. Tree-only settling, which ignores frames,
+/// does not hold for one.
+#[test]
+fn with_slow_frames_settle_after_input_holds_for_its_first_changed_frame() {
+    let screen = Screen::load("login-ios");
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(0), Step::Frame(1));
+    target.on_tap("tab-list", vec![(ms(350), Step::Frame(2))]);
+    let mut mirror = Mirror::new(target.backend(), slow(50));
+    tap_on(&mut mirror, "tab-list");
+    let tapped = target.elapsed();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert_eq!(
+        settle.frame_changes, 1,
+        "the frame the tap changed: {settle:?}"
+    );
+    assert_eq!(
+        target.elapsed() - tapped,
+        ms(550),
+        "a quiet window after the frame at 350 ms: {settle:?}"
+    );
+
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(0), Step::Frame(1));
+    let mut mirror = Mirror::new(target.backend(), slow(50));
+    tap_on(&mut mirror, "login-status");
+    let tapped = target.elapsed();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert_eq!(settle.frame_changes, 0, "{settle:?}");
+    assert_eq!(target.elapsed() - tapped, DEFAULT_FIRST_FRAME_WAIT);
+
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(0), Step::Frame(1));
+    let mut mirror = Mirror::new(target.backend(), slow(50));
+    tap_on(&mut mirror, "login-status");
+    let tapped = target.elapsed();
+    let settle = mirror
+        .settle(&SettleOptions {
+            signals: Signals::TreeOnly,
+            ..SettleOptions::default()
+        })
+        .unwrap();
+    assert!(settle.settled, "{settle:?}");
+    assert_eq!(target.elapsed() - tapped, DEFAULT_QUIET_WINDOW);
+}
+
+/// Physical-ios, task 5.2 (design D23, "without any frames"): a target
+/// configured for slow frames that has no frame source settles on the
+/// probe-less path for windows without events, re-read every minimum
+/// interval, exactly as a target without frames does.
+#[test]
+fn without_frames_a_slow_frame_target_settles_on_rereads_every_minimum_interval() {
+    let screen = Screen::load("compose-anim");
+    let off = screen.patched(json!([{"find": "anim-toggle", "off": ["checked"]}]));
+    let target = FakeTarget::new(screen.read());
+    target.read_cost(ms(10));
+    target.on_tap("anim-toggle", vec![(ms(150), Step::Show(off.read()))]);
+    let mut mirror = Mirror::new(target.backend_without_frames(), slow(50));
+    tap_on(&mut mirror, "anim-toggle");
+    let tapped = target.elapsed();
+    let settle = mirror.settle(&SettleOptions::default()).unwrap();
+    assert!(settle.settled);
+    assert_eq!(settle.tree_changes, 1, "{settle:?}");
+    let reads: Vec<_> = target
+        .reads()
+        .iter()
+        .skip(1)
+        .map(|r| (r.at - tapped, r.request.reason))
+        .collect();
+    assert_eq!(
+        reads,
+        [
+            (ms(0), ReadReason::Action),
+            (ms(200), ReadReason::Poll),
+            (ms(400), ReadReason::Poll),
+        ]
+    );
+    assert_eq!(settle.elapsed, ms(410));
 }
