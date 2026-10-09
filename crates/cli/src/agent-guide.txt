@@ -17,7 +17,9 @@ Snapshots
   One element per line: role, name in quotes, attributes, the ref last.
   A field's value follows ": ". A line in parentheses, such as
   "(12 more actionable items below, scroll down to reveal)", means content
-  is scrolled out of view: scroll, then snapshot again.
+  is scrolled out of view: scroll, then snapshot again. An element under a
+  dialog, or under a view drawn over it such as a fixed footer, a floating
+  button or a sticky header, is left out.
   snapshot -i        only elements with refs; start here
   snapshot           every element, texts and system bars too
   snapshot -d 2      at most two levels deep
@@ -27,8 +29,7 @@ Refs
   Write a ref as @e4; ref=e4 and e4 work too. A ref names one element for as
   long as that element stays on screen, and a number is never reused. When
   the element is gone the command fails with code stale_ref: snapshot again
-  and use the new refs. An element under a dialog fails with
-  element_covered, one scrolled out of view with element_offscreen.
+  and use the new refs.
 
 Selectors
   Where a ref goes, a selector works too: #login-submit (test id),
@@ -51,6 +52,20 @@ Acting
                               no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
   open com.example.app        launch an app; close stops it and frees the target
+  Acting on an element you cannot see fails rather than tapping elsewhere.
+  element_covered names what lies over it: act on a dialog first, but
+  scroll the element out from under a view drawn over it instead of
+  tapping the view, which could press it (a consent footer's Accept button).
+  element_offscreen means none of it is in view, even after a fresh read:
+  close the keyboard or scroll --until it, since click never scrolls. A
+  click on an element not mostly in view taps its centre and warns.
+  fill's reply says what it read back: verified: text, or length for a
+  masked field, from the field's value or, with readFrom: descendants,
+  from what lies inside it, as a code field's boxes; verified: false with
+  reason: no_value_to_read and a warning when the field shows nothing to
+  read, so the text went in unchecked: look at a screenshot. method: keys
+  means typed, direct entered in one piece: set on Android, pasted on iOS,
+  which replaces the pasteboard and can show iOS's paste banner.
 
 Waiting
   wait --settle               no tree or frame change for 200 ms, at most
