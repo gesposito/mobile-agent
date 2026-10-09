@@ -122,7 +122,7 @@ Conventions a driver follows:
   `emits_events: Some(false)` puts a window on the re-read path and
   `Some(true)` keeps it off, whatever its classes; the Android agent sets
   `Some(false)` for windows hosting Compose, dialogs included, and
-  Simulator drivers set it for every window. Without it the mirror infers
+  Simulator drivers and the physical iPhone driver set it for every window. Without it the mirror infers
   it: a window holding a node of any class under `androidx.compose.` sends
   none (spike S1), which covers the
   `androidx.compose.ui.platform.AndroidComposeView` spike S1 saw and the
@@ -169,7 +169,7 @@ Conventions a driver follows:
 | first use | every window | `attach` |
 | tree event naming a known window | that window | `events` |
 | window event, lifecycle `ready`, tree event for an unknown window, `note_window_change` | every window | `events` |
-| input the mirror injected, for windows without events | those windows, when the tree is next needed | `action` |
+| input the mirror injected, for windows without events | those windows, when the tree is next needed; on a target whose frames come slowly (`slow_frames`), once the first frame that changed after the input arrived, at most `first_frame_wait` (500 ms) after the input | `action` |
 | frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
 | text the mirror pasted or set into a field of such a window, not typed as keys, until a read shows the field's text changed, the next input, or 1 s after the text | the field's window, as soon as a frame changes after its last read began; without frames, as soon as that read ends (task 10.29) | `frames`; `action` without frames |
 | 1 s since such a window's last read began | it | `poll` |
@@ -187,7 +187,9 @@ streams this version does not know are ignored. Once disconnected, the mirror
 stops reading, serves the last replica and refuses actions.
 
 The daemon keeps a mirror current between commands with `pump` (apply what
-arrived, perform due reads, never wait) or `run_until(deadline)`, and
+arrived, perform due reads, never wait, but for the re-read after input on
+a target whose frames come slowly, which first waits for the input's first
+changed frame) or `run_until(deadline)`, and
 `next_wakeup` says when the next poll, frame-driven re-read or re-read after
 text falls due.
 `drain` applies what arrived without reading the tree, even when a read is
@@ -357,6 +359,8 @@ the reasons in this order, each with advice:
 | `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
 | `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
 | `DEFAULT_OVERSCROLL` | 500 ms | task 10.14: on the API 36 emulator the Expo list pulled against its end drew its stretch for 333 to 383 ms after the finger lifted; 117 ms beyond the longest |
+| `slow_frames` | none | design D23 of physical-ios: `SlowFrames { capture_interval, first_frame_wait }`, which the driver's attachment sets for frames that come slowly, a physical iPhone's polled screenshots, about 19 a second (a 52.6 ms interval) |
+| `DEFAULT_FIRST_FRAME_WAIT` | 500 ms | design D23 of physical-ios: how long the re-read after input, and settle after it, hold for the input's first changed frame on such a target; spike S11 saw a tap's first changed frame 222 to 439 ms after its acknowledgement at p95 |
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
 
@@ -368,6 +372,19 @@ the reasons in this order, each with advice:
   callbacks without pixel changes do not count (spike S2). Without a frame
   source, windows without events are re-read every minimum re-read interval
   while waiting. `Signals::TreeOnly` ignores frames, for video.
+- On a target whose frames come slowly (`slow_frames`, design D23 of
+  physical-ios), the quiet window is at least two capture intervals,
+  whatever shorter one the wait is given: a change can take a capture
+  interval to show. After injected input the wait, when it watches frames,
+  does not settle until the first frame that changed after the input came,
+  or `first_frame_wait` from the input has passed, then waits its quiet
+  window after the last change: a physical iPhone's polled screenshots
+  showed a tap's first change after the default quiet window (spike S11:
+  274 and 439 ms at p50 and p95 for a row that opens a page), so a settle a
+  quiet window after the tap would end before the change. A tap that
+  changes nothing settles once the wait is over. Without a frame source the
+  setting changes nothing: the wait takes the probe-less re-read path of
+  any target without frames.
 - Without a frame source, a node that moves without a change event, as a
   view an app animates may, changes nothing the tree reports, so the quiet
   window could pass while the screen still moved (task 10.11). When the
@@ -563,7 +580,13 @@ cargo test -p mirror
   295 ms with the interval. Text typed as keys keeps the interval: `fill` holds it 200 ms,
   which a read at its first frame cannot end, and that read would put the
   next one 200 ms after it. Every other window and input keeps it too,
-  where an animation would otherwise make reads back to back.
+  where an animation would otherwise make reads back to back. On a target
+  whose frames come slowly, as a physical iPhone's screenshots, the re-read
+  after input waits for the input's first changed frame, at most 500 ms
+  (design D23 of physical-ios): read at once, it would show the screen
+  before the change, and the frame-driven re-read that catches the change
+  comes a minimum interval after a read that costs about half a second
+  there.
 - *Settle predicate*: the quiet window counts from the last observed change
   or injected input. A screen that has been quiet that long settles at once,
   and a tap that changes nothing settles one window after the tap. On a
@@ -641,6 +664,7 @@ cargo test -p mirror
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
 | | Submit button moved by the keyboard | in the daemon, which reads the windows again (`note_window_change`, `pump`) before it taps an element none of which `visibility` finds in view: `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, and the rest of its row in `crates/daemon/README.md` |
 | Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting`, `settle::a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn`, `settle::a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event` |
+| Windows without change events; Frames and screenshots from the host, spec `ios-device-driver` (physical-ios task 5.2, design D23) | (a target whose frames come slowly: the re-read after input waits for the first changed frame; settle's floor of two captures and its hold after input; without frames, the probe-less path) | `replica::with_slow_frames_a_re_read_after_input_waits_for_the_first_changed_frame`, `replica::with_slow_frames_a_re_read_after_input_that_changes_no_frame_waits_out_the_wait`, `replica::with_slow_frames_but_no_frame_source_a_re_read_after_input_reads_at_once`, `settle::with_slow_frames_settle_waits_at_least_two_capture_intervals_without_a_change`, `settle::with_slow_frames_settle_after_input_holds_for_its_first_changed_frame`, `settle::without_frames_a_slow_frame_target_settles_on_rereads_every_minimum_interval`; through the daemon's fake iPhone, its `worker::tests` and `fake::realtime::tests::a_fake_iphones_frames_come_at_the_devices_rate` |
 | | Continuous animation | `settle::a_continuous_animation_is_not_settled_after_the_maximum_and_names_frame_changes`, `settle::an_animation_that_also_sends_tree_events_names_both_signals`, `settle::tree_only_settling_ignores_frames` |
 | Wait predicates from the event stream | Element appears | `waits::a_wait_for_text_resolves_within_one_processing_cycle_of_its_appearance`, `waits::a_disappear_wait_resolves_when_the_element_leaves`, `waits::an_enabled_wait_resolves_when_the_element_becomes_enabled`, `waits::a_wait_on_a_window_without_change_events_resolves_from_its_re_reads`, `waits::a_wait_that_already_holds_returns_at_once`, `waits::selectors_match_text_identifier_role_and_ref_on_screen_only` |
 | | Wait times out | `waits::a_wait_that_never_matches_fails_at_the_timeout_with_the_last_snapshot_summary` |

@@ -445,6 +445,14 @@ screen that keeps changing its frames, such as a focused field's blinking
 cursor, can make a tree read wait for one re-read, since the worker's own
 pumps keep re-reading such a screen between commands.
 
+A physical iPhone's frames come slowly, screenshots polled about 19 times a
+second, and its tree read costs about half a second, so its attachment sets
+the mirror's `slow_frames` (design D23): the re-read a tap calls for waits
+in the mirror for the tap's first changed frame, at most 500 ms, rather than
+read the screen before the change and leave the change to a frame-driven
+re-read a minimum interval after it; settle waits at least two captures
+without a change and, after input, for that first changed frame too.
+
 ## Sessions and claims
 
 A target command claims its target for the request's session when nobody
@@ -650,7 +658,10 @@ and scale from lockdown, and subscribes to the screen:
 - events: frames from screenshots polled on DVT and CoreDevice, about 19 a
   second, a frame each time a pixel below the status bar moves more than
   two levels (design D23), its time the capture's arrival; encoded frames
-  are those the stream holds, scaled.
+  are those the stream holds, scaled. The mirror's `slow_frames` is set for
+  a capture every 52.6 ms (Reading the tree after the display changed);
+  without a subscription the mirror re-reads every minimum interval, as on
+  any target without frames.
 - input: taps, long presses, swipes (a resting release creeps on as UIKit
   needs), hardware buttons and keys through the disk image's `dtuhidd`
   from the host where the device's iOS takes its reports (iOS 18 up to
@@ -839,7 +850,13 @@ and `booted`; they have neither a capture nor a report. A fake iPhone
 `status` is the physical iPhone driver's report of a phone whose runner
 said hello: its input through `dtuhidd`, its frames `screenshots` at 19 a
 second with the count delivered, the runner `mobile-agent-ios-runner` of
-`agent-ios/VERSION` with no restart. `FakeDriver::with_readiness` lists one
+`agent-ios/VERSION` with no restart. Its frames show only at its captures,
+every 52.6 ms from the attach, a change and each frame of a transition or
+of the Anim tab's spinner at the capture that follows it, and its
+attachment sets the mirror's `slow_frames` as the physical driver's does;
+`FakeDriver::with_device_frames(false)` takes its frame source away, as a
+phone whose screenshots could not be subscribed to, its `status` saying
+so. `FakeDriver::with_readiness` lists one
 in a readiness state with its advice, `crates/ios`'s message, and an
 attach to it then fails with the state's code, as the driver's does.
 Emulators, Simulators and fake iPhones have a frame source; Android devices
@@ -1004,6 +1021,7 @@ Worked around here without changing `crates/mirror`:
 | Device discovery and readiness, spec `ios-device-driver` (task 5.1 of physical-ios) | Ready device listed; Device not ready | `devices::ios::tests::a_ready_iphone_is_listed_with_its_name_model_and_ios_version`, `devices::ios::tests::an_unready_iphone_is_listed_in_its_state_with_the_step_as_advice`, `fake::tests::ios_device_fakes_take_default_ids_and_the_ios_device_class`, `fake::tests::an_unready_fake_iphone_is_listed_in_its_state_and_refuses_an_attach`, `ios_device::devices_lists_a_fake_iphone_in_the_ios_device_class`; the CLI's `doctor::each_iphone_is_listed_in_its_readiness_state_with_the_daemons_step`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone` |
 | One resident runner per session, spec `ios-device-driver` (task 5.1) | Runner stays up (the status names the runner's agent and restarts) | `devices::ios::tests::the_status_names_the_input_path_the_frames_with_their_rate_and_the_runner`, `fake::tests::a_fake_iphone_reports_dtuhidd_screenshots_and_its_runner`, `ios_device::status_names_a_fake_iphones_input_frames_and_runner` |
 | Compatibility statement, spec `ios-device-driver` (task 5.1) | Table lists the device paths | `devices::ios::tests::the_compatibility_rows_are_the_supported_range_then_every_call_site`, `ios_device::a_daemon_with_the_ios_driver_names_its_runner_bundle_and_the_device_rows`; the CLI's `doctor::the_iphone_checks_need_macos_and_the_device_rows_fill_the_table` |
+| Frames and screenshots from the host; Foreground tree read (windows without events), spec `ios-device-driver` (task 5.2 of physical-ios, design D23) | Frame change after a tap (settle on slow frames, with and without them; the re-reads of windows without events) | `worker::tests::on_a_fake_iphone_a_snapshot_right_after_a_tap_shows_what_the_tap_did`, `worker::tests::a_fake_iphones_windows_are_re_read_on_the_poll_and_on_frame_changes`, `worker::tests::settle_on_a_fake_iphone_holds_for_the_first_changed_frame_after_a_tap`, `worker::tests::settle_on_a_fake_iphone_without_frames_re_reads_every_minimum_interval`, `fake::realtime::tests::a_fake_iphones_frames_come_at_the_devices_rate`; the mirror's `replica::with_slow_frames_*` and `settle::with_slow_frames_*`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone` |
 | (task 5.1, the iPhone driver's registration and adapter) | (`ios` registered only when named, the runner bundle, the input variable, errors, keys) | `driver::tests::the_ios_driver_registers_only_when_named`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `devices::ios::tests::the_runner_bundle_is_the_built_one_or_the_one_the_variable_names`, `devices::ios::tests::the_input_variable_takes_auto_dtuhidd_or_runner`, `devices::ios::tests::driver_errors_keep_their_code_and_retryable_flag`, `devices::ios::tests::keyboard_codes_become_keys_and_consumer_codes_buttons`; the driver's screen in `crates/ios`, `macos::driver::tests::the_screen_is_the_devices_pixels_and_scale_from_lockdown` |
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
