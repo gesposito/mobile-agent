@@ -548,10 +548,21 @@ impl<H: Host> Core<H> {
                     });
                 }
             }
+            // A running instance is ended first, as terminate ends it,
+            // rather than with DVT's KillExisting: an app relaunched that way
+            // kept a black window on iOS 26.6.2 (S11, and the SwiftUI
+            // fixture in task 3.8), where one launched after its end drew.
+            if options.terminate_running {
+                state.terminate(bundle_id, self.limits).await?;
+            }
+            let fresh = LaunchOptions {
+                terminate_running: false,
+                ..options.clone()
+            };
             let reply = state
                 .call(
                     dvt::PROCESS_CONTROL,
-                    dvt::launch(bundle_id, options),
+                    dvt::launch(bundle_id, &fresh),
                     false,
                     self.limits,
                 )
@@ -1349,7 +1360,46 @@ pub(crate) mod tests {
             .launch(PHONE, SWIFTUI, &options)
             .expect("launches again");
         assert_eq!(core.host.device.lock_reads(), 2, "before every launch");
-        assert_ne!(again.pid, launched.pid, "KillExisting starts a new process");
+        assert_ne!(again.pid, launched.pid, "a new process");
+        assert_eq!(core.host.device.running(SWIFTUI), vec![again.pid]);
+    }
+
+    #[test]
+    fn a_relaunch_ends_the_running_instance_itself_rather_than_with_kill_existing() {
+        // DVT's KillExisting relaunch left the app's window black on the
+        // phone (S11, and the fixture in task 3.8's device check); a launch
+        // after the instance ended drew.
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        let options = LaunchOptions::new().terminating_running();
+        let first = core.launch(PHONE, SWIFTUI, &options).expect("launches");
+        let again = core.launch(PHONE, SWIFTUI, &options).expect("relaunches");
+        let calls: Vec<_> = core
+            .host
+            .device
+            .dvt_calls()
+            .into_iter()
+            .filter(|call| call.service == PROCESS_CONTROL)
+            .collect();
+        let selectors: Vec<&str> = calls.iter().map(|call| call.selector.as_str()).collect();
+        assert_eq!(
+            selectors,
+            vec![LAUNCH, SEND_SIGNAL, LAUNCH],
+            "the running instance is signalled before the second launch"
+        );
+        assert_eq!(
+            calls[1].args.get(1),
+            Some(&Arg::Archived(Value::Integer(i64::from(first.pid).into())))
+        );
+        for launch in [&calls[0], &calls[2]] {
+            match launch.args.get(4) {
+                Some(Arg::Archived(Value::Dictionary(launch_options))) => assert_eq!(
+                    launch_options.get("KillExisting"),
+                    Some(&Value::Boolean(false))
+                ),
+                other => panic!("the launch's options: {other:?}"),
+            }
+        }
         assert_eq!(core.host.device.running(SWIFTUI), vec![again.pid]);
     }
 
