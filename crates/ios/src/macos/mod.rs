@@ -2,6 +2,7 @@
 //! device through the `idevice` crate, on the driver's tokio runtime.
 
 mod driver;
+mod dvt;
 #[cfg(test)]
 mod fake;
 mod host;

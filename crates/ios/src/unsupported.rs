@@ -2,9 +2,13 @@
 //! as the daemon compile on every platform; opening it always fails, and it
 //! has no values, so none of its methods can run.
 
-use crate::driver::Devices;
+use std::path::Path;
+
+use crate::driver::{Devices, Lifecycle};
 use crate::error::{Error, Result};
-use crate::model::{Connected, DeviceInfo, TargetStatus};
+use crate::model::{
+    Connected, DeviceInfo, Installed, LaunchOptions, Launched, TargetStatus, Terminated,
+};
 use crate::readiness::Need;
 
 /// Drives physical iOS devices; available on macOS only.
@@ -35,6 +39,29 @@ impl Devices for IosDriver {
     }
 
     fn status(&self, _target: &str) -> Result<TargetStatus> {
+        match *self {}
+    }
+}
+
+impl Lifecycle for IosDriver {
+    fn install(&self, _target: &str, _app: &Path) -> Result<Installed> {
+        match *self {}
+    }
+
+    fn launch(
+        &self,
+        _target: &str,
+        _bundle_id: &str,
+        _options: &LaunchOptions,
+    ) -> Result<Launched> {
+        match *self {}
+    }
+
+    fn terminate(&self, _target: &str, _bundle_id: &str) -> Result<Terminated> {
+        match *self {}
+    }
+
+    fn running(&self, _target: &str, _bundle_id: &str) -> Result<Option<u32>> {
         match *self {}
     }
 }

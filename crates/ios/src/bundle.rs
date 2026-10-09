@@ -43,10 +43,8 @@ mod tests {
 
     impl Fixture {
         fn new(test: &str) -> Fixture {
-            let root = std::env::temp_dir().join(format!(
-                "ios-bundle-{test}-{}",
-                std::process::id()
-            ));
+            let root =
+                std::env::temp_dir().join(format!("ios-bundle-{test}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&root);
             let app = root.join("FixtureSwiftUI.app");
             fs::create_dir_all(app.join("_CodeSignature")).expect("the bundle directory");
@@ -65,13 +63,15 @@ mod tests {
             );
             plist::to_file_binary(app.join("Info.plist"), &info).expect("Info.plist");
             fs::write(app.join("FixtureSwiftUI"), b"\xca\xfe\xba\xbe").expect("the executable");
-            fs::write(app.join("_CodeSignature/CodeResources"), b"<plist/>").expect("the signature");
+            fs::write(app.join("_CodeSignature/CodeResources"), b"<plist/>")
+                .expect("the signature");
             fs::write(app.join("embedded.mobileprovision"), b"profile").expect("the profile");
             Fixture { root, app }
         }
 
         fn set(&self, key: &str, value: Value) {
-            let mut info: Dictionary = plist::from_file(self.app.join("Info.plist")).expect("Info.plist");
+            let mut info: Dictionary =
+                plist::from_file(self.app.join("Info.plist")).expect("Info.plist");
             info.insert(key.into(), value);
             plist::to_file_binary(self.app.join("Info.plist"), &info).expect("Info.plist");
         }
@@ -124,7 +124,11 @@ mod tests {
     fn something_that_is_not_a_bundle_is_refused() {
         let fixture = Fixture::new("not-a-bundle");
         let missing = fixture.root.join("Missing.app");
-        assert!(inspect(&missing).expect_err("missing").contains("no such bundle"));
+        assert!(
+            inspect(&missing)
+                .expect_err("missing")
+                .contains("no such bundle")
+        );
         let file = fixture.root.join("App.ipa");
         fs::write(&file, b"PK").expect("a file");
         assert!(
@@ -143,7 +147,11 @@ mod tests {
     fn a_bundle_without_its_executable_or_identifier_is_refused() {
         let fixture = Fixture::new("no-executable");
         fs::remove_file(fixture.app.join("FixtureSwiftUI")).expect("no executable");
-        assert!(inspect(&fixture.app).expect_err("no executable").contains("FixtureSwiftUI"));
+        assert!(
+            inspect(&fixture.app)
+                .expect_err("no executable")
+                .contains("FixtureSwiftUI")
+        );
         let nameless = Fixture::new("no-identifier");
         let mut info: Dictionary =
             plist::from_file(nameless.app.join("Info.plist")).expect("Info.plist");

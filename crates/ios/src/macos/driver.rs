@@ -5,27 +5,41 @@
 //!
 //! The logic lives in [`Core`], generic over the host so that the tests run
 //! it on recorded listings and values and a fake endpoint instead of a
-//! device. What the driver opens for a device, its tunnel and the service
-//! connections over it, is kept per target until the target is reset.
+//! device. What the driver opens for a device, its tunnel, DVT's channels
+//! over it and a lockdown session for the lock, is kept per target until the
+//! target is reset; a command on a device it has not connected connects it
+//! first.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use idevice::ReadWrite;
+use idevice::dvt::message::Message;
 use idevice::dvt::remote_server::RemoteServerClient;
 use tokio::time::timeout;
 
+use crate::bundle;
 use crate::discovery::{self, usb_entries};
-use crate::driver::Devices;
+use crate::driver::{Devices, Lifecycle};
 use crate::error::{Error, Result};
-use crate::model::{Connected, DeviceInfo, DiskImage, MountReport, MuxEntry, TargetStatus};
+use crate::model::{
+    Connected, DeviceInfo, DiskImage, Installed, LaunchOptions, Launched, MountReport, MuxEntry,
+    TargetStatus, Terminated,
+};
 use crate::readiness::{self, Need, Readiness};
-use crate::services;
 
-use super::host::{Host, UsbHost, describe};
+use super::dvt::{self, CallError, DvtChannel};
+use super::host::{Host, Link, UsbHost, describe};
 use super::image::{self, MountLimits};
 use super::tunnel::{Limits, Opener, Tunnel};
+
+/// How long `terminate` waits for the processes to leave DVT's list: 22 ms
+/// after the request in spike S9.
+const TERMINATE_WAIT: Duration = Duration::from_secs(2);
+/// The pause between two reads of the process list while it waits.
+const TERMINATE_POLL: Duration = Duration::from_millis(10);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -70,54 +84,83 @@ impl Devices for IosDriver {
     }
 }
 
-/// What the driver keeps for one device.
-pub(crate) struct Target<O: Opener> {
-    tunnel: Tunnel<O>,
-    disk_image: Option<MountReport>,
-    /// DVT's connection, which lifecycle and screenshots go through; kept,
-    /// since a later one costs 25 to 30 ms and the first 37 ms (S9).
-    dvt: Option<RemoteServerClient<Box<dyn ReadWrite>>>,
+impl Lifecycle for IosDriver {
+    fn install(&self, target: &str, app: &Path) -> Result<Installed> {
+        self.core.install(target, app)
+    }
+
+    fn launch(&self, target: &str, bundle_id: &str, options: &LaunchOptions) -> Result<Launched> {
+        self.core.launch(target, bundle_id, options)
+    }
+
+    fn terminate(&self, target: &str, bundle_id: &str) -> Result<Terminated> {
+        self.core.terminate(target, bundle_id)
+    }
+
+    fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>> {
+        self.core.running(target, bundle_id)
+    }
 }
 
-impl<O: Opener> Target<O> {
+/// What the driver keeps for one device.
+pub(crate) struct Target<O: Opener, L: Link> {
+    target: String,
+    tunnel: Tunnel<O>,
+    link: L,
+    disk_image: Option<MountReport>,
+    /// DVT's channels by identifier, each on a connection of its own, kept
+    /// for the target's lifetime: a new connection costs 25 to 37 ms (S9).
+    channels: BTreeMap<&'static str, DvtChannel>,
+}
+
+impl<O: Opener, L: Link> Target<O, L> {
     /// What `status` reports of the target.
     fn snapshot(&self) -> TargetStatus {
         TargetStatus {
             tunnel: self.tunnel.status(),
             disk_image: self.disk_image.clone(),
-            services_open: self.dvt.iter().map(|_| services::DVT).collect(),
+            services_open: self.channels.keys().copied().collect(),
         }
     }
 
-    /// Opens DVT's connection unless it is open, and reads the services it
-    /// publishes, which it sends first, as `idevice`'s own process-control
-    /// tool waits for them.
-    async fn open_dvt(&mut self, wait: Duration) -> Result<()> {
-        if self.dvt.is_some() {
-            return Ok(());
-        }
-        let mut dvt: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
-        match timeout(wait, dvt.read_message(0)).await {
-            Ok(Ok(_capabilities)) => {
-                self.dvt = Some(dvt);
-                Ok(())
-            }
-            Ok(Err(error)) => Err(Error::Device {
-                call: "DVT's capabilities".into(),
-                reason: describe(&error),
-            }),
-            Err(_) => Err(Error::Timeout {
-                what: "DVT's capabilities".into(),
-                after: wait,
-            }),
-        }
+    /// The channel `identifier`, opened on a DVT connection of its own unless
+    /// it serves. DVT sends the services it publishes first, which are read
+    /// before the channel opens, as `idevice`'s own process-control tool
+    /// reads them.
+    async fn channel(&mut self, identifier: &'static str, wait: Duration) -> Result<&DvtChannel> {
+        let _ = (
+            identifier,
+            wait,
+            &self.channels,
+            &self.tunnel,
+            timeout::<std::future::Ready<()>>,
+            describe,
+            DvtChannel::open,
+            std::marker::PhantomData::<RemoteServerClient<Box<dyn ReadWrite>>>,
+        );
+        todo!()
+    }
+
+    /// Sends `call` on the channel `identifier` and returns its reply. A
+    /// call whose connection was gone before it was written goes again on a
+    /// new one, once, through a tunnel opened again if it dropped; so does a
+    /// `repeatable` call whose connection closed before its reply.
+    async fn call(
+        &mut self,
+        identifier: &'static str,
+        call: dvt::Call,
+        repeatable: bool,
+        wait: Duration,
+    ) -> Result<Message> {
+        let _ = (identifier, call, repeatable, wait, CallError::NotSent);
+        todo!()
     }
 }
 
 /// A device's state, behind the lock its commands take, and what `status`
 /// reports, which it reads without that lock while a command runs.
-pub(crate) struct Slot<O: Opener> {
-    state: tokio::sync::Mutex<Target<O>>,
+pub(crate) struct Slot<O: Opener, L: Link> {
+    state: tokio::sync::Mutex<Target<O, L>>,
     snapshot: Mutex<TargetStatus>,
 }
 
@@ -125,7 +168,7 @@ pub(crate) struct Slot<O: Opener> {
 pub(crate) struct Core<H: Host> {
     /// Declared before the runtime, so that what the targets keep open is
     /// dropped while the tasks serving it can still end on their own.
-    targets: Mutex<HashMap<String, Arc<Slot<H::Opener>>>>,
+    targets: Mutex<HashMap<String, Arc<Slot<H::Opener, H::Link>>>>,
     host: H,
     runtime: tokio::runtime::Runtime,
     limits: Limits,
@@ -196,66 +239,116 @@ impl<H: Host> Core<H> {
 
     /// Gets the device ready for its developer services: fails on what
     /// stands in the way, mounts the developer disk image when it is
-    /// missing, then opens the tunnel unless it is open.
+    /// missing, then opens the tunnel and DVT's process control unless they
+    /// are open.
     pub(crate) fn connect(&self, target: &str) -> Result<Connected> {
-        self.runtime.block_on(async {
-            let entry = self.entry(target).await?;
-            let identity = self.host.identity();
-            let not_ready = |readiness| Error::NotReady {
-                target: target.to_owned(),
-                readiness,
-            };
-            let (values, probe) = self.host.probe(&entry).await;
-            let mut device = discovery::device_info(target, &values, probe, &identity);
-            let assess = |device: &DeviceInfo| {
-                readiness::assess(
-                    device.ios_version.as_deref(),
-                    &device.probe,
-                    &identity,
-                    Need::DiskImage,
-                )
-            };
-            let disk_image = match assess(&device) {
-                Ok(()) => MountReport {
-                    image: device
-                        .probe
-                        .disk_image
-                        .clone()
-                        .unwrap_or(DiskImage::NotMounted),
-                    attempts: Vec::new(),
-                },
-                Err(Readiness::DiskImageUnmounted) => {
-                    let mounter = self.host.mounter(&entry, &device);
-                    let report = image::ensure_mounted(&mounter, self.mount_limits, target)
-                        .await
-                        .map_err(|failure| Error::DiskImage {
-                            target: target.to_owned(),
-                            attempts: failure.attempts,
-                            offline: failure.offline,
-                        })?;
-                    let (values, probe) = self.host.probe(&entry).await;
-                    device = discovery::device_info(target, &values, probe, &identity);
-                    assess(&device).map_err(not_ready)?;
-                    report
-                }
-                Err(readiness) => return Err(not_ready(readiness)),
-            };
-            let slot = self.slot(&entry);
-            let mut state = slot.state.lock().await;
-            state.disk_image = Some(disk_image.clone());
-            let opened = match state.tunnel.open().await {
-                Ok(()) => state.open_dvt(self.limits.connect).await,
-                Err(error) => Err(error),
-            };
-            *lock(&slot.snapshot) = state.snapshot();
-            opened?;
-            let tunnel = state.tunnel.status().expect("an open tunnel");
-            Ok(Connected {
+        self.runtime
+            .block_on(self.connect_target(target))
+            .map(|(_, connected)| connected)
+    }
+
+    async fn connect_target(
+        &self,
+        target: &str,
+    ) -> Result<(Arc<Slot<H::Opener, H::Link>>, Connected)> {
+        let entry = self.entry(target).await?;
+        let identity = self.host.identity();
+        let not_ready = |readiness| Error::NotReady {
+            target: target.to_owned(),
+            readiness,
+        };
+        let (values, probe) = self.host.probe(&entry).await;
+        let mut device = discovery::device_info(target, &values, probe, &identity);
+        let assess = |device: &DeviceInfo| {
+            readiness::assess(
+                device.ios_version.as_deref(),
+                &device.probe,
+                &identity,
+                Need::DiskImage,
+            )
+        };
+        let disk_image = match assess(&device) {
+            Ok(()) => MountReport {
+                image: device
+                    .probe
+                    .disk_image
+                    .clone()
+                    .unwrap_or(DiskImage::NotMounted),
+                attempts: Vec::new(),
+            },
+            Err(Readiness::DiskImageUnmounted) => {
+                let mounter = self.host.mounter(&entry, &device);
+                let report = image::ensure_mounted(&mounter, self.mount_limits, target)
+                    .await
+                    .map_err(|failure| Error::DiskImage {
+                        target: target.to_owned(),
+                        attempts: failure.attempts,
+                        offline: failure.offline,
+                    })?;
+                let (values, probe) = self.host.probe(&entry).await;
+                device = discovery::device_info(target, &values, probe, &identity);
+                assess(&device).map_err(not_ready)?;
+                report
+            }
+            Err(readiness) => return Err(not_ready(readiness)),
+        };
+        let slot = self.slot(&entry);
+        let mut state = slot.state.lock().await;
+        state.disk_image = Some(disk_image.clone());
+        let opened = match state.tunnel.open().await {
+            Ok(()) => state
+                .channel(dvt::PROCESS_CONTROL, self.limits.connect)
+                .await
+                .map(|_| ()),
+            Err(error) => Err(error),
+        };
+        *lock(&slot.snapshot) = state.snapshot();
+        opened?;
+        let tunnel = state.tunnel.status().expect("an open tunnel");
+        drop(state);
+        Ok((
+            slot,
+            Connected {
                 device,
                 tunnel,
                 disk_image,
-            })
-        })
+            },
+        ))
+    }
+
+    /// The state of `target`, connecting it first when the driver holds
+    /// none for it.
+    async fn connected(&self, target: &str) -> Result<Arc<Slot<H::Opener, H::Link>>> {
+        let held = lock(&self.targets).get(target).cloned();
+        match held {
+            Some(slot) => Ok(slot),
+            None => Ok(self.connect_target(target).await?.0),
+        }
+    }
+
+    pub(crate) fn install(&self, target: &str, app: &Path) -> Result<Installed> {
+        let _ = (target, app, bundle::inspect, Instant::now);
+        todo!()
+    }
+
+    pub(crate) fn launch(
+        &self,
+        target: &str,
+        bundle_id: &str,
+        options: &LaunchOptions,
+    ) -> Result<Launched> {
+        let _ = (target, bundle_id, options);
+        todo!()
+    }
+
+    pub(crate) fn terminate(&self, target: &str, bundle_id: &str) -> Result<Terminated> {
+        let _ = (target, bundle_id, TERMINATE_WAIT, TERMINATE_POLL);
+        todo!()
+    }
+
+    pub(crate) fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>> {
+        let _ = (target, bundle_id, Self::connected);
+        todo!()
     }
 
     /// What the driver holds for `target`; nothing for a device it has not
@@ -273,7 +366,7 @@ impl<H: Host> Core<H> {
         };
         self.runtime.block_on(async {
             let mut state = slot.state.lock().await;
-            state.dvt = None;
+            state.channels.clear();
             state.tunnel.close().await;
         });
         Ok(())
@@ -281,14 +374,16 @@ impl<H: Host> Core<H> {
 
     /// The state the driver keeps for the device of `entry`, made on first
     /// use.
-    fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H::Opener>> {
+    fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H::Opener, H::Link>> {
         let mut targets = lock(&self.targets);
         let slot = targets.entry(entry.udid.clone()).or_insert_with(|| {
             Arc::new(Slot {
                 state: tokio::sync::Mutex::new(Target {
+                    target: entry.udid.clone(),
                     tunnel: Tunnel::new(&entry.udid, self.host.opener(entry), self.limits),
+                    link: self.host.link(entry),
                     disk_image: None,
-                    dvt: None,
+                    channels: BTreeMap::new(),
                 }),
                 snapshot: Mutex::new(TargetStatus::default()),
             })
@@ -318,7 +413,8 @@ mod tests {
     use crate::discovery::tests::{identity, recorded_images, recorded_values};
     use crate::discovery::{DEVELOPER_MODE_KEY, LOCK_KEY, probe as probe_from};
     use crate::identity::IdentityCheck;
-    use crate::macos::fake::{FakeDevice, FakeMounter, FakeOpener};
+    use crate::macos::dvt::{LAUNCH, PROCESS_CONTROL, SEND_SIGNAL};
+    use crate::macos::fake::{Arg, FakeDevice, FakeLink, FakeMounter, FakeOpener};
     use crate::model::{Connection, DiskImage, MountPath, Probe, Trust};
     use crate::readiness::Readiness;
     use crate::services;
@@ -407,6 +503,7 @@ mod tests {
     impl Host for FakeHost {
         type Opener = FakeOpener;
         type Mounter = FakeMounter;
+        type Link = FakeLink;
 
         async fn list(&self) -> Result<Vec<MuxEntry>> {
             self.listing
@@ -440,6 +537,10 @@ mod tests {
 
         fn mounter(&self, _entry: &MuxEntry, _device: &DeviceInfo) -> FakeMounter {
             self.mounter.clone()
+        }
+
+        fn link(&self, _entry: &MuxEntry) -> FakeLink {
+            FakeLink::new(&self.device)
         }
     }
 
@@ -606,8 +707,8 @@ mod tests {
         assert_eq!(status.disk_image.as_ref(), Some(&connected.disk_image));
         assert_eq!(
             status.services_open,
-            vec![services::DVT],
-            "DVT's connection is opened and kept"
+            vec![PROCESS_CONTROL],
+            "DVT's process control is opened and kept"
         );
         let dvt = core.host.device.port(services::DVT).expect("DVT's port");
         assert_eq!(
@@ -731,5 +832,258 @@ mod tests {
             .connect("placeholder-udid-other")
             .expect_err("no such device");
         assert_eq!(error.code(), "not_found");
+    }
+
+    const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
+
+    /// A bundle laid out as a signed device build of the SwiftUI fixture,
+    /// removed when dropped.
+    struct App {
+        root: std::path::PathBuf,
+        path: std::path::PathBuf,
+    }
+
+    impl App {
+        fn new(test: &str, platform: &str) -> App {
+            let root =
+                std::env::temp_dir().join(format!("ios-driver-{test}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            let path = root.join("FixtureSwiftUI.app");
+            std::fs::create_dir_all(path.join("_CodeSignature")).expect("the bundle");
+            let mut info = Dictionary::new();
+            info.insert("CFBundleIdentifier".into(), Value::String(SWIFTUI.into()));
+            info.insert(
+                "CFBundleExecutable".into(),
+                Value::String("FixtureSwiftUI".into()),
+            );
+            info.insert(
+                "CFBundleSupportedPlatforms".into(),
+                Value::Array(vec![Value::String(platform.into())]),
+            );
+            plist::to_file_binary(path.join("Info.plist"), &info).expect("Info.plist");
+            std::fs::write(path.join("FixtureSwiftUI"), b"\xca\xfe").expect("the executable");
+            std::fs::write(path.join("_CodeSignature/CodeResources"), b"<plist/>")
+                .expect("the signature");
+            std::fs::write(path.join("embedded.mobileprovision"), b"profile").expect("the profile");
+            App { root, path }
+        }
+    }
+
+    impl Drop for App {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// The selectors DVT's process control took, in order.
+    fn control_calls(device: &FakeDevice) -> Vec<String> {
+        device
+            .dvt_calls()
+            .into_iter()
+            .filter(|call| call.service == PROCESS_CONTROL)
+            .map(|call| call.selector)
+            .collect()
+    }
+
+    #[test]
+    fn install_checks_the_bundle_uploads_it_and_reports_its_identifier_and_time() {
+        let core = core(FakeHost::ready());
+        let app = App::new("install", "iPhoneOS");
+        let installed = core.install(PHONE, &app.path).expect("installs");
+        assert_eq!(installed.bundle_id, SWIFTUI);
+        assert_eq!(core.host.device.installs(), vec![app.path.clone()]);
+        assert_eq!(core.running(PHONE, SWIFTUI).expect("running"), None);
+    }
+
+    #[test]
+    fn a_bundle_a_device_does_not_take_is_refused_before_anything_is_asked_of_it() {
+        let core = core(FakeHost::ready());
+        let app = App::new("simulator-build", "iPhoneSimulator");
+        let error = core
+            .install(PHONE, &app.path)
+            .expect_err("a Simulator build");
+        assert_eq!(error.code(), "invalid_bundle", "{error}");
+        assert!(error.to_string().contains("Simulator"), "{error}");
+        assert!(core.host.device.installs().is_empty());
+        assert_eq!(
+            core.host.device.opens(),
+            0,
+            "nothing was asked of the device"
+        );
+    }
+
+    #[test]
+    fn an_install_the_installation_proxy_refuses_says_why() {
+        let core = core(FakeHost::ready());
+        core.host
+            .device
+            .fail_installs("ApplicationVerificationFailed: the profile does not list this device");
+        let app = App::new("refused", "iPhoneOS");
+        let error = core.install(PHONE, &app.path).expect_err("refused");
+        assert_eq!(error.code(), "install_failed");
+        assert!(
+            error.to_string().contains("does not list this device"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_launch_reads_the_lock_then_launches_through_process_control_and_returns_the_pid() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        let options = LaunchOptions::new()
+            .env("FIXTURE_INITIAL_TAB", "Big")
+            .terminating_running();
+        let launched = core.launch(PHONE, SWIFTUI, &options).expect("launches");
+        assert_eq!(core.host.device.lock_reads(), 1, "the lock is read first");
+        assert_eq!(core.host.device.running(SWIFTUI), vec![launched.pid]);
+        assert_eq!(control_calls(&core.host.device), vec![LAUNCH]);
+        assert_eq!(
+            core.running(PHONE, SWIFTUI).expect("running"),
+            Some(launched.pid)
+        );
+        let again = core
+            .launch(PHONE, SWIFTUI, &options)
+            .expect("launches again");
+        assert_eq!(core.host.device.lock_reads(), 2, "before every launch");
+        assert_ne!(again.pid, launched.pid, "KillExisting starts a new process");
+        assert_eq!(core.host.device.running(SWIFTUI), vec![again.pid]);
+    }
+
+    #[test]
+    fn a_launch_on_a_locked_phone_is_refused_without_being_tried() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        core.host.device.set_locked(true);
+        let error = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect_err("locked");
+        assert_eq!(error.code(), "device_locked", "{error}");
+        assert!(
+            control_calls(&core.host.device).is_empty(),
+            "DVT was not asked"
+        );
+        core.host.device.set_locked(false);
+        core.launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect("unlocked, it launches");
+    }
+
+    #[test]
+    fn launching_an_app_that_is_not_installed_fails_as_not_installed() {
+        let core = core(FakeHost::ready());
+        let error = core
+            .launch(
+                PHONE,
+                "dev.mobileagent.placeholder.missing",
+                &LaunchOptions::new(),
+            )
+            .expect_err("not installed");
+        assert_eq!(error.code(), "app_not_installed", "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("dev.mobileagent.placeholder.missing"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_refused_launch_of_an_installed_app_says_why() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        core.host.device.refuse_launches();
+        let error = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect_err("refused");
+        assert_eq!(error.code(), "launch_failed", "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("FBSOpenApplicationServiceErrorDomain"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn terminate_signals_the_apps_process_and_returns_once_it_is_gone() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        let launched = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect("launches");
+        let terminated = core.terminate(PHONE, SWIFTUI).expect("terminates");
+        assert_eq!(terminated.pids, vec![launched.pid]);
+        assert!(core.host.device.running(SWIFTUI).is_empty());
+        assert_eq!(core.running(PHONE, SWIFTUI).expect("running"), None);
+        let signal = core
+            .host
+            .device
+            .dvt_calls()
+            .into_iter()
+            .find(|call| call.selector == SEND_SIGNAL)
+            .expect("a signal");
+        assert_eq!(
+            signal.args,
+            vec![
+                Arg::Archived(Value::Integer(9.into())),
+                Arg::Archived(Value::Integer(i64::from(launched.pid).into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn terminating_an_app_that_is_not_running_signals_nothing() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        let terminated = core.terminate(PHONE, SWIFTUI).expect("nothing to do");
+        assert!(terminated.pids.is_empty());
+        assert!(!control_calls(&core.host.device).contains(&SEND_SIGNAL.to_owned()));
+    }
+
+    #[test]
+    fn a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        let launched = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect("launches");
+        core.host.device.drop_tunnel();
+        assert_eq!(
+            core.running(PHONE, SWIFTUI).expect("served again"),
+            Some(launched.pid)
+        );
+        core.terminate(PHONE, SWIFTUI)
+            .expect("process control is served again too");
+        assert_eq!(core.host.device.opens(), 2);
+        let status = core.status(PHONE).expect("status");
+        assert_eq!(status.tunnel.map(|tunnel| tunnel.opens), Some(2));
+    }
+
+    #[test]
+    fn a_launch_whose_dvt_never_answers_times_out() {
+        let core = core(FakeHost::ready());
+        core.host.device.install_app(SWIFTUI, "FixtureSwiftUI");
+        core.connect(PHONE).expect("connects");
+        core.host.device.silence_dvt();
+        let error = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect_err("no reply");
+        assert_eq!(error.code(), "timeout", "{error}");
+    }
+
+    #[test]
+    fn a_command_on_a_phone_that_is_not_ready_fails_with_its_state() {
+        let host = FakeHost::with(
+            &[(DEVELOPER_MODE_KEY, Value::Boolean(false))],
+            Trust::Trusted,
+            None,
+        );
+        let core = core(host);
+        let error = core
+            .launch(PHONE, SWIFTUI, &LaunchOptions::new())
+            .expect_err("developer mode is off");
+        assert_eq!(error.code(), "developer_mode_off");
+        let error = core.running(PHONE, SWIFTUI).expect_err("still off");
+        assert_eq!(error.code(), "developer_mode_off");
     }
 }

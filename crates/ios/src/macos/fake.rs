@@ -4,23 +4,35 @@
 //! ports that accept connections, served by handlers the tests register.
 //! The tunnel can drop, as jktcp's does when its adapter dies, and the
 //! device can go away and come back.
+//!
+//! Its DVT speaks DTX through `idevice`'s own message types: it opens
+//! channels, launches the apps installed on it, signals and lists
+//! processes, records every call with its arguments decoded, and refuses a
+//! launch with an archived `NSError` as the phone does. A primitive pid in a
+//! signal drops the connection, as `kill_app`'s did on iOS 26.6.2 (S9). Its
+//! usbmuxd side, [`FakeLink`], reads the lock and installs bundles.
 
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use idevice::dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader};
+
+use super::dvt::{DEVICE_INFO, LAUNCH, PROCESS_CONTROL, RUNNING_PROCESSES, SEND_SIGNAL};
 use idevice::provider::RsdProvider;
 use idevice::xpc::{XPCMessage, XPCObject};
 use idevice::{IdeviceError, ReadWrite};
 use plist::{Dictionary, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
+use super::host::Link;
 use super::image::Mounter;
 use super::tunnel::Opener;
 use crate::discovery::tests::recorded_images;
+use crate::services;
 
 /// The port the fake RSD answers on.
 const RSD_PORT: u16 = 58783;
@@ -43,6 +55,83 @@ struct State {
     connections: Vec<u16>,
 }
 
+/// A process of the fake device.
+#[derive(Clone, Debug)]
+struct FakeProcess {
+    pid: u32,
+    name: String,
+    bundle_id: Option<String>,
+    path: String,
+}
+
+/// What the fake DVT knows and was asked.
+struct Dvt {
+    /// The installed apps by bundle identifier, with their executables.
+    apps: HashMap<String, String>,
+    processes: Vec<FakeProcess>,
+    next_pid: u32,
+    calls: Vec<DvtCall>,
+    refuse_launches: bool,
+    silent: bool,
+    closed: bool,
+}
+
+impl Default for Dvt {
+    fn default() -> Dvt {
+        Dvt {
+            apps: HashMap::new(),
+            processes: vec![
+                FakeProcess {
+                    pid: 1,
+                    name: "launchd".into(),
+                    bundle_id: None,
+                    path: "/sbin/launchd".into(),
+                },
+                FakeProcess {
+                    pid: 34,
+                    name: "SpringBoard".into(),
+                    bundle_id: Some("com.apple.springboard".into()),
+                    path: "/System/Library/CoreServices/SpringBoard.app/SpringBoard".into(),
+                },
+            ],
+            next_pid: 1000,
+            calls: Vec::new(),
+            refuse_launches: false,
+            silent: false,
+            closed: false,
+        }
+    }
+}
+
+/// What the fake usbmuxd side knows and was asked.
+#[derive(Default)]
+struct LinkState {
+    locked: bool,
+    lock_reads: u32,
+    install_failure: Option<String>,
+    installs: Vec<PathBuf>,
+}
+
+/// One argument of a DTX call, as the fake DVT decoded it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Arg {
+    /// An archived object, unarchived.
+    Archived(Value),
+    /// A primitive integer, as `kill_app` sends a pid.
+    Primitive(i64),
+    Text(String),
+    Other,
+}
+
+/// One call the fake DVT took.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DvtCall {
+    /// The channel's identifier, such as DVT's process control.
+    pub service: String,
+    pub selector: String,
+    pub args: Vec<Arg>,
+}
+
 /// The device behind the fake tunnel.
 pub(crate) struct FakeDevice {
     /// Each service's name, port and recorded entry, in the recording's
@@ -51,6 +140,8 @@ pub(crate) struct FakeDevice {
     properties: Dictionary,
     state: Mutex<State>,
     handlers: Mutex<HashMap<u16, Handler>>,
+    dvt: Mutex<Dvt>,
+    link: Mutex<LinkState>,
 }
 
 impl fmt::Debug for FakeDevice {
@@ -99,7 +190,158 @@ impl FakeDevice {
                 .unwrap_or_default(),
             state: Mutex::new(State::default()),
             handlers: Mutex::new(HashMap::new()),
+            dvt: Mutex::new(Dvt::default()),
+            link: Mutex::new(LinkState::default()),
         })
+    }
+
+    fn dvt(&self) -> MutexGuard<'_, Dvt> {
+        self.dvt
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn link(&self) -> MutexGuard<'_, LinkState> {
+        self.link
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Installs an app, as the installation proxy would.
+    pub(crate) fn install_app(&self, bundle_id: &str, executable: &str) {
+        self.dvt()
+            .apps
+            .insert(bundle_id.to_owned(), executable.to_owned());
+    }
+
+    /// The pids of `bundle_id`'s processes.
+    pub(crate) fn running(&self, bundle_id: &str) -> Vec<u32> {
+        self.dvt()
+            .processes
+            .iter()
+            .filter(|process| process.bundle_id.as_deref() == Some(bundle_id))
+            .map(|process| process.pid)
+            .collect()
+    }
+
+    /// Every call DVT took, in order.
+    pub(crate) fn dvt_calls(&self) -> Vec<DvtCall> {
+        self.dvt().calls.clone()
+    }
+
+    /// Makes DVT refuse every launch.
+    pub(crate) fn refuse_launches(&self) {
+        self.dvt().refuse_launches = true;
+    }
+
+    /// Makes DVT take calls and answer none.
+    pub(crate) fn silence_dvt(&self) {
+        self.dvt().silent = true;
+    }
+
+    /// Makes DVT close every connection at its next call.
+    pub(crate) fn close_dvt(&self) {
+        self.dvt().closed = true;
+    }
+
+    /// Locks or unlocks the device.
+    pub(crate) fn set_locked(&self, locked: bool) {
+        self.link().locked = locked;
+    }
+
+    /// How many times the lock was read.
+    pub(crate) fn lock_reads(&self) -> u32 {
+        self.link().lock_reads
+    }
+
+    /// Makes the installation proxy refuse every bundle with `reason`.
+    pub(crate) fn fail_installs(&self, reason: &str) {
+        self.link().install_failure = Some(reason.to_owned());
+    }
+
+    /// The bundles installed so far, by their paths on the host.
+    pub(crate) fn installs(&self) -> Vec<PathBuf> {
+        self.link().installs.clone()
+    }
+
+    /// What DVT answers `selector` on the channel `service` with, or `None`
+    /// for no reply; an error closes the connection.
+    fn answer(&self, service: &str, selector: &str, args: Vec<Arg>) -> Result<Option<Reply>, ()> {
+        let mut dvt = self.dvt();
+        dvt.calls.push(DvtCall {
+            service: service.to_owned(),
+            selector: selector.to_owned(),
+            args: args.clone(),
+        });
+        if dvt.closed {
+            return Err(());
+        }
+        if dvt.silent {
+            return Ok(None);
+        }
+        let reply = match (service, selector) {
+            (PROCESS_CONTROL, LAUNCH) => {
+                let bundle = match args.get(1) {
+                    Some(Arg::Archived(Value::String(bundle))) => bundle.clone(),
+                    _ => String::new(),
+                };
+                let kill_existing = matches!(
+                    args.get(4),
+                    Some(Arg::Archived(Value::Dictionary(options)))
+                        if options.get("KillExisting").and_then(Value::as_boolean) == Some(true)
+                );
+                let executable = dvt.apps.get(&bundle).cloned();
+                match executable {
+                    Some(executable) if !dvt.refuse_launches => {
+                        let running = dvt
+                            .processes
+                            .iter()
+                            .find(|process| process.bundle_id.as_deref() == Some(&bundle))
+                            .map(|process| process.pid);
+                        match running {
+                            Some(pid) if !kill_existing => Reply::Data(Some(pid_value(pid))),
+                            _ => {
+                                dvt.processes.retain(|process| {
+                                    process.bundle_id.as_deref() != Some(&bundle)
+                                });
+                                let pid = dvt.next_pid;
+                                dvt.next_pid += 1;
+                                dvt.processes.push(FakeProcess {
+                                    pid,
+                                    name: executable.clone(),
+                                    bundle_id: Some(bundle.clone()),
+                                    path: format!(
+                                        "/var/containers/Bundle/Application/PLACEHOLDER/{executable}.app/{executable}"
+                                    ),
+                                });
+                                Reply::Data(Some(pid_value(pid)))
+                            }
+                        }
+                    }
+                    _ => Reply::Raw(ns_error_archive(
+                        "FBSOpenApplicationServiceErrorDomain",
+                        4,
+                        &format!("The request to open \"{bundle}\" failed."),
+                    )),
+                }
+            }
+            (PROCESS_CONTROL, SEND_SIGNAL) => match args.get(1) {
+                Some(Arg::Archived(Value::Integer(pid))) => {
+                    let pid = pid.as_unsigned().unwrap_or_default();
+                    dvt.processes
+                        .retain(|process| u64::from(process.pid) != pid);
+                    Reply::Data(None)
+                }
+                // A pid sent as a primitive stalled the phone's DVT service
+                // and dropped its connections (S9).
+                _ => return Err(()),
+            },
+            (DEVICE_INFO, RUNNING_PROCESSES) => Reply::Data(Some(Value::Array(
+                dvt.processes.iter().map(process_value).collect(),
+            ))),
+            _ => Reply::Data(None),
+        };
+        Ok(Some(reply))
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -231,10 +473,171 @@ pub(crate) fn capabilities() -> Vec<u8> {
     .serialize()
 }
 
-/// A DVT service hub that says its capabilities and takes nothing more.
-pub(crate) async fn dvt_hello(mut stream: DuplexStream) {
-    if stream.write_all(&capabilities()).await.is_ok() {
-        drain(stream).await;
+enum Reply {
+    /// Data to archive into the reply, or none for an empty one.
+    Data(Option<Value>),
+    /// An archive written as it is, such as an `NSError`.
+    Raw(Vec<u8>),
+}
+
+fn pid_value(pid: u32) -> Value {
+    Value::Integer(i64::from(pid).into())
+}
+
+fn process_value(process: &FakeProcess) -> Value {
+    let mut entry = Dictionary::new();
+    entry.insert("pid".into(), pid_value(process.pid));
+    entry.insert("name".into(), Value::String(process.name.clone()));
+    entry.insert("realAppName".into(), Value::String(process.path.clone()));
+    entry.insert(
+        "isApplication".into(),
+        Value::Boolean(process.bundle_id.is_some()),
+    );
+    if let Some(bundle_id) = &process.bundle_id {
+        entry.insert("bundleIdentifier".into(), Value::String(bundle_id.clone()));
+    }
+    Value::Dictionary(entry)
+}
+
+/// An `NSError` as `NSKeyedArchiver` archives it, with its domain, code and
+/// a localized description in its user info.
+pub(crate) fn ns_error_archive(domain: &str, code: i64, description: &str) -> Vec<u8> {
+    let uid = |index: u64| Value::Uid(plist::Uid::new(index));
+    let class = |name: &str| {
+        let mut class = Dictionary::new();
+        class.insert("$classname".into(), Value::String(name.into()));
+        class.insert(
+            "$classes".into(),
+            Value::Array(vec![
+                Value::String(name.into()),
+                Value::String("NSObject".into()),
+            ]),
+        );
+        Value::Dictionary(class)
+    };
+    let mut error = Dictionary::new();
+    error.insert("$class".into(), uid(7));
+    error.insert("NSCode".into(), Value::Integer(code.into()));
+    error.insert("NSDomain".into(), uid(2));
+    error.insert("NSUserInfo".into(), uid(3));
+    let mut info = Dictionary::new();
+    info.insert("$class".into(), uid(6));
+    info.insert("NS.keys".into(), Value::Array(vec![uid(4)]));
+    info.insert("NS.objects".into(), Value::Array(vec![uid(5)]));
+    let mut top = Dictionary::new();
+    top.insert("root".into(), uid(1));
+    let mut archive = Dictionary::new();
+    archive.insert("$archiver".into(), Value::String("NSKeyedArchiver".into()));
+    archive.insert("$version".into(), Value::Integer(100000.into()));
+    archive.insert("$top".into(), Value::Dictionary(top));
+    archive.insert(
+        "$objects".into(),
+        Value::Array(vec![
+            Value::String("$null".into()),
+            Value::Dictionary(error),
+            Value::String(domain.into()),
+            Value::Dictionary(info),
+            Value::String("NSLocalizedDescription".into()),
+            Value::String(description.into()),
+            class("NSDictionary"),
+            class("NSError"),
+        ]),
+    );
+    let mut bytes = Vec::new();
+    plist::to_writer_binary(&mut bytes, &Value::Dictionary(archive)).expect("archives");
+    bytes
+}
+
+/// A DTX reply to the call `identifier` on `channel`, with its archived
+/// data, empty for an acknowledgement.
+fn reply_bytes(identifier: u32, channel: i32, archived: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(48 + archived.len());
+    out.extend_from_slice(&0x1F3D_5B79u32.to_le_bytes());
+    out.extend_from_slice(&32u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&(16 + archived.len() as u32).to_le_bytes());
+    out.extend_from_slice(&identifier.to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&channel.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.push(if archived.is_empty() { 0 } else { 3 });
+    out.extend_from_slice(&[0, 0, 0]);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&(archived.len() as u32).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(archived);
+    out
+}
+
+fn arg(value: &AuxValue) -> Arg {
+    match value {
+        AuxValue::Array(bytes) => ns_keyed_archive::decode::from_bytes(bytes)
+            .map(Arg::Archived)
+            .unwrap_or(Arg::Other),
+        AuxValue::U32(value) => Arg::Primitive(i64::from(*value)),
+        AuxValue::I64(value) => Arg::Primitive(*value),
+        AuxValue::String(text) => Arg::Text(text.clone()),
+        _ => Arg::Other,
+    }
+}
+
+/// Serves one DVT connection: its capabilities first, then channels and
+/// the calls on them, until the driver closes it or the device does.
+pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    if writer.write_all(&capabilities()).await.is_err() {
+        return;
+    }
+    let mut channels: HashMap<i32, String> = HashMap::new();
+    loop {
+        let Ok(message) = Message::from_reader(&mut reader).await else {
+            return;
+        };
+        let header = message.message_header.serialize();
+        let identifier = u32::from_le_bytes(header[16..20].try_into().expect("4 bytes"));
+        // A call comes on its channel's code, which the reader negates.
+        let code = -message.message_header.channel;
+        let selector = message
+            .data
+            .as_ref()
+            .and_then(Value::as_string)
+            .unwrap_or_default()
+            .to_owned();
+        let args: Vec<Arg> = message
+            .aux
+            .as_ref()
+            .map(|aux| aux.values.iter().map(arg).collect())
+            .unwrap_or_default();
+        let reply = if code == 0 && selector == "_requestChannelWithCode:identifier:" {
+            if let (Some(Arg::Primitive(channel)), Some(Arg::Archived(Value::String(name)))) =
+                (args.first(), args.get(1))
+            {
+                channels.insert(*channel as i32, name.clone());
+            }
+            Some(Reply::Data(None))
+        } else {
+            let service = channels.get(&code).cloned().unwrap_or_default();
+            match device.answer(&service, &selector, args) {
+                Ok(reply) => reply,
+                Err(()) => return,
+            }
+        };
+        let archived = match reply {
+            None => continue,
+            Some(Reply::Data(None)) => Vec::new(),
+            Some(Reply::Data(Some(data))) => {
+                ns_keyed_archive::encode::encode_to_bytes(data).expect("the reply archives")
+            }
+            Some(Reply::Raw(raw)) => raw,
+        };
+        if writer
+            .write_all(&reply_bytes(identifier, code, &archived))
+            .await
+            .is_err()
+        {
+            return;
+        }
     }
 }
 
@@ -336,8 +739,8 @@ impl RsdProvider for FakeProvider {
                 Some(handler) => {
                     tokio::spawn(handler(server));
                 }
-                None if Some(port) == self.device.port(crate::services::DVT) => {
-                    tokio::spawn(dvt_hello(server));
+                None if Some(port) == self.device.port(services::DVT) => {
+                    tokio::spawn(serve_dvt(Arc::clone(&self.device), server));
                 }
                 None => {
                     tokio::spawn(drain(server));
@@ -438,5 +841,43 @@ impl Mounter for FakeMounter {
             self.mount();
         }
         self.devicectl.clone()
+    }
+}
+
+/// The fake device's usbmuxd side: lockdown's lock and the installation
+/// proxy.
+pub(crate) struct FakeLink {
+    device: Arc<FakeDevice>,
+}
+
+impl FakeLink {
+    pub(crate) fn new(device: &Arc<FakeDevice>) -> FakeLink {
+        FakeLink {
+            device: Arc::clone(device),
+        }
+    }
+}
+
+impl Link for FakeLink {
+    async fn password_protected(&self) -> std::result::Result<bool, String> {
+        let mut link = self.device.link();
+        link.lock_reads += 1;
+        Ok(link.locked)
+    }
+
+    async fn install(&self, app: &Path) -> std::result::Result<(), String> {
+        let failure = self.device.link().install_failure.clone();
+        if let Some(reason) = failure {
+            return Err(reason);
+        }
+        let bundle = crate::bundle::inspect(app)?;
+        self.device
+            .install_app(&bundle.bundle_id, &bundle.executable);
+        self.device.link().installs.push(app.to_owned());
+        Ok(())
+    }
+
+    async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String> {
+        Ok(self.device.dvt().apps.contains_key(bundle_id))
     }
 }

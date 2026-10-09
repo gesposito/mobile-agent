@@ -5,8 +5,12 @@
 //! Every method names its device with `target`, the device identifier
 //! `devices` lists: names are not unique, so no method takes one.
 
+use std::path::Path;
+
 use crate::error::Result;
-use crate::model::{Connected, DeviceInfo, TargetStatus};
+use crate::model::{
+    Connected, DeviceInfo, Installed, LaunchOptions, Launched, TargetStatus, Terminated,
+};
 use crate::readiness::Need;
 
 /// Lists the devices attached over USB and what stands between each and a
@@ -32,4 +36,26 @@ pub trait Devices {
     /// What the driver holds for `target`: its tunnel and the disk image as
     /// the last `connect` found it; nothing before a `connect`.
     fn status(&self, target: &str) -> Result<TargetStatus>;
+}
+
+/// Installs, launches and terminates apps and tells whether they run (spec
+/// `ios-device-driver`, "App lifecycle"; design D19), connecting the device
+/// first when it is not connected.
+pub trait Lifecycle {
+    /// Installs the signed bundle at `app`, a `.app` built for a device,
+    /// through the installation proxy, replacing an installed one.
+    fn install(&self, target: &str, app: &Path) -> Result<Installed>;
+
+    /// Launches the installed app `bundle_id` with `options`' arguments and
+    /// environment, through DVT's process control, and returns its pid. The
+    /// lock is read first, and a locked device fails with `device_locked`
+    /// without the launch being tried.
+    fn launch(&self, target: &str, bundle_id: &str, options: &LaunchOptions) -> Result<Launched>;
+
+    /// Ends the app's processes with SIGKILL through DVT and returns once
+    /// they left the process list; an app that is not running is left alone.
+    fn terminate(&self, target: &str, bundle_id: &str) -> Result<Terminated>;
+
+    /// The pid of the app's process, from DVT's process list, when it runs.
+    fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>>;
 }

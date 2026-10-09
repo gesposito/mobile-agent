@@ -3,6 +3,7 @@
 //! record, which usbmuxd hands over (`ReadPairRecord`), so nothing reads
 //! `/var/db/lockdown`.
 
+use std::path::Path;
 use std::time::Duration;
 
 use idevice::lockdown::LockdownClient;
@@ -51,12 +52,29 @@ pub(crate) fn describe(error: &dyn std::error::Error) -> String {
     text
 }
 
+/// What the driver asks of one device over usbmuxd rather than the tunnel:
+/// lockdown's lock and the installation proxy, whose uploads go faster
+/// through usbmuxd than through jktcp's one segment at a time.
+pub(crate) trait Link: Send + Sync + 'static {
+    /// Lockdown's `PasswordProtected`, which follows the lock (S9).
+    async fn password_protected(&self) -> std::result::Result<bool, String>;
+
+    /// Uploads the bundle at `app` to the device's `PublicStaging` through
+    /// AFC and installs it through the installation proxy.
+    async fn install(&self, app: &Path) -> std::result::Result<(), String>;
+
+    /// Whether the installation proxy lists `bundle_id`.
+    async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String>;
+}
+
 /// What the driver needs from the host: the seam the tests replace.
 pub(crate) trait Host: Send + Sync + 'static {
     /// Opens tunnels to one device.
     type Opener: Opener;
     /// Mounts the developer disk image on one device.
     type Mounter: Mounter;
+    /// Lockdown and the installation proxy of one device.
+    type Link: Link;
 
     /// usbmuxd's listing, every entry as it comes.
     async fn list(&self) -> Result<Vec<MuxEntry>>;
@@ -73,6 +91,9 @@ pub(crate) trait Host: Send + Sync + 'static {
 
     /// The disk image mounts on `device`, the device of `entry`.
     fn mounter(&self, entry: &MuxEntry, device: &DeviceInfo) -> Self::Mounter;
+
+    /// Lockdown and the installation proxy of the device of `entry`.
+    fn link(&self, entry: &MuxEntry) -> Self::Link;
 }
 
 /// The real host: usbmuxd at its default socket, or the one
@@ -105,6 +126,7 @@ impl UsbHost {
 impl Host for UsbHost {
     type Opener = UsbTunnel;
     type Mounter = UsbMounter;
+    type Link = UsbLink;
 
     async fn list(&self) -> Result<Vec<MuxEntry>> {
         let unavailable = |reason: String| Error::Usbmuxd { reason };
@@ -151,6 +173,39 @@ impl Host for UsbHost {
             product_type: device.model.clone(),
             directory: DDI_DIRECTORY.into(),
         }
+    }
+
+    fn link(&self, entry: &MuxEntry) -> UsbLink {
+        UsbLink {
+            provider: self.provider(entry),
+            lockdown: tokio::sync::Mutex::new(None),
+        }
+    }
+}
+
+/// The real link: a lockdown session kept for the lock's reads, and the
+/// installation proxy through usbmuxd.
+pub(crate) struct UsbLink {
+    provider: UsbmuxdProvider,
+    /// The session the lock is read on: one `GetValue`, 0.84 ms at p50 in
+    /// S9, where a new session costs 22 ms.
+    lockdown: tokio::sync::Mutex<Option<LockdownClient>>,
+}
+
+impl Link for UsbLink {
+    async fn password_protected(&self) -> std::result::Result<bool, String> {
+        let _ = &self.lockdown;
+        todo!()
+    }
+
+    async fn install(&self, app: &Path) -> std::result::Result<(), String> {
+        let _ = (app, &self.provider);
+        todo!()
+    }
+
+    async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String> {
+        let _ = bundle_id;
+        todo!()
     }
 }
 
