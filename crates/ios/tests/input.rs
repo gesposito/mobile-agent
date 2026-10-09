@@ -1,8 +1,10 @@
-//! Task 3.8 on the device: input from the host through `dtuhidd`, checked
-//! with the runner's tree. The SwiftUI fixture's List tab is in front: a tap
-//! on `row-1` opens `detail-1`, a tap on `detail-back` returns, a resting
-//! swipe moves the list by about its length, and the home button leaves for
-//! the home screen.
+//! Tasks 3.8 and 4.5 on the device: input from the host through `dtuhidd`,
+//! and through the runner's synthesis, its fallback, when the session asks
+//! for it, checked with the runner's tree. The SwiftUI fixture's List tab is
+//! in front: a tap on `row-1` opens `detail-1`, a tap on `detail-back`
+//! returns, a resting swipe moves the list by about its length, and the home
+//! button leaves for the home screen; on the Login tab, keys and the
+//! harness's 36 characters, typed and set, land in `login-username`.
 //!
 //! The runner is `agent-ios`'s, installed from the bundle
 //! `MOBILE_AGENT_IOS_RUNNER_APP` names when the phone has another version.
@@ -18,10 +20,11 @@ mod common;
 use std::time::{Duration, Instant};
 
 use ios::{
-    AttachOptions, Button, Dispatch, FrameOptions, Frames, ImageFormat, Input, IosDriver,
-    LaunchOptions, Lifecycle, Point, ScreenshotOptions, Session, Swipe, decode_png,
+    AttachOptions, Button, Dispatch, FrameOptions, Frames, ImageFormat, Input, InputPath,
+    IosDriver, Key, LaunchOptions, Lifecycle, Modifiers, Point, ScreenshotOptions, Session, Swipe,
+    decode_png,
 };
-use protocol::message::{Call, Reply, SnapshotParams};
+use protocol::message::{Call, KeyParams, Reply, SnapshotParams, TextMethod, TextParams};
 use protocol::snapshot::{Bounds, Node, Snapshot};
 
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
@@ -99,6 +102,11 @@ fn wait_for(
 
 /// The fixture on its List tab, the runner attached, `row-1` on screen.
 fn on_the_list(driver: &IosDriver, udid: &str) {
+    on_the_list_with(driver, udid, AttachOptions::new(common::runner()));
+}
+
+/// The fixture on its List tab, the runner attached with `options`.
+fn on_the_list_with(driver: &IosDriver, udid: &str, options: AttachOptions) {
     driver
         .launch(
             udid,
@@ -108,9 +116,7 @@ fn on_the_list(driver: &IosDriver, udid: &str) {
                 .terminating_running(),
         )
         .expect("the SwiftUI fixture launches; install it first");
-    driver
-        .attach(udid, &AttachOptions::new(common::runner()))
-        .expect("the runner starts");
+    driver.attach(udid, &options).expect("the runner starts");
     wait_for(driver, udid, Duration::from_secs(10), |read| {
         bounds(read, "row-1").is_some()
     })
@@ -417,4 +423,342 @@ fn the_lock_button() {
             asked.elapsed().as_secs_f64()
         );
     }
+}
+
+/// The harness's text entry (`bench`'s `primitive::TEXT_ENTRY`).
+const TEXT_ENTRY: &str = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/// The text of the field `id`, from the runner's tree.
+fn value_of(driver: &IosDriver, udid: &str, id: &str) -> Option<String> {
+    let read = snapshot(driver, udid);
+    read.windows
+        .iter()
+        .filter_map(|window| window.root.as_ref())
+        .find_map(|root| find(root, id))
+        .and_then(|node| node.text.clone())
+}
+
+/// Enters `text` into the focused field through the runner, as `mode` asks,
+/// and returns the method it reports and how long it took.
+fn enter(
+    driver: &IosDriver,
+    udid: &str,
+    text: &str,
+    mode: Option<TextMethod>,
+) -> (TextMethod, Duration) {
+    let sent = Instant::now();
+    let reply = driver
+        .call(
+            udid,
+            Call::TextSet(TextParams {
+                text: text.to_owned(),
+                node: None,
+                mode,
+            }),
+            Duration::from_secs(30),
+        )
+        .unwrap_or_else(|error| panic!("the runner enters {text:?}: {error}"));
+    match reply {
+        Reply::Text(ack) => (ack.method, sent.elapsed()),
+        other => panic!("text was answered with {other:?}"),
+    }
+}
+
+/// The SwiftUI fixture's Login tab with `login-username` focused through
+/// the runner's taps, its text set empty.
+fn on_the_focused_username(driver: &IosDriver, udid: &str) {
+    tap_on(driver, udid, "tab-login", "login-username");
+    let read = snapshot(driver, udid);
+    let field = bounds(&read, "login-username").expect("the username field");
+    driver
+        .tap(udid, center(field))
+        .expect("the field is tapped");
+    wait_for(driver, udid, Duration::from_secs(5), |read| {
+        read.windows
+            .iter()
+            .filter_map(|window| window.root.as_ref())
+            .find_map(|root| find(root, "login-username"))
+            .is_some_and(|node| node.flags.contains(protocol::snapshot::NodeFlags::FOCUSED))
+    })
+    .expect("the username field has keyboard focus");
+    enter(driver, udid, "", Some(TextMethod::DIRECT));
+}
+
+/// Task 4.5: with the session asking for the runner's synthesis, taps,
+/// a long press, a resting swipe and keys go through it, acknowledged when
+/// it answers, and text goes into the focused field typed, set, and typed
+/// when the runner may choose, each method reported and read back whole.
+#[test]
+fn the_runners_synthesis_taps_presses_swipes_types_and_sets_text() {
+    let Some(udid) = common::gated("the_runners_synthesis") else {
+        return;
+    };
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    on_the_list_with(
+        &driver,
+        &udid,
+        AttachOptions::new(common::runner()).input(InputPath::Runner),
+    );
+
+    let (opened, reached) = tap_on(&driver, &udid, "row-1", "detail-1");
+    assert_eq!(opened.path, InputPath::Runner);
+    assert!(reached.is_some(), "the tap on row-1 opened detail-1");
+    let (_, back) = tap_on(&driver, &udid, "detail-back", "row-1");
+    assert!(
+        back.is_some(),
+        "the tap on detail-back returned to the list"
+    );
+
+    let read = snapshot(&driver, &udid);
+    let row = bounds(&read, "row-2").expect("row-2");
+    let hold = Duration::from_millis(600);
+    let pressed = driver
+        .press(&udid, center(row), hold)
+        .expect("the press is sent");
+    assert_eq!(pressed.path, InputPath::Runner);
+    assert!(pressed.acknowledged >= hold, "{pressed:?}");
+    if let Some((read, _)) = wait_for(&driver, &udid, Duration::from_millis(800), |read| {
+        bounds(read, "detail-back").is_some()
+    }) {
+        driver
+            .tap(
+                &udid,
+                center(bounds(&read, "detail-back").expect("the back button")),
+            )
+            .expect("back");
+        wait_for(&driver, &udid, Duration::from_secs(3), |read| {
+            bounds(read, "row-1").is_some()
+        })
+        .expect("the list again");
+    }
+
+    std::thread::sleep(Duration::from_secs(1));
+    let still = pixels(&driver, &udid);
+    let stroke = Swipe::new(
+        Point::new(187.0, 520.0),
+        Point::new(187.0, 320.0),
+        Duration::from_millis(300),
+    )
+    .resting();
+    let swiped = driver.swipe(&udid, &stroke).expect("the swipe is sent");
+    assert_eq!(swiped.path, InputPath::Runner);
+    std::thread::sleep(Duration::from_millis(1500));
+    let moved = shift(&still, &pixels(&driver, &udid));
+    let stroke_pixels = ((stroke.from.y - stroke.to.y) * SCALE) as usize;
+
+    on_the_focused_username(&driver, &udid);
+    let shifted = Key {
+        usage: 0x04,
+        modifiers: Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        },
+    };
+    let keyed = driver.key(&udid, shifted).expect("the key is sent");
+    assert_eq!(keyed.path, InputPath::Runner);
+    driver
+        .call(
+            &udid,
+            Call::Key(KeyParams {
+                code: 0x05,
+                meta: None,
+            }),
+            Duration::from_secs(10),
+        )
+        .expect("a key through the runner's call");
+    assert_eq!(
+        value_of(&driver, &udid, "login-username").as_deref(),
+        Some("Ab")
+    );
+
+    let mut buttons = Vec::new();
+    for button in [Button::VolumeUp, Button::VolumeDown] {
+        let pressed = driver.button(&udid, button).expect("the button is pressed");
+        assert_eq!(pressed.path, InputPath::Runner);
+        buttons.push((button, milliseconds(pressed.acknowledged)));
+    }
+
+    let mut entries = Vec::new();
+    for mode in [Some(TextMethod::KEYS), Some(TextMethod::DIRECT), None] {
+        enter(&driver, &udid, "", Some(TextMethod::DIRECT));
+        let (method, took) = enter(&driver, &udid, TEXT_ENTRY, mode);
+        let read_back = value_of(&driver, &udid, "login-username");
+        entries.push((mode, method, took, read_back.clone()));
+        assert_eq!(
+            read_back.as_deref(),
+            Some(TEXT_ENTRY),
+            "{mode:?} landed whole"
+        );
+    }
+    assert_eq!(entries[0].1, TextMethod::KEYS);
+    assert_eq!(entries[1].1, TextMethod::DIRECT);
+    assert_eq!(
+        entries[2].1,
+        TextMethod::KEYS,
+        "typed when the runner may choose"
+    );
+    enter(&driver, &udid, "", Some(TextMethod::DIRECT));
+    driver.release(&udid).expect("releases");
+    eprintln!(
+        "through the runner: tap acknowledged {:.1} ms, detail-1 in the tree {:.0} ms after; \
+         press of {hold:?} acknowledged {:.1} ms; resting swipe of {stroke_pixels} px \
+         acknowledged {:.1} ms, the list moved {moved} px; key {:.1} ms; buttons {buttons:?}; \
+         text {:?}",
+        milliseconds(opened.acknowledged),
+        reached.map_or(0.0, milliseconds),
+        milliseconds(pressed.acknowledged),
+        milliseconds(swiped.acknowledged),
+        milliseconds(keyed.acknowledged),
+        entries
+            .iter()
+            .map(|(mode, method, took, _)| format!(
+                "{mode:?} -> {method:?} {:.0} ms",
+                milliseconds(*took)
+            ))
+            .collect::<Vec<_>>()
+    );
+    let ratio = moved as f64 / stroke_pixels as f64;
+    assert!(
+        (0.8..=1.1).contains(&ratio),
+        "the list moved {moved} px for a {stroke_pixels} px stroke"
+    );
+}
+
+/// The runner's input measured, on a quiet host: 20 taps through its
+/// synthesis after 2 warm-up taps, alternating the Login and List tabs, each
+/// checked by a changed frame, as `input_series` checks `dtuhidd`'s; then the
+/// harness's 36 characters 20 times typed and 20 times set into
+/// `login-username`, each read back. Design D22 puts a tap's dispatch under
+/// 150 ms at p95, which the runner's synthesis misses (S10: 294 ms).
+#[test]
+#[ignore = "a measurement, run on a quiet host"]
+fn runner_input_series() {
+    let Some(udid) = common::gated("runner_input_series") else {
+        return;
+    };
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    on_the_list_with(
+        &driver,
+        &udid,
+        AttachOptions::new(common::runner()).input(InputPath::Runner),
+    );
+    std::thread::sleep(Duration::from_secs(2));
+    let quiet = common::quiet_host("runner_input_series", Duration::from_secs(90 * 60));
+    let before = common::load();
+    let stream = driver
+        .frames(&udid, &FrameOptions::default())
+        .expect("subscribed");
+    stream
+        .next(Duration::from_secs(3))
+        .expect("the first frame");
+    let mut acknowledged = Vec::new();
+    let mut changed = Vec::new();
+    let mut missed = 0;
+    for index in 0..22 {
+        settle(&stream);
+        let point = if index % 2 == 0 { LOGIN_TAB } else { LIST_TAB };
+        let requested = Instant::now();
+        let dispatch = driver.tap(&udid, point).expect("the tap is sent");
+        assert_eq!(dispatch.path, InputPath::Runner);
+        let frame = changed_after(&stream, requested, Duration::from_secs(2));
+        if index >= 2 {
+            acknowledged.push(milliseconds(dispatch.acknowledged));
+            match frame {
+                Some(frame) => {
+                    changed.push(milliseconds(
+                        frame.arrived.saturating_duration_since(requested),
+                    ));
+                }
+                None => {
+                    missed += 1;
+                    let read = snapshot(&driver, &udid);
+                    let selected: Vec<String> = ["tab-login", "tab-list"]
+                        .into_iter()
+                        .filter(|id| {
+                            read.windows
+                                .iter()
+                                .filter_map(|window| window.root.as_ref())
+                                .find_map(|root| find(root, id))
+                                .is_some_and(|node| {
+                                    node.flags.contains(protocol::snapshot::NodeFlags::SELECTED)
+                                })
+                        })
+                        .map(str::to_owned)
+                        .collect();
+                    eprintln!(
+                        "runner tap {index} at {point:?} showed no change within 2 s; \
+                         acknowledged in {:.1} ms; selected now {selected:?}",
+                        milliseconds(dispatch.acknowledged)
+                    );
+                }
+            }
+        }
+    }
+    drop(stream);
+    acknowledged.sort_by(f64::total_cmp);
+    changed.sort_by(f64::total_cmp);
+
+    on_the_focused_username(&driver, &udid);
+    let mut typed = Vec::new();
+    let mut set = Vec::new();
+    let mut whole = [0, 0];
+    for _ in 0..20 {
+        for (slot, mode) in [(0, TextMethod::KEYS), (1, TextMethod::DIRECT)] {
+            enter(&driver, &udid, "", Some(TextMethod::DIRECT));
+            let (method, took) = enter(&driver, &udid, TEXT_ENTRY, Some(mode));
+            assert_eq!(method, mode);
+            if value_of(&driver, &udid, "login-username").as_deref() == Some(TEXT_ENTRY) {
+                whole[slot] += 1;
+            }
+            if slot == 0 {
+                typed.push(milliseconds(took));
+            } else {
+                set.push(milliseconds(took));
+            }
+        }
+    }
+    enter(&driver, &udid, "", Some(TextMethod::DIRECT));
+    let after = common::load();
+    driver.release(&udid).expect("releases");
+    typed.sort_by(f64::total_cmp);
+    set.sort_by(f64::total_cmp);
+    eprintln!(
+        "runner taps: n={} acknowledged p50 {:.1} / p95 {:.1} ms (min {:.1}, max {:.1}); first \
+         changed frame p50 {:.0} / p95 {:.0} ms after the request; missed {missed}",
+        acknowledged.len(),
+        rank(&acknowledged, 50),
+        rank(&acknowledged, 95),
+        acknowledged[0],
+        acknowledged[acknowledged.len() - 1],
+        if changed.is_empty() {
+            0.0
+        } else {
+            rank(&changed, 50)
+        },
+        if changed.is_empty() {
+            0.0
+        } else {
+            rank(&changed, 95)
+        },
+    );
+    eprintln!(
+        "runner text, 36 characters: typed p50 {:.0} / p95 {:.0} ms, {} of 20 whole; set p50 \
+         {:.0} / p95 {:.0} ms, {} of 20 whole",
+        rank(&typed, 50),
+        rank(&typed, 95),
+        whole[0],
+        rank(&set, 50),
+        rank(&set, 95),
+        whole[1]
+    );
+    eprintln!(
+        "guard: {} checks over {:.0} s, relaxed {}; load before {before:?}, after {after:?}",
+        quiet.checks,
+        quiet.waited.as_secs_f64(),
+        quiet.relaxed
+    );
+    assert_eq!(missed, 0, "every tap reached the screen");
+    assert_eq!(whole, [20, 20], "every entry landed whole");
 }
