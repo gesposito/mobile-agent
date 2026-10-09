@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::readiness::Readiness;
 
@@ -575,4 +575,148 @@ impl Screen {
             f64::from(self.height) / self.scale,
         )
     }
+}
+
+/// How a frame subscription polls the device's screenshots (design D23).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameOptions {
+    /// At most this many captures a second over both connections, as the
+    /// Simulator's reads are capped; 0 captures back to back.
+    pub max_fps: u32,
+    /// The longer side of a delivered frame in pixels; 0 keeps the native
+    /// size. 1000 by default, as on the Simulator: 562x1000 on the SE.
+    pub max_dimension: u32,
+    /// The status bar's height in points, left out of the comparison;
+    /// `None` takes it from the device's screen.
+    pub status_bar: Option<f64>,
+}
+
+impl Default for FrameOptions {
+    fn default() -> FrameOptions {
+        FrameOptions {
+            max_fps: 30,
+            max_dimension: 1000,
+            status_bar: None,
+        }
+    }
+}
+
+/// The connection a capture came on: DVT's `takeScreenshot` or CoreDevice's
+/// `capturescreenshot`, polled side by side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Capture {
+    Dvt,
+    CoreDevice,
+}
+
+impl Capture {
+    /// Its index in [`FrameStats::captures`].
+    pub fn index(self) -> usize {
+        match self {
+            Capture::Dvt => 0,
+            Capture::CoreDevice => 1,
+        }
+    }
+}
+
+/// A frame: the first capture of a subscription, then each capture with a
+/// pixel below the status bar more than two levels from the frame before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Frame {
+    /// 1 for the first frame, then one more per frame.
+    pub sequence: u64,
+    /// When the capture that showed it was requested, and when it arrived:
+    /// the screen looked so at some moment between.
+    pub requested: Instant,
+    pub arrived: Instant,
+    /// The delivered size, the device's scaled to the long edge asked for.
+    pub width: u32,
+    pub height: u32,
+    /// A hash of the frame below the status bar: two frames delivered in a
+    /// row always differ in it.
+    pub hash: u64,
+    pub source: Capture,
+}
+
+/// Counters of a frame subscription.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FrameStats {
+    /// Captures taken on each connection, DVT's first.
+    pub captures: [u64; 2],
+    /// Captures whose PNG had the same bytes as the one before, skipped
+    /// before decoding.
+    pub identical: u64,
+    pub decoded: u64,
+    /// Decoded captures within the tolerance of the last frame: no change.
+    pub unchanged: u64,
+    /// Frames delivered: the first and each change.
+    pub delivered: u64,
+    /// Frames dropped because the consumer fell 16 behind; the oldest go.
+    pub dropped: u64,
+    /// Captures or decodes that failed, and the first failure.
+    pub failures: u64,
+    pub failure: Option<String>,
+    /// The rows at the top of a delivered frame left out as the status bar.
+    pub status_bar_rows: u32,
+    pub elapsed: Duration,
+}
+
+/// The encoding of a screenshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    /// Baseline JPEG, through the Simulator pipeline's encoder.
+    Jpeg,
+    /// PNG: at the native size the device's own bytes.
+    Png,
+}
+
+/// How to take a screenshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenshotOptions {
+    /// The longer side in pixels; 0 keeps the native size.
+    pub max_dimension: u32,
+    /// JPEG quality, 1 to 100.
+    pub quality: u8,
+    pub format: ImageFormat,
+}
+
+impl Default for ScreenshotOptions {
+    fn default() -> ScreenshotOptions {
+        ScreenshotOptions {
+            max_dimension: 0,
+            quality: 90,
+            format: ImageFormat::Jpeg,
+        }
+    }
+}
+
+/// The screen, captured on demand.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Screenshot {
+    pub width: u32,
+    pub height: u32,
+    pub format: ImageFormat,
+    pub data: Vec<u8>,
+    /// From the request until the image was ready.
+    pub elapsed: Duration,
+}
+
+/// A way to take the device's frames.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FramePath {
+    /// DVT's and CoreDevice's screenshots, polled on two connections.
+    Screenshots,
+    /// CoreDevice's display stream, which iOS 26.6.2 refuses (S11).
+    DisplayStream,
+    /// AVFoundation's capture of the device as a camera, behind the macOS
+    /// camera permission.
+    AvFoundation,
+}
+
+/// Whether a frame path serves the device, and why not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FramePathStatus {
+    pub path: FramePath,
+    pub active: bool,
+    pub reason: Option<String>,
 }

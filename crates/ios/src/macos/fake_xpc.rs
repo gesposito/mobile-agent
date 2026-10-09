@@ -24,6 +24,10 @@ use super::fake::FakeDevice;
 pub(crate) enum XpcService {
     HidUniversal,
     HidIndigo,
+    /// CoreDevice's screen capture, answering with the screen as a PNG.
+    ScreenCapture,
+    /// CoreDevice's display service, answering what media it supports.
+    Display,
 }
 
 /// What `dtuhidd` took.
@@ -139,6 +143,9 @@ pub(crate) async fn serve_xpc(device: Arc<FakeDevice>, stream: DuplexStream, ser
                     indigo(&device, &request);
                     None
                 }
+                XpcService::ScreenCapture | XpcService::Display => {
+                    core_device(&device, service, &request).await
+                }
             };
             if let Some(reply) = reply {
                 let bytes =
@@ -225,6 +232,44 @@ fn universal(device: &FakeDevice, request: &Value) -> Option<Dictionary> {
         device.remove_keyboard(id);
     }
     None
+}
+
+/// A CoreDevice invocation, answered in CoreDevice's output envelope.
+async fn core_device(
+    device: &FakeDevice,
+    service: XpcService,
+    request: &Value,
+) -> Option<Dictionary> {
+    let feature = request
+        .as_dictionary()?
+        .get("CoreDevice.featureIdentifier")?
+        .as_string()?;
+    let mut output = Dictionary::new();
+    match (service, feature) {
+        (XpcService::ScreenCapture, "com.apple.coredevice.feature.capturescreenshot") => {
+            output.insert("image".into(), Value::Data(device.capture(1).await));
+        }
+        (XpcService::Display, "com.apple.coredevice.feature.getmediasupportinfo") => {
+            let features = device.features();
+            output.insert(
+                "avcFrameworkVersion".into(),
+                Value::String("2215.5.1".into()),
+            );
+            output.insert("supportedFeatures".into(), Value::Integer(features.into()));
+            output.insert(
+                "supportedFeaturesDescription".into(),
+                Value::String(if features == 0 {
+                    "No supported features are available:  (Raw Value: 0)".into()
+                } else {
+                    format!("Raw Value: {features}")
+                }),
+            );
+        }
+        _ => return None,
+    }
+    let mut reply = Dictionary::new();
+    reply.insert("CoreDevice.output".into(), Value::Dictionary(output));
+    Some(reply)
 }
 
 /// An Indigo event.

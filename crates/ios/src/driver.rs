@@ -11,9 +11,11 @@ use std::time::Duration;
 use protocol::message::{Call, Reply};
 
 use crate::error::Result;
+use crate::frames::FrameStream;
 use crate::model::{
-    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, Installed, Key,
-    LaunchOptions, Launched, Point, Released, Swipe, TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, FrameOptions,
+    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screenshot,
+    ScreenshotOptions, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -112,4 +114,22 @@ pub trait Input {
     /// Keys typed one after another on a virtual keyboard the driver
     /// registers for them and removes afterwards.
     fn keys(&self, target: &str, keys: &[Key]) -> Result<Dispatch>;
+}
+
+/// Frames and screenshots from the host (spec `ios-device-driver`, "Frames
+/// and screenshots from the host"; design D23).
+pub trait Frames {
+    /// Subscribes to the screen: screenshots polled on DVT and CoreDevice
+    /// side by side, at most `options.max_fps` a second; the frame on
+    /// screen now, then one each time a capture shows a pixel below the
+    /// status bar more than two levels from the frame before. Nothing comes
+    /// while the screen is still.
+    fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream>;
+
+    /// The screen now, at the native size or scaled to a long edge.
+    fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot>;
+
+    /// Which way of taking frames serves the device, and why the others,
+    /// the display stream and AVFoundation's capture, do not.
+    fn frame_paths(&self, target: &str) -> Result<Vec<FramePathStatus>>;
 }

@@ -18,6 +18,7 @@ mod compat;
 mod discovery;
 mod driver;
 mod error;
+mod frames;
 mod identity;
 mod model;
 mod readiness;
@@ -37,8 +38,9 @@ pub use compat::{
     IDEVICE, VALIDATED_IOS, VALIDATED_XCODE, call_sites, hid_input, render as render_compatibility,
     supported_ios, supported_range,
 };
-pub use driver::{Devices, Input, Lifecycle, Session};
+pub use driver::{Devices, Frames, Input, Lifecycle, Session};
 pub use error::{Error, Result};
+pub use frames::{FrameStream, TOLERANCE, decode_png};
 pub use identity::{IdentityCheck, host_identity};
 pub use model::{
     ATTACH_TIMEOUT, AttachOptions, Attached, Button, Connected, Connection, DeviceInfo, DiskImage,
@@ -46,6 +48,10 @@ pub use model::{
     MountPath, MountReport, MuxEntry, Point, Probe, RUNNER_BUNDLE_ID, RUNNER_NAME, RUNNER_PORT,
     Release, Released, RunnerSpec, RunnerState, RunnerStatus, Screen, Swipe, TEAM_VARIABLE,
     TargetStatus, Terminated, Trust, TunnelStatus,
+};
+pub use model::{
+    Capture, Frame, FrameOptions, FramePath, FramePathStatus, FrameStats, ImageFormat, Screenshot,
+    ScreenshotOptions,
 };
 pub use readiness::{Need, Readiness};
 pub use services::{NEEDED, Needed};

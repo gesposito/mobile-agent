@@ -6,10 +6,15 @@ rust-version.workspace = true
 publish.workspace = true
 
 # The runner speaks the device protocol (`protocol`). `idevice`'s HID clients
-# come with its `display_stream` feature, though they open no stream.
+# come with its `display_stream` feature, though they open no stream. Frames
+# go through the Simulator pipeline's downscale, hashes and JPEG encoder
+# (`simulator`, with its dependency-free encoder so the crate builds without
+# libjpeg-turbo); the device's screenshots arrive as PNG (`png`).
 [dependencies]
 plist = "1.10.1"
+png = "0.18.1"
 protocol = { version = "0.1.0", path = "../protocol" }
+simulator = { version = "0.1.0", path = "../simulator", default-features = false, features = ["jpeg-encoder"] }
 
 [lints]
 workspace = true
@@ -19,4 +24,5 @@ idevice = { version = "=0.1.68", features = ["usbmuxd", "core_device_proxy", "tu
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "time", "sync", "macros", "io-util", "process"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
+libc = "0.2"
 ns-keyed-archive = "0.1.5"

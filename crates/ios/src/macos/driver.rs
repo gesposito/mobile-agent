@@ -24,12 +24,14 @@ use tokio::time::timeout;
 use crate::bundle;
 use crate::compat;
 use crate::discovery::{self, usb_entries};
-use crate::driver::{Devices, Input, Lifecycle, Session};
+use crate::driver::{Devices, Frames, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
+use crate::frames::FrameStream;
 use crate::model::{
-    AttachOptions, Attached, Button, Connected, DeviceInfo, DiskImage, Dispatch, InputPath,
-    Installed, Key, LaunchOptions, Launched, MountReport, MuxEntry, Point, Release, Released,
-    Screen, Swipe, TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, DiskImage, Dispatch, FrameOptions,
+    FramePathStatus, InputPath, Installed, Key, LaunchOptions, Launched, MountReport, MuxEntry,
+    Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
+    Terminated,
 };
 use crate::readiness::{self, Need, Readiness};
 use crate::touch;
@@ -101,6 +103,20 @@ impl Session for IosDriver {
 
     fn release(&self, target: &str) -> Result<Released> {
         self.core.release(target)
+    }
+}
+
+impl Frames for IosDriver {
+    fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
+        self.core.frames(target, options)
+    }
+
+    fn screenshot(&self, target: &str, options: &ScreenshotOptions) -> Result<Screenshot> {
+        self.core.screenshot(target, options)
+    }
+
+    fn frame_paths(&self, target: &str) -> Result<Vec<FramePathStatus>> {
+        self.core.frame_paths(target)
     }
 }
 
@@ -185,7 +201,7 @@ impl<H: Host> Target<H> {
     }
 
     /// The device's screen, read from lockdown once.
-    async fn screen(&mut self) -> Result<Screen> {
+    pub(crate) async fn screen(&mut self) -> Result<Screen> {
         if let Some(screen) = self.screen {
             return Ok(screen);
         }
@@ -209,28 +225,7 @@ impl<H: Host> Target<H> {
     async fn channel(&mut self, identifier: &'static str, limits: Limits) -> Result<&DvtChannel> {
         if !self.channels.get(identifier).is_some_and(DvtChannel::alive) {
             self.channels.remove(identifier);
-            let mut client: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
-            match timeout(limits.reply, client.read_message(0)).await {
-                Ok(Ok(_capabilities)) => {}
-                Ok(Err(error)) => {
-                    return Err(Error::Device {
-                        call: "DVT's capabilities".into(),
-                        reason: describe(&error),
-                    });
-                }
-                Err(_) => {
-                    return Err(Error::Timeout {
-                        what: "DVT's capabilities".into(),
-                        after: limits.reply,
-                    });
-                }
-            }
-            let channel = DvtChannel::open(client, identifier, limits.reply)
-                .await
-                .map_err(|reason| Error::Device {
-                    call: format!("opening DVT's {identifier}"),
-                    reason,
-                })?;
+            let channel = self.open_channel(identifier, limits).await?;
             self.channels.insert(identifier, channel);
         }
         Ok(self
@@ -239,11 +234,41 @@ impl<H: Host> Target<H> {
             .expect("the channel was just opened"))
     }
 
+    /// A new channel `identifier` on a DVT connection of its own, not kept.
+    pub(crate) async fn open_channel(
+        &mut self,
+        identifier: &'static str,
+        limits: Limits,
+    ) -> Result<DvtChannel> {
+        let mut client: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
+        match timeout(limits.reply, client.read_message(0)).await {
+            Ok(Ok(_capabilities)) => {}
+            Ok(Err(error)) => {
+                return Err(Error::Device {
+                    call: "DVT's capabilities".into(),
+                    reason: describe(&error),
+                });
+            }
+            Err(_) => {
+                return Err(Error::Timeout {
+                    what: "DVT's capabilities".into(),
+                    after: limits.reply,
+                });
+            }
+        }
+        DvtChannel::open(client, identifier, limits.reply)
+            .await
+            .map_err(|reason| Error::Device {
+                call: format!("opening DVT's {identifier}"),
+                reason,
+            })
+    }
+
     /// Sends `call` on the channel `identifier` and returns its reply. A
     /// call whose connection was gone before it was written goes again on a
     /// new one, once, through a tunnel opened again if it dropped; so does a
     /// `repeatable` call whose connection closed before its reply.
-    async fn call(
+    pub(crate) async fn call(
         &mut self,
         identifier: &'static str,
         call: dvt::Call,
@@ -921,6 +946,44 @@ impl<H: Host> Core<H> {
             state.tunnel.close().await;
         });
         Ok(())
+    }
+
+    /// Subscribes to `target`'s frames: screenshots polled on DVT and
+    /// CoreDevice.
+    pub(crate) fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
+        self.runtime.block_on(async {
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            let stream = state
+                .frames(options, self.limits, self.runtime.handle())
+                .await;
+            *lock(&slot.snapshot) = state.snapshot();
+            stream
+        })
+    }
+
+    /// `target`'s screen now.
+    pub(crate) fn screenshot(
+        &self,
+        target: &str,
+        options: &ScreenshotOptions,
+    ) -> Result<Screenshot> {
+        self.runtime.block_on(async {
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            let shot = state.screenshot(options, self.limits).await;
+            *lock(&slot.snapshot) = state.snapshot();
+            shot
+        })
+    }
+
+    /// Which frame path serves `target`, and why the others do not.
+    pub(crate) fn frame_paths(&self, target: &str) -> Result<Vec<FramePathStatus>> {
+        self.runtime.block_on(async {
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            state.frame_paths(self.limits).await
+        })
     }
 
     /// Delivers `gesture` to `target`: through `dtuhidd` where the device's

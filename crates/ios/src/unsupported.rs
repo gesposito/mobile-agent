@@ -7,11 +7,13 @@ use std::time::Duration;
 
 use protocol::message::{Call, Reply};
 
-use crate::driver::{Devices, Input, Lifecycle, Session};
+use crate::driver::{Devices, Frames, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
+use crate::frames::FrameStream;
 use crate::model::{
-    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, Installed, Key,
-    LaunchOptions, Launched, Point, Released, Swipe, TargetStatus, Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, FrameOptions,
+    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screenshot,
+    ScreenshotOptions, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
 
@@ -57,6 +59,20 @@ impl Session for IosDriver {
     }
 
     fn release(&self, _target: &str) -> Result<Released> {
+        match *self {}
+    }
+}
+
+impl Frames for IosDriver {
+    fn frames(&self, _target: &str, _options: &FrameOptions) -> Result<FrameStream> {
+        match *self {}
+    }
+
+    fn screenshot(&self, _target: &str, _options: &ScreenshotOptions) -> Result<Screenshot> {
+        match *self {}
+    }
+
+    fn frame_paths(&self, _target: &str) -> Result<Vec<FramePathStatus>> {
         match *self {}
     }
 }

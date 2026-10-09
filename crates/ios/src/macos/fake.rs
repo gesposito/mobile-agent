@@ -18,9 +18,11 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use idevice::dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader};
 
+use super::capture::{SCREENSHOT, TAKE_SCREENSHOT};
 use super::dvt::{
     DEVICE_INFO, IS_RUNNING_PID, LAUNCH, PROCESS_CONTROL, RUNNING_PROCESSES, SEND_SIGNAL,
 };
@@ -37,8 +39,11 @@ use super::host::Link;
 use super::image::Mounter;
 use super::tunnel::Opener;
 use crate::discovery::tests::recorded_images;
-use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT, Screen};
+use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT};
 use crate::services;
+
+/// CoreDevice's display service, asked whether it lists media features.
+const DISPLAY: &str = "com.apple.coredevice.displayservice";
 
 /// The fake runner's executable, as S10's runner names it.
 pub(crate) const RUNNER_EXECUTABLE: &str = "MobileAgentRunner-Runner";
@@ -121,6 +126,16 @@ struct LinkState {
     installs: Vec<PathBuf>,
 }
 
+/// The fake device's screen: the PNG captured, how long a capture takes,
+/// the captures each service took, and the display service's features.
+#[derive(Default)]
+struct Screen {
+    png: Vec<u8>,
+    delay: Duration,
+    captures: [u64; 2],
+    features: u64,
+}
+
 /// The runner on the fake device: the version installed, which its hello
 /// names, and the process serving its port.
 #[derive(Default)]
@@ -182,6 +197,8 @@ pub(crate) struct FakeDevice {
     pub(crate) runner_deaths: tokio::sync::watch::Sender<u64>,
     /// What `dtuhidd` took, in order.
     hid: Mutex<Vec<TimedHid>>,
+    /// The screen both screenshot services capture.
+    screen: Mutex<Screen>,
     /// The virtual keyboards registered, with what they were created with.
     keyboards: Mutex<Vec<(u64, Dictionary)>>,
 }
@@ -239,7 +256,47 @@ impl FakeDevice {
             runner_deaths: tokio::sync::watch::Sender::new(0),
             hid: Mutex::new(Vec::new()),
             keyboards: Mutex::new(Vec::new()),
+            screen: Mutex::new(Screen::default()),
         })
+    }
+
+    fn screen(&self) -> MutexGuard<'_, Screen> {
+        self.screen
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Shows `png` on the screen: what the next captures return.
+    pub(crate) fn show(&self, png: Vec<u8>) {
+        self.screen().png = png;
+    }
+
+    /// Makes every capture take `delay`, as the phone's took 42 to 130 ms.
+    pub(crate) fn capture_delay(&self, delay: Duration) {
+        self.screen().delay = delay;
+    }
+
+    /// Makes the display service list `features` (0 on iOS 26.6.2).
+    pub(crate) fn media_features(&self, features: u64) {
+        self.screen().features = features;
+    }
+
+    /// A capture of the screen on `service`, after the capture delay.
+    pub(crate) async fn capture(&self, service: usize) -> Vec<u8> {
+        let delay = self.screen().delay;
+        tokio::time::sleep(delay).await;
+        let mut screen = self.screen();
+        screen.captures[service] += 1;
+        screen.png.clone()
+    }
+
+    /// Captures taken so far: DVT's, then CoreDevice's.
+    pub(crate) fn captures(&self) -> [u64; 2] {
+        self.screen().captures
+    }
+
+    pub(crate) fn features(&self) -> u64 {
+        self.screen().features
     }
 
     pub(crate) fn record_hid(&self, event: HidEvent) {
@@ -516,6 +573,10 @@ impl FakeDevice {
                 // and dropped its connections (S9).
                 _ => return Err(()),
             },
+            (SCREENSHOT, TAKE_SCREENSHOT) => {
+                // The capture itself is served by `serve_dvt`, after its delay.
+                return Ok(Some(Reply::Screenshot));
+            }
             (DEVICE_INFO, RUNNING_PROCESSES) => Reply::Data(Some(Value::Array(
                 dvt.processes.iter().map(process_value).collect(),
             ))),
@@ -677,6 +738,8 @@ enum Reply {
     Data(Option<Value>),
     /// An archive written as it is, such as an `NSError`.
     Raw(Vec<u8>),
+    /// The screen, captured after the capture delay.
+    Screenshot,
 }
 
 fn pid_value(pid: u32) -> Value {
@@ -822,8 +885,15 @@ pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
                 Err(()) => return,
             }
         };
+        let reply = match reply {
+            Some(Reply::Screenshot) => {
+                Some(Reply::Data(Some(Value::Data(device.capture(0).await))))
+            }
+            other => other,
+        };
         let archived = match reply {
             None => continue,
+            Some(Reply::Screenshot) => unreachable!("captured above"),
             Some(Reply::Data(None)) => Vec::new(),
             Some(Reply::Data(Some(data))) => {
                 ns_keyed_archive::encode::encode_to_bytes(data).expect("the reply archives")
@@ -945,6 +1015,14 @@ impl RsdProvider for FakeProvider {
                 None if Some(port) == self.device.port(services::HID_INDIGO) => Box::pin(
                     serve_xpc(Arc::clone(&self.device), server, XpcService::HidIndigo),
                 ),
+                None if Some(port) == self.device.port(services::SCREEN_CAPTURE) => Box::pin(
+                    serve_xpc(Arc::clone(&self.device), server, XpcService::ScreenCapture),
+                ),
+                None if Some(port) == self.device.port(DISPLAY) => Box::pin(serve_xpc(
+                    Arc::clone(&self.device),
+                    server,
+                    XpcService::Display,
+                )),
                 None => Box::pin(drain(server)),
             }
         };
@@ -1108,9 +1186,9 @@ impl Link for FakeLink {
         Ok(self.device.dvt().apps.contains_key(bundle_id))
     }
 
-    async fn screen(&self) -> std::result::Result<Screen, String> {
+    async fn screen(&self) -> std::result::Result<crate::model::Screen, String> {
         // The iPhone SE (3rd generation)'s, as lockdown gave them.
-        Ok(Screen {
+        Ok(crate::model::Screen {
             width: 750,
             height: 1334,
             scale: 2.0,
