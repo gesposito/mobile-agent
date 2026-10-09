@@ -95,14 +95,20 @@ pub(crate) fn running_processes() -> Call {
 /// takes 480 to 710 ms on the iPhone SE (3rd generation) with about 580
 /// processes.
 pub(crate) fn is_running_pid(pid: u32) -> Call {
-    let _ = pid;
-    todo!()
+    Call {
+        selector: IS_RUNNING_PID,
+        args: vec![AuxValue::archived_value(Value::Integer(
+            i64::from(pid).into(),
+        ))],
+    }
 }
 
 /// What an `isRunningPid:` reply says.
 pub(crate) fn running_reply(reply: &Message) -> Result<bool, String> {
-    let _ = reply;
-    todo!()
+    match &reply.data {
+        Some(Value::Boolean(running)) => Ok(*running),
+        other => Err(format!("the reply carried {other:?}, not a yes or no")),
+    }
 }
 
 /// A process in DVT's list.

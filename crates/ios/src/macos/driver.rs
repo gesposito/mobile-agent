@@ -241,26 +241,32 @@ impl<O: Opener, L: Link> Target<O, L> {
             )
             .await?;
         }
+        // Each pid is asked after, a small reply, where the whole list
+        // takes 480 to 710 ms on the phone.
         let deadline = Instant::now() + TERMINATE_WAIT;
-        while !pids.is_empty() {
-            let left: Vec<u32> = self
-                .pids(bundle_id, limits)
-                .await?
-                .into_iter()
-                .filter(|pid| pids.contains(pid))
-                .collect();
-            if left.is_empty() {
-                break;
+        for pid in &pids {
+            while self.is_running(*pid, limits).await? {
+                if Instant::now() >= deadline {
+                    return Err(Error::Timeout {
+                        what: format!("the end of {bundle_id}'s process {pid}"),
+                        after: TERMINATE_WAIT,
+                    });
+                }
+                tokio::time::sleep(TERMINATE_POLL).await;
             }
-            if Instant::now() >= deadline {
-                return Err(Error::Timeout {
-                    what: format!("the end of {bundle_id}'s processes {left:?}"),
-                    after: TERMINATE_WAIT,
-                });
-            }
-            tokio::time::sleep(TERMINATE_POLL).await;
         }
         Ok(pids)
+    }
+
+    /// Whether the process `pid` runs, through DVT's `isRunningPid:`.
+    async fn is_running(&mut self, pid: u32, limits: Limits) -> Result<bool> {
+        let reply = self
+            .call(dvt::DEVICE_INFO, dvt::is_running_pid(pid), true, limits)
+            .await?;
+        dvt::running_reply(&reply).map_err(|reason| Error::Device {
+            call: "DVT's isRunningPid:".into(),
+            reason,
+        })
     }
 }
 
@@ -1205,10 +1211,11 @@ mod tests {
             .launch(PHONE, SWIFTUI, &LaunchOptions::new())
             .expect("launches");
         let terminated = core.terminate(PHONE, SWIFTUI).expect("terminates");
+        // What terminate asked, before the checks below ask anything more.
+        let calls = core.host.device.dvt_calls();
         assert_eq!(terminated.pids, vec![launched.pid]);
         assert!(core.host.device.running(SWIFTUI).is_empty());
         assert_eq!(core.running(PHONE, SWIFTUI).expect("running"), None);
-        let calls = core.host.device.dvt_calls();
         let signalled = calls
             .iter()
             .position(|call| call.selector == SEND_SIGNAL)
