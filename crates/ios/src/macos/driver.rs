@@ -498,6 +498,13 @@ pub(crate) struct Slot<H: Host> {
     /// The runner's session, from `attach` until `release`, outside the
     /// target's lock so that a call to the runner leaves the lock free.
     runner: Mutex<Option<Arc<RunnerSession>>>,
+    /// usbmuxd's number for the device when the slot was made: what its
+    /// tunnel, link and test manager reach. A replugged device comes back
+    /// under another, and those fail with "bad device".
+    device_id: u32,
+    /// Set when the device dropped: the next command reads usbmuxd's
+    /// listing again before it uses the slot.
+    stale: std::sync::atomic::AtomicBool,
 }
 
 impl<H: Host> Slot<H> {
@@ -679,12 +686,12 @@ impl<H: Host> Core<H> {
     }
 
     /// The state of `target`, connecting it first when the driver holds
-    /// none for it.
+    /// none for it, or holds one its device dropped from.
     async fn connected(&self, target: &str) -> Result<Arc<Slot<H>>> {
         let held = lock(&self.targets).get(target).cloned();
         match held {
-            Some(slot) => Ok(slot),
-            None => Ok(self.connect_target(target).await?.0),
+            Some(slot) if !slot.stale.load(std::sync::atomic::Ordering::SeqCst) => Ok(slot),
+            _ => Ok(self.connect_target(target).await?.0),
         }
     }
 
@@ -1064,6 +1071,13 @@ impl<H: Host> Core<H> {
         Err(error)
     }
 
+    /// Marks `target`'s slot as one its device dropped from.
+    fn mark_stale(&self, target: &str) {
+        if let Some(slot) = lock(&self.targets).get(target) {
+            slot.stale.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
     /// Why `target` dropped: gone from usbmuxd's listing; back without the
     /// disk image, or refusing lockdown until its first unlock, as after a
     /// restart; locked; or lost while it stays ready. One probe, about
@@ -1105,12 +1119,27 @@ impl<H: Host> Core<H> {
         state.hid.close();
         state.tunnel.close().await;
         *lock(&slot.snapshot) = state.snapshot();
+        drop(state);
+        self.mark_stale(target);
     }
 
     /// The state the driver keeps for the device of `entry`, made on first
-    /// use.
+    /// use, and made anew when usbmuxd lists the device under another
+    /// number than the slot was made for: it was replugged, and what the old
+    /// slot reaches answers "bad device". The old slot's runner session ends.
     fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H>> {
         let mut targets = lock(&self.targets);
+        if let Some(held) = targets.get(&entry.udid) {
+            if held.device_id == entry.device_id {
+                held.stale.store(false, std::sync::atomic::Ordering::SeqCst);
+                return Arc::clone(held);
+            }
+            if let Some(session) = held.runner() {
+                // The supervisor ends at the signal on its own thread.
+                drop(session.stop());
+            }
+            targets.remove(&entry.udid);
+        }
         let slot = targets.entry(entry.udid.clone()).or_insert_with(|| {
             Arc::new(Slot {
                 state: tokio::sync::Mutex::new(Target {
@@ -1126,6 +1155,8 @@ impl<H: Host> Core<H> {
                 }),
                 snapshot: Mutex::new(TargetStatus::default()),
                 runner: Mutex::new(None),
+                device_id: entry.device_id,
+                stale: std::sync::atomic::AtomicBool::new(false),
             })
         });
         Arc::clone(slot)
@@ -1304,13 +1335,19 @@ pub(crate) mod tests {
                 .listing
                 .clone()
                 .map_err(|reason| Error::Usbmuxd { reason })?;
-            // A phone that is away leaves the listing.
+            // A phone that is away leaves the listing, and comes back under
+            // a new number.
             listing.retain(|entry| entry.udid != PHONE || !self.device.gone());
-            for (index, other) in self.others.iter().enumerate() {
+            for entry in &mut listing {
+                if entry.udid == PHONE && entry.connection == Connection::Usb {
+                    entry.device_id = self.device.usb_id();
+                }
+            }
+            for other in &self.others {
                 if !other.device.gone() {
                     listing.push(MuxEntry {
                         udid: other.udid.clone(),
-                        device_id: 10 + index as u32,
+                        device_id: other.device.usb_id(),
                         connection: Connection::Usb,
                     });
                 }
@@ -1350,7 +1387,7 @@ pub(crate) mod tests {
         }
 
         fn opener(&self, entry: &MuxEntry) -> FakeOpener {
-            FakeOpener::new(self.device_of(&entry.udid))
+            FakeOpener::for_entry(self.device_of(&entry.udid), entry.device_id)
         }
 
         fn mounter(&self, _entry: &MuxEntry, _device: &DeviceInfo) -> FakeMounter {
@@ -1358,17 +1395,15 @@ pub(crate) mod tests {
         }
 
         fn link(&self, entry: &MuxEntry) -> FakeLink {
-            FakeLink::new(self.device_of(&entry.udid))
+            FakeLink::for_entry(self.device_of(&entry.udid), entry.device_id)
         }
 
         fn test_manager(&self, entry: &MuxEntry) -> FakeTestManager {
             self.others
                 .iter()
                 .find(|other| other.udid == entry.udid)
-                .map_or_else(
-                    || self.test_manager.clone(),
-                    |other| other.test_manager.clone(),
-                )
+                .map_or(&self.test_manager, |other| &other.test_manager)
+                .for_entry(entry.device_id)
         }
     }
 

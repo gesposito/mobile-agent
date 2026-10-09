@@ -157,6 +157,20 @@ fn a_replugged_phone_attaches_again_and_starts_over() {
 }
 
 #[test]
+fn a_replugged_phone_takes_commands_again_under_its_new_usbmuxd_number() {
+    let core = core(two_phones());
+    tap(&core, PHONE).expect("taps");
+    let first = core.host.device.usb_id();
+    core.host.device.unplug();
+    tap(&core, PHONE).expect_err("unplugged");
+    core.host.device.plug_in();
+    assert_ne!(core.host.device.usb_id(), first, "usbmuxd numbers it anew");
+    tap(&core, PHONE).expect("input again, through a new tunnel, without an attach");
+    core.attach(PHONE, &options())
+        .expect("and the runner attaches under the new number");
+}
+
+#[test]
 fn a_locked_phone_fails_input_as_locked_and_keeps_its_connections() {
     let core = core(two_phones());
     core.attach(PHONE, &options()).expect("attaches");

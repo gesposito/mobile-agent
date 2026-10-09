@@ -61,6 +61,8 @@ pub(crate) struct FakeTestManager {
     device: Arc<FakeDevice>,
     script: Arc<Mutex<Script>>,
     aborted: Arc<AtomicU32>,
+    /// The usbmuxd number it was made for, when it was made for an entry.
+    usb_id: Option<u32>,
 }
 
 impl FakeTestManager {
@@ -69,6 +71,15 @@ impl FakeTestManager {
             device: Arc::clone(device),
             script: Arc::new(Mutex::new(Script::default())),
             aborted: Arc::new(AtomicU32::new(0)),
+            usb_id: None,
+        }
+    }
+
+    /// The same test manager, for the device as usbmuxd numbered it.
+    pub(crate) fn for_entry(&self, usb_id: u32) -> FakeTestManager {
+        FakeTestManager {
+            usb_id: Some(usb_id),
+            ..self.clone()
         }
     }
 
@@ -113,6 +124,9 @@ impl TestManager for FakeTestManager {
         target_app: Option<&str>,
         log: Arc<SessionLog>,
     ) -> std::result::Result<XcTask, StartError> {
+        self.device
+            .check_usb_id(self.usb_id)
+            .map_err(|error| StartError::Failed(format!("lockdown: {error}")))?;
         self.script()
             .started
             .push((runner.to_owned(), target_app.map(str::to_owned)));

@@ -63,6 +63,9 @@ struct State {
     /// as jktcp's does once its adapter is gone.
     generation: u32,
     gone: bool,
+    /// usbmuxd's number for the device after its first plug: 1, then one
+    /// more at every replug, as usbmuxd numbers a device anew.
+    replugs: u32,
     rsd_silent: bool,
     opens: u32,
     closed: u32,
@@ -677,9 +680,27 @@ impl FakeDevice {
         self.generations.send_replace(state.generation);
     }
 
-    /// Brings the device back.
+    /// Brings the device back, under a new usbmuxd number.
     pub(crate) fn plug_in(&self) {
-        self.state().gone = false;
+        let mut state = self.state();
+        if state.gone {
+            state.replugs += 1;
+        }
+        state.gone = false;
+    }
+
+    /// usbmuxd's number for the device now.
+    pub(crate) fn usb_id(&self) -> u32 {
+        1 + self.state().replugs
+    }
+
+    /// Fails as usbmuxd does a connection to a device number it no longer
+    /// lists, when `usb_id` is not the device's now.
+    pub(crate) fn check_usb_id(&self, usb_id: Option<u32>) -> std::result::Result<(), String> {
+        match usb_id {
+            Some(id) if id != self.usb_id() => Err("bad device".into()),
+            _ => Ok(()),
+        }
     }
 
     /// Makes RSD accept connections and never answer them.
@@ -937,12 +958,23 @@ pub(crate) async fn drain(mut stream: DuplexStream) {
 /// Opens fake tunnels to a [`FakeDevice`].
 pub(crate) struct FakeOpener {
     device: Arc<FakeDevice>,
+    /// The usbmuxd number it was made for, when it was made for an entry.
+    usb_id: Option<u32>,
 }
 
 impl FakeOpener {
     pub(crate) fn new(device: &Arc<FakeDevice>) -> FakeOpener {
         FakeOpener {
             device: Arc::clone(device),
+            usb_id: None,
+        }
+    }
+
+    /// An opener for the device as usbmuxd numbered it, `usb_id`.
+    pub(crate) fn for_entry(device: &Arc<FakeDevice>, usb_id: u32) -> FakeOpener {
+        FakeOpener {
+            device: Arc::clone(device),
+            usb_id: Some(usb_id),
         }
     }
 }
@@ -951,6 +983,9 @@ impl Opener for FakeOpener {
     type Provider = FakeProvider;
 
     async fn open(&self) -> std::result::Result<(FakeProvider, u16), String> {
+        self.device
+            .check_usb_id(self.usb_id)
+            .map_err(|error| format!("CoreDeviceProxy: {error}"))?;
         let mut state = self.device.state();
         if state.gone {
             return Err("CoreDeviceProxy: the device is not in usbmuxd's listing".into());
@@ -1168,18 +1203,22 @@ impl Mounter for FakeMounter {
 /// proxy.
 pub(crate) struct FakeLink {
     device: Arc<FakeDevice>,
+    usb_id: Option<u32>,
 }
 
 impl FakeLink {
-    pub(crate) fn new(device: &Arc<FakeDevice>) -> FakeLink {
+    /// A link to the device as usbmuxd numbered it, `usb_id`.
+    pub(crate) fn for_entry(device: &Arc<FakeDevice>, usb_id: u32) -> FakeLink {
         FakeLink {
             device: Arc::clone(device),
+            usb_id: Some(usb_id),
         }
     }
 }
 
 impl Link for FakeLink {
     async fn password_protected(&self) -> std::result::Result<bool, String> {
+        self.device.check_usb_id(self.usb_id)?;
         let mut link = self.device.link();
         link.lock_reads += 1;
         Ok(link.locked)
@@ -1222,6 +1261,9 @@ impl Link for FakeLink {
     }
 
     async fn connect(&self, port: u16) -> std::result::Result<Box<dyn ReadWrite>, String> {
+        self.device
+            .check_usb_id(self.usb_id)
+            .map_err(|error| format!("usbmuxd's Connect to port {port}: {error}"))?;
         if self.device.state().gone {
             return Err(format!(
                 "usbmuxd's Connect to port {port}: the device is not in usbmuxd's listing"
