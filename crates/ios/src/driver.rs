@@ -14,7 +14,7 @@ use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
     AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, FrameOptions,
-    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screenshot,
+    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screen, Screenshot,
     ScreenshotOptions, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
@@ -42,6 +42,11 @@ pub trait Devices {
     /// What the driver holds for `target`: its tunnel and the disk image as
     /// the last `connect` found it; nothing before a `connect`.
     fn status(&self, target: &str) -> Result<TargetStatus>;
+
+    /// The screen of `target` as lockdown's `com.apple.mobile.iTunes` domain
+    /// reports it, its pixels and the scale from points to pixels, read once
+    /// per connection: what puts the runner's tree, in pixels, into points.
+    fn screen(&self, target: &str) -> Result<Screen>;
 }
 
 /// Installs, launches and terminates apps and tells whether they run (spec

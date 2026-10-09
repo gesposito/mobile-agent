@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
     AttachOptions, Attached, Button, Connected, DeviceInfo, Dispatch, FrameOptions,
-    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screenshot,
+    FramePathStatus, Installed, Key, LaunchOptions, Launched, Point, Released, Screen, Screenshot,
     ScreenshotOptions, Swipe, TargetStatus, Terminated,
 };
 use crate::readiness::Need;
@@ -45,6 +45,10 @@ impl Devices for IosDriver {
     }
 
     fn status(&self, _target: &str) -> Result<TargetStatus> {
+        match *self {}
+    }
+
+    fn screen(&self, _target: &str) -> Result<Screen> {
         match *self {}
     }
 }

@@ -91,6 +91,10 @@ impl Devices for IosDriver {
     fn status(&self, target: &str) -> Result<TargetStatus> {
         self.core.status(target)
     }
+
+    fn screen(&self, target: &str) -> Result<Screen> {
+        self.core.screen(target)
+    }
 }
 
 impl Session for IosDriver {
@@ -998,6 +1002,15 @@ impl<H: Host> Core<H> {
         })
     }
 
+    /// `target`'s screen, read from lockdown once per connection.
+    pub(crate) fn screen(&self, target: &str) -> Result<Screen> {
+        self.contained(target, async {
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            state.screen().await
+        })
+    }
+
     /// Which frame path serves `target`, and why the others do not.
     pub(crate) fn frame_paths(&self, target: &str) -> Result<Vec<FramePathStatus>> {
         self.contained(target, async {
@@ -1577,6 +1590,24 @@ pub(crate) mod tests {
             let error = core.require(target, Need::Trust).expect_err(target);
             assert_eq!(error.code(), "not_found", "{target}: {error}");
         }
+    }
+
+    /// Task 5.1: the screen is the device's pixels and scale as lockdown
+    /// gives them, which put the runner's tree, in pixels, into points: 750
+    /// by 1334 pixels at a scale of 2 on the SE, 375 by 667 points.
+    #[test]
+    fn the_screen_is_the_devices_pixels_and_scale_from_lockdown() {
+        let core = core(FakeHost::ready());
+        let screen = core.screen(PHONE).expect("the screen");
+        assert_eq!(
+            (screen.width, screen.height, screen.scale),
+            (750, 1334, 2.0)
+        );
+        assert_eq!(screen.points(), (375.0, 667.0));
+        let unknown = core
+            .screen("placeholder-udid-other")
+            .expect_err("no such device");
+        assert_eq!(unknown.code(), "not_found", "{unknown}");
     }
 
     #[test]

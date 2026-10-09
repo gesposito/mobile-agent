@@ -107,6 +107,7 @@ contract (`crates/daemon/src/driver.rs`) and the mirror's backend
 | `AppControl::launch` | `Lifecycle::launch`, `relaunch` as `terminate_running` |
 | `AppControl::terminate` | `Lifecycle::terminate` |
 | `Report::report` | `Devices::status`: the tunnel, the disk image, the connections open and `runner` (state, agent, restarts, handshake retries, leftovers ended, start time) |
+| `Attachment::display`, `TreeRead::scale` | `Devices::screen`: lockdown's pixels and scale (750 by 1334 at 2 on the SE), read once per connection |
 | `Driver::compatibility` | `ios::call_sites` and the supported range |
 | `TreeSource::read` | `Session::call` with `Call::Snapshot`; the runner's reply is the protocol's snapshot (group 4) |
 | `InputSink::perform`: `Input::Tap` | `Input::tap`, or `Input::press` with its hold |
