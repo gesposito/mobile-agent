@@ -80,14 +80,19 @@ pub(crate) enum Frames {
     None,
     /// A stream, as an emulator's controller or a Simulator's display.
     Stream,
-    /// Screenshots polled at a physical iPhone's rate (design D23).
-    Screenshots,
+    /// Screenshots polled at a physical iPhone's rate (design D23), or,
+    /// unless `subscribed`, a phone whose screenshots could not be
+    /// subscribed to, which has no frame source.
+    Screenshots { subscribed: bool },
 }
 
 impl Frames {
     /// Whether the target has a frame source.
     fn any(self) -> bool {
-        self != Frames::None
+        matches!(
+            self,
+            Frames::Stream | Frames::Screenshots { subscribed: true }
+        )
     }
 }
 
@@ -485,7 +490,7 @@ pub(crate) fn attach(
     typing: Typing,
     keyboard: bool,
 ) -> Attachment {
-    let polled = frames == Frames::Screenshots;
+    let polled = matches!(frames, Frames::Screenshots { .. });
     let frames = frames.any();
     let Timing {
         latency,
@@ -718,6 +723,7 @@ impl AppControl for Part {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mirror::SlowFrames;
 
     /// Task 10.23: text whose method the target may choose is typed key by
     /// key in a field's place under a typing mode that types keys, up to the
@@ -839,6 +845,73 @@ mod tests {
             Some(Duration::ZERO),
             "the first input of the session, which waited no time"
         );
+    }
+
+    /// Physical-ios, task 5.2 (design D23): a fake iPhone's frames are
+    /// screenshots polled at the device's rate, about 19 a second, so the
+    /// Anim tab's spinner, which a Simulator's stream shows 60 times a
+    /// second, shows in frames a capture interval apart; its attachment
+    /// sets the mirror for slow frames, and its windows send no change
+    /// events.
+    #[test]
+    fn a_fake_iphones_frames_come_at_the_devices_rate() {
+        let anim = Launch {
+            relaunch: false,
+            env: vec![("FIXTURE_INITIAL_TAB".into(), "anim".into())],
+        };
+        let polled = Frames::Screenshots { subscribed: true };
+        let mut phone = attach(
+            Platform::Ios,
+            polled,
+            Timing::default(),
+            false,
+            Typing::Whole,
+            false,
+        );
+        assert_eq!(
+            phone.config.slow_frames,
+            Some(SlowFrames::every(device::CAPTURE_INTERVAL))
+        );
+        phone.apps.launch(app::FIXTURE, &anim).unwrap();
+        let frames = frames_within(&mut phone, Duration::from_millis(600));
+        assert!(
+            (5..=13).contains(&frames.len()),
+            "{} frames in 600 ms: {frames:?}",
+            frames.len()
+        );
+        for pair in frames.windows(2) {
+            let apart = pair[1].at - pair[0].at;
+            assert!(
+                apart + Duration::from_millis(5) >= device::CAPTURE_INTERVAL,
+                "frames {apart:?} apart: {frames:?}"
+            );
+        }
+        let request = ReadRequest {
+            windows: None,
+            reason: mirror::backend::ReadReason::Attach,
+        };
+        let read = phone.backend.tree.read(&request).unwrap();
+        assert!(
+            read.snapshot
+                .windows
+                .iter()
+                .all(|window| window.emits_events == Some(false)),
+            "{:?}",
+            read.snapshot.windows
+        );
+
+        let mut simulator = attach(
+            Platform::Ios,
+            Frames::Stream,
+            Timing::default(),
+            false,
+            Typing::Whole,
+            false,
+        );
+        assert_eq!(simulator.config.slow_frames, None);
+        simulator.apps.launch(app::FIXTURE, &anim).unwrap();
+        let streamed = frames_within(&mut simulator, Duration::from_millis(600));
+        assert!(streamed.len() > 20, "{} frames", streamed.len());
     }
 
     /// Task 8.13: a frame stream that starts after the attach, as an

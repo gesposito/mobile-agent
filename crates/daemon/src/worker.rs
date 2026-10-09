@@ -340,8 +340,12 @@ fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::driver::Launch;
     use crate::fake::FakeDriver;
-    use mirror::{Action, SnapshotOptions, Target};
+    use mirror::{
+        Action, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, RefreshMode, SettleOptions,
+        SnapshotOptions, Target,
+    };
 
     /// The first fake target `spec` names, attached, showing each change
     /// `latency` after its cause.
@@ -473,6 +477,155 @@ mod tests {
         );
         worker.signal_stop();
         worker.join(Instant::now() + Duration::from_secs(2));
+    }
+
+    /// Taps the element `id` names on `target`'s screen, as an interactive
+    /// snapshot lists it.
+    fn tap(target: &mut Attached, id: &str) {
+        let snapshot = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let reference = ref_of(&snapshot, id);
+        target
+            .mirror
+            .act(&Action::Tap {
+                target: Target::Ref(reference),
+                hold: None,
+            })
+            .unwrap();
+    }
+
+    /// Physical-ios, task 5.2 (design D23): on a fake iPhone, whose frames
+    /// are screenshots at the device's rate, the re-read a tap calls for
+    /// waits for the tap's first changed frame, so a snapshot right after
+    /// the tap shows what the tap did, with no frame-driven re-read to wait
+    /// for; on a fake Simulator, whose frames are a stream, the tap's
+    /// re-read runs at once, before the app has changed.
+    #[test]
+    fn on_a_fake_iphone_a_snapshot_right_after_a_tap_shows_what_the_tap_did() {
+        for (spec, opened) in [("ios-device", true), ("ios", false)] {
+            let mut target = attached(spec, Duration::from_millis(120));
+            tap(&mut target, "launcher-fixture");
+            let after = target
+                .mirror
+                .snapshot(&SnapshotOptions::interactive())
+                .unwrap();
+            assert_eq!(
+                after.text.contains("id=tab-login"),
+                opened,
+                "{spec}:\n{}",
+                after.text
+            );
+        }
+    }
+
+    /// Physical-ios, task 5.2: a fake iPhone's windows send no change
+    /// events, so the mirror re-reads them as it re-reads a Simulator's: on
+    /// its poll while the screen is still, and when frames change no sooner
+    /// than its minimum interval after the last read.
+    #[test]
+    fn a_fake_iphones_windows_are_re_read_on_the_poll_and_on_frame_changes() {
+        let mut target = attached("ios-device", Duration::ZERO);
+        let launcher = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(
+            launcher
+                .windows
+                .iter()
+                .all(|window| window.source.mode == RefreshMode::Reread),
+            "{:?}",
+            launcher.windows
+        );
+        let read = target.mirror.timestamps().last_read.unwrap();
+        assert_eq!(
+            target.mirror.next_wakeup(),
+            Some(read.started + DEFAULT_POLL_INTERVAL),
+            "a still screen is read again on the poll"
+        );
+        // The Anim tab's spinner keeps the frames changing.
+        let anim = Launch {
+            relaunch: false,
+            env: vec![("FIXTURE_INITIAL_TAB".into(), "anim".into())],
+        };
+        target
+            .apps
+            .launch("dev.mobileagent.fixture.expo", &anim)
+            .unwrap();
+        target.mirror.note_window_change();
+        target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let read = target.mirror.timestamps().last_read.unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        target.mirror.drain();
+        assert!(
+            target
+                .mirror
+                .timestamps()
+                .last_frame_change
+                .is_some_and(|at| at > read.started),
+            "the spinner changed the frames"
+        );
+        assert_eq!(
+            target.mirror.next_wakeup(),
+            Some(read.finished + DEFAULT_MIN_REREAD_INTERVAL),
+            "changed frames call for a read the minimum interval after the last"
+        );
+    }
+
+    /// Physical-ios, task 5.2 (design D23): settle on a fake iPhone after a
+    /// tap whose effect shows later than the quiet window holds for the
+    /// tap's first changed frame and counts it, where a fake Simulator,
+    /// whose frames are a stream, settles a quiet window after the tap,
+    /// before the change.
+    #[test]
+    fn settle_on_a_fake_iphone_holds_for_the_first_changed_frame_after_a_tap() {
+        for (spec, counted) in [("ios-device", true), ("ios", false)] {
+            let mut target = attached(spec, Duration::from_millis(300));
+            tap(&mut target, "launcher-fixture");
+            let settle = target.mirror.settle(&SettleOptions::default()).unwrap();
+            assert!(settle.settled, "{spec}: {settle:?}");
+            assert_eq!(settle.frame_changes > 0, counted, "{spec}: {settle:?}");
+        }
+    }
+
+    /// Physical-ios, task 5.2 (design D23, "without any frames"): a fake
+    /// iPhone whose screenshots could not be subscribed to settles on the
+    /// probe-less re-read path for windows without events: re-read every
+    /// minimum interval while waiting, a re-read finding the tap's change.
+    #[test]
+    fn settle_on_a_fake_iphone_without_frames_re_reads_every_minimum_interval() {
+        let driver = FakeDriver::parse("ios-device")
+            .unwrap()
+            .with_latency(Duration::from_millis(150))
+            .with_device_frames(false);
+        let info = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        assert!(attachment.backend.frames.is_none());
+        assert!(attachment.config.slow_frames.is_some());
+        let mut target = Attached::new(&info, attachment, &Arc::default());
+        tap(&mut target, "launcher-fixture");
+        let tapped = Instant::now();
+        let settle = target.mirror.settle(&SettleOptions::default()).unwrap();
+        assert!(settle.settled, "{settle:?}");
+        assert!(
+            settle.tree_changes > 0,
+            "a re-read found the change: {settle:?}"
+        );
+        let read = target.mirror.timestamps().last_read.unwrap();
+        assert!(
+            read.started >= tapped + DEFAULT_MIN_REREAD_INTERVAL - Duration::from_millis(20),
+            "the change showed in a re-read a minimum interval after the tap's"
+        );
+        let after = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(after.text.contains("id=tab-login"), "{}", after.text);
     }
 
     #[test]

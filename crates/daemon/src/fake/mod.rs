@@ -153,6 +153,8 @@ pub struct FakeDriver {
     typing: Typing,
     /// Whether the keyboard stays up over every fixture screen.
     keyboard: bool,
+    /// Whether fake iPhones' screenshots can be subscribed to.
+    device_frames: bool,
 }
 
 impl FakeDriver {
@@ -240,6 +242,7 @@ impl FakeDriver {
             fling: false,
             typing: Typing::Whole,
             keyboard: false,
+            device_frames: true,
         })
     }
 
@@ -312,6 +315,13 @@ impl FakeDriver {
         self
     }
 
+    /// These targets, their fake iPhones' screenshots subscribed to, or,
+    /// unless `subscribed`, not.
+    pub fn with_device_frames(mut self, subscribed: bool) -> FakeDriver {
+        self.device_frames = subscribed;
+        self
+    }
+
     /// These targets, the fake iPhone `id` listed in the readiness state
     /// `code` with `advice`, as the physical iOS driver lists a phone that
     /// is not ready (`crates/ios`'s readiness states and messages); an
@@ -375,7 +385,9 @@ impl Driver for FakeDriver {
         }
         let frames = match target.class {
             TargetClass::Simulator => Frames::Stream,
-            TargetClass::IosDevice => Frames::Screenshots,
+            TargetClass::IosDevice => Frames::Screenshots {
+                subscribed: self.device_frames,
+            },
             TargetClass::AndroidEmulator if self.controller == EmulatorController::Auto => {
                 Frames::Stream
             }

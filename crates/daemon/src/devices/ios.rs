@@ -91,6 +91,10 @@ pub(crate) const RUNNER_BUNDLE: &str = "agent-ios/dist/MobileAgentRunner-Runner.
 /// in spike S11 (design D23).
 pub(crate) const CAPTURES_A_SECOND: u32 = 19;
 
+/// The time between two of those captures: 52.6 ms.
+pub(crate) const CAPTURE_INTERVAL: Duration =
+    Duration::from_nanos(1_000_000_000 / CAPTURES_A_SECOND as u64);
+
 /// The tree backend's name in snapshots' verdicts.
 const BACKEND: &str = "ios-runner";
 
