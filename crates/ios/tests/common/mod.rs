@@ -4,11 +4,14 @@
 //! `MOBILE_AGENT_IOS_UDID`. When it is unset, as in CI, the test prints why
 //! it skipped and passes. Set it to the identifier of an iPhone attached
 //! over USB, trusted, unlocked, with Developer Mode on and the developer
-//! disk image mounted, and `MOBILE_AGENT_IOS_TEAM` to the team its runner
-//! is signed for:
+//! disk image mounted, `MOBILE_AGENT_IOS_TEAM` to the team its runner is
+//! signed for, and `MOBILE_AGENT_IOS_RUNNER_APP` to the runner bundle
+//! `agent-ios/build.sh` built, which an attach installs when the phone's
+//! runner is missing or of another version:
 //!
 //! ```sh
-//! MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> cargo test -p ios
+//! MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
+//!   MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app cargo test -p ios
 //! ```
 //!
 //! Neither value enters a tracked file, and no test prints them.
@@ -19,6 +22,21 @@ use std::sync::{Mutex, MutexGuard};
 
 /// The variable that enables the device tests.
 pub const UDID_VARIABLE: &str = "MOBILE_AGENT_IOS_UDID";
+
+/// The variable naming the runner bundle `agent-ios/build.sh` built,
+/// `agent-ios/dist/MobileAgentRunner-Runner.app`, which an attach installs
+/// in place of a runner that is missing or says hello with another version.
+pub const RUNNER_APP_VARIABLE: &str = "MOBILE_AGENT_IOS_RUNNER_APP";
+
+/// The runner built beside the driver: `agent-ios`'s version, with the
+/// bundle `MOBILE_AGENT_IOS_RUNNER_APP` names when it is set.
+pub fn runner() -> ios::RunnerSpec {
+    let spec = ios::RunnerSpec::new(agent_ios::VERSION);
+    match std::env::var_os(RUNNER_APP_VARIABLE).filter(|path| !path.is_empty()) {
+        Some(path) => spec.with_bundle(path),
+        None => spec,
+    }
+}
 
 /// The device to drive, or `None` after printing why the test is skipped.
 pub fn gated(test: &str) -> Option<String> {

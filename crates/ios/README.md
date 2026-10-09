@@ -602,13 +602,15 @@ a lost session says hello and closes the connection, as S10's did.
 The tests in `tests/` drive the phone. Each checks `MOBILE_AGENT_IOS_UDID`
 first; when it is unset, as in CI, the test prints why it skipped and
 passes. To run them, attach an iPhone over USB, trusted, unlocked, with
-Developer Mode on and Auto-Lock at Never, the runner and the SwiftUI
-fixture installed, and name the team its runner is signed for and the
-fixture's device build:
+Developer Mode on and Auto-Lock at Never, the SwiftUI fixture installed,
+and name the team the runner is signed for, the runner bundle
+`agent-ios/build.sh` built and the fixture's device build:
 
 ```sh
+agent-ios/build.sh                            # prints the runner bundle's path, agent-ios/dist/
 spikes/s10-ios-runner/fixtures.sh swiftui     # prints the bundle's path; task 6.1 moves this into fixtures/
 MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
+  MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app \
   MOBILE_AGENT_IOS_SWIFTUI_APP=<path to FixtureSwiftUI.app> cargo test -p ios
 # measurements, on a quiet host (each waits for the guard)
 cargo test -p ios --test lifecycle -- --ignored --nocapture install_series
@@ -619,14 +621,18 @@ cargo test -p ios --test input -- --ignored --nocapture the_lock_button
 cargo test -p ios --test containment -- --ignored --nocapture
 ```
 
-`MOBILE_AGENT_IOS_RUNNER_VERSION` names the runner's version when it is not
-S10's `0.1.0`. Neither the identifier nor the team enters a tracked file,
-and no test prints them. Without `MOBILE_AGENT_IOS_TEAM` the phone is listed
-as `no_signing_identity`, which the discovery test accepts; without the
-fixture's bundle the lifecycle tests skip. The lifecycle test installs the
-fixture, which stays installed, launches and terminates it; the runner and
-input tests launch it, press home and leave it running; nothing else is
-installed and no setting is changed.
+The tests ask for the runner `agent-ios` builds, by its version
+(`agent_ios::VERSION`), and `MOBILE_AGENT_IOS_RUNNER_APP` names its
+bundle, which an attach installs when the phone's runner is missing or says
+hello with another version; without the variable such an attach fails, and
+the test of the replacement skips. Neither the identifier nor the team
+enters a tracked file, and no test prints them. Without
+`MOBILE_AGENT_IOS_TEAM` the phone is listed as `no_signing_identity`, which
+the discovery test accepts; without the fixture's bundle the lifecycle
+tests skip. The lifecycle test installs the fixture, which stays installed,
+launches and terminates it; the runner and input tests launch it, press
+home and leave it running; the runner's bundle is installed when the phone
+has another version; nothing else is installed and no setting is changed.
 
 ## Spec requirements and their tests
 

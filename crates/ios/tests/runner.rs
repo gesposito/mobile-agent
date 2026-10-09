@@ -1,12 +1,14 @@
-//! Task 3.4 on the device: the runner installed on the phone started through
-//! the test manager, fifty mixed commands served by one runner process with
-//! no restart, and the runner ended on release.
+//! Tasks 3.4, 4.2 and 4.3 on the device: the runner `agent-ios` builds,
+//! installed in place of a runner of another version, says hello with its
+//! version and capabilities; started through the test manager, it serves
+//! fifty mixed commands with one process and no restart, and it is ended on
+//! release.
 //!
-//! The runner is `dev.mobileagent.runner`, spike S10's until `agent-ios`
-//! replaces it, saying hello as `mobile-agent-ios-runner` with the version
-//! `MOBILE_AGENT_IOS_RUNNER_VERSION` names (S10's `0.1.0` by default). The
-//! SwiftUI fixture is brought to the front first when it is installed. The
-//! taps land on the status bar, which scrolls a list to its top at most.
+//! The runner is `dev.mobileagent.runner`, saying hello as
+//! `mobile-agent-ios-runner` with `agent-ios`'s version; the bundle
+//! `MOBILE_AGENT_IOS_RUNNER_APP` names replaces a runner of another version.
+//! The SwiftUI fixture is brought to the front first when it is installed.
+//! The taps land on the status bar, which scrolls a list to its top at most.
 
 #![cfg(target_os = "macos")]
 
@@ -18,16 +20,10 @@ use ios::{
     AttachOptions, Devices, IosDriver, LaunchOptions, Lifecycle, RUNNER_BUNDLE_ID, RUNNER_NAME,
     RUNNER_PORT, RunnerSpec, RunnerState, Session,
 };
-use protocol::message::{Call, Reply, ScreenshotParams, SnapshotParams, TapParams};
+use protocol::Capabilities;
+use protocol::message::{Call, ImageFormat, Reply, ScreenshotParams, SnapshotParams, TapParams};
 
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
-
-/// The variable naming the runner's version, when it is not S10's.
-const VERSION_VARIABLE: &str = "MOBILE_AGENT_IOS_RUNNER_VERSION";
-
-fn spec() -> RunnerSpec {
-    RunnerSpec::new(std::env::var(VERSION_VARIABLE).unwrap_or_else(|_| "0.1.0".to_owned()))
-}
 
 fn milliseconds(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e3
@@ -50,6 +46,74 @@ fn the_driver_asks_for_the_runner_agent_ios_builds() {
     );
 }
 
+/// The bundle `agent-ios/build.sh` built is installed by the attach in place
+/// of a runner of another version, as spike S10's `0.1.0` was, and says
+/// hello with `agent-ios`'s version and the capabilities `tree`, `input`,
+/// `screenshot` and `text_set`; its screenshot is XCTest's PNG.
+#[test]
+fn the_built_runner_replaces_another_version_and_says_hello_with_its_own() {
+    let Some(udid) = common::gated("the_built_runner_replaces_another_version") else {
+        return;
+    };
+    let spec = common::runner();
+    if spec.bundle.is_none() {
+        eprintln!(
+            "the_built_runner_replaces_another_version: skipped; set {} to the bundle \
+             agent-ios/build.sh built",
+            common::RUNNER_APP_VARIABLE
+        );
+        return;
+    }
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    let attached = driver
+        .attach(&udid, &AttachOptions::new(spec))
+        .expect("the built runner starts");
+    assert_eq!(attached.runner.state, RunnerState::Ready);
+    assert_eq!(attached.runner.agent.as_deref(), Some(agent_ios::AGENT));
+    assert_eq!(
+        attached.runner.capabilities,
+        Capabilities::TREE
+            | Capabilities::INPUT
+            | Capabilities::SCREENSHOT
+            | Capabilities::TEXT_SET
+    );
+    let sent = Instant::now();
+    let reply = driver
+        .call(
+            &udid,
+            Call::Screenshot(ScreenshotParams::default()),
+            Duration::from_secs(10),
+        )
+        .expect("a screenshot through the runner");
+    let took = sent.elapsed();
+    let Reply::Screenshot(shot) = reply else {
+        panic!("a screenshot was answered with {reply:?}");
+    };
+    assert_eq!(shot.format, ImageFormat::PNG);
+    assert!(shot.data.starts_with(b"\x89PNG"), "a PNG");
+    assert!(
+        shot.width > 0 && shot.height > shot.width,
+        "{}x{}",
+        shot.width,
+        shot.height
+    );
+    let released = driver.release(&udid).expect("releases");
+    eprintln!(
+        "attach {:.0} ms (hello {:.0} ms after the start), replaced {}, {} leftovers ended; \
+         screenshot {}x{} of {} bytes in {:.0} ms; release {:.0} ms",
+        milliseconds(attached.elapsed),
+        attached.runner.started_in.map_or(0.0, milliseconds),
+        attached.runner.replaced,
+        attached.runner.leftovers.len(),
+        shot.width,
+        shot.height,
+        shot.data.len(),
+        milliseconds(took),
+        milliseconds(released.elapsed)
+    );
+}
+
 #[test]
 fn the_runner_serves_fifty_commands_with_one_process_and_no_restart() {
     let Some(udid) = common::gated("the_runner_serves_fifty_commands") else {
@@ -64,7 +128,7 @@ fn the_runner_serves_fifty_commands_with_one_process_and_no_restart() {
         eprintln!("the SwiftUI fixture is not installed; the runner reads what is in front");
     }
     let attached = driver
-        .attach(&udid, &AttachOptions::new(spec()))
+        .attach(&udid, &AttachOptions::new(common::runner()))
         .expect("the runner starts");
     assert_eq!(attached.runner.state, RunnerState::Ready);
     let before = driver

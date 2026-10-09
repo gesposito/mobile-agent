@@ -15,18 +15,12 @@ mod common;
 use std::time::{Duration, Instant};
 
 use ios::{
-    AttachOptions, Devices, Input, IosDriver, Lifecycle, Point, RUNNER_BUNDLE_ID, RunnerSpec,
-    RunnerState, Session,
+    AttachOptions, Devices, Input, IosDriver, Lifecycle, Point, RUNNER_BUNDLE_ID, RunnerState,
+    Session,
 };
 use protocol::message::{Call, SnapshotParams};
 
 const PERSON: Duration = Duration::from_secs(600);
-
-fn spec() -> RunnerSpec {
-    RunnerSpec::new(
-        std::env::var("MOBILE_AGENT_IOS_RUNNER_VERSION").unwrap_or_else(|_| "0.1.0".to_owned()),
-    )
-}
 
 fn snapshot() -> Call {
     Call::Snapshot(SnapshotParams::default())
@@ -41,7 +35,7 @@ fn a_pulled_cable_is_reported_and_a_replug_attaches_again() {
     let _device = common::exclusive();
     let driver = IosDriver::open().expect("the driver opens");
     let first = driver
-        .attach(&udid, &AttachOptions::new(spec()))
+        .attach(&udid, &AttachOptions::new(common::runner()))
         .expect("the runner starts");
     assert_eq!(first.runner.state, RunnerState::Ready);
     driver
@@ -89,7 +83,7 @@ fn a_pulled_cable_is_reported_and_a_replug_attaches_again() {
     // The phone answers lockdown a moment after usbmuxd lists it.
     let attaching = Instant::now();
     let again = loop {
-        match driver.attach(&udid, &AttachOptions::new(spec())) {
+        match driver.attach(&udid, &AttachOptions::new(common::runner())) {
             Ok(attached) => break attached,
             Err(error) if attaching.elapsed() < Duration::from_secs(60) => {
                 eprintln!("containment: attach not yet: {}", error.code());

@@ -4,9 +4,9 @@
 //! swipe moves the list by about its length, and the home button leaves for
 //! the home screen.
 //!
-//! The runner is the installed `dev.mobileagent.runner` (spike S10's until
-//! `agent-ios` replaces it), with the version `MOBILE_AGENT_IOS_RUNNER_VERSION`
-//! names (`0.1.0` by default). The fixture must be installed.
+//! The runner is `agent-ios`'s, installed from the bundle
+//! `MOBILE_AGENT_IOS_RUNNER_APP` names when the phone has another version.
+//! The fixture must be installed.
 //! `input_series` is the measurement, run on a quiet host; it checks the taps
 //! with frames and the swipe with screenshots, so it needs no runner:
 //! `cargo test -p ios --test input -- --ignored --nocapture input_series`.
@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use ios::{
     AttachOptions, Button, Dispatch, FrameOptions, Frames, ImageFormat, Input, IosDriver,
-    LaunchOptions, Lifecycle, Point, RunnerSpec, ScreenshotOptions, Session, Swipe, decode_png,
+    LaunchOptions, Lifecycle, Point, ScreenshotOptions, Session, Swipe, decode_png,
 };
 use protocol::message::{Call, Reply, SnapshotParams};
 use protocol::snapshot::{Bounds, Node, Snapshot};
@@ -27,12 +27,6 @@ use protocol::snapshot::{Bounds, Node, Snapshot};
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
 /// The iPhone SE (3rd generation)'s points to pixels.
 const SCALE: f64 = 2.0;
-
-fn spec() -> RunnerSpec {
-    RunnerSpec::new(
-        std::env::var("MOBILE_AGENT_IOS_RUNNER_VERSION").unwrap_or_else(|_| "0.1.0".to_owned()),
-    )
-}
 
 fn milliseconds(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e3
@@ -115,7 +109,7 @@ fn on_the_list(driver: &IosDriver, udid: &str) {
         )
         .expect("the SwiftUI fixture launches; install it first");
     driver
-        .attach(udid, &AttachOptions::new(spec()))
+        .attach(udid, &AttachOptions::new(common::runner()))
         .expect("the runner starts");
     wait_for(driver, udid, Duration::from_secs(10), |read| {
         bounds(read, "row-1").is_some()
