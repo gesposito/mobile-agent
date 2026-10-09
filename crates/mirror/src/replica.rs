@@ -465,6 +465,12 @@ impl Replica {
         }
     }
 
+    /// Whether a window that sends no change events waits for the re-read
+    /// that input the mirror injected calls for.
+    pub fn action_pending(&self) -> bool {
+        self.windows.iter().any(|window| window.action_pending)
+    }
+
     /// Records that the input noted last was text in one piece for
     /// `element`, on a target with frames when `frames` says so: its window
     /// is read again sooner until a read shows the field's text changed (see

@@ -67,26 +67,45 @@ pub const DEFAULT_PROBE_ANCHORS: usize = 4;
 /// opened nothing; the hold leaves 117 ms beyond the longest stretch.
 pub const DEFAULT_OVERSCROLL: Duration = Duration::from_millis(500);
 
-/// How long a re-read after input waits for the first changed frame on a
-/// target whose frames come slowly.
+/// How long a re-read after input, and a settle wait after it, hold for the
+/// first frame that changed after the input on a target whose frames come
+/// slowly (design D23 of physical-ios): a physical iPhone's polled
+/// screenshots showed a tap's first change 222 to 439 ms after its
+/// acknowledgement at p95 (spike S11).
 pub const DEFAULT_FIRST_FRAME_WAIT: Duration = Duration::from_millis(500);
 
-/// Frames that come slowly.
+/// Frames that come slowly: screenshots polled one at a time rather than a
+/// stream, as a physical iPhone's on iOS 26, about 19 a second over two
+/// connections (design D23 of physical-ios). A change can take a capture
+/// interval to show, and a tap's first change comes hundreds of
+/// milliseconds after it, so settle waits at least two capture intervals
+/// without a change and holds after input for the first changed frame, and
+/// the re-read after input waits for that frame rather than read the screen
+/// the input has not changed yet. Without a frame source the setting does
+/// nothing: windows without events are re-read every minimum interval, as
+/// on any target without frames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlowFrames {
-    /// The time between two captures.
+    /// The time between two captures: 53 ms at 19 a second.
     pub capture_interval: Duration,
-    /// How long a re-read after input waits for the first changed frame.
+    /// How long the re-read after input, and settle after it, hold for the
+    /// first changed frame.
     pub first_frame_wait: Duration,
 }
 
 impl SlowFrames {
-    /// Frames captured every `capture_interval`.
+    /// Frames captured every `capture_interval`, the first changed frame
+    /// after input awaited [`DEFAULT_FIRST_FRAME_WAIT`].
     pub fn every(capture_interval: Duration) -> SlowFrames {
         SlowFrames {
             capture_interval,
             first_frame_wait: DEFAULT_FIRST_FRAME_WAIT,
         }
+    }
+
+    /// The shortest quiet window settle takes: two capture intervals.
+    pub fn quiet(&self) -> Duration {
+        self.capture_interval * 2
     }
 }
 
@@ -103,7 +122,9 @@ pub struct MirrorConfig {
     /// leaves the content under it at an end of its range, for the
     /// overscroll effect the platform draws there; zero holds none.
     pub overscroll: Duration,
-    /// Frames that come slowly.
+    /// How the target's frames come when they come slowly, as a physical
+    /// iPhone's screenshots; `None` for a stream, the default. The driver's
+    /// attachment sets it.
     pub slow_frames: Option<SlowFrames>,
 }
 
@@ -302,7 +323,10 @@ impl Mirror {
     }
 
     /// Applies what the target reported so far and performs the reads that
-    /// are due, without waiting.
+    /// are due, without waiting, but for a re-read after input on a target
+    /// whose frames come slowly ([`SlowFrames`]), which first waits for the
+    /// first frame that changed after the input, at most the first-frame
+    /// wait from it.
     pub fn pump(&mut self) -> Result<(), MirrorError> {
         self.drain();
         self.refresh()
@@ -363,6 +387,7 @@ impl Mirror {
         if self.replica.disconnected.is_some() {
             return Ok(());
         }
+        self.await_first_frame();
         // A read can make another one due at once, such as a full read
         // after a scoped one found another backend; a few rounds suffice.
         for _ in 0..4 {
@@ -373,6 +398,47 @@ impl Mirror {
             self.read(&request, started)?;
         }
         Ok(())
+    }
+
+    /// When a target whose frames come slowly stops waiting for the first
+    /// frame that changed after the latest input: `None` without such
+    /// frames, input or wait, once that frame came, or once the
+    /// first-frame wait from the input has passed.
+    fn first_frame_due(&self, now: Instant) -> Option<Instant> {
+        let slow = self.config.slow_frames?;
+        self.backend.frames.as_ref()?;
+        let input = self.replica.last_action?;
+        if self
+            .replica
+            .last_frame_change
+            .is_some_and(|change| change > input)
+        {
+            return None;
+        }
+        let until = input + slow.first_frame_wait;
+        (now < until).then_some(until)
+    }
+
+    /// Holds a re-read after input on a target whose frames come slowly
+    /// until the first frame that changed after the input arrives, at most
+    /// the first-frame wait from the input (design D23 of physical-ios):
+    /// read at once, as on a stream, it would show the screen before the
+    /// input's effect, a tap's first change coming hundreds of milliseconds
+    /// later on a physical iPhone, and the frame-driven re-read that would
+    /// catch the change comes a minimum interval after a read that costs
+    /// about half a second there.
+    fn await_first_frame(&mut self) {
+        if !self.replica.action_pending() {
+            return;
+        }
+        while let Some(until) = self.first_frame_due(self.now()) {
+            if self.replica.disconnected.is_some() {
+                return;
+            }
+            if let Some(item) = self.backend.events.next(until) {
+                self.replica.apply(item);
+            }
+        }
     }
 
     /// Performs `request`, started at `started`, and takes it into the
@@ -822,6 +888,12 @@ impl Mirror {
     /// passed since the stroke and since the tree's last change (task
     /// 10.14): the platform's overscroll effect there shows in no read and
     /// no probe, so a maximum that passes meanwhile names the tree too.
+    ///
+    /// On a target whose frames come slowly ([`SlowFrames`]), the quiet
+    /// window is at least two capture intervals, and after input the wait
+    /// does not settle, when it watches frames, until the first frame that
+    /// changed after the input came or the first-frame wait from the input
+    /// has passed.
     pub fn settle(&mut self, options: &SettleOptions) -> Result<Settle, MirrorError> {
         let start = self.now();
         let deadline = start + options.max;
@@ -829,6 +901,8 @@ impl Mirror {
         let frames_before = self.replica.frame_changes;
         let blind = self.backend.frames.is_none();
         let every = self.config.min_reread_interval;
+        let slow = self.config.slow_frames.filter(|_| !blind);
+        let quiet = slow.map_or(options.quiet, |slow| options.quiet.max(slow.quiet()));
         let mut probes = (blind
             && options.signals.tree()
             && self.config.probe_anchors > 0
@@ -861,7 +935,13 @@ impl Mirror {
                 .into_iter()
                 .flatten()
                 .max();
-            let quiet_until = last.map(|at| at + options.quiet);
+            let quiet_until = last.map(|at| at + quiet);
+            // Slow frames: the input's first changed frame may still come.
+            let first_frame = if options.signals.frames() && slow.is_some() {
+                self.first_frame_due(now)
+            } else {
+                None
+            };
             let still = probes.as_ref().is_none_or(|state| state.agrees_since(last));
             let transformed = blind && options.signals.tree() && self.replica.drawn_transformed();
             let overscroll = if blind && options.signals.tree() {
@@ -873,9 +953,10 @@ impl Mirror {
             let settled = quiet_until.is_none_or(|until| now >= until)
                 && still
                 && !transformed
-                && !overscrolling;
+                && !overscrolling
+                && first_frame.is_none();
             if settled || now >= deadline {
-                let since = now.checked_sub(options.quiet).unwrap_or(start);
+                let since = now.checked_sub(quiet).unwrap_or(start);
                 let mut still_changing = Vec::new();
                 if !settled {
                     if transformed || overscrolling || tree.is_some_and(|at| at > since) {
@@ -907,6 +988,9 @@ impl Mirror {
                 wake = wake.min(due);
             }
             if let Some(until) = overscroll.filter(|&until| until > now) {
+                wake = wake.min(until);
+            }
+            if let Some(until) = first_frame {
                 wake = wake.min(until);
             }
             if let Some(item) = self.backend.events.next(wake.max(now)) {
