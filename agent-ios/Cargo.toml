@@ -21,6 +21,7 @@ bench = false
 # The tree goes through the Simulator reader's conversion
 # (`simulator_reader::elements`); the shim hands XCTest's snapshot over as JSON.
 [dependencies]
+libc = "0.2"
 protocol = { version = "0.1.0", path = "../crates/protocol" }
 serde_json = "1.0.151"
 simulator-reader = { version = "0.1.0", path = "../crates/simulator/reader" }

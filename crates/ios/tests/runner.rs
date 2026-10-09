@@ -15,8 +15,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use ios::{
-    AttachOptions, Devices, IosDriver, LaunchOptions, Lifecycle, RUNNER_BUNDLE_ID, RunnerSpec,
-    RunnerState, Session,
+    AttachOptions, Devices, IosDriver, LaunchOptions, Lifecycle, RUNNER_BUNDLE_ID, RUNNER_NAME,
+    RUNNER_PORT, RunnerSpec, RunnerState, Session,
 };
 use protocol::message::{Call, Reply, ScreenshotParams, SnapshotParams, TapParams};
 
@@ -36,6 +36,18 @@ fn milliseconds(duration: Duration) -> f64 {
 /// Nearest-rank percentile of sorted samples.
 fn rank(sorted: &[f64], percent: usize) -> f64 {
     sorted[(sorted.len() * percent).div_ceil(100) - 1]
+}
+
+/// The runner `agent-ios` builds is the one the driver asks for: its hello
+/// names the runner and its version, on the port the driver connects to.
+#[test]
+fn the_driver_asks_for_the_runner_agent_ios_builds() {
+    assert_eq!(agent_ios::NAME, RUNNER_NAME);
+    assert_eq!(agent_ios::PORT, RUNNER_PORT);
+    assert_eq!(
+        RunnerSpec::new(agent_ios::VERSION).agent(),
+        agent_ios::AGENT
+    );
 }
 
 #[test]

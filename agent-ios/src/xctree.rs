@@ -14,8 +14,104 @@
 //! empty, and the conversion's rules that need a class see none (spike S10).
 //! Keyboard focus becomes the editing trait the conversion reads for it.
 
+use std::collections::HashMap;
+
 use serde_json::Value;
-use simulator_reader::elements::{self, Element, Owner, traits};
+use simulator_reader::codes;
+use simulator_reader::elements::{self, Element, Limits, Owner, Read, traits};
+
+use crate::shim::Shim;
+
+fn error(code: &str, message: impl Into<String>, retryable: bool) -> protocol::Error {
+    protocol::Error {
+        code: code.to_owned(),
+        message: message.into(),
+        retryable,
+    }
+}
+
+/// The pid of the process in front: the first of XCTest's active
+/// applications, else its system application, SpringBoard, as on the home
+/// screen.
+pub fn foreground_pid<S: Shim>(shim: &S) -> Result<i32, protocol::Error> {
+    let foreground = shim.foreground();
+    foreground
+        .active
+        .first()
+        .copied()
+        .or(foreground.system)
+        .ok_or_else(|| {
+            error(
+                codes::NO_FOREGROUND,
+                "XCTest lists no active application and no system application",
+                true,
+            )
+        })
+}
+
+/// The bundle identifier of `pid`'s application, asked of the daemon once
+/// and kept in `bundles`.
+pub fn bundle<S: Shim>(
+    shim: &S,
+    bundles: &mut HashMap<i32, String>,
+    pid: i32,
+) -> Result<String, protocol::Error> {
+    if let Some(bundle) = bundles.get(&pid) {
+        return Ok(bundle.clone());
+    }
+    let bundle = shim.bundle(pid).ok_or_else(|| {
+        error(
+            codes::SNAPSHOT_FAILED,
+            format!("the test manager names no application for pid {pid}"),
+            true,
+        )
+    })?;
+    bundles.insert(pid, bundle.clone());
+    Ok(bundle)
+}
+
+/// Reads the tree of the process in front through XCTest's snapshot of its
+/// application, at `scale` pixels a point, and checks the process in front
+/// again afterwards: a change during the read is `window_changed`, which
+/// the host repeats.
+pub fn read<S: Shim>(
+    shim: &S,
+    bundles: &mut HashMap<i32, String>,
+    limits: Limits,
+    scale: f64,
+) -> Result<Read, protocol::Error> {
+    let pid = foreground_pid(shim)?;
+    let bundle = bundle(shim, bundles, pid)?;
+    let tree = shim
+        .tree(&bundle)
+        .map_err(|reason| error(codes::SNAPSHOT_FAILED, format!("{bundle}: {reason}"), true))?;
+    let parsed: Value = serde_json::from_str(&tree).map_err(|reason| {
+        error(
+            protocol::code::INTERNAL,
+            format!("the shim's tree is not JSON: {reason}"),
+            false,
+        )
+    })?;
+    let root = element(&parsed);
+    let after = foreground_pid(shim).ok();
+    if after != Some(pid) {
+        return Err(error(
+            protocol::code::WINDOW_CHANGED,
+            format!(
+                "the foreground changed from pid {pid} to {} during the read",
+                after.map_or("none".to_owned(), |pid| pid.to_string())
+            ),
+            true,
+        ));
+    }
+    Ok(Read {
+        owner: owner(pid, &bundle, &root),
+        root,
+        scale,
+        limits,
+        depth_cut: false,
+    })
+}
 
 /// One node of the shim's JSON, with its children, as an [`Element`].
 pub fn element(node: &Value) -> Element {
