@@ -439,9 +439,10 @@ pub enum Release {
     /// flings on at its speed.
     #[default]
     Moving,
-    /// It rests at the end of its path, then moves one pixel on and lifts
-    /// there, the Android `rest_ms` semantics (task 10.16), so the content
-    /// stops where it left it.
+    /// It rests 60 ms at the end of its path, the Android `rest_ms`
+    /// semantics (task 10.16), then creeps on three moves of a point and
+    /// lifts, as UIKit needs to see it stop, so the content stops where it
+    /// left it.
     Resting,
 }
 

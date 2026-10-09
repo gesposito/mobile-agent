@@ -2,6 +2,13 @@
 //! becomes the touchscreen's 16-bit coordinates over the screen, and a tap,
 //! a press or a swipe a timed series of contact reports ending with a
 //! release, as spike S11 sent them through `dtuhidd`.
+//!
+//! A swipe that rests follows the Android `rest_ms` semantics, the finger
+//! still for 60 ms at its end, then moves on as the Simulator driver's does:
+//! UIKit takes a drag's velocity from its last moves, and on the iPhone SE a
+//! rest followed by one pixel on still flung the list 917 px for a 400 px
+//! stroke, where three moves of a point 16 ms apart stopped it after 323 px
+//! (task 3.8's device check).
 
 use std::time::Duration;
 
@@ -16,6 +23,11 @@ pub const REPORT_EVERY: Duration = Duration::from_millis(16);
 /// How long a resting finger stays still at the end of its stroke before it
 /// moves one pixel on and lifts: the Android `rest_ms`.
 pub const REST: Duration = Duration::from_millis(60);
+
+/// How many moves a resting finger creeps on before it lifts, and how far
+/// each goes in points: the Simulator driver's, for the same UIKit.
+pub const CREEP_MOVES: u32 = 3;
+pub const CREEP_STEP: f64 = 1.0;
 
 /// Whether a report's finger touches the screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,8 +74,9 @@ pub fn press(screen: &Screen, point: Point, hold: Duration) -> Result<Vec<TouchR
 
 /// A stroke: contacts every [`REPORT_EVERY`] along the line from `from` to
 /// `to`, the last at `to` after `duration`. A moving finger lifts there; a
-/// resting one stays at `to`, reporting, for [`REST`], moves one pixel on
-/// along each axis the stroke went, and lifts there.
+/// resting one stays at `to`, reporting, for [`REST`], creeps on along its
+/// line [`CREEP_MOVES`] moves of [`CREEP_STEP`] points [`REPORT_EVERY`]
+/// apart, and lifts at the last.
 pub fn swipe(screen: &Screen, swipe: &Swipe) -> Result<Vec<TouchReport>, String> {
     let steps = if swipe.duration.is_zero() {
         1
@@ -107,38 +120,36 @@ pub fn swipe(screen: &Screen, swipe: &Swipe) -> Result<Vec<TouchReport>, String>
             });
             still += REPORT_EVERY;
         }
-        // Then one pixel on along each axis the stroke went, and the lift
-        // there.
-        let pixel = 1.0 / screen.scale;
+        // Then it creeps on along its line, a point a move, and lifts at
+        // the last: UIKit takes a drag's velocity from its last moves.
+        let (dx, dy) = (swipe.to.x - swipe.from.x, swipe.to.y - swipe.from.y);
+        let length = dx.hypot(dy);
         let (width, height) = screen.points();
-        let on = |to: f64, from: f64, limit: f64| {
-            let sign = if to > from {
-                1.0
-            } else if to < from {
-                -1.0
+        for k in 1..=CREEP_MOVES {
+            let crept = if length > 0.0 {
+                let on = CREEP_STEP * f64::from(k) / length;
+                Point::new(
+                    (swipe.to.x + dx * on).clamp(0.0, width),
+                    (swipe.to.y + dy * on).clamp(0.0, height),
+                )
             } else {
-                0.0
+                swipe.to
             };
-            (to + sign * pixel).clamp(0.0, limit)
-        };
-        let crept = Point::new(
-            on(swipe.to.x, swipe.from.x, width),
-            on(swipe.to.y, swipe.from.y, height),
-        );
-        let (x, y) = normalize(screen, crept)?;
-        let at = swipe.duration + REST;
-        reports.push(TouchReport {
-            at,
-            contact: Contact::Touching,
-            x,
-            y,
-        });
-        lift = TouchReport {
-            at,
-            contact: Contact::Lifted,
-            x,
-            y,
-        };
+            let (x, y) = normalize(screen, crept)?;
+            let at = swipe.duration + REST + REPORT_EVERY * (k - 1);
+            reports.push(TouchReport {
+                at,
+                contact: Contact::Touching,
+                x,
+                y,
+            });
+            lift = TouchReport {
+                at,
+                contact: Contact::Lifted,
+                x,
+                y,
+            };
+        }
     }
     reports.push(lift);
     Ok(reports)
@@ -229,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn a_resting_swipe_stays_still_60_ms_then_moves_one_pixel_on_and_lifts_there() {
+    fn a_resting_swipe_stays_still_60_ms_then_creeps_on_three_points_and_lifts_there() {
         let stroke =
             Swipe::new(Point::new(187.0, 500.0), Point::new(187.0, 260.0), ms(160)).resting();
         let reports = swipe(&SE, &stroke).expect("a swipe");
@@ -240,7 +251,8 @@ mod tests {
             .expect("the finger reaches the end");
         assert_eq!(reports[arrived].at, ms(160));
         let (lift, rest) = reports[arrived..].split_last().expect("reports");
-        let (crept, still) = rest.split_last().expect("the move one pixel on");
+        let creep = rest.len() - CREEP_MOVES as usize;
+        let (still, crept) = rest.split_at(creep);
         assert!(
             still
                 .iter()
@@ -251,14 +263,18 @@ mod tests {
             still.len() >= 4,
             "it keeps reporting while it rests: {still:?}"
         );
-        assert_eq!(crept.at, ms(160) + REST);
-        assert_eq!(crept.contact, Contact::Touching);
-        // One pixel of the SE's 1334 up the screen, the stroke's way.
-        let pixel = (65535.0_f64 / 1334.0).round() as u16;
-        assert_eq!((crept.x, crept.y), (end.0, end.1 - pixel));
+        // A point a move up the screen, the stroke's way, 16 ms apart.
+        for (k, report) in crept.iter().enumerate() {
+            let on = normalize(&SE, Point::new(187.0, 260.0 - (k + 1) as f64 * CREEP_STEP))
+                .expect("on screen");
+            assert_eq!((report.x, report.y), on, "move {k}");
+            assert_eq!(report.at, ms(160) + REST + REPORT_EVERY * k as u32);
+            assert_eq!(report.contact, Contact::Touching);
+        }
+        let last = crept.last().expect("the creep");
         assert_eq!(lift.contact, Contact::Lifted);
-        assert_eq!((lift.x, lift.y), (crept.x, crept.y));
-        assert_eq!(lift.at, crept.at);
+        assert_eq!((lift.x, lift.y), (last.x, last.y));
+        assert_eq!(lift.at, last.at);
         assert_eq!(REST, ms(60));
     }
 

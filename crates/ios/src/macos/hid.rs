@@ -422,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn a_resting_swipe_rests_before_it_moves_one_pixel_on_and_lifts() {
+    fn a_resting_swipe_rests_before_it_creeps_on_and_lifts() {
         let core = core(FakeHost::ready());
         let stroke = Swipe::new(
             Point::new(187.0, 500.0),
@@ -444,8 +444,9 @@ mod tests {
             .position(|timed| matches!(timed.event, HidEvent::Touch { x, y, .. } if (x, y) == end))
             .expect("the finger reaches the end");
         let (lift, crept) = (&events[events.len() - 1], &events[events.len() - 2]);
+        let first_creep = &events[events.len() - 1 - touch::CREEP_MOVES as usize];
         assert!(
-            crept.at - events[arrived].at + Duration::from_millis(5) >= REST,
+            first_creep.at - events[arrived].at + Duration::from_millis(5) >= REST,
             "it rests {REST:?} at the end before moving on"
         );
         match (&crept.event, &lift.event) {
@@ -462,7 +463,7 @@ mod tests {
                 },
             ) => {
                 assert_eq!((crept_x, crept_y), (x, y), "it lifts where it crept to");
-                assert!(*crept_y < end.1, "one pixel on, up the screen");
+                assert!(*crept_y < end.1, "crept on, up the screen");
             }
             other => panic!("expected a move then the lift: {other:?}"),
         }
