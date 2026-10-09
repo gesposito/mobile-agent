@@ -1,9 +1,9 @@
 mobile-agent: a guide for agents
 
-mobile-agent drives Android devices, emulators and iOS Simulators. A daemon
-keeps a live mirror of each screen, so snapshots answer from memory and refs
-stay stable while their elements stay on screen. The grammar, refs and JSON
-output follow agent-browser.
+mobile-agent drives Android devices and emulators, iOS Simulators and iPhones.
+A daemon keeps a live mirror of each screen, so snapshots answer from memory
+and refs stay stable while their elements stay on screen. The grammar, refs
+and JSON output follow agent-browser.
 
 The loop
   1. mobile-agent snapshot -i       list actionable elements with their refs
@@ -64,8 +64,9 @@ Acting
   from what lies inside it, as a code field's boxes; verified: false with
   reason: no_value_to_read and a warning when the field shows nothing to
   read, so the text went in unchecked: look at a screenshot. method: keys
-  means typed, direct entered in one piece: set on Android, pasted on iOS,
-  which replaces the pasteboard and can show iOS's paste banner.
+  means typed, direct entered in one piece: set on Android and iPhones,
+  pasted on a Simulator, which replaces the pasteboard and can show iOS's
+  paste banner.
 
 Waiting
   wait --settle               no tree or frame change for 200 ms, at most
@@ -99,6 +100,17 @@ Targets and sessions
   devices lists the targets. With several, pass --device ID or --platform.
   --session NAME keeps target claims and refs apart. A target that another
   session holds is refused with target_claimed, unless you pass --force.
+
+iPhones
+  A phone on USB is a target when MOBILE_AGENT_DRIVERS names ios. A command
+  on one that is not ready fails with its state as the code: device_locked
+  (unlock it), developer_mode_off, not_trusted, disk_image_unmounted,
+  no_signing_identity, or automation_not_enabled (approve Enable UI
+  Automation on the phone); devices and doctor name the step. It is slower:
+  a tree read of a 500-cell screen takes about 0.5 s, and frames come
+  19 a second, so settle and waits take longer. Text goes in
+  through the runner: method: keys means typed, direct the field's value
+  set, not a paste, so the pasteboard is left alone.
 
 Batch
   mobile-agent batch --bail 'open com.example.app' 'snapshot -i' 'click @e3'
