@@ -10,7 +10,8 @@ use std::time::Duration;
 use mirror::backend::ReadReason;
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Condition, Mirror, MirrorConfig, MirrorError, Ref, Role, Selector, SnapshotOptions, code,
+    Action, Condition, DEFAULT_POLL_INTERVAL, Mirror, MirrorConfig, MirrorError, Ref, Role,
+    Selector, SnapshotOptions, Target, code,
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind};
 use serde_json::json;
@@ -190,6 +191,88 @@ fn a_wait_that_already_holds_returns_at_once() {
         .unwrap();
     assert_eq!(outcome.elapsed, ms(0));
     assert_eq!(outcome.element.unwrap().role, Role::Textbox);
+}
+
+/// Rn-app-fixes D36, scenario "Condition already holds": a wait for text
+/// the replica already lists answers from it at once, without the read
+/// that is due, here a poll of a window that sends no change events, which
+/// a wait paid 43 to 473 ms for in the smoke test; the next pump takes the
+/// read.
+#[test]
+fn a_wait_that_holds_in_the_replica_answers_before_a_poll_that_is_due() {
+    let target = FakeTarget::new(Screen::load("login-ios").read());
+    target.read_cost(ms(380));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(DEFAULT_POLL_INTERVAL + ms(200));
+    let now = target.instant(target.elapsed());
+    assert!(
+        mirror.next_wakeup().is_some_and(|due| due <= now),
+        "a poll is due"
+    );
+    let reads = target.reads().len();
+
+    let outcome = mirror
+        .wait(&Selector::text("Sign in"), Condition::Appear, secs(5))
+        .unwrap();
+    assert_eq!(outcome.elapsed, ms(0), "answered from the replica");
+    assert_eq!(
+        outcome.element.unwrap().identifier.as_deref(),
+        Some("login-submit")
+    );
+    assert_eq!(target.reads().len(), reads, "no read before the answer");
+
+    mirror.pump().unwrap();
+    let poll = target.reads().last().cloned().unwrap();
+    assert_eq!(
+        (poll.at, poll.request.reason),
+        (ms(380) + DEFAULT_POLL_INTERVAL + ms(200), ReadReason::Poll),
+        "the next pump takes the poll"
+    );
+}
+
+/// D36 answers from the replica while it is current by the mirror's own
+/// rules. Right after a tap, which the mirror reads a window without
+/// change events again for when the tree is next needed, and once an event
+/// names a window, a wait first takes the read: it does not answer from
+/// the screen before either.
+#[test]
+fn a_wait_does_not_answer_from_a_replica_behind_a_tap_or_an_event() {
+    let screen = Screen::load("login-ios");
+    let welcome = screen.patched(json!([{"find": "login-status", "desc": "Welcome, alice"}]));
+    let target = FakeTarget::new(screen.read());
+    target.on_tap("login-submit", vec![(ms(0), Step::Show(welcome.read()))]);
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let submit = mirror
+        .snapshot(&SnapshotOptions::interactive())
+        .unwrap()
+        .by_identifier("login-submit")
+        .unwrap()
+        .reference
+        .unwrap();
+    mirror
+        .act(&Action::Tap {
+            target: Target::Ref(submit),
+            hold: None,
+        })
+        .unwrap();
+    let error = mirror
+        .wait(&Selector::text("Signed out"), Condition::Appear, ms(0))
+        .unwrap_err();
+    assert_eq!(error.code(), code::WAIT_TIMEOUT, "{error}");
+
+    let screen = Screen::load("login");
+    let welcome = screen.patched(json!([{"find": "login-status", "text": "Welcome, alice"}]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(welcome.read()));
+    target.at(ms(100), content_changed(1));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+    target.advance(ms(200));
+    let error = mirror
+        .wait(&Selector::text("Signed out"), Condition::Appear, ms(0))
+        .unwrap_err();
+    assert_eq!(error.code(), code::WAIT_TIMEOUT, "{error}");
 }
 
 #[test]
