@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use mirror::backend::Release;
 use mirror::{
-    Action, DEFAULT_QUIET_WINDOW, ElementId, MirrorError, Point, Rect, Ref, SettleOptions, Target,
-    Timestamps, Visibility,
+    Action, DEFAULT_QUIET_WINDOW, Element, ElementId, MirrorError, Point, Rect, Ref, SettleOptions,
+    Target, Timestamps, Visibility,
 };
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
@@ -265,9 +265,101 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
     reference.map_or(Value::Null, |r| format!("@{r}").into())
 }
 
+/// How much of `element` is in view before a tap on it, which `given`
+/// names. None of it in view can be bounds the replica holds from before a
+/// layout change that no event reported and no read has seen yet: in the
+/// React Native smoke test the keyboard moved a submit button up, the
+/// replica kept its old bounds under the keyboard, and the click tapped the
+/// number pad there (design D32). So the element's window is read again
+/// once, and a tap aimed at a point goes to the centre of the element's
+/// bounds as that read has them. The mirror reads a window on demand only
+/// after text it entered (task 10.29), so the read covers every window, as
+/// every read of a Simulator's reader does. Fails with
+/// `element_offscreen`, naming the element, when none of it is in view
+/// after the read, and with `element_not_found` when a selector's element
+/// has left the screen.
+fn sight(
+    target: &mut Attached,
+    element: &Element,
+    given: &str,
+    aimed: &mut Target,
+) -> Result<Option<Visibility>, Failure> {
+    let Some(seen) = target.mirror.visibility(element.id) else {
+        return Ok(None);
+    };
+    if seen.fraction > 0.0 {
+        return Ok(Some(seen));
+    }
+    target.mirror.note_window_change();
+    target.mirror.pump()?;
+    let Some(seen) = target.mirror.visibility(element.id) else {
+        return match aimed {
+            // The mirror fails the tap with stale_ref.
+            Target::Ref(_) => Ok(None),
+            Target::Point(_) => Err(Failure::new(
+                code::ELEMENT_NOT_FOUND,
+                format!(
+                    "{given} left the screen when its window was read again; take a snapshot to see the screen"
+                ),
+            )),
+        };
+    };
+    if seen.fraction <= 0.0 {
+        return Err(offscreen(target, element, given, &seen));
+    }
+    if let Target::Point(point) = aimed {
+        *point = seen.bounds.center();
+    }
+    Ok(Some(seen))
+}
+
+/// The failure of a tap on `element`, which `given` names, none of which is
+/// in view as `seen` has it after its window was read again: the message
+/// names the element, what keeps it out of view and how to bring it in.
+fn offscreen(target: &Attached, element: &Element, given: &str, seen: &Visibility) -> Failure {
+    let named = if element.name.is_empty() {
+        format!("{given} ({})", element.role)
+    } else {
+        format!("{given} ({} {:?})", element.role, element.name)
+    };
+    let keyboard = target
+        .mirror
+        .uncovered(seen.bounds, Some(element.id))
+        .keyboard;
+    let centre = seen.bounds.center();
+    let scrolls = target.mirror.scroll_viewport(centre, true).is_some()
+        || target.mirror.scroll_viewport(centre, false).is_some();
+    let close = match target.info.platform {
+        Platform::Android => "press Back to close the keyboard",
+        Platform::Ios => "close the keyboard, as the field's return key does in most apps",
+    };
+    let (why, advice) = match (keyboard, scrolls) {
+        (true, true) => (
+            "the keyboard covers all of it",
+            format!("{close}, or scroll --until {given} brings it above the keyboard"),
+        ),
+        (true, false) => ("the keyboard covers all of it", close.to_owned()),
+        (false, true) => (
+            "none of it lies in what shows of its list",
+            format!("scroll --until {given} brings it into view"),
+        ),
+        (false, false) => (
+            "none of it lies in what shows of its window",
+            "take a snapshot to see what lies over it".to_owned(),
+        ),
+    };
+    Failure::new(
+        mirror::code::ELEMENT_OFFSCREEN,
+        format!(
+            "{named} is out of view: {why}, also when its window was read again, so a tap there would not reach it; {advice}, then click it again"
+        ),
+    )
+    .with_data(json!({"ref": reference_json(element.reference), "visible": 0.0}))
+}
+
 pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let hold = request.u64("hold")?.map(Duration::from_millis);
-    let (aimed, reference, clicked, found) = match (request.f64("x")?, request.f64("y")?) {
+    let (mut aimed, reference, clicked, found) = match (request.f64("x")?, request.f64("y")?) {
         (Some(x), Some(y)) => (
             Target::Point(Point::new(x, y)),
             None,
@@ -287,13 +379,12 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     target.mirror.pump()?;
     // How much of the element is in view where the tap goes in; a ref the
     // mirror cannot resolve fails the tap below.
-    let seen = found
-        .or_else(|| {
-            reference
-                .and_then(|reference| target.mirror.resolve(reference).ok())
-                .map(|element| element.id)
-        })
-        .and_then(|element| target.mirror.visibility(element));
+    let element =
+        found.or_else(|| reference.and_then(|reference| target.mirror.resolve(reference).ok()));
+    let seen = match &element {
+        Some(element) => sight(target, element, &clicked, &mut aimed)?,
+        None => None,
+    };
     let revision = target.mirror.revision();
     let started = Instant::now();
     let outcome = target.mirror.act(&Action::Tap {

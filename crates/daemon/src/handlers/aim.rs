@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use mirror::{
-    Condition, Element, ElementId, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
+    Condition, Element, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
     SnapshotSummary, Target, WaitOutcome,
 };
 
@@ -185,7 +185,7 @@ pub(crate) fn action_target(
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<(Target, Option<Ref>, Option<ElementId>), Failure> {
+) -> Result<(Target, Option<Ref>, Option<Element>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
@@ -199,11 +199,10 @@ pub(crate) fn action_target(
 
 /// Where an action on a found element lands: its ref, which the mirror
 /// checks, else its center; with the element.
-fn aimed_at(element: Element) -> (Target, Option<Ref>, Option<ElementId>) {
-    let found = Some(element.id);
+fn aimed_at(element: Element) -> (Target, Option<Ref>, Option<Element>) {
     match element.reference {
-        Some(reference) => (Target::Ref(reference), Some(reference), found),
-        None => (Target::Point(element.bounds.center()), None, found),
+        Some(reference) => (Target::Ref(reference), Some(reference), Some(element)),
+        None => (Target::Point(element.bounds.center()), None, Some(element)),
     }
 }
 
