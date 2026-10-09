@@ -1060,23 +1060,38 @@ fn slow(interval: u64) -> MirrorConfig {
 /// capture interval to show; the defaults keep the window given.
 #[test]
 fn with_slow_frames_settle_waits_at_least_two_capture_intervals_without_a_change() {
-    for (config, settled_at) in [(slow(150), 340), (MirrorConfig::default(), 140)] {
+    // A frame changes at 40 ms, when the wait begins.
+    let changed_then = |config: MirrorConfig| {
         let target = FakeTarget::new(Screen::load("login-ios").read());
         target.at(ms(0), Step::Frame(1));
         target.at(ms(40), Step::Frame(2));
-        let mut mirror = Mirror::new(target.backend(), config.clone());
+        target.advance(ms(40));
+        Mirror::new(target.backend(), config)
+    };
+    for (config, settled_after) in [(slow(150), 300), (MirrorConfig::default(), 100)] {
+        let mut mirror = changed_then(config.clone());
         let settle = mirror.settle(&quiet(100)).unwrap();
         assert!(settle.settled, "{config:?}: {settle:?}");
         assert_eq!(settle.frame_changes, 1, "{config:?}: {settle:?}");
-        assert_eq!(settle.elapsed, ms(settled_at), "{config:?}: {settle:?}");
+        assert_eq!(settle.elapsed, ms(settled_after), "{config:?}: {settle:?}");
     }
     // A window longer than two intervals stands.
-    let target = FakeTarget::new(Screen::load("login-ios").read());
-    target.at(ms(0), Step::Frame(1));
-    target.at(ms(40), Step::Frame(2));
-    let mut mirror = Mirror::new(target.backend(), slow(50));
+    let mut mirror = changed_then(slow(50));
     let settle = mirror.settle(&SettleOptions::default()).unwrap();
-    assert_eq!(settle.elapsed, ms(240), "{settle:?}");
+    assert_eq!(settle.elapsed, DEFAULT_QUIET_WINDOW, "{settle:?}");
+}
+
+/// Taps the middle of the element `identifier` names, as a full snapshot
+/// lists it, whether or not it has a ref.
+fn tap_middle_of(mirror: &mut Mirror, identifier: &str) {
+    let snapshot = mirror.snapshot(&SnapshotOptions::full()).unwrap();
+    let at = snapshot.by_identifier(identifier).unwrap().bounds.center();
+    mirror
+        .act(&Action::Tap {
+            target: Target::Point(at),
+            hold: None,
+        })
+        .unwrap();
 }
 
 /// Physical-ios, task 5.2 (design D23): on a target whose frames come
@@ -1110,7 +1125,7 @@ fn with_slow_frames_settle_after_input_holds_for_its_first_changed_frame() {
     let target = FakeTarget::new(screen.read());
     target.at(ms(0), Step::Frame(1));
     let mut mirror = Mirror::new(target.backend(), slow(50));
-    tap_on(&mut mirror, "login-status");
+    tap_middle_of(&mut mirror, "login-status");
     let tapped = target.elapsed();
     let settle = mirror.settle(&SettleOptions::default()).unwrap();
     assert!(settle.settled, "{settle:?}");
@@ -1120,7 +1135,7 @@ fn with_slow_frames_settle_after_input_holds_for_its_first_changed_frame() {
     let target = FakeTarget::new(screen.read());
     target.at(ms(0), Step::Frame(1));
     let mut mirror = Mirror::new(target.backend(), slow(50));
-    tap_on(&mut mirror, "login-status");
+    tap_middle_of(&mut mirror, "login-status");
     let tapped = target.elapsed();
     let settle = mirror
         .settle(&SettleOptions {
