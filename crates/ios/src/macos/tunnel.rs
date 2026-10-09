@@ -44,6 +44,9 @@ pub(crate) struct Limits {
     pub open: Duration,
     /// One service connection: 25 to 37 ms for DVT's in spike S9.
     pub connect: Duration,
+    /// One reply on a service connection: a launch's came in 46 ms at p95
+    /// in spike S9.
+    pub reply: Duration,
 }
 
 impl Default for Limits {
@@ -51,6 +54,7 @@ impl Default for Limits {
         Limits {
             open: Duration::from_secs(10),
             connect: Duration::from_secs(10),
+            reply: Duration::from_secs(10),
         }
     }
 }
@@ -304,6 +308,7 @@ mod tests {
     const SHORT: Limits = Limits {
         open: Duration::from_millis(500),
         connect: Duration::from_millis(500),
+        reply: Duration::from_millis(500),
     };
 
     #[test]

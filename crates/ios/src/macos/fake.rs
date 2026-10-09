@@ -139,6 +139,9 @@ pub(crate) struct FakeDevice {
     services: Vec<(String, u16, Dictionary)>,
     properties: Dictionary,
     state: Mutex<State>,
+    /// The serving generation, for the connections open over a tunnel,
+    /// which close when it drops.
+    generations: tokio::sync::watch::Sender<u32>,
     handlers: Mutex<HashMap<u16, Handler>>,
     dvt: Mutex<Dvt>,
     link: Mutex<LinkState>,
@@ -189,6 +192,7 @@ impl FakeDevice {
                 .cloned()
                 .unwrap_or_default(),
             state: Mutex::new(State::default()),
+            generations: tokio::sync::watch::Sender::new(0),
             handlers: Mutex::new(HashMap::new()),
             dvt: Mutex::new(Dvt::default()),
             link: Mutex::new(LinkState::default()),
@@ -389,14 +393,22 @@ impl FakeDevice {
     /// Drops the serving tunnel, as jktcp's dies with its adapter; the
     /// device stays and a new tunnel serves.
     pub(crate) fn drop_tunnel(&self) {
-        self.state().generation += 1;
+        let mut state = self.state();
+        self.next_generation(&mut state);
     }
 
     /// Takes the device away: its tunnel drops and no new one opens.
     pub(crate) fn unplug(&self) {
         let mut state = self.state();
-        state.generation += 1;
+        self.next_generation(&mut state);
         state.gone = true;
+    }
+
+    /// Ends the serving tunnel: new connections through it fail and the
+    /// open ones close, as jktcp's do once its adapter is gone.
+    fn next_generation(&self, state: &mut State) {
+        state.generation += 1;
+        self.generations.send_replace(state.generation);
     }
 
     /// Brings the device back.
@@ -682,7 +694,7 @@ impl Opener for FakeOpener {
         let mut state = self.device.state();
         state.closed += 1;
         if provider.generation == state.generation {
-            state.generation += 1;
+            self.device.next_generation(&mut state);
         }
     }
 }
@@ -719,14 +731,14 @@ impl RsdProvider for FakeProvider {
             state.rsd_silent
         };
         let (client, mut server) = tokio::io::duplex(1 << 20);
-        if port == RSD_PORT {
+        let server: Pin<Box<dyn Future<Output = ()> + Send>> = if port == RSD_PORT {
             let frame = (!silent).then(|| self.device.handshake_frame());
-            tokio::spawn(async move {
+            Box::pin(async move {
                 if let Some(frame) = frame {
                     let _ = server.write_all(&frame).await;
                 }
                 drain(server).await;
-            });
+            })
         } else {
             let handler = self
                 .device
@@ -736,17 +748,28 @@ impl RsdProvider for FakeProvider {
                 .get(&port)
                 .cloned();
             match handler {
-                Some(handler) => {
-                    tokio::spawn(handler(server));
-                }
+                Some(handler) => handler(server),
                 None if Some(port) == self.device.port(services::DVT) => {
-                    tokio::spawn(serve_dvt(Arc::clone(&self.device), server));
+                    Box::pin(serve_dvt(Arc::clone(&self.device), server))
                 }
-                None => {
-                    tokio::spawn(drain(server));
-                }
+                None => Box::pin(drain(server)),
             }
-        }
+        };
+        // The connection lives as long as its tunnel does.
+        let mut generations = self.device.generations.subscribe();
+        let generation = self.generation;
+        tokio::spawn(async move {
+            tokio::select! {
+                () = server => {}
+                () = async {
+                    while *generations.borrow_and_update() == generation {
+                        if generations.changed().await.is_err() {
+                            std::future::pending::<()>().await;
+                        }
+                    }
+                } => {}
+            }
+        });
         Ok(Box::new(client))
     }
 }

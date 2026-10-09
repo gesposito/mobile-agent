@@ -165,7 +165,7 @@ pub(crate) fn ns_error(archive: &[u8]) -> Option<String> {
         "NSLocalizedFailureReason",
     ]
     .iter()
-    .find_map(|key| info?.get(*key)?.as_string());
+    .find_map(|key| info?.get(key)?.as_string());
     Some(match detail {
         Some(detail) => format!("{domain} {code}: {detail}"),
         None => format!("{domain} {code}"),
@@ -309,10 +309,6 @@ impl DvtChannel {
     /// Whether the channel's connection still serves.
     pub(crate) fn alive(&self) -> bool {
         !self.task.is_finished() && !self.requests.is_closed()
-    }
-
-    pub(crate) fn identifier(&self) -> &'static str {
-        self.identifier
     }
 }
 

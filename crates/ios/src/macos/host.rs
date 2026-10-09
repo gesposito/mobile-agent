@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use idevice::installation_proxy::InstallationProxyClient;
 use idevice::lockdown::LockdownClient;
 use idevice::mobile_image_mounter::ImageMounter;
 use idevice::provider::{IdeviceProvider, UsbmuxdProvider};
@@ -33,6 +34,13 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The label lockdown and usbmuxd see the driver's connections under.
 pub(crate) const LABEL: &str = "mobile-agent";
+
+/// How long a lockdown session or an installation proxy lookup gets.
+const LINK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long an install gets: S10 installed its 3.7 MB runner in 1.1 s and
+/// the Expo fixture in about 3 s.
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// An error and its sources on one line, since `idevice`'s errors say
 /// little on their own; a cause that repeats the one before is left out.
@@ -194,19 +202,70 @@ pub(crate) struct UsbLink {
 
 impl Link for UsbLink {
     async fn password_protected(&self) -> std::result::Result<bool, String> {
-        let _ = &self.lockdown;
-        todo!()
+        let mut session = self.lockdown.lock().await;
+        let mut retried = false;
+        loop {
+            if session.is_none() {
+                *session = Some(lockdown_session(&self.provider).await?);
+            }
+            let lockdown = session.as_mut().expect("a session");
+            let failure =
+                match timeout(LINK_TIMEOUT, lockdown.get_value(Some(LOCK_KEY), None)).await {
+                    Ok(Ok(value)) => {
+                        return value
+                            .as_boolean()
+                            .ok_or_else(|| format!("PasswordProtected is {value:?}"));
+                    }
+                    Ok(Err(error)) => describe(&error),
+                    Err(_) => format!("no answer within {LINK_TIMEOUT:?}"),
+                };
+            // The device closes a session it held for a while; a new one
+            // answers.
+            *session = None;
+            if retried {
+                return Err(failure);
+            }
+            retried = true;
+        }
     }
 
     async fn install(&self, app: &Path) -> std::result::Result<(), String> {
-        let _ = (app, &self.provider);
-        todo!()
+        timeout(
+            INSTALL_TIMEOUT,
+            idevice::utils::installation::install_package(&self.provider, app, None),
+        )
+        .await
+        .map_err(|_| format!("the install did not finish within {INSTALL_TIMEOUT:?}"))?
+        .map_err(|error| describe(&error))
     }
 
     async fn installed(&self, bundle_id: &str) -> std::result::Result<bool, String> {
-        let _ = bundle_id;
-        todo!()
+        let lookup = async {
+            let mut proxy = InstallationProxyClient::connect(&self.provider).await?;
+            proxy.get_apps(None, Some(vec![bundle_id.to_owned()])).await
+        };
+        let apps = timeout(LINK_TIMEOUT, lookup)
+            .await
+            .map_err(|_| format!("the installation proxy did not answer within {LINK_TIMEOUT:?}"))?
+            .map_err(|error| describe(&error))?;
+        Ok(apps.contains_key(bundle_id))
     }
+}
+
+/// A lockdown session with the pairing record usbmuxd holds.
+async fn lockdown_session(
+    provider: &UsbmuxdProvider,
+) -> std::result::Result<LockdownClient, String> {
+    let session = async {
+        let mut lockdown = LockdownClient::connect(provider).await?;
+        let pairing = provider.get_pairing_file().await?;
+        lockdown.start_session(&pairing).await?;
+        Ok::<_, IdeviceError>(lockdown)
+    };
+    timeout(LINK_TIMEOUT, session)
+        .await
+        .map_err(|_| format!("lockdown did not start a session within {LINK_TIMEOUT:?}"))?
+        .map_err(|error| describe(&error))
 }
 
 /// Every entry of usbmuxd's listing over `mux`, with its connection.

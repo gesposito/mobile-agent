@@ -127,18 +127,37 @@ impl<O: Opener, L: Link> Target<O, L> {
     /// it serves. DVT sends the services it publishes first, which are read
     /// before the channel opens, as `idevice`'s own process-control tool
     /// reads them.
-    async fn channel(&mut self, identifier: &'static str, wait: Duration) -> Result<&DvtChannel> {
-        let _ = (
-            identifier,
-            wait,
-            &self.channels,
-            &self.tunnel,
-            timeout::<std::future::Ready<()>>,
-            describe,
-            DvtChannel::open,
-            std::marker::PhantomData::<RemoteServerClient<Box<dyn ReadWrite>>>,
-        );
-        todo!()
+    async fn channel(&mut self, identifier: &'static str, limits: Limits) -> Result<&DvtChannel> {
+        if !self.channels.get(identifier).is_some_and(DvtChannel::alive) {
+            self.channels.remove(identifier);
+            let mut client: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
+            match timeout(limits.reply, client.read_message(0)).await {
+                Ok(Ok(_capabilities)) => {}
+                Ok(Err(error)) => {
+                    return Err(Error::Device {
+                        call: "DVT's capabilities".into(),
+                        reason: describe(&error),
+                    });
+                }
+                Err(_) => {
+                    return Err(Error::Timeout {
+                        what: "DVT's capabilities".into(),
+                        after: limits.reply,
+                    });
+                }
+            }
+            let channel = DvtChannel::open(client, identifier, limits.reply)
+                .await
+                .map_err(|reason| Error::Device {
+                    call: format!("opening DVT's {identifier}"),
+                    reason,
+                })?;
+            self.channels.insert(identifier, channel);
+        }
+        Ok(self
+            .channels
+            .get(identifier)
+            .expect("the channel was just opened"))
     }
 
     /// Sends `call` on the channel `identifier` and returns its reply. A
@@ -150,12 +169,103 @@ impl<O: Opener, L: Link> Target<O, L> {
         identifier: &'static str,
         call: dvt::Call,
         repeatable: bool,
-        wait: Duration,
+        limits: Limits,
     ) -> Result<Message> {
-        let _ = (identifier, call, repeatable, wait, CallError::NotSent);
-        todo!()
+        let selector = call.selector;
+        let mut retried = false;
+        loop {
+            let channel = self.channel(identifier, limits).await?;
+            let error = match channel.call(call.clone(), limits.reply).await {
+                Ok(reply) => return Ok(reply),
+                Err(error) => error,
+            };
+            self.channels.remove(identifier);
+            let again = match &error {
+                CallError::NotSent(_) => true,
+                CallError::Closed(_) => repeatable,
+                CallError::TimedOut(_) => false,
+            };
+            if again && !retried {
+                retried = true;
+                continue;
+            }
+            return Err(match error {
+                CallError::TimedOut(after) => Error::Timeout {
+                    what: format!("DVT's reply to {selector}"),
+                    after,
+                },
+                CallError::NotSent(cause) | CallError::Closed(cause) => Error::Disconnected {
+                    target: self.target.clone(),
+                    cause: format!("DVT's {selector}: {cause}"),
+                },
+            });
+        }
+    }
+
+    /// DVT's process list.
+    async fn processes(&mut self, limits: Limits) -> Result<Vec<dvt::Process>> {
+        let reply = self
+            .call(dvt::DEVICE_INFO, dvt::running_processes(), true, limits)
+            .await?;
+        dvt::processes(&reply).map_err(|reason| Error::Device {
+            call: "DVT's runningProcesses".into(),
+            reason,
+        })
+    }
+
+    /// The pids of `bundle_id`'s processes: an app's own, which DVT lists
+    /// with its bundle identifier on iOS 26.6.2, and not its extensions',
+    /// which have identifiers of their own.
+    async fn pids(&mut self, bundle_id: &str, limits: Limits) -> Result<Vec<u32>> {
+        Ok(self
+            .processes(limits)
+            .await?
+            .into_iter()
+            .filter(|process| process.bundle_id.as_deref() == Some(bundle_id))
+            .map(|process| process.pid)
+            .collect())
+    }
+
+    /// Ends `bundle_id`'s processes with SIGKILL and waits until they left
+    /// the process list; returns the pids signalled.
+    async fn terminate(&mut self, bundle_id: &str, limits: Limits) -> Result<Vec<u32>> {
+        let pids = self.pids(bundle_id, limits).await?;
+        for pid in &pids {
+            // A signal is not sent twice: the pid could belong to another
+            // process by then.
+            self.call(
+                dvt::PROCESS_CONTROL,
+                dvt::send_signal(*pid, dvt::SIGKILL),
+                false,
+                limits,
+            )
+            .await?;
+        }
+        let deadline = Instant::now() + TERMINATE_WAIT;
+        while !pids.is_empty() {
+            let left: Vec<u32> = self
+                .pids(bundle_id, limits)
+                .await?
+                .into_iter()
+                .filter(|pid| pids.contains(pid))
+                .collect();
+            if left.is_empty() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(Error::Timeout {
+                    what: format!("the end of {bundle_id}'s processes {left:?}"),
+                    after: TERMINATE_WAIT,
+                });
+            }
+            tokio::time::sleep(TERMINATE_POLL).await;
+        }
+        Ok(pids)
     }
 }
+
+/// The slots of a host's devices.
+type Slots<H> = HashMap<String, Arc<Slot<<H as Host>::Opener, <H as Host>::Link>>>;
 
 /// A device's state, behind the lock its commands take, and what `status`
 /// reports, which it reads without that lock while a command runs.
@@ -168,7 +278,7 @@ pub(crate) struct Slot<O: Opener, L: Link> {
 pub(crate) struct Core<H: Host> {
     /// Declared before the runtime, so that what the targets keep open is
     /// dropped while the tasks serving it can still end on their own.
-    targets: Mutex<HashMap<String, Arc<Slot<H::Opener, H::Link>>>>,
+    targets: Mutex<Slots<H>>,
     host: H,
     runtime: tokio::runtime::Runtime,
     limits: Limits,
@@ -297,7 +407,7 @@ impl<H: Host> Core<H> {
         state.disk_image = Some(disk_image.clone());
         let opened = match state.tunnel.open().await {
             Ok(()) => state
-                .channel(dvt::PROCESS_CONTROL, self.limits.connect)
+                .channel(dvt::PROCESS_CONTROL, self.limits)
                 .await
                 .map(|_| ()),
             Err(error) => Err(error),
@@ -327,8 +437,27 @@ impl<H: Host> Core<H> {
     }
 
     pub(crate) fn install(&self, target: &str, app: &Path) -> Result<Installed> {
-        let _ = (target, app, bundle::inspect, Instant::now);
-        todo!()
+        let bundle = bundle::inspect(app).map_err(|reason| Error::InvalidBundle {
+            path: app.display().to_string(),
+            reason,
+        })?;
+        self.runtime.block_on(async {
+            let slot = self.connected(target).await?;
+            let state = slot.state.lock().await;
+            let started = Instant::now();
+            state
+                .link
+                .install(app)
+                .await
+                .map_err(|reason| Error::InstallFailed {
+                    bundle_id: bundle.bundle_id.clone(),
+                    reason,
+                })?;
+            Ok(Installed {
+                bundle_id: bundle.bundle_id,
+                elapsed: started.elapsed(),
+            })
+        })
     }
 
     pub(crate) fn launch(
@@ -337,18 +466,81 @@ impl<H: Host> Core<H> {
         bundle_id: &str,
         options: &LaunchOptions,
     ) -> Result<Launched> {
-        let _ = (target, bundle_id, options);
-        todo!()
+        self.runtime.block_on(async {
+            let started = Instant::now();
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            // The lock first (design D19): on a locked phone DVT refuses with
+            // an error it does not explain, and CoreDevice's app service
+            // refused at some moments and launched behind the lock screen at
+            // others (S9), so a launch is not tried.
+            match state.link.password_protected().await {
+                Ok(false) => {}
+                Ok(true) => {
+                    return Err(Error::NotReady {
+                        target: target.to_owned(),
+                        readiness: Readiness::Locked,
+                    });
+                }
+                Err(cause) => {
+                    return Err(Error::Disconnected {
+                        target: target.to_owned(),
+                        cause: format!("reading lockdown's PasswordProtected: {cause}"),
+                    });
+                }
+            }
+            let reply = state
+                .call(
+                    dvt::PROCESS_CONTROL,
+                    dvt::launch(bundle_id, options),
+                    false,
+                    self.limits,
+                )
+                .await;
+            *lock(&slot.snapshot) = state.snapshot();
+            match dvt::launched_pid(&reply?) {
+                Ok(pid) => Ok(Launched {
+                    pid,
+                    elapsed: started.elapsed(),
+                }),
+                // DVT's refusal does not say whether the app is installed;
+                // the installation proxy does.
+                Err(reason) => match state.link.installed(bundle_id).await {
+                    Ok(false) => Err(Error::AppNotInstalled {
+                        target: target.to_owned(),
+                        bundle_id: bundle_id.to_owned(),
+                    }),
+                    _ => Err(Error::LaunchFailed {
+                        bundle_id: bundle_id.to_owned(),
+                        reason,
+                    }),
+                },
+            }
+        })
     }
 
     pub(crate) fn terminate(&self, target: &str, bundle_id: &str) -> Result<Terminated> {
-        let _ = (target, bundle_id, TERMINATE_WAIT, TERMINATE_POLL);
-        todo!()
+        self.runtime.block_on(async {
+            let started = Instant::now();
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            let pids = state.terminate(bundle_id, self.limits).await;
+            *lock(&slot.snapshot) = state.snapshot();
+            Ok(Terminated {
+                pids: pids?,
+                elapsed: started.elapsed(),
+            })
+        })
     }
 
     pub(crate) fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>> {
-        let _ = (target, bundle_id, Self::connected);
-        todo!()
+        self.runtime.block_on(async {
+            let slot = self.connected(target).await?;
+            let mut state = slot.state.lock().await;
+            let pids = state.pids(bundle_id, self.limits).await;
+            *lock(&slot.snapshot) = state.snapshot();
+            Ok(pids?.first().copied())
+        })
     }
 
     /// What the driver holds for `target`; nothing for a device it has not
@@ -547,6 +739,7 @@ mod tests {
     pub(crate) const SHORT: Limits = Limits {
         open: Duration::from_millis(500),
         connect: Duration::from_millis(500),
+        reply: Duration::from_millis(500),
     };
 
     pub(crate) const SHORT_MOUNTS: MountLimits = MountLimits {
