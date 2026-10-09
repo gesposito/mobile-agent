@@ -23,6 +23,7 @@ Research note: `docs/research/ios-device.md` (task 1.1). Spike reports: `docs/sp
 - A runner that starts once per session and never restarts in it, speaks the device protocol over a socket, and reads the tree the way the Simulator's reader does, so the mirror's listing rules, refs, modal views and keyboard handling carry over without change.
 - A frame stream from the host as the change signal, so settle and the mirror's re-reads work without an event stream, as on the Simulator, and no idle wait anywhere.
 - Every host-side piece in Rust, in one new crate; the runner in Rust with an Objective-C shim only where a bundle's entry point or a private call needs one.
+- iOS 26 first, as a specific path: the driver is built and measured for what the device at hand runs, iOS 26.6.2, where the display stream is refused and `dtuhidd` needs no stream (S11), and every path it takes is gated on the device's iOS version as the Android agent gates its reads on the API level (`Levels.kt`) and the Simulator driver its transport on the CoreSimulator version. iOS 27's display stream, and its input that needs the stream, come later as another gated path, added when a device runs it, costing the iOS 26 path nothing.
 - Keep the core lean: nothing device-specific enters `protocol`, `mirror`, the CLI or the Android driver; what the device needs is gated in `crates/ios` and the runner.
 
 **Non-Goals:**
@@ -157,6 +158,8 @@ Additive: a new crate, a new bundle, a new target class. Nothing deployed change
 
 ## Open Questions
 
+- iOS 27: the CoreDevice display stream (HEVC over RTP, keyframes on request) and `dtuhidd` input behind a running stream are a later path, gated on the device's version, to be spiked on a phone that runs iOS 27 (the iPhone 17e once upgraded, or the SE) with S11's measurements repeated there; until then the iOS 26 path is the only one, and the harness's tap-to-frame-change on this class stays reported, not gated.
+- AVFoundation capture is host-side and not tied to the iOS version: once the camera permission is granted, its series decide whether it replaces polled screenshots on iOS 26 (30 frames a second and a first changed frame within 100 ms at p95 would pass D23's gate); a failure leaves the polling.
 - Whether hardware buttons (home, lock, volume) need a protocol method of their own or go through `key` codes; decided by what S10 finds the runner can synthesize.
 - Whether the accessibility audit service's element actions are worth a fallback for apps whose XCTest tree is sparse, as some React Native screens were on the Simulator (`reports/10.4-rn-smoke.md`); measured if a device run shows such a screen.
 - Which baselines support a physical device on this host without their own signing setup; found out in task 7.3 and recorded in the report.
