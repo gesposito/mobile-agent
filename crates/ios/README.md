@@ -178,7 +178,8 @@ and unmounting it is not this driver's to do.
   `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:`
   with the arguments and environment archived, the app started running and
   `KillExisting` as `terminate_running` asks, and returns the pid of the
-  reply. A refusal is `app_not_installed` when the installation proxy does
+  reply. Without `terminate_running` a running app keeps its process: DVT
+  answered the running instance's pid, in 55 ms. A refusal is `app_not_installed` when the installation proxy does
   not list the app, `launch_failed` with DVT's `NSError` otherwise, read
   from the reply's archive since `idevice`'s decoder leaves it unresolved.
 - **running** reads DVT's process list for the app's bundle identifier,
@@ -201,11 +202,22 @@ in Numbers.
 
 ## Numbers
 
-The only series of this task, as the brief asks: ten installs of the
-SwiftUI fixture's Debug device build in a row through `install`, the
-connection open, after a wait for a quiet host (a 1-minute load under 4 and
-no cargo, rustc, xcodebuild, gradle, kotlinc or java process above 5% of a
-core). Results are added once the series has run.
+One series, the install of the SwiftUI fixture's Debug device build (664 KB
+in 7 files), ten times in a row through `install` with the connection open
+(`lifecycle::install_series`), on 2026-10-09 at 17:15. Host: Apple M1 Max,
+macOS 26.6.2, Xcode 27.0 (27A266a); device: iPhone SE (3rd generation),
+iOS 26.6.2, on USB, unlocked. The series waited 15 minutes for a quiet host,
+a 1-minute load under 4 and no cargo, rustc, xcodebuild, gradle, kotlinc or
+java process above 5% of a core, checked every 30 s, as the spikes' guard
+did; the check that let it start read 3.99.
+
+| Series | n | p50 | p95 | min | max | Load before / after (1, 5, 15 minutes) |
+|---|---:|---:|---:|---:|---:|---|
+| install, SwiftUI fixture | 10 | 1088 ms | 1379 ms | 1011 ms | 1379 ms | 4.15, 5.39, 11.69 / 4.05, 5.33, 11.59 |
+
+Percentiles are nearest rank. Spike S10 installed its 3.7 MB runner the same
+way in 1118 and 1290 ms at p50 and p95, and this fixture once in 1.6 to
+1.7 s.
 
 ## Compatibility
 
