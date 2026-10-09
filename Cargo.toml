@@ -1,7 +1,7 @@
 [workspace]
 # The Simulator driver's in-guest reader lives inside its crate (design D11),
 # one level below the glob.
-members = ["crates/*", "crates/simulator/reader"]
+members = ["crates/*", "crates/simulator/reader", "agent-ios"]
 # Spikes are throwaway programs with their own manifests; see spikes/README.md.
 # Exclude entries are path prefixes, not globs, so "spikes" covers every spike.
 exclude = ["spikes"]

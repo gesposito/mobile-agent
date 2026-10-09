@@ -6,7 +6,10 @@
 //!
 //! - [`elements`] is the tree model both of the driver's read paths fill in,
 //!   and its conversion into the protocol's snapshot payload. It is plain
-//!   Rust; the driver's host translator uses it too.
+//!   Rust; the driver's host translator uses it too, and so does the iOS
+//!   device's runner (`agent-ios`), which fills it from XCTest's snapshot
+//!   and builds this library for `aarch64-apple-ios` for the conversion
+//!   alone.
 //! - `guest` (Apple platforms) is the reader proper: the runtime bindings,
 //!   the snapshot extraction and the protocol server. It builds for macOS as
 //!   well, where its tests run, although the runtime it loads exists only

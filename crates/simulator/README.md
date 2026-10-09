@@ -128,7 +128,11 @@ Foundation, CoreFoundation, libobjc, libSystem and libiconv, and carries
 only the ad hoc signature the linker gives every arm64 binary. The reader's
 library, the conversion into the snapshot payload, also builds for the
 host, where the workspace lints and tests it, on macOS with the rest of the
-reader's code; its runtime exists only inside a Simulator.
+reader's code; its runtime exists only inside a Simulator. It builds as it
+is for `aarch64-apple-ios` too, where the physical iPhone's runner
+(`agent-ios`) links it and converts XCTest's snapshot with `elements`; the
+snapshot call stays the Simulator's, since the runner's sandbox refuses it
+on a device (design D21 of `physical-ios`).
 
 ### Hosts other than macOS
 

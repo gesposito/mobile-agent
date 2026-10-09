@@ -3,7 +3,9 @@
 //!
 //! The in-guest reader fills [`Element`]s from the runtime's snapshot
 //! dictionaries; the host translator fills them from `AXPTranslator`'s
-//! elements. [`snapshot`] then turns one read into windows and nodes the way
+//! elements; the iOS device's runner (`agent-ios`) fills them from XCTest's
+//! snapshot, which names no platform class and no scroll area.
+//! [`snapshot`] then turns one read into windows and nodes the way
 //! the mirror reads them (see `mirror::backend`):
 //!
 //! - `class` is the `XCUIElementType` name, such as `XCUIElementTypeButton`,

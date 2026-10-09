@@ -1,0 +1,26 @@
+[package]
+name = "agent-ios"
+description = "The iOS runner's agent: the device protocol served from inside an XCTest bundle on a physical iPhone"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# A static library, which build.sh links with the Objective-C shim into the
+# runner's test bundle for aarch64-apple-ios, and an rlib for the tests on the
+# host. The runner's version is VERSION, which build.rs reads, not the
+# workspace's. The library holds no benchmark; its libtest bench harness,
+# which cargo bench runs first, would refuse criterion's flags such as --noplot.
+[lib]
+crate-type = ["staticlib", "rlib"]
+bench = false
+
+# The tree goes through the Simulator reader's conversion
+# (`simulator_reader::elements`); the shim hands XCTest's snapshot over as JSON.
+[dependencies]
+protocol = { version = "0.1.0", path = "../crates/protocol" }
+serde_json = "1.0.151"
+simulator-reader = { version = "0.1.0", path = "../crates/simulator/reader" }
