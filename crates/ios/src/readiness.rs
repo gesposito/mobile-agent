@@ -12,8 +12,9 @@
 
 use std::fmt;
 
+use crate::compat;
 use crate::identity::IdentityCheck;
-use crate::model::Probe;
+use crate::model::{DiskImage, Probe, TEAM_VARIABLE, Trust};
 
 /// What an operation needs of a device, in the order a person makes a device
 /// ready; each level needs the ones before it.
@@ -59,17 +60,55 @@ impl Readiness {
     /// A stable name for the state, which a command on a device in it fails
     /// with.
     pub fn code(&self) -> &'static str {
-        todo!()
+        match self {
+            Readiness::Ready => "ready",
+            Readiness::UnsupportedIos { .. } => "unsupported_ios",
+            Readiness::NotTrusted { .. } => "not_trusted",
+            Readiness::DeveloperModeOff => "developer_mode_off",
+            Readiness::DiskImageUnmounted => "disk_image_unmounted",
+            Readiness::Locked => "device_locked",
+            Readiness::NoSigningIdentity { .. } => "no_signing_identity",
+        }
     }
 
     /// Whether nothing stands between the device and a session.
     pub fn is_ready(&self) -> bool {
-        todo!()
+        *self == Readiness::Ready
     }
 
     /// What the state is and the step that leaves it.
     pub fn message(&self) -> String {
-        todo!()
+        match self {
+            Readiness::Ready => "ready".to_owned(),
+            Readiness::UnsupportedIos { version } => format!(
+                "it runs iOS {version}, outside the versions this driver supports, {}; see {}",
+                compat::supported_range(),
+                compat::NOTES
+            ),
+            Readiness::NotTrusted { reason } => format!(
+                "this Mac is not trusted by it ({reason}): unlock it, connect it over USB and tap \
+                 Trust when it asks whether to trust this computer, then enter its passcode; if it \
+                 does not ask, opening Finder with the device connected starts the pairing"
+            ),
+            Readiness::DeveloperModeOff => "Developer Mode is off: on the device open Settings > \
+                 Privacy & Security > Developer Mode, turn it on, let it restart, then confirm \
+                 with the passcode"
+                .to_owned(),
+            Readiness::DiskImageUnmounted => "the developer disk image is not mounted, as after \
+                 every restart: `xcrun devicectl device info ddiServices --device <identifier>` \
+                 mounts the selected Xcode's, which needs this Mac online for Apple's signing \
+                 server"
+                .to_owned(),
+            Readiness::Locked => "it is locked: unlock it, and set Settings > Display & \
+                 Brightness > Auto-Lock to Never for long runs"
+                .to_owned(),
+            Readiness::NoSigningIdentity { reason } => format!(
+                "{reason}; the runner is signed with an Apple Development identity of the team \
+                 {TEAM_VARIABLE} names: create the development certificate in Xcode (Settings > \
+                 Accounts, Manage Certificates) with the team's account, and export \
+                 {TEAM_VARIABLE} with the team's identifier"
+            ),
+        }
     }
 }
 
@@ -88,8 +127,49 @@ pub fn assess(
     identity: &IdentityCheck,
     need: Need,
 ) -> Result<(), Readiness> {
-    let _ = (ios_version, probe, identity, need);
-    todo!()
+    // Lockdown gives the version without a session, so an unsupported iOS is
+    // told before anything else; a version it did not give leaves the
+    // trust check to speak.
+    if let Some(version) = ios_version
+        && !compat::supported_ios(version)
+    {
+        return Err(Readiness::UnsupportedIos {
+            version: version.to_owned(),
+        });
+    }
+    match &probe.trust {
+        Trust::Trusted => {}
+        Trust::NotPaired => {
+            return Err(Readiness::NotTrusted {
+                reason: "usbmuxd holds no pairing record for it".to_owned(),
+            });
+        }
+        Trust::Refused => {
+            return Err(Readiness::NotTrusted {
+                reason: "it refused this Mac's pairing record".to_owned(),
+            });
+        }
+        Trust::Unreachable(reason) => {
+            return Err(Readiness::NotTrusted {
+                reason: format!("lockdown did not start a session: {reason}"),
+            });
+        }
+    }
+    if need >= Need::DeveloperMode && probe.developer_mode != Some(true) {
+        return Err(Readiness::DeveloperModeOff);
+    }
+    if need >= Need::DiskImage && !matches!(probe.disk_image, Some(DiskImage::Mounted { .. })) {
+        return Err(Readiness::DiskImageUnmounted);
+    }
+    if need >= Need::Unlocked && probe.password_protected != Some(false) {
+        return Err(Readiness::Locked);
+    }
+    if need >= Need::Session && !identity.ok() {
+        return Err(Readiness::NoSigningIdentity {
+            reason: identity.reason(),
+        });
+    }
+    Ok(())
 }
 
 /// The device's state for a session: the first state that stands between it
@@ -333,7 +413,7 @@ mod tests {
             (
                 Readiness::Locked,
                 "device_locked",
-                &["Unlock", "Auto-Lock"][..],
+                &["unlock it", "Auto-Lock"][..],
             ),
             (
                 Readiness::NoSigningIdentity {

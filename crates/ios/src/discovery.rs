@@ -31,8 +31,13 @@ pub const LOCK_KEY: &str = "PasswordProtected";
 /// kept. A device listed only on the network is dropped, since this driver
 /// drives devices over USB only.
 pub fn usb_entries(entries: Vec<MuxEntry>) -> Vec<MuxEntry> {
-    let _ = (entries, Connection::Usb);
-    todo!()
+    let mut kept: Vec<MuxEntry> = Vec::new();
+    for entry in entries {
+        if entry.connection == Connection::Usb && !kept.iter().any(|seen| seen.udid == entry.udid) {
+            kept.push(entry);
+        }
+    }
+    kept
 }
 
 /// What the probe read, from the values it stored (the description, then
@@ -44,8 +49,18 @@ pub fn probe(
     trust: Trust,
     images: Option<Result<Vec<Value>, String>>,
 ) -> Probe {
-    let _ = (values, trust, images);
-    todo!()
+    if trust != Trust::Trusted {
+        return Probe::untrusted(trust);
+    }
+    Probe {
+        trust,
+        developer_mode: values.get(DEVELOPER_MODE_KEY).and_then(Value::as_boolean),
+        disk_image: images.map(|images| match images {
+            Ok(entries) => disk_image(&entries),
+            Err(reason) => DiskImage::Unreadable(reason),
+        }),
+        password_protected: values.get(LOCK_KEY).and_then(Value::as_boolean),
+    }
 }
 
 /// The developer disk image from the image mounter's `CopyDevices` entries:
@@ -53,8 +68,33 @@ pub fn probe(
 /// `PersonalizedImageType` `DeveloperDiskImage`, or `Developer` before iOS 17)
 /// that says it is mounted or names its mount path.
 pub fn disk_image(entries: &[Value]) -> DiskImage {
-    let _ = entries;
-    todo!()
+    for entry in entries {
+        let Some(entry) = entry.as_dictionary() else {
+            continue;
+        };
+        let text = |key: &str| entry.get(key).and_then(Value::as_string);
+        let developer = match text("DiskImageType") {
+            Some("Personalized") => text("PersonalizedImageType")
+                .is_none_or(|personalized| personalized == "DeveloperDiskImage"),
+            Some("Developer") => true,
+            _ => false,
+        };
+        if !developer {
+            continue;
+        }
+        let mount_path = text("MountPath").map(str::to_owned);
+        let mounted = entry
+            .get("IsMounted")
+            .and_then(Value::as_boolean)
+            .unwrap_or(mount_path.is_some());
+        if mounted {
+            return DiskImage::Mounted {
+                image_type: text("DiskImageType").unwrap_or_default().to_owned(),
+                mount_path,
+            };
+        }
+    }
+    DiskImage::NotMounted
 }
 
 /// The device as `devices` lists it: its identifier, its description from
@@ -66,8 +106,23 @@ pub fn device_info(
     probe: Probe,
     identity: &IdentityCheck,
 ) -> DeviceInfo {
-    let _ = (udid, values, probe, identity, readiness::readiness);
-    todo!()
+    let text = |key: &str| {
+        values
+            .get(key)
+            .and_then(Value::as_string)
+            .map(str::to_owned)
+    };
+    let ios_version = text("ProductVersion");
+    let readiness = readiness::readiness(ios_version.as_deref(), &probe, identity);
+    DeviceInfo {
+        udid: udid.to_owned(),
+        name: text("DeviceName"),
+        model: text("ProductType"),
+        ios_version,
+        build: text("BuildVersion"),
+        probe,
+        readiness,
+    }
 }
 
 #[cfg(test)]

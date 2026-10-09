@@ -29,8 +29,9 @@ pub const NOTES: &str = "the Compatibility section of crates/ios/README.md";
 
 /// Whether the driver supports a device running iOS `version`.
 pub fn supported_ios(version: &str) -> bool {
-    let _ = (version, Version::parse);
-    todo!()
+    let first = Version::parse(FIRST_SUPPORTED_IOS).expect("a dotted version");
+    let past = Version::parse(FIRST_UNSUPPORTED_IOS).expect("a dotted version");
+    Version::parse(version).is_some_and(|version| version >= first && version < past)
 }
 
 /// The supported range in words.
@@ -57,12 +58,84 @@ pub struct CallSite {
 /// Every interface the driver uses on the device, with where it was
 /// validated.
 pub fn call_sites() -> Vec<CallSite> {
-    todo!()
+    const DISCOVERY: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/discovery.rs";
+    let site = |call, service, validated_on, note| CallSite {
+        call,
+        service,
+        validated_on,
+        note,
+    };
+    vec![
+        site(
+            "ListDevices, ReadPairRecord, Connect",
+            "usbmuxd (/var/run/usbmuxd)",
+            DISCOVERY,
+            "a phone with Wi-Fi sync is listed twice; the USB entry is taken. The pairing record comes from usbmuxd, not /var/db/lockdown",
+        ),
+        site(
+            "GetValue DeviceName, ProductType, ProductVersion, BuildVersion (no session); StartSession",
+            "lockdownd (port 62078)",
+            DISCOVERY,
+            "",
+        ),
+        site(
+            "GetValue DeveloperModeStatus in com.apple.security.mac.amfi",
+            "lockdownd",
+            DISCOVERY,
+            "",
+        ),
+        site(
+            "GetValue PasswordProtected",
+            "lockdownd",
+            DISCOVERY,
+            "follows the lock; CoreDevice's com.apple.coredevice.feature.getlockstate is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked",
+        ),
+        site(
+            "CopyDevices",
+            "com.apple.mobile.mobile_image_mounter (lockdown)",
+            DISCOVERY,
+            "the personalized image of Xcode 27.0 at /System/Developer; a Cryptex1 form (iOS 17.4 and later, devices outside the image's build manifest) is not listed here",
+        ),
+    ]
 }
 
 /// The table as aligned text: the supported range, then every call site.
 pub fn render() -> String {
-    todo!()
+    let mut out = format!(
+        "Supported: {}, under Xcode {VALIDATED_XCODE}, through idevice {IDEVICE}\n\n",
+        supported_range()
+    );
+    let sites = call_sites();
+    let rows: Vec<[&str; 4]> = sites
+        .iter()
+        .map(|site| [site.call, site.service, site.validated_on, site.note])
+        .collect();
+    out.push_str(&table(["Call", "Service", "Validated on", "Note"], &rows));
+    out
+}
+
+/// Left-aligned columns, two spaces apart, the last one unpadded.
+fn table<const N: usize>(header: [&str; N], rows: &[[&str; N]]) -> String {
+    let mut widths = header.map(|cell| cell.chars().count());
+    for row in rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.chars().count());
+        }
+    }
+    let mut out = String::new();
+    for row in std::iter::once(&header).chain(rows) {
+        let mut line = String::new();
+        for (index, (cell, width)) in row.iter().zip(widths).enumerate() {
+            if index + 1 == N {
+                line.push_str(cell);
+            } else {
+                line.push_str(&format!("{cell:<width$}  "));
+            }
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
 }
 
 #[cfg(test)]

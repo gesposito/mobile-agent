@@ -6,12 +6,11 @@
 //! The logic lives in [`Core`], generic over the host so that the tests run
 //! it on recorded listings and values instead of a device.
 
-use plist::Dictionary;
-
+use crate::discovery::{self, usb_entries};
 use crate::driver::Devices;
 use crate::error::{Error, Result};
-use crate::model::{DeviceInfo, Probe};
-use crate::readiness::Need;
+use crate::model::{DeviceInfo, MuxEntry};
+use crate::readiness::{self, Need};
 
 use super::host::{Host, UsbHost};
 
@@ -25,7 +24,7 @@ impl IosDriver {
     /// until a method needs it.
     pub fn open() -> Result<IosDriver> {
         Ok(IosDriver {
-            core: Core::new(UsbHost)?,
+            core: Core::new(UsbHost::new()?)?,
         })
     }
 }
@@ -61,18 +60,47 @@ impl<H: Host> Core<H> {
     }
 
     pub(crate) fn devices(&self) -> Result<Vec<DeviceInfo>> {
-        let _ = (
-            &self.runtime,
-            &self.host,
-            Dictionary::new(),
-            Probe::untrusted,
-        );
-        todo!()
+        self.runtime.block_on(async {
+            let entries = usb_entries(self.host.list().await?);
+            let identity = self.host.identity();
+            let mut devices = Vec::with_capacity(entries.len());
+            for entry in &entries {
+                let (values, probe) = self.host.probe(entry).await;
+                devices.push(discovery::device_info(
+                    &entry.udid,
+                    &values,
+                    probe,
+                    &identity,
+                ));
+            }
+            Ok(devices)
+        })
     }
 
     pub(crate) fn require(&self, target: &str, need: Need) -> Result<DeviceInfo> {
-        let _ = (target, need);
-        todo!()
+        self.runtime.block_on(async {
+            let entry = self.entry(target).await?;
+            let (values, probe) = self.host.probe(&entry).await;
+            let identity = self.host.identity();
+            let info = discovery::device_info(target, &values, probe, &identity);
+            readiness::assess(info.ios_version.as_deref(), &info.probe, &identity, need).map_err(
+                |readiness| Error::NotReady {
+                    target: target.to_owned(),
+                    readiness,
+                },
+            )?;
+            Ok(info)
+        })
+    }
+
+    /// The USB entry of the device whose identifier is `target`.
+    async fn entry(&self, target: &str) -> Result<MuxEntry> {
+        usb_entries(self.host.list().await?)
+            .into_iter()
+            .find(|entry| entry.udid == target)
+            .ok_or_else(|| Error::NotFound {
+                target: target.to_owned(),
+            })
     }
 }
 
@@ -81,13 +109,13 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    use plist::Value;
+    use plist::{Dictionary, Value};
 
     use super::*;
     use crate::discovery::tests::{identity, recorded_images, recorded_values};
     use crate::discovery::{DEVELOPER_MODE_KEY, LOCK_KEY, probe as probe_from};
     use crate::identity::IdentityCheck;
-    use crate::model::{Connection, MuxEntry, Trust};
+    use crate::model::{Connection, Probe, Trust};
     use crate::readiness::Readiness;
 
     const PHONE: &str = "placeholder-udid-phone";

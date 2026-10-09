@@ -3,13 +3,50 @@
 //! record, which usbmuxd hands over (`ReadPairRecord`), so nothing reads
 //! `/var/db/lockdown`.
 
-use idevice::IdeviceError;
-use idevice::usbmuxd::UsbmuxdConnection;
-use plist::Dictionary;
+use std::time::Duration;
 
-use crate::error::Result;
+use idevice::lockdown::LockdownClient;
+use idevice::mobile_image_mounter::ImageMounter;
+use idevice::provider::{IdeviceProvider, UsbmuxdProvider};
+use idevice::usbmuxd::{Connection as MuxConnection, UsbmuxdAddr, UsbmuxdConnection};
+use idevice::{IdeviceError, IdeviceService};
+use plist::{Dictionary, Value};
+use tokio::time::timeout;
+
+use crate::discovery::{
+    self, DESCRIPTION_KEYS, DEVELOPER_MODE_DOMAIN, DEVELOPER_MODE_KEY, LOCK_KEY,
+};
+use crate::error::{Error, Result};
 use crate::identity::IdentityCheck;
-use crate::model::{MuxEntry, Probe, Trust};
+use crate::model::{Connection, MuxEntry, Probe, Trust};
+
+/// How long usbmuxd gets to answer: 0.4 ms at p50 in spike S9.
+const USBMUXD_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long a device's probe gets: lockdown's session and values, and the
+/// image mounter's listing, about 50 ms together on the spike's phone.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The label lockdown and usbmuxd see the driver's connections under.
+pub(crate) const LABEL: &str = "mobile-agent";
+
+/// An error and its sources on one line, since `idevice`'s errors say
+/// little on their own; a cause that repeats the one before is left out.
+pub(crate) fn describe(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut last = text.clone();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let message = cause.to_string();
+        if message != last {
+            text.push_str(": ");
+            text.push_str(&message);
+        }
+        last = message;
+        source = cause.source();
+    }
+    text
+}
 
 /// What discovery needs from the host: the seam the tests replace.
 pub(crate) trait Host: Send + Sync + 'static {
@@ -24,18 +61,60 @@ pub(crate) trait Host: Send + Sync + 'static {
     fn identity(&self) -> IdentityCheck;
 }
 
-/// The real host: usbmuxd at its default socket, lockdown through it.
-#[derive(Debug, Default)]
-pub(crate) struct UsbHost;
+/// The real host: usbmuxd at its default socket, or the one
+/// `USBMUXD_SOCKET_ADDRESS` names, and lockdown through it.
+#[derive(Debug)]
+pub(crate) struct UsbHost {
+    addr: UsbmuxdAddr,
+}
+
+impl UsbHost {
+    pub(crate) fn new() -> Result<UsbHost> {
+        let addr = UsbmuxdAddr::from_env_var().map_err(|error| Error::Usbmuxd {
+            reason: format!("USBMUXD_SOCKET_ADDRESS is not an address: {error}"),
+        })?;
+        Ok(UsbHost { addr })
+    }
+
+    /// The provider that reaches the device of `entry` through usbmuxd.
+    pub(crate) fn provider(&self, entry: &MuxEntry) -> UsbmuxdProvider {
+        UsbmuxdProvider {
+            addr: self.addr.clone(),
+            tag: entry.device_id,
+            udid: entry.udid.clone(),
+            device_id: entry.device_id,
+            label: LABEL.to_owned(),
+        }
+    }
+}
 
 impl Host for UsbHost {
     async fn list(&self) -> Result<Vec<MuxEntry>> {
-        todo!()
+        let unavailable = |reason: String| Error::Usbmuxd { reason };
+        let listing = async {
+            let mux = self
+                .addr
+                .connect(0)
+                .await
+                .map_err(|error| unavailable(describe(&error)))?;
+            list_devices(mux).await
+        };
+        timeout(USBMUXD_TIMEOUT, listing)
+            .await
+            .map_err(|_| unavailable(format!("no answer within {USBMUXD_TIMEOUT:?}")))?
     }
 
     async fn probe(&self, entry: &MuxEntry) -> (Dictionary, Probe) {
-        let _ = entry;
-        todo!()
+        let provider = self.provider(entry);
+        match timeout(PROBE_TIMEOUT, probe_device(&provider)).await {
+            Ok(read) => read,
+            Err(_) => (
+                Dictionary::new(),
+                Probe::untrusted(Trust::Unreachable(format!(
+                    "lockdown did not answer within {PROBE_TIMEOUT:?}"
+                ))),
+            ),
+        }
     }
 
     fn identity(&self) -> IdentityCheck {
@@ -44,15 +123,105 @@ impl Host for UsbHost {
 }
 
 /// Every entry of usbmuxd's listing over `mux`, with its connection.
-pub(crate) async fn list_devices(mux: UsbmuxdConnection) -> Result<Vec<MuxEntry>> {
-    let _ = mux;
-    todo!()
+pub(crate) async fn list_devices(mut mux: UsbmuxdConnection) -> Result<Vec<MuxEntry>> {
+    let devices = mux.get_devices().await.map_err(|error| Error::Usbmuxd {
+        reason: describe(&error),
+    })?;
+    Ok(devices
+        .into_iter()
+        .map(|device| MuxEntry {
+            udid: device.udid,
+            device_id: device.device_id,
+            connection: match device.connection_type {
+                MuxConnection::Usb => Connection::Usb,
+                MuxConnection::Network(_) => Connection::Network,
+                MuxConnection::Unknown(kind) => Connection::Other(kind),
+            },
+        })
+        .collect())
+}
+
+/// Reads what readiness needs from the device: its description without a
+/// session, then, inside a session with the pairing record usbmuxd holds,
+/// Developer Mode and the lock, and with Developer Mode on the image
+/// mounter's listing.
+async fn probe_device(provider: &UsbmuxdProvider) -> (Dictionary, Probe) {
+    let mut values = Dictionary::new();
+    let mut lockdown = match LockdownClient::connect(provider).await {
+        Ok(lockdown) => lockdown,
+        Err(error) => {
+            return (
+                values,
+                Probe::untrusted(Trust::Unreachable(describe(&error))),
+            );
+        }
+    };
+    for key in DESCRIPTION_KEYS {
+        if let Ok(value) = lockdown.get_value(Some(key), None).await {
+            values.insert(key.to_owned(), value);
+        }
+    }
+    let trust = match provider.get_pairing_file().await {
+        Err(error) => trust_after(&error),
+        Ok(pairing) => match lockdown.start_session(&pairing).await {
+            Ok(_) => Trust::Trusted,
+            Err(error) => trust_after(&error),
+        },
+    };
+    if trust != Trust::Trusted {
+        let probe = discovery::probe(&values, trust, None);
+        return (values, probe);
+    }
+    if let Ok(value) = lockdown
+        .get_value(Some(DEVELOPER_MODE_KEY), Some(DEVELOPER_MODE_DOMAIN))
+        .await
+    {
+        values.insert(DEVELOPER_MODE_KEY.to_owned(), value);
+    }
+    // The lock, from lockdown: CoreDevice's getlockstate answers that it is
+    // not implemented on iOS 26.6.2 (spike S9), so it is never asked.
+    if let Ok(value) = lockdown.get_value(Some(LOCK_KEY), None).await {
+        values.insert(LOCK_KEY.to_owned(), value);
+    }
+    let developer_mode = values.get(DEVELOPER_MODE_KEY).and_then(Value::as_boolean);
+    let images = if developer_mode == Some(true) {
+        Some(mounted_images(provider).await)
+    } else {
+        None
+    };
+    let probe = discovery::probe(&values, trust, images);
+    (values, probe)
+}
+
+/// The image mounter's `CopyDevices` entries.
+pub(crate) async fn mounted_images(
+    provider: &dyn IdeviceProvider,
+) -> std::result::Result<Vec<Value>, String> {
+    let mut mounter = ImageMounter::connect(provider)
+        .await
+        .map_err(|error| format!("the image mounter did not start: {}", describe(&error)))?;
+    mounter
+        .copy_devices()
+        .await
+        .map_err(|error| format!("CopyDevices failed: {}", describe(&error)))
 }
 
 /// The trust a failed `ReadPairRecord` or `StartSession` means.
 pub(crate) fn trust_after(error: &IdeviceError) -> Trust {
-    let _ = error;
-    todo!()
+    match error {
+        IdeviceError::InvalidHostID => Trust::Refused,
+        // usbmuxd answers ReadPairRecord without a record, which idevice
+        // reports as a reply missing it.
+        IdeviceError::UnexpectedResponse(message) if message.contains("PairRecordData") => {
+            Trust::NotPaired
+        }
+        IdeviceError::UnknownErrorType(kind) if kind.contains("PasswordProtected") => {
+            Trust::Unreachable(
+                "the device is locked, and lockdown refuses a session until it is unlocked".into(),
+            )
+        }
+        other => Trust::Unreachable(describe(other)),
+    }
 }
 
 #[cfg(test)]

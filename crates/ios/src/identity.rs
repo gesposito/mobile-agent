@@ -36,13 +36,29 @@ pub enum IdentityCheck {
 impl IdentityCheck {
     /// Whether the runner can be signed.
     pub fn ok(&self) -> bool {
-        todo!()
+        matches!(self, IdentityCheck::Found { .. })
     }
 
     /// Why the runner cannot be signed, for the readiness message; empty
     /// when it can.
     pub fn reason(&self) -> String {
-        todo!()
+        match self {
+            IdentityCheck::Found { .. } => String::new(),
+            IdentityCheck::NoTeam => format!("{TEAM_VARIABLE} is not set"),
+            IdentityCheck::NoIdentity { team } => format!(
+                "the keychain holds no valid Apple Development identity, which the runner of team {team} is signed with"
+            ),
+            IdentityCheck::OtherTeams { team, found } if found.is_empty() => format!(
+                "none of the keychain's valid Apple Development identities belongs to team {team}"
+            ),
+            IdentityCheck::OtherTeams { team, found } => format!(
+                "the keychain's valid Apple Development identities belong to {}, not to team {team}",
+                found.join(", ")
+            ),
+            IdentityCheck::Unreadable(reason) => {
+                format!("the keychain's identities could not be listed: {reason}")
+            }
+        }
     }
 }
 
@@ -57,36 +73,206 @@ impl fmt::Display for IdentityCheck {
 
 /// The identity check from the team and the two commands' outputs.
 pub fn check(team: Option<&str>, identities: &str, certificates: &str) -> IdentityCheck {
-    let _ = (team, identities, certificates);
-    todo!()
+    let Some(team) = team.map(str::trim).filter(|team| !team.is_empty()) else {
+        return IdentityCheck::NoTeam;
+    };
+    let development: Vec<(String, String)> = parse_identities(identities)
+        .into_iter()
+        .filter(|(_, name)| name.starts_with(DEVELOPMENT_PREFIX))
+        .collect();
+    if development.is_empty() {
+        return IdentityCheck::NoIdentity {
+            team: team.to_owned(),
+        };
+    }
+    let certificates = parse_certificates(certificates);
+    let mut found: Vec<String> = Vec::new();
+    for (sha1, name) in development {
+        let unit = certificates
+            .iter()
+            .find(|(hash, _)| hash.eq_ignore_ascii_case(&sha1))
+            .and_then(|(_, der)| subject_unit(der));
+        match unit {
+            Some(unit) if unit.eq_ignore_ascii_case(team) => {
+                return IdentityCheck::Found { name, team: unit };
+            }
+            Some(unit) if !found.contains(&unit) => found.push(unit),
+            _ => {}
+        }
+    }
+    IdentityCheck::OtherTeams {
+        team: team.to_owned(),
+        found,
+    }
 }
 
 /// The valid identities `security find-identity -v` lists, as their
 /// certificate's SHA-1 in upper-case hex and their name.
 pub fn parse_identities(output: &str) -> Vec<(String, String)> {
-    let _ = output;
-    todo!()
+    output
+        .lines()
+        .filter_map(|line| {
+            let (number, rest) = line.trim().split_once(") ")?;
+            number.parse::<u32>().ok()?;
+            let (hash, name) = rest.split_once(' ')?;
+            if hash.len() != 40 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return None;
+            }
+            let name = name.trim().strip_prefix('"')?.strip_suffix('"')?;
+            Some((hash.to_ascii_uppercase(), name.to_owned()))
+        })
+        .collect()
 }
 
 /// The certificates `security find-certificate -a -Z -p` prints, as their
 /// SHA-1 in upper-case hex and their DER bytes.
 pub fn parse_certificates(output: &str) -> Vec<(String, Vec<u8>)> {
-    let _ = output;
-    todo!()
+    let mut certificates = Vec::new();
+    let mut hash: Option<String> = None;
+    let mut pem: Option<String> = None;
+    for line in output.lines().map(str::trim) {
+        if let Some(sha1) = line.strip_prefix("SHA-1 hash:") {
+            hash = Some(sha1.trim().to_ascii_uppercase());
+        } else if line == "-----BEGIN CERTIFICATE-----" {
+            pem = Some(String::new());
+        } else if line == "-----END CERTIFICATE-----" {
+            if let (Some(sha1), Some(body)) = (hash.take(), pem.take())
+                && let Some(der) = decode_base64(&body)
+            {
+                certificates.push((sha1, der));
+            }
+        } else if let Some(body) = pem.as_mut() {
+            body.push_str(line);
+        }
+    }
+    certificates
+}
+
+const SEQUENCE: u8 = 0x30;
+const SET: u8 = 0x31;
+const OBJECT_IDENTIFIER: u8 = 0x06;
+const EXPLICIT_VERSION: u8 = 0xA0;
+/// The object identifier 2.5.4.11, organizationalUnitName.
+const ORGANIZATIONAL_UNIT: &[u8] = &[0x55, 0x04, 0x0B];
+
+/// One DER element at the front of `input`: its tag, its content and what
+/// follows it.
+fn element(input: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+    let (&tag, rest) = input.split_first()?;
+    let (&first, mut rest) = rest.split_first()?;
+    let length = if first < 0x80 {
+        usize::from(first)
+    } else {
+        let count = usize::from(first & 0x7F);
+        if count == 0 || count > 4 || rest.len() < count {
+            return None;
+        }
+        let (bytes, after) = rest.split_at(count);
+        rest = after;
+        bytes
+            .iter()
+            .fold(0usize, |length, &byte| (length << 8) | usize::from(byte))
+    };
+    if rest.len() < length {
+        return None;
+    }
+    let (content, after) = rest.split_at(length);
+    Some((tag, content, after))
 }
 
 /// The organizational unit of a DER certificate's subject: the team of an
 /// Apple Development certificate. The issuer's units, such as Apple's "G3",
 /// are not it.
 pub fn subject_unit(der: &[u8]) -> Option<String> {
-    let _ = der;
-    todo!()
+    let (SEQUENCE, certificate, _) = element(der)? else {
+        return None;
+    };
+    let (SEQUENCE, tbs, _) = element(certificate)? else {
+        return None;
+    };
+    // TBSCertificate: [0] version, serialNumber, signature, issuer,
+    // validity, subject, and more after.
+    let mut rest = tbs;
+    let (tag, _, after) = element(rest)?;
+    if tag == EXPLICIT_VERSION {
+        rest = after;
+    }
+    for _ in 0..4 {
+        rest = element(rest)?.2;
+    }
+    let (SEQUENCE, subject, _) = element(rest)? else {
+        return None;
+    };
+    let mut sets = subject;
+    while !sets.is_empty() {
+        let (tag, set, after) = element(sets)?;
+        sets = after;
+        if tag != SET {
+            continue;
+        }
+        let mut attributes = set;
+        while !attributes.is_empty() {
+            let (tag, attribute, after) = element(attributes)?;
+            attributes = after;
+            if tag != SEQUENCE {
+                continue;
+            }
+            let (OBJECT_IDENTIFIER, oid, value) = element(attribute)? else {
+                continue;
+            };
+            if oid == ORGANIZATIONAL_UNIT {
+                let (_, text, _) = element(value)?;
+                return String::from_utf8(text.to_vec()).ok();
+            }
+        }
+    }
+    None
 }
 
 /// Standard base64 with padding, whitespace ignored; `None` when it is not.
 pub fn decode_base64(text: &str) -> Option<Vec<u8>> {
-    let _ = text;
-    todo!()
+    fn sextet(symbol: u8) -> Option<u32> {
+        let value = match symbol {
+            b'A'..=b'Z' => symbol - b'A',
+            b'a'..=b'z' => symbol - b'a' + 26,
+            b'0'..=b'9' => symbol - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        Some(u32::from(value))
+    }
+    let symbols: Vec<u8> = text
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if !symbols.len().is_multiple_of(4) {
+        return None;
+    }
+    let blocks = symbols.len() / 4;
+    let mut bytes = Vec::with_capacity(blocks * 3);
+    for (index, block) in symbols.chunks(4).enumerate() {
+        let padding = block
+            .iter()
+            .rev()
+            .take_while(|&&symbol| symbol == b'=')
+            .count();
+        if padding > 2 || (padding > 0 && index + 1 != blocks) {
+            return None;
+        }
+        let mut bits = 0u32;
+        for (position, &symbol) in block.iter().enumerate() {
+            let value = if position >= 4 - padding {
+                0
+            } else {
+                sextet(symbol)?
+            };
+            bits = (bits << 6) | value;
+        }
+        let decoded = [(bits >> 16) as u8, (bits >> 8) as u8, bits as u8];
+        bytes.extend_from_slice(&decoded[..3 - padding]);
+    }
+    Some(bytes)
 }
 
 /// The host's signing identity for the team in `MOBILE_AGENT_IOS_TEAM`,
