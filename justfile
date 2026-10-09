@@ -6,9 +6,10 @@
 # crates/simulator/README.md). agent-android's scripts and the Compose fixture
 # default ANDROID_HOME to $HOME/Library/Android/sdk, the macOS location, so set
 # it there. Only the Compose fixture builds on Linux: the SwiftUI fixture and
-# the Expo fixture's default iOS build need Xcode. CI's Linux job runs
-# `just validate` with FIXTURES=compose, and its macOS job with
-# FIXTURES=expo,swiftui and SKIP_AGENT_BUILD=1.
+# the Expo fixture's default iOS build need Xcode, and the iOS runner Xcode and
+# MOBILE_AGENT_IOS_TEAM. CI's Linux job runs `just validate` with
+# FIXTURES=compose, and its macOS job with FIXTURES=expo,swiftui and
+# SKIP_AGENT_BUILD=1.
 
 [private]
 default:
@@ -42,6 +43,10 @@ check-paths:
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
 
+# Build and sign the iOS runner into agent-ios/dist, skipping without MOBILE_AGENT_IOS_TEAM or the iPhoneOS SDK
+agent-ios-build:
+    if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the iOS runner build"; elif [ -z "${MOBILE_AGENT_IOS_TEAM:-}" ]; then echo "MOBILE_AGENT_IOS_TEAM is not set, skipping the iOS runner build"; elif ! xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then echo "the iPhoneOS SDK is not present, skipping the iOS runner build"; else agent-ios/build.sh; fi
+
 # Cross-check the Kotlin codec against the Rust golden frames and run the agent's host-side unit tests on the host JVM, skipping without kotlinc
 codec-test:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the codec cross-check"; elif ! command -v kotlinc >/dev/null 2>&1; then echo "kotlinc not present, skipping the codec cross-check"; elif [ -f agent-android/codec-test.sh ]; then agent-android/codec-test.sh --host-only; else echo "agent-android/codec-test.sh not present, skipping"; fi
@@ -64,5 +69,5 @@ micro *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-paths, test, agent-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-paths test agent-build codec-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-paths, test, agent-build, agent-ios-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-paths test agent-build agent-ios-build codec-test fixtures-build openspec-validate
