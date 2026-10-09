@@ -25,6 +25,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -40,9 +41,10 @@ use protocol::message::{Rotation, TextMethod};
 use super::app::{self, Device, Entry};
 use super::tree::{self, Win};
 use super::{Timing, Typing};
+use crate::devices::ios::{self as device, Facts};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
-    Size,
+    Report, Size, TargetReport,
 };
 
 /// How often the event stream looks for items while it waits.
@@ -70,6 +72,24 @@ const KEYBOARD_LIMIT: usize = 32;
 /// keyboard's way once the keyboard has shown. The move shows in no frame
 /// (see [`Change::Layout`]).
 const LIFT: Duration = Duration::from_millis(50);
+
+/// How a fake target's frames come.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Frames {
+    /// No frame source, as on an Android device (design D7).
+    None,
+    /// A stream, as an emulator's controller or a Simulator's display.
+    Stream,
+    /// Screenshots polled at a physical iPhone's rate (design D23).
+    Screenshots,
+}
+
+impl Frames {
+    /// Whether the target has a frame source.
+    fn any(self) -> bool {
+        self != Frames::None
+    }
+}
 
 /// How text entered as `method` asks reaches a field under `typing`: keys
 /// add to what the field holds; text whose method the target may choose is
@@ -114,6 +134,8 @@ struct Shared {
     /// When the placeholder app's layout moves its submit button above the
     /// keyboard, once the keyboard is up.
     lift_due: Mutex<Option<Instant>>,
+    /// Frames the event stream delivered.
+    delivered: AtomicU64,
 }
 
 impl Drop for Shared {
@@ -415,22 +437,56 @@ impl InputNotes for FakeSession {
     }
 }
 
-/// A fake device of `platform`, attached: it shows its launcher. It has a
-/// frame source when `frames` is set; `timing` says when its frames start,
-/// how late each change shows after the input or launch that caused it,
-/// how long a launch splash lasts, when its input session activates and
-/// how long detaching it takes. With `fling`, a stroke whose finger lifts
-/// moving glides the list on; `typing` says how its fields take text whose
-/// method the target may choose. With `keyboard`, its keyboard stays up
-/// over every screen of the fixture apps.
+/// What `status` shows about a fake iPhone: what the physical iOS driver
+/// reports of a phone whose runner, the one `agent-ios` builds, said hello,
+/// its input going through `dtuhidd` and its frames from screenshots at the
+/// device's rate.
+struct DeviceReport(Arc<Shared>);
+
+impl Report for DeviceReport {
+    fn report(&self) -> TargetReport {
+        let runner = ios::RunnerStatus {
+            state: ios::RunnerState::Ready,
+            agent: Some(agent_ios::AGENT.to_owned()),
+            capabilities: protocol::Capabilities::TREE
+                | protocol::Capabilities::INPUT
+                | protocol::Capabilities::SCREENSHOT
+                | protocol::Capabilities::TEXT_SET,
+            ..ios::RunnerStatus::starting("the hello")
+        };
+        let status = ios::TargetStatus {
+            runner: Some(runner),
+            ..ios::TargetStatus::default()
+        };
+        let facts = Facts {
+            ios_version: Some(ios::VALIDATED_IOS.to_owned()),
+            frames: self.0.delivered.load(Ordering::Relaxed),
+            capture_rate: Some(f64::from(device::CAPTURES_A_SECOND)),
+            ..Facts::default()
+        };
+        device::status_report(&status, &facts)
+    }
+}
+
+/// A fake device of `platform`, attached: it shows its launcher. Its frames
+/// come as `frames` says, and a fake whose frames are screenshots reports
+/// itself as the physical iOS driver reports an iPhone; `timing` says when
+/// its frames start, how late each change shows after the input or launch
+/// that caused it, how long a launch splash lasts, when its input session
+/// activates and how long detaching it takes. With `fling`, a stroke whose
+/// finger lifts moving glides the list on; `typing` says how its fields take
+/// text whose method the target may choose. With `keyboard`, its keyboard
+/// stays up over every screen of the fixture apps.
 pub(crate) fn attach(
     platform: Platform,
-    frames: bool,
+    frames: Frames,
     timing: Timing,
     fling: bool,
     typing: Typing,
     keyboard: bool,
 ) -> Attachment {
+    let polled = frames == Frames::Screenshots;
+    let frames = frames.any();
     let Timing {
         latency,
         frame_delay,
@@ -465,6 +521,7 @@ pub(crate) fn attach(
         typing,
         keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
+        delivered: AtomicU64::new(0),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -486,7 +543,7 @@ pub(crate) fn attach(
         })),
         config: MirrorConfig::default(),
         capture: None,
-        report: None,
+        report: polled.then(|| Arc::new(DeviceReport(Arc::clone(&shared))) as Arc<dyn Report>),
         input_notes: (!activation.is_zero())
             .then(|| Arc::new(FakeSession(Arc::clone(&shared))) as Arc<dyn InputNotes>),
         input_session: (!activation.is_zero())
@@ -514,6 +571,9 @@ impl EventStream for Part {
             if let Some(item) = self.target.next(now) {
                 if self.shared.withheld(&item) {
                     continue;
+                }
+                if matches!(item.item, StreamItem::Frame(_)) {
+                    self.shared.delivered.fetch_add(1, Ordering::Relaxed);
                 }
                 return Some(item);
             }
@@ -704,7 +764,14 @@ mod tests {
             splash: Duration::from_millis(150),
             ..Timing::default()
         };
-        let mut attachment = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
+        let mut attachment = attach(
+            Platform::Ios,
+            Frames::None,
+            timing,
+            false,
+            Typing::Whole,
+            false,
+        );
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
                 windows: None,
@@ -738,13 +805,27 @@ mod tests {
             at: mirror::Point::new(1.0, 1.0),
             hold: None,
         };
-        let mut cold = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
+        let mut cold = attach(
+            Platform::Ios,
+            Frames::None,
+            timing,
+            false,
+            Typing::Whole,
+            false,
+        );
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert!(cold.input_notes.unwrap().activation_wait().is_some());
 
-        let mut warm = attach(Platform::Ios, false, timing, false, Typing::Whole, false);
+        let mut warm = attach(
+            Platform::Ios,
+            Frames::None,
+            timing,
+            false,
+            Typing::Whole,
+            false,
+        );
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
         assert!(!session.active());
@@ -768,7 +849,7 @@ mod tests {
         let attached = Instant::now();
         let mut late = attach(
             Platform::Android,
-            true,
+            Frames::Stream,
             Timing {
                 frame_delay: Duration::from_millis(150),
                 ..Timing::default()
@@ -790,7 +871,7 @@ mod tests {
         // The same device without a delay shows its launcher's frame at once.
         let mut prompt = attach(
             Platform::Android,
-            true,
+            Frames::Stream,
             Timing::default(),
             false,
             Typing::Whole,

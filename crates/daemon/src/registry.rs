@@ -117,6 +117,11 @@ impl Registry {
             .collect()
     }
 
+    /// The fields every driver adds to `doctor`'s reply.
+    pub fn doctor(&self) -> serde_json::Map<String, serde_json::Value> {
+        self.drivers.iter().flat_map(|d| d.doctor()).collect()
+    }
+
     pub fn driver_names(&self) -> Vec<String> {
         self.drivers.iter().map(|d| d.name().to_owned()).collect()
     }

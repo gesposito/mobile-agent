@@ -516,7 +516,7 @@ fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
 }
 
 /// Whether an application window of `snapshot` has a focused editable node.
-fn has_focused_field(snapshot: &Snapshot) -> bool {
+pub(crate) fn has_focused_field(snapshot: &Snapshot) -> bool {
     let focused = NodeFlags::FOCUSED | NodeFlags::EDITABLE;
     snapshot
         .windows

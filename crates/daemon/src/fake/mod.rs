@@ -13,7 +13,12 @@
 //! image. Emulators and Simulators have a frame source and Android devices
 //! none, as design D7 has it, and emulators have none either when the
 //! daemon's emulator controller setting is off; `status` names an Android
-//! target's input and frame paths as the Android driver names them. A latency
+//! target's input and frame paths as the Android driver names them. A fake
+//! iPhone (`ios-device`) stands in for a physical one: an iOS fake whose
+//! frames are screenshots, in the `ios-device` class, whose `status` names
+//! its input, frames and runner as the physical iOS driver names them, and
+//! which [`FakeDriver::with_readiness`] can list in a readiness state that
+//! refuses an attach, as that driver lists a phone that is not ready. A latency
 //! (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
@@ -52,6 +57,7 @@ mod tree;
 use std::sync::Arc;
 use std::time::Duration;
 
+use realtime::Frames;
 use serde_json::{Map, Value};
 
 use crate::devices::android::report_controller;
@@ -151,26 +157,39 @@ pub struct FakeDriver {
 
 impl FakeDriver {
     /// Parses a comma-separated list of `platform[:id]` entries, such as
-    /// `android:emulator-5554,ios:FAKE-IOS-1`. Without an id, Android fakes
-    /// are `emulator-5554`, `emulator-5556` and so on, iOS fakes
-    /// `FAKE-IOS-1`, `FAKE-IOS-2`. An Android id starting `emulator-` is an
+    /// `android:emulator-5554,ios:FAKE-IOS-1`, the platform `android`, `ios`
+    /// for a Simulator or `ios-device` for a physical iPhone. Without an id,
+    /// Android fakes are `emulator-5554`, `emulator-5556` and so on, iOS fakes
+    /// `FAKE-IOS-1`, `FAKE-IOS-2`, and fake iPhones `FAKE-IOS-DEVICE-1`,
+    /// `FAKE-IOS-DEVICE-2`. An Android id starting `emulator-` is an
     /// emulator, any other a device.
     pub fn parse(spec: &str) -> Result<FakeDriver, String> {
         let mut targets: Vec<TargetInfo> = Vec::new();
-        let (mut android, mut ios) = (0u32, 0u32);
+        let (mut android, mut ios, mut devices) = (0u32, 0u32, 0u32);
         for entry in spec.split(',').map(str::trim).filter(|e| !e.is_empty()) {
             let (platform, id) = match entry.split_once(':') {
-                Some((platform, id)) => (platform, Some(id.trim())),
+                Some((platform, id)) => (platform.trim(), Some(id.trim())),
                 None => (entry, None),
             };
-            let platform = Platform::parse(platform.trim()).ok_or_else(|| {
-                format!("fake target {entry:?}: the platform must be android or ios")
-            })?;
+            let device = platform.eq_ignore_ascii_case("ios-device");
+            let platform = if device {
+                Platform::Ios
+            } else {
+                Platform::parse(platform).ok_or_else(|| {
+                    format!(
+                        "fake target {entry:?}: the platform must be android, ios or ios-device"
+                    )
+                })?
+            };
             let id = match (platform, id) {
                 (_, Some(id)) if !id.is_empty() => id.to_owned(),
                 (Platform::Android, _) => {
                     android += 1;
                     format!("emulator-{}", 5552 + 2 * android)
+                }
+                (Platform::Ios, _) if device => {
+                    devices += 1;
+                    format!("FAKE-IOS-DEVICE-{devices}")
                 }
                 (Platform::Ios, _) => {
                     ios += 1;
@@ -180,6 +199,7 @@ impl FakeDriver {
             if targets.iter().any(|t| t.id == id) {
                 return Err(format!("fake target {id} is listed twice"));
             }
+            let validated = format!("iOS {}", ios::VALIDATED_IOS);
             let (class, name, os, state) = match platform {
                 Platform::Android if id.starts_with("emulator-") => (
                     TargetClass::AndroidEmulator,
@@ -192,6 +212,12 @@ impl FakeDriver {
                     "Fake Android device",
                     "Android 16",
                     "device",
+                ),
+                Platform::Ios if device => (
+                    TargetClass::IosDevice,
+                    "Fake physical iPhone",
+                    validated.as_str(),
+                    ios::Readiness::Ready.code(),
                 ),
                 Platform::Ios => (TargetClass::Simulator, "Fake iPhone", "iOS 26.5", "booted"),
             };
@@ -287,8 +313,16 @@ impl FakeDriver {
     }
 
     /// These targets, the fake iPhone `id` listed in the readiness state
-    /// `code` with `advice`.
-    pub fn with_readiness(self, _id: &str, _code: &str, _advice: &str) -> FakeDriver {
+    /// `code` with `advice`, as the physical iOS driver lists a phone that
+    /// is not ready (`crates/ios`'s readiness states and messages); an
+    /// attach to it fails with `code`. Other targets are left as they are.
+    pub fn with_readiness(mut self, id: &str, code: &str, advice: &str) -> FakeDriver {
+        for target in &mut self.targets {
+            if target.id == id && target.class == TargetClass::IosDevice {
+                target.state = code.to_owned();
+                target.advice = (code != ios::Readiness::Ready.code()).then(|| advice.to_owned());
+            }
+        }
         self
     }
 }
@@ -330,10 +364,22 @@ impl Driver for FakeDriver {
         target: &TargetInfo,
         _options: &AttachOptions,
     ) -> Result<Attachment, DriverError> {
+        // A phone that is not ready refuses a session with its state's
+        // code, as the physical iOS driver's attach does.
+        if target.class == TargetClass::IosDevice && target.state != ios::Readiness::Ready.code() {
+            let advice = target.advice.as_deref().unwrap_or("it is not ready");
+            return Err(DriverError::new(
+                &target.state,
+                format!("iOS device {} is not ready: {advice}", target.id),
+            ));
+        }
         let frames = match target.class {
-            TargetClass::Simulator | TargetClass::IosDevice => true,
-            TargetClass::AndroidEmulator => self.controller == EmulatorController::Auto,
-            TargetClass::AndroidDevice => false,
+            TargetClass::Simulator => Frames::Stream,
+            TargetClass::IosDevice => Frames::Screenshots,
+            TargetClass::AndroidEmulator if self.controller == EmulatorController::Auto => {
+                Frames::Stream
+            }
+            TargetClass::AndroidEmulator | TargetClass::AndroidDevice => Frames::None,
         };
         let mut attachment = realtime::attach(
             target.platform,

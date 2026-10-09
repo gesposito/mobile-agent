@@ -97,8 +97,9 @@ pub(crate) fn settle_max(request: &Request) -> Result<Duration, Failure> {
 }
 
 /// What `doctor` asks of the daemon: its identity, drivers, emulator
-/// controller setting and the rows the drivers contribute to the
-/// compatibility table.
+/// controller setting, the rows the drivers contribute to the compatibility
+/// table and what else they add, such as the physical iPhone driver's
+/// runner bundle (`iosRunner`).
 fn doctor(daemon: &Daemon) -> Outcome {
     let registry = daemon.registry();
     let rows: Vec<Value> = registry
@@ -116,13 +117,17 @@ fn doctor(daemon: &Daemon) -> Outcome {
     let note = rows.is_empty().then_some(
         "no driver has supplied compatibility data; the Simulator driver fills this table with each Xcode and iOS runtime it was validated on",
     );
-    Ok(Success::new(json!({
-        "pid": std::process::id(),
-        "version": daemon.version,
-        "drivers": registry.driver_names(),
-        "emulatorController": daemon.emulator_controller.name(),
-        "compatibility": {"rows": rows, "note": note},
-    })))
+    let mut data = Map::new();
+    data.insert("pid".into(), std::process::id().into());
+    data.insert("version".into(), daemon.version.clone().into());
+    data.insert("drivers".into(), registry.driver_names().into());
+    data.insert(
+        "emulatorController".into(),
+        daemon.emulator_controller.name().into(),
+    );
+    data.insert("compatibility".into(), json!({"rows": rows, "note": note}));
+    data.extend(registry.doctor());
+    Ok(Success::new(Value::Object(data)))
 }
 
 /// Sets the session's default timeout for waiting commands.

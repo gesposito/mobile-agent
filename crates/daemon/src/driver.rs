@@ -43,6 +43,12 @@ pub trait Driver: Send + Sync {
     fn compatibility(&self) -> Vec<CompatibilityRow> {
         Vec::new()
     }
+
+    /// Fields this driver adds to `doctor`'s reply beside the daemon's own,
+    /// such as the physical iPhone driver's runner bundle; none by default.
+    fn doctor(&self) -> Map<String, Value> {
+        Map::new()
+    }
 }
 
 /// A target's operating system.
@@ -334,9 +340,11 @@ pub struct Registration<'a> {
 ///
 /// This is the registration point for device drivers: the Simulator driver
 /// (`crates/simulator`) on macOS and the Android driver (`crates/android`)
-/// everywhere, both put behind the mirror's backend traits in
-/// [`crate::devices`], the Simulator driver also filling `doctor`'s Xcode
-/// compatibility table through [`Driver::compatibility`]. Fake targets
+/// everywhere, and on macOS the physical iPhone driver (`crates/ios`) when
+/// `drivers` names `ios`, each put behind the mirror's backend traits in
+/// [`crate::devices`], the Simulator and iPhone drivers also filling
+/// `doctor`'s Xcode compatibility table through [`Driver::compatibility`].
+/// Fake targets
 /// stand in for them: when `fake` names any, only the fake driver serves,
 /// showing every change `fake_latency` after its cause, its frames from
 /// `fake_frame_delay` after the attach, its fixture apps' launch splash for
@@ -374,9 +382,10 @@ pub fn registered(registration: &Registration<'_>) -> Result<Vec<Arc<dyn Driver>
 }
 
 /// The device drivers a daemon registers: those `drivers` names
-/// (comma-separated `simulator`, or `ios`, and `android`; `none` for
-/// none), else every device driver this host runs unless fake targets are
-/// named.
+/// (comma-separated `simulator`, `ios` and `android`; `none` for none),
+/// else every device driver this host runs by default unless fake targets
+/// are named. `ios`, the physical iPhone driver, registers only when named
+/// ([`devices::OPT_IN`]).
 pub fn device_drivers(drivers: Option<&str>, fake: bool) -> Result<Vec<&'static str>, String> {
     let Some(list) = drivers.filter(|list| !list.trim().is_empty()) else {
         return Ok(if fake {
@@ -402,15 +411,16 @@ pub fn device_drivers(drivers: Option<&str>, fake: bool) -> Result<Vec<&'static 
     let mut names: Vec<&'static str> = Vec::new();
     for entry in &entries {
         let name = match entry.as_str() {
-            "simulator" | "ios" => devices::simulator::NAME,
+            "simulator" => devices::simulator::NAME,
+            "ios" => devices::ios::NAME,
             "android" => devices::android::NAME,
             other => {
                 return Err(format!(
-                    "drivers {list:?}: {other:?} is not a device driver; name simulator (or ios), android, or none"
+                    "drivers {list:?}: {other:?} is not a device driver; name simulator, ios (physical iPhones), android, or none"
                 ));
             }
         };
-        if !devices::DEFAULT.contains(&name) {
+        if !devices::DEFAULT.contains(&name) && !devices::OPT_IN.contains(&name) {
             return Err(format!(
                 "the {name} driver needs macOS, which this host is not"
             ));
