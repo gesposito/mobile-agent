@@ -295,3 +295,53 @@ fn input_series() {
         "the list moved {moved} px for a {stroke_pixels} px stroke"
     );
 }
+
+/// The lock button as an Indigo button event, with a person at the phone:
+/// whether the phone locks, read from lockdown's `PasswordProtected`, then a
+/// wait of up to ten minutes for the person to unlock it.
+#[test]
+#[ignore = "locks the phone; needs a person to unlock it"]
+fn the_lock_button() {
+    let Some(udid) = common::gated("the_lock_button") else {
+        return;
+    };
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    let unlocked = |driver: &IosDriver| {
+        use ios::Devices;
+        driver.require(&udid, ios::Need::Unlocked).is_ok()
+    };
+    assert!(unlocked(&driver), "the phone is unlocked before the press");
+    let pressed = driver
+        .button(&udid, Button::Lock)
+        .expect("the press is sent");
+    let started = Instant::now();
+    let mut locked_after = None;
+    while started.elapsed() < Duration::from_secs(5) {
+        if !unlocked(&driver) {
+            locked_after = Some(started.elapsed());
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    eprintln!(
+        "lock button: acknowledged in {:.1} ms; the phone locked: {}",
+        milliseconds(pressed.acknowledged),
+        locked_after.map_or("no, within 5 s".to_owned(), |after| format!(
+            "yes, PasswordProtected true {:.0} ms after the press",
+            milliseconds(after)
+        ))
+    );
+    if locked_after.is_some() {
+        eprintln!("lock button: UNLOCK THE PHONE NOW (waiting up to ten minutes)");
+        let asked = Instant::now();
+        while !unlocked(&driver) {
+            assert!(asked.elapsed() < Duration::from_secs(600), "not unlocked");
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        eprintln!(
+            "lock button: unlocked {:.0} s after the request",
+            asked.elapsed().as_secs_f64()
+        );
+    }
+}
