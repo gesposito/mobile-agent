@@ -41,6 +41,9 @@ pub enum Error {
     },
     /// A wait ran out.
     Timeout { what: String, after: Duration },
+    /// The device refused a call, or answered it in a way the driver does
+    /// not read: the call and what came back.
+    Device { call: String, reason: String },
     /// The developer disk image is still not mounted after every way of
     /// mounting it was tried; each attempt and why it failed. `offline` when
     /// a failure says this Mac could not reach Apple's signing server, which
@@ -65,6 +68,7 @@ impl Error {
             Error::Disconnected { .. } => "disconnected",
             Error::ServiceMissing { .. } => "service_missing",
             Error::Timeout { .. } => "timeout",
+            Error::Device { .. } => "device_error",
             Error::DiskImage { .. } => Readiness::DiskImageUnmounted.code(),
         }
     }
@@ -108,6 +112,7 @@ impl fmt::Display for Error {
                 "iOS device {target} does not list {service} among its {listed} RSD services; it is listed on iOS 26.6.2 with Xcode 27.0's developer disk image mounted"
             ),
             Error::Timeout { what, after } => write!(f, "{what} did not happen within {after:?}"),
+            Error::Device { call, reason } => write!(f, "{call} failed on the device: {reason}"),
             Error::DiskImage {
                 target,
                 attempts,

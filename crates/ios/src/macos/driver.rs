@@ -10,14 +10,20 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+
+use idevice::ReadWrite;
+use idevice::dvt::remote_server::RemoteServerClient;
+use tokio::time::timeout;
 
 use crate::discovery::{self, usb_entries};
 use crate::driver::Devices;
 use crate::error::{Error, Result};
-use crate::model::{Connected, DeviceInfo, MountReport, MuxEntry, TargetStatus};
-use crate::readiness::{self, Need};
+use crate::model::{Connected, DeviceInfo, DiskImage, MountReport, MuxEntry, TargetStatus};
+use crate::readiness::{self, Need, Readiness};
+use crate::services;
 
-use super::host::{Host, UsbHost};
+use super::host::{Host, UsbHost, describe};
 use super::image::{self, MountLimits};
 use super::tunnel::{Limits, Opener, Tunnel};
 
@@ -68,6 +74,44 @@ impl Devices for IosDriver {
 pub(crate) struct Target<O: Opener> {
     tunnel: Tunnel<O>,
     disk_image: Option<MountReport>,
+    /// DVT's connection, which lifecycle and screenshots go through; kept,
+    /// since a later one costs 25 to 30 ms and the first 37 ms (S9).
+    dvt: Option<RemoteServerClient<Box<dyn ReadWrite>>>,
+}
+
+impl<O: Opener> Target<O> {
+    /// What `status` reports of the target.
+    fn snapshot(&self) -> TargetStatus {
+        TargetStatus {
+            tunnel: self.tunnel.status(),
+            disk_image: self.disk_image.clone(),
+            services_open: self.dvt.iter().map(|_| services::DVT).collect(),
+        }
+    }
+
+    /// Opens DVT's connection unless it is open, and reads the services it
+    /// publishes, which it sends first, as `idevice`'s own process-control
+    /// tool waits for them.
+    async fn open_dvt(&mut self, wait: Duration) -> Result<()> {
+        if self.dvt.is_some() {
+            return Ok(());
+        }
+        let mut dvt: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
+        match timeout(wait, dvt.read_message(0)).await {
+            Ok(Ok(_capabilities)) => {
+                self.dvt = Some(dvt);
+                Ok(())
+            }
+            Ok(Err(error)) => Err(Error::Device {
+                call: "DVT's capabilities".into(),
+                reason: describe(&error),
+            }),
+            Err(_) => Err(Error::Timeout {
+                what: "DVT's capabilities".into(),
+                after: wait,
+            }),
+        }
+    }
 }
 
 /// A device's state, behind the lock its commands take, and what `status`
@@ -79,9 +123,11 @@ pub(crate) struct Slot<O: Opener> {
 
 /// The driver's state and logic over a host.
 pub(crate) struct Core<H: Host> {
-    runtime: tokio::runtime::Runtime,
-    host: H,
+    /// Declared before the runtime, so that what the targets keep open is
+    /// dropped while the tasks serving it can still end on their own.
     targets: Mutex<HashMap<String, Arc<Slot<H::Opener>>>>,
+    host: H,
+    runtime: tokio::runtime::Runtime,
     limits: Limits,
     mount_limits: MountLimits,
 }
@@ -98,9 +144,9 @@ impl<H: Host> Core<H> {
                 reason: error.to_string(),
             })?;
         Ok(Core {
-            runtime,
-            host,
             targets: Mutex::new(HashMap::new()),
+            host,
+            runtime,
             limits: Limits::default(),
             mount_limits: MountLimits::default(),
         })
@@ -152,21 +198,102 @@ impl<H: Host> Core<H> {
     /// stands in the way, mounts the developer disk image when it is
     /// missing, then opens the tunnel unless it is open.
     pub(crate) fn connect(&self, target: &str) -> Result<Connected> {
-        let _ = (target, image::ensure_mounted::<H::Mounter>, lock::<()>);
-        todo!()
+        self.runtime.block_on(async {
+            let entry = self.entry(target).await?;
+            let identity = self.host.identity();
+            let not_ready = |readiness| Error::NotReady {
+                target: target.to_owned(),
+                readiness,
+            };
+            let (values, probe) = self.host.probe(&entry).await;
+            let mut device = discovery::device_info(target, &values, probe, &identity);
+            let assess = |device: &DeviceInfo| {
+                readiness::assess(
+                    device.ios_version.as_deref(),
+                    &device.probe,
+                    &identity,
+                    Need::DiskImage,
+                )
+            };
+            let disk_image = match assess(&device) {
+                Ok(()) => MountReport {
+                    image: device
+                        .probe
+                        .disk_image
+                        .clone()
+                        .unwrap_or(DiskImage::NotMounted),
+                    attempts: Vec::new(),
+                },
+                Err(Readiness::DiskImageUnmounted) => {
+                    let mounter = self.host.mounter(&entry, &device);
+                    let report = image::ensure_mounted(&mounter, self.mount_limits, target)
+                        .await
+                        .map_err(|failure| Error::DiskImage {
+                            target: target.to_owned(),
+                            attempts: failure.attempts,
+                            offline: failure.offline,
+                        })?;
+                    let (values, probe) = self.host.probe(&entry).await;
+                    device = discovery::device_info(target, &values, probe, &identity);
+                    assess(&device).map_err(not_ready)?;
+                    report
+                }
+                Err(readiness) => return Err(not_ready(readiness)),
+            };
+            let slot = self.slot(&entry);
+            let mut state = slot.state.lock().await;
+            state.disk_image = Some(disk_image.clone());
+            let opened = match state.tunnel.open().await {
+                Ok(()) => state.open_dvt(self.limits.connect).await,
+                Err(error) => Err(error),
+            };
+            *lock(&slot.snapshot) = state.snapshot();
+            opened?;
+            let tunnel = state.tunnel.status().expect("an open tunnel");
+            Ok(Connected {
+                device,
+                tunnel,
+                disk_image,
+            })
+        })
     }
 
     /// What the driver holds for `target`; nothing for a device it has not
-    /// connected to.
+    /// connected to. It reads a snapshot, so it answers while a command on
+    /// the target runs.
     pub(crate) fn status(&self, target: &str) -> Result<TargetStatus> {
-        let _ = target;
-        todo!()
+        let slot = lock(&self.targets).get(target).cloned();
+        Ok(slot.map_or_else(TargetStatus::default, |slot| lock(&slot.snapshot).clone()))
     }
 
     /// Closes what the driver opened for `target`.
     pub(crate) fn reset_target(&self, target: &str) -> Result<()> {
-        let _ = target;
-        todo!()
+        let Some(slot) = lock(&self.targets).remove(target) else {
+            return Ok(());
+        };
+        self.runtime.block_on(async {
+            let mut state = slot.state.lock().await;
+            state.dvt = None;
+            state.tunnel.close().await;
+        });
+        Ok(())
+    }
+
+    /// The state the driver keeps for the device of `entry`, made on first
+    /// use.
+    fn slot(&self, entry: &MuxEntry) -> Arc<Slot<H::Opener>> {
+        let mut targets = lock(&self.targets);
+        let slot = targets.entry(entry.udid.clone()).or_insert_with(|| {
+            Arc::new(Slot {
+                state: tokio::sync::Mutex::new(Target {
+                    tunnel: Tunnel::new(&entry.udid, self.host.opener(entry), self.limits),
+                    disk_image: None,
+                    dvt: None,
+                }),
+                snapshot: Mutex::new(TargetStatus::default()),
+            })
+        });
+        Arc::clone(slot)
     }
 
     /// The USB entry of the device whose identifier is `target`.
@@ -477,9 +604,24 @@ mod tests {
         let status = core.status(PHONE).expect("status");
         assert_eq!(status.tunnel.as_ref(), Some(&connected.tunnel));
         assert_eq!(status.disk_image.as_ref(), Some(&connected.disk_image));
+        assert_eq!(
+            status.services_open,
+            vec![services::DVT],
+            "DVT's connection is opened and kept"
+        );
+        let dvt = core.host.device.port(services::DVT).expect("DVT's port");
+        assert_eq!(
+            core.host.device.connections(),
+            vec![core.host.device.rsd_port(), dvt]
+        );
         let again = core.connect(PHONE).expect("connects again");
         assert_eq!(again.tunnel.opens, 1, "the tunnel is kept");
         assert_eq!(core.host.device.opens(), 1);
+        assert_eq!(
+            core.host.device.connections(),
+            vec![core.host.device.rsd_port(), dvt],
+            "and DVT's connection with it"
+        );
     }
 
     #[test]
@@ -575,6 +717,7 @@ mod tests {
         core.reset_target(PHONE).expect("resets");
         assert_eq!(core.status(PHONE).expect("status"), TargetStatus::default());
         assert_eq!(core.host.device.closed(), 1);
+        assert_eq!(core.host.device.connections().len(), 2, "RSD's and DVT's");
         let connected = core.connect(PHONE).expect("connects again");
         assert_eq!(connected.tunnel.opens, 1, "a new target's first tunnel");
         assert_eq!(core.host.device.opens(), 2);

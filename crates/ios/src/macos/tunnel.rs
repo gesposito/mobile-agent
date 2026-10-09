@@ -14,8 +14,11 @@ use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::AdapterHandle;
 use idevice::{IdeviceError, IdeviceService, RsdService};
 
+use tokio::time::timeout;
+
 use crate::error::{Error, Result};
 use crate::model::TunnelStatus;
+use crate::services;
 
 use super::host::describe;
 
@@ -82,8 +85,57 @@ impl<O: Opener> Tunnel<O> {
 
     /// Opens the tunnel and RSD's handshake, unless they are open.
     pub(crate) async fn open(&mut self) -> Result<()> {
-        let _ = (Instant::now, &self.opener, self.limits, describe);
-        todo!()
+        if self.link.is_some() {
+            return Ok(());
+        }
+        let started = Instant::now();
+        let opened = timeout(self.limits.open, self.opener.open()).await;
+        let (mut provider, rsd_port) = match opened {
+            Ok(Ok(opened)) => opened,
+            Ok(Err(cause)) => {
+                return Err(Error::Disconnected {
+                    target: self.target.clone(),
+                    cause,
+                });
+            }
+            Err(_) => {
+                return Err(Error::Timeout {
+                    what: format!("the CoreDevice tunnel to {}", self.target),
+                    after: self.limits.open,
+                });
+            }
+        };
+        let handshake = async {
+            let stream = provider.connect_to_service_port(rsd_port).await?;
+            RsdHandshake::new(stream).await
+        };
+        let left = self.limits.open.saturating_sub(started.elapsed());
+        let handshake = timeout(left, handshake).await;
+        let error = match handshake {
+            Ok(Ok(handshake)) => {
+                self.opens += 1;
+                self.opened_in = started.elapsed();
+                self.link = Some(Link {
+                    provider,
+                    handshake,
+                });
+                return Ok(());
+            }
+            Ok(Err(error)) if tunnel_gone(&error) => Error::Disconnected {
+                target: self.target.clone(),
+                cause: format!("RSD's handshake: {}", describe(&error)),
+            },
+            Ok(Err(error)) => Error::Device {
+                call: "RSD's handshake".into(),
+                reason: describe(&error),
+            },
+            Err(_) => Error::Timeout {
+                what: format!("RSD's handshake with {}", self.target),
+                after: self.limits.open,
+            },
+        };
+        self.opener.close(&mut provider).await;
+        Err(error)
     }
 
     /// A connection to the service `S` through the tunnel, opening it first
@@ -91,17 +143,71 @@ impl<O: Opener> Tunnel<O> {
     /// device that is gone fails as disconnected, and a service the
     /// handshake does not list as missing.
     pub(crate) async fn connect<S: RsdService>(&mut self) -> Result<S> {
-        todo!()
+        let name = S::rsd_service_name().into_owned();
+        let mut reopened = false;
+        loop {
+            self.open().await?;
+            let link = self.link.as_mut().expect("an open tunnel");
+            if !link.handshake.services.contains_key(&name) {
+                return Err(Error::ServiceMissing {
+                    target: self.target.clone(),
+                    service: name,
+                    listed: link.handshake.services.len(),
+                });
+            }
+            let connection = timeout(
+                self.limits.connect,
+                link.handshake.connect::<S>(&mut link.provider),
+            )
+            .await;
+            match connection {
+                Ok(Ok(service)) => return Ok(service),
+                Ok(Err(error)) if tunnel_gone(&error) => {
+                    self.close().await;
+                    if reopened {
+                        return Err(Error::Disconnected {
+                            target: self.target.clone(),
+                            cause: format!("connecting to {name}: {}", describe(&error)),
+                        });
+                    }
+                    reopened = true;
+                }
+                Ok(Err(error)) => {
+                    return Err(Error::Device {
+                        call: format!("connecting to {name}"),
+                        reason: describe(&error),
+                    });
+                }
+                Err(_) => {
+                    self.close().await;
+                    return Err(Error::Timeout {
+                        what: format!("a connection to {name} on {}", self.target),
+                        after: self.limits.connect,
+                    });
+                }
+            }
+        }
     }
 
     /// What the open tunnel's handshake listed, `None` before one opened.
     pub(crate) fn status(&self) -> Option<TunnelStatus> {
-        todo!()
+        let link = self.link.as_ref()?;
+        let mut services: Vec<String> = link.handshake.services.keys().cloned().collect();
+        services.sort();
+        let missing = services::missing(services.iter().map(String::as_str));
+        Some(TunnelStatus {
+            opens: self.opens,
+            opened_in: self.opened_in,
+            services,
+            missing,
+        })
     }
 
     /// Closes the tunnel; the next connection opens a new one.
     pub(crate) async fn close(&mut self) {
-        todo!()
+        if let Some(mut link) = self.link.take() {
+            self.opener.close(&mut link.provider).await;
+        }
     }
 }
 
@@ -109,8 +215,20 @@ impl<O: Opener> Tunnel<O> {
 /// serve: jktcp's stack answers a connection on a dead tunnel with "adapter
 /// closed".
 pub(crate) fn tunnel_gone(error: &IdeviceError) -> bool {
-    let _ = error;
-    todo!()
+    use std::io::ErrorKind;
+    matches!(
+        error,
+        IdeviceError::Socket(io) if matches!(
+            io.kind(),
+            ErrorKind::BrokenPipe
+                | ErrorKind::NetworkUnreachable
+                | ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::NotConnected
+                | ErrorKind::UnexpectedEof
+                | ErrorKind::TimedOut
+        )
+    )
 }
 
 /// The real opener: `CoreDeviceProxy` through lockdown, ended by jktcp.
@@ -122,8 +240,14 @@ impl Opener for UsbTunnel {
     type Provider = AdapterHandle;
 
     async fn open(&self) -> std::result::Result<(AdapterHandle, u16), String> {
-        let _ = CoreDeviceProxy::connect;
-        todo!()
+        let proxy = CoreDeviceProxy::connect(&self.provider)
+            .await
+            .map_err(|error| format!("CoreDeviceProxy: {}", describe(&error)))?;
+        let rsd_port = proxy.tunnel_info().server_rsd_port;
+        let adapter = proxy
+            .create_software_tunnel()
+            .map_err(|error| format!("jktcp's tunnel: {}", describe(&error)))?;
+        Ok((adapter.to_async_handle(), rsd_port))
     }
 
     async fn close(&self, provider: &mut AdapterHandle) {
@@ -134,15 +258,17 @@ impl Opener for UsbTunnel {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
+    use std::sync::Arc;
 
     use idevice::ReadWrite;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::macos::fake::{FakeDevice, FakeOpener};
+    use crate::macos::fake::{FakeDevice, FakeOpener, drain};
     use crate::services;
 
     /// A connection to DVT's service hub, as raw as it comes.
-    struct Dvt(#[allow(dead_code)] Box<dyn ReadWrite>);
+    struct Dvt(Box<dyn ReadWrite>);
 
     impl RsdService for Dvt {
         fn rsd_service_name() -> Cow<'static, str> {
@@ -184,6 +310,15 @@ mod tests {
     fn the_handshake_lists_the_recorded_services_and_a_service_is_found_by_name() {
         runtime().block_on(async {
             let device = FakeDevice::recorded();
+            device.serve(
+                services::DVT,
+                Arc::new(|mut stream| {
+                    Box::pin(async move {
+                        let _ = stream.write_all(b"dvt").await;
+                        drain(stream).await;
+                    })
+                }),
+            );
             let mut tunnel = Tunnel::new("placeholder-udid-phone", FakeOpener::new(&device), SHORT);
             assert_eq!(
                 tunnel.status(),
@@ -199,7 +334,13 @@ mod tests {
                 "sorted"
             );
             assert!(status.missing.is_empty(), "{:?}", status.missing);
-            tunnel.connect::<Dvt>().await.expect("DVT is listed");
+            let Dvt(mut stream) = tunnel.connect::<Dvt>().await.expect("DVT is listed");
+            let mut greeting = [0u8; 3];
+            stream
+                .read_exact(&mut greeting)
+                .await
+                .expect("DVT's server answers");
+            assert_eq!(&greeting, b"dvt", "the connection reaches DVT's own server");
             assert_eq!(
                 device.connections(),
                 vec![

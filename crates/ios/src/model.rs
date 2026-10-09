@@ -183,4 +183,6 @@ pub struct TargetStatus {
     pub tunnel: Option<TunnelStatus>,
     /// The disk image as the last `connect` found it.
     pub disk_image: Option<MountReport>,
+    /// The service connections kept open over the tunnel, by RSD name.
+    pub services_open: Vec<&'static str>,
 }

@@ -82,6 +82,11 @@ fn the_tunnel_opens_in_this_unprivileged_process_and_lists_the_developer_service
     assert_eq!(again.tunnel.opens, 1, "the tunnel is kept");
     let status = driver.status(&udid).expect("status");
     assert_eq!(status.tunnel.map(|tunnel| tunnel.opens), Some(1));
+    assert_eq!(
+        status.services_open,
+        vec!["com.apple.instruments.dtservicehub"],
+        "DVT's connection is kept"
+    );
     driver.reset_target(&udid).expect("resets");
     assert_eq!(driver.status(&udid).expect("status").tunnel, None);
     let reopened = driver.connect(&udid).expect("connects after a reset");

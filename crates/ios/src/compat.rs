@@ -59,6 +59,8 @@ pub struct CallSite {
 /// validated.
 pub fn call_sites() -> Vec<CallSite> {
     const DISCOVERY: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/discovery.rs";
+    const TUNNEL: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/tunnel.rs";
+    const MOUNT: &str = "iOS 26.6.2, Xcode 27.0: not exercised, the image was mounted in S9, S10 and tests/tunnel.rs; S10's personalized mount through idevice never returned, though the image was mounted by then";
     let site = |call, service, validated_on, note| CallSite {
         call,
         service,
@@ -95,6 +97,36 @@ pub fn call_sites() -> Vec<CallSite> {
             "com.apple.mobile.mobile_image_mounter (lockdown)",
             DISCOVERY,
             "the personalized image of Xcode 27.0 at /System/Developer; a Cryptex1 form (iOS 17.4 and later, devices outside the image's build manifest) is not listed here",
+        ),
+        site(
+            "StartService com.apple.internal.devicecompute.CoreDeviceProxy, CDTunnel's clientHandshakeRequest",
+            "lockdownd, then the CoreDevice tunnel ended in this process by jktcp",
+            TUNNEL,
+            "no root and no TUN interface; jktcp sends one segment at a time and retransmits after 200 ms, so bulk transfers (installs) go through usbmuxd instead",
+        ),
+        site(
+            "RSD handshake (RemoteXPC over HTTP/2, MessagingProtocolVersion 7)",
+            "remoted's RSD port in the tunnel",
+            TUNNEL,
+            "82 services listed with Xcode 27.0's image mounted; 61 without it in S10, the test manager and the HID services gone",
+        ),
+        site(
+            "_notifyOfPublishedCapabilities: on a new connection",
+            "com.apple.instruments.dtservicehub (DVT)",
+            TUNNEL,
+            "read before the connection is kept, as idevice's own process-control tool does",
+        ),
+        site(
+            "QueryPersonalizationManifest, QueryNonce, QueryPersonalizationIdentifiers, UploadImage, MountImage Personalized; TSS at gs.apple.com",
+            "com.apple.mobile.mobile_image_mounter (lockdown), Apple's signing server",
+            MOUNT,
+            "tried first when CopyDevices lists no developer image, within 60 s; needs this Mac online",
+        ),
+        site(
+            "xcrun devicectl device info ddiServices --auto-mount-ddis",
+            "CoreDevice 642.16 on the host",
+            MOUNT,
+            "the fallback within 120 s, a process of its own; it mounts the Cryptex1 form for a device the build manifest does not name",
         ),
     ]
 }

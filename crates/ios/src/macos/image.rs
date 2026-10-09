@@ -8,6 +8,7 @@
 
 use std::io::Write as _;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use idevice::IdeviceService;
@@ -46,11 +47,14 @@ pub(crate) struct MountLimits {
     pub devicectl: Duration,
 }
 
+/// How long `devicectl` gets, which it is told as its own timeout too.
+const DEVICECTL_SECONDS: u64 = 120;
+
 impl Default for MountLimits {
     fn default() -> MountLimits {
         MountLimits {
             idevice: Duration::from_secs(60),
-            devicectl: Duration::from_secs(120),
+            devicectl: Duration::from_secs(DEVICECTL_SECONDS),
         }
     }
 }
@@ -72,22 +76,94 @@ pub(crate) async fn ensure_mounted<M: Mounter>(
     limits: MountLimits,
     label: &str,
 ) -> std::result::Result<MountReport, MountFailure> {
-    let _ = (
-        mounter,
-        limits,
+    let listed = |entries: std::result::Result<Vec<Value>, String>| match entries {
+        Ok(entries) => disk_image(&entries),
+        Err(reason) => DiskImage::Unreadable(reason),
+    };
+    let image = listed(mounter.images().await);
+    if matches!(image, DiskImage::Mounted { .. }) {
+        return Ok(MountReport {
+            image,
+            attempts: Vec::new(),
+        });
+    }
+    log(
         label,
-        Instant::now,
-        timeout::<std::future::Ready<()>>,
-        disk_image,
+        &format!("the developer disk image is not mounted ({image:?}); mounting it"),
     );
-    todo!()
+    let mut attempts = Vec::new();
+    for path in [MountPath::Idevice, MountPath::Devicectl] {
+        let started = Instant::now();
+        let (outcome, limit) = match path {
+            MountPath::Idevice => (
+                timeout(limits.idevice, mounter.mount_with_idevice()).await,
+                limits.idevice,
+            ),
+            MountPath::Devicectl => (
+                timeout(limits.devicectl, mounter.mount_with_devicectl()).await,
+                limits.devicectl,
+            ),
+        };
+        let elapsed = started.elapsed();
+        let mut failure = match outcome {
+            Ok(Ok(())) => None,
+            Ok(Err(reason)) => Some(reason),
+            Err(_) => Some(format!("did not finish within {limit:?}")),
+        };
+        // Whatever the path said, the image mounter tells: in S10 a mount
+        // that never returned had mounted the image.
+        let image = listed(mounter.images().await);
+        let mounted = matches!(image, DiskImage::Mounted { .. });
+        if failure.is_none() && !mounted {
+            failure = Some(
+                "it reported success, but the image mounter lists no developer disk image".into(),
+            );
+        }
+        log(
+            label,
+            &format!(
+                "{path} after {:.1} s: {}{}",
+                elapsed.as_secs_f64(),
+                failure.as_deref().unwrap_or("done"),
+                if mounted {
+                    "; the image is mounted"
+                } else {
+                    ""
+                }
+            ),
+        );
+        attempts.push(MountAttempt {
+            path,
+            elapsed,
+            failure,
+        });
+        if mounted {
+            return Ok(MountReport { image, attempts });
+        }
+    }
+    let offline = attempts
+        .iter()
+        .filter_map(|attempt| attempt.failure.as_deref())
+        .any(looks_offline);
+    Err(MountFailure { attempts, offline })
 }
 
 /// Whether a mount's failure says this Mac could not reach Apple's signing
 /// server.
 pub(crate) fn looks_offline(failure: &str) -> bool {
-    let _ = failure;
-    todo!()
+    let failure = failure.to_ascii_lowercase();
+    [
+        "http request failed",
+        "error sending request",
+        "dns",
+        "gs.apple.com",
+        "offline",
+        "could not connect to the server",
+        "hostname could not be found",
+        "network is unreachable",
+    ]
+    .iter()
+    .any(|sign| failure.contains(sign))
 }
 
 /// The image and trust cache, relative to the image's directory, that the
@@ -95,8 +171,28 @@ pub(crate) fn looks_offline(failure: &str) -> bool {
 /// manifest has no personalized identity for it, as for a device too new
 /// for the image, which takes the Cryptex1 form.
 pub(crate) fn ddi_files(manifest: &Dictionary, product_type: &str) -> Option<(String, String)> {
-    let _ = (manifest, product_type);
-    todo!()
+    let identities = manifest.get("BuildIdentities")?.as_array()?;
+    identities
+        .iter()
+        .filter_map(Value::as_dictionary)
+        .filter(|identity| {
+            identity.get("Ap,ProductType").and_then(Value::as_string) == Some(product_type)
+        })
+        .find_map(|identity| {
+            let path = |component: &str| {
+                identity
+                    .get("Manifest")?
+                    .as_dictionary()?
+                    .get(component)?
+                    .as_dictionary()?
+                    .get("Info")?
+                    .as_dictionary()?
+                    .get("Path")?
+                    .as_string()
+                    .map(str::to_owned)
+            };
+            Some((path("PersonalizedDMG")?, path("LoadableTrustCache")?))
+        })
 }
 
 /// Writes one line about the mount to standard error, the daemon's log.
@@ -120,28 +216,88 @@ impl Mounter for UsbMounter {
     }
 
     async fn mount_with_idevice(&self) -> std::result::Result<(), String> {
-        let _ = (
-            &self.directory,
-            &self.product_type,
-            LockdownClient::connect,
-            ImageMounter::connect,
-            describe,
-            log,
-        );
-        todo!()
+        let directory = &self.directory;
+        let read = |name: &str| {
+            std::fs::read(directory.join(name))
+                .map_err(|error| format!("reading {}: {error}", directory.join(name).display()))
+        };
+        let manifest_bytes = read("BuildManifest.plist")?;
+        let manifest: Dictionary = plist::from_bytes(&manifest_bytes)
+            .map_err(|error| format!("the developer disk image's build manifest: {error}"))?;
+        let product_type = self
+            .product_type
+            .as_deref()
+            .ok_or("lockdown gave no ProductType to pick the image's identity with")?;
+        let (image, trust_cache) = ddi_files(&manifest, product_type).ok_or_else(|| {
+            format!(
+                "{product_type} is not in the build manifest of {}; such a device takes the image \
+                 as a Cryptex1, which devicectl mounts",
+                directory.display()
+            )
+        })?;
+        let image = read(&image)?;
+        let trust_cache = read(&trust_cache)?;
+        let chip = unique_chip_id(&self.provider).await?;
+        let mut mounter = ImageMounter::connect(&self.provider)
+            .await
+            .map_err(|error| format!("the image mounter did not start: {}", describe(&error)))?;
+        mounter
+            .mount_personalized(
+                &self.provider,
+                image,
+                trust_cache,
+                &manifest_bytes,
+                None,
+                chip,
+            )
+            .await
+            .map_err(|error| format!("the personalized mount: {}", describe(&error)))
     }
 
     async fn mount_with_devicectl(&self) -> std::result::Result<(), String> {
-        let _ = &self.udid;
-        todo!()
+        let timeout = DEVICECTL_SECONDS.to_string();
+        let output = tokio::process::Command::new("xcrun")
+            .args(["devicectl", "device", "info", "ddiServices", "--device"])
+            .arg(&self.udid)
+            .args(["--auto-mount-ddis", "--quiet", "--timeout", &timeout])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|error| format!("xcrun devicectl did not start: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let last = stderr.lines().rev().find(|line| !line.trim().is_empty());
+        Err(format!(
+            "devicectl exited with {}: {}",
+            output.status,
+            last.map_or("no message", str::trim)
+        ))
     }
 }
 
 /// The device's `UniqueChipID`, which the signing server's ticket names,
 /// read in a lockdown session.
 async fn unique_chip_id(provider: &dyn IdeviceProvider) -> std::result::Result<u64, String> {
-    let _ = provider;
-    todo!()
+    let lockdown_error = |error: idevice::IdeviceError| format!("lockdown: {}", describe(&error));
+    let mut lockdown = LockdownClient::connect(provider)
+        .await
+        .map_err(lockdown_error)?;
+    let pairing = provider.get_pairing_file().await.map_err(lockdown_error)?;
+    lockdown
+        .start_session(&pairing)
+        .await
+        .map_err(lockdown_error)?;
+    lockdown
+        .get_value(Some("UniqueChipID"), None)
+        .await
+        .map_err(lockdown_error)?
+        .as_unsigned_integer()
+        .ok_or_else(|| "lockdown's UniqueChipID is not an integer".to_owned())
 }
 
 #[cfg(test)]

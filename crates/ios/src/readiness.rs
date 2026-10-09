@@ -95,9 +95,9 @@ impl Readiness {
                  with the passcode"
                 .to_owned(),
             Readiness::DiskImageUnmounted => "the developer disk image is not mounted, as after \
-                 every restart: `xcrun devicectl device info ddiServices --device <identifier>` \
-                 mounts the selected Xcode's, which needs this Mac online for Apple's signing \
-                 server"
+                 every restart: connecting mounts the selected Xcode's, which needs this Mac \
+                 online for Apple's signing server; `xcrun devicectl device info ddiServices \
+                 --device <identifier>` mounts it by hand"
                 .to_owned(),
             Readiness::Locked => "it is locked: unlock it, and set Settings > Display & \
                  Brightness > Auto-Lock to Never for long runs"

@@ -11,6 +11,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use idevice::dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader};
 use idevice::provider::RsdProvider;
 use idevice::xpc::{XPCMessage, XPCObject};
 use idevice::{IdeviceError, ReadWrite};
@@ -207,6 +208,36 @@ impl FakeDevice {
     }
 }
 
+/// DVT's first message on a new connection: the services it publishes, on
+/// the control channel, which `idevice`'s client keeps for
+/// `read_message(0)`.
+pub(crate) fn capabilities() -> Vec<u8> {
+    let mut services = Dictionary::new();
+    for service in [
+        "com.apple.instruments.server.services.processcontrol",
+        "com.apple.instruments.server.services.deviceinfo",
+        "com.apple.instruments.server.services.screenshot",
+    ] {
+        services.insert(service.to_owned(), Value::Integer(1.into()));
+    }
+    Message::new(
+        MessageHeader::new(0, 1, 1, 0, 0, false),
+        PayloadHeader::method_invocation(),
+        Some(Aux::from_values(vec![AuxValue::archived_value(
+            Value::Dictionary(services),
+        )])),
+        Some(Value::String("_notifyOfPublishedCapabilities:".into())),
+    )
+    .serialize()
+}
+
+/// A DVT service hub that says its capabilities and takes nothing more.
+pub(crate) async fn dvt_hello(mut stream: DuplexStream) {
+    if stream.write_all(&capabilities()).await.is_ok() {
+        drain(stream).await;
+    }
+}
+
 /// Reads and drops what the other end writes until it closes.
 pub(crate) async fn drain(mut stream: DuplexStream) {
     let mut buffer = [0u8; 4096];
@@ -304,6 +335,9 @@ impl RsdProvider for FakeProvider {
             match handler {
                 Some(handler) => {
                     tokio::spawn(handler(server));
+                }
+                None if Some(port) == self.device.port(crate::services::DVT) => {
+                    tokio::spawn(dvt_hello(server));
                 }
                 None => {
                     tokio::spawn(drain(server));

@@ -55,8 +55,12 @@ pub const NEEDED: [Needed; 6] = [
 
 /// The needed services that `listed` lacks, in [`NEEDED`]'s order.
 pub fn missing<'a>(listed: impl IntoIterator<Item = &'a str>) -> Vec<&'static str> {
-    let _ = listed;
-    todo!()
+    let listed: Vec<&str> = listed.into_iter().collect();
+    NEEDED
+        .iter()
+        .map(|needed| needed.name)
+        .filter(|name| !listed.contains(name))
+        .collect()
 }
 
 #[cfg(test)]
