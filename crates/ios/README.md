@@ -191,7 +191,12 @@ channel lives on a connection of its own, served by a task that owns the
 connection and sends one call at a time, since `idevice`'s channel borrows
 its connection: a call whose connection was gone before it was written goes
 again on a new one, and a reply that never comes ends the channel, so a
-late reply cannot answer the next call.
+late reply cannot answer the next call. The messages the device starts on a
+channel are passed over, DTX numbering their conversation even and a
+reply's odd: process control sends what a launched app prints as
+`outputReceived:fromProcess:atTime:`, and the Expo fixture's output came
+before its launch's reply, which the driver had read as the launch's
+answer, every later reply on the channel one call late.
 
 The disk image is mounted through `idevice`'s personalized mount first,
 within 60 s: the image and trust cache the build manifest of the selected
@@ -550,7 +555,7 @@ range and the table below, which `ios::call_sites()` returns for `doctor`:
 | `QueryPersonalizationManifest`, `QueryNonce`, `QueryPersonalizationIdentifiers`, `UploadImage`, `MountImage` `Personalized`; TSS | image mounter, Apple's signing server | iOS 26.6.2, Xcode 27.0: not exercised; the image stayed mounted, and S10's call never returned | first, within 60 s; needs this Mac online |
 | `xcrun devicectl device info ddiServices --auto-mount-ddis` | CoreDevice 642.16 on the host | iOS 26.6.2, Xcode 27.0: not exercised | the fallback, within 120 s |
 | `_requestChannelWithCode:identifier:` | DVT | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs` | a channel per connection, kept |
-| `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:` with `KillExisting` false | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs`, `tests/input.rs` | written by hand: `launch_app` drops a refusal's reason; a running instance is signalled first, since a `KillExisting` relaunch kept a black window (S11, task 3.8) |
+| `launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:` with `KillExisting` false | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs`, `tests/input.rs` | written by hand: `launch_app` drops a refusal's reason; a running instance is signalled first, since a `KillExisting` relaunch kept a black window (S11, task 3.8); the app's output, `outputReceived:fromProcess:atTime:` on the channel (the Expo fixture's before the reply, task 4.4), is passed over |
 | `sendSignal:toPid:` with SIGKILL and the pid archived | DVT's process control | iOS 26.6.2, Xcode 27.0: S9, `tests/lifecycle.rs` | written by hand: `kill_app`'s primitive pid stalled the phone's DVT service (S9) |
 | `runningProcesses`, `isRunningPid:` | DVT's device information | iOS 26.6.2, Xcode 27.0: `tests/lifecycle.rs`, `tests/runner.rs` | `bundleIdentifier` for application processes, the runner's included; the list takes 480 to 710 ms |
 | AFC upload to `PublicStaging`; installation proxy `Upgrade`, `Lookup` | AFC, installation proxy (lockdown) | iOS 26.6.2, Xcode 27.0: S10, `tests/lifecycle.rs` | over usbmuxd, not the tunnel |

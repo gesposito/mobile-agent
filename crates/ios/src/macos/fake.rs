@@ -91,6 +91,10 @@ struct Dvt {
     refuse_launches: bool,
     silent: bool,
     closed: bool,
+    /// What a launched app prints, which process control sends on its
+    /// channel before the launch's reply, as the phone sent the Expo
+    /// fixture's output.
+    launch_output: Vec<String>,
 }
 
 impl Default for Dvt {
@@ -116,6 +120,7 @@ impl Default for Dvt {
             refuse_launches: false,
             silent: false,
             closed: false,
+            launch_output: Vec::new(),
         }
     }
 }
@@ -469,6 +474,17 @@ impl FakeDevice {
     /// Makes DVT refuse every launch.
     pub(crate) fn refuse_launches(&self) {
         self.dvt().refuse_launches = true;
+    }
+
+    /// Makes every launched app print `lines`, which process control sends
+    /// as `outputReceived:fromProcess:atTime:` before the launch's reply.
+    pub(crate) fn print_on_launch(&self, lines: &[&str]) {
+        self.dvt().launch_output = lines.iter().map(|line| (*line).to_owned()).collect();
+    }
+
+    /// What a launched app prints.
+    fn launch_output(&self) -> Vec<String> {
+        self.dvt().launch_output.clone()
     }
 
     /// Makes DVT take calls and answer none.
@@ -849,6 +865,24 @@ pub(crate) fn ns_error_archive(domain: &str, code: i64, description: &str) -> Ve
     bytes
 }
 
+/// `outputReceived:fromProcess:atTime:`, which process control sends on its
+/// channel `channel` as the process `pid` prints `line`: a message of the
+/// device's own, conversation index 0, expecting no reply, which DTX writes
+/// on the negated channel code.
+fn output_bytes(channel: i32, line: &str, pid: &Value) -> Vec<u8> {
+    Message::new(
+        MessageHeader::new(0, 1, 7, 0, -channel, false),
+        PayloadHeader::method_invocation(),
+        Some(Aux::from_values(vec![
+            AuxValue::archived_value(Value::String(line.to_owned())),
+            AuxValue::archived_value(pid.clone()),
+            AuxValue::archived_value(Value::Integer(0.into())),
+        ])),
+        Some(Value::String("outputReceived:fromProcess:atTime:".into())),
+    )
+    .serialize()
+}
+
 /// A DTX reply to the call `identifier` on `channel`, with its archived
 /// data, empty for an acknowledgement.
 fn reply_bytes(identifier: u32, channel: i32, archived: &[u8]) -> Vec<u8> {
@@ -910,6 +944,7 @@ pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
             .as_ref()
             .map(|aux| aux.values.iter().map(arg).collect())
             .unwrap_or_default();
+        let launch = selector == LAUNCH;
         let reply = if code == 0 && selector == "_requestChannelWithCode:identifier:" {
             if let (Some(Arg::Primitive(channel)), Some(Arg::Archived(Value::String(name)))) =
                 (args.first(), args.get(1))
@@ -930,6 +965,17 @@ pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
             }
             other => other,
         };
+        if launch && let Some(Reply::Data(Some(pid))) = &reply {
+            for line in device.launch_output() {
+                if writer
+                    .write_all(&output_bytes(code, &line, pid))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
         let archived = match reply {
             None => continue,
             Some(Reply::Screenshot) => unreachable!("captured above"),

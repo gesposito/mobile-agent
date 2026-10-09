@@ -340,9 +340,9 @@ impl Drop for DvtChannel {
 }
 
 /// The channel's task: opens the channel on the connection it owns, says
-/// so, then sends each call and waits for its reply, in order. A call that
-/// cannot be written, or a reply that cannot be read, ends it with the
-/// connection.
+/// so, then sends each call and waits for its reply, in order, passing over
+/// the messages the device starts on the channel. A call that cannot be
+/// written, or a reply that cannot be read, ends it with the connection.
 async fn serve(
     mut client: RemoteServerClient<Box<dyn ReadWrite>>,
     identifier: &'static str,
@@ -371,7 +371,13 @@ async fn serve(
             let _ = reply.send(Err(CallError::NotSent(describe(&error))));
             return;
         }
-        match channel.read_message().await {
+        let read = loop {
+            match channel.read_message().await {
+                Ok(message) if from_the_device(&message) => {}
+                read => break read,
+            }
+        };
+        match read {
             Ok(message) => {
                 let _ = reply.send(Ok(message));
             }
@@ -381,6 +387,16 @@ async fn serve(
             }
         }
     }
+}
+
+/// Whether `message` is one the device started rather than a reply, such as
+/// process control's `outputReceived:fromProcess:atTime:` with what a
+/// launched app prints, which the phone sent before the launch's reply: DTX
+/// numbers a reply's conversation odd and a message a peer starts even.
+fn from_the_device(message: &Message) -> bool {
+    let header = message.message_header.serialize();
+    let conversation = u32::from_le_bytes(header[20..24].try_into().expect("a 32-byte header"));
+    conversation % 2 == 0
 }
 
 #[cfg(test)]
@@ -448,6 +464,40 @@ mod tests {
                     Arg::Archived(Value::Dictionary(launch_options)),
                 ]
             );
+        });
+    }
+
+    /// Process control sends what a launched app prints on the launch's
+    /// channel, as `outputReceived:fromProcess:atTime:` messages of the
+    /// device's own; on the phone the Expo fixture's output came before the
+    /// launch's reply. The reply is the launch's, and the next call gets its
+    /// own.
+    #[test]
+    fn the_output_of_a_launched_app_is_no_reply_to_the_launch_or_the_next_call() {
+        runtime().block_on(async {
+            let device = FakeDevice::recorded();
+            device.install_app(SWIFTUI, "FixtureSwiftUI");
+            device.print_on_launch(&["Running application main", "[native] bridge started"]);
+            let control = channel(&device, PROCESS_CONTROL).await;
+            let reply = control
+                .call(launch(SWIFTUI, &LaunchOptions::new()), WAIT)
+                .await
+                .expect("a reply");
+            let pid = launched_pid(&reply).expect("the launch's reply carries the pid");
+            assert!(device.running(SWIFTUI).contains(&pid));
+            let reply = control
+                .call(send_signal(pid, SIGKILL), WAIT)
+                .await
+                .expect("the signal's reply");
+            assert_eq!(
+                reply.data, None,
+                "the signal's own reply, not the app's output"
+            );
+            let again = control
+                .call(launch(SWIFTUI, &LaunchOptions::new()), WAIT)
+                .await
+                .expect("a reply");
+            assert!(launched_pid(&again).is_ok(), "the second launch's pid");
         });
     }
 

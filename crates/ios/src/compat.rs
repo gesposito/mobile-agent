@@ -176,7 +176,7 @@ pub fn call_sites() -> Vec<CallSite> {
             "launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options: with KillExisting",
             "DVT's com.apple.instruments.server.services.processcontrol",
             LIFECYCLE,
-            "written by hand, since idevice 0.1.68's launch_app drops the device's reason for a refusal; the NSError is read from the reply's archive",
+            "written by hand, since idevice 0.1.68's launch_app drops the device's reason for a refusal; the NSError is read from the reply's archive; the launched app's output comes on the channel as outputReceived:fromProcess:atTime: (the Expo fixture's before the reply) and is passed over",
         ),
         site(
             "sendSignal:toPid: with SIGKILL and the pid archived",
