@@ -169,16 +169,17 @@ impl Env {
         self.cli_with(args, &[])
     }
 
-    /// Runs `args` with `vars` in the CLI's environment as well.
+    /// Runs `args` with `vars` in the CLI's environment as well, which
+    /// may name another `HOME`.
     fn cli_with(&self, args: &[&str], vars: &[(&str, &str)]) -> Run {
         let mut command = Command::new(cli_bin());
         support::clean_env(&mut command);
-        command.envs(vars.iter().copied());
         command
             .args(args)
             .env("HOME", self.home.path())
             .env("MOBILE_AGENT_SOCKET_DIR", &self.daemon.dir)
             .env("MOBILE_AGENT_DAEMON_BIN", &self.binary)
+            .envs(vars.iter().copied())
             .current_dir(self.home.path())
             .stdin(Stdio::null());
         let started = Instant::now();
@@ -1062,7 +1063,12 @@ fn the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone() {
         "{phone}"
     );
 
-    let run = env.cli_with(&["--json", "doctor"], &vars);
+    // `security`, which the signing check runs, searches the keychains
+    // under the user's home, not the test's.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut doctor_vars = vars.clone();
+    doctor_vars.push(("HOME", home.as_str()));
+    let run = env.cli_with(&["--json", "doctor"], &doctor_vars);
     times.push(("doctor", ms(run.elapsed)));
     let doctor = run.data();
     let check = |name: &str| {
