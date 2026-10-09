@@ -1,6 +1,9 @@
 //! The values the driver takes and returns. Nothing here depends on the
 //! `idevice` crate, so these types exist on every platform.
 
+use std::fmt;
+use std::time::Duration;
+
 use crate::readiness::Readiness;
 
 /// The environment variable that names the development team the runner is
@@ -105,4 +108,79 @@ pub struct DeviceInfo {
     pub probe: Probe,
     /// What stands between the device and a session, or `Ready`.
     pub readiness: Readiness,
+}
+
+/// The CoreDevice tunnel to a device and the services its RSD handshake
+/// listed (design D18).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TunnelStatus {
+    /// Tunnels opened to the device so far: one, unless one dropped and the
+    /// driver opened another.
+    pub opens: u32,
+    /// How long the last one took to open, `CoreDeviceProxy` and the RSD
+    /// handshake together: 60 ms at p50 in spike S9.
+    pub opened_in: Duration,
+    /// Every service the handshake listed, by name, sorted.
+    pub services: Vec<String>,
+    /// The services the driver needs that the handshake did not list.
+    pub missing: Vec<&'static str>,
+}
+
+/// How the driver mounted the developer disk image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MountPath {
+    /// The image mounter's personalized mount through `idevice`, with the
+    /// ticket from Apple's signing server.
+    Idevice,
+    /// `xcrun devicectl device info ddiServices`, which mounts the image
+    /// the host's CoreDevice holds; the fallback, since `idevice`'s mount
+    /// hung once in spike S10.
+    Devicectl,
+}
+
+impl fmt::Display for MountPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            MountPath::Idevice => "idevice's personalized mount",
+            MountPath::Devicectl => "devicectl device info ddiServices",
+        })
+    }
+}
+
+/// One try at mounting the developer disk image.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MountAttempt {
+    pub path: MountPath,
+    pub elapsed: Duration,
+    /// `None` when the path reported success; why it failed otherwise. A
+    /// path that reported success still counts only once the image mounter
+    /// lists the image.
+    pub failure: Option<String>,
+}
+
+/// What `connect` found of the developer disk image and did about it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MountReport {
+    /// The image as the image mounter lists it once the attempts are over.
+    pub image: DiskImage,
+    /// The mounts tried, none when the image was already mounted.
+    pub attempts: Vec<MountAttempt>,
+}
+
+/// What `connect` found and opened.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Connected {
+    /// The device as its probe read it after any mount.
+    pub device: DeviceInfo,
+    pub tunnel: TunnelStatus,
+    pub disk_image: MountReport,
+}
+
+/// What the driver holds for a device.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TargetStatus {
+    /// The tunnel, once `connect` opened one and until it is reset.
+    pub tunnel: Option<TunnelStatus>,
+    /// The disk image as the last `connect` found it.
+    pub disk_image: Option<MountReport>,
 }

@@ -2,7 +2,9 @@
 //! repository's snake_case style.
 
 use std::fmt;
+use std::time::Duration;
 
+use crate::model::MountAttempt;
 use crate::readiness::Readiness;
 
 /// The driver's result type.
@@ -27,6 +29,27 @@ pub enum Error {
     },
     /// The driver's runtime or a host command could not start.
     Io { what: String, reason: String },
+    /// The device went away, or its tunnel did and a new one could not be
+    /// opened: unplugged, rebooted or asleep; the cause.
+    Disconnected { target: String, cause: String },
+    /// The device's RSD handshake does not list a service the operation
+    /// needs.
+    ServiceMissing {
+        target: String,
+        service: String,
+        listed: usize,
+    },
+    /// A wait ran out.
+    Timeout { what: String, after: Duration },
+    /// The developer disk image is still not mounted after every way of
+    /// mounting it was tried; each attempt and why it failed. `offline` when
+    /// a failure says this Mac could not reach Apple's signing server, which
+    /// the mount needs.
+    DiskImage {
+        target: String,
+        attempts: Vec<MountAttempt>,
+        offline: bool,
+    },
 }
 
 impl Error {
@@ -39,13 +62,17 @@ impl Error {
             Error::NotFound { .. } => "not_found",
             Error::NotReady { readiness, .. } => readiness.code(),
             Error::Io { .. } => "io",
+            Error::Disconnected { .. } => "disconnected",
+            Error::ServiceMissing { .. } => "service_missing",
+            Error::Timeout { .. } => "timeout",
+            Error::DiskImage { .. } => Readiness::DiskImageUnmounted.code(),
         }
     }
 
     /// Whether repeating the same request can succeed without a person
-    /// changing anything: none of these.
+    /// changing anything: a wait that ran out.
     pub fn retryable(&self) -> bool {
-        false
+        matches!(self, Error::Timeout { .. })
     }
 }
 
@@ -68,6 +95,47 @@ impl fmt::Display for Error {
                 )
             }
             Error::Io { what, reason } => write!(f, "{what}: {reason}"),
+            Error::Disconnected { target, cause } => write!(
+                f,
+                "iOS device {target} is disconnected ({cause}); plug it in again over USB, unlocked, and connect again"
+            ),
+            Error::ServiceMissing {
+                target,
+                service,
+                listed,
+            } => write!(
+                f,
+                "iOS device {target} does not list {service} among its {listed} RSD services; it is listed on iOS 26.6.2 with Xcode 27.0's developer disk image mounted"
+            ),
+            Error::Timeout { what, after } => write!(f, "{what} did not happen within {after:?}"),
+            Error::DiskImage {
+                target,
+                attempts,
+                offline,
+            } => {
+                write!(
+                    f,
+                    "the developer disk image could not be mounted on iOS device {target}"
+                )?;
+                if *offline {
+                    f.write_str(
+                        "; this Mac seems to be offline, and the mount needs Apple's signing server for the device's ticket",
+                    )?;
+                }
+                for attempt in attempts {
+                    write!(
+                        f,
+                        "; {} after {:.1} s: {}",
+                        attempt.path,
+                        attempt.elapsed.as_secs_f64(),
+                        attempt.failure.as_deref().unwrap_or("mounted")
+                    )?;
+                }
+                if attempts.is_empty() {
+                    f.write_str("; no way of mounting it could be tried")?;
+                }
+                Ok(())
+            }
         }
     }
 }

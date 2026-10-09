@@ -6,7 +6,7 @@
 //! `devices` lists: names are not unique, so no method takes one.
 
 use crate::error::Result;
-use crate::model::DeviceInfo;
+use crate::model::{Connected, DeviceInfo, TargetStatus};
 use crate::readiness::Need;
 
 /// Lists the devices attached over USB and what stands between each and a
@@ -21,4 +21,15 @@ pub trait Devices {
     /// stands in the way; otherwise fails with the code of the first state
     /// that does ([`crate::Error::NotReady`]).
     fn require(&self, target: &str, need: Need) -> Result<DeviceInfo>;
+
+    /// Gets `target` ready for its developer services (spec
+    /// `ios-device-driver`, "Transport without root or helpers"): fails on
+    /// what stands in the way, mounts the developer disk image when the
+    /// device lacks it, and opens the CoreDevice tunnel in this process
+    /// unless it is open. The tunnel is kept for the target's lifetime.
+    fn connect(&self, target: &str) -> Result<Connected>;
+
+    /// What the driver holds for `target`: its tunnel and the disk image as
+    /// the last `connect` found it; nothing before a `connect`.
+    fn status(&self, target: &str) -> Result<TargetStatus>;
 }

@@ -2,6 +2,10 @@
 //! device through the `idevice` crate, on the driver's tokio runtime.
 
 mod driver;
+#[cfg(test)]
+mod fake;
 mod host;
+mod image;
+mod tunnel;
 
 pub use driver::IosDriver;

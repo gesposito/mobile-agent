@@ -18,7 +18,10 @@ use crate::discovery::{
 };
 use crate::error::{Error, Result};
 use crate::identity::IdentityCheck;
-use crate::model::{Connection, MuxEntry, Probe, Trust};
+use crate::model::{Connection, DeviceInfo, MuxEntry, Probe, Trust};
+
+use super::image::{DDI_DIRECTORY, Mounter, UsbMounter};
+use super::tunnel::{Opener, UsbTunnel};
 
 /// How long usbmuxd gets to answer: 0.4 ms at p50 in spike S9.
 const USBMUXD_TIMEOUT: Duration = Duration::from_secs(5);
@@ -48,8 +51,13 @@ pub(crate) fn describe(error: &dyn std::error::Error) -> String {
     text
 }
 
-/// What discovery needs from the host: the seam the tests replace.
+/// What the driver needs from the host: the seam the tests replace.
 pub(crate) trait Host: Send + Sync + 'static {
+    /// Opens tunnels to one device.
+    type Opener: Opener;
+    /// Mounts the developer disk image on one device.
+    type Mounter: Mounter;
+
     /// usbmuxd's listing, every entry as it comes.
     async fn list(&self) -> Result<Vec<MuxEntry>>;
 
@@ -59,6 +67,12 @@ pub(crate) trait Host: Send + Sync + 'static {
 
     /// The host's signing identity for the runner.
     fn identity(&self) -> IdentityCheck;
+
+    /// The tunnels to the device of `entry`.
+    fn opener(&self, entry: &MuxEntry) -> Self::Opener;
+
+    /// The disk image mounts on `device`, the device of `entry`.
+    fn mounter(&self, entry: &MuxEntry, device: &DeviceInfo) -> Self::Mounter;
 }
 
 /// The real host: usbmuxd at its default socket, or the one
@@ -89,6 +103,9 @@ impl UsbHost {
 }
 
 impl Host for UsbHost {
+    type Opener = UsbTunnel;
+    type Mounter = UsbMounter;
+
     async fn list(&self) -> Result<Vec<MuxEntry>> {
         let unavailable = |reason: String| Error::Usbmuxd { reason };
         let listing = async {
@@ -119,6 +136,21 @@ impl Host for UsbHost {
 
     fn identity(&self) -> IdentityCheck {
         crate::identity::host_identity()
+    }
+
+    fn opener(&self, entry: &MuxEntry) -> UsbTunnel {
+        UsbTunnel {
+            provider: self.provider(entry),
+        }
+    }
+
+    fn mounter(&self, entry: &MuxEntry, device: &DeviceInfo) -> UsbMounter {
+        UsbMounter {
+            provider: self.provider(entry),
+            udid: entry.udid.clone(),
+            product_type: device.model.clone(),
+            directory: DDI_DIRECTORY.into(),
+        }
     }
 }
 

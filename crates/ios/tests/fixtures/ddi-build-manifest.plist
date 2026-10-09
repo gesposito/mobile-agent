@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Three of the 141 build identities of Xcode 27.0's developer disk image
+(/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore/BuildManifest.plist,
+27A266a), cut to the keys the driver reads: two personalized identities, the
+iPhone SE (3rd generation)'s among them, which name the image and its trust
+cache, and the Cryptex1 identity, which names no device and no image.
+-->
+<plist version="1.0">
+<dict>
+	<key>BuildIdentities</key>
+	<array>
+		<dict>
+			<key>Ap,ProductType</key>
+			<string>iPhone9,3</string>
+			<key>ApBoardID</key>
+			<string>0x0C</string>
+			<key>ApChipID</key>
+			<string>0x8010</string>
+			<key>Info</key>
+			<dict>
+				<key>DeviceClass</key>
+				<string>d101ap</string>
+				<key>Variant</key>
+				<string>Customer iOS Developer PDI</string>
+			</dict>
+			<key>Manifest</key>
+			<dict>
+				<key>LoadableTrustCache</key>
+				<dict>
+					<key>Info</key>
+					<dict>
+						<key>Path</key>
+						<string>Firmware/022-20190-411.dmg.trustcache</string>
+					</dict>
+				</dict>
+				<key>PersonalizedDMG</key>
+				<dict>
+					<key>Info</key>
+					<dict>
+						<key>Path</key>
+						<string>022-20190-411.dmg</string>
+					</dict>
+				</dict>
+			</dict>
+		</dict>
+		<dict>
+			<key>Ap,ProductType</key>
+			<string>iPhone14,6</string>
+			<key>ApBoardID</key>
+			<string>0x10</string>
+			<key>ApChipID</key>
+			<string>0x8110</string>
+			<key>Info</key>
+			<dict>
+				<key>DeviceClass</key>
+				<string>d49ap</string>
+				<key>Variant</key>
+				<string>Customer iOS Developer PDI</string>
+			</dict>
+			<key>Manifest</key>
+			<dict>
+				<key>LoadableTrustCache</key>
+				<dict>
+					<key>Info</key>
+					<dict>
+						<key>Path</key>
+						<string>Firmware/022-20190-411.dmg.trustcache</string>
+					</dict>
+				</dict>
+				<key>PersonalizedDMG</key>
+				<dict>
+					<key>Info</key>
+					<dict>
+						<key>Path</key>
+						<string>022-20190-411.dmg</string>
+					</dict>
+				</dict>
+			</dict>
+		</dict>
+		<dict>
+			<key>Info</key>
+			<dict>
+				<key>Variant</key>
+				<string>iOS Customer Developer Disk Image Cryptex</string>
+			</dict>
+			<key>Manifest</key>
+			<dict/>
+		</dict>
+	</array>
+	<key>ProductBuildVersion</key>
+	<string>27A266a</string>
+</dict>
+</plist>

@@ -4,7 +4,7 @@
 
 use crate::driver::Devices;
 use crate::error::{Error, Result};
-use crate::model::DeviceInfo;
+use crate::model::{Connected, DeviceInfo, TargetStatus};
 use crate::readiness::Need;
 
 /// Drives physical iOS devices; available on macOS only.
@@ -15,6 +15,10 @@ impl IosDriver {
     pub fn open() -> Result<IosDriver> {
         Err(Error::PlatformUnsupported)
     }
+
+    pub fn reset_target(&self, _target: &str) -> Result<()> {
+        match *self {}
+    }
 }
 
 impl Devices for IosDriver {
@@ -23,6 +27,14 @@ impl Devices for IosDriver {
     }
 
     fn require(&self, _target: &str, _need: Need) -> Result<DeviceInfo> {
+        match *self {}
+    }
+
+    fn connect(&self, _target: &str) -> Result<Connected> {
+        match *self {}
+    }
+
+    fn status(&self, _target: &str) -> Result<TargetStatus> {
         match *self {}
     }
 }

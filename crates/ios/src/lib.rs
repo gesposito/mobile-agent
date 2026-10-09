@@ -1,7 +1,8 @@
 //! Physical iOS device driver (design D18 to D25, spec `ios-device-driver`):
-//! discovery and readiness over usbmuxd and lockdown, driven from the host
-//! through the `idevice` crate in this process, with no root, no helper
-//! process and no network interface of its own.
+//! discovery and readiness over usbmuxd and lockdown, the CoreDevice tunnel
+//! and the developer services over it, driven from the host through the
+//! `idevice` crate in this process, with no root, no helper process and no
+//! network interface of its own.
 //!
 //! [`IosDriver`] implements the driver traits, [`Devices`]; on hosts other
 //! than macOS it exists but cannot be opened. `README.md` covers the
@@ -18,6 +19,7 @@ mod error;
 mod identity;
 mod model;
 mod readiness;
+mod services;
 mod version;
 
 #[cfg(target_os = "macos")]
@@ -32,8 +34,12 @@ pub use compat::{
 pub use driver::Devices;
 pub use error::{Error, Result};
 pub use identity::{IdentityCheck, host_identity};
-pub use model::{Connection, DeviceInfo, DiskImage, MuxEntry, Probe, TEAM_VARIABLE, Trust};
+pub use model::{
+    Connected, Connection, DeviceInfo, DiskImage, MountAttempt, MountPath, MountReport, MuxEntry,
+    Probe, TEAM_VARIABLE, TargetStatus, Trust, TunnelStatus,
+};
 pub use readiness::{Need, Readiness};
+pub use services::{NEEDED, Needed};
 
 #[cfg(target_os = "macos")]
 pub use macos::IosDriver;
