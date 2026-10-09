@@ -95,6 +95,10 @@ pub fn call_sites() -> Vec<CallSite> {
     const TUNNEL: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 and tests/tunnel.rs";
     const MOUNT: &str = "iOS 26.6.2, Xcode 27.0: not exercised, the image was mounted in S9, S10 and tests/tunnel.rs; S10's personalized mount through idevice never returned, though the image was mounted by then";
     const LIFECYCLE: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S9 (Settings) and tests/lifecycle.rs (the SwiftUI fixture)";
+    const SESSION: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0 (XCTest 25228), macOS 26.6.2: spike S10 and tests/runner.rs";
+    const INPUT: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spikes S10 and S11, and tests/input.rs";
+    const KEYS: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S11 (typed into Safari's address field)";
+    const FRAMES: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spikes S9 and S11, and tests/frames.rs";
     let site = |call, service, validated_on, note| CallSite {
         call,
         service,
@@ -191,6 +195,72 @@ pub fn call_sites() -> Vec<CallSite> {
             "com.apple.afc and com.apple.mobile.installation_proxy (lockdown)",
             LIFECYCLE,
             "through usbmuxd rather than the tunnel, whose stack sends one segment at a time",
+        ),
+        site(
+            "installation_proxy Lookup of the runner (Path, Container, CFBundleExecutable ending in -Runner)",
+            "com.apple.mobile.installation_proxy (lockdown)",
+            SESSION,
+            "a missing runner is installed from the bundle the caller gives, or reported as runner_not_installed",
+        ),
+        site(
+            "the xctest session: the DTX handshake on two testmanagerd connections, _IDE_initiateControlSessionWithCapabilities:, _IDE_initiateSessionWithIdentifier:capabilities:, the runner launched through DVT's process control (XCTestBundlePath, XCTestSessionIdentifier, XCTestManagerVariant DDI), _IDE_authorizeTestSessionWithProcessID:, _XCT_testRunnerReadyWithCapabilities: answered with the configuration, _IDE_startExecutingTestPlanWithProtocolVersion:",
+            "com.apple.dt.testmanagerd.remote and DVT, through idevice 0.1.68's XCUITestService on a tunnel of its own",
+            SESSION,
+            "kept on a task for the session; XCTest asks the owner to approve Enable UI Automation and waits 60 s in \"enabling automation mode\" (automation_not_enabled), which iOS 26.6.2 asked again once in a day without a restart; the handshake went unanswered for a minute or two after runners were ended mid-start, so a start is made again within the attach's time; idevice reports XCTestErrorDomain 103 as an untrusted certificate though S10's cause was an arm64e executable",
+        ),
+        site(
+            "Connect to the runner's loopback port 27183; the device protocol's hello",
+            "usbmuxd, then the runner's AgentSession",
+            SESSION,
+            "usbmuxd rather than the tunnel, as for installs; the hello names mobile-agent-ios-runner and its version, another version is replaced by the bundle given",
+        ),
+        site(
+            "GetValue ScreenWidth, ScreenHeight, ScreenScaleFactor in com.apple.mobile.iTunes",
+            "lockdownd",
+            INPUT,
+            "750, 1334 and 2.0 on the SE: the touchscreen's coordinates and the status bar's band come from them",
+        ),
+        site(
+            "send {_0: a 58-byte mainTouchscreen report (0x09, contact count, 5, state 0xC2 touching or 0x02 lifted, x and y over 0 to 65535 across the screen in points), _1: 257}",
+            "com.apple.coredevice.hid.universalhidservice (dtuhidd of the disk image)",
+            INPUT,
+            "no display stream runs, and iOS 26.6.2 takes the reports anyway (S11); iOS 27 drops them without one (pymobiledevice3, idevice), so the path is gated to iOS 18 up to 27 and the runner synthesizes elsewhere",
+        ),
+        site(
+            "IndigoButtonEvent {usagePage 0x0C, usageCode: home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA, state 1 down, 2 up}",
+            "com.apple.coredevice.hid.indigo (dtuhidd)",
+            INPUT,
+            "held 80 ms; home reached the home screen, where the phone's own home button does not work (S11); lock and volume as task 3.8's device check recorded them in crates/ios/README.md",
+        ),
+        site(
+            "IndigoKeyboardButtonEvent {usageCode on the keyboard page, state}",
+            "com.apple.coredevice.hid.indigo (dtuhidd)",
+            KEYS,
+            "a key held 30 ms with its modifiers' events around it; pymobiledevice3 found dtuhidd ignoring it on iOS 27",
+        ),
+        site(
+            "createService (a virtual mainKeyboard), connectedServices, send {_0: a 39-byte keyboard report, _1: its service}, resetGestureState, removeService",
+            "com.apple.coredevice.hid.universalhidservice (dtuhidd)",
+            KEYS,
+            "registered for typing and removed after it, since Xcode 27's notes say a device may otherwise stay in hardware keyboard mode for two minutes",
+        ),
+        site(
+            "takeScreenshot",
+            "DVT's com.apple.instruments.server.services.screenshot",
+            FRAMES,
+            "a PNG, 8-bit for most screens and 16-bit with an ICC profile for the home screen's wallpaper (S11); polled on a connection of its own for frames, and on the kept channel for screenshots",
+        ),
+        site(
+            "capturescreenshot with requestedFormat png",
+            "com.apple.coredevice.screencaptureservice",
+            FRAMES,
+            "the second frame connection; JPEG requests are refused (S9)",
+        ),
+        site(
+            "getmediasupportinfo",
+            "com.apple.coredevice.displayservice",
+            FRAMES,
+            "supportedFeatures 0 on iOS 26.6.2, which refuses the display stream with CoreDeviceError 9021 until iOS 27 (S11); the stream stays off, a later addition",
         ),
     ]
 }
@@ -289,6 +359,25 @@ mod tests {
             assert!(
                 calls.iter().any(|call| call.contains(expected)),
                 "no call site for {expected}: {calls:?}"
+            );
+        }
+        for expected in [
+            "testmanagerd",
+            "27183",
+            "mainTouchscreen",
+            "IndigoButtonEvent",
+            "IndigoKeyboardButtonEvent",
+            "mainKeyboard",
+            "takeScreenshot",
+            "capturescreenshot",
+            "getmediasupportinfo",
+            "ScreenScaleFactor",
+        ] {
+            assert!(
+                sites
+                    .iter()
+                    .any(|site| site.call.contains(expected) || site.service.contains(expected)),
+                "no call site for {expected}"
             );
         }
         // The lock comes from lockdown because CoreDevice's lock state is not
