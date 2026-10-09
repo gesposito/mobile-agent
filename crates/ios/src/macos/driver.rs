@@ -619,7 +619,18 @@ impl<H: Host> Core<H> {
     }
 
     async fn connect_target(&self, target: &str) -> Result<(Arc<Slot<H>>, Connected)> {
-        let entry = self.entry(target).await?;
+        let entry = match self.entry(target).await {
+            // A phone the driver held that left usbmuxd's listing is
+            // disconnected, not an identifier the driver does not know.
+            Err(Error::NotFound { .. }) if lock(&self.targets).contains_key(target) => {
+                return Err(Error::Disconnected {
+                    target: target.to_owned(),
+                    kind: Disconnect::Unplugged,
+                    cause: "usbmuxd does not list it".into(),
+                });
+            }
+            entry => entry?,
+        };
         let identity = self.host.identity();
         let not_ready = |readiness| Error::NotReady {
             target: target.to_owned(),

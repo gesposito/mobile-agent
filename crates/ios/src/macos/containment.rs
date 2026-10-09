@@ -157,6 +157,33 @@ fn a_replugged_phone_attaches_again_and_starts_over() {
 }
 
 #[test]
+fn every_command_on_a_pulled_phone_fails_as_unplugged_until_it_is_back() {
+    let core = core(two_phones());
+    core.attach(PHONE, &options()).expect("attaches");
+    tap(&core, PHONE).expect("taps");
+    core.host.device.unplug();
+    tap(&core, PHONE).expect_err("unplugged");
+    // The driver held the phone: away from usbmuxd's listing it is
+    // disconnected, not an identifier the driver does not know.
+    let errors = [
+        tap(&core, PHONE).map(|_| ()).expect_err("still away"),
+        core.screenshot(PHONE, &ScreenshotOptions::default())
+            .map(|_| ())
+            .expect_err("still away"),
+        core.attach(PHONE, &options())
+            .map(|_| ())
+            .expect_err("still away"),
+    ];
+    for error in errors {
+        assert_eq!(error.code(), "disconnected", "{error}");
+        assert_eq!(kind(&error), Some(Disconnect::Unplugged), "{error}");
+    }
+    core.host.device.plug_in();
+    core.attach(PHONE, &options())
+        .expect("attaches again once it is back");
+}
+
+#[test]
 fn a_replugged_phone_takes_commands_again_under_its_new_usbmuxd_number() {
     let core = core(two_phones());
     tap(&core, PHONE).expect("taps");
