@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+usbmuxd's answer to ListDevices, the body of its reply packet. The USB entry
+was recorded on 2026-10-09 from the iPhone SE (3rd generation) with iOS 26.6.2,
+its serial numbers replaced by placeholders. The phone also has Wi-Fi sync on,
+so usbmuxd lists it a second time on the network, as it did in spike S9; that
+entry, listed first here, and a second phone listed only on the network follow
+usbmuxd's shape for a network device, with TEST-NET-1 addresses.
+-->
+<plist version="1.0">
+<dict>
+	<key>DeviceList</key>
+	<array>
+		<dict>
+			<key>DeviceID</key>
+			<integer>22198</integer>
+			<key>MessageType</key>
+			<string>Attached</string>
+			<key>Properties</key>
+			<dict>
+				<key>ConnectionType</key>
+				<string>Network</string>
+				<key>DeviceID</key>
+				<integer>22198</integer>
+				<key>EscapedFullServiceName</key>
+				<string>placeholder-service-name._apple-mobdev2._tcp.local.</string>
+				<key>InterfaceIndex</key>
+				<integer>14</integer>
+				<key>NetworkAddress</key>
+				<data>
+				EAIAAMAAAgoAAAAAAAAAAA==
+				</data>
+				<key>SerialNumber</key>
+				<string>placeholder-udid-phone</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>DeviceID</key>
+			<integer>22197</integer>
+			<key>MessageType</key>
+			<string>Attached</string>
+			<key>Properties</key>
+			<dict>
+				<key>ConnectionSpeed</key>
+				<integer>480000000</integer>
+				<key>ConnectionType</key>
+				<string>USB</string>
+				<key>DeviceID</key>
+				<integer>22197</integer>
+				<key>LocationID</key>
+				<integer>34603008</integer>
+				<key>ProductID</key>
+				<integer>4776</integer>
+				<key>SerialNumber</key>
+				<string>placeholder-udid-phone</string>
+				<key>USBSerialNumber</key>
+				<string>placeholder-usb-serial</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>DeviceID</key>
+			<integer>22199</integer>
+			<key>MessageType</key>
+			<string>Attached</string>
+			<key>Properties</key>
+			<dict>
+				<key>ConnectionType</key>
+				<string>Network</string>
+				<key>DeviceID</key>
+				<integer>22199</integer>
+				<key>EscapedFullServiceName</key>
+				<string>placeholder-other-service._apple-mobdev2._tcp.local.</string>
+				<key>InterfaceIndex</key>
+				<integer>14</integer>
+				<key>NetworkAddress</key>
+				<data>
+				EAIAAMAAAgsAAAAAAAAAAA==
+				</data>
+				<key>SerialNumber</key>
+				<string>placeholder-udid-wifi-only</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

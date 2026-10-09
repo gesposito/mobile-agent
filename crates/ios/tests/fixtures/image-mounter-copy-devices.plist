@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+The image mounter's CopyDevices EntryList on the iPhone SE (3rd generation)
+with iOS 26.6.2 and Xcode 27.0's developer disk image mounted, as spike S9
+recorded it (spikes/s9-ios-transport/results/probe.json, ddi.image_mounter_entries).
+-->
+<plist version="1.0">
+<array>
+	<dict>
+		<key>DiskImageType</key>
+		<string>Personalized</string>
+		<key>FilesystemType</key>
+		<string>apfs</string>
+		<key>IsMounted</key>
+		<true/>
+		<key>MountPath</key>
+		<string>/System/Developer</string>
+		<key>PersonalizedImageType</key>
+		<string>DeveloperDiskImage</string>
+	</dict>
+</array>
+</plist>
