@@ -2272,4 +2272,101 @@ mod tests {
             );
         }
     }
+
+    /// Design D33: a React Native code input built of boxes holds its code
+    /// in the boxes' texts and has no value of its own, so in the smoke test
+    /// `fill` typed the code and then failed with `text_mismatch`. A field
+    /// without a value is read back through its descendants' values or
+    /// texts, in order: six digits are verified through the six boxes, with
+    /// no retry and no warning. A field with a value is read back from it.
+    #[test]
+    fn a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts() {
+        for (platform, typing, method) in [
+            ("ios", Typing::Keys, "keys"),
+            ("android", Typing::Whole, "direct"),
+        ] {
+            let driver = FakeDriver::parse(platform).unwrap().with_typing(typing);
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &[]);
+            let success = fill_in(&mut target, "#placeholder-code", "123456").unwrap();
+            let data = &success.data;
+            assert_eq!(data["verified"], "text", "{platform}: {data}");
+            assert_eq!(data["readFrom"], "descendants", "{platform}: {data}");
+            assert_eq!(data["method"], method, "{platform}: {data}");
+            assert_eq!(data["retried"], false, "{platform}: {data}");
+            assert!(
+                success.warning.is_none(),
+                "{platform}: {:?}",
+                success.warning
+            );
+
+            let (mut login, _) = recorded(&driver, FIXTURE, &[]);
+            let success = fill_in(&mut login, "#login-username", "agent").unwrap();
+            assert_eq!(
+                success.data["readFrom"], "value",
+                "{platform}: {}",
+                success.data
+            );
+        }
+    }
+
+    /// Design D33: a field the tree shows without a value and with nothing
+    /// below it, as iOS shows a React Native field inside a view marked
+    /// accessible, takes the text, and the fill succeeds unverified, saying
+    /// why, once the screen has held still a settle's quiet window after the
+    /// entry, rather than failing with `text_mismatch`; the text goes in once.
+    #[test]
+    fn a_fill_into_a_field_with_no_value_to_read_succeeds_unverified() {
+        for platform in ["ios", "android"] {
+            let driver = FakeDriver::parse(platform)
+                .unwrap()
+                .with_typing(Typing::Keys);
+            let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
+            let reply = fill_in(&mut target, "#placeholder-secret", "agent");
+            let success = reply.unwrap_or_else(|failure| panic!("{platform}: {failure:?}"));
+            let data = &success.data;
+            assert_eq!(data["verified"], false, "{platform}: {data}");
+            assert_eq!(data["reason"], "no_value_to_read", "{platform}: {data}");
+            assert!(data["readFrom"].is_null(), "{platform}: {data}");
+            assert_eq!(data["retried"], false, "{platform}: {data}");
+            assert!(
+                data["readBackMs"]
+                    .as_f64()
+                    .is_some_and(|ms| (200.0..600.0).contains(&ms)),
+                "{platform}: {data}"
+            );
+            let texts = sent
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, input)| matches!(input, Input::Text { .. }))
+                .count();
+            assert_eq!(texts, 1, "{platform}: the text went in once");
+        }
+    }
+
+    /// Design D33: `text_mismatch` stays for a field that reads back other
+    /// text after the text went in again in one piece, and names both the
+    /// text entered and what the field holds, read from its value or through
+    /// its boxes.
+    #[test]
+    fn a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Max(4));
+        for (app, field, text, holds) in [
+            (FIXTURE, "#login-username", "nobel", "nobe"),
+            (PLACEHOLDER, "#placeholder-code", "123456", "1234"),
+        ] {
+            let (mut target, _) = recorded(&driver, app, &[]);
+            let failure = fill_in(&mut target, field, text).unwrap_err();
+            assert_eq!(failure.code, TEXT_MISMATCH, "{field}: {}", failure.message);
+            assert!(
+                failure.message.contains(&format!("holds \"{holds}\""))
+                    && failure.message.contains(&format!("\"{text}\"")),
+                "{field}: the message names both: {}",
+                failure.message
+            );
+            assert_eq!(failure.data.unwrap_or_default()["value"], holds, "{field}");
+        }
+    }
 }

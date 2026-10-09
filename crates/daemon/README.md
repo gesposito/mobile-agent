@@ -660,6 +660,9 @@ settle windows take real time, and a device model:
   shapes a React Native app showed in the smoke test of 2026-10-09, under
   placeholder names: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
+  `placeholder-secret`, a field the tree shows as a labelled node without
+  traits, no value and nothing below it, as iOS reads a React Native field
+  inside a view marked accessible, which takes text and never shows it;
   `placeholder-status`; `placeholder-hint`, a button the keyboard, once up,
   covers all but its top 14 points of; `placeholder-submit`, low on the
   screen, which the layout moves above the keyboard 50 ms after the

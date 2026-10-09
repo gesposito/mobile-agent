@@ -35,6 +35,34 @@ pub(crate) enum Entry {
 /// order ([`Typing::Reorder`]) lands before its last character.
 const REORDER_FROM: usize = 3;
 
+/// Enters `text` into a field that holds `value`, as `entry` says, the
+/// field taking it as `typing` says.
+fn take(value: &mut String, text: &str, entry: Entry, typing: Typing) {
+    match entry {
+        Entry::Whole => {
+            value.clear();
+            value.push_str(text);
+        }
+        Entry::Keys { replace } => {
+            if replace {
+                value.clear();
+            }
+            for (index, key) in text.chars().enumerate() {
+                let behind = typing == Typing::Reorder && index >= REORDER_FROM;
+                match value.char_indices().last() {
+                    Some((last, _)) if behind => value.insert(last, key),
+                    _ => value.push(key),
+                }
+            }
+        }
+    }
+    if let Typing::Max(max) = typing
+        && let Some((cut, _)) = value.char_indices().nth(max)
+    {
+        value.truncate(cut);
+    }
+}
+
 /// The fixture app the launcher's Fixture button opens.
 pub(crate) const FIXTURE: &str = "dev.mobileagent.fixture.expo";
 
@@ -193,12 +221,17 @@ enum FormField {
     /// The code field: a labelled node without traits holding a box per
     /// character, as a React Native code input built of boxes reads.
     Code,
+    /// A field the tree shows only as a labelled node without traits, with
+    /// nothing below it and no value, as iOS reads a React Native field
+    /// inside a view marked accessible: it takes text and never shows it.
+    Secret,
 }
 
 impl FormField {
     fn parse(id: &str) -> Option<FormField> {
         match id {
             "placeholder-code" => Some(FormField::Code),
+            "placeholder-secret" => Some(FormField::Secret),
             _ => None,
         }
     }
@@ -208,6 +241,7 @@ impl FormField {
 #[derive(Clone, Debug, PartialEq)]
 struct Forms {
     code: String,
+    secret: String,
     focus: Option<FormField>,
     status: String,
     /// Whether the layout has moved the submit button above the keyboard,
@@ -219,6 +253,7 @@ impl Forms {
     fn launch() -> Forms {
         Forms {
             code: String::new(),
+            secret: String::new(),
             focus: None,
             status: "Not submitted".to_owned(),
             lifted: false,
@@ -228,6 +263,7 @@ impl Forms {
     fn field(&mut self, field: FormField) -> &mut String {
         match field {
             FormField::Code => &mut self.code,
+            FormField::Secret => &mut self.secret,
         }
     }
 
@@ -549,6 +585,16 @@ impl Device {
         typing: Typing,
     ) -> Option<bool> {
         let before = self.clone();
+        if self.foreground == Foreground::Placeholder {
+            let forms = self.placeholder.as_mut()?;
+            let field = match target {
+                Some(id) => FormField::parse(id)?,
+                None => forms.focus?,
+            };
+            forms.focus = Some(field);
+            take(forms.field(field), text, entry, typing);
+            return Some(*self != before);
+        }
         let fixture = self.front_fixture()?;
         if fixture.tab != Tab::Login || fixture.modal() {
             return None;
@@ -558,30 +604,7 @@ impl Device {
             None => fixture.focus?,
         };
         fixture.focus = Some(field);
-        let value = fixture.field(field);
-        match entry {
-            Entry::Whole => {
-                value.clear();
-                value.push_str(text);
-            }
-            Entry::Keys { replace } => {
-                if replace {
-                    value.clear();
-                }
-                for (index, key) in text.chars().enumerate() {
-                    let behind = typing == Typing::Reorder && index >= REORDER_FROM;
-                    match value.char_indices().last() {
-                        Some((last, _)) if behind => value.insert(last, key),
-                        _ => value.push(key),
-                    }
-                }
-            }
-        }
-        if let Typing::Max(max) = typing
-            && let Some((cut, _)) = value.char_indices().nth(max)
-        {
-            value.truncate(cut);
-        }
+        take(fixture.field(field), text, entry, typing);
         Some(*self != before)
     }
 
@@ -990,7 +1013,9 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windo
 
 /// The placeholder app's screen, from the top: a heading; the code field, a
 /// labelled node without traits holding a box per character, as a React
-/// Native code input built of boxes reads; a status line; a hint button
+/// Native code input built of boxes reads; the secret field, a labelled
+/// node without traits and nothing below it, as iOS reads a React Native
+/// field inside a view marked accessible; a status line; a hint button
 /// that the keyboard, once up, covers all but its top 14 points of; the
 /// submit button low on the screen, which the layout moves above the
 /// keyboard some time after the keyboard came up, as React Native moves a
@@ -1023,6 +1048,11 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         ),
         kit.generic("placeholder-code", "Placeholder code", code)
             .children(boxes),
+        kit.generic(
+            "placeholder-secret",
+            "Placeholder secret",
+            kit.line(120.0, 48.0),
+        ),
         kit.label(
             Some("placeholder-status"),
             &forms.status,
