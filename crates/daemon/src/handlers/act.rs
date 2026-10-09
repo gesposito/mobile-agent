@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 use super::aim::{self, Aim};
 use super::view::element_json;
 use super::{millis, timeout};
-use crate::driver::Platform;
+use crate::driver::{Platform, TargetClass};
 use crate::keys;
 use crate::wire::code::{
     self, COVERED_BY_KEYBOARD, INPUT_REJECTED, STROKE_TOO_SHORT, TEXT_MISMATCH,
@@ -804,14 +804,17 @@ fn enter(
     Ok(outcome.method)
 }
 
-/// How `fill` entered its text by `method` on `platform`, as messages say.
-fn entered_by(platform: Platform, method: Option<TextMethod>) -> &'static str {
+/// How `fill` entered its text by `method` on a target of `class`, as
+/// messages say: in one piece, a Simulator pastes it, a physical iPhone's
+/// runner sets the field's value and Android sets it directly.
+fn entered_by(class: TargetClass, method: Option<TextMethod>) -> &'static str {
     if method == Some(TextMethod::KEYS) {
         return "typed the text";
     }
-    match platform {
-        Platform::Ios => "pasted the text",
-        Platform::Android => "set the text directly",
+    match class {
+        TargetClass::Simulator => "pasted the text",
+        TargetClass::IosDevice => "set the text through the runner",
+        TargetClass::AndroidEmulator | TargetClass::AndroidDevice => "set the text directly",
     }
 }
 
@@ -922,8 +925,9 @@ fn mismatch(given: &str, reference: Ref, text: &str, value: Option<&str>, tries:
 /// [`READ_BACK_HOLD`] and taking text that went in in one piece from the
 /// first read that shows it, from the field's value or, for a field without
 /// one, through its descendants (see [`reading`]). A field that shows other
-/// text gets the text again in one piece, pasted on a Simulator and set
-/// directly on Android, and is read back again; a field that still shows
+/// text gets the text again in one piece, pasted on a Simulator, set through
+/// the runner on a physical iPhone and set directly on Android, and is read
+/// back again; a field that still shows
 /// other text fails the fill with `text_mismatch`. A field that shows
 /// nothing to read back, neither a value nor anything below it, leaves the
 /// fill unverified, with a warning, and gets the text once. On Android an
@@ -935,7 +939,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
     let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
-    let platform = target.info.platform;
+    let (platform, class) = (target.info.platform, target.info.class);
     if platform == Platform::Ios {
         ready_keyboard(target, reference, given)?;
     }
@@ -957,11 +961,11 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
         }
         ReadBack::Gone => {
             return Ok(filled(given, reference, first, Check::Skipped, false)
-                .warn(Some(gone(entered_by(platform, first)))));
+                .warn(Some(gone(entered_by(class, first)))));
         }
         ReadBack::Other(value) => value,
     };
-    let first_by = entered_by(platform, first);
+    let first_by = entered_by(class, first);
     let second = match enter(target, reference, &text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
@@ -973,7 +977,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
         }
     };
     let entered = Instant::now();
-    let second_by = entered_by(platform, second);
+    let second_by = entered_by(class, second);
     let again = || {
         let it = second_by.replacen("the text", "it", 1);
         format!(
