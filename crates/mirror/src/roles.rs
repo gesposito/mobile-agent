@@ -143,6 +143,24 @@ fn simple_role(name: &str) -> Option<Role> {
     })
 }
 
+/// What a view's value says when React Native gives the view the role
+/// checkbox on iOS, where no trait says so: `checkbox`, then its state,
+/// `checked`, `unchecked` or `mixed`, then anything else the view says,
+/// joined by `, ` (`RCTViewComponentView`'s `accessibilityValue`, in
+/// English). `Some(Some(checked))` for a checked or unchecked checkbox,
+/// `Some(None)` for one in another state, `None` for any other value.
+pub(crate) fn announced_checkbox(value: &str) -> Option<Option<bool>> {
+    let mut parts = value.split(", ");
+    if parts.next() != Some("checkbox") {
+        return None;
+    }
+    Some(parts.find_map(|part| match part {
+        "checked" => Some(true),
+        "unchecked" => Some(false),
+        _ => None,
+    }))
+}
+
 /// Whether the node takes input itself: a tap, a long press or text.
 pub(crate) fn acts(flags: NodeFlags) -> bool {
     flags.contains(NodeFlags::CLICKABLE)
@@ -170,5 +188,25 @@ pub(crate) fn role(class: &str, flags: NodeFlags, has_text: bool) -> Role {
             }
         }
         Some(role) => role,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn react_native_s_checkbox_value_says_whether_it_is_checked() {
+        assert_eq!(announced_checkbox("checkbox, checked"), Some(Some(true)));
+        assert_eq!(announced_checkbox("checkbox, unchecked"), Some(Some(false)));
+        assert_eq!(
+            announced_checkbox("checkbox, checked, busy"),
+            Some(Some(true))
+        );
+        assert_eq!(announced_checkbox("checkbox, mixed"), Some(None));
+        assert_eq!(announced_checkbox("checkbox"), Some(None));
+        assert_eq!(announced_checkbox("radio button, checked"), None);
+        assert_eq!(announced_checkbox("checkboxes, checked"), None);
+        assert_eq!(announced_checkbox("checked"), None);
     }
 }

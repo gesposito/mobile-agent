@@ -3,7 +3,8 @@
 //!
 //! Facts are computed per window in passes over the pre-order:
 //!
-//! 1. each node on its own: role from class and states, its own label,
+//! 1. each node on its own: role from class and states, or a checkbox that
+//!    React Native announces only in its value on iOS, its own label,
 //!    value, bounds, visibility;
 //! 2. a tapped container that keeps the role on a child, as Material
 //!    components in Compose do, takes the child's role and absorbs it;
@@ -11,18 +12,20 @@
 //!    non-actionable descendants, which it absorbs, the way accessibility
 //!    services compute a name (design D5);
 //! 4. a node that repeats its parent's role, name and identifier, as XCTest
-//!    reports UIKit's nested alert buttons, is folded into the parent;
+//!    reports UIKit's nested alert buttons, is folded into the parent, and
+//!    so is the only child that repeats a text or a heading, as XCTest
+//!    reports React Native's text and UIKit's scroll bars;
 //! 5. a field with no label of its own takes the label of the container it
 //!    sits in, when that container holds no other field, as React Native
 //!    lays out a field marked accessible with a label (Ignite's sign-in
 //!    fields in the React Native smoke test); the container is then not
 //!    listed again;
 //! 6. a labelled node without traits whose children, if any, are static
-//!    text gets a ref unless an actionable element holds it: it is a control
-//!    the platform exposes without saying what it does, as React Native
-//!    exposes a view marked accessible without a role, whose content it may
-//!    hide (Ignite's sign-in fields and Bluesky's options and language rows
-//!    in the React Native smoke test);
+//!    text, or that is selected, gets a ref unless an actionable element
+//!    holds it: it is a control the platform exposes without saying what it
+//!    does, as React Native exposes a view marked accessible without a role,
+//!    whose content it may hide (Ignite's sign-in fields and Bluesky's
+//!    options and language rows in the React Native smoke test), and a tab;
 //! 7. the top-most modal (a modal window, or an alert or dialog node) cuts
 //!    what lies outside it, since the Simulator's reader still returns the
 //!    screen under an alert (spike S4); keyboard windows are collapsed;
@@ -264,13 +267,30 @@ pub(crate) fn facts_of(replica: &Replica, w: usize, i: usize) -> Facts {
 fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
     let text = non_empty(&node.text);
     let desc = non_empty(&node.desc);
-    let role = roles::role(&node.class, node.flags, text.is_some() || desc.is_some());
+    let mut role = roles::role(&node.class, node.flags, text.is_some() || desc.is_some());
     let editable = node.editable() || matches!(role, Role::Textbox | Role::Searchbox);
-    let name = own_label(node, editable).map(normalize).unwrap_or_default();
-    let value = match (desc, text) {
-        (_, Some(text)) if editable => Some(text.to_owned()),
-        (Some(desc), Some(text)) if text != desc => Some(text.to_owned()),
+    // React Native says that a view is a checkbox, and whether it is
+    // checked, only in its value on iOS: the value is neither the
+    // checkbox's name nor a value of its own.
+    let announced = match (role, text) {
+        (Role::Generic | Role::Group | Role::Text | Role::Image, Some(text)) if !editable => {
+            roles::announced_checkbox(text)
+        }
         _ => None,
+    };
+    let (name, value) = if announced.is_some() {
+        role = Role::Checkbox;
+        (desc.map(normalize).unwrap_or_default(), None)
+    } else {
+        let value = match (desc, text) {
+            (_, Some(text)) if editable => Some(text.to_owned()),
+            (Some(desc), Some(text)) if text != desc => Some(text.to_owned()),
+            _ => None,
+        };
+        (
+            own_label(node, editable).map(normalize).unwrap_or_default(),
+            value,
+        )
     };
     let rect = Rect::from_pixels(node.bounds, scale);
     let visible = node.flags.contains(NodeFlags::VISIBLE) && rect.overlaps(area);
@@ -287,7 +307,8 @@ fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
         rect,
         visible,
         actionable,
-        checked: checkable.then(|| node.flags.contains(NodeFlags::CHECKED)),
+        checked: announced
+            .unwrap_or_else(|| checkable.then(|| node.flags.contains(NodeFlags::CHECKED))),
         signature: 0,
         absorbed: false,
         lent: false,
@@ -397,18 +418,30 @@ fn name_from_descendants(window: &Win, facts: &mut [Facts]) {
     }
 }
 
+/// Folds into its parent a node that repeats it: one with the parent's
+/// role, name and identifier under a parent with a ref, as XCTest reports
+/// UIKit's nested alert buttons; and the only child of a text or a heading
+/// that repeats its name, as text or in its role, without an identifier
+/// of its own, as XCTest reports React Native's text, a heading's without
+/// the heading's identifier, and UIKit's scroll bars (rn-app-fixes, design
+/// D35).
 fn fold_duplicates(window: &Win, facts: &mut [Facts]) {
     for (i, node) in window.nodes.iter().enumerate() {
         let Some(parent) = node.parent else {
             continue;
         };
         let (p, c) = (&facts[parent], &facts[i]);
-        if p.bears_ref
-            && !p.absorbed
-            && p.role == c.role
-            && p.name == c.name
-            && window.nodes[parent].identifier == node.identifier
-        {
+        if p.absorbed || p.name != c.name {
+            continue;
+        }
+        let same_identifier = window.nodes[parent].identifier == node.identifier;
+        let repeated = p.bears_ref && p.role == c.role && same_identifier;
+        let own_text = !c.name.is_empty()
+            && window.nodes[parent].children.len() == 1
+            && matches!(p.role, Role::Text | Role::Heading)
+            && (c.role == p.role || c.role == Role::Text)
+            && (node.identifier.is_none() || same_identifier);
+        if repeated || own_text {
             let folded = &mut facts[i];
             folded.absorbed = true;
             folded.bears_ref = false;
@@ -473,7 +506,10 @@ fn lend_container_labels(window: &Win, facts: &mut [Facts]) {
 /// own, its name. The platform exposes such a node as an element without
 /// saying what it does: React Native exposes a view marked accessible
 /// without a role this way, on iOS hiding what the view holds, and
-/// agent-device lists these nodes as `Other` and `Cell`.
+/// agent-device lists these nodes as `Other` and `Cell`. A selected one
+/// gets a ref whatever it holds: React Native exposes a tab so on iOS,
+/// with no trait but `selected`, and the selected tab may show more than
+/// the others, as its label under its icon (rn-app-fixes, design D35).
 fn untraited_controls(window: &Win, facts: &mut [Facts]) {
     for i in 0..window.nodes.len() {
         let node = &window.nodes[i];
@@ -490,7 +526,8 @@ fn untraited_controls(window: &Win, facts: &mut [Facts]) {
             |c: usize| facts[c].role == Role::Text && window.nodes[c].children.is_empty();
         let held = std::iter::successors(node.parent, |&a| window.nodes[a].parent)
             .any(|a| facts[a].actionable);
-        if node.children.iter().all(|&c| static_text(c)) && !held {
+        let selected = node.flags.contains(NodeFlags::SELECTED);
+        if (selected || node.children.iter().all(|&c| static_text(c))) && !held {
             facts[i].bears_ref = true;
         }
     }

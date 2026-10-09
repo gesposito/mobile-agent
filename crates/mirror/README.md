@@ -231,11 +231,20 @@ also counts).
   descendants, which are then not listed again. A tapped container takes the
   control role a child carries (Material in Compose), and a node repeating its
   parent's role, name and identifier is folded into it (XCTest's nested alert
-  buttons). A field with no label of its own takes the label of the nearest
-  labelled container it sits in, when that container is neither actionable
-  nor a window's root and holds no other field, as React Native lays out a
-  field whose wrapper carries the label; the container is then not listed
-  again.
+  buttons). So is the only child of a text or a heading that repeats its
+  name, as text or in its role, without an identifier of its own: XCTest
+  reports React Native's text as a text whose only child is its own text,
+  a heading likewise without the heading's identifier, and UIKit's scroll
+  bars as elements whose only child repeats them, which the full listing
+  then shows once (rn-app-fixes, design D35). A field with no label of its
+  own takes the label of the nearest labelled container it sits in, when
+  that container is neither actionable nor a window's root and holds no
+  other field, as React Native lays out a field whose wrapper carries the
+  label; the container is then not listed again.
+- React Native says that a view is a checkbox, and whether it is checked,
+  only in its value on iOS, where no trait says so (`checkbox, checked`,
+  `checkbox, unchecked`, in English): such a node lists as a checkbox with
+  `checked=`, as a switch does, its value not shown (D35).
 - Refs go to actionable elements; to named headings, cells and list items;
   and to labelled generic nodes whose children, if any, are static text,
   other than a window's root and the nodes an actionable element holds,
@@ -243,7 +252,10 @@ also counts).
   accessible without a role this way, as Bluesky's sheet options and
   language rows. On iOS it hides a field inside such a view, so the view is
   all the read has of the field, and a tap by its ref lands on its center,
-  over the field.
+  over the field. A selected one gets a ref whatever it holds: React Native
+  exposes a tab this way on iOS, with no trait but `selected`, and the
+  smoke test's selected tab, which also showed its label under its icon,
+  got none (D35).
   An interactive listing (`SnapshotOptions::interactive()`) keeps only
   elements with refs, as agent-browser's `-i`. A full listing leaves out
   window roots and unnamed, unidentified generic containers, texts and images,
@@ -606,7 +618,7 @@ cargo test -p mirror
 | | Card under a sticky header | `interactive::a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
 | | (rn-app-fixes 1.1: a floating button over a list's last row; bars spared, a tab bar covering what lies wholly under it; overlapping siblings in any order) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, and the unit tests `view::tests::*` |
 | | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so` |
-| | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once` |
+| | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
