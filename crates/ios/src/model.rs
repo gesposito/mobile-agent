@@ -186,3 +186,66 @@ pub struct TargetStatus {
     /// The service connections kept open over the tunnel, by RSD name.
     pub services_open: Vec<&'static str>,
 }
+
+/// Arguments and environment for a launch (design D19).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LaunchOptions {
+    pub arguments: Vec<String>,
+    /// The process's environment, as given.
+    pub environment: Vec<(String, String)>,
+    /// End a running instance first (DVT's `KillExisting`), so the launch
+    /// starts a new process that sees these arguments and this environment.
+    pub terminate_running: bool,
+}
+
+impl LaunchOptions {
+    pub fn new() -> LaunchOptions {
+        LaunchOptions::default()
+    }
+
+    /// Adds one argument.
+    pub fn argument(mut self, argument: impl Into<String>) -> LaunchOptions {
+        self.arguments.push(argument.into());
+        self
+    }
+
+    /// Adds one environment variable.
+    pub fn env(mut self, name: impl Into<String>, value: impl Into<String>) -> LaunchOptions {
+        self.environment.push((name.into(), value.into()));
+        self
+    }
+
+    /// Ends a running instance before launching.
+    pub fn terminating_running(mut self) -> LaunchOptions {
+        self.terminate_running = true;
+        self
+    }
+}
+
+/// A launched application.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Launched {
+    /// The process identifier DVT's reply carries.
+    pub pid: u32,
+    /// From the request, the lock's read included, to the reply.
+    pub elapsed: Duration,
+}
+
+/// An installed application.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Installed {
+    /// The bundle identifier its `Info.plist` names.
+    pub bundle_id: String,
+    /// From the request to the installation proxy's completion: the upload
+    /// through AFC and the install.
+    pub elapsed: Duration,
+}
+
+/// What `terminate` ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Terminated {
+    /// The processes signalled, none when the application was not running.
+    pub pids: Vec<u32>,
+    /// From the request until the processes left DVT's process list.
+    pub elapsed: Duration,
+}

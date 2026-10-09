@@ -44,6 +44,14 @@ pub enum Error {
     /// The device refused a call, or answered it in a way the driver does
     /// not read: the call and what came back.
     Device { call: String, reason: String },
+    /// The path given to install is not a bundle a device takes; why.
+    InvalidBundle { path: String, reason: String },
+    /// The installation proxy refused the bundle; its reason.
+    InstallFailed { bundle_id: String, reason: String },
+    /// The application is not installed on the device.
+    AppNotInstalled { target: String, bundle_id: String },
+    /// DVT refused the launch of an installed application; its reason.
+    LaunchFailed { bundle_id: String, reason: String },
     /// The developer disk image is still not mounted after every way of
     /// mounting it was tried; each attempt and why it failed. `offline` when
     /// a failure says this Mac could not reach Apple's signing server, which
@@ -69,6 +77,10 @@ impl Error {
             Error::ServiceMissing { .. } => "service_missing",
             Error::Timeout { .. } => "timeout",
             Error::Device { .. } => "device_error",
+            Error::InvalidBundle { .. } => "invalid_bundle",
+            Error::InstallFailed { .. } => "install_failed",
+            Error::AppNotInstalled { .. } => "app_not_installed",
+            Error::LaunchFailed { .. } => "launch_failed",
             Error::DiskImage { .. } => Readiness::DiskImageUnmounted.code(),
         }
     }
@@ -113,6 +125,19 @@ impl fmt::Display for Error {
             ),
             Error::Timeout { what, after } => write!(f, "{what} did not happen within {after:?}"),
             Error::Device { call, reason } => write!(f, "{call} failed on the device: {reason}"),
+            Error::InvalidBundle { path, reason } => {
+                write!(f, "{path} cannot be installed on a device: {reason}")
+            }
+            Error::InstallFailed { bundle_id, reason } => {
+                write!(f, "the installation proxy refused {bundle_id}: {reason}")
+            }
+            Error::AppNotInstalled { target, bundle_id } => write!(
+                f,
+                "{bundle_id} is not installed on iOS device {target}; install its bundle first"
+            ),
+            Error::LaunchFailed { bundle_id, reason } => {
+                write!(f, "DVT refused to launch {bundle_id}: {reason}")
+            }
             Error::DiskImage {
                 target,
                 attempts,
