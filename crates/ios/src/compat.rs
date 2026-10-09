@@ -230,7 +230,7 @@ pub fn call_sites() -> Vec<CallSite> {
             "IndigoButtonEvent {usagePage 0x0C, usageCode: home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA, state 1 down, 2 up}",
             "com.apple.coredevice.hid.indigo (dtuhidd)",
             INPUT,
-            "held 80 ms; home reached the home screen, where the phone's own home button does not work (S11), and volume up and down showed the volume HUD (task 3.8); the lock as task 3.8's device check recorded it in crates/ios/README.md",
+            "held 80 ms; home reached the home screen, where the phone's own home button does not work (S11), and volume up and down showed the volume HUD, and lock locked the phone, PasswordProtected reading true 652 ms after the press (task 3.8)",
         ),
         site(
             "IndigoKeyboardButtonEvent {usageCode on the keyboard page, state}",

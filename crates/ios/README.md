@@ -433,11 +433,33 @@ mounter, about 50 ms on failure paths only:
 
 The error's code stays `disconnected`; its `kind` and message name the
 cause and the step. No other target is touched: each has its own tunnel,
-connections and session. After a disconnect the next attach starts over: a
-new tunnel, the runner's leftover process ended, a new session with no
-restart counted. The process list, whose read costs 474 to 728 ms on the
-phone, is read only by `running`, `terminate`, a relaunch and a runner's
-start and stop, never by input, frames, screenshots or the runner's calls.
+connections and session. While an unplugged phone stays out of usbmuxd's
+listing, every command on it fails as `disconnected`, `unplugged`. A
+replugged phone comes back under a new usbmuxd number, where the tunnel,
+lockdown link and test manager held for the old one answer "bad device":
+the driver records the number a target's state was made for and makes the
+state anew when the listing shows another, so input works again at once.
+After a disconnect the next attach starts over: a new tunnel, the runner's
+leftover process ended, a new session with no restart counted. The process
+list, whose read costs 474 to 728 ms on the phone, is read only by
+`running`, `terminate`, a relaunch and a runner's start and stop, never by
+input, frames, screenshots or the runner's calls.
+
+On the phone, with a person pulling the cable and plugging it back twice
+(`containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, a
+debug build; the 1-minute load read 4.18 during the second, so these are
+not measurements): after each pull, the first of the test's calls, made
+every 300 ms, failed with `disconnected`, `unplugged`, its cause the
+tunnel's "CoreDeviceProxy: bad device". At the first replug, that run's
+driver kept the old usbmuxd number and every attach failed for 60 s as
+`lost` ("bad device"), which is how the renumbering above was found. After
+the second, the phone was listed again and the new attach took 1862 ms,
+the hello 806 ms after its start; it ended the runner process the pull had
+left, the old session's, counted no restart, and a tap was then
+acknowledged in 87.1 ms. That run's driver answered a second command made
+while the phone was away with `not_found`; the `unplugged` answer above is
+checked on the fakes only
+(`macos::containment::every_command_on_a_pulled_phone_fails_as_unplugged_until_it_is_back`).
 
 ## Numbers
 
@@ -496,7 +518,11 @@ Every tap reached the screen, none missed. The resting swipe, 200 points
 364 px, 91% of the stroke, and stopped. Volume up and down were
 acknowledged in 86 ms each, their 80 ms hold included, and each showed the
 volume HUD in a frame captured after the press; each was pressed once, so
-the volume came back to where it was. The lock button: PENDING-LOCK.
+the volume came back to where it was. The lock button, pressed with a
+person at the phone to unlock it (`input::the_lock_button`), locked it:
+lockdown's `PasswordProtected` read true 652 ms after the press, which was
+acknowledged in 419 ms, the HID connections opened first in a new
+process; the phone was unlocked by hand 33 s after the test asked.
 S11 acknowledged its taps in 53.7 ms at p95 and S10 in 53.5 ms, the same
 50 ms hold.
 
@@ -533,7 +559,7 @@ range and the table below, which `ios::call_sites()` returns for `doctor`:
 | `Connect` to the runner's loopback port 27183; the device protocol's hello | usbmuxd, the runner's `AgentSession` | iOS 26.6.2, Xcode 27.0: S10, `tests/runner.rs` | the hello names `mobile-agent-ios-runner` and its version |
 | `GetValue` `ScreenWidth`, `ScreenHeight`, `ScreenScaleFactor` in `com.apple.mobile.iTunes` | lockdownd | iOS 26.6.2, Xcode 27.0: `tests/input.rs`, `tests/frames.rs` | 750, 1334 and 2.0 on the SE |
 | `send` with a 58-byte `mainTouchscreen` report (0x09, the contact count, 5, state 0xC2 touching or 0x02 lifted, x and y over 0 to 65535) to surface 257 | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | no display stream on iOS 26.6.2; gated to iOS 18 up to 27 |
-| `IndigoButtonEvent` (Consumer page; home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA; state 1 down, 2 up) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | home reaches the home screen; volume up and down show the volume HUD; lock: PENDING-LOCK |
+| `IndigoButtonEvent` (Consumer page; home 0x40, lock 0x30, volume up 0xE9, volume down 0xEA; state 1 down, 2 up) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S10, S11, `tests/input.rs` | held 80 ms; home reaches the home screen, where the phone's own home button does not work (S11); volume up and down show the volume HUD; lock locks the phone, `PasswordProtected` reading true 652 ms after the press |
 | `IndigoKeyboardButtonEvent` (keyboard-page usage, state) | `com.apple.coredevice.hid.indigo` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | typed one key into Safari's address field |
 | `createService` (a virtual `mainKeyboard`), `connectedServices`, `send` with a 39-byte keyboard report, `resetGestureState`, `removeService` | `com.apple.coredevice.hid.universalhidservice` (`dtuhidd`) | iOS 26.6.2, Xcode 27.0: S11 | removed after typing: a device may stay in hardware keyboard mode for two minutes (Xcode 27's notes) |
 | `takeScreenshot` | DVT's screenshot service | iOS 26.6.2, Xcode 27.0: S9, S11, `tests/frames.rs` | 8-bit PNGs, 16-bit with an ICC profile for the home screen's wallpaper (S11) |
@@ -615,5 +641,5 @@ installed and no setting is changed.
 | App lifecycle | Fixture launched (the launch and the process; the tree read is the runner's, group 4) | `lifecycle::the_fixture_is_installed_launched_with_an_environment_found_running_and_terminated`, `macos::driver::tests::install_checks_the_bundle_uploads_it_and_reports_its_identifier_and_time`, `macos::driver::tests::a_launch_reads_the_lock_then_launches_through_process_control_and_returns_the_pid`, `macos::driver::tests::a_relaunch_ends_the_running_instance_itself_rather_than_with_kill_existing`, `macos::driver::tests::a_launch_on_a_locked_phone_is_refused_without_being_tried`, `macos::driver::tests::launching_an_app_that_is_not_installed_fails_as_not_installed`, `macos::driver::tests::a_refused_launch_of_an_installed_app_says_why`, `macos::driver::tests::terminate_signals_the_apps_process_and_returns_once_it_is_gone`, `macos::driver::tests::terminating_an_app_that_is_not_running_signals_nothing`, `macos::dvt::tests::a_launch_sends_the_bundle_its_environment_arguments_and_kill_existing_and_reads_the_pid`, `macos::dvt::tests::a_kill_is_send_signal_to_pid_with_sigkill_and_the_pid_both_archived`, `macos::dvt::tests::the_process_list_gives_each_application_its_bundle_identifier`, `macos::dvt::tests::whether_a_pid_runs_is_asked_with_the_pid_archived`, `macos::dvt::tests::a_refused_launch_reads_the_errors_domain_code_and_description`, `bundle::tests::a_simulator_build_is_refused_naming_the_device_destination`, `macos::driver::tests::a_bundle_a_device_does_not_take_is_refused_before_anything_is_asked_of_it` |
 | Input actions without idle waits | Tap dispatched | `input::a_tap_reaches_the_screen_and_the_home_button_the_home_screen`, `input::input_series`, `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `macos::hid::tests::a_tap_is_a_main_touchscreen_contact_held_then_released_and_acknowledged_at_the_release`, `macos::hid::tests::a_long_press_holds_its_contact_for_its_hold`, `macos::hid::tests::a_resting_swipe_rests_before_it_moves_one_pixel_on_and_lifts`, `macos::hid::tests::a_moving_swipe_lifts_at_the_end_of_its_path`, `macos::hid::tests::the_home_button_is_an_indigo_button_event_down_held_then_up`, `macos::hid::tests::lock_and_volume_take_their_consumer_usages`, `macos::hid::tests::a_key_is_an_indigo_keyboard_event_with_its_modifiers_held_around_it`, `macos::hid::tests::keys_are_typed_on_a_virtual_keyboard_registered_then_removed`, `macos::hid::tests::a_point_off_the_screen_is_refused_before_any_report`, `macos::hid::tests::the_connections_to_dtuhidd_are_kept_and_opened_again_after_the_tunnel_dropped`, `macos::hid::tests::an_ios_whose_dtuhidd_takes_no_report_goes_through_the_runner_or_is_refused`, `touch::tests::points_map_to_the_touchscreen_space_and_off_screen_points_are_refused`, `touch::tests::a_tap_is_a_contact_held_50_ms_then_a_release_at_the_same_point`, `touch::tests::a_moving_swipe_reports_every_16_ms_along_its_line_and_lifts_at_its_end`, `touch::tests::a_resting_swipe_stays_still_60_ms_then_moves_one_pixel_on_and_lifts_there`, `touch::tests::a_swipe_that_leaves_the_screen_is_refused`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream` |
 | Frames and screenshots from the host | Frame change after a tap | `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `frames::frames_series`, `macos::capture::tests::frames_are_polled_on_dvt_and_coredevice_side_by_side`, `macos::capture::tests::a_still_screen_counts_no_frame_after_the_first`, `macos::capture::tests::a_change_on_screen_is_the_next_frame`, `macos::capture::tests::frames_are_throttled_to_the_rate_asked_for`, `macos::capture::tests::a_held_frame_encodes_as_a_jpeg_of_the_size_asked_for`, `macos::capture::tests::the_screenshot_is_the_devices_png_at_full_size_or_scaled_to_a_long_edge`, `macos::capture::tests::the_display_stream_and_avfoundation_say_why_they_are_off`, `macos::capture::tests::the_pace_spreads_the_rate_over_the_connections`, `frames::tests::identical_pngs_are_skipped_before_decoding`, `frames::tests::a_frame_is_a_pixel_below_the_status_bar_more_than_two_levels_from_the_last_frame`, `frames::tests::a_change_inside_the_devices_status_bar_is_no_frame`, `frames::tests::the_status_bar_comes_from_the_devices_screen`, `frames::tests::no_still_frame_is_counted_through_one_level_noise_and_drift_is_measured_from_the_last_frame`, `frames::tests::frames_are_scaled_to_the_long_edge_asked_for_and_held_for_encoding`, `frames::tests::eight_and_sixteen_bit_pngs_become_bgra`, `frames::tests::a_png_that_does_not_decode_is_a_failure_not_a_frame` (settle on these frames is the mirror's, task 5.2) |
-| Failure containment | Cable pulled | `containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, `macos::containment::a_pulled_cable_fails_the_phones_commands_as_unplugged_and_spares_the_other_phone`, `macos::containment::a_replugged_phone_attaches_again_and_starts_over`, `macos::containment::a_locked_phone_fails_input_as_locked_and_keeps_its_connections`, `macos::containment::a_rebooted_phone_is_told_apart_and_attaches_again_once_unlocked`, `macos::containment::a_command_made_while_the_runner_starts_again_waits_for_it_within_its_timeout`, `macos::containment::no_hot_path_reads_the_process_list`, `macos::containment::a_device_that_refuses_lockdown_until_its_first_unlock_reads_as_rebooted`, `macos::tunnel::tests::a_tunnel_that_dropped_is_opened_again_once`, `macos::tunnel::tests::a_device_that_is_gone_is_disconnected_with_the_cause`, `macos::driver::tests::a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel`, `macos::dvt::tests::a_call_on_a_connection_that_closed_fails_and_the_channel_is_done`, `macos::dvt::tests::a_call_without_a_reply_times_out_and_ends_the_channel`, `macos::driver::tests::a_launch_whose_dvt_never_answers_times_out` |
+| Failure containment | Cable pulled | `containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, `macos::containment::a_pulled_cable_fails_the_phones_commands_as_unplugged_and_spares_the_other_phone`, `macos::containment::a_replugged_phone_attaches_again_and_starts_over`, `macos::containment::a_replugged_phone_takes_commands_again_under_its_new_usbmuxd_number`, `macos::containment::every_command_on_a_pulled_phone_fails_as_unplugged_until_it_is_back`, `macos::containment::a_locked_phone_fails_input_as_locked_and_keeps_its_connections`, `macos::containment::a_rebooted_phone_is_told_apart_and_attaches_again_once_unlocked`, `macos::containment::a_command_made_while_the_runner_starts_again_waits_for_it_within_its_timeout`, `macos::containment::no_hot_path_reads_the_process_list`, `macos::containment::a_device_that_refuses_lockdown_until_its_first_unlock_reads_as_rebooted`, `macos::tunnel::tests::a_tunnel_that_dropped_is_opened_again_once`, `macos::tunnel::tests::a_device_that_is_gone_is_disconnected_with_the_cause`, `macos::driver::tests::a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel`, `macos::dvt::tests::a_call_on_a_connection_that_closed_fails_and_the_channel_is_done`, `macos::dvt::tests::a_call_without_a_reply_times_out_and_ends_the_channel`, `macos::driver::tests::a_launch_whose_dvt_never_answers_times_out` |
 | Compatibility statement | Table lists the device paths | `compat::tests::every_call_site_names_the_ios_and_xcode_it_was_validated_on`, `compat::tests::the_table_renders_the_range_and_every_call_site`, `compat::tests::ios_17_4_up_to_27_is_supported`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream`, `readiness::tests::an_ios_outside_the_supported_range_is_refused_naming_the_version` |
