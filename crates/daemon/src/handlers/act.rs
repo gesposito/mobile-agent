@@ -265,21 +265,22 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
     reference.map_or(Value::Null, |r| format!("@{r}").into())
 }
 
-/// How much of `element` is in view before a tap on it, which `given`
-/// names. None of it in view can be bounds the replica holds from before a
-/// layout change that no event reported and no read has seen yet: in the
-/// React Native smoke test the keyboard moved a submit button up, the
-/// replica kept its old bounds under the keyboard, and the click tapped the
-/// number pad there (design D32). So the element's window is read again
-/// once, and a tap aimed at a point goes to the centre of the element's
-/// bounds as that read has them. The mirror reads a window on demand only
-/// after text it entered (task 10.29), so the read covers every window, as
-/// every read of a Simulator's reader does. Fails with
+/// How much of `element`, which `given` names, is in view before `action`,
+/// the command, taps it. None of it in view can be bounds the replica holds
+/// from before a layout change that no event reported and no read has seen
+/// yet: in the React Native smoke test the keyboard moved a submit button
+/// up, the replica kept its old bounds under the keyboard, and the click
+/// tapped the number pad there (design D32). So the element's window is
+/// read again once, and a tap aimed at a point goes to the centre of the
+/// element's bounds as that read has them. The mirror reads a window on
+/// demand only after text it entered (task 10.29), so the read covers every
+/// window, as every read of a Simulator's reader does. Fails with
 /// `element_offscreen`, naming the element, when none of it is in view
 /// after the read, and with `element_not_found` when a selector's element
 /// has left the screen.
 fn sight(
     target: &mut Attached,
+    action: &str,
     element: &Element,
     given: &str,
     aimed: &mut Target,
@@ -305,7 +306,7 @@ fn sight(
         };
     };
     if seen.fraction <= 0.0 {
-        return Err(offscreen(target, element, given, &seen));
+        return Err(offscreen(target, action, element, given, &seen));
     }
     if let Target::Point(point) = aimed {
         *point = seen.bounds.center();
@@ -313,10 +314,17 @@ fn sight(
     Ok(Some(seen))
 }
 
-/// The failure of a tap on `element`, which `given` names, none of which is
-/// in view as `seen` has it after its window was read again: the message
-/// names the element, what keeps it out of view and how to bring it in.
-fn offscreen(target: &Attached, element: &Element, given: &str, seen: &Visibility) -> Failure {
+/// The failure of `action`, the command, on `element`, which `given` names,
+/// none of which is in view as `seen` has it after its window was read
+/// again: the message names the element, what keeps it out of view and how
+/// to bring it in.
+fn offscreen(
+    target: &Attached,
+    action: &str,
+    element: &Element,
+    given: &str,
+    seen: &Visibility,
+) -> Failure {
     let named = if element.name.is_empty() {
         format!("{given} ({})", element.role)
     } else {
@@ -351,7 +359,7 @@ fn offscreen(target: &Attached, element: &Element, given: &str, seen: &Visibilit
     Failure::new(
         mirror::code::ELEMENT_OFFSCREEN,
         format!(
-            "{named} is out of view: {why}, also when its window was read again, so a tap there would not reach it; {advice}, then click it again"
+            "{named} is out of view: {why}, also when its window was read again, so a tap there would not reach it; {advice}, then {action} it again"
         ),
     )
     .with_data(json!({"ref": reference_json(element.reference), "visible": 0.0}))
@@ -382,7 +390,7 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     let element =
         found.or_else(|| reference.and_then(|reference| target.mirror.resolve(reference).ok()));
     let seen = match &element {
-        Some(element) => sight(target, element, &clicked, &mut aimed)?,
+        Some(element) => sight(target, "click", element, &clicked, &mut aimed)?,
         None => None,
     };
     let revision = target.mirror.revision();
@@ -739,7 +747,7 @@ fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<
         return Ok(());
     }
     let mut aimed = Target::Ref(reference);
-    sight(target, &element, given, &mut aimed)?;
+    sight(target, "fill", &element, given, &mut aimed)?;
     let tapped = Instant::now();
     let outcome = target.mirror.act(&Action::Tap {
         target: aimed,
