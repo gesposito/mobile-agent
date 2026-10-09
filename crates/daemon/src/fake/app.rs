@@ -1,7 +1,7 @@
 //! The fake device's apps as state that input changes: a launcher with a
 //! heading and two buttons, the fixture app of `fixtures/CONTRACT.md` (tabs
-//! Login, List, Big, Anim and System) and a settings app. Each state
-//! renders to the windows a driver would read.
+//! Login, List, Big, Anim and System), a settings app and the placeholder
+//! app. Each state renders to the windows a driver would read.
 
 use std::collections::HashMap;
 
@@ -37,6 +37,19 @@ const REORDER_FROM: usize = 3;
 
 /// The fixture app the launcher's Fixture button opens.
 pub(crate) const FIXTURE: &str = "dev.mobileagent.fixture.expo";
+
+/// The placeholder app: one screen with the shapes a React Native app
+/// showed in the smoke test of 2026-10-09, under placeholder names (see
+/// [`placeholder_content`]).
+pub(crate) const PLACEHOLDER: &str = "dev.mobileagent.placeholder";
+
+/// How many boxes the placeholder app's code field shows, one character
+/// each.
+const CODE_BOXES: usize = 6;
+
+/// What a tap on the keyboard enters into the placeholder app's field in
+/// focus: a key of its number pad.
+const PAD_KEY: char = '5';
 
 /// Row height of the fixture's list, in points.
 const ROW: f64 = 48.0;
@@ -174,11 +187,88 @@ impl Fixture {
     }
 }
 
+/// A field of the placeholder app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FormField {
+    /// The code field: a labelled node without traits holding a box per
+    /// character, as a React Native code input built of boxes reads.
+    Code,
+}
+
+impl FormField {
+    fn parse(id: &str) -> Option<FormField> {
+        match id {
+            "placeholder-code" => Some(FormField::Code),
+            _ => None,
+        }
+    }
+}
+
+/// The running placeholder app.
+#[derive(Clone, Debug, PartialEq)]
+struct Forms {
+    code: String,
+    focus: Option<FormField>,
+    status: String,
+    /// Whether the layout has moved the submit button above the keyboard,
+    /// which it does some time after the keyboard came up.
+    lifted: bool,
+}
+
+impl Forms {
+    fn launch() -> Forms {
+        Forms {
+            code: String::new(),
+            focus: None,
+            status: "Not submitted".to_owned(),
+            lifted: false,
+        }
+    }
+
+    fn field(&mut self, field: FormField) -> &mut String {
+        match field {
+            FormField::Code => &mut self.code,
+        }
+    }
+
+    /// A tap that landed on `hit`, or on the keyboard when `on_keyboard`
+    /// says so: a key of the number pad, entered into the field in focus.
+    fn tap(&mut self, hit: Option<&str>, on_keyboard: bool) {
+        if on_keyboard {
+            if let Some(field) = self.focus {
+                self.field(field).push(PAD_KEY);
+            }
+            return;
+        }
+        if let Some(field) = hit.and_then(FormField::parse) {
+            self.focus = Some(field);
+            return;
+        }
+        match hit {
+            Some("placeholder-submit") => {
+                self.status = if self.code.is_empty() {
+                    "Submitted".to_owned()
+                } else {
+                    format!("Submitted {}", self.code)
+                };
+                self.focus = None;
+            }
+            Some("placeholder-help") => self.status = "Help shown".to_owned(),
+            Some("placeholder-hint") => self.status = "Hint shown".to_owned(),
+            _ => self.focus = None,
+        }
+        if self.focus.is_none() {
+            self.lifted = false;
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Foreground {
     Launcher,
     Fixture(String),
     Settings,
+    Placeholder,
 }
 
 /// Which screen is in front: the app, and in the fixture its tab, open
@@ -188,6 +278,7 @@ enum Foreground {
 pub(crate) enum Screen {
     Launcher,
     Settings,
+    Placeholder,
     Fixture {
         app: String,
         tab: Tab,
@@ -203,6 +294,8 @@ pub(crate) struct Device {
     pub kit: Kit,
     foreground: Foreground,
     fixtures: HashMap<String, Fixture>,
+    /// The placeholder app, while it runs.
+    placeholder: Option<Forms>,
     wifi: bool,
     /// Whether the keyboard stays up over every screen of the fixture apps,
     /// whether or not a field has focus.
@@ -215,6 +308,7 @@ impl Device {
             kit: Kit { platform },
             foreground: Foreground::Launcher,
             fixtures: HashMap::new(),
+            placeholder: None,
             wifi: true,
             keyboard_up: false,
         }
@@ -227,18 +321,44 @@ impl Device {
         self
     }
 
-    /// Where the keyboard is, in points, while it shows: over a fixture app
-    /// with a field in focus, or over any fixture screen when it stays up.
-    /// iOS fakes show none.
+    /// Where the keyboard is, in points, while it shows: over an app with a
+    /// field in focus, or over any fixture screen when it stays up.
     fn keyboard(&self) -> Option<[f64; 4]> {
-        let Foreground::Fixture(app) = &self.foreground else {
-            return None;
+        let app = match &self.foreground {
+            Foreground::Fixture(app) => {
+                let fixture = self.fixtures.get(app)?;
+                if fixture.focus.is_none() && !self.keyboard_up {
+                    return None;
+                }
+                app.as_str()
+            }
+            Foreground::Placeholder => {
+                self.placeholder.as_ref()?.focus?;
+                PLACEHOLDER
+            }
+            Foreground::Launcher | Foreground::Settings => return None,
         };
-        let fixture = self.fixtures.get(app)?;
-        if fixture.focus.is_none() && !self.keyboard_up {
-            return None;
+        Some(self.kit.keyboard(app).rect)
+    }
+
+    /// Whether the placeholder app's layout has yet to move its submit
+    /// button above the keyboard that came up for its field in focus.
+    pub fn lift_pending(&self) -> bool {
+        self.foreground == Foreground::Placeholder
+            && self.keyboard().is_some()
+            && self.placeholder.as_ref().is_some_and(|forms| !forms.lifted)
+    }
+
+    /// Moves the placeholder app's submit button above the keyboard, as its
+    /// layout does some time after the keyboard came up; whether it moved.
+    pub fn lift(&mut self) -> bool {
+        if !self.lift_pending() {
+            return false;
         }
-        self.kit.keyboard().map(|keyboard| keyboard.rect)
+        if let Some(forms) = self.placeholder.as_mut() {
+            forms.lifted = true;
+        }
+        true
     }
 
     fn settings_id(&self) -> &'static str {
@@ -256,6 +376,7 @@ impl Device {
             Platform::Ios => "dev.mobileagent.fixture.swiftui",
         });
         apps.push(self.settings_id());
+        apps.push(PLACEHOLDER);
         apps
     }
 
@@ -272,6 +393,13 @@ impl Device {
     pub fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
         if app == self.settings_id() {
             self.foreground = Foreground::Settings;
+            return Ok(());
+        }
+        if app == PLACEHOLDER {
+            if launch.relaunch || self.placeholder.is_none() {
+                self.placeholder = Some(Forms::launch());
+            }
+            self.foreground = Foreground::Placeholder;
             return Ok(());
         }
         if !self.installed().contains(&app) {
@@ -298,12 +426,12 @@ impl Device {
 
     /// Whether `app` runs.
     pub fn runs(&self, app: &str) -> bool {
-        self.fixtures.contains_key(app)
+        self.fixtures.contains_key(app) || (app == PLACEHOLDER && self.placeholder.is_some())
     }
 
     /// Whether `app` is one of the fixture apps.
     pub fn is_fixture(&self, app: &str) -> bool {
-        app != self.settings_id() && self.installed().contains(&app)
+        app != self.settings_id() && app != PLACEHOLDER && self.installed().contains(&app)
     }
 
     /// The windows the device shows while `app` shows its launch splash:
@@ -324,9 +452,13 @@ impl Device {
             return Err(self.not_installed(app));
         }
         self.fixtures.remove(app);
+        if app == PLACEHOLDER {
+            self.placeholder = None;
+        }
         let front = match &self.foreground {
             Foreground::Fixture(front) => front == app,
             Foreground::Settings => app == self.settings_id(),
+            Foreground::Placeholder => app == PLACEHOLDER,
             Foreground::Launcher => false,
         };
         if front {
@@ -347,6 +479,7 @@ impl Device {
         match &self.foreground {
             Foreground::Launcher => Screen::Launcher,
             Foreground::Settings => Screen::Settings,
+            Foreground::Placeholder => Screen::Placeholder,
             Foreground::Fixture(app) => {
                 let fixture = &self.fixtures[app];
                 Screen::Fixture {
@@ -371,9 +504,13 @@ impl Device {
         }
     }
 
-    /// A tap that landed on `hit`; whether the screen changed.
-    pub fn tap(&mut self, hit: Option<&str>) -> bool {
+    /// A tap at `at`, in points, that landed on `hit`; whether the screen
+    /// changed.
+    pub fn tap(&mut self, hit: Option<&str>, at: (f64, f64)) -> bool {
         let before = self.clone();
+        let on_keyboard = self
+            .keyboard()
+            .is_some_and(|keyboard| tree::contains(keyboard, at.0, at.1));
         match self.foreground.clone() {
             Foreground::Launcher => match hit {
                 Some("launcher-fixture") => {
@@ -385,6 +522,11 @@ impl Device {
             Foreground::Settings => {
                 if hit == Some("settings-wifi") {
                     self.wifi = !self.wifi;
+                }
+            }
+            Foreground::Placeholder => {
+                if let Some(forms) = self.placeholder.as_mut() {
+                    forms.tap(hit, on_keyboard);
                 }
             }
             Foreground::Fixture(_) => {
@@ -464,6 +606,13 @@ impl Device {
         match self.foreground.clone() {
             Foreground::Launcher => {}
             Foreground::Settings => self.foreground = Foreground::Launcher,
+            Foreground::Placeholder => match self.placeholder.as_mut() {
+                Some(forms) if forms.focus.is_some() => {
+                    forms.focus = None;
+                    forms.lifted = false;
+                }
+                _ => self.foreground = Foreground::Launcher,
+            },
             Foreground::Fixture(_) => {
                 let Some(fixture) = self.front_fixture() else {
                     return;
@@ -532,6 +681,15 @@ impl Device {
             Foreground::Fixture(app) => {
                 let keyboard = self.keyboard().is_some();
                 fixture_windows(kit, app, &self.fixtures[app], keyboard, &mut windows);
+            }
+            Foreground::Placeholder => {
+                if let Some(forms) = &self.placeholder {
+                    let content = placeholder_content(kit, forms);
+                    windows.push(kit.app_window(PLACEHOLDER, "Placeholder", content));
+                    if self.keyboard().is_some() {
+                        windows.push(kit.keyboard(PLACEHOLDER));
+                    }
+                }
             }
         }
         windows.extend(kit.status_bar());
@@ -824,10 +982,56 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windo
     if windows.iter().any(|w| w.modal) {
         window.flags = WindowFlags::EMPTY;
     }
-    if keyboard && let Some(keyboard) = kit.keyboard() {
-        windows.insert(0, keyboard);
+    if keyboard {
+        windows.insert(0, kit.keyboard(app));
     }
     windows.push(window);
+}
+
+/// The placeholder app's screen, from the top: a heading; the code field, a
+/// labelled node without traits holding a box per character, as a React
+/// Native code input built of boxes reads; a status line; a hint button
+/// that the keyboard, once up, covers all but its top 14 points of; the
+/// submit button low on the screen, which the layout moves above the
+/// keyboard some time after the keyboard came up, as React Native moves a
+/// view out of the keyboard's way; and a help button at the bottom, which
+/// the keyboard covers.
+fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let (width, height) = (kit.width(), kit.height());
+    let keyboard = kit.keyboard_top();
+    let row = |top: f64| [16.0, top, width - 16.0, top + 48.0];
+    let code = kit.line(56.0, 48.0);
+    let side = (code[2] - code[0]) / CODE_BOXES as f64;
+    let mut digits = forms.code.chars().map(String::from);
+    let boxes = (0..CODE_BOXES).map(|k| {
+        let left = code[0] + side * k as f64;
+        kit.text(
+            digits.next().as_deref(),
+            [left, code[1], left + side, code[3]],
+        )
+    });
+    let submit = if forms.lifted {
+        keyboard - 64.0
+    } else {
+        height - 174.0
+    };
+    vec![
+        kit.heading(
+            "placeholder-title",
+            "Placeholder form",
+            kit.line(16.0, 32.0),
+        ),
+        kit.generic("placeholder-code", "Placeholder code", code)
+            .children(boxes),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            kit.line(184.0, 24.0),
+        ),
+        kit.button("placeholder-hint", "Placeholder hint", row(keyboard - 14.0)),
+        kit.button("placeholder-submit", "Placeholder submit", row(submit)),
+        kit.button("placeholder-help", "Placeholder help", row(height - 114.0)),
+    ]
 }
 
 fn tab_content(kit: Kit, fixture: &Fixture) -> Vec<El> {
@@ -1117,7 +1321,7 @@ mod tests {
     fn a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing() {
         let mut device = Device::new(Platform::Android);
         device.launch(FIXTURE, &Launch::default()).unwrap();
-        assert!(device.tap(Some("login-username")));
+        assert!(device.tap(Some("login-username"), (204.0, 120.0)));
         assert!(device.swipe((204.0, 700.0), (204.0, 300.0), 0.0));
         assert!(device.swipe((204.0, 650.0), (204.0, 250.0), 0.0));
         assert_eq!(device.fixtures[FIXTURE].username, "by by");

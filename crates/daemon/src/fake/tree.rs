@@ -91,6 +91,13 @@ const SPRINGBOARD_WINDOW: u32 = 900;
 /// the window of its alert.
 const ALERT_WINDOW: u32 = 1 << 30;
 
+/// The bit the Simulator's reader sets in an application's window id for
+/// the window of its keyboard.
+const KEYBOARD_WINDOW: u32 = 1 << 31;
+
+/// An application's window id on a fake device.
+const APP_WINDOW: u32 = 1;
+
 /// One window.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Win {
@@ -505,7 +512,7 @@ impl Kit {
             ),
         };
         Win {
-            id: 1,
+            id: APP_WINDOW,
             kind: WindowType::APPLICATION,
             layer,
             package: Some(package.to_owned()),
@@ -516,6 +523,25 @@ impl Kit {
             owner: Owner::Target,
             modal: false,
             root,
+        }
+    }
+
+    /// A labelled node without traits: React Native's view marked
+    /// accessible without a role, which a field it holds can stand behind.
+    pub fn generic(self, id: &str, label: &str, rect: [f64; 4]) -> El {
+        self.group(rect).id(id).desc(label)
+    }
+
+    /// A text that shows `text`, or nothing.
+    pub fn text(self, text: Option<&str>, rect: [f64; 4]) -> El {
+        let el = match self.platform {
+            Platform::Android => El::new("android.widget.TextView", rect),
+            Platform::Ios => El::new("XCUIElementTypeStaticText", rect),
+        };
+        match (text, self.platform) {
+            (Some(text), Platform::Android) => el.text(text),
+            (Some(text), Platform::Ios) => el.desc(text),
+            (None, _) => el,
         }
     }
 
@@ -590,25 +616,57 @@ impl Kit {
         })
     }
 
-    /// Android's keyboard window.
-    pub fn keyboard(self) -> Option<Win> {
-        if self.platform != Platform::Android {
-            return None;
+    /// Where the keyboard's window starts, in points from the top: the fake
+    /// Gboard's; on an iPhone, the keyboard's host view from its prediction
+    /// bar down, as the Simulator's reader bounds the keyboard's window
+    /// (task 10.21: from 539 points down on an iPhone 17).
+    pub fn keyboard_top(self) -> f64 {
+        match self.platform {
+            Platform::Android => 600.0,
+            Platform::Ios => 539.0,
         }
-        let rect = [0.0, 600.0, self.width(), self.height()];
-        Some(Win {
-            id: 5,
-            kind: WindowType::INPUT_METHOD,
-            layer: 4,
-            package: Some("com.google.android.inputmethod.latin".to_owned()),
-            title: Some("Keyboard".to_owned()),
-            rect,
-            flags: WindowFlags::EMPTY,
-            events: Some(true),
-            owner: Owner::System("com.google.android.inputmethod.latin".to_owned()),
-            modal: false,
-            root: El::new("android.widget.FrameLayout", rect),
-        })
+    }
+
+    /// The keyboard's window over `app`: on Android the input method's; on
+    /// iOS the one the Simulator's reader gives the keyboard
+    /// (`UIRemoteKeyboardWindow`), its id the app window's with bit 31 set,
+    /// with the app's package, bounded by what the keyboard draws, its root
+    /// the window's own node across the screen, holding the keyboard.
+    pub fn keyboard(self, app: &str) -> Win {
+        let rect = [0.0, self.keyboard_top(), self.width(), self.height()];
+        match self.platform {
+            Platform::Android => Win {
+                id: 5,
+                kind: WindowType::INPUT_METHOD,
+                layer: 4,
+                package: Some("com.google.android.inputmethod.latin".to_owned()),
+                title: Some("Keyboard".to_owned()),
+                rect,
+                flags: WindowFlags::EMPTY,
+                events: Some(true),
+                owner: Owner::System("com.google.android.inputmethod.latin".to_owned()),
+                modal: false,
+                root: El::new("android.widget.FrameLayout", rect),
+            },
+            Platform::Ios => {
+                let screen = [0.0, 0.0, self.width(), self.height()];
+                let keys = [0.0, rect[1] + 44.0, self.width(), self.height() - 58.0];
+                Win {
+                    id: APP_WINDOW | KEYBOARD_WINDOW,
+                    kind: WindowType::INPUT_METHOD,
+                    layer: 1,
+                    package: Some(app.to_owned()),
+                    title: None,
+                    rect,
+                    flags: WindowFlags::EMPTY,
+                    events: Some(false),
+                    owner: Owner::Target,
+                    modal: false,
+                    root: El::new("XCUIElementTypeWindow", screen)
+                        .child(El::new("XCUIElementTypeKeyboard", keys)),
+                }
+            }
+        }
     }
 
     /// An Android dialog window that covers what lies below it, owned by

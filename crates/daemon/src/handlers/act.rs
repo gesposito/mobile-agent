@@ -1970,4 +1970,215 @@ mod tests {
         assert!(strokes.lock().unwrap().is_empty());
         assert_eq!(held(&mut target, "#login-username"), "agent");
     }
+
+    /// The placeholder app: one screen with the shapes the React Native
+    /// smoke test met (`crate::fake`).
+    const PLACEHOLDER: &str = "dev.mobileagent.placeholder";
+
+    /// Every input a target was sent, with when it was sent.
+    type Sent = Arc<Mutex<Vec<(Instant, Input)>>>;
+
+    /// An input sink that notes every input it passes on, and when.
+    struct Recording {
+        inner: Box<dyn InputSink>,
+        sent: Sent,
+    }
+
+    impl InputSink for Recording {
+        fn perform(&mut self, input: &Input) -> Result<InputAck, BackendError> {
+            self.sent
+                .lock()
+                .unwrap()
+                .push((Instant::now(), input.clone()));
+            self.inner.perform(input)
+        }
+    }
+
+    /// The first target `driver` lists, attached, with `app` open as `open`
+    /// with `env` opens it, and the inputs it is sent from then on.
+    fn recorded(driver: &FakeDriver, app: &str, env: &[&str]) -> (Attached, Sent) {
+        let info = driver.discover().unwrap().remove(0);
+        let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let sent = Sent::default();
+        attachment.backend.input = Box::new(Recording {
+            inner: attachment.backend.input,
+            sent: Arc::clone(&sent),
+        });
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let open = json!({"action": "open", "app": app, "env": env}).to_string();
+        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        sent.lock().unwrap().clear();
+        (target, sent)
+    }
+
+    /// Where the taps among `sent` went, in points.
+    fn taps(sent: &Sent) -> Vec<Point> {
+        sent.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, input)| match input {
+                Input::Tap { at, .. } => Some(*at),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The ref an interactive snapshot gives the element named `name`, as
+    /// `@eN`.
+    fn ref_named(target: &mut Attached, name: &str) -> String {
+        let listing = super::super::view::snapshot(
+            target,
+            "default",
+            &request(r#"{"action": "snapshot", "interactive": true}"#),
+        )
+        .unwrap()
+        .data;
+        listing["refs"]
+            .as_object()
+            .and_then(|refs| {
+                refs.iter()
+                    .find(|(_, entry)| entry["name"] == name)
+                    .map(|(reference, _)| format!("@{reference}"))
+            })
+            .unwrap_or_else(|| panic!("no ref for {name}: {}", listing["snapshot"]))
+    }
+
+    /// `click` on what `aimed` names.
+    fn click_on(target: &mut Attached, aimed: &str) -> Outcome {
+        let click = json!({"action": "click", "target": aimed}).to_string();
+        super::click(target, "default", &request(&click))
+    }
+
+    /// The text of the element `aimed` names, as `get text` reads it.
+    fn text_of(target: &mut Attached, aimed: &str) -> Value {
+        let get = json!({"action": "get", "what": "text", "target": aimed}).to_string();
+        super::super::view::get(target, "default", &request(&get))
+            .unwrap()
+            .data["text"]
+            .clone()
+    }
+
+    /// Design D32: in the React Native smoke test the keyboard's appearance
+    /// moved a submit button up without an event, the replica still held its
+    /// old bounds, none of them in view under the keyboard, and the click
+    /// tapped the number pad there. On the placeholder app's screen the
+    /// layout moves the button above the keyboard 50 ms after the keyboard
+    /// came up, in no frame: a click on the button by the ref an earlier
+    /// snapshot gave it reads the window again and taps the button where it
+    /// is now, its centre at 499 points rather than 724.
+    #[test]
+    fn a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
+        let submit = ref_named(&mut target, "Placeholder submit");
+        click_on(&mut target, "#placeholder-code").unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let reply = click_on(&mut target, &submit);
+        let status = text_of(&mut target, "#placeholder-status");
+        assert_eq!(
+            status,
+            "Submitted",
+            "the click pressed the button: {reply:?}, taps {:?}",
+            taps(&sent)
+        );
+        let success = reply.unwrap();
+        assert_eq!(success.data["y"], 499.0, "{}", success.data);
+        assert!(success.warning.is_none(), "{:?}", success.warning);
+    }
+
+    /// Design D32: a button the keyboard still covers once its window was
+    /// read again fails the click with `element_offscreen`, the message
+    /// naming the button and the keyboard, and nothing is tapped.
+    #[test]
+    fn a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
+        click_on(&mut target, "#placeholder-code").unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let tapped = taps(&sent).len();
+        let failure = click_on(&mut target, "#placeholder-help").expect_err(&format!(
+            "the keyboard covers the help button; taps {:?}",
+            taps(&sent)
+        ));
+        assert_eq!(failure.code, "element_offscreen", "{}", failure.message);
+        assert!(
+            failure.message.contains("#placeholder-help")
+                && failure.message.contains("\"Placeholder help\"")
+                && failure.message.contains("keyboard"),
+            "the message names the button and what covers it: {}",
+            failure.message
+        );
+        assert_eq!(
+            taps(&sent).len(),
+            tapped,
+            "nothing tapped: {:?}",
+            taps(&sent)
+        );
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Not submitted");
+    }
+
+    /// Design D32: a button partly in view keeps the click's warning and its
+    /// tap: the keyboard covers all but the hint button's top 14 of 48
+    /// points, and the tap goes to its centre.
+    #[test]
+    fn a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
+        click_on(&mut target, "#placeholder-code").unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let success = click_on(&mut target, "#placeholder-hint").unwrap();
+        let warning = success.warning.clone().unwrap_or_default();
+        assert!(
+            warning.contains("#placeholder-hint was not mostly in view (29% of it in view)"),
+            "{warning}"
+        );
+        assert_eq!(success.data["y"], 549.0, "{}", success.data);
+        assert_eq!(taps(&sent).last(), Some(&Point::new(201.0, 549.0)));
+    }
+
+    /// Design D32: `click` makes no stroke; a row of a list the keyboard
+    /// covers all of fails the click with `element_offscreen`, which names
+    /// `scroll --until`, and `scroll --until` brings the row in with one
+    /// stroke, after which the click opens it.
+    #[test]
+    fn a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until() {
+        for (platform, tab, row, detail) in [
+            ("android", "initial_tab=list", "#row-13", "#detail-13"),
+            ("ios", "FIXTURE_INITIAL_TAB=list", "#row-11", "#detail-11"),
+        ] {
+            let driver = FakeDriver::parse(platform).unwrap().with_keyboard(true);
+            let (mut target, sent) = recorded(&driver, FIXTURE, &[tab]);
+            let failure = click_on(&mut target, row).expect_err(&format!(
+                "{platform}: the keyboard covers {row}; taps {:?}",
+                taps(&sent)
+            ));
+            assert_eq!(
+                failure.code, "element_offscreen",
+                "{platform}: {}",
+                failure.message
+            );
+            assert!(
+                failure.message.contains(&format!("scroll --until {row}")),
+                "{platform}: {}",
+                failure.message
+            );
+            assert!(taps(&sent).is_empty(), "{platform}: {:?}", taps(&sent));
+            let scrolled = scroll_with(
+                &mut target,
+                json!({"direction": "down", "amount": 300, "until": row, "target": "#list"}),
+            )
+            .unwrap()
+            .data;
+            assert_eq!(scrolled["strokes"], 1, "{platform}: {scrolled}");
+            assert_eq!(scrolled["visible"], 1.0, "{platform}: {scrolled}");
+            let opened = click_on(&mut target, row).unwrap();
+            assert!(opened.warning.is_none(), "{platform}: {:?}", opened.warning);
+            assert!(
+                text_of(&mut target, detail)
+                    .as_str()
+                    .is_some_and(|text| text.starts_with("Detail")),
+                "{platform}"
+            );
+        }
+    }
 }

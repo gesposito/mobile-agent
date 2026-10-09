@@ -641,10 +641,21 @@ settle windows take real time, and a device model:
   the initial tab honored at launch as each platform's fixtures read it:
   `--env FIXTURE_INITIAL_TAB=<tab>` on iOS, `--env initial_tab=<tab>` on
   Android;
-- a settings app with a Wi-Fi switch.
+- a settings app with a Wi-Fi switch;
+- the placeholder app `dev.mobileagent.placeholder`, one screen with the
+  shapes a React Native app showed in the smoke test of 2026-10-09, under
+  placeholder names: a heading; `placeholder-code`, a code field built of
+  six boxes, a labelled node without traits holding a text per character;
+  `placeholder-status`; `placeholder-hint`, a button the keyboard, once up,
+  covers all but its top 14 points of; `placeholder-submit`, low on the
+  screen, which the layout moves above the keyboard 50 ms after the
+  keyboard came up, without an event and in no frame, so that the replica
+  keeps its old bounds until its next read (design D32); and
+  `placeholder-help` at the bottom, under the keyboard. A tap on the
+  keyboard enters a 5 into the field in focus, as its number pad does.
 
 Android fakes use widget classes, a status bar, a keyboard window (from
-600 points down, while a fixture field has focus) and dialog windows, and
+600 points down, while a field has focus) and dialog windows, and
 send window events; a stroke that comes down on the keyboard goes to the
 keyboard and moves nothing, its glide typing entering "by" into the field
 in focus, as Gboard did on a Nexus 5X (task 10.32); the fixture's list
@@ -660,7 +671,11 @@ holds the home screen and the location prompt, so `origin` reads
 a modal window of its own above the app's (the app window's id with bit 30
 set, titled by the alert, active and focused in the app window's stead),
 which the mirror names `dialog "In-app alert"` in an `element_covered`
-error. Their states are `device`
+error; while a field has focus the keyboard's window sits above the app's
+as the reader gives it (the app window's id with bit 31 set, the app's
+package, bounded by what the keyboard draws: from its prediction bar at
+539 points down, task 10.21), and a stroke that comes down on it types as
+on Android. Their states are `device`
 and `booted`; they have neither a capture nor a report. Emulators and
 Simulators have a frame source; Android devices have none, as design D7
 has it, so `screenshot` answers them with `no_frame`. Every change shows

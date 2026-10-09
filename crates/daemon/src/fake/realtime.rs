@@ -62,6 +62,12 @@ const APP_WINDOW: u32 = 1;
 /// the Simulator driver's `TextMethod::Auto` does; longer text is pasted.
 const KEYBOARD_LIMIT: usize = 32;
 
+/// How long after the keyboard came up the placeholder app's layout moves
+/// its submit button above it, as React Native moves a view out of the
+/// keyboard's way once the keyboard has shown. The move shows in no frame
+/// (see [`Change::Layout`]).
+const LIFT: Duration = Duration::from_millis(50);
+
 /// How text entered as `method` asks reaches a field under `typing`: keys
 /// add to what the field holds; text whose method the target may choose is
 /// typed key by key in its place when `typing` types keys and it is short
@@ -100,6 +106,9 @@ struct Shared {
     fling: bool,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
+    /// When the placeholder app's layout moves its submit button above the
+    /// keyboard, once the keyboard is up.
+    lift_due: Mutex<Option<Instant>>,
 }
 
 impl Drop for Shared {
@@ -154,6 +163,12 @@ enum Change {
     Content,
     /// To another screen, which animates.
     Screen,
+    /// Within the screen, a view the layout moved, which the target shows
+    /// without an event and in no frame the mirror takes in before its next
+    /// read: the React Native smoke test's submit button, which the keyboard
+    /// moved up while the replica kept its old bounds, the frame-driven
+    /// re-read not yet due (design D32).
+    Layout,
 }
 
 /// A hash for the `n`th frame derived from `base`, never `base` itself.
@@ -176,7 +191,34 @@ impl Shared {
         let now = real.max(fake);
         self.start_frames(now);
         self.animate(now);
+        self.lift(now);
         now
+    }
+
+    /// Moves the placeholder app's submit button above the keyboard once
+    /// the move is due, showing it as a layout change.
+    fn lift(&self, now: Instant) {
+        let due = *lock(&self.lift_due);
+        if due.is_none_or(|due| now < due) {
+            return;
+        }
+        *lock(&self.lift_due) = None;
+        let mut device = lock(&self.device);
+        if device.lift() {
+            self.show_after(&device, Change::Layout, Duration::ZERO);
+        }
+    }
+
+    /// Schedules what follows a change shown `delay` from now: the
+    /// placeholder app's layout moves its submit button [`LIFT`] after the
+    /// keyboard came up.
+    fn follow(&self, device: &Device, delay: Duration) {
+        let mut due = lock(&self.lift_due);
+        *due = if device.lift_pending() {
+            due.or_else(|| Some(self.target.clock().now() + delay + LIFT))
+        } else {
+            None
+        };
     }
 
     /// Delivers the first frame of a frame stream that starts after the
@@ -255,6 +297,11 @@ impl Shared {
         let read = read(windows, device);
         let hash = hash(&read);
         self.target.after(delay, Step::Show(read));
+        if change == Change::Layout {
+            // The final frame shows it, whenever one comes next.
+            lock(&self.visual).screen = hash;
+            return;
+        }
         if device.kit.platform == Platform::Android {
             self.target.after(
                 delay,
@@ -270,7 +317,7 @@ impl Shared {
         let mut visual = lock(&self.visual);
         visual.screen = hash;
         let first = match change {
-            Change::Content => {
+            Change::Content | Change::Layout => {
                 visual.transition = None;
                 hash
             }
@@ -386,6 +433,7 @@ pub(crate) fn attach(
         stop,
         fling,
         typing,
+        lift_due: Mutex::new(None),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -473,7 +521,7 @@ impl InputSink for Part {
         let changed = match input {
             Input::Tap { at, .. } => {
                 let hit = tree::hit(&device.windows(), at.x, at.y);
-                device.tap(hit.as_deref())
+                device.tap(hit.as_deref(), (at.x, at.y))
             }
             Input::Swipe {
                 from,
@@ -517,6 +565,7 @@ impl InputSink for Part {
             };
             self.shared.show(&device, change);
         }
+        self.shared.follow(&device, self.shared.latency);
         Ok(ack)
     }
 }
@@ -555,6 +604,7 @@ impl AppControl for Part {
         } else {
             self.shared.show(&device, Change::Screen);
         }
+        self.shared.follow(&device, self.shared.latency);
         Ok(())
     }
 
@@ -569,6 +619,7 @@ impl AppControl for Part {
             Change::Screen
         };
         self.shared.show(&device, change);
+        self.shared.follow(&device, self.shared.latency);
         Ok(())
     }
 }

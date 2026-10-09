@@ -5,13 +5,15 @@
 //!
 //! A fake device shows a launcher (a heading and the buttons Fixture and
 //! Settings), the fixture app of `fixtures/CONTRACT.md` under the ids
-//! `dev.mobileagent.fixture.expo` and the platform's native fixture, and a
-//! settings app. Taps, text, keys and swipes change it as the real apps
-//! change; screenshots return placeholder bytes, not an image. Emulators and
-//! Simulators have a frame source and Android devices none, as design D7
-//! has it, and emulators have none either when the daemon's emulator
-//! controller setting is off; `status` names an Android target's input and
-//! frame paths as the Android driver names them. A latency
+//! `dev.mobileagent.fixture.expo` and the platform's native fixture, a
+//! settings app, and the placeholder app `dev.mobileagent.placeholder`, one
+//! screen with the shapes a React Native app showed in the smoke test of
+//! 2026-10-09 under placeholder names. Taps, text, keys and swipes change it
+//! as the real apps change; screenshots return placeholder bytes, not an
+//! image. Emulators and Simulators have a frame source and Android devices
+//! none, as design D7 has it, and emulators have none either when the
+//! daemon's emulator controller setting is off; `status` names an Android
+//! target's input and frame paths as the Android driver names them. A latency
 //! (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
@@ -30,13 +32,15 @@
 //! choose, as `fill` sends it, which they otherwise take whole, as the
 //! Android agent sets it (see [`Typing`]).
 //!
-//! An Android fake shows its keyboard, a window over the screen from 600
-//! points down, while a fixture field has focus, and with
+//! A fake shows its keyboard while a field has focus, and with
 //! [`FakeDriver::with_keyboard`] over every fixture screen, so a list can
-//! lie partly under it. A stroke that comes down on the keyboard goes to the
-//! keyboard and moves nothing: its glide typing enters a word into the field
-//! in focus, as Gboard took the strokes of a `scroll` that started on its
-//! keys on a Nexus 5X (`reports/10.3-physical-android.md`, finding 4).
+//! lie partly under it: on Android a window over the screen from 600 points
+//! down, on iOS the window the Simulator's reader gives the keyboard, from
+//! its prediction bar at 539 points down. A stroke that comes down on the
+//! keyboard goes to the keyboard and moves nothing: its glide typing enters
+//! a word into the field in focus, as Gboard took the strokes of a `scroll`
+//! that started on its keys on a Nexus 5X
+//! (`reports/10.3-physical-android.md`, finding 4).
 
 mod app;
 mod realtime;
@@ -119,8 +123,7 @@ pub struct FakeDriver {
     fling: bool,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
-    /// Whether an Android fake's keyboard stays up over every fixture
-    /// screen.
+    /// Whether the keyboard stays up over every fixture screen.
     keyboard: bool,
 }
 
@@ -247,9 +250,8 @@ impl FakeDriver {
         self
     }
 
-    /// These targets, the Android ones keeping their keyboard up over every
-    /// screen of the fixture apps when `up` is set, whether or not a field
-    /// has focus.
+    /// These targets, keeping their keyboard up over every screen of the
+    /// fixture apps when `up` is set, whether or not a field has focus.
     pub fn with_keyboard(mut self, up: bool) -> FakeDriver {
         self.keyboard = up;
         self
