@@ -266,7 +266,12 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
 }
 
 /// How much of `element`, which `given` names, is in view before `action`,
-/// the command, taps it. None of it in view can be bounds the replica holds
+/// the command, taps it. A covered element is not a matter of bounds out of
+/// date, whatever share of it is in view: a modal, or a view drawn over it
+/// (design D31), takes the tap, so the mirror refuses a tap on its ref with
+/// `element_covered`, naming what the tap would land on, and nothing is
+/// read again or tapped; a point aimed at one fails the same way here.
+/// None of an uncovered element in view can be bounds the replica holds
 /// from before a layout change that no event reported and no read has seen
 /// yet: in the React Native smoke test the keyboard moved a submit button
 /// up, the replica kept its old bounds under the keyboard, and the click
@@ -285,6 +290,17 @@ fn sight(
     given: &str,
     aimed: &mut Target,
 ) -> Result<Option<Visibility>, Failure> {
+    if let Some(by) = target.mirror.covered_by(element.id) {
+        return match aimed {
+            Target::Ref(_) => Ok(None),
+            Target::Point(_) => Err(Failure::new(
+                mirror::code::ELEMENT_COVERED,
+                format!(
+                    "{given} is covered by the {by}, which a tap there would land on; bring it out from under it, or act on the {by} first, then take a new snapshot"
+                ),
+            )),
+        };
+    }
     let Some(seen) = target.mirror.visibility(element.id) else {
         return Ok(None);
     };
