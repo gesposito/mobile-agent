@@ -7,7 +7,8 @@
 //! The runner is the installed `dev.mobileagent.runner` (spike S10's until
 //! `agent-ios` replaces it), with the version `MOBILE_AGENT_IOS_RUNNER_VERSION`
 //! names (`0.1.0` by default). The fixture must be installed.
-//! `input_series` is the measurement, run on a quiet host:
+//! `input_series` is the measurement, run on a quiet host; it checks the taps
+//! with frames and the swipe with screenshots, so it needs no runner:
 //! `cargo test -p ios --test input -- --ignored --nocapture input_series`.
 
 #![cfg(target_os = "macos")]
@@ -17,10 +18,10 @@ mod common;
 use std::time::{Duration, Instant};
 
 use ios::{
-    AttachOptions, Button, Dispatch, Input, IosDriver, LaunchOptions, Lifecycle, Point, RunnerSpec,
-    Session, Swipe,
+    AttachOptions, Button, Dispatch, FrameOptions, Frames, ImageFormat, Input, IosDriver,
+    LaunchOptions, Lifecycle, Point, RunnerSpec, ScreenshotOptions, Session, Swipe, decode_png,
 };
-use protocol::message::{Call, Reply, ScreenshotParams, SnapshotParams};
+use protocol::message::{Call, Reply, SnapshotParams};
 use protocol::snapshot::{Bounds, Node, Snapshot};
 
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
@@ -102,20 +103,6 @@ fn wait_for(
     }
 }
 
-fn screenshot(driver: &IosDriver, udid: &str) -> Vec<u8> {
-    match driver
-        .call(
-            udid,
-            Call::Screenshot(ScreenshotParams::default()),
-            Duration::from_secs(10),
-        )
-        .expect("the runner takes a screenshot")
-    {
-        Reply::Screenshot(shot) => shot.data,
-        other => panic!("a screenshot was answered with {other:?}"),
-    }
-}
-
 /// The fixture on its List tab, the runner attached, `row-1` on screen.
 fn on_the_list(driver: &IosDriver, udid: &str) {
     driver
@@ -189,8 +176,80 @@ fn a_tap_reaches_the_screen_and_the_home_button_the_home_screen() {
     driver.release(&udid).expect("releases");
 }
 
-/// The measured series: 20 taps after 2 warm-up taps, a resting swipe, and
-/// the volume buttons, with the guard's load before and after.
+/// The tab bar's Login and List buttons on the SE, in points.
+const LOGIN_TAB: Point = Point { x: 62.0, y: 606.0 };
+const LIST_TAB: Point = Point { x: 124.5, y: 606.0 };
+
+/// The screen now, as packed BGRA of 750 by 1334.
+fn pixels(driver: &IosDriver, udid: &str) -> Vec<u8> {
+    let shot = driver
+        .screenshot(
+            udid,
+            &ScreenshotOptions {
+                max_dimension: 0,
+                quality: 90,
+                format: ImageFormat::Png,
+            },
+        )
+        .expect("a screenshot");
+    let mut out = Vec::new();
+    assert_eq!(decode_png(&shot.data, &mut out), Ok((750, 1334)));
+    out
+}
+
+/// How far the list moved up between `before` and `after`, in pixels: the
+/// shift of the rows' text column (x 20 to 300) that matches best, among
+/// 0 to 850 rows, over the list's area above the tab bar; a list that flung
+/// further matches none well, which the caller reads as a fling.
+fn shift(before: &[u8], after: &[u8]) -> usize {
+    let (width, top, bottom) = (750, 100, 1100);
+    let green = |frame: &[u8], x: usize, y: usize| i32::from(frame[(y * width + x) * 4 + 1]);
+    (0..=850)
+        .filter(|shift| bottom - shift > top + 140)
+        .min_by_key(|&shift| {
+            let mut total = 0i64;
+            let mut count = 0i64;
+            for y in (top..bottom - shift).step_by(2) {
+                for x in (20..300).step_by(4) {
+                    total += i64::from((green(after, x, y) - green(before, x, y + shift)).abs());
+                    count += 1;
+                }
+            }
+            total * 1000 / count.max(1)
+        })
+        .expect("a shift")
+}
+
+/// Waits until `stream` delivers no frame for 400 ms, at most 3 s: the
+/// screen is still.
+fn settle(stream: &ios::FrameStream) {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(3) {
+        if stream.next(Duration::from_millis(400)).is_none() {
+            return;
+        }
+    }
+}
+
+/// The first frame captured after `requested`, within `wait`.
+fn changed_after(
+    stream: &ios::FrameStream,
+    requested: Instant,
+    wait: Duration,
+) -> Option<ios::Frame> {
+    let deadline = Instant::now() + wait;
+    loop {
+        let frame = stream.next(deadline.saturating_duration_since(Instant::now()))?;
+        if frame.requested >= requested {
+            return Some(frame);
+        }
+    }
+}
+
+/// The measured series: 20 taps after 2 warm-up taps, alternating the Login
+/// and List tabs, each checked by a changed frame; a resting swipe up the
+/// list, its travel measured from two screenshots; and the volume buttons.
+/// The guard's load is recorded before and after.
 #[test]
 #[ignore = "a measurement, run on a quiet host"]
 fn input_series() {
@@ -199,35 +258,54 @@ fn input_series() {
     };
     let _device = common::exclusive();
     let driver = IosDriver::open().expect("the driver opens");
-    on_the_list(&driver, &udid);
+    driver
+        .launch(
+            &udid,
+            SWIFTUI,
+            &LaunchOptions::new()
+                .env("FIXTURE_INITIAL_TAB", "list")
+                .terminating_running(),
+        )
+        .expect("the SwiftUI fixture launches; install it first");
+    std::thread::sleep(Duration::from_secs(2));
     let quiet = common::quiet_host("input_series", Duration::from_secs(90 * 60));
     let before = common::load();
+    let stream = driver
+        .frames(&udid, &FrameOptions::default())
+        .expect("subscribed");
+    stream
+        .next(Duration::from_secs(3))
+        .expect("the first frame");
 
-    // Taps: row-1 opens detail-1, detail-back returns.
+    // Taps: Login, then List, each changing the screen.
     let mut acknowledged = Vec::new();
-    let mut reached = Vec::new();
+    let mut changed = Vec::new();
     let mut missed = 0;
     for index in 0..22 {
-        let (id, expected) = if index % 2 == 0 {
-            ("row-1", "detail-1")
-        } else {
-            ("detail-back", "row-1")
-        };
-        let (dispatch, shown) = tap_on(&driver, &udid, id, expected);
+        settle(&stream);
+        let point = if index % 2 == 0 { LOGIN_TAB } else { LIST_TAB };
+        let requested = Instant::now();
+        let dispatch = driver.tap(&udid, point).expect("the tap is sent");
+        let frame = changed_after(&stream, requested, Duration::from_secs(2));
         if index >= 2 {
             acknowledged.push(milliseconds(dispatch.acknowledged));
-            match shown {
-                Some(after) => reached.push(milliseconds(after)),
+            match frame {
+                Some(frame) => {
+                    changed.push(milliseconds(
+                        frame.arrived.saturating_duration_since(requested),
+                    ));
+                }
                 None => missed += 1,
             }
         }
     }
     acknowledged.sort_by(f64::total_cmp);
-    reached.sort_by(f64::total_cmp);
+    changed.sort_by(f64::total_cmp);
+    drop(stream);
 
-    // A resting swipe up the list: row-6 moves by about the stroke.
-    let read = snapshot(&driver, &udid);
-    let row = bounds(&read, "row-6").expect("row-6 is on screen");
+    // A resting swipe up the list, which the last tap left in front.
+    std::thread::sleep(Duration::from_secs(1));
+    let still = pixels(&driver, &udid);
     let stroke = Swipe::new(
         Point::new(187.0, 520.0),
         Point::new(187.0, 320.0),
@@ -235,48 +313,49 @@ fn input_series() {
     )
     .resting();
     let swiped = driver.swipe(&udid, &stroke).expect("the swipe is sent");
-    std::thread::sleep(Duration::from_millis(800));
-    let after = snapshot(&driver, &udid);
-    let moved = bounds(&after, "row-6").map(|moved| row.top - moved.top);
-    let stroke_pixels = (stroke.from.y - stroke.to.y) * SCALE;
+    std::thread::sleep(Duration::from_millis(1500));
+    let moved = shift(&still, &pixels(&driver, &udid));
+    let stroke_pixels = ((stroke.from.y - stroke.to.y) * SCALE) as usize;
 
     // The volume buttons, each pressed once: whether the screen changed.
     let mut volume = Vec::new();
     for button in [Button::VolumeUp, Button::VolumeDown] {
-        let still = screenshot(&driver, &udid);
-        let pressed = driver.button(&udid, button).expect("the button is sent");
-        let changed = (0..8).any(|_| {
-            std::thread::sleep(Duration::from_millis(150));
-            screenshot(&driver, &udid) != still
-        });
-        volume.push((button, milliseconds(pressed.acknowledged), changed));
         std::thread::sleep(Duration::from_secs(3));
+        let stream = driver
+            .frames(&udid, &FrameOptions::default())
+            .expect("subscribed");
+        stream
+            .next(Duration::from_secs(3))
+            .expect("the first frame");
+        std::thread::sleep(Duration::from_millis(500));
+        while stream.try_next().is_some() {}
+        let pressed = driver.button(&udid, button).expect("the button is sent");
+        let shown = stream.next(Duration::from_secs(2)).is_some();
+        volume.push((button, milliseconds(pressed.acknowledged), shown));
     }
     let after_load = common::load();
-
-    driver.release(&udid).expect("releases");
     eprintln!(
-        "taps: n={} acknowledged p50 {:.1} / p95 {:.1} ms (min {:.1}, max {:.1}); in the tree \
-         p50 {:.0} / p95 {:.0} ms after the acknowledgement; missed {missed}",
+        "taps: n={} acknowledged p50 {:.1} / p95 {:.1} ms (min {:.1}, max {:.1}); first changed \
+         frame captured after the request p50 {:.0} / p95 {:.0} ms after it; missed {missed}",
         acknowledged.len(),
         rank(&acknowledged, 50),
         rank(&acknowledged, 95),
         acknowledged[0],
         acknowledged[acknowledged.len() - 1],
-        if reached.is_empty() {
+        if changed.is_empty() {
             0.0
         } else {
-            rank(&reached, 50)
+            rank(&changed, 50)
         },
-        if reached.is_empty() {
+        if changed.is_empty() {
             0.0
         } else {
-            rank(&reached, 95)
+            rank(&changed, 95)
         },
     );
     eprintln!(
-        "resting swipe: {:.0} px stroke over {:?}, acknowledged {:.1} ms, row-6 moved {moved:?} px",
-        stroke_pixels,
+        "resting swipe: a {stroke_pixels} px stroke over {:?}, acknowledged {:.1} ms; the list \
+         moved {moved} px",
         stroke.duration,
         milliseconds(swiped.acknowledged)
     );
@@ -289,9 +368,9 @@ fn input_series() {
     );
     assert_eq!(missed, 0, "every tap reached the screen");
     assert!(rank(&acknowledged, 95) < 150.0, "p95 under 150 ms");
-    let moved = f64::from(moved.expect("row-6 is still on screen"));
+    let ratio = moved as f64 / stroke_pixels as f64;
     assert!(
-        (0.8..=1.1).contains(&(moved / stroke_pixels)),
+        (0.8..=1.1).contains(&ratio),
         "the list moved {moved} px for a {stroke_pixels} px stroke"
     );
 }
