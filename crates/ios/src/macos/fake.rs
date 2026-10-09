@@ -21,7 +21,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use idevice::dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader};
 
-use super::dvt::{DEVICE_INFO, LAUNCH, PROCESS_CONTROL, RUNNING_PROCESSES, SEND_SIGNAL};
+use super::dvt::{
+    DEVICE_INFO, IS_RUNNING_PID, LAUNCH, PROCESS_CONTROL, RUNNING_PROCESSES, SEND_SIGNAL,
+};
 use idevice::provider::RsdProvider;
 use idevice::xpc::{XPCMessage, XPCObject};
 use idevice::{IdeviceError, ReadWrite};
@@ -343,6 +345,17 @@ impl FakeDevice {
             (DEVICE_INFO, RUNNING_PROCESSES) => Reply::Data(Some(Value::Array(
                 dvt.processes.iter().map(process_value).collect(),
             ))),
+            (DEVICE_INFO, IS_RUNNING_PID) => {
+                let pid = match args.first() {
+                    Some(Arg::Archived(Value::Integer(pid))) => pid.as_unsigned(),
+                    _ => None,
+                };
+                Reply::Data(Some(Value::Boolean(
+                    dvt.processes
+                        .iter()
+                        .any(|process| Some(u64::from(process.pid)) == pid),
+                )))
+            }
             _ => Reply::Data(None),
         };
         Ok(Some(reply))

@@ -73,10 +73,15 @@ fn the_fixture_is_installed_launched_with_an_environment_found_running_and_termi
         .launch(&udid, SWIFTUI, &options)
         .expect("the fixture launches");
     assert!(launched.pid > 0);
+    let listing = Instant::now();
     assert_eq!(
         driver.running(&udid, SWIFTUI).expect("the process list"),
         Some(launched.pid)
     );
+    let first_listing = listing.elapsed();
+    let listing = Instant::now();
+    driver.running(&udid, SWIFTUI).expect("the process list");
+    let second_listing = listing.elapsed();
 
     let relaunched = driver
         .launch(&udid, SWIFTUI, &options)
@@ -110,10 +115,12 @@ fn the_fixture_is_installed_launched_with_an_environment_found_running_and_termi
 
     eprintln!(
         "install {:.0} ms, launch {:.1} ms and again {:.1} ms (the lock read included), \
-         terminate {:.1} ms",
+         the process list {:.1} ms and again {:.1} ms, terminate {:.1} ms",
         milliseconds(installed.elapsed),
         milliseconds(launched.elapsed),
         milliseconds(relaunched.elapsed),
+        milliseconds(first_listing),
+        milliseconds(second_listing),
         milliseconds(terminated.elapsed)
     );
     driver.reset_target(&udid).expect("resets");

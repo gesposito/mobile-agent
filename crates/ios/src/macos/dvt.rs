@@ -28,6 +28,7 @@ pub(crate) const LAUNCH: &str =
     "launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:";
 pub(crate) const SEND_SIGNAL: &str = "sendSignal:toPid:";
 pub(crate) const RUNNING_PROCESSES: &str = "runningProcesses";
+pub(crate) const IS_RUNNING_PID: &str = "isRunningPid:";
 pub(crate) const SIGKILL: i64 = 9;
 
 /// One method call on a channel: its selector and arguments.
@@ -88,6 +89,20 @@ pub(crate) fn running_processes() -> Call {
         selector: RUNNING_PROCESSES,
         args: Vec::new(),
     }
+}
+
+/// Whether the process `pid` runs: a small reply, where the whole list
+/// takes 480 to 710 ms on the iPhone SE (3rd generation) with about 580
+/// processes.
+pub(crate) fn is_running_pid(pid: u32) -> Call {
+    let _ = pid;
+    todo!()
+}
+
+/// What an `isRunningPid:` reply says.
+pub(crate) fn running_reply(reply: &Message) -> Result<bool, String> {
+    let _ = reply;
+    todo!()
 }
 
 /// A process in DVT's list.
@@ -515,6 +530,34 @@ mod tests {
                 device.dvt_calls().last().expect("a call").service,
                 DEVICE_INFO
             );
+        });
+    }
+
+    #[test]
+    fn whether_a_pid_runs_is_asked_with_the_pid_archived() {
+        runtime().block_on(async {
+            let device = FakeDevice::recorded();
+            device.install_app(SWIFTUI, "FixtureSwiftUI");
+            let control = channel(&device, PROCESS_CONTROL).await;
+            let reply = control
+                .call(launch(SWIFTUI, &LaunchOptions::new()), WAIT)
+                .await
+                .expect("launched");
+            let pid = launched_pid(&reply).expect("a pid");
+            let info = channel(&device, DEVICE_INFO).await;
+            let reply = info.call(is_running_pid(pid), WAIT).await.expect("a reply");
+            assert_eq!(running_reply(&reply), Ok(true));
+            let call = device.dvt_calls().last().expect("the question").clone();
+            assert_eq!(call.selector, IS_RUNNING_PID);
+            assert_eq!(
+                call.args,
+                vec![Arg::Archived(Value::Integer(i64::from(pid).into()))]
+            );
+            let reply = info
+                .call(is_running_pid(pid + 1), WAIT)
+                .await
+                .expect("a reply");
+            assert_eq!(running_reply(&reply), Ok(false));
         });
     }
 

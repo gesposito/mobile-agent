@@ -605,7 +605,7 @@ mod tests {
     use crate::discovery::tests::{identity, recorded_images, recorded_values};
     use crate::discovery::{DEVELOPER_MODE_KEY, LOCK_KEY, probe as probe_from};
     use crate::identity::IdentityCheck;
-    use crate::macos::dvt::{LAUNCH, PROCESS_CONTROL, SEND_SIGNAL};
+    use crate::macos::dvt::{IS_RUNNING_PID, LAUNCH, PROCESS_CONTROL, SEND_SIGNAL};
     use crate::macos::fake::{Arg, FakeDevice, FakeLink, FakeMounter, FakeOpener};
     use crate::model::{Connection, DiskImage, MountPath, Probe, Trust};
     use crate::readiness::Readiness;
@@ -1208,13 +1208,20 @@ mod tests {
         assert_eq!(terminated.pids, vec![launched.pid]);
         assert!(core.host.device.running(SWIFTUI).is_empty());
         assert_eq!(core.running(PHONE, SWIFTUI).expect("running"), None);
-        let signal = core
-            .host
-            .device
-            .dvt_calls()
-            .into_iter()
-            .find(|call| call.selector == SEND_SIGNAL)
+        let calls = core.host.device.dvt_calls();
+        let signalled = calls
+            .iter()
+            .position(|call| call.selector == SEND_SIGNAL)
             .expect("a signal");
+        let after: Vec<&str> = calls[signalled + 1..]
+            .iter()
+            .map(|call| call.selector.as_str())
+            .collect();
+        assert!(
+            !after.is_empty() && after.iter().all(|selector| *selector == IS_RUNNING_PID),
+            "the end is waited for pid by pid, not on the whole list: {after:?}"
+        );
+        let signal = calls[signalled].clone();
         assert_eq!(
             signal.args,
             vec![
