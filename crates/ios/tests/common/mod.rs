@@ -29,11 +29,18 @@ pub const UDID_VARIABLE: &str = "MOBILE_AGENT_IOS_UDID";
 pub const RUNNER_APP_VARIABLE: &str = "MOBILE_AGENT_IOS_RUNNER_APP";
 
 /// The runner built beside the driver: `agent-ios`'s version, with the
-/// bundle `MOBILE_AGENT_IOS_RUNNER_APP` names when it is set.
+/// bundle `MOBILE_AGENT_IOS_RUNNER_APP` names when it is set, a relative path
+/// taken from the workspace's root.
 pub fn runner() -> ios::RunnerSpec {
     let spec = ios::RunnerSpec::new(agent_ios::VERSION);
     match std::env::var_os(RUNNER_APP_VARIABLE).filter(|path| !path.is_empty()) {
-        Some(path) => spec.with_bundle(path),
+        Some(path) => {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .expect("crates/ios sits two levels below the workspace's root");
+            spec.with_bundle(root.join(path))
+        }
         None => spec,
     }
 }
