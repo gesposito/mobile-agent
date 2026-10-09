@@ -420,12 +420,16 @@ Never for long runs`.
 
 Every command's help ends with examples and states its defaults; `help
 <command>` prints the same as `<command> --help`, and `help get text`
-reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 106 lines
-for an agent's prompt: the snapshot, act and snapshot-again loop, the
-listing format and what it leaves out, refs and `stale_ref`, selectors,
-acting, what an action on an element out of sight fails with and what
-`fill` reads back, waiting and settle, reading, output and codes, targets
-and sessions, and batch.
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 118 lines
+for an agent's prompt, under the spec's 120: the snapshot, act and
+snapshot-again loop, the listing format and what it leaves out, refs and
+`stale_ref`, selectors, acting, what an action on an element out of sight
+fails with and what `fill` reads back, waiting and settle, reading, output
+and codes, targets and sessions, where a physical iPhone differs (the
+readiness codes a command on it fails with and where `devices` and
+`doctor` name the step, the slower tier, a tree read of a 500-cell screen
+about 0.5 s and frames 19 a second, and text through the runner, `direct`
+the field's value set rather than pasted), and batch.
 
 ## Process overhead
 
@@ -515,7 +519,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Sessions | Claimed target | `sessions::a_claimed_target_refuses_another_session_naming_the_holder_until_forced`, `sessions::refs_are_isolated_between_sessions`, `sessions::the_session_and_json_flags_have_environment_twins`, `selection::claims_are_per_target`; the daemon's `claims::*` |
 | Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
 | Configurable timeouts | Per-command timeout | `timeouts::a_2_s_wait_fails_at_2_s_not_after_the_session_default`, `timeouts::the_session_default_applies_to_waits_that_name_no_timeout`, `timeouts::session_defaults_belong_to_their_session`, `timeouts::the_environment_default_applies_when_the_session_sets_none`, `timeouts::timeouts_are_bounded_and_must_be_numbers`, `timeouts::a_long_wait_outlasts_a_short_idle_timeout`, `help::waiting_commands_document_their_default_timeouts`, `client::tests::waits_get_their_own_timeout_plus_a_margin_and_other_commands_30_s` |
-| Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back`, `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
+| Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back`, `help::the_agent_guide_says_where_a_physical_iphone_differs` (physical-ios task 5.3), `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
 | Text entry verification | Composite code field; Value that cannot be read back; Mismatch | the daemon's `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified` and `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` (rn-app-fixes, design D33); end to end, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` and `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`; `method` and its side effect on the pasteboard in the guide, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back` |
 
 The timing spans (task 8.9) serve the benchmark harness rather than a

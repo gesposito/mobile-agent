@@ -265,7 +265,8 @@ as an app that owns its field's value can set it again between the keys
 and after them: shown by a read that began that late, or by an earlier one
 after which neither the tree nor, on a target whose windows are read again
 as frames change, a frame changed. Text that went in in one piece, pasted
-on a Simulator or set directly on Android, leaves such an app no keys to
+on a Simulator, set through the runner on a physical iPhone or set
+directly on Android, leaves such an app no keys to
 interleave with, so `fill` takes it at the first read that shows it: one
 that began after the entry, or an earlier one after which nothing changed
 (task 10.30: a hold after such text was 200 of the 224 ms a text entry took
@@ -278,7 +279,8 @@ characters (`•` or `●`), some perhaps showing the text's own, as a secure
 field does, or nothing while it is named as the text, since the
 Simulator's reader leaves out a value that repeats the placeholder. Other
 text at the bound gets the text again in one piece, `direct`: pasted on a
-Simulator, set with `ACTION_SET_TEXT` on Android, as Playwright's and
+Simulator, the field's value set through the runner on a physical iPhone,
+which leaves the pasteboard alone, set with `ACTION_SET_TEXT` on Android, as Playwright's and
 agent-browser's single `Input.insertText` and UiAutomator2's set text are,
 rather than typed again into a field that can reorder keys again; the reply
 then has `retried` and a warning naming what the field showed. Still other
@@ -1039,6 +1041,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 | Single coordinate contract (design D32) | Submit button moved by the keyboard | `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning`, `handlers::act::tests::a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until`, `handlers::act::tests::a_click_on_a_button_a_footer_is_drawn_over_fails_covered_without_a_read_or_a_tap` |
 | Text entry verification (design D33) | Composite code field; Value that cannot be read back; Mismatch | `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified`, `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` |
+| Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
 | Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 
