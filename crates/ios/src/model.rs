@@ -254,6 +254,8 @@ pub struct AttachOptions {
     pub target_app: Option<String>,
     /// The longest the start may take, every retry included.
     pub timeout: Duration,
+    /// The way touches, buttons and keys go while the session lasts.
+    pub input: InputChoice,
 }
 
 impl AttachOptions {
@@ -262,8 +264,28 @@ impl AttachOptions {
             runner,
             target_app: None,
             timeout: ATTACH_TIMEOUT,
+            input: InputChoice::Auto,
         }
     }
+
+    /// The same session, its input sent only one way.
+    pub fn input(mut self, path: InputPath) -> AttachOptions {
+        self.input = InputChoice::Only(path);
+        self
+    }
+}
+
+/// How the driver picks the way touches, buttons and keys go (design D22).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InputChoice {
+    /// `dtuhidd` from the host where the device's iOS takes its reports
+    /// without a display stream, from iOS 18 up to 27, and the runner's
+    /// synthesis elsewhere.
+    #[default]
+    Auto,
+    /// Only this way, for tests and diagnosis: the runner's synthesis on an
+    /// iOS whose `dtuhidd` takes reports too, or `dtuhidd` alone.
+    Only(InputPath),
 }
 
 /// Where a runner session is.

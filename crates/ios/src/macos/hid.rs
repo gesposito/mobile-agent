@@ -668,4 +668,70 @@ mod tests {
             "dtuhidd was not used"
         );
     }
+
+    /// A session that asks for the runner's synthesis gets it on an iOS
+    /// whose `dtuhidd` takes reports too: every gesture as the runner's
+    /// calls, nothing written to `dtuhidd`.
+    #[test]
+    fn a_session_that_asks_for_the_runners_synthesis_gets_it_where_dtuhidd_takes_reports() {
+        let host = FakeHost::ready();
+        host.device.install_runner("0.1.0");
+        let core = core(host);
+        core.attach(
+            PHONE,
+            &AttachOptions::new(RunnerSpec::new("0.1.0")).input(InputPath::Runner),
+        )
+        .expect("attaches");
+        let tap = core
+            .input(PHONE, Gesture::Press(Point::new(50.0, 50.0), TAP_HOLD))
+            .expect("synthesized by the runner");
+        assert_eq!(tap.path, InputPath::Runner);
+        let swipe = Swipe::new(
+            Point::new(187.0, 520.0),
+            Point::new(187.0, 320.0),
+            Duration::from_millis(300),
+        )
+        .resting();
+        let swiped = core
+            .input(PHONE, Gesture::Swipe(swipe))
+            .expect("synthesized by the runner");
+        assert_eq!(swiped.path, InputPath::Runner);
+        core.input(PHONE, Gesture::Button(Button::Home))
+            .expect("pressed by the runner");
+        core.input(PHONE, Gesture::Key(Key::usage(0x04)))
+            .expect("typed by the runner");
+        assert_eq!(
+            core.host.device.runner_served(),
+            vec!["tap", "swipe", "key", "key"]
+        );
+        assert!(
+            core.host.device.hid_events().is_empty(),
+            "dtuhidd was not used"
+        );
+    }
+
+    /// A session that asks for `dtuhidd` alone is refused on an iOS whose
+    /// `dtuhidd` takes no report, naming the version, rather than going
+    /// through the runner.
+    #[test]
+    fn a_session_that_asks_for_dtuhidd_alone_is_refused_where_it_takes_no_report() {
+        let host = FakeHost::with(
+            &[("ProductVersion", Value::String("17.6".into()))],
+            Trust::Trusted,
+            Some(Ok(recorded_images())),
+        );
+        host.device.install_runner("0.1.0");
+        let core = core(host);
+        core.attach(
+            PHONE,
+            &AttachOptions::new(RunnerSpec::new("0.1.0")).input(InputPath::Hid),
+        )
+        .expect("attaches");
+        let error = core
+            .input(PHONE, Gesture::Press(Point::new(50.0, 50.0), TAP_HOLD))
+            .expect_err("dtuhidd alone");
+        assert_eq!(error.code(), "input_unavailable", "{error}");
+        assert!(error.to_string().contains("17.6"), "{error}");
+        assert!(core.host.device.runner_served().is_empty());
+    }
 }

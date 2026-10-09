@@ -30,9 +30,9 @@ use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
     AttachOptions, Attached, Button, Connected, DeviceInfo, Disconnect, DiskImage, Dispatch,
-    FrameOptions, FramePathStatus, InputPath, Installed, Key, LaunchOptions, Launched, MountReport,
-    MuxEntry, Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
-    Terminated, Trust,
+    FrameOptions, FramePathStatus, InputChoice, InputPath, Installed, Key, LaunchOptions, Launched,
+    MountReport, MuxEntry, Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe,
+    TargetStatus, Terminated, Trust,
 };
 use crate::readiness::{self, Need, Readiness};
 use crate::touch;
@@ -1009,7 +1009,8 @@ impl<H: Host> Core<H> {
 
     /// Delivers `gesture` to `target`: through `dtuhidd` where the device's
     /// iOS takes its reports without a display stream, through the runner's
-    /// synthesis otherwise when a runner is attached.
+    /// synthesis otherwise when a runner is attached, or the one way the
+    /// attached session asks for.
     pub(crate) fn input(&self, target: &str, gesture: Gesture) -> Result<Dispatch> {
         self.contained(target, async {
             let requested = Instant::now();
@@ -1035,9 +1036,27 @@ impl<H: Host> Core<H> {
                 }
             }
             let screen = state.screen().await?;
-            if let Err(reason) = compat::hid_input(state.ios_version()) {
+            let session = slot.runner();
+            let choice = session
+                .as_ref()
+                .map_or(InputChoice::Auto, |session| session.options.input);
+            // Why the runner synthesizes the gesture, when it does.
+            let synthesized = match (choice, compat::hid_input(state.ios_version())) {
+                (InputChoice::Only(InputPath::Runner), _) => {
+                    Some("the session asks for the runner's synthesis".to_owned())
+                }
+                (InputChoice::Only(InputPath::Hid), Err(reason)) => {
+                    return Err(Error::InputUnavailable {
+                        target: target.to_owned(),
+                        reason,
+                    });
+                }
+                (InputChoice::Auto, Err(reason)) => Some(reason),
+                (_, Ok(())) => None,
+            };
+            if let Some(reason) = synthesized {
                 drop(state);
-                let Some(session) = slot.runner() else {
+                let Some(session) = session else {
                     return Err(Error::InputUnavailable {
                         target: target.to_owned(),
                         reason,

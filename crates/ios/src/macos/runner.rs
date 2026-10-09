@@ -898,6 +898,7 @@ mod tests {
             runner: RunnerSpec::new(VERSION),
             target_app: None,
             timeout: Duration::from_secs(5),
+            input: crate::model::InputChoice::Auto,
         }
     }
 
