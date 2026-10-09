@@ -36,21 +36,21 @@ The driver SHALL deploy a runner bundle signed for the host's team, start it thr
 - **THEN** the driver installs the built one before starting the session
 
 ### Requirement: Foreground tree read
-The runner SHALL read the foreground application's accessibility tree in one request, with the same windows, identifiers, labels, values, traits, bounds in device pixels and scale, keyboard window and modal views as the Simulator's reader gives, and SHALL mark every window as sending no change events, so the mirror re-reads it on frame changes and polls; a read of a system screen SHALL be served from the system process's tree with its owner named.
+The runner SHALL read the foreground application's accessibility tree in one request, with the same identifiers, labels, values, traits, bounds in device pixels and scale as the Simulator's reader gives, and the keyboard window, modal views and scroll semantics as far as the device's tree reports the attributes that tell them, each gap named in the compatibility statement; it SHALL mark every window as sending no change events, so the mirror re-reads it on frame changes and polls; a read of a system screen SHALL be served from the system process's tree with its owner named.
 
 #### Scenario: Reference screen read
 - **WHEN** the fixture's 500-cell screen is in front
 - **THEN** one request returns every cell with its identifier and bounds, and the mirror lists the same refs it lists on the Simulator
 
 ### Requirement: Input actions without idle waits
-The runner SHALL synthesize taps, long presses, swipes that rest before lifting, key presses and typed text at device coordinates without waiting for the application to go idle, SHALL report each as accepted once the event is synthesized, and SHALL enter text into the focused field by typing or by setting its value where typing cannot, reporting which.
+The driver SHALL deliver taps, long presses, swipes that rest before lifting, hardware button presses and key presses at device coordinates from the host through the device's HID service where the device's iOS version takes them, and through the runner's event synthesis otherwise, in either case without waiting for the application to go idle, and SHALL report each as accepted once the report is written or the event synthesized; text SHALL go into the focused field through the runner, typed or set where typing cannot, the method reported.
 
 #### Scenario: Tap dispatched
 - **WHEN** a tap is requested at a point
-- **THEN** the runner acknowledges it once the event is synthesized, without an idle wait, and the frame stream shows the screen change afterwards
+- **THEN** the driver acknowledges it once the report is written or the event synthesized, without an idle wait, and the frames show the screen change afterwards
 
 ### Requirement: Frames and screenshots from the host
-The driver SHALL take a frame stream of the device's display from the host while a target is attached, hash it as the Simulator driver hashes its frames so that settle and the mirror's re-reads work from it, and SHALL serve screenshots on demand at full resolution and at a requested long edge and quality.
+The driver SHALL take frames of the device's display from the host while a target is attached, a stream where the device offers one and screenshots polled on more than one connection where it does not, and SHALL tell a changed frame with a tolerance that counts no frame of a still screen as a change, the status bar left out, so that settle and the mirror's re-reads work from them; it SHALL serve screenshots on demand at full resolution and at a requested long edge and quality.
 
 #### Scenario: Frame change after a tap
 - **WHEN** a tap changes the screen

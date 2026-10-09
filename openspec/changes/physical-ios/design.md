@@ -20,8 +20,8 @@ Research note: `docs/research/ios-device.md` (task 1.1). Spike reports: `docs/sp
 
 **Goals:**
 - A physical iPhone as a third target class behind the same protocol, mirror, CLI and harness, with numbers: the gates of the benchmark spec for the `ios-device` class, measured on the maintainer's phone against the baselines that support devices.
-- A runner that starts once per session and never restarts in it, speaks the device protocol over a socket, and reads the tree the way the Simulator's reader does, so the mirror's listing rules, refs, modal views and keyboard handling carry over without change.
-- A frame stream from the host as the change signal, so settle and the mirror's re-reads work without an event stream, as on the Simulator, and no idle wait anywhere.
+- A runner that starts once per session and never restarts in it, speaks the device protocol over a socket, and hands the tree to the Simulator reader's conversion, so the mirror's listing rules and refs carry over without change (modal views and the keyboard window as far as the device's tree reports them, D21).
+- Frames from the host as the change signal, a stream where the device offers one and polled screenshots where it does not (D23), so settle and the mirror's re-reads work without an event stream, as on the Simulator, and no idle wait anywhere.
 - Every host-side piece in Rust, in one new crate; the runner in Rust with an Objective-C shim only where a bundle's entry point or a private call needs one.
 - iOS 26 first, as a specific path: the driver is built and measured for what the device at hand runs, iOS 26.6.2, where the display stream is refused and `dtuhidd` needs no stream (S11), and every path it takes is gated on the device's iOS version as the Android agent gates its reads on the API level (`Levels.kt`) and the Simulator driver its transport on the CoreSimulator version. iOS 27's display stream, and its input that needs the stream, come later as another gated path, added when a device runs it, costing the iOS 26 path nothing.
 - Keep the core lean: nothing device-specific enters `protocol`, `mirror`, the CLI or the Android driver; what the device needs is gated in `crates/ios` and the runner.
@@ -32,7 +32,7 @@ Research note: `docs/research/ios-device.md` (task 1.1). Spike reports: `docs/sp
 
 ## Decisions
 
-Decisions D18 to D23 are candidates until their spike records numbers here (Delivery process, Measured decisions).
+Decisions D18 to D23 were candidates until their spikes recorded numbers here (Delivery process, Measured decisions): S9 for D18 and D19, S10 for D20 to D22, S11 for D22's host path and D23, all on an iPhone SE (3rd generation) with iOS 26.6.2 under Xcode 27.0; the spike review (task 2.4) consolidated them on 2026-10-09.
 
 ### D18. Transport: the `idevice` crate in the daemon's process, with the tunnel in process
 `crates/ios` lists devices over usbmuxd and takes the device's USB entry: usbmuxd lists a phone with Wi-Fi sync on a second time, on the network. It reads the host's pairing record from usbmuxd (`ReadPairRecord`) and opens lockdown sessions with it. It opens the CoreDevice tunnel through lockdown's `CoreDeviceProxy`, with `idevice`'s in-process TCP stack (jktcp), and reaches the developer services over RSD. There is no `devicectl`, no Python or Go helper, no root and no TUN device. Spike S9 (`docs/spikes/s9-ios-transport.md`) measured these p50 and p95 times on an iPhone SE (3rd generation) with iOS 26.6.2, from an unprivileged process, with `idevice` 0.1.68:
@@ -179,9 +179,9 @@ Without any frames, settle falls back to the mirror's probe-less path for window
 
 ### D25. Workspace layout
 ```
-crates/ios          discovery, readiness, tunnel, lifecycle, runner session, frames, screenshots   (macOS only; a stub elsewhere, as crates/simulator)
-agent-ios/          the runner bundle: Rust cdylib, ObjC shim, Info.plist, build and sign script, VERSION
-crates/simulator/reader/   gains a library target for the tree extraction both binaries share
+crates/ios          discovery, readiness, tunnel, lifecycle, runner session, host input (dtuhidd), frames, screenshots   (macOS only; a stub elsewhere, as crates/simulator)
+agent-ios/          the runner bundle: Rust static library and ObjC shim linked with clang -bundle into PlugIns/<Name>.xctest inside a thinned copy of XCTRunner.app, Info.plists, the build and sign script (codesign with the installed profile, no xcodebuild project), VERSION
+crates/simulator/reader/   gains a library target for the element conversion (elements.rs) both binaries share; the snapshot call stays the Simulator's
 ```
 The driver registers as `ios` in the daemon's driver list; `MOBILE_AGENT_DRIVERS=ios` runs it alone. The daemon's fake targets gain nothing: the fake already stands in for a target without events.
 
@@ -196,8 +196,10 @@ The rules of the archived design's Delivery process bind this change unchanged (
 ## Risks / Trade-offs
 
 - [An `idevice` call misbehaves on iOS 26.6.2, as 0.1.68's `kill_app` did (a pid sent unarchived stalls the phone's DVT service) and CoreDevice's lock state does (not implemented on the phone)] → S9 reached every service the driver needs and recorded the calls that work (`sendSignal:toPid:`, lockdown's `PasswordProtected` for the lock, PNG captures only); the driver uses those, and `devicectl` stays the per-operation fallback for lifecycle at about 250 ms more per call. The runner's launch goes through the test manager; a `devicectl` foreground launch never serves on iOS 27, so it is no second path.
-- [The test manager refuses a runner that is not built by Xcode, or the provisioning profile does not carry the device] → the build script runs `xcodebuild` on a minimal host project so Xcode manages the profile; the profile and certificate are the maintainer's.
-- [XCTest's private event synthesis changes under iOS 26] → the compatibility table records the call site per version, as D12 does for the Simulator; the public `XCUICoordinate` path stays as the slower fallback.
+- [A later iOS refuses a runner signed outside Xcode, which iOS 26.6.2 accepted (S10: a thinned copy of `XCTRunner.app`, the test bundle in `PlugIns`, no XCTest framework embedded, `codesign` with the installed development profile)] → the fallback is an `xcodebuild` host project that Xcode signs; the profile and certificate stay the maintainer's.
+- [XCTest's private calls change under a later iOS: the idle-wait replacements, the daemon session's synthesis, screenshot, `_XCT_sendString` and `_XCT_setAttribute`, `XCAXClient_iOS`'s notifications] → the compatibility table records each call site per version, as D12 does for the Simulator; `dtuhidd` carries input without XCTest, the public `XCUICoordinate` path and `XCUIScreen` stay as the slower fallbacks.
+- [A runner outlives a lost session, as it did after S10's cable pull, and answers the next attach with a stale process] → the driver ends any runner process left before it starts a session, and retries the test manager's handshake, which stops answering for a minute or two after a runner is ended mid-start.
+- [After a reboot the disk image is gone and "Enable UI Automation" may be asked again; `idevice`'s personalized mount hung once in S10] → readiness reports the image and the approval as states with their steps; the mount goes through `idevice` with `devicectl`'s mount as the fallback, timed in task 3.2.
 - [No host-side frame stream works at 30 fps, which S11 found to be the case on iOS 26.6.2: the display stream needs iOS 27 and AVFoundation capture waits on the camera permission] → the device is a slow-frame target, as D23 now says: screenshots polled on two connections at up to 19 frames a second with a two-level tolerance tell changes exactly, settle counts them, and the tap-to-frame-change gate stays unstated; AVFoundation replaces the polling once its series pass with the camera allowed, the display stream once the phone runs iOS 27.
 - [The device sleeps, locks or disconnects mid-run] → readiness checks before every attach, `disconnected` with the cause, a resumed attach starts over; auto-lock off is a documented prerequisite of measured runs.
 - [The runner's cold start dominates cold attach] → the runner stays installed and the session is kept for the target's lifetime; cold attach's gate counts the session start, not the install.
@@ -210,6 +212,7 @@ Additive: a new crate, a new bundle, a new target class. Nothing deployed change
 
 - iOS 27: the CoreDevice display stream (HEVC over RTP, keyframes on request) and `dtuhidd` input behind a running stream are a later path, gated on the device's version, to be spiked on a phone that runs iOS 27 (the iPhone 17e once upgraded, or the SE) with S11's measurements repeated there; until then the iOS 26 path is the only one, and the harness's tap-to-frame-change on this class stays reported, not gated.
 - AVFoundation capture is host-side and not tied to the iOS version: once the camera permission is granted, its series decide whether it replaces polled screenshots on iOS 26 (30 frames a second and a first changed frame within 100 ms at p95 would pass D23's gate); a failure leaves the polling.
-- Whether hardware buttons (home, lock, volume) need a protocol method of their own or go through `key` codes; decided by what S10 finds the runner can synthesize.
+- Hardware buttons: the home press goes through `dtuhidd`'s Indigo button event (89 ms, S11 and S10) and needs no protocol method, since the host sends it; lock and volume are validated in task 3.8, and the runner's `-[XCUIDevice pressButton:]` (502 ms) is the fallback.
+- A real app on the device: the maintainer's own development build, or an App Store app with a read-only account, driven through the runner and `dtuhidd` (task 2.5, after the same app is checked on the Simulator), to see what XCTest's tree loses on a React Native screen before the driver's shape is fixed.
 - Whether the accessibility audit service's element actions are worth a fallback for apps whose XCTest tree is sparse, as some React Native screens were on the Simulator (`reports/10.4-rn-smoke.md`); measured if a device run shows such a screen.
 - Which baselines support a physical device on this host without their own signing setup; found out in task 7.3 and recorded in the report.
