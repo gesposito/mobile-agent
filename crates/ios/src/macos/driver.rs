@@ -11,6 +11,7 @@
 //! first.
 
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -28,10 +29,10 @@ use crate::driver::{Devices, Frames, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::model::{
-    AttachOptions, Attached, Button, Connected, DeviceInfo, DiskImage, Dispatch, FrameOptions,
-    FramePathStatus, InputPath, Installed, Key, LaunchOptions, Launched, MountReport, MuxEntry,
-    Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
-    Terminated,
+    AttachOptions, Attached, Button, Connected, DeviceInfo, Disconnect, DiskImage, Dispatch,
+    FrameOptions, FramePathStatus, InputPath, Installed, Key, LaunchOptions, Launched, MountReport,
+    MuxEntry, Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe, TargetStatus,
+    Terminated, Trust,
 };
 use crate::readiness::{self, Need, Readiness};
 use crate::touch;
@@ -299,6 +300,7 @@ impl<H: Host> Target<H> {
                     after,
                 },
                 CallError::NotSent(cause) | CallError::Closed(cause) => Error::Disconnected {
+                    kind: Disconnect::Lost,
                     target: self.target.clone(),
                     cause: format!("DVT's {selector}: {cause}"),
                 },
@@ -691,7 +693,7 @@ impl<H: Host> Core<H> {
             path: app.display().to_string(),
             reason,
         })?;
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let slot = self.connected(target).await?;
             let state = slot.state.lock().await;
             let started = Instant::now();
@@ -716,7 +718,7 @@ impl<H: Host> Core<H> {
         bundle_id: &str,
         options: &LaunchOptions,
     ) -> Result<Launched> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let started = Instant::now();
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
@@ -734,6 +736,7 @@ impl<H: Host> Core<H> {
                 }
                 Err(cause) => {
                     return Err(Error::Disconnected {
+                        kind: Disconnect::Lost,
                         target: target.to_owned(),
                         cause: format!("reading lockdown's PasswordProtected: {cause}"),
                     });
@@ -781,7 +784,7 @@ impl<H: Host> Core<H> {
     }
 
     pub(crate) fn terminate(&self, target: &str, bundle_id: &str) -> Result<Terminated> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let started = Instant::now();
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
@@ -795,7 +798,7 @@ impl<H: Host> Core<H> {
     }
 
     pub(crate) fn running(&self, target: &str, bundle_id: &str) -> Result<Option<u32>> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
             let pids = state.pids(bundle_id, self.limits).await;
@@ -809,7 +812,7 @@ impl<H: Host> Core<H> {
     /// starts the runner and hands it to a supervisor. A session that
     /// serves, or is on its way to, is kept.
     pub(crate) fn attach(&self, target: &str, options: &AttachOptions) -> Result<Attached> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let started = Instant::now();
             let (slot, connected) = self.connect_target(target).await?;
             let identity = self.host.identity();
@@ -891,7 +894,7 @@ impl<H: Host> Core<H> {
             .ok_or_else(|| Error::NotAttached {
                 target: target.to_owned(),
             })?;
-        self.runtime.block_on(runner::call(&session, call, timeout))
+        self.contained(target, runner::call(&session, call, timeout))
     }
 
     /// Ends the runner's session on `target`.
@@ -951,7 +954,7 @@ impl<H: Host> Core<H> {
     /// Subscribes to `target`'s frames: screenshots polled on DVT and
     /// CoreDevice.
     pub(crate) fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
             let stream = state
@@ -979,7 +982,7 @@ impl<H: Host> Core<H> {
 
     /// Which frame path serves `target`, and why the others do not.
     pub(crate) fn frame_paths(&self, target: &str) -> Result<Vec<FramePathStatus>> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
             state.frame_paths(self.limits).await
@@ -990,10 +993,29 @@ impl<H: Host> Core<H> {
     /// iOS takes its reports without a display stream, through the runner's
     /// synthesis otherwise when a runner is attached.
     pub(crate) fn input(&self, target: &str, gesture: Gesture) -> Result<Dispatch> {
-        self.runtime.block_on(async {
+        self.contained(target, async {
             let requested = Instant::now();
             let slot = self.connected(target).await?;
             let mut state = slot.state.lock().await;
+            // Input on a locked phone would reach the lock screen: the lock
+            // is read first, one value on the session kept for it.
+            match state.link.password_protected().await {
+                Ok(false) => {}
+                Ok(true) => {
+                    return Err(Error::Disconnected {
+                        target: target.to_owned(),
+                        kind: Disconnect::Locked,
+                        cause: "lockdown's PasswordProtected reads true".into(),
+                    });
+                }
+                Err(cause) => {
+                    return Err(Error::Disconnected {
+                        target: target.to_owned(),
+                        kind: Disconnect::Lost,
+                        cause: format!("reading lockdown's PasswordProtected: {cause}"),
+                    });
+                }
+            }
             let screen = state.screen().await?;
             if let Err(reason) = compat::hid_input(state.ios_version()) {
                 drop(state);
@@ -1010,6 +1032,79 @@ impl<H: Host> Core<H> {
             *lock(&slot.snapshot) = state.snapshot();
             dispatched
         })
+    }
+
+    /// Runs `command` for `target` on the driver's runtime and contains a
+    /// disconnect it fails with.
+    fn contained<T>(&self, target: &str, command: impl Future<Output = Result<T>>) -> Result<T> {
+        self.runtime.block_on(async {
+            let result = command.await;
+            self.contain(target, result).await
+        })
+    }
+
+    /// Contains a failure of `target` (spec `ios-device-driver`, "Failure
+    /// containment"): a disconnect is told apart as unplugged, locked,
+    /// rebooted or lost, and unless the phone is only locked, what the
+    /// driver held open for it is closed, so that the next attach starts
+    /// over. No other target is touched.
+    async fn contain<T>(&self, target: &str, result: Result<T>) -> Result<T> {
+        let Err(Error::Disconnected { cause, .. }) = result else {
+            return result;
+        };
+        let kind = self.diagnose(target).await;
+        let error = Error::Disconnected {
+            target: target.to_owned(),
+            kind,
+            cause,
+        };
+        if kind != Disconnect::Locked {
+            self.drop_connections(target, &error).await;
+        }
+        Err(error)
+    }
+
+    /// Why `target` dropped: gone from usbmuxd's listing; back without the
+    /// disk image, or refusing lockdown until its first unlock, as after a
+    /// restart; locked; or lost while it stays ready. One probe, about
+    /// 50 ms, on failure paths only.
+    async fn diagnose(&self, target: &str) -> Disconnect {
+        let Ok(entry) = self.entry(target).await else {
+            return Disconnect::Unplugged;
+        };
+        let (_, probe) = self.host.probe(&entry).await;
+        match (&probe.trust, &probe.disk_image, probe.password_protected) {
+            (Trust::Unreachable(reason), _, _) if reason.contains("locked") => Disconnect::Rebooted,
+            (_, Some(DiskImage::NotMounted), _) => Disconnect::Rebooted,
+            (_, _, Some(true)) => Disconnect::Locked,
+            _ => Disconnect::Lost,
+        }
+    }
+
+    /// [`Core::diagnose`] from a thread outside the runtime, for the tests.
+    #[cfg(test)]
+    pub(crate) fn runtime_block_on_diagnose(&self, target: &str) -> Option<Disconnect> {
+        Some(self.runtime.block_on(self.diagnose(target)))
+    }
+
+    /// Closes what the driver holds open for `target` after it dropped: its
+    /// runner's session fails with `error` and its supervisor ends, and its
+    /// tunnel, DVT's channels and `dtuhidd`'s connections close.
+    async fn drop_connections(&self, target: &str, error: &Error) {
+        let Some(slot) = lock(&self.targets).get(target).cloned() else {
+            return;
+        };
+        if let Some(session) = slot.runner() {
+            session.fail(error);
+            // The supervisor ends at the signal on its own thread; it is
+            // not waited for here, inside the runtime.
+            drop(session.stop());
+        }
+        let mut state = slot.state.lock().await;
+        state.channels.clear();
+        state.hid.close();
+        state.tunnel.close().await;
+        *lock(&slot.snapshot) = state.snapshot();
     }
 
     /// The state the driver keeps for the device of `entry`, made on first
@@ -1089,6 +1184,26 @@ pub(crate) mod tests {
         pub(crate) mounter: FakeMounter,
         pub(crate) probed: Mutex<Vec<MuxEntry>>,
         pub(crate) test_manager: FakeTestManager,
+        /// More phones on the same host, ready, each with its own device.
+        pub(crate) others: Vec<Other>,
+    }
+
+    /// Another phone of a fake host.
+    pub(crate) struct Other {
+        pub(crate) udid: String,
+        pub(crate) device: Arc<FakeDevice>,
+        pub(crate) test_manager: FakeTestManager,
+    }
+
+    impl Other {
+        pub(crate) fn new(udid: &str) -> Other {
+            let device = FakeDevice::recorded();
+            Other {
+                udid: udid.to_owned(),
+                test_manager: FakeTestManager::new(&device),
+                device,
+            }
+        }
     }
 
     impl FakeHost {
@@ -1117,7 +1232,26 @@ pub(crate) mod tests {
                 device,
                 mounter: FakeMounter::new(true, Err("not called".into()), Err("not called".into())),
                 probed: Mutex::new(Vec::new()),
+                others: Vec::new(),
             }
+        }
+
+        /// The device of `udid`: the phone's or another's.
+        pub(crate) fn device_of(&self, udid: &str) -> &Arc<FakeDevice> {
+            self.others
+                .iter()
+                .find(|other| other.udid == udid)
+                .map_or(&self.device, |other| &other.device)
+        }
+
+        /// Restarts the phone: it leaves the listing and comes back locked,
+        /// without the developer disk image or the runner's process.
+        pub(crate) fn reboot(&self) {
+            self.device.unplug();
+            self.device.kill_runner();
+            self.mounter.unmount();
+            self.device.set_locked(true);
+            self.device.plug_in();
         }
 
         /// The recorded phone with `values` changed, `trust` and `images`.
@@ -1166,13 +1300,32 @@ pub(crate) mod tests {
         type TestManager = FakeTestManager;
 
         async fn list(&self) -> Result<Vec<MuxEntry>> {
-            self.listing
+            let mut listing = self
+                .listing
                 .clone()
-                .map_err(|reason| Error::Usbmuxd { reason })
+                .map_err(|reason| Error::Usbmuxd { reason })?;
+            // A phone that is away leaves the listing.
+            listing.retain(|entry| entry.udid != PHONE || !self.device.gone());
+            for (index, other) in self.others.iter().enumerate() {
+                if !other.device.gone() {
+                    listing.push(MuxEntry {
+                        udid: other.udid.clone(),
+                        device_id: 10 + index as u32,
+                        connection: Connection::Usb,
+                    });
+                }
+            }
+            Ok(listing)
         }
 
         async fn probe(&self, entry: &MuxEntry) -> (Dictionary, Probe) {
             self.probed.lock().expect("probed").push(entry.clone());
+            if let Some(other) = self.others.iter().find(|other| other.udid == entry.udid) {
+                let mut values = recorded_values();
+                values.insert(LOCK_KEY.into(), Value::Boolean(other.device.locked()));
+                let probe = probe_from(&values, Trust::Trusted, Some(Ok(recorded_images())));
+                return (values, probe);
+            }
             if entry.udid != PHONE {
                 return (
                     Dictionary::new(),
@@ -1183,28 +1336,39 @@ pub(crate) mod tests {
                 Images::Fixed(images) => images.clone(),
                 Images::Mounter => Some(Ok(self.mounter.listing())),
             };
-            let probe = probe_from(&self.values, self.trust.clone(), images);
-            (self.values.clone(), probe)
+            // The lock as the device has it now, when it was locked since.
+            let mut values = self.values.clone();
+            if self.device.locked() {
+                values.insert(LOCK_KEY.into(), Value::Boolean(true));
+            }
+            let probe = probe_from(&values, self.trust.clone(), images);
+            (values, probe)
         }
 
         fn identity(&self) -> IdentityCheck {
             self.identity.clone()
         }
 
-        fn opener(&self, _entry: &MuxEntry) -> FakeOpener {
-            FakeOpener::new(&self.device)
+        fn opener(&self, entry: &MuxEntry) -> FakeOpener {
+            FakeOpener::new(self.device_of(&entry.udid))
         }
 
         fn mounter(&self, _entry: &MuxEntry, _device: &DeviceInfo) -> FakeMounter {
             self.mounter.clone()
         }
 
-        fn link(&self, _entry: &MuxEntry) -> FakeLink {
-            FakeLink::new(&self.device)
+        fn link(&self, entry: &MuxEntry) -> FakeLink {
+            FakeLink::new(self.device_of(&entry.udid))
         }
 
-        fn test_manager(&self, _entry: &MuxEntry) -> FakeTestManager {
-            self.test_manager.clone()
+        fn test_manager(&self, entry: &MuxEntry) -> FakeTestManager {
+            self.others
+                .iter()
+                .find(|other| other.udid == entry.udid)
+                .map_or_else(
+                    || self.test_manager.clone(),
+                    |other| other.test_manager.clone(),
+                )
         }
     }
 

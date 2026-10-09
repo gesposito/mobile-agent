@@ -22,7 +22,7 @@ use idevice::core_device::{
 use super::driver::Target;
 use super::host::{Host, describe};
 use crate::error::{Error, Result};
-use crate::model::{Button, Dispatch, InputPath, Key};
+use crate::model::{Button, Disconnect, Dispatch, InputPath, Key};
 use crate::touch::{Contact, TouchReport};
 
 /// How long a hardware button is held: `idevice`'s tool and S11 held home
@@ -131,6 +131,7 @@ impl<H: Host> Target<H> {
                         continue;
                     }
                     return Err(Error::Disconnected {
+                        kind: Disconnect::Lost,
                         target: self.target.clone(),
                         cause: format!(
                             "dtuhidd's connection failed after {} reports: {}",

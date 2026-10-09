@@ -195,6 +195,10 @@ pub(crate) struct FakeDevice {
     /// Bumped when the runner process ends, which closes its connections
     /// and ends the test manager's session that started it.
     pub(crate) runner_deaths: tokio::sync::watch::Sender<u64>,
+    /// Bumped when the cable is pulled, which closes every connection
+    /// through usbmuxd: the runner's socket and the test manager's session.
+    /// The runner's process outlives it, as it did in S10.
+    pub(crate) pulls: tokio::sync::watch::Sender<u64>,
     /// What `dtuhidd` took, in order.
     hid: Mutex<Vec<TimedHid>>,
     /// The screen both screenshot services capture.
@@ -254,6 +258,7 @@ impl FakeDevice {
             link: Mutex::new(LinkState::default()),
             runner: Mutex::new(RunnerState::default()),
             runner_deaths: tokio::sync::watch::Sender::new(0),
+            pulls: tokio::sync::watch::Sender::new(0),
             hid: Mutex::new(Vec::new()),
             keyboards: Mutex::new(Vec::new()),
             screen: Mutex::new(Screen::default()),
@@ -645,11 +650,24 @@ impl FakeDevice {
         self.next_generation(&mut state);
     }
 
-    /// Takes the device away: its tunnel drops and no new one opens.
+    /// Takes the device away: its tunnel drops and no new one opens, and
+    /// every connection through usbmuxd closes.
     pub(crate) fn unplug(&self) {
         let mut state = self.state();
         self.next_generation(&mut state);
         state.gone = true;
+        drop(state);
+        self.pulls.send_modify(|pulls| *pulls += 1);
+    }
+
+    /// Whether the device is away.
+    pub(crate) fn gone(&self) -> bool {
+        self.state().gone
+    }
+
+    /// Whether lockdown's PasswordProtected reads true.
+    pub(crate) fn locked(&self) -> bool {
+        self.link().locked
     }
 
     /// Ends the serving tunnel: new connections through it fail and the
@@ -1109,6 +1127,14 @@ impl FakeMounter {
             .mounted
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+    }
+
+    /// Unmounts the image, as a restart does.
+    pub(crate) fn unmount(&self) {
+        *self
+            .mounted
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = false;
     }
 }
 

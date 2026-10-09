@@ -43,11 +43,11 @@ pub use error::{Error, Result};
 pub use frames::{FrameStream, TOLERANCE, decode_png};
 pub use identity::{IdentityCheck, host_identity};
 pub use model::{
-    ATTACH_TIMEOUT, AttachOptions, Attached, Button, Connected, Connection, DeviceInfo, DiskImage,
-    Dispatch, InputPath, Installed, Key, LaunchOptions, Launched, Modifiers, MountAttempt,
-    MountPath, MountReport, MuxEntry, Point, Probe, RUNNER_BUNDLE_ID, RUNNER_NAME, RUNNER_PORT,
-    Release, Released, RunnerSpec, RunnerState, RunnerStatus, Screen, Swipe, TEAM_VARIABLE,
-    TargetStatus, Terminated, Trust, TunnelStatus,
+    ATTACH_TIMEOUT, AttachOptions, Attached, Button, Connected, Connection, DeviceInfo, Disconnect,
+    DiskImage, Dispatch, InputPath, Installed, Key, LaunchOptions, Launched, Modifiers,
+    MountAttempt, MountPath, MountReport, MuxEntry, Point, Probe, RUNNER_BUNDLE_ID, RUNNER_NAME,
+    RUNNER_PORT, Release, Released, RunnerSpec, RunnerState, RunnerStatus, Screen, Swipe,
+    TEAM_VARIABLE, TargetStatus, Terminated, Trust, TunnelStatus,
 };
 pub use model::{
     Capture, Frame, FrameOptions, FramePath, FramePathStatus, FrameStats, ImageFormat, Screenshot,

@@ -720,3 +720,43 @@ pub struct FramePathStatus {
     pub active: bool,
     pub reason: Option<String>,
 }
+
+/// Why a device dropped out of a session (spec `ios-device-driver`,
+/// "Failure containment"), told after the fact from usbmuxd's listing and
+/// what lockdown and the image mounter say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Disconnect {
+    /// It left usbmuxd's listing: the cable was pulled, or it is restarting.
+    Unplugged,
+    /// It is locked, so input would reach the lock screen.
+    Locked,
+    /// It is back without the developer disk image, as after a restart, or
+    /// refuses lockdown until its first unlock after one.
+    Rebooted,
+    /// Its connection was lost while it stays listed and ready.
+    Lost,
+}
+
+impl Disconnect {
+    /// A stable name for the cause.
+    pub fn name(self) -> &'static str {
+        match self {
+            Disconnect::Unplugged => "unplugged",
+            Disconnect::Locked => "locked",
+            Disconnect::Rebooted => "rebooted",
+            Disconnect::Lost => "lost",
+        }
+    }
+
+    /// What happened, in words.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Disconnect::Unplugged => "it left usbmuxd's listing: unplugged, or restarting",
+            Disconnect::Locked => "it is locked: unlock it",
+            Disconnect::Rebooted => {
+                "it restarted: the developer disk image is gone, and the phone wants its passcode"
+            }
+            Disconnect::Lost => "its connection was lost",
+        }
+    }
+}

@@ -18,7 +18,7 @@ use idevice::{IdeviceError, IdeviceService, RsdService};
 use tokio::time::timeout;
 
 use crate::error::{Error, Result};
-use crate::model::TunnelStatus;
+use crate::model::{Disconnect, TunnelStatus};
 use crate::services;
 
 use super::host::describe;
@@ -101,6 +101,7 @@ impl<O: Opener> Tunnel<O> {
             Ok(Ok(opened)) => opened,
             Ok(Err(cause)) => {
                 return Err(Error::Disconnected {
+                    kind: Disconnect::Lost,
                     target: self.target.clone(),
                     cause,
                 });
@@ -125,6 +126,7 @@ impl<O: Opener> Tunnel<O> {
                 return Ok(());
             }
             Ok(Err(error)) if tunnel_gone(&error) => Error::Disconnected {
+                kind: Disconnect::Lost,
                 target: self.target.clone(),
                 cause: format!("RSD's handshake: {}", describe(&error)),
             },
@@ -169,6 +171,7 @@ impl<O: Opener> Tunnel<O> {
                     self.close().await;
                     if reopened {
                         return Err(Error::Disconnected {
+                            kind: Disconnect::Lost,
                             target: self.target.clone(),
                             cause: format!("connecting to {name}: {}", describe(&error)),
                         });

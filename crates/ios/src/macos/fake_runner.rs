@@ -44,6 +44,8 @@ pub(crate) enum Start {
     /// XCTest waits in "enabling automation mode" for `wait`, then starts
     /// the runner when the owner approved, and fails otherwise.
     Approval { wait: Duration, approved: bool },
+    /// Starts the runner after `wait`.
+    Slow(Duration),
 }
 
 #[derive(Default)]
@@ -148,6 +150,7 @@ async fn session(
             return Err("xctest session timed out after 30.0s".into());
         }
         Start::NoTestManager => return Err("service not found".into()),
+        Start::Slow(wait) => tokio::time::sleep(wait).await,
         Start::Normal | Start::Approval { .. } => {}
     }
     log.push(XcEvent::RunnerReady);
@@ -165,14 +168,21 @@ async fn session(
     log.push(XcEvent::InitializingForUiTesting);
     let mut deaths = device.runner_deaths.subscribe();
     deaths.borrow_and_update();
+    let mut pulls = device.pulls.subscribe();
+    pulls.borrow_and_update();
     let Some(pid) = device.launch_runner() else {
         return Err("the runner is not installed".into());
     };
     log.push(XcEvent::TestStarted);
-    // The session lasts as long as its runner's process.
+    // The session lasts as long as its runner's process and the cable.
     while device.runner().is_some_and(|runner| runner.pid == pid) {
-        if deaths.changed().await.is_err() {
-            std::future::pending::<()>().await;
+        tokio::select! {
+            changed = deaths.changed() => {
+                if changed.is_err() {
+                    std::future::pending::<()>().await;
+                }
+            }
+            _ = pulls.changed() => return Err("device socket io failed".into()),
         }
     }
     Err("test runner disconnected before the test plan completed".into())
@@ -226,6 +236,8 @@ pub(crate) async fn serve_runner(
     let mut session = AgentSession::new(config, Instant::now());
     let mut deaths = device.runner_deaths.subscribe();
     deaths.borrow_and_update();
+    let mut pulls = device.pulls.subscribe();
+    pulls.borrow_and_update();
     let mut buffer = vec![0u8; 64 * 1024];
     loop {
         while let Some(event) = session.poll_event() {
@@ -265,6 +277,8 @@ pub(crate) async fn serve_runner(
                     return;
                 }
             }
+            // A pulled cable closes the socket; the process stays.
+            _ = pulls.changed() => return,
         }
     }
 }

@@ -4,7 +4,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use crate::model::MountAttempt;
+use crate::model::{Disconnect, MountAttempt};
 use crate::readiness::Readiness;
 
 /// The driver's result type.
@@ -30,8 +30,13 @@ pub enum Error {
     /// The driver's runtime or a host command could not start.
     Io { what: String, reason: String },
     /// The device went away, or its tunnel did and a new one could not be
-    /// opened: unplugged, rebooted or asleep; the cause.
-    Disconnected { target: String, cause: String },
+    /// opened: unplugged, locked or rebooted, as `kind` says once the driver
+    /// told which; the cause.
+    Disconnected {
+        target: String,
+        kind: Disconnect,
+        cause: String,
+    },
     /// The device's RSD handshake does not list a service the operation
     /// needs.
     ServiceMissing {
@@ -161,9 +166,15 @@ impl fmt::Display for Error {
                 )
             }
             Error::Io { what, reason } => write!(f, "{what}: {reason}"),
-            Error::Disconnected { target, cause } => write!(
+            Error::Disconnected {
+                target,
+                kind,
+                cause,
+            } => write!(
                 f,
-                "iOS device {target} is disconnected ({cause}); plug it in again over USB, unlocked, and connect again"
+                "iOS device {target} is disconnected, {} ({cause}); plug it in again over USB, \
+                 unlocked, and attach again, which starts over",
+                kind.describe()
             ),
             Error::ServiceMissing {
                 target,

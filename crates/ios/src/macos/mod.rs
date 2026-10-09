@@ -3,6 +3,8 @@
 
 mod capture;
 mod connection;
+#[cfg(test)]
+mod containment;
 mod driver;
 mod dvt;
 #[cfg(test)]

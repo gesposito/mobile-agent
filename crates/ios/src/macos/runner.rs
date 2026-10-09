@@ -33,7 +33,7 @@ use super::driver::{Slot, Target};
 use super::host::{Host, Link, describe};
 use super::tunnel::Limits;
 use crate::error::{Error, Result};
-use crate::model::{AttachOptions, RunnerState, RunnerStatus};
+use crate::model::{AttachOptions, Disconnect, RunnerState, RunnerStatus};
 use crate::readiness::Readiness;
 use crate::runner::{self, StartFailure};
 use crate::services;
@@ -228,6 +228,25 @@ impl RunnerSession {
         self.changes.send_modify(|changes| *changes += 1);
     }
 
+    /// Changes the session unless it failed or is being released: a
+    /// supervisor that was mid-restart when its device dropped, or when
+    /// `release` came, must not bring a failed session back.
+    fn update_live(&self, change: impl FnOnce(&mut Shared)) {
+        if *self.stopping.borrow() {
+            return;
+        }
+        let mut shared = self.shared();
+        if matches!(
+            shared.status.state,
+            RunnerState::Failed { .. } | RunnerState::Stopped
+        ) {
+            return;
+        }
+        change(&mut shared);
+        drop(shared);
+        self.changes.send_modify(|changes| *changes += 1);
+    }
+
     /// What the target's status reports of the session.
     pub(crate) fn status(&self) -> RunnerStatus {
         self.shared().status.clone()
@@ -259,7 +278,7 @@ impl RunnerSession {
 
     /// The runner said hello with the expected version.
     pub(crate) fn ready(&self, live: &Live) {
-        self.update(|shared| {
+        self.update_live(|shared| {
             shared.status.state = RunnerState::Ready;
             shared.status.agent = Some(live.connection.agent().to_owned());
             shared.status.capabilities = live.connection.capabilities();
@@ -270,7 +289,7 @@ impl RunnerSession {
 
     /// The runner died; the supervisor starts it again.
     fn restarting(&self, cause: &str) {
-        self.update(|shared| {
+        self.update_live(|shared| {
             shared.status.state = RunnerState::Restarting {
                 cause: cause.to_owned(),
             };
@@ -281,7 +300,7 @@ impl RunnerSession {
 
     /// The runner said hello again after its restart.
     fn restarted(&self, live: &Live) {
-        self.update(|shared| shared.status.restarts += 1);
+        self.update_live(|shared| shared.status.restarts += 1);
         self.ready(live);
     }
 
@@ -590,6 +609,9 @@ pub(crate) async fn supervise<H: Host>(
             return;
         }
         session.restarting(&cause);
+        if !session.serving() || *stopping.borrow() {
+            return;
+        }
         let Some(slot) = slot.upgrade() else {
             return;
         };
@@ -626,6 +648,7 @@ fn restart_failure(target: &str, cause: &str, error: Error) -> Error {
     match error {
         Error::Disconnected { .. } => error,
         Error::NotFound { .. } => Error::Disconnected {
+            kind: Disconnect::Lost,
             target: target.to_owned(),
             cause: format!("{cause}, and the device left usbmuxd's listing"),
         },
@@ -655,6 +678,7 @@ pub(crate) async fn call(session: &RunnerSession, call: Call, timeout: Duration)
                     }
                     Err(CallFailure::Lost(cause)) => {
                         return Err(Error::Disconnected {
+                            kind: Disconnect::Lost,
                             target: session.target.clone(),
                             cause: format!(
                                 "the runner's connection closed before it answered {method} \
