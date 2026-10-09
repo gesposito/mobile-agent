@@ -55,6 +55,30 @@ fn the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle() {
     assert!(!env.socket().exists(), "help starts no daemon");
 }
 
+/// Rn-app-fixes (design D31 to D33): the guide says what an action on an
+/// element out of sight fails with and what `fill` reads back, `direct`
+/// text with its side effect on the pasteboard included.
+#[test]
+fn the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "element_covered",
+        "element_offscreen",
+        "out from under",
+        "readFrom: descendants",
+        "verified: false",
+        "reason: no_value_to_read",
+        "method: keys",
+        "pasteboard",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 #[test]
 fn every_command_has_help_with_examples() {
     let env = TestEnv::new("android");
