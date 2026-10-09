@@ -133,7 +133,12 @@ Conventions a driver follows:
   Simulator's reader finds for a view an iOS app marks
   `accessibilityViewIsModal`, and the `on_top` node flag a node drawn after
   every sibling its bounds overlap, which the Android agent tells from the
-  order a parent draws its children in (task 10.28).
+  order a parent draws its children in (task 10.28). An iOS driver needs
+  no such flag: XCTest lists a view's subviews in the order UIKit draws
+  them, which the mirror reads as the drawing order in a read whose
+  windows are rooted at `XCUIElementType` classes, from a backend that is
+  not a fallback (rn-app-fixes, design D31), so the driver keeps the
+  children in XCTest's order.
   An input-method window's bounds are what the keyboard covers, as the
   Android agent gives them, the pieces of the window's touchable region
   that hold what it shows (task 10.25), and as the Simulator's reader gives
@@ -281,8 +286,7 @@ also counts).
   with an area is judged, since Android gives a node scrolled out of its
   list bounds clipped to nothing: those rows keep counting in their list's
   hint under the tab bar drawn over the list's bottom, which hides only
-  what lies wholly under it. Acting on a covered element names the view by
-  its role and name, or as an `overlay` when it is a plain container.
+  what lies wholly under it.
 - On iOS the order is what tells (rn-app-fixes, design D31): XCTest lists a
   view's subviews in the order UIKit draws them and reports no occlusion,
   so in a tree from XCTest's snapshot (a window rooted at an
@@ -306,11 +310,13 @@ also counts).
   later sibling transparent where it spans an earlier one hides it as if
   drawn, and nothing in the tree tells; the smoke test's and Bluesky's
   screens showed none, and a screen that does is recorded here and the
-  rule gated further. Acting on what a view drawn over it covers names the
-  node a tap there would land on, the innermost one of the view that holds
-  the element's bounds and shows something itself, else the view, and
-  advises bringing the element out from under it rather than acting on
-  the cover: the smoke test's tap on that heading accepted the consent.
+  rule gated further. On either platform, acting on what a view drawn over
+  it covers names the node a tap there would land on, the innermost one of
+  the view that holds the element's bounds and shows something itself,
+  else the view, by its role and name or as an `overlay` when it is a
+  plain container, and advises bringing the element out from under it
+  rather than acting on the cover: the smoke test's tap on that heading
+  accepted the consent.
 - Scroll hints come from actionable nodes outside a container's viewport when
   the read has them, and from the container's scroll semantics otherwise
   (Compose reports only the nodes in the viewport): a range with a position
@@ -633,6 +639,7 @@ cargo test -p mirror
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
+| | Submit button moved by the keyboard | in the daemon, which reads the windows again (`note_window_change`, `pump`) before it taps an element none of which `visibility` finds in view: `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, and the rest of its row in `crates/daemon/README.md` |
 | Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting`, `settle::a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn`, `settle::a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event` |
 | | Continuous animation | `settle::a_continuous_animation_is_not_settled_after_the_maximum_and_names_frame_changes`, `settle::an_animation_that_also_sends_tree_events_names_both_signals`, `settle::tree_only_settling_ignores_frames` |
 | Wait predicates from the event stream | Element appears | `waits::a_wait_for_text_resolves_within_one_processing_cycle_of_its_appearance`, `waits::a_disappear_wait_resolves_when_the_element_leaves`, `waits::an_enabled_wait_resolves_when_the_element_becomes_enabled`, `waits::a_wait_on_a_window_without_change_events_resolves_from_its_re_reads`, `waits::a_wait_that_already_holds_returns_at_once`, `waits::selectors_match_text_identifier_role_and_ref_on_screen_only` |
