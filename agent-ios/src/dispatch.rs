@@ -7,13 +7,16 @@
 //! - `tap`, `swipe` and `key` go through XCTest's event synthesis, the
 //!   fallback of the host's `dtuhidd` (D22): a tap held 50 ms unless the
 //!   request says how long, a swipe that rests at its end when it asks to;
-//!   a key of the HID Keyboard page (0x07) is typed as its character, and the
-//!   home button's usage on the Consumer page (0x0C, usage 0x40, in the high
-//!   half of the code) presses home.
-//! - `text_set` types the text into the element with keyboard focus through
-//!   the daemon's `_XCT_sendString`, or sets that element's value through
-//!   the daemon's `_XCT_setAttribute` when it asks for the direct method,
-//!   and says which it did.
+//!   a key of the HID Keyboard page (0x07) is typed as the character a US
+//!   keyboard gives it, with shift when the meta state's first bit says so,
+//!   and a hardware button's usage on the Consumer page (0x0C, in the high
+//!   half of the code) is pressed through `XCUIDevice`: home (0x40) and the
+//!   volume buttons (0xE9, 0xEA), the lock button being the host's alone.
+//! - `text_set` enters the text into the element with keyboard focus: typed
+//!   through the daemon's `_XCT_sendString`, set through its
+//!   `_XCT_setAttribute` when the request asks for the direct method, and
+//!   when it leaves the method to the runner, typed, or set where typing
+//!   fails; the reply names the method that took it.
 //! - `screenshot` is `XCUIScreen`'s PNG at the screen's size, whatever the
 //!   request asks: the host takes its screenshots through DVT (D23).
 
@@ -36,6 +39,9 @@ pub const TAP_HOLD: f64 = 0.05;
 /// The Consumer page in the high half of a `key` code: the page of the
 /// hardware buttons, as the driver sends them to the runner.
 pub const CONSUMER_PAGE: u32 = 0x000C_0000;
+
+/// The meta state's shift bit, as the driver sends a key's modifiers.
+pub const SHIFT: u32 = 1;
 
 /// The runner's requests over a [`Shim`].
 pub struct Dispatcher<S: Shim> {
@@ -77,34 +83,74 @@ impl<S: Shim> Dispatcher<S> {
     }
 
     fn key(&self, params: &KeyParams) -> Result<Reply, protocol::Error> {
-        if params.code == CONSUMER_PAGE | 0x40 {
-            return accepted(self.shim.button(Button::Home));
+        if params.code & 0xFFFF_0000 == CONSUMER_PAGE {
+            let button = match params.code & 0xFFFF {
+                0x40 => Button::Home,
+                0xE9 => Button::VolumeUp,
+                0xEA => Button::VolumeDown,
+                usage => {
+                    return Err(invalid(format!(
+                        "the runner presses home and the volume buttons through XCUIDevice, which \
+                         presses no button of Consumer usage {usage:#x}, the lock button's \
+                         included; the host presses it through dtuhidd"
+                    )));
+                }
+            };
+            return accepted(self.shim.button(button));
         }
-        match key_text(params.code) {
+        let meta = params.meta.unwrap_or(0);
+        if meta & !SHIFT != 0 {
+            return Err(invalid(format!(
+                "the runner types characters, with shift at most; the meta state {meta:#x} holds \
+                 other modifiers"
+            )));
+        }
+        match key_text(params.code, meta & SHIFT != 0) {
             Some(text) => accepted(self.shim.type_text(text)),
-            None => Err(protocol::Error::new(
-                protocol::code::INVALID_PARAMS,
-                format!(
-                    "key code {:#x} is neither a key of the HID Keyboard page the runner types \
-                     nor the home button",
-                    params.code
-                ),
-            )),
+            None => Err(invalid(format!(
+                "key code {:#x} is neither a key of the HID Keyboard page the runner types nor a \
+                 button it presses",
+                params.code
+            ))),
         }
     }
 
     fn text(&mut self, params: &TextParams) -> Result<Reply, protocol::Error> {
-        let method = if params.mode == Some(TextMethod::DIRECT) {
-            let bundle = self.foreground_bundle()?;
-            self.shim
-                .set_text(&bundle, &params.text)
-                .map_err(internal)?;
-            TextMethod::DIRECT
-        } else {
-            self.shim.type_text(&params.text).map_err(internal)?;
-            TextMethod::KEYS
+        if params.node.is_some() {
+            return Err(invalid(
+                "the runner enters text into the element with keyboard focus; tap the field first \
+                 and name no node",
+            ));
+        }
+        let method = match params.mode {
+            Some(TextMethod::DIRECT) => {
+                self.set_text(&params.text)?;
+                TextMethod::DIRECT
+            }
+            Some(TextMethod::KEYS) => {
+                self.shim.type_text(&params.text).map_err(internal)?;
+                TextMethod::KEYS
+            }
+            _ => match self.shim.type_text(&params.text) {
+                Ok(()) => TextMethod::KEYS,
+                Err(typing) => {
+                    self.set_text(&params.text).map_err(|error| {
+                        internal(format!(
+                            "typing failed ({typing}), and so did setting the value: {}",
+                            error.message
+                        ))
+                    })?;
+                    TextMethod::DIRECT
+                }
+            },
         };
         Ok(Reply::Text(TextAck { method }))
+    }
+
+    /// Sets the value of the foreground's element with keyboard focus.
+    fn set_text(&mut self, text: &str) -> Result<(), protocol::Error> {
+        let bundle = self.foreground_bundle()?;
+        self.shim.set_text(&bundle, text).map_err(internal)
     }
 
     /// The bundle of the application in front.
@@ -153,28 +199,84 @@ fn internal(message: String) -> protocol::Error {
     protocol::Error::new(protocol::code::INTERNAL, message)
 }
 
+fn invalid(message: impl Into<String>) -> protocol::Error {
+    protocol::Error::new(protocol::code::INVALID_PARAMS, message)
+}
+
 fn accepted(result: Result<(), String>) -> Result<Reply, protocol::Error> {
     result
         .map(|()| Reply::Input(InputAck { accepted: true }))
         .map_err(internal)
 }
 
-/// The character the runner types for a key of the HID Keyboard page.
-fn key_text(code: u32) -> Option<&'static str> {
-    const LETTERS: [&str; 26] = [
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r",
-        "s", "t", "u", "v", "w", "x", "y", "z",
+/// The character a US keyboard types for a key of the HID Keyboard page,
+/// with shift or without.
+fn key_text(code: u32, shift: bool) -> Option<&'static str> {
+    const LETTERS: [[&str; 2]; 26] = [
+        ["a", "A"],
+        ["b", "B"],
+        ["c", "C"],
+        ["d", "D"],
+        ["e", "E"],
+        ["f", "F"],
+        ["g", "G"],
+        ["h", "H"],
+        ["i", "I"],
+        ["j", "J"],
+        ["k", "K"],
+        ["l", "L"],
+        ["m", "M"],
+        ["n", "N"],
+        ["o", "O"],
+        ["p", "P"],
+        ["q", "Q"],
+        ["r", "R"],
+        ["s", "S"],
+        ["t", "T"],
+        ["u", "U"],
+        ["v", "V"],
+        ["w", "W"],
+        ["x", "X"],
+        ["y", "Y"],
+        ["z", "Z"],
     ];
-    const DIGITS: [&str; 10] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
-    Some(match code {
+    /// Usages 0x1e to 0x38: the digits, Return, Escape, Delete, Tab, Space
+    /// and the marks.
+    const REST: [[&str; 2]; 27] = [
+        ["1", "!"],
+        ["2", "@"],
+        ["3", "#"],
+        ["4", "$"],
+        ["5", "%"],
+        ["6", "^"],
+        ["7", "&"],
+        ["8", "*"],
+        ["9", "("],
+        ["0", ")"],
+        ["\n", "\n"],
+        ["\u{1b}", "\u{1b}"],
+        ["\u{8}", "\u{8}"],
+        ["\t", "\t"],
+        [" ", " "],
+        ["-", "_"],
+        ["=", "+"],
+        ["[", "{"],
+        ["]", "}"],
+        ["\\", "|"],
+        ["", ""],
+        [";", ":"],
+        ["'", "\""],
+        ["`", "~"],
+        [",", "<"],
+        [".", ">"],
+        ["/", "?"],
+    ];
+    let pair = match code {
         0x04..=0x1d => LETTERS[(code - 0x04) as usize],
-        0x1e..=0x27 => DIGITS[(code - 0x1e) as usize],
-        0x28 => "\n",
-        0x2a => "\u{8}",
-        0x2b => "\t",
-        0x2c => " ",
+        0x1e..=0x38 => REST[(code - 0x1e) as usize],
         _ => return None,
-    })
+    };
+    Some(pair[usize::from(shift)]).filter(|text| !text.is_empty())
 }
 
 /// The width and height a PNG's header names; zeros when it is no PNG.
@@ -511,6 +613,115 @@ pub(crate) mod tests {
         let error = dispatcher.handle(key(0x3a)).expect_err("F1 types nothing");
         assert_eq!(error.code, protocol::code::INVALID_PARAMS);
         assert!(error.message.contains("0x3a"), "{}", error.message);
+    }
+
+    /// Text the agent may enter either way is typed, and set on the
+    /// focused element where typing fails, the method reported as the one
+    /// that took it.
+    #[test]
+    fn text_typing_cannot_enter_is_set_and_reported_set() {
+        let fake = Fake::showing(812, SWIFTUI, TREE);
+        fake.state().typing = Some("the daemon refused the string".into());
+        let mut dispatcher = Dispatcher::new(fake.clone());
+        for mode in [None, Some(TextMethod::AUTO)] {
+            let reply = dispatcher.handle(Call::TextSet(TextParams {
+                text: "ada".into(),
+                node: None,
+                mode,
+            }));
+            assert_eq!(
+                reply,
+                Ok(Reply::Text(TextAck {
+                    method: TextMethod::DIRECT
+                }))
+            );
+        }
+        assert_eq!(
+            fake.acts(),
+            vec![
+                Act::Type("ada".into()),
+                Act::Bundle(812),
+                Act::Set(SWIFTUI.into(), "ada".into()),
+                Act::Type("ada".into()),
+                Act::Set(SWIFTUI.into(), "ada".into()),
+            ]
+        );
+        let error = dispatcher
+            .handle(Call::TextSet(TextParams {
+                text: "ada".into(),
+                node: None,
+                mode: Some(TextMethod::KEYS),
+            }))
+            .expect_err("typing alone");
+        assert!(error.message.contains("refused"), "{}", error.message);
+    }
+
+    /// The runner enters text into the field with keyboard focus alone: a
+    /// node of a snapshot is refused rather than another field filled.
+    #[test]
+    fn text_for_a_node_is_refused_naming_the_focused_field() {
+        let fake = Fake::showing(812, SWIFTUI, TREE);
+        let error = Dispatcher::new(fake.clone())
+            .handle(Call::TextSet(TextParams {
+                text: "ada".into(),
+                node: Some(42),
+                mode: None,
+            }))
+            .expect_err("a node");
+        assert_eq!(error.code, protocol::code::INVALID_PARAMS);
+        assert!(error.message.contains("focus"), "{}", error.message);
+        assert!(fake.acts().is_empty());
+    }
+
+    /// Shift types a letter's capital and a digit's or a mark's shifted
+    /// character, as the host's keyboard reports would; the volume buttons
+    /// are pressed through `XCUIDevice`; the lock button, which `XCUIDevice`
+    /// does not press, is refused naming the host's way.
+    #[test]
+    fn shifted_keys_type_their_characters_and_the_volume_buttons_press() {
+        let fake = Fake::default();
+        let mut dispatcher = Dispatcher::new(fake.clone());
+        let key = |code, meta| Call::Key(KeyParams { code, meta });
+        for (code, meta) in [
+            (0x04, Some(1)),
+            (0x1e, Some(1)),
+            (0x27, Some(1)),
+            (0x2d, None),
+            (0x2d, Some(1)),
+            (0x36, None),
+            (0x37, None),
+            (0x38, Some(1)),
+            (0x000C_00E9, None),
+            (0x000C_00EA, None),
+        ] {
+            dispatcher
+                .handle(key(code, meta))
+                .unwrap_or_else(|error| panic!("{code:#x}: {error}"));
+        }
+        assert_eq!(
+            fake.acts(),
+            vec![
+                Act::Type("A".into()),
+                Act::Type("!".into()),
+                Act::Type(")".into()),
+                Act::Type("-".into()),
+                Act::Type("_".into()),
+                Act::Type(",".into()),
+                Act::Type(".".into()),
+                Act::Type("?".into()),
+                Act::Button(Button::VolumeUp),
+                Act::Button(Button::VolumeDown),
+            ]
+        );
+        let error = dispatcher
+            .handle(key(0x000C_0030, None))
+            .expect_err("the lock button");
+        assert_eq!(error.code, protocol::code::INVALID_PARAMS);
+        assert!(error.message.contains("dtuhidd"), "{}", error.message);
+        let error = dispatcher
+            .handle(key(0x04, Some(2)))
+            .expect_err("control-a");
+        assert_eq!(error.code, protocol::code::INVALID_PARAMS);
     }
 
     #[test]

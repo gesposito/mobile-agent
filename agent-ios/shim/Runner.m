@@ -13,8 +13,9 @@
 // - The C functions below are the XCTest calls the agent makes (src/shim.rs):
 //   the foreground's pid and bundle, the snapshot XCTest's accessibility
 //   client asks testmanagerd for, as JSON, taps and swipes as an
-//   XCSynthesizedEventRecord sent to XCUIDevice's
-//   event synthesizer, the hardware buttons, typing through the daemon proxy's
+//   XCSynthesizedEventRecord sent to XCUIDevice's event synthesizer, or
+//   through the public XCUICoordinate where XCTest has no synthesizer, the
+//   hardware buttons, typing through the daemon proxy's
 //   _XCT_sendString:maximumFrequency:completion:, setting the focused
 //   element's value through its _XCT_setAttribute:value:element:reply:, and
 //   XCUIScreen's screenshot.
@@ -411,12 +412,19 @@ int ma_tree(int pid, char **json, char **err) {
 // ---------------------------------------------------------------------------
 // Taps and swipes, in the portrait screen's points.
 
-// Sends one event record to XCUIDevice's event synthesizer, the daemon
-// session, and waits for its completion, the acknowledgement. The idle waits
-// are no-ops, so nothing waits for the application to go idle.
-static int ma_synthesize(XCSynthesizedEventRecord *record, char **err) {
-  id<MAEventSynthesizer> synthesizer = [XCUIDevice.sharedDevice eventSynthesizer];
-  if (!synthesizer) return ma_fail(err, @"XCUIDevice has no event synthesizer");
+// XCUIDevice's event synthesizer, the daemon session, when this XCTest has
+// it and the private event classes; nil otherwise, where taps and swipes take
+// XCUICoordinate's public path instead.
+static id<MAEventSynthesizer> ma_synthesizer(void) {
+  if (!NSClassFromString(@"XCPointerEventPath") || !NSClassFromString(@"XCSynthesizedEventRecord")) return nil;
+  if (![XCUIDevice.sharedDevice respondsToSelector:@selector(eventSynthesizer)]) return nil;
+  return [XCUIDevice.sharedDevice eventSynthesizer];
+}
+
+// Sends one event record to the synthesizer and waits for its completion,
+// the acknowledgement. The idle waits are no-ops, so nothing waits for the
+// application to go idle.
+static int ma_synthesize(id<MAEventSynthesizer> synthesizer, XCSynthesizedEventRecord *record, char **err) {
   dispatch_semaphore_t sem = dispatch_semaphore_create(0);
   __block atomic_bool done = false;
   __block NSError *error = nil;
@@ -439,13 +447,41 @@ static XCSynthesizedEventRecord *ma_record(NSString *name, XCPointerEventPath *p
   return record;
 }
 
+// The screen's point (x, y) as an XCUICoordinate, in SpringBoard's space,
+// which spans the screen. Main thread.
+static XCUICoordinate *ma_coordinate(double x, double y) {
+  XCUICoordinate *origin = [ma_app(@"com.apple.springboard") coordinateWithNormalizedOffset:CGVectorMake(0, 0)];
+  return [origin coordinateWithOffset:CGVectorMake(x, y)];
+}
+
+// Runs a gesture of XCUICoordinate's on the main thread: the public path,
+// which resolves the application first and took 795 ms a tap at p95 in
+// spike S10.
+static int ma_coordinate_gesture(char **err, void (^gesture)(void)) {
+  __block NSString *failure = nil;
+  ma_on_main(^{
+    @try {
+      gesture();
+    } @catch (NSException *e) {
+      failure = ma_exception(e);
+    }
+  });
+  return failure ? ma_fail(err, failure) : 0;
+}
+
 // A touch at (x, y), lifted after hold seconds.
 int ma_tap(double x, double y, double hold, char **err) {
   @autoreleasepool {
+    id<MAEventSynthesizer> synthesizer = ma_synthesizer();
+    if (!synthesizer) {
+      return ma_coordinate_gesture(err, ^{
+        [ma_coordinate(x, y) pressForDuration:hold];
+      });
+    }
     @try {
       XCPointerEventPath *path = [[NSClassFromString(@"XCPointerEventPath") alloc] initForTouchAtPoint:CGPointMake(x, y) offset:0];
       [path liftUpAtOffset:hold];
-      return ma_synthesize(ma_record(@"tap", path), err);
+      return ma_synthesize(synthesizer, ma_record(@"tap", path), err);
     } @catch (NSException *e) {
       return ma_fail(err, ma_exception(e));
     }
@@ -456,16 +492,26 @@ int ma_tap(double x, double y, double hold, char **err) {
 // it stays at the end that long, then creeps on along its line three moves of
 // a point 16 ms apart and lifts at the last, as the host's swipes through
 // dtuhidd do: UIKit takes a drag's velocity from its last moves, so the
-// content stops where the finger left it (crates/ios, Input).
+// content stops where the finger left it (crates/ios, Input). XCUICoordinate's
+// drag holds rest seconds at the end instead.
 int ma_swipe(double x1, double y1, double x2, double y2, double duration, double rest, char **err) {
   @autoreleasepool {
+    double dx = x2 - x1, dy = y2 - y1;
+    double length = sqrt(dx * dx + dy * dy);
+    id<MAEventSynthesizer> synthesizer = ma_synthesizer();
+    if (!synthesizer) {
+      return ma_coordinate_gesture(err, ^{
+        [ma_coordinate(x1, y1) pressForDuration:0
+                       thenDragToCoordinate:ma_coordinate(x2, y2)
+                               withVelocity:(duration > 0 ? length / duration : XCUIGestureVelocityDefault)
+                        thenHoldForDuration:rest];
+      });
+    }
     @try {
       XCPointerEventPath *path = [[NSClassFromString(@"XCPointerEventPath") alloc] initForTouchAtPoint:CGPointMake(x1, y1) offset:0];
       [path moveToPoint:CGPointMake(x2, y2) atOffset:duration];
       double end = duration;
       if (rest > 0) {
-        double dx = x2 - x1, dy = y2 - y1;
-        double length = sqrt(dx * dx + dy * dy);
         double ux = length > 0 ? dx / length : 0, uy = length > 0 ? dy / length : 0;
         end = duration + rest;
         [path moveToPoint:CGPointMake(x2, y2) atOffset:end];
@@ -475,7 +521,7 @@ int ma_swipe(double x1, double y1, double x2, double y2, double duration, double
         }
       }
       [path liftUpAtOffset:end];
-      return ma_synthesize(ma_record(@"swipe", path), err);
+      return ma_synthesize(synthesizer, ma_record(@"swipe", path), err);
     } @catch (NSException *e) {
       return ma_fail(err, ma_exception(e));
     }
