@@ -99,6 +99,7 @@ pub fn call_sites() -> Vec<CallSite> {
     const INPUT: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spikes S10 and S11, and tests/input.rs";
     const KEYS: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spike S11 (typed into Safari's address field)";
     const FRAMES: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: spikes S9 and S11, and tests/frames.rs";
+    const TREE: &str = "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0 (XCTest 25228), macOS 26.6.2: spike S10, task 4.4 and tests/tree.rs, in agent-ios's runner";
     let site = |call, service, validated_on, note| CallSite {
         call,
         service,
@@ -262,6 +263,30 @@ pub fn call_sites() -> Vec<CallSite> {
             FRAMES,
             "supportedFeatures 0 on iOS 26.6.2, which refuses the display stream with CoreDeviceError 9021 until iOS 27 (S11); the stream stays off, a later addition",
         ),
+        site(
+            "-[XCAXClient_iOS activeApplications], -systemApplication",
+            "XCTest's accessibility client (XCUIAutomation) in the runner",
+            TREE,
+            "the foreground is the first active application, SpringBoard when none is; read again after the tree, a change being window_changed",
+        ),
+        site(
+            "-[XCTRunnerDaemonSession requestApplicationSpecifierForPID:reply:], -[XCUIApplicationSpecifier bundleIdentifier]",
+            "testmanagerd, through XCTestCore in the runner",
+            TREE,
+            "the foreground's bundle, asked once per pid: the runner's sandbox hides other processes' executables (S10)",
+        ),
+        site(
+            "-[XCAXClient_iOS requestSnapshotForElement:attributes:parameters:error:] on +[XCAccessibilityElement elementWithProcessIdentifier:], parameters defaultParameters with snapshotKeyHonorModalViews false; XCUIElementSnapshotRequestResult _rootElementSnapshot, XCElementSnapshot additionalAttributes",
+            "testmanagerd (_XCT_requestSnapshotForElement:attributes:parameters:reply:, useLegacySnapshotPath false), through XCTest's accessibility client in the runner",
+            TREE,
+            "the reader's attribute names with the visible frame and scroll areas, without XC_kAXXCAttributeChildren, whose array the runner's decoder refuses so that no reply arrives (timed out after 65 s in S10 and task 4.4); XC_kAXXCAttributeElementType is never returned, so the platform class is XC_kAXXCAttributeElementBaseType's (UIRemoteKeyboardWindow, _UIAlertControllerPhoneTVMacView, UIResponder for a SwiftUI element); the content an alert covers is read too; 546 nodes in 550 ms at p50, where the same request with XCTest's own 22 names took 526 ms and asking a scroll view's areas element by element 107 ms each; the Simulator reader's userTestingSnapshotForElement: is refused by the runner's sandbox (S10)",
+        ),
+        site(
+            "XCAXAccessibilityAttributesForStringAttributes",
+            "XCTAutomationSupport in the runner",
+            TREE,
+            "the numbers additionalAttributes are keyed by: ElementType 5003, ElementBaseType 5004, IsUserInteractionEnabled 5034, VisibleVerticalScrollArea 5027, VisibleHorizontalScrollArea 5026, VisibleFrame 2057 on iOS 26.6.2",
+        ),
     ]
 }
 
@@ -372,6 +397,10 @@ mod tests {
             "capturescreenshot",
             "getmediasupportinfo",
             "ScreenScaleFactor",
+            "requestSnapshotForElement:attributes:parameters:error:",
+            "XCAXAccessibilityAttributesForStringAttributes",
+            "activeApplications",
+            "requestApplicationSpecifierForPID:reply:",
         ] {
             assert!(
                 sites
@@ -380,6 +409,18 @@ mod tests {
                 "no call site for {expected}"
             );
         }
+        // The runner's tree names the attributes that decode and the class
+        // the device returns.
+        let tree = sites
+            .iter()
+            .find(|site| site.call.contains("requestSnapshotForElement"))
+            .expect("the tree's call site");
+        assert!(
+            tree.note.contains("XC_kAXXCAttributeChildren")
+                && tree.note.contains("ElementBaseType"),
+            "{}",
+            tree.note
+        );
         // The lock comes from lockdown because CoreDevice's lock state is not
         // implemented on iOS 26.6.2 (S9); the table says so at the call.
         let lock = sites
