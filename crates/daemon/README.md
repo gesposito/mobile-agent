@@ -302,6 +302,20 @@ fill succeeds with `verified: false`, `reason: no_value_to_read` and a
 warning, without entering the text again, which could enter it twice.
 `type` reads nothing back.
 
+On iOS, `fill` into a field without the focus while no keyboard is up taps
+the field itself first, then enters the text once the replica shows the
+keyboard's window (an input-method window that cuts the screen, as
+`Mirror::uncovered` has it), at most 1 s after the tap (design D34): in the
+React Native smoke test the first keys typed into a just-focused field were
+lost in 3 of 8 runs while the Simulator's keyboard slid in, and spike S3
+measured the slide-in at about 1.2 s, the keyboard's window showing in the
+tree before the animation ends. A paste is Command-V, a key the keyboard
+takes like the others, so the wait holds whichever way the text goes in. A
+field with the focus, or a keyboard already up, pays nothing, and the tap
+obeys the click's rule for an element out of view. The driver's own tap,
+which follows, finds the field focused. Android sets text without typing
+and does not wait.
+
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
 launch splash, read after the launch returned when the app was relaunched,
@@ -709,7 +723,10 @@ error; while a field has focus the keyboard's window sits above the app's
 as the reader gives it (the app window's id with bit 31 set, the app's
 package, bounded by what the keyboard draws: from its prediction bar at
 539 points down, task 10.21), and a stroke that comes down on it types as
-on Android. Their states are `device`
+on Android. The keyboard comes up with the focus; the tests' fakes can
+have it come up some time after the focus, an iOS field losing the text
+that reaches it sooner, typed or pasted, or never (`Slide`). Their states
+are `device`
 and `booted`; they have neither a capture nor a report. Emulators and
 Simulators have a frame source; Android devices have none, as design D7
 has it, so `screenshot` answers them with `no_frame`. Every change shows
@@ -877,6 +894,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 | Single coordinate contract (design D32) | Submit button moved by the keyboard | `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning`, `handlers::act::tests::a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until` |
 | Text entry verification (design D33) | Composite code field; Value that cannot be read back; Mismatch | `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified`, `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` |
+| Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end

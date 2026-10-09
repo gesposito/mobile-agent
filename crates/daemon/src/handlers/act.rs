@@ -706,6 +706,61 @@ fn read_back(
     }
 }
 
+/// How long `fill` waits on iOS, from the tap that focused a field, for the
+/// keyboard's window to show in the replica before it enters the text all
+/// the same: a field with an input view of its own, or a Simulator with a
+/// hardware keyboard connected, shows no keyboard (design D34).
+const KEYBOARD_WAIT: Duration = Duration::from_secs(1);
+
+/// How often that wait looks at the replica; the mirror applies what the
+/// target reports and reads what falls due in between.
+const KEYBOARD_SLICE: Duration = Duration::from_millis(10);
+
+/// Whether the replica shows a keyboard's window over the screen: an
+/// input-method window that cuts what a stroke may go through
+/// (`Mirror::uncovered`), as one does that shows what the keyboard draws.
+fn keyboard_up(target: &mut Attached) -> Result<bool, Failure> {
+    let screen = screen(target)?;
+    Ok(target.mirror.uncovered(screen, None).keyboard)
+}
+
+/// Gets the field `reference` names, which `given` names, ready for text on
+/// iOS (design D34): a field without the focus, while no keyboard is up, is
+/// tapped, and the text waits until the replica shows the keyboard's window,
+/// at most [`KEYBOARD_WAIT`] from the tap. In the React Native smoke test the
+/// first keys typed into a just-focused field were lost in 3 of 8 runs while
+/// the Simulator's keyboard slid in; a paste is Command-V, a key too, so text
+/// waits whichever way it goes in. A field with the focus, or a keyboard up
+/// already, pays nothing. The tap goes where the field is in view, as a
+/// click's does ([`sight`]).
+fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<(), Failure> {
+    let element = target.mirror.resolve(reference)?;
+    if element.focused || keyboard_up(target)? {
+        return Ok(());
+    }
+    let mut aimed = Target::Ref(reference);
+    sight(target, &element, given, &mut aimed)?;
+    let tapped = Instant::now();
+    let outcome = target.mirror.act(&Action::Tap {
+        target: aimed,
+        hold: None,
+    })?;
+    if !outcome.accepted {
+        return Err(rejected("tap that focuses the field"));
+    }
+    let deadline = tapped + KEYBOARD_WAIT;
+    loop {
+        target.mirror.pump()?;
+        let now = Instant::now();
+        if now >= deadline || keyboard_up(target)? {
+            return Ok(());
+        }
+        target
+            .mirror
+            .run_until((now + KEYBOARD_SLICE).min(deadline))?;
+    }
+}
+
 /// Enters `text` into the field `reference` names as `method` asks; says
 /// the method the target used.
 fn enter(
@@ -849,12 +904,17 @@ fn mismatch(given: &str, reference: Ref, text: &str, value: Option<&str>, tries:
 /// nothing to read back, neither a value nor anything below it, leaves the
 /// fill unverified, with a warning, and gets the text once. On Android an
 /// empty field reads as its hint, so an empty fill there is not read back.
+/// On iOS a field without the focus is focused first and gets its text once
+/// the keyboard is up (see [`ready_keyboard`]).
 pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let text = text_param(request)?;
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
     let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
     let platform = target.info.platform;
+    if platform == Platform::Ios {
+        ready_keyboard(target, reference, given)?;
+    }
     let first = enter(target, reference, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
