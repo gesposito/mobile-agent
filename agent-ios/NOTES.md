@@ -17,13 +17,16 @@ is not part of it.
   spike S10's `0.1.0` on 2026-10-09, so the replacement cannot be repeated
   on this phone without installing another version first.
 
+- 4.4: the tree through `XCAXClient_iOS`'s request without
+  `XC_kAXXCAttributeChildren` (classes from `ElementBaseType`, scroll areas,
+  interaction, modal views not honoured); the four screens list through the
+  mirror as the Simulator's listings in `crates/ios/tests/fixtures/listings/`
+  (recorded on `mobile-agent-spike`, now shut down). The phone has the build
+  of that commit, installed with `devicectl device install app` since the
+  version stayed `0.2.0`.
+
 ## Next
 
-- 4.4: record the Simulator's listings of the SwiftUI and Expo Big tabs (and
-  the Login tab with the keyboard, the System tab's alert) through the
-  mirror; compare with the device's; try the attribute shapes of
-  `_XCT_requestSnapshotForElement:` and `XCAXClient_iOS`'s request (at most
-  about 2 hours), recording each shape and its reply.
 - 4.5: the driver's choice of the runner's synthesis, the runner's input
   checks on the device, the 36-character text entry.
 - 4.6: `README.md`.
