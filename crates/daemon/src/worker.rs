@@ -342,9 +342,10 @@ mod tests {
     use super::*;
     use crate::driver::Launch;
     use crate::fake::FakeDriver;
+    use mirror::backend::ReadReason;
     use mirror::{
-        Action, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, RefreshMode, SettleOptions,
-        SnapshotOptions, Target,
+        Action, DEFAULT_MIN_REREAD_INTERVAL, DEFAULT_POLL_INTERVAL, DEFAULT_STILL_POLL_INTERVAL,
+        RefreshMode, SettleOptions, SnapshotOptions, Target,
     };
 
     /// The first fake target `spec` names, attached, showing each change
@@ -520,12 +521,13 @@ mod tests {
         }
     }
 
-    /// Physical-ios, task 5.2: a fake iPhone's windows send no change
-    /// events, so the mirror re-reads them as it re-reads a Simulator's: on
-    /// its poll while the screen is still, and when frames change no sooner
-    /// than its minimum interval after the last read.
+    /// Physical-ios, tasks 5.2 and 9.1: a fake iPhone's windows send no
+    /// change events, so the mirror re-reads them as it re-reads a
+    /// Simulator's when frames change, no sooner than its minimum interval
+    /// after the last read; while the screen is still, its frames slow and
+    /// present, the poll waits for the still-poll interval (design D26).
     #[test]
-    fn a_fake_iphones_windows_are_re_read_on_the_poll_and_on_frame_changes() {
+    fn a_fake_iphones_windows_are_re_read_on_frame_changes_and_polled_when_still() {
         let mut target = attached("ios-device", Duration::ZERO);
         let launcher = target
             .mirror
@@ -542,8 +544,8 @@ mod tests {
         let read = target.mirror.timestamps().last_read.unwrap();
         assert_eq!(
             target.mirror.next_wakeup(),
-            Some(read.started + DEFAULT_POLL_INTERVAL),
-            "a still screen is read again on the poll"
+            Some(read.started + DEFAULT_STILL_POLL_INTERVAL),
+            "a still screen is read again on the still poll"
         );
         // The Anim tab's spinner keeps the frames changing.
         let anim = Launch {
@@ -575,6 +577,48 @@ mod tests {
             Some(read.finished + DEFAULT_MIN_REREAD_INTERVAL),
             "changed frames call for a read the minimum interval after the last"
         );
+    }
+
+    /// Physical-ios, task 9.1 (design D26): an idle fake iPhone whose frames
+    /// hold still is not polled, where a fake Simulator's windows without
+    /// events, whose frames stream, are polled every second, and so are a
+    /// fake iPhone's whose screenshots could not be subscribed to.
+    #[test]
+    fn an_idle_fake_iphone_with_still_frames_is_not_polled_where_others_are() {
+        for (spec, subscribed, polled) in [
+            ("ios-device", true, false),
+            ("ios", true, true),
+            ("ios-device", false, true),
+        ] {
+            let driver = FakeDriver::parse(spec)
+                .unwrap()
+                .with_device_frames(subscribed);
+            let info = driver.discover().unwrap().remove(0);
+            let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+            let mut target = Attached::new(&info, attachment, &Arc::default());
+            target
+                .mirror
+                .snapshot(&SnapshotOptions::interactive())
+                .unwrap();
+            let first = target.mirror.timestamps().last_read.unwrap();
+            let what = format!("{spec}, screenshots subscribed: {subscribed}");
+            if polled {
+                assert_eq!(
+                    target.mirror.next_wakeup(),
+                    Some(first.started + DEFAULT_POLL_INTERVAL),
+                    "{what}"
+                );
+            }
+            target
+                .mirror
+                .run_until(Instant::now() + DEFAULT_POLL_INTERVAL + Duration::from_millis(300))
+                .unwrap();
+            let last = target.mirror.timestamps().last_read.unwrap();
+            assert_eq!(last.started > first.started, polled, "{what}: {last:?}");
+            if polled {
+                assert_eq!(last.reason, ReadReason::Poll, "{what}");
+            }
+        }
     }
 
     /// Physical-ios, task 5.2 (design D23): settle on a fake iPhone after a

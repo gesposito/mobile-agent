@@ -14,8 +14,8 @@ use std::time::Duration;
 use mirror::backend::{ReadReason, ReadRequest};
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, DEFAULT_FIRST_FRAME_WAIT, Mirror, MirrorConfig, Point, Rect, Ref, RefreshMode,
-    SlowFrames, SnapshotOptions, Target,
+    Action, DEFAULT_FIRST_FRAME_WAIT, DEFAULT_POLL_INTERVAL, DEFAULT_STILL_POLL_INTERVAL, Mirror,
+    MirrorConfig, Point, Rect, Ref, RefreshMode, SlowFrames, SnapshotOptions, Target,
 };
 use protocol::event::{TreeChangeKind, WindowChangeKind};
 use protocol::message::TextMethod;
@@ -834,4 +834,111 @@ fn with_slow_frames_but_no_frame_source_a_re_read_after_input_reads_at_once() {
     assert_eq!(reads.len(), 2, "{reads:?}");
     assert_eq!(reads[1].request.reason, ReadReason::Action);
     assert_eq!(reads[1].at - tapped, ms(0));
+}
+
+/// The reads `target` saw: when each began, from the start of the script,
+/// and why.
+fn reads_and_reasons(target: &FakeTarget) -> Vec<(Duration, ReadReason)> {
+    target
+        .reads()
+        .into_iter()
+        .map(|read| (read.at, read.request.reason))
+        .collect()
+}
+
+/// Physical-ios, task 9.1 (design D26): on a target whose frames come
+/// slowly and that has a frame source, a window without events whose frames
+/// hold still is not polled every second: its poll waits for the
+/// still-poll interval, 10 s from the start of its last read, re-reads once
+/// then, and waits as long again. The phone's 500 ms reads polled every
+/// second kept its worker reading half the time.
+#[test]
+fn with_slow_frames_a_still_screen_is_polled_once_every_still_poll_interval() {
+    assert_eq!(DEFAULT_STILL_POLL_INTERVAL, ms(10_000));
+    let (target, mut mirror) = device_login(true, true);
+    mirror.snapshot(&full()).unwrap();
+    assert_eq!(
+        mirror.next_wakeup(),
+        Some(target.instant(ms(10_000))),
+        "the still-poll interval after the read began"
+    );
+    mirror.run_until(target.instant(ms(9_999))).unwrap();
+    assert_eq!(
+        reads_and_reasons(&target),
+        [(ms(0), ReadReason::Attach)],
+        "no poll while the frames hold still"
+    );
+    mirror.run_until(target.instant(ms(19_999))).unwrap();
+    assert_eq!(
+        reads_and_reasons(&target),
+        [(ms(0), ReadReason::Attach), (ms(10_000), ReadReason::Poll)],
+        "one poll at the bound, the frames still"
+    );
+    assert_eq!(mirror.next_wakeup(), Some(target.instant(ms(20_000))));
+}
+
+/// Physical-ios, task 9.1 (design D26): a frame change since the last read
+/// brings the poll back: the window is read again as the changed frame
+/// arrives, the minimum interval after the read before having passed, and
+/// shows the change; with the frames still again, the next poll waits for
+/// the still-poll interval from that read.
+#[test]
+fn with_slow_frames_a_frame_change_since_the_last_read_brings_the_poll_back() {
+    let screen = Screen::load("login-ios");
+    let welcome = screen.patched(json!([{"find": "login-status", "desc": "Welcome, alice"}]));
+    let target = FakeTarget::new(screen.read());
+    target.read_cost(ms(500));
+    target.at(ms(0), Step::Frame(1));
+    target.at(ms(3_000), Step::Show(welcome.read()));
+    target.at(ms(3_000), Step::Frame(2));
+    let config = MirrorConfig {
+        slow_frames: Some(SlowFrames::every(ms(50))),
+        ..MirrorConfig::default()
+    };
+    let mut mirror = Mirror::new(target.backend(), config);
+    mirror.snapshot(&full()).unwrap();
+    mirror.run_until(target.instant(ms(12_999))).unwrap();
+    assert_eq!(
+        reads_and_reasons(&target),
+        [(ms(0), ReadReason::Attach), (ms(3_000), ReadReason::Frames)],
+        "read as the changed frame came, then not until the bound"
+    );
+    assert_eq!(mirror.dump(), cold_dump(&welcome.read()));
+    assert_eq!(mirror.next_wakeup(), Some(target.instant(ms(13_000))));
+}
+
+/// Physical-ios, task 9.1 (design D26): the still poll is gated on frames
+/// that come slowly and a frame source together. A Simulator's window
+/// without events, whose frames stream, an Android device's, which has no
+/// frames, and a phone whose screenshots could not be subscribed to keep
+/// the 1 s poll.
+#[test]
+fn without_slow_frames_or_without_a_frame_source_the_poll_stays_at_one_second() {
+    for (slow, frames, what) in [
+        (false, true, "a Simulator: frames that stream"),
+        (false, false, "an Android device: no frames"),
+        (
+            true,
+            false,
+            "a phone whose screenshots could not be subscribed to",
+        ),
+    ] {
+        let (target, mut mirror) = device_login(slow, frames);
+        mirror.snapshot(&full()).unwrap();
+        assert_eq!(
+            mirror.next_wakeup(),
+            Some(target.instant(DEFAULT_POLL_INTERVAL)),
+            "{what}"
+        );
+        mirror.run_until(target.instant(ms(2_999))).unwrap();
+        assert_eq!(
+            reads_and_reasons(&target),
+            [
+                (ms(0), ReadReason::Attach),
+                (ms(1_000), ReadReason::Poll),
+                (ms(2_000), ReadReason::Poll)
+            ],
+            "{what}"
+        );
+    }
 }

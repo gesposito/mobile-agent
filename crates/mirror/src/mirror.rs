@@ -32,6 +32,16 @@ use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 /// else re-reads it.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+/// How often a window that sends no change events is re-read when nothing
+/// else re-reads it, on a target whose frames come slowly ([`SlowFrames`])
+/// and that has a frame source, while its frames hold still (design D26 of
+/// physical-ios). A read there costs more than a frame interval, 450 to
+/// 650 ms for a physical iPhone's 500-cell screen, so the 1 s poll kept the
+/// target's worker reading half the time, and the frames already tell a
+/// still screen: the poll re-reads once the frames changed since the read
+/// before, or once this long has passed since it.
+pub const DEFAULT_STILL_POLL_INTERVAL: Duration = Duration::from_secs(10);
+
 /// The shortest time from the end of a read of a window that sends no change
 /// events to a re-read that frame changes trigger (design D5: re-read after
 /// frames change and once more when they stop, bounded by a minimum
@@ -81,9 +91,11 @@ pub const DEFAULT_FIRST_FRAME_WAIT: Duration = Duration::from_millis(500);
 /// milliseconds after it, so settle waits at least two capture intervals
 /// without a change and holds after input for the first changed frame, and
 /// the re-read after input waits for that frame rather than read the screen
-/// the input has not changed yet. Without a frame source the setting does
-/// nothing: windows without events are re-read every minimum interval, as
-/// on any target without frames.
+/// the input has not changed yet. The poll of a window without events waits
+/// for the frames to change, or for the still-poll interval. Without a frame
+/// source the setting does nothing: windows without events are re-read
+/// every minimum interval, as on any target without frames, and polled
+/// every poll interval.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlowFrames {
     /// The time between two captures: 53 ms at 19 a second.
@@ -91,15 +103,20 @@ pub struct SlowFrames {
     /// How long the re-read after input, and settle after it, hold for the
     /// first changed frame.
     pub first_frame_wait: Duration,
+    /// How long a window without events goes unpolled while the frames hold
+    /// still since its last read began.
+    pub still_poll_interval: Duration,
 }
 
 impl SlowFrames {
     /// Frames captured every `capture_interval`, the first changed frame
-    /// after input awaited [`DEFAULT_FIRST_FRAME_WAIT`].
+    /// after input awaited [`DEFAULT_FIRST_FRAME_WAIT`] and a still screen
+    /// polled every [`DEFAULT_STILL_POLL_INTERVAL`].
     pub fn every(capture_interval: Duration) -> SlowFrames {
         SlowFrames {
             capture_interval,
             first_frame_wait: DEFAULT_FIRST_FRAME_WAIT,
+            still_poll_interval: DEFAULT_STILL_POLL_INTERVAL,
         }
     }
 

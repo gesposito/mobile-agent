@@ -42,7 +42,7 @@ pub use geometry::{Point, Rect};
 pub use mirror::{
     Action, ActionOutcome, DEFAULT_FIRST_FRAME_WAIT, DEFAULT_MIN_REREAD_INTERVAL,
     DEFAULT_OVERSCROLL, DEFAULT_POLL_INTERVAL, DEFAULT_PROBE_ANCHORS, DEFAULT_PROBE_INTERVAL,
-    Mirror, MirrorConfig, SlowFrames, Target,
+    DEFAULT_STILL_POLL_INTERVAL, Mirror, MirrorConfig, SlowFrames, Target,
 };
 pub use refs::Ref;
 pub use settle::{
