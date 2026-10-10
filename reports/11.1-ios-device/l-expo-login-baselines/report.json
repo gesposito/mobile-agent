@@ -1,0 +1,2052 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-10T11:47:11Z",
+    "finished_at": "2026-10-10T12:10:14Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        1.7,
+        3.44,
+        3.82
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "d24b3293c736c6ba3eb38661a77ab5bb9ac5e9c2",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "expo",
+            "bundle": "fixtures/expo/build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app",
+            "elapsed_us": 2107367
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, its iOS device driver unfinished"
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      },
+      {
+        "name": "webdriveragent",
+        "role": "baseline",
+        "status": "available",
+        "version": "16.14.1 (Appium 3.8.0, XCUITest driver 12.16.0)",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8220292,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 502.873 ms; fill id=login-password: method keys, read back as length in 632.89 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 6601036,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 593.446 ms; fill id=login-password: method keys, read back as length in 644.512 ms",
+          "errors": [
+            "mobile-agent wait --timeout 10000 --text=Welcome, agent: wait_timeout: waited 10007 ms for text \"Welcome, agent\" to appear; the screen now shows revision 12, 1 windows, 8 elements with refs, read 602 ms ago:"
+          ]
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username agent: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over",
+            "mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 10809403,
+        "p95_us": 11333537,
+        "max_us": 22752094
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 2,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 4.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 17838529,
+          "nodes": null,
+          "detail": "agent-device reported 15156 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10386431,
+          "nodes": null,
+          "detail": "agent-device reported 10275 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10787511,
+          "nodes": null,
+          "detail": "agent-device reported 10680 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10400144,
+          "nodes": null,
+          "detail": "agent-device reported 10287 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10457506,
+          "nodes": null,
+          "detail": "agent-device reported 10347 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10565633,
+          "nodes": null,
+          "detail": "agent-device reported 10452 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10440481,
+          "nodes": null,
+          "detail": "agent-device reported 10331 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10429810,
+          "nodes": null,
+          "detail": "agent-device reported 10317 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 19279944,
+          "nodes": null,
+          "detail": "agent-device reported 19170 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 22752094,
+          "nodes": null,
+          "detail": "agent-device reported 16127 ms",
+          "errors": [
+            "$HOME/.local/share/mise/installs/node/25.8.0/bin/agent-device timed out after 120000 ms"
+          ]
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10940490,
+          "nodes": null,
+          "detail": "agent-device reported 10794 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11156176,
+          "nodes": null,
+          "detail": "agent-device reported 11011 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10655537,
+          "nodes": null,
+          "detail": "agent-device reported 10519 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10608071,
+          "nodes": null,
+          "detail": "agent-device reported 10476 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11157335,
+          "nodes": null,
+          "detail": "agent-device reported 11010 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 11012790,
+          "nodes": null,
+          "detail": "agent-device reported 10828 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 5 (wait): wait timed out for text: Welcome, agent"
+          ]
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10739785,
+          "nodes": null,
+          "detail": "agent-device reported 10624 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10835308,
+          "nodes": null,
+          "detail": "agent-device reported 10689 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10689932,
+          "nodes": null,
+          "detail": "agent-device reported 10551 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11014381,
+          "nodes": null,
+          "detail": "agent-device reported 10863 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10747094,
+          "nodes": null,
+          "detail": "agent-device reported 10604 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10813898,
+          "nodes": null,
+          "detail": "agent-device reported 10670 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10826978,
+          "nodes": null,
+          "detail": "agent-device reported 10666 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10886039,
+          "nodes": null,
+          "detail": "agent-device reported 10721 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10801473,
+          "nodes": null,
+          "detail": "agent-device reported 10636 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10738514,
+          "nodes": null,
+          "detail": "agent-device reported 10577 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11085235,
+          "nodes": null,
+          "detail": "agent-device reported 10919 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10651196,
+          "nodes": null,
+          "detail": "agent-device reported 10494 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11333537,
+          "nodes": null,
+          "detail": "agent-device reported 11200 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10725755,
+          "nodes": null,
+          "detail": "agent-device reported 10557 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10769094,
+          "nodes": null,
+          "detail": "agent-device reported 10600 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11178127,
+          "nodes": null,
+          "detail": "agent-device reported 11044 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10809403,
+          "nodes": null,
+          "detail": "agent-device reported 10628 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10951652,
+          "nodes": null,
+          "detail": "agent-device reported 10782 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10743272,
+          "nodes": null,
+          "detail": "agent-device reported 10595 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11040113,
+          "nodes": null,
+          "detail": "agent-device reported 10874 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10854929,
+          "nodes": null,
+          "detail": "agent-device reported 10690 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10647028,
+          "nodes": null,
+          "detail": "agent-device reported 10517 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11133514,
+          "nodes": null,
+          "detail": "agent-device reported 10974 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10791546,
+          "nodes": null,
+          "detail": "agent-device reported 10627 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10985436,
+          "nodes": null,
+          "detail": "agent-device reported 10810 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11008138,
+          "nodes": null,
+          "detail": "agent-device reported 10851 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10568711,
+          "nodes": null,
+          "detail": "agent-device reported 10436 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10830385,
+          "nodes": null,
+          "detail": "agent-device reported 10696 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10921743,
+          "nodes": null,
+          "detail": "agent-device reported 10762 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10874169,
+          "nodes": null,
+          "detail": "agent-device reported 10709 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10732820,
+          "nodes": null,
+          "detail": "agent-device reported 10569 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10685726,
+          "nodes": null,
+          "detail": "agent-device reported 10520 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11238202,
+          "nodes": null,
+          "detail": "agent-device reported 11069 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10606013,
+          "nodes": null,
+          "detail": "agent-device reported 10447 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10747821,
+          "nodes": null,
+          "detail": "agent-device reported 10587 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 11029044,
+          "nodes": null,
+          "detail": "agent-device reported 10852 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10714284,
+          "nodes": null,
+          "detail": "agent-device reported 10548 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "webdriveragent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 5686697,
+        "p95_us": 5828340,
+        "max_us": 6045733
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 1,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 2.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5788697,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5685031,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5732707,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5617505,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5712963,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5752075,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5703844,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5674591,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5686677,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5676397,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5754335,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5646194,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5580407,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5784496,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5662792,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5638967,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5695427,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5752955,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5649168,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5616756,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5828340,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5698466,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5686697,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 5664136,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "login-status showed \"Welcome, a\" rather than \"Welcome, agent\" after 10 s"
+          ]
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5717975,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5838309,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5737454,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5585703,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5727906,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5786481,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5734367,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5710592,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5594818,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5736505,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5665606,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5747988,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5707749,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5679195,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5722853,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5701179,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5681395,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5735859,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5679687,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5733236,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5620713,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5667430,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5664862,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5678243,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5716191,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5669681,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5676621,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6045733,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5641013,
+          "nodes": null,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 1901767,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 1671661,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": "mobile-agent",
+      "elapsed_us": 1479426,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 2358043,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 1780283,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": null,
+      "elapsed_us": 2563433,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
