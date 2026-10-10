@@ -1,0 +1,2003 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-10T13:50:44Z",
+    "finished_at": "2026-10-10T14:06:34Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        4.23,
+        4.8,
+        3.57
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "119ac96439b41e08f0ac3bcf4e143e874661be2c",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "expo",
+            "bundle": "fixtures/expo/build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app",
+            "elapsed_us": 3423089
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, its iOS device driver unfinished"
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      },
+      {
+        "name": "webdriveragent",
+        "role": "baseline",
+        "status": "available",
+        "version": "16.14.1 (Appium 3.8.0, XCUITest driver 12.16.0)",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 3385231,
+        "p95_us": 4191034,
+        "max_us": 4469490
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 506,
+        "max": 506
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "counts": {
+          "cell": 500
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5461478,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2991756,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3057917,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3055444,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3141216,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3103346,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3118118,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3183242,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3215425,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3155172,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3252171,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3138381,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3189642,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3296632,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3218404,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3259997,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3185361,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3244085,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3215368,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3164993,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3265457,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3337162,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3343348,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3324406,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3446055,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3477053,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3378857,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3375574,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4188693,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3458486,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3564602,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4191034,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3401944,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4143377,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4111121,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3376270,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4124908,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3535233,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3488387,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3631951,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3609375,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4142192,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3390494,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3476736,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4123721,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3475081,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3385231,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3593195,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4180104,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4184042,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3599551,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4469490,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4358388,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 49,
+        "p50_us": 3940936,
+        "p95_us": 8547772,
+        "max_us": 35415594
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 1,
+        "flakes": 7,
+        "failure_rate_pct": 2.0,
+        "flake_rate_pct": 14.0
+      },
+      "nodes": {
+        "min": 514,
+        "max": 514
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "counts": {
+          "cell": 500
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 18435574,
+          "nodes": 514,
+          "detail": "agent-device reported 14893 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3772964,
+          "nodes": 514,
+          "detail": "agent-device reported 3641 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3793241,
+          "nodes": 514,
+          "detail": "agent-device reported 3648 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3940936,
+          "nodes": 514,
+          "detail": "agent-device reported 3799 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3820400,
+          "nodes": 514,
+          "detail": "agent-device reported 3680 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3754245,
+          "nodes": 514,
+          "detail": "agent-device reported 3551 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3875283,
+          "nodes": 514,
+          "detail": "agent-device reported 3766 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3852696,
+          "nodes": 514,
+          "detail": "agent-device reported 3714 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3981899,
+          "nodes": 514,
+          "detail": "agent-device reported 3845 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3999227,
+          "nodes": 514,
+          "detail": "agent-device reported 3865 ms",
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3810614,
+          "nodes": 514,
+          "detail": "agent-device reported 3673 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3974643,
+          "nodes": 514,
+          "detail": "agent-device reported 3832 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3798446,
+          "nodes": 514,
+          "detail": "agent-device reported 3655 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3785539,
+          "nodes": 514,
+          "detail": "agent-device reported 3654 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3814910,
+          "nodes": 514,
+          "detail": "agent-device reported 3673 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3995961,
+          "nodes": 514,
+          "detail": "agent-device reported 3856 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3985173,
+          "nodes": 514,
+          "detail": "agent-device reported 3835 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3944153,
+          "nodes": 514,
+          "detail": "agent-device reported 3800 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3897940,
+          "nodes": 514,
+          "detail": "agent-device reported 3761 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3910163,
+          "nodes": 514,
+          "detail": "agent-device reported 3771 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3735464,
+          "nodes": 514,
+          "detail": "agent-device reported 3599 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3840129,
+          "nodes": 514,
+          "detail": "agent-device reported 3708 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3722332,
+          "nodes": 514,
+          "detail": "agent-device reported 3600 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 3905007,
+          "nodes": 514,
+          "detail": "agent-device reported 3787 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3818721,
+          "nodes": 514,
+          "detail": "agent-device reported 3692 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 3939022,
+          "nodes": 514,
+          "detail": "agent-device reported 3786 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4103656,
+          "nodes": 514,
+          "detail": "agent-device reported 3963 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4020945,
+          "nodes": 514,
+          "detail": "agent-device reported 3880 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 4102446,
+          "nodes": 514,
+          "detail": "agent-device reported 3929 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3698390,
+          "nodes": 514,
+          "detail": "agent-device reported 3588 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3933462,
+          "nodes": 514,
+          "detail": "agent-device reported 3792 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3778123,
+          "nodes": 514,
+          "detail": "agent-device reported 3641 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3923248,
+          "nodes": 514,
+          "detail": "agent-device reported 3786 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3683549,
+          "nodes": 514,
+          "detail": "agent-device reported 3533 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\"",
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 4000006,
+          "nodes": 514,
+          "detail": "agent-device reported 3837 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 3996969,
+          "nodes": 514,
+          "detail": "agent-device reported 3846 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3903393,
+          "nodes": 514,
+          "detail": "agent-device reported 3761 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3928989,
+          "nodes": 514,
+          "detail": "agent-device reported 3788 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3611447,
+          "nodes": 514,
+          "detail": "agent-device reported 3496 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4358512,
+          "nodes": 514,
+          "detail": "agent-device reported 4152 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4198950,
+          "nodes": 514,
+          "detail": "agent-device reported 4023 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4271604,
+          "nodes": 514,
+          "detail": "agent-device reported 4066 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6733230,
+          "nodes": 514,
+          "detail": "agent-device reported 6530 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 18464445,
+          "nodes": 514,
+          "detail": "agent-device reported 16111 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6606552,
+          "nodes": 514,
+          "detail": "agent-device reported 4011 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4597216,
+          "nodes": 514,
+          "detail": "agent-device reported 4438 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 8547772,
+          "nodes": 514,
+          "detail": "agent-device reported 8214 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 8288909,
+          "nodes": 514,
+          "detail": "agent-device reported 3692 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 35415594,
+          "nodes": 514,
+          "detail": "agent-device reported 34911 ms",
+          "errors": [
+            "COMMAND_FAILED: Batch failed at step 3 (wait): wait timed out for selector: id=\"cell-500\""
+          ]
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4043604,
+          "nodes": 514,
+          "detail": "agent-device reported 3901 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3994959,
+          "nodes": 514,
+          "detail": "agent-device reported 3848 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4101342,
+          "nodes": 514,
+          "detail": "agent-device reported 3804 ms",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tool": "webdriveragent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 23,
+        "p50_us": 3744085,
+        "p95_us": 3827012,
+        "max_us": 3877303
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 27,
+        "flakes": 0,
+        "failure_rate_pct": 54.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 529,
+        "max": 529
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "counts": {
+          "cell": 500
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3780515,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3720944,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3680142,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3701191,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3687753,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3716253,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3827012,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3743320,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3726847,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3730301,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3744085,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3702140,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3693455,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3726371,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3877303,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3785352,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3769805,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3783566,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3744521,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3815697,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3736856,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3758613,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3757235,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3764191,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3713448,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 3824311,
+          "nodes": 529,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: socket hang up",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374",
+            "POST /session/4eff77da-b052-4dcc-a5a4-d0a13d6de7fb/execute/sync failed with 500: unknown error: Could not proxy command to the remote server. Original error: connect ECONNREFUSED 127.0.0.1:58374"
+          ]
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 2154669,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 1928659,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": "mobile-agent",
+      "elapsed_us": 2372029,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 2584492,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 1926734,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": null,
+      "elapsed_us": 2724898,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
