@@ -1,0 +1,87 @@
+{
+  "description": "System tab of the SwiftUI fixture under its in-app alert, read by the Simulator's in-guest reader on an iPhone 17 with iOS 26.5 (physical-ios task 9.5): the alert's modal window holds UIKit's alert controller, whose title and message sit in a scroll view followed by its scroll indicators, each listed twice as XCTest reports them, their accessibility frames 30-point hit areas along the view's edges; the message lies wholly inside the horizontal indicator's frame. The app's window keeps the System tab under the alert, its wrappers trimmed. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1073741825, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.swiftui",
+      "title": "In-app alert", "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false, "modal": true,
+      "root": {"class": "UITransitionView", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "UIView", "bounds": [0, 0, 402, 874]},
+        {"class": "UIView", "bounds": [0, 0, 402, 874]},
+        {"class": "_UIAlertControllerPhoneTVMacView", "desc": "In-app alert", "bounds": [41, 375, 361, 527], "children": [
+          {"class": "UIView", "bounds": [41, 375, 361, 527], "children": [
+            {"class": "_UIAlertControllerInterfaceActionGroupView", "bounds": [41, 375, 361, 527], "children": [
+              {"class": "_UIAlertBackground", "bounds": [41, 375, 361, 527]},
+              {"class": "UIView", "bounds": [41, 375, 361, 527], "children": [
+                {"class": "XCUIElementTypeScrollView", "bounds": [41, 375, 361, 447], "flags": ["scrollable"], "children": [
+                  {"class": "_UIAlertControllerLayoutObservingContainerView", "bounds": [41, 375, 361, 447], "children": [
+                    {"class": "XCUIElementTypeStaticText", "desc": "In-app alert", "bounds": [71, 397, 331, 417.333]},
+                    {"class": "XCUIElementTypeStaticText", "desc": "This alert is presented by the app.", "bounds": [71, 424.667, 331, 442.667]}
+                  ]},
+                  {"class": "_UIAlertControllerGradientView", "bounds": [41, 445, 361, 447]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 2 pages", "bounds": [328, 375, 358, 447], "children": [
+                    {"class": "UIView", "bounds": [355, 336, 358, 372]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [41, 414, 361, 444], "children": [
+                    {"class": "UIView", "bounds": [2, 441, 38, 444]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 2 pages", "bounds": [328, 375, 358, 447], "children": [
+                    {"class": "UIView", "bounds": [355, 336, 358, 372]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [41, 414, 361, 444], "children": [
+                    {"class": "UIView", "bounds": [2, 441, 38, 444]}
+                  ]}
+                ]},
+                {"class": "XCUIElementTypeScrollView", "bounds": [41, 447, 361, 527], "flags": ["scrollable"], "children": [
+                  {"class": "_UIInterfaceActionSeparatableSequenceView", "bounds": [41, 447, 361, 527], "children": [
+                    {"class": "UIStackView", "bounds": [57, 463, 345, 511], "children": [
+                      {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [57, 463, 345, 511], "flags": ["clickable"], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [57, 463, 345, 511], "flags": ["clickable"]}
+                      ]}
+                    ]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [328, 447, 358, 527], "children": [
+                    {"class": "UIView", "bounds": [355, 537, 358, 544]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [41, 494, 361, 524], "children": [
+                    {"class": "UIView", "bounds": [131, 521, 138, 524]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [328, 447, 358, 527], "children": [
+                    {"class": "UIView", "bounds": [355, 537, 358, 544]}
+                  ]},
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [41, 494, 361, 524], "children": [
+                    {"class": "UIView", "bounds": [131, 521, 138, 524]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]},
+          {"class": "UIKit._GlassGroupView", "bounds": [41, 375, 361, 527], "children": [
+            {"class": "UIKit._UIMaterialDefinitionView", "bounds": [41, 375, 361, 527]}
+          ]}
+        ]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui",
+      "title": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "SwiftUI.AccessibilityNode", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeButton", "id": "system-permission", "desc": "Request location permission", "bounds": [16, 78, 254.667, 112.333], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeStaticText", "id": "system-permission-status", "desc": "Permission: unknown", "bounds": [16, 128.333, 177.333, 148.667]},
+            {"class": "XCUIElementTypeButton", "id": "system-alert", "desc": "Show in-app alert", "bounds": [16, 164.667, 174.667, 199], "flags": ["clickable"]}
+          ]},
+          {"class": "XCUIElementTypeTabBar", "desc": "Tab Bar", "bounds": [0, 791, 402, 874], "children": [
+            {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [25, 795, 102, 849], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [93.667, 795, 170.667, 849], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [162.667, 795, 239.667, 849], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [231.333, 795, 308.333, 849], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [300, 795, 377, 849], "flags": ["clickable", "selected"]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

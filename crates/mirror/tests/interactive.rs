@@ -263,6 +263,74 @@ fn an_alert_cuts_the_content_it_covers() {
     assert_eq!(snapshot.foreground, Owner::Target);
 }
 
+/// `value` without the identifiers that equal `id`, as React Native's alert
+/// gives its OK button none.
+fn without_identifier(value: &mut serde_json::Value, id: &str) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.get("id").is_some_and(|value| value == id) {
+                map.remove("id");
+            }
+            map.values_mut().for_each(|v| without_identifier(v, id));
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(|v| without_identifier(v, id)),
+        _ => {}
+    }
+}
+
+/// Physical-ios, task 9.5 (design D26): UIKit's alert controller holds its
+/// title and message in a scroll view that its scroll indicators follow, as
+/// XCTest lists them, each twice, their accessibility frames 30-point hit
+/// areas along the view's edges, the horizontal one wholly over the
+/// message. The alert lays out its own views and draws none over its text,
+/// so the message is listed once under the alert, after its title: as the
+/// Simulator's reader reads the SwiftUI fixture's alert on an iPhone 17
+/// (`alert-message-ios`), as the runner reads it on the SE, where the
+/// message fits (`alert-message-se`), and as React Native's alert, whose OK
+/// button has no identifier, on either. The listings of task 6.1 had the
+/// title and the button and not the message, on both platforms.
+#[test]
+fn an_alerts_message_is_listed_once_under_it_on_the_simulator_and_the_phone() {
+    for (fixture, pages) in [
+        ("alert-message-ios", "2 pages"),
+        ("alert-message-se", "1 page"),
+    ] {
+        for identified in [true, false] {
+            let mut screen = Screen::load(fixture);
+            if !identified {
+                without_identifier(&mut screen.0, "inapp-alert-ok");
+            }
+            let target = FakeTarget::new(screen.read());
+            let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+            let ok = if identified {
+                "  - button \"OK\" [id=inapp-alert-ok, ref=e1]"
+            } else {
+                "  - button \"OK\" [ref=e1]"
+            };
+            let vertical = format!("  - text \"Vertical scroll bar, {pages}\": 0%");
+            assert_eq!(
+                mirror.snapshot(&full()).unwrap().text,
+                lines(&[
+                    "- alert \"In-app alert\"",
+                    "  - text \"In-app alert\"",
+                    "  - text \"This alert is presented by the app.\"",
+                    &vertical,
+                    "  - text \"Horizontal scroll bar, 1 page\": 0%",
+                    ok,
+                    "  - text \"Vertical scroll bar, 1 page\": 0%",
+                    "  - text \"Horizontal scroll bar, 1 page\": 0%",
+                ]),
+                "{fixture}, the OK button identified: {identified}"
+            );
+            assert_eq!(
+                mirror.snapshot(&interactive()).unwrap().text,
+                ok.trim_start(),
+                "{fixture}: the screen under the alert is cut"
+            );
+        }
+    }
+}
+
 /// A window the snapshot marks modal, an Android dialog here, cuts the
 /// application windows below it, and names itself when an action aims at
 /// what it covers.
