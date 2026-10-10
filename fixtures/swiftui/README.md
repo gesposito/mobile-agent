@@ -3,7 +3,7 @@
 A SwiftUI iOS app with no dependencies that implements the shared fixture contract in [`../CONTRACT.md`](../CONTRACT.md). The benchmark harness and the Simulator spikes use it as a deterministic target: fixed labels, no randomness, no network, no time-dependent text.
 
 - Bundle identifier `dev.mobileagent.fixture.swiftui`, one app target `FixtureSwiftUI`, deployment target iOS 17.0, iPhone only, portrait, light appearance.
-- The project uses the Xcode 16 file format (`objectVersion = 77`) so every Xcode in the CI matrix can open it. Built and verified with Xcode 27.0 (27A266a) on an iPhone 17 Simulator running iOS 26.5.
+- The project uses the Xcode 16 file format (`objectVersion = 77`) so every Xcode in the CI matrix can open it. Built and verified with Xcode 27.0 (27A266a) on an iPhone 17 Simulator running iOS 26.5, and as a device build on an iPhone SE (3rd generation) with iOS 26.6.2 (see Physical iPhone).
 - `FixtureSwiftUI/` is a file-system-synchronized group: a Swift file added there joins the target without editing `project.pbxproj`.
 
 ## Build
@@ -20,6 +20,24 @@ APP="$(./build.sh)"
 
 Debug builds use Xcode's debug dylib layout: the `FixtureSwiftUI` executable is a stub that loads `FixtureSwiftUI.debug.dylib`.
 
+### Build for a physical iPhone
+
+```sh
+MOBILE_AGENT_IOS_TEAM=<team> DESTINATION=device ./build.sh
+```
+
+`DESTINATION` picks what the script builds for: `simulator`, the default, or `device`. A device build is the same Debug configuration for `generic/platform=iOS` with the `iphoneos` SDK, in the same `build/` derived data, and lands in `build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app`. It is signed manually, so `xcodebuild` registers nothing with the account, from three variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MOBILE_AGENT_IOS_TEAM` | none, required | the development team; it stays in the environment and enters no tracked file |
+| `MOBILE_AGENT_IOS_IDENTITY` | `Apple Development` | the signing identity's name in the keychain |
+| `MOBILE_AGENT_IOS_PROFILE` | `mobile-agent development` | the installed provisioning profile's name; the profile must include the device and cover `dev.mobileagent.fixture.swiftui`, as a wildcard App ID `dev.mobileagent.*` does |
+
+These are the variables `agent-ios/build.sh` signs the runner with. Once the bundle is built, `codesign --verify --strict` checks it, and stdout carries its path as for the Simulator. Without `MOBILE_AGENT_IOS_TEAM` the script builds nothing, says why on stderr and exits with status 3, which `../build.sh` reports as a skipped device build; any other `DESTINATION` exits with status 2.
+
+On a host with Xcode 27.0 at a 1-minute load of 2 to 3, a device build from an empty `build/` took 10.4 s, and one with nothing to do 1.9 s.
+
 ## Install and launch
 
 ```sh
@@ -29,6 +47,13 @@ xcrun simctl terminate booted dev.mobileagent.fixture.swiftui
 ```
 
 Use a Simulator UDID instead of `booted` when more than one Simulator is booted.
+
+A device build installs on a phone the profile includes, through CoreDevice, and launches through `mobile-agent` with the `ios` driver (`MOBILE_AGENT_DRIVERS=ios`), whose `open --env` passes launch options to the app:
+
+```sh
+xcrun devicectl device install app --device <udid> "$APP"
+MOBILE_AGENT_DRIVERS=ios mobile-agent --device <udid> open --relaunch --env FIXTURE_INITIAL_TAB=big dev.mobileagent.fixture.swiftui
+```
 
 ## Identifier contract
 
@@ -125,3 +150,17 @@ SIMCTL_CHILD_FIXTURE_INITIAL_TAB=big xcrun simctl launch booted dev.mobileagent.
 ## Determinism
 
 - The appearance is fixed to light and the text size to Large, so host settings do not change pixels or layout. The app runs in portrait on iPhone only.
+
+## Physical iPhone
+
+Verified on an iPhone SE (3rd generation) with iOS 26.6.2: the device build installed through the `ios` driver's installation proxy and through CoreDevice, and launched with an environment. Through `mobile-agent` with the `ios` driver, every identifier of the contract listed on its tab:
+
+| Tab | `snapshot -i` | Only in the full `snapshot` |
+| --- | --- | --- |
+| Login | the five tabs, `login-username`, `login-password`, `login-submit` | `login-status` |
+| List | the five tabs and the rows on screen, `row-1` to `row-13` without `row-12`, which the device's tree does not hold; after a tap, `detail-back` | `detail-<n>` |
+| Big | the five tabs, `big-count` and the 500 cells | |
+| Anim | the five tabs, `anim-toggle` | `anim-spinner` |
+| System | the five tabs, `system-alert`, `system-permission`; with the alert up, its `inapp-alert-ok` and title | `system-permission-status` |
+
+`scroll --until id=row-200` reached the last row in 25 strokes, and its detail opened. The alert's message did not list on the device.

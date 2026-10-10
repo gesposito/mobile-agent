@@ -4,9 +4,8 @@
 //!
 //! The bundle is the device build of `fixtures/swiftui`, signed for the team
 //! `MOBILE_AGENT_IOS_TEAM` names, which `MOBILE_AGENT_IOS_SWIFTUI_APP` points
-//! to (`spikes/s10-ios-runner/fixtures.sh swiftui` builds it until task 6.1
-//! moves the device build into the fixture's own script). Without it the
-//! tests skip. The fixture stays installed.
+//! to (`DESTINATION=device fixtures/swiftui/build.sh` builds it and prints
+//! its path). Without it the tests skip. The fixture stays installed.
 
 #![cfg(target_os = "macos")]
 
@@ -32,7 +31,7 @@ fn gated(test: &str) -> Option<(String, PathBuf)> {
         _ => {
             eprintln!(
                 "{test}: skipped; set {APP_VARIABLE} to the SwiftUI fixture's device build \
-                 (spikes/s10-ios-runner/fixtures.sh swiftui prints its path)"
+                 (DESTINATION=device fixtures/swiftui/build.sh prints its path)"
             );
             None
         }

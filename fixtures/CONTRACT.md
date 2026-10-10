@@ -38,4 +38,4 @@ Every reference fixture (SwiftUI, Expo, Compose) implements exactly this, so the
 - implementations may keep screens mounted but hidden from accessibility, or lift state to the root and mount only the selected screen; both satisfy the two rules above
 
 ## Launch options
-- the launch environment variable `FIXTURE_INITIAL_TAB` with one of `login`, `list`, `big`, `anim`, `system` selects the tab shown at launch; default `login`; on iOS it is passed through `xcrun simctl launch` as `SIMCTL_CHILD_FIXTURE_INITIAL_TAB`; on Android it is the string intent extra `initial_tab` on the launch intent; unknown values fall back to `login`
+- the launch environment variable `FIXTURE_INITIAL_TAB` with one of `login`, `list`, `big`, `anim`, `system` selects the tab shown at launch; default `login`; on the iOS Simulator it is passed through `xcrun simctl launch` as `SIMCTL_CHILD_FIXTURE_INITIAL_TAB`, and on a physical iPhone it is the launch environment, as `mobile-agent open --env` passes it; on Android it is the string intent extra `initial_tab` on the launch intent; unknown values fall back to `login`

@@ -28,6 +28,28 @@ Release (the default) embeds the Hermes bytecode bundle, so the app launches wit
 
 Type-check the sources with `bun run typecheck`. Metro strips types without checking them, so a type error does not fail `build.sh`.
 
+## Build (physical iPhone)
+
+```sh
+MOBILE_AGENT_IOS_TEAM=<team> DESTINATION=device ./build.sh
+```
+
+`DESTINATION` picks what an iOS build is for: `simulator`, the default, or `device`. A device build leaves the project as it is. It copies the sources into `build/device/` with `rsync`, without `node_modules/`, `ios/`, `android/`, `build/` and `.expo/`, then takes the four steps above in that copy, each only when its output there is missing or stale: `sfw bun install --frozen-lockfile`, `sfw bunx expo prebuild --platform ios --no-install`, `pod install`, and `xcodebuild` for `generic/platform=iOS` with the `iphoneos` SDK, its derived data in the copy's `build/`. The copy keeps what it generated from one build to the next, as the project does for the Simulator. The Release app lands in `build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app`; a Debug one would load its JavaScript from Metro on the Mac, which has not been exercised on a phone.
+
+The build is signed manually, so `xcodebuild` registers nothing with the account, from the variables `agent-ios/build.sh` signs the runner with:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MOBILE_AGENT_IOS_TEAM` | none, required | the development team; it stays in the environment and enters no tracked file |
+| `MOBILE_AGENT_IOS_IDENTITY` | `Apple Development` | the signing identity's name in the keychain |
+| `MOBILE_AGENT_IOS_PROFILE` | `mobile-agent development` | the installed provisioning profile's name; the profile must include the device and cover `dev.mobileagent.fixture.expo`, as a wildcard App ID `dev.mobileagent.*` does |
+
+Once the bundle is built, `codesign --verify --strict` checks it, and stdout carries its path. Without `MOBILE_AGENT_IOS_TEAM` the script builds nothing, says why on stderr and exits with status 3, which `../build.sh` reports as a skipped device build. `DESTINATION=device` with `PLATFORM=android` exits with status 2, as does any `DESTINATION` other than `simulator` and `device`: the APK serves emulators and devices alike.
+
+On a host with Xcode 27.0 at a 1-minute load of 3 to 4, the first device build took 195.8 s: the copy, `bun install` of 456 packages in 1.2 s, the prebuild, `pod install` of 88 pods and the Release build. One with nothing to install, prebuild or compile took 16.8 s, in the script phases React Native's and Expo's pods run on every build and the JavaScript bundle's.
+
+Install the bundle with `xcrun devicectl device install app --device <udid> "$app"` and launch it through `mobile-agent` with the `ios` driver (`MOBILE_AGENT_DRIVERS=ios`), whose `open --env` passes `FIXTURE_INITIAL_TAB`; see Launch options.
+
 ## Build (Android)
 
 ```sh
@@ -125,6 +147,11 @@ The permission prompt text comes from `NSLocationWhenInUseUsageDescription`, whi
   ```
 
   The app reads the variable when its process starts, so pass `--terminate-running-process` if a copy may already be running.
+- **Physical iPhone:** the launch environment, which `mobile-agent open --env` passes through the `ios` driver's launch:
+
+  ```sh
+  MOBILE_AGENT_DRIVERS=ios mobile-agent --device <udid> open --relaunch --env FIXTURE_INITIAL_TAB=big dev.mobileagent.fixture.expo
+  ```
 - **Android:** the string extra `initial_tab` on the launch intent:
 
   ```sh
@@ -236,3 +263,17 @@ Bounds from `uiautomator dump`:
 | `big-count` | [0,132][1080,256] | [132,74][2400,198] |
 
 The tab bar ends where the navigation bar starts. Its centres, at y = 2264 in portrait and y = 944 in landscape, therefore also clear the 84 px band at the bottom where the system always takes swipes (`mandatorySystemGestures`, from y = 2316 and y = 996).
+
+## Physical iPhone
+
+Verified on an iPhone SE (3rd generation) with iOS 26.6.2: the Release device build installed through CoreDevice (`devicectl device install app`). Through `mobile-agent` with the `ios` driver, every identifier of the contract listed on its tab:
+
+| Tab | `snapshot -i` | Only in the full `snapshot` |
+|---|---|---|
+| Login | the five tabs, `login-username`, `login-password`, `login-submit` | `login-status` |
+| List | the five tabs and the rows on screen, `row-1` to `row-14`; with a detail open, `detail-back`, the list hidden from accessibility | `detail-<n>` |
+| Big | the five tabs, `big-count` and the 500 cells | |
+| Anim | the five tabs, `anim-toggle` | `anim-spinner` |
+| System | the five tabs, `system-alert`, `system-permission`; with the alert up, its title and its `OK` button, which carries no identifier | `system-permission-status` |
+
+`scroll --until id=row-200` reached the last row in 22 strokes, and its detail opened. The alert's message did not list on the device.

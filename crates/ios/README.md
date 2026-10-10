@@ -671,7 +671,7 @@ and name the team the runner is signed for, the runner bundle
 
 ```sh
 agent-ios/build.sh                            # prints the runner bundle's path, agent-ios/dist/
-spikes/s10-ios-runner/fixtures.sh swiftui     # prints the bundle's path; task 6.1 moves this into fixtures/
+DESTINATION=device fixtures/swiftui/build.sh  # prints the fixture's device build, signed for the team
 MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
   MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app \
   MOBILE_AGENT_IOS_SWIFTUI_APP=<path to FixtureSwiftUI.app> cargo test -p ios
