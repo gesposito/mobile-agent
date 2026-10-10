@@ -8,6 +8,8 @@
 
 pub mod agent_device;
 pub mod maestro;
+#[cfg(target_os = "macos")]
+pub mod wda_xctest;
 
 use std::cell::OnceCell;
 use std::ffi::OsString;

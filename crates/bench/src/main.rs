@@ -51,6 +51,26 @@ enum Command {
     Baselines,
     /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, and write report.json and report.md
     Micro(MicroArgs),
+    /// Start WebDriverAgent on a physical iPhone through its test manager, print its localhost URL and serve until standard input closes: the WebDriverAgent baseline's helper
+    #[command(hide = true)]
+    WdaSession(WdaSessionArgs),
+}
+
+// Only macOS reaches an iPhone, so elsewhere the arguments go unread.
+#[derive(Args)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+struct WdaSessionArgs {
+    /// The iPhone's identifier, on USB
+    #[arg(long, value_name = "UDID")]
+    udid: String,
+
+    /// The bundle identifier of the WebDriverAgent runner installed on it
+    #[arg(long, value_name = "ID")]
+    bundle_id: String,
+
+    /// How long WebDriverAgent has to answer once its test starts, in seconds
+    #[arg(long, value_name = "SECONDS", default_value_t = 90)]
+    readiness: u64,
 }
 
 #[derive(Args)]
@@ -184,6 +204,7 @@ fn main() -> ExitCode {
             Ok(ExitCode::SUCCESS)
         }
         Command::Micro(args) => run_micro(&args),
+        Command::WdaSession(args) => wda_session(&args),
     };
     result.unwrap_or_else(|message| {
         eprintln!("mobile-agent-bench: {message}");
@@ -370,6 +391,23 @@ fn run_micro(args: &MicroArgs) -> Result<ExitCode, String> {
     println!();
     print!("{}", finished.report.verdict());
     Ok(ExitCode::from(finished.report.summary.exit_status))
+}
+
+/// The WebDriverAgent baseline's helper: WebDriverAgent started through the
+/// iPhone's test manager and served on localhost until standard input closes.
+#[cfg(target_os = "macos")]
+fn wda_session(args: &WdaSessionArgs) -> Result<ExitCode, String> {
+    bench::baseline::wda_xctest::serve(
+        &args.udid,
+        &args.bundle_id,
+        Duration::from_secs(args.readiness),
+    )?;
+    Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wda_session(_: &WdaSessionArgs) -> Result<ExitCode, String> {
+    Err("WebDriverAgent on a physical iPhone needs macOS".to_owned())
 }
 
 fn judge(args: &GatesArgs) -> Result<ExitCode, String> {
