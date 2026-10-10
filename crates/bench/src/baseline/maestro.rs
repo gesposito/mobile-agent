@@ -116,8 +116,14 @@ pub fn maestro_args(target: &Target, file: &Path) -> Vec<OsString> {
     ]
 }
 
-/// Arguments for `maestro-runner`.
-pub fn runner_args(target: &Target, file: &Path) -> Vec<OsString> {
+/// Why Maestro does not run on a physical iPhone, the note of a run whose
+/// targets are all iPhones.
+pub const IPHONE_NOTE: &str = "";
+
+/// Arguments for `maestro-runner`; `team` is the development team its iOS
+/// agent is signed for on a physical iPhone.
+pub fn runner_args(target: &Target, file: &Path, team: Option<&str>) -> Vec<OsString> {
+    let _ = team;
     vec![
         "--platform".into(),
         target.class.platform().id().into(),
@@ -139,8 +145,9 @@ pub fn maestro_hierarchy_args(target: &Target) -> Vec<OsString> {
 }
 
 /// Arguments for `maestro-runner hierarchy`, which prints the hierarchy as a
-/// tree normalized across its drivers.
-pub fn runner_hierarchy_args(target: &Target) -> Vec<OsString> {
+/// tree normalized across its drivers; `team` as for [`runner_args`].
+pub fn runner_hierarchy_args(target: &Target, team: Option<&str>) -> Vec<OsString> {
+    let _ = team;
     vec![
         "--platform".into(),
         target.class.platform().id().into(),
@@ -355,8 +362,66 @@ mod tests {
             ["--device", "emulator-5554", "hierarchy"]
         );
         assert_eq!(
-            strings(runner_hierarchy_args(&sim)),
+            strings(runner_hierarchy_args(&sim, Some("TEAM123456"))),
             ["--platform", "ios", "--device", "SIM-1", "hierarchy"]
+        );
+    }
+
+    /// maestro-runner's documentation says its iOS agent runs on a physical
+    /// iPhone given `--team-id`, which signs it for the team; on a
+    /// Simulator and on Android it takes none.
+    #[test]
+    fn on_an_iphone_maestro_runner_gets_the_team_its_agent_is_signed_for() {
+        let strings = |args: Vec<OsString>| -> Vec<String> {
+            args.into_iter().map(|a| a.into_string().unwrap()).collect()
+        };
+        let phone = Target::new("PHONE-1", TargetClass::IosDevice);
+        let file = Path::new("/work/maestro-runner-login-PHONE-1.yaml");
+        assert_eq!(
+            strings(runner_args(&phone, file, Some("TEAM123456"))),
+            [
+                "--platform",
+                "ios",
+                "--team-id",
+                "TEAM123456",
+                "--device",
+                "PHONE-1",
+                "test",
+                "/work/maestro-runner-login-PHONE-1.yaml"
+            ]
+        );
+        assert_eq!(
+            strings(runner_hierarchy_args(&phone, Some("TEAM123456"))),
+            [
+                "--platform",
+                "ios",
+                "--team-id",
+                "TEAM123456",
+                "--device",
+                "PHONE-1",
+                "hierarchy"
+            ]
+        );
+        // Without a team it is left to maestro-runner to say what it needs.
+        assert!(
+            !strings(runner_args(&phone, file, None))
+                .iter()
+                .any(|a| a == "--team-id")
+        );
+        let sim = Target::new("SIM-1", TargetClass::Simulator);
+        assert!(
+            !strings(runner_args(&sim, file, Some("TEAM123456")))
+                .iter()
+                .any(|a| a == "--team-id")
+        );
+    }
+
+    #[test]
+    fn maestro_s_note_on_an_iphone_says_why_it_is_skipped() {
+        assert_eq!(
+            IPHONE_NOTE,
+            "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, \
+             its iOS device driver unfinished"
         );
     }
 
@@ -468,7 +533,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            strings(runner_args(&sim, file)),
+            strings(runner_args(&sim, file, None)),
             [
                 "--platform",
                 "ios",
@@ -478,6 +543,6 @@ mod tests {
                 "/work/maestro-login-emulator-5554.yaml"
             ]
         );
-        assert_eq!(strings(runner_args(&emulator, file))[1], "android");
+        assert_eq!(strings(runner_args(&emulator, file, None))[1], "android");
     }
 }

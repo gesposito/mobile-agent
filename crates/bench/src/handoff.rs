@@ -349,6 +349,7 @@ mod tests {
     use crate::adapter::{AdapterError, Detection, Role, Scenario};
     use crate::harness::Subject;
     use crate::target::TargetClass;
+    use serde_json::json;
 
     /// What the tools and the device were asked to do, in order.
     type Log = Rc<RefCell<Vec<String>>>;
@@ -414,6 +415,7 @@ mod tests {
                     name: name.to_owned(),
                     pid: pid.parse().unwrap(),
                     stray: name == "daemon",
+                    device: false,
                 })
                 .collect())
         }
@@ -433,13 +435,17 @@ mod tests {
 
     /// A host and the Android device on it. The device's input method is as
     /// `adb` reads and sets it. The host runs `processes`, and `kill` sends
-    /// them signals. The commands it was asked to run go to the log.
+    /// them signals. A physical iPhone on it, `PHONE-1`, runs `on_phone`,
+    /// which CoreDevice lists and ends: `devicectl device process terminate`
+    /// sends SIGTERM, with `--kill` SIGKILL. The commands it was asked to run
+    /// go to the log.
     struct Device {
         ime: RefCell<Option<String>>,
         log: Log,
         /// `ime set` runs and changes nothing.
         stuck: bool,
         processes: Vec<Running>,
+        on_phone: Vec<Running>,
     }
 
     impl Device {
@@ -469,6 +475,54 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         }
+
+        /// `devicectl device info processes` on the iPhone: launchd and each
+        /// process of `on_phone` its tool has not released, or released at
+        /// most as many phone listings ago, this one included, as it
+        /// outlives a release by, and that no termination sent since has
+        /// ended.
+        fn phone_listing(&self) -> String {
+            let log = self.log.borrow();
+            let mut processes =
+                vec![json!({"executable": "file:///sbin/launchd", "processIdentifier": 1})];
+            for process in &self.on_phone {
+                let released = format!("{} released ", process.tool);
+                if let Some(at) = log.iter().rposition(|l| l.starts_with(&released)) {
+                    let since = log[at..].iter().filter(|l| *l == PHONE_PS).count();
+                    let term = terminate(process.pid, false);
+                    let kill = terminate(process.pid, true);
+                    let ended = match process.ends_on {
+                        Some("TERM") => log[at..].iter().any(|l| *l == term || *l == kill),
+                        Some(_) => log[at..].contains(&kill),
+                        None => false,
+                    };
+                    if ended || process.outlives.is_some_and(|outlives| since > outlives) {
+                        continue;
+                    }
+                }
+                processes.push(json!({
+                    "executable": format!(
+                        "file:///private/var/containers/Bundle/Application/1/{0}.app/{0}",
+                        process.name
+                    ),
+                    "processIdentifier": process.pid
+                }));
+            }
+            json!({"info": {"outcome": "success"}, "result": {"runningProcesses": processes}})
+                .to_string()
+        }
+    }
+
+    /// The iPhone's process listing, as the hand-off asks the probe for it.
+    const PHONE_PS: &str = "xcrun devicectl device info processes --device PHONE-1 --json-output -";
+
+    /// The termination of `pid` on the iPhone, as the hand-off asks the
+    /// probe for it: SIGTERM, or SIGKILL when `kill`.
+    fn terminate(pid: u32, kill: bool) -> String {
+        format!(
+            "xcrun devicectl device process terminate --device PHONE-1 --pid {pid}{} --json-output -",
+            if kill { " --kill" } else { "" }
+        )
     }
 
     impl Probe for Device {
@@ -479,6 +533,22 @@ mod tests {
             match (program, args) {
                 ("ps", ["-A", "-ww", "-o", "pid=,command="]) => Some(self.listing()),
                 ("kill", [signal, _]) if signal.starts_with('-') => Some(String::new()),
+                (
+                    "xcrun",
+                    [
+                        "devicectl",
+                        "device",
+                        "info",
+                        "processes",
+                        "--device",
+                        "PHONE-1",
+                        "--json-output",
+                        "-",
+                    ],
+                ) => Some(self.phone_listing()),
+                ("xcrun", ["devicectl", "device", "process", "terminate", ..]) => {
+                    Some(json!({"info": {"outcome": "success"}}).to_string())
+                }
                 (
                     "adb",
                     [
@@ -523,8 +593,152 @@ mod tests {
             log: Rc::clone(&log),
             stuck,
             processes: Vec::new(),
+            on_phone: Vec::new(),
         };
         (tools, device, log)
+    }
+
+    /// `from` drives the iPhone `PHONE-1`, then `to` does; `from` leaves its
+    /// runner app, pid 812, on the phone for `outlives` phone listings after
+    /// its release, or until a termination `ends_on` names ends it.
+    fn on_a_phone(
+        from: &'static str,
+        to: &'static str,
+        runner: &'static str,
+        outlives: Option<usize>,
+        ends_on: Option<&'static str>,
+    ) -> (Vec<Box<dyn Adapter>>, Device, Log) {
+        let (_, mut device, log) = setup(None, false);
+        let tool = |name: &'static str| {
+            Box::new(Holder {
+                name,
+                log: Rc::clone(&log),
+                fails: false,
+                on_host: false,
+            }) as Box<dyn Adapter>
+        };
+        device.on_phone = vec![Running {
+            tool: from,
+            pid: 812,
+            name: runner,
+            outlives,
+            ends_on,
+        }];
+        (vec![tool(from), tool(to)], device, log)
+    }
+
+    fn phone() -> Target {
+        Target::new("PHONE-1", TargetClass::IosDevice)
+    }
+
+    /// On a physical iPhone each tool's runner holds the phone's one
+    /// automation session, and a runner left there makes the next tool's
+    /// wait for the session rather than fail. After a tool's release the
+    /// hand-off lists the phone's processes, ends that tool's runner app if
+    /// it is still there, through CoreDevice since it is no host process,
+    /// waits until it is gone, and names what it did.
+    #[test]
+    fn a_runner_left_on_an_iphone_is_ended_through_coredevice_before_the_next_tool_drives_it() {
+        let (mut tools, device, log) = on_a_phone(
+            "agent-device",
+            "mobile-agent",
+            "AgentDeviceRunnerUITests-Runner",
+            None,
+            Some("TERM"),
+        );
+        let target = phone();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        log.borrow_mut()
+            .push("mobile-agent drives PHONE-1".to_owned());
+        assert_eq!(
+            log.borrow()[..],
+            [
+                "agent-device released PHONE-1".to_owned(),
+                PHONE_PS.to_owned(),
+                terminate(812, false),
+                PHONE_PS.to_owned(),
+                "mobile-agent drives PHONE-1".to_owned(),
+            ]
+        );
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some(
+                "agent-device left runner app on the iPhone (pid 812) running after its \
+                 release; the hand-off sent it SIGTERM, and it exited"
+            )
+        );
+        assert!(kills(&log).is_empty(), "no host process was signalled");
+    }
+
+    /// A runner that outlives SIGTERM on the phone gets SIGKILL through
+    /// CoreDevice once the bound has passed.
+    #[test]
+    fn a_runner_that_outlives_sigterm_on_an_iphone_gets_sigkill_through_coredevice() {
+        let (mut tools, device, log) = on_a_phone(
+            "webdriveragent",
+            "mobile-agent",
+            "WebDriverAgentRunner-Runner",
+            None,
+            Some("KILL"),
+        );
+        let target = phone();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.kill_after = Duration::from_millis(50);
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        let terminations: Vec<String> = log
+            .borrow()
+            .iter()
+            .filter(|l| l.contains(" terminate "))
+            .cloned()
+            .collect();
+        assert_eq!(terminations, [terminate(812, false), terminate(812, true)]);
+        assert_eq!(
+            handoffs.done[0].error.as_deref(),
+            Some(
+                "webdriveragent left runner app on the iPhone (pid 812) running after its \
+                 release; the hand-off sent it SIGTERM, then SIGKILL after 50 ms, and it exited"
+            )
+        );
+    }
+
+    /// `mobile-agent`'s daemon ends its runner as it shuts down, so the
+    /// hand-off finds nothing of it on the phone and records no error; a
+    /// tool that keeps no runner there, such as Maestro, has nothing looked
+    /// for on the phone.
+    #[test]
+    fn a_runner_its_release_ended_leaves_nothing_to_end_on_the_iphone() {
+        let (mut tools, device, log) = on_a_phone(
+            "mobile-agent",
+            "agent-device",
+            "MobileAgentRunner-Runner",
+            Some(0),
+            None,
+        );
+        let target = phone();
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        assert_eq!(
+            log.borrow()[..],
+            ["mobile-agent released PHONE-1", PHONE_PS]
+        );
+        assert_eq!(handoffs.done[0].error, None);
+
+        let (mut tools, device, log) = on_a_phone(
+            "maestro",
+            "mobile-agent",
+            "MobileAgentRunner-Runner",
+            None,
+            None,
+        );
+        let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+        handoffs.take(&mut tools, &device, &target, 0);
+        handoffs.take(&mut tools, &device, &target, 1);
+        assert_eq!(log.borrow()[..], ["maestro released PHONE-1"]);
+        assert_eq!(handoffs.done[0].error, None);
     }
 
     /// Two tools on a Simulator, the first of which runs a daemon, a runner
@@ -806,5 +1020,28 @@ mod tests {
             "{:?}",
             log.borrow()
         );
+    }
+
+    /// Only a physical iPhone has its processes listed through CoreDevice,
+    /// even when the tool that let go keeps a runner on one.
+    #[test]
+    fn a_simulator_or_an_emulator_has_no_phone_processes_listed() {
+        for target in [simulator(), emulator()] {
+            let (mut tools, device, log) = on_a_phone(
+                "agent-device",
+                "mobile-agent",
+                "AgentDeviceRunnerUITests-Runner",
+                None,
+                None,
+            );
+            let mut handoffs = HandOffs::new(&device, std::slice::from_ref(&target));
+            handoffs.take(&mut tools, &device, &target, 0);
+            handoffs.take(&mut tools, &device, &target, 1);
+            assert!(
+                !log.borrow().iter().any(|line| line.starts_with("xcrun ")),
+                "{:?}",
+                log.borrow()
+            );
+        }
     }
 }

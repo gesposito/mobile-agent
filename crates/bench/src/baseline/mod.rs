@@ -1,13 +1,18 @@
 //! Baseline tools the harness compares `mobile-agent` with on the same flows:
-//! Maestro, maestro-runner and agent-device. Each adapter runs a flow through
-//! the tool's own CLI in the shape the tool's documentation gives, reads the
-//! screen through the tool's hierarchy or snapshot command for the flow's
-//! golden check and node count, and a tool that is not on `PATH` is skipped
-//! with a note. Only flows run through them; none of the three exposes the
-//! spans the primitives measure.
+//! Maestro, maestro-runner and agent-device, and on a physical iPhone
+//! WebDriverAgent through Appium's XCUITest driver ([`wda`]). Each adapter
+//! runs a flow through the tool's own CLI in the shape the tool's
+//! documentation gives, or for WebDriverAgent as WebDriver requests, reads
+//! the screen through the tool's hierarchy, snapshot or source for the
+//! flow's golden check and node count, and a tool that is not on `PATH` is
+//! skipped with a note, as is a tool that runs on none of the run's targets.
+//! Only flows run through them; none of them exposes the spans the
+//! primitives measure.
 
 pub mod agent_device;
+pub mod iphone;
 pub mod maestro;
+pub mod wda;
 #[cfg(target_os = "macos")]
 pub mod wda_xctest;
 
@@ -26,7 +31,7 @@ use crate::flow::Flow;
 use crate::harness::Subject;
 use crate::process::{self, Finished};
 use crate::provenance::Probe;
-use crate::target::{Platform, Target};
+use crate::target::{Platform, Target, TargetClass};
 
 /// The agent-device session every flow runs in.
 pub const SESSION: &str = "mobile-agent-bench";
@@ -57,8 +62,33 @@ impl BaselineTool {
     }
 }
 
-/// Where a baseline adapter looks for its tool, where it writes flow files and
-/// how long it waits.
+/// The team's signing for the runners the baseline tools build for a
+/// physical iPhone: the team `MOBILE_AGENT_IOS_TEAM` names, and the identity
+/// and profile `MOBILE_AGENT_IOS_IDENTITY` and `MOBILE_AGENT_IOS_PROFILE`
+/// name, `Apple Development` and `mobile-agent development` by default, as
+/// for `mobile-agent`'s runner and the fixtures' device builds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IosSigning {
+    pub team: String,
+    pub identity: String,
+    pub profile: String,
+}
+
+impl IosSigning {
+    /// The signing the variables `var` reads name; `None` without a team.
+    pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        let _ = var;
+        None
+    }
+
+    /// The signing the environment names.
+    pub fn from_env() -> Option<Self> {
+        IosSigning::from_vars(|name| std::env::var(name).ok())
+    }
+}
+
+/// Where a baseline adapter looks for its tool, where it writes flow files,
+/// how long it waits, and what it needs to know about the run's targets.
 #[derive(Clone, Debug)]
 pub struct BaselineConfig {
     /// Directories searched for the executable, in order: `PATH` by default.
@@ -69,18 +99,44 @@ pub struct BaselineConfig {
     pub flow_timeout: Duration,
     /// Deadline for `--version`; Maestro starts a JVM to answer it.
     pub version_timeout: Duration,
+    /// The classes of the run's targets; empty when not known, as when
+    /// `mobile-agent-bench baselines` lists the tools. A tool that runs on
+    /// none of them is skipped with the reason.
+    pub targets: Vec<TargetClass>,
+    /// The team's signing for runners built for a physical iPhone, if the
+    /// environment names a team.
+    pub ios_signing: Option<IosSigning>,
+    /// The program, with its first arguments, that starts WebDriverAgent on
+    /// a physical iPhone ([`wda`]): `mobile-agent-bench wda-session`.
+    pub wda_helper: Vec<OsString>,
+    /// The port Appium serves on for WebDriverAgent ([`wda::APPIUM_PORT`]).
+    pub appium_port: u16,
 }
 
 impl BaselineConfig {
-    /// Searches `PATH`, writes flow files under `work_dir`, and gives a flow
-    /// 120 s and `--version` 30 s.
+    /// Searches `PATH`, writes flow files under `work_dir`, gives a flow
+    /// 120 s and `--version` 30 s, takes the team's signing from the
+    /// environment, and starts WebDriverAgent with this program's own
+    /// `wda-session`; the run's targets are not known.
     pub fn new(work_dir: impl Into<PathBuf>) -> Self {
         BaselineConfig {
             search_path: search_path(),
             work_dir: work_dir.into(),
             flow_timeout: Duration::from_secs(120),
             version_timeout: Duration::from_secs(30),
+            targets: Vec::new(),
+            ios_signing: IosSigning::from_env(),
+            wda_helper: std::env::current_exe()
+                .map(|exe| vec![exe.into_os_string(), "wda-session".into()])
+                .unwrap_or_default(),
+            appium_port: wda::APPIUM_PORT,
         }
+    }
+
+    /// This configuration for a run on targets of `classes`.
+    pub fn for_targets(mut self, classes: impl IntoIterator<Item = TargetClass>) -> Self {
+        self.targets = classes.into_iter().collect();
+        self
     }
 }
 
@@ -151,7 +207,8 @@ pub(crate) fn last_line(output: &str) -> Option<&str> {
 /// A reader of what a tool prints for its screen.
 type ReadScreen = fn(&str) -> Result<Reading, String>;
 
-/// One adapter per baseline tool, in report order.
+/// One adapter per baseline tool, in report order: the CLI tools, then
+/// WebDriverAgent.
 pub fn baselines(config: &BaselineConfig) -> Vec<Box<dyn Adapter>> {
     BaselineTool::ALL
         .into_iter()
@@ -392,7 +449,7 @@ impl Baseline {
                 let args = if self.tool == BaselineTool::Maestro {
                     maestro::maestro_args(target, &file)
                 } else {
-                    maestro::runner_args(target, &file)
+                    maestro::runner_args(target, &file, None)
                 };
                 (file, maestro::flow_yaml(flow, app), args)
             }
@@ -445,7 +502,7 @@ impl Baseline {
                 maestro::read_hierarchy,
             ),
             BaselineTool::MaestroRunner => (
-                maestro::runner_hierarchy_args(target),
+                maestro::runner_hierarchy_args(target, None),
                 maestro::read_runner_hierarchy,
             ),
             BaselineTool::AgentDevice => (
@@ -597,7 +654,15 @@ mod tests {
     fn baselines_are_flow_only_and_in_report_order() {
         let adapters = baselines(&BaselineConfig::new("/nonexistent"));
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
-        assert_eq!(names, ["maestro", "maestro-runner", "agent-device"]);
+        assert_eq!(
+            names,
+            [
+                "maestro",
+                "maestro-runner",
+                "agent-device",
+                "webdriveragent"
+            ]
+        );
         let target = Target::new("emulator-5554", crate::target::TargetClass::AndroidEmulator);
         let adapter = &adapters[0];
         assert_eq!(adapter.role(), Role::Baseline);
@@ -611,5 +676,113 @@ mod tests {
             &Scenario::default(),
             &Subject::Primitive(crate::primitive::Primitive::WarmSnapshot)
         ));
+    }
+
+    /// Each tool runs its flows where it can: Maestro never on a physical
+    /// iPhone, which 2.11.0 refuses, WebDriverAgent only on one, the others
+    /// on every class.
+    #[test]
+    fn each_baseline_runs_flows_on_the_classes_it_supports() {
+        use crate::target::TargetClass::*;
+        let adapters = baselines(&BaselineConfig::new("/nonexistent"));
+        let login = Subject::Flow("login".into());
+        let supported = |name: &str| -> Vec<TargetClass> {
+            let adapter = adapters.iter().find(|a| a.name() == name).unwrap();
+            [Simulator, AndroidEmulator, AndroidDevice, IosDevice]
+                .into_iter()
+                .filter(|class| {
+                    adapter.supports(&Target::new("T-1", *class), &Scenario::default(), &login)
+                })
+                .collect()
+        };
+        assert_eq!(
+            supported("maestro"),
+            [Simulator, AndroidEmulator, AndroidDevice]
+        );
+        assert_eq!(
+            supported("maestro-runner"),
+            [Simulator, AndroidEmulator, AndroidDevice, IosDevice]
+        );
+        assert_eq!(
+            supported("agent-device"),
+            [Simulator, AndroidEmulator, AndroidDevice, IosDevice]
+        );
+        assert_eq!(supported("webdriveragent"), [IosDevice]);
+    }
+
+    #[test]
+    fn the_team_s_signing_comes_from_the_runner_s_variables() {
+        let vars = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            }
+        };
+        assert_eq!(
+            IosSigning::from_vars(vars(&[("MOBILE_AGENT_IOS_TEAM", "TEAM123456")])),
+            Some(IosSigning {
+                team: "TEAM123456".into(),
+                identity: "Apple Development".into(),
+                profile: "mobile-agent development".into(),
+            })
+        );
+        assert_eq!(
+            IosSigning::from_vars(vars(&[
+                ("MOBILE_AGENT_IOS_TEAM", "TEAM123456"),
+                ("MOBILE_AGENT_IOS_IDENTITY", "Apple Development: someone"),
+                ("MOBILE_AGENT_IOS_PROFILE", "another profile"),
+            ])),
+            Some(IosSigning {
+                team: "TEAM123456".into(),
+                identity: "Apple Development: someone".into(),
+                profile: "another profile".into(),
+            })
+        );
+        assert_eq!(IosSigning::from_vars(vars(&[])), None);
+        assert_eq!(
+            IosSigning::from_vars(vars(&[("MOBILE_AGENT_IOS_TEAM", "")])),
+            None
+        );
+    }
+
+    /// On a run whose targets are all physical iPhones Maestro is skipped
+    /// with the reason, without being asked anything; on a run with any
+    /// other target it is detected as ever.
+    #[test]
+    fn maestro_is_skipped_with_its_reason_on_a_run_of_iphones() {
+        let dir = scratch("maestro-iphones");
+        fs::write(
+            dir.join("maestro"),
+            "#!/bin/sh\necho \"$@\" >> \"${0%/*}/maestro.log\"\necho 2.10.0\n",
+        )
+        .unwrap();
+        fs::set_permissions(dir.join("maestro"), fs::Permissions::from_mode(0o755)).unwrap();
+        let config = BaselineConfig {
+            search_path: vec![dir.clone()],
+            ..BaselineConfig::new(dir.join("work"))
+        };
+        let mut on_phones = Baseline::new(
+            BaselineTool::Maestro,
+            config.clone().for_targets([TargetClass::IosDevice]),
+        );
+        assert_eq!(
+            on_phones.detect(),
+            Detection::Absent {
+                note: maestro::IPHONE_NOTE.to_owned()
+            }
+        );
+        assert!(!dir.join("maestro.log").exists());
+        let mut mixed = Baseline::new(
+            BaselineTool::Maestro,
+            config.for_targets([TargetClass::IosDevice, TargetClass::Simulator]),
+        );
+        assert_eq!(
+            mixed.detect(),
+            Detection::Available {
+                version: Some("2.10.0".into())
+            }
+        );
     }
 }

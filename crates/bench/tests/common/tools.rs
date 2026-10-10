@@ -205,6 +205,10 @@ impl Tools {
             work_dir: self.dir.join("work"),
             flow_timeout: Duration::from_secs(30),
             version_timeout: Duration::from_secs(10),
+            targets: Vec::new(),
+            ios_signing: None,
+            wda_helper: vec![self.bin.join("wda-helper").into()],
+            appium_port: bench::baseline::wda::APPIUM_PORT,
         }
     }
 

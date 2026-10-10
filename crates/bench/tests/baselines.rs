@@ -101,6 +101,10 @@ impl Setup {
             work_dir: self.dir.join("work"),
             flow_timeout: Duration::from_secs(30),
             version_timeout: Duration::from_secs(10),
+            targets: Vec::new(),
+            ios_signing: None,
+            wda_helper: vec![self.bin.join("wda-helper").into()],
+            appium_port: bench::baseline::wda::APPIUM_PORT,
         }
     }
 
@@ -237,7 +241,12 @@ fn an_absent_tool_is_noted_as_skipped_and_the_tools_that_ran_are_still_compared(
 fn every_baseline_is_skipped_when_none_is_installed() {
     let setup = Setup::new("baselines-none");
     let report = setup.run();
-    for name in ["maestro", "maestro-runner", "agent-device"] {
+    for (name, executable) in [
+        ("maestro", "maestro"),
+        ("maestro-runner", "maestro-runner"),
+        ("agent-device", "agent-device"),
+        ("webdriveragent", "appium"),
+    ] {
         let tool = report
             .provenance
             .tools
@@ -245,12 +254,13 @@ fn every_baseline_is_skipped_when_none_is_installed() {
             .find(|t| t.name == name)
             .unwrap();
         assert_eq!(tool.status, ToolStatus::Skipped);
-        assert_eq!(tool.note, Some(format!("{name} not found on PATH")));
+        assert_eq!(tool.note, Some(format!("{executable} not found on PATH")));
     }
     assert!(report.measurements.iter().all(|m| m.tool == "mobile-agent"));
     assert!(report.to_markdown().contains(
         "Skipped: maestro (maestro not found on PATH); maestro-runner (maestro-runner not \
-         found on PATH); agent-device (agent-device not found on PATH)."
+         found on PATH); agent-device (agent-device not found on PATH); webdriveragent \
+         (appium not found on PATH)."
     ));
 }
 
@@ -341,7 +351,22 @@ fn a_run_through_the_binary_includes_the_installed_baselines() {
         .filter(|t| t.status == ToolStatus::Skipped)
         .map(|t| t.name.as_str())
         .collect();
-    assert_eq!(skipped, ["maestro-runner", "agent-device"]);
+    assert_eq!(
+        skipped,
+        ["maestro-runner", "agent-device", "webdriveragent"]
+    );
+    // The run's only target is an emulator, where WebDriverAgent does not
+    // run, which its note says before anything is looked for.
+    let wda = report
+        .provenance
+        .tools
+        .iter()
+        .find(|t| t.name == "webdriveragent")
+        .unwrap();
+    assert_eq!(
+        wda.note.as_deref(),
+        Some(bench::baseline::wda::NO_IPHONE_NOTE)
+    );
     let measured: Vec<&str> = report
         .measurements
         .iter()
@@ -385,6 +410,10 @@ fn the_baselines_command_lists_each_tool_and_notes_absent_ones() {
             "—",
             "agent-device not found on PATH"
         ]
+    );
+    assert_eq!(
+        row("webdriveragent"),
+        ["webdriveragent", "skipped", "—", "appium not found on PATH"]
     );
 }
 
@@ -469,6 +498,37 @@ const ON_EMULATOR: [(Process, u32); 1] = [(
     0,
 )];
 
+/// agent-device's processes on the host for the physical iPhone `PHONE-1`
+/// and the state directory `/state`: its daemon, gone at the first listing
+/// after a `daemon stop`, and its runner's `xcodebuild`, gone at the
+/// second. Its runner app runs on the phone, which CoreDevice lists.
+const ON_PHONE: [(Process, u32); 2] = [
+    (
+        (
+            401,
+            "/opt/homebrew/bin/node",
+            "/opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js",
+            "AGENT_DEVICE_STATE_DIR=/state AGENT_DEVICE_DAEMON_SERVER_MODE=socket",
+        ),
+        0,
+    ),
+    (
+        (
+            402,
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
+            "test-without-building -only-testing AgentDeviceRunnerUITests/RunnerTests/testCommand \
+             -xctestrun /Users/<user>/.agent-device/apple-runner/derived/ios-device/cache-1/\
+             Build/Products/AgentDeviceRunner.env.session-PHONE-1-owner-401-1-1.xctestrun \
+             -destination platform=iOS,id=PHONE-1",
+            "AGENT_DEVICE_STATE_DIR=/state",
+        ),
+        1,
+    ),
+];
+
+/// The pid of agent-device's runner app on the iPhone.
+const PHONE_RUNNER: u32 = 912;
+
 /// A daemon of `/state` that `daemon stop` does not reach, as when a
 /// timed-out request deleted its `daemon.json` but left it running: no
 /// number of listings after the stop ends it, only a signal.
@@ -543,6 +603,12 @@ struct Host {
     /// Each package force-stopped in the guest, and how many batches had run
     /// by then.
     force_stopped: RefCell<Vec<(String, usize)>>,
+    /// On a physical iPhone, its identifier: from the first batch on, the
+    /// phone runs agent-device's runner app, [`PHONE_RUNNER`], until
+    /// CoreDevice terminates it after the last batch.
+    phone: Option<&'static str>,
+    /// How many batches had run when CoreDevice terminated the runner app.
+    terminated_at: Cell<Option<usize>>,
     scripted: ScriptedProbe,
 }
 
@@ -606,6 +672,42 @@ impl Host {
             signal.trim_start_matches('-')
         ));
         Some(String::new())
+    }
+
+    /// `devicectl device info processes` on the iPhone, as JSON: launchd,
+    /// and agent-device's runner app while it runs.
+    fn phone_processes(&self) -> String {
+        let batches = self.batches();
+        let runs = batches > 0 && self.terminated_at.get() != Some(batches);
+        self.events.borrow_mut().push(if runs {
+            format!("the iPhone runs AgentDeviceRunnerUITests-Runner ({PHONE_RUNNER})")
+        } else {
+            "the iPhone runs no runner".to_owned()
+        });
+        let mut processes =
+            vec![serde_json::json!({"executable": "file:///sbin/launchd", "processIdentifier": 1})];
+        if runs {
+            processes.push(serde_json::json!({
+                "executable": "file:///private/var/containers/Bundle/Application/1/\
+                               AgentDeviceRunnerUITests-Runner.app/AgentDeviceRunnerUITests-Runner",
+                "processIdentifier": PHONE_RUNNER
+            }));
+        }
+        serde_json::json!({"info": {"outcome": "success"}, "result": {"runningProcesses": processes}})
+            .to_string()
+    }
+
+    /// `devicectl device process terminate --pid <pid>` on the iPhone, which
+    /// ends agent-device's runner app; it fails for any other pid.
+    fn terminate(&self, pid: &str) -> Option<String> {
+        if pid != PHONE_RUNNER.to_string() {
+            return None;
+        }
+        self.terminated_at.set(Some(self.batches()));
+        self.events
+            .borrow_mut()
+            .push(format!("CoreDevice terminates {pid}"));
+        Some(r#"{"info": {"outcome": "success"}}"#.to_owned())
     }
 
     /// `adb shell am force-stop <package>`, which prints nothing.
@@ -695,6 +797,34 @@ impl Probe for Host {
                 Some(self.force_stop(package))
             }
             ("kill", [signal @ ("-TERM" | "-KILL"), pid]) => self.kill(signal, pid),
+            (
+                "xcrun",
+                [
+                    "devicectl",
+                    "device",
+                    "info",
+                    "processes",
+                    "--device",
+                    udid,
+                    "--json-output",
+                    "-",
+                ],
+            ) if Some(*udid) == self.phone => Some(self.phone_processes()),
+            (
+                "xcrun",
+                [
+                    "devicectl",
+                    "device",
+                    "process",
+                    "terminate",
+                    "--device",
+                    udid,
+                    "--pid",
+                    pid,
+                    "--json-output",
+                    "-",
+                ],
+            ) if Some(*udid) == self.phone => self.terminate(pid),
             _ => self.scripted.output(program, args),
         }
     }
@@ -808,6 +938,8 @@ fn hand_back(
         killed: RefCell::new(Vec::new()),
         serial: (target.class != TargetClass::Simulator).then_some("emulator-5554"),
         force_stopped: RefCell::new(Vec::new()),
+        phone: None,
+        terminated_at: Cell::new(None),
         scripted: common::probe(),
     };
     // The tool under test runs the flow, then agent-device does; then the
@@ -1112,6 +1244,294 @@ fn simulator() -> Target {
 
 fn emulator() -> Target {
     Target::new("emulator-5554", TargetClass::AndroidEmulator)
+}
+
+fn phone() -> Target {
+    Target::new("PHONE-1", TargetClass::IosDevice)
+}
+
+/// The team's signing the iPhone tests run with.
+fn team_signing() -> bench::baseline::IosSigning {
+    bench::baseline::IosSigning {
+        team: "TEAM123456".into(),
+        identity: "Apple Development".into(),
+        profile: "mobile-agent development".into(),
+    }
+}
+
+/// A fake `xcrun` whose `devicectl device info processes` lists launchd and
+/// the runners `runners` names, executable and pid, on whatever device it
+/// is asked about: the listing a baseline reads before it starts.
+fn fake_xcrun(bin: &Path, runners: &[(&str, u32)]) {
+    let mut processes =
+        vec![serde_json::json!({"executable": "file:///sbin/launchd", "processIdentifier": 1})];
+    for (runner, pid) in runners {
+        processes.push(serde_json::json!({
+            "executable": format!("file:///private/var/containers/Bundle/Application/2/{runner}.app/{runner}"),
+            "processIdentifier": pid
+        }));
+    }
+    fs::write(
+        bin.join("phone.json"),
+        serde_json::json!({"info": {"outcome": "success"}, "result": {"runningProcesses": processes}})
+            .to_string(),
+    )
+    .unwrap();
+    let path = bin.join("xcrun");
+    fs::write(
+        &path,
+        "#!/bin/sh\n\
+         echo \"$@\" >> \"${0%/*}/xcrun.log\"\n\
+         case \"$*\" in\n\
+         'devicectl device info processes '*) cat \"${0%/*}/phone.json\" ;;\n\
+         *) exit 1 ;;\n\
+         esac\n",
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// On the fake host of the physical iPhone `PHONE-1`, the tool under test
+/// runs the tab-list flow, then agent-device does, then the tool under test
+/// takes the phone back for its process start. agent-device's commands log
+/// the signing variables they got; the phone, as the hand-off and the
+/// release see it through the probe, runs agent-device's runner app from
+/// its first batch on, and as agent-device sees it before it starts, the
+/// runners `held` names. Returns the report, what happened on the host and
+/// the phone, agent-device's commands besides its batches, and every line
+/// agent-device logged.
+fn on_a_phone(name: &str, held: &[(&str, u32)]) -> (Report, Vec<String>, Vec<String>, Vec<String>) {
+    let setup = Setup::new(name);
+    fake_tool(
+        &setup.bin,
+        "agent-device",
+        "0.21.14",
+        &format!(
+            "echo \"signing team=$AGENT_DEVICE_IOS_TEAM_ID bundle=$AGENT_DEVICE_IOS_BUNDLE_ID \
+             profile=$AGENT_DEVICE_IOS_PROVISIONING_PROFILE identity=$AGENT_DEVICE_IOS_SIGNING_IDENTITY\" \
+             >> \"${{0%/*}}/agent-device.log\"\n\
+             case \"$1\" in\n\
+             batch) echo '{}' ;;\n\
+             close) {CLOSED} ;;\n\
+             daemon) echo '{{\"success\":true,\"data\":{{\"stopped\":true,\"mode\":\"graceful\",\"clean\":true}}}}' ;;\n\
+             session) echo '{{\"success\":true,\"data\":{{\"stateDir\":\"/state\"}}}}' ;;\n\
+             esac",
+            AGENT_DEVICE_PASSES
+                .trim_start_matches("echo '")
+                .trim_end_matches('\'')
+        ),
+    );
+    fake_xcrun(&setup.bin, held);
+    let events: Events = Rc::new(RefCell::new(Vec::new()));
+    let target = phone();
+    let host = Host {
+        tool_log: setup.bin.join("agent-device.log"),
+        events: Rc::clone(&events),
+        agent_device: ON_PHONE.to_vec(),
+        listings_since_stop: Cell::new(0),
+        killed: RefCell::new(Vec::new()),
+        serial: None,
+        force_stopped: RefCell::new(Vec::new()),
+        phone: Some("PHONE-1"),
+        terminated_at: Cell::new(None),
+        scripted: common::probe(),
+    };
+    let fake = FakeAdapter::new(FakeScript {
+        tool: "mobile-agent".into(),
+        version: Some("0.1.0".into()),
+        role: Role::UnderTest,
+        targets: vec![target.clone()],
+        series: vec![
+            FakeSeries::new(
+                &target.id,
+                Some(Fixture::Expo),
+                None,
+                Subject::Flow("tab-list".into()),
+                vec![300.0],
+            ),
+            FakeSeries::new(
+                &target.id,
+                None,
+                None,
+                Subject::Primitive(Primitive::CliStart),
+                vec![4.0],
+            ),
+        ],
+        flows: vec![tab_flow()],
+    });
+    let mut harness = Harness::new(
+        RunConfig {
+            iterations: 2,
+            warmup: 0,
+            retries: 0,
+        },
+        fake.targets(),
+        fake.series(),
+    )
+    .flows(fake.flows())
+    .tool(Box::new(Watched {
+        inner: fake,
+        events: Rc::clone(&events),
+    }));
+    let config = BaselineConfig {
+        ios_signing: Some(team_signing()),
+        ..setup.config().for_targets([TargetClass::IosDevice])
+    };
+    for baseline in baselines(&config) {
+        harness = harness.tool(baseline);
+    }
+    let report = harness.probe(Box::new(host), "macos").run().unwrap();
+    let logged: Vec<String> = setup
+        .log("agent-device")
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let commands = logged
+        .iter()
+        .filter(|l| !l.starts_with("batch ") && !l.starts_with("signing "))
+        .cloned()
+        .collect();
+    let events = events.borrow().clone();
+    (report, events, commands, logged)
+}
+
+/// Task 6.3: on a physical iPhone agent-device builds its runner for the
+/// team, signed manually with the team's profile and under the team's App
+/// ID, so every command carries the signing variables. Its release closes
+/// the session, stops the daemon with `--clean`, which ends the runner's
+/// `xcodebuild`, and ends the runner app the phone keeps, through
+/// CoreDevice; the hand-off waits for the `xcodebuild` and finds nothing of
+/// agent-device's left on the phone before the tool under test drives it.
+#[test]
+fn agent_device_runs_on_an_iphone_signed_for_the_team_and_its_release_ends_its_runner() {
+    let (report, events, commands, logged) = on_a_phone("baselines-agent-device-iphone", &[]);
+    let agent_device = report
+        .measurements
+        .iter()
+        .find(|m| m.tool == "agent-device")
+        .unwrap();
+    assert_eq!(agent_device.stats.map(|s| s.n), Some(2), "{agent_device:?}");
+    let signing = "signing team=TEAM123456 bundle=dev.mobileagent.agentdevice.runner \
+                   profile=mobile-agent development identity=Apple Development";
+    let batches: Vec<usize> = logged
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with("batch "))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(batches.len(), 2);
+    for i in batches {
+        assert!(
+            logged[i].contains("--platform ios --udid PHONE-1"),
+            "{}",
+            logged[i]
+        );
+        assert_eq!(logged[i + 1], signing, "the batch's environment");
+    }
+    assert_eq!(
+        commands[..2],
+        [
+            "close --json --platform ios --udid PHONE-1 --session mobile-agent-bench",
+            "daemon stop --clean --json"
+        ]
+    );
+    let handoff = report
+        .handoffs
+        .iter()
+        .find(|h| h.from == "agent-device")
+        .unwrap();
+    assert_eq!(
+        handoff.released.as_deref(),
+        Some(
+            "closed agent-device session mobile-agent-bench, stopped its daemon and ended \
+             its runner app on the iPhone"
+        )
+    );
+    assert_eq!(handoff.error, None);
+    // The release ended the runner app through CoreDevice, the hand-off
+    // waited for the runner's `xcodebuild` and found no runner of
+    // agent-device's left on the phone, and only then did the tool under
+    // test take the phone.
+    let after = events
+        .iter()
+        .position(|e| e == "CoreDevice terminates 912")
+        .unwrap_or_else(|| panic!("the runner app was not ended: {events:?}"));
+    assert_eq!(
+        events[after - 1..(after + 7).min(events.len())],
+        [
+            "the iPhone runs AgentDeviceRunnerUITests-Runner (912)",
+            "CoreDevice terminates 912",
+            "the iPhone runs no runner",
+            "ps lists 402",
+            "the iPhone runs no runner",
+            "ps lists none of agent-device's processes",
+            "the iPhone runs no runner",
+            "mobile-agent prepares cli-start",
+        ]
+    );
+}
+
+/// One automation session per iPhone: a runner another tool left on the
+/// phone would keep agent-device's waiting for the session, so agent-device
+/// does not start there and its series fails at once, naming the runner.
+#[test]
+fn agent_device_does_not_start_on_an_iphone_another_tool_s_runner_holds() {
+    let (report, _, _, logged) = on_a_phone(
+        "baselines-agent-device-iphone-held",
+        &[("WebDriverAgentRunner-Runner", 7920)],
+    );
+    let agent_device = report
+        .measurements
+        .iter()
+        .find(|m| m.tool == "agent-device")
+        .unwrap();
+    assert_eq!(agent_device.stats, None);
+    let error = agent_device.error.as_deref().unwrap_or_default();
+    assert!(
+        error.contains(
+            "the iPhone's automation session is held by webdriveragent's runner \
+             WebDriverAgentRunner-Runner (pid 7920)"
+        ),
+        "{error}"
+    );
+    assert!(
+        !logged.iter().any(|l| l.starts_with("batch ")),
+        "agent-device ran: {logged:?}"
+    );
+}
+
+/// Task 6.3: Maestro 2.11.0 refuses physical iPhones, its device driver
+/// unfinished. On a run whose targets are all iPhones it is skipped with
+/// that note and never run, and the tools that ran are still compared.
+#[test]
+fn maestro_is_skipped_on_an_iphone_and_the_tools_that_ran_are_compared() {
+    let (report, _, _, _) = on_a_phone("baselines-maestro-iphone", &[]);
+    // `on_a_phone` installs no Maestro; a run of iPhones skips it with the
+    // note before looking for it.
+    let maestro = report
+        .provenance
+        .tools
+        .iter()
+        .find(|t| t.name == "maestro")
+        .unwrap();
+    assert_eq!(maestro.status, ToolStatus::Skipped);
+    assert_eq!(
+        maestro.note.as_deref(),
+        Some(
+            "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, \
+             its iOS device driver unfinished"
+        )
+    );
+    let comparison = common::table(&report.to_markdown(), "Comparison");
+    assert_eq!(
+        comparison.header[4..],
+        ["mobile-agent", "agent-device"],
+        "{comparison:?}"
+    );
+    assert!(report.to_markdown().contains(
+        "maestro (Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical \
+         iPhones, its iOS device driver unfinished)"
+    ));
 }
 
 /// A run of `series` on the script's emulator, with the tab-list flow.

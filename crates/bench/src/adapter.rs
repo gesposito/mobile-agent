@@ -95,8 +95,9 @@ impl fmt::Display for AdapterError {
 
 impl std::error::Error for AdapterError {}
 
-/// A process a tool still runs on the host for a target after its release,
-/// as [`Adapter::left_running`] finds it.
+/// A process a tool still runs for a target after its release, on the host
+/// as [`Adapter::left_running`] finds it, or on a physical iPhone, where the
+/// hand-off looks for the tool's runner.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Left {
     /// What the process is to the tool, such as `daemon`.
@@ -107,6 +108,10 @@ pub struct Left {
     /// The hand-off ends a stray itself, with SIGTERM and then SIGKILL,
     /// where it waits for any other process to exit.
     pub stray: bool,
+    /// Whether the process runs on the target, a physical iPhone, rather
+    /// than on the host: the hand-off ends it through CoreDevice rather
+    /// than with `kill`.
+    pub device: bool,
 }
 
 impl fmt::Display for Left {

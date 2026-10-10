@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+pub mod appium;
 pub mod micro;
 pub mod tools;
 

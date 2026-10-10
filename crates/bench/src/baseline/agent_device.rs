@@ -332,8 +332,28 @@ pub fn left_running(
             name: name.to_owned(),
             pid,
             stray: name == "daemon",
+            device: false,
         })
         .collect()
+}
+
+/// The bundle identifier agent-device's runner app is built with for a
+/// physical iPhone, under the team's wildcard App ID: its UI tests are
+/// `<id>.uitests` and the app that hosts them `<id>.uitests.xctrunner`.
+pub const RUNNER_BUNDLE_ID: &str = "dev.mobileagent.agentdevice.runner";
+
+/// The environment agent-device's commands get on a physical iPhone, so
+/// that the runner it builds there is signed for the team, manually with
+/// the team's profile, which registers nothing with the account: its team,
+/// bundle identifier ([`RUNNER_BUNDLE_ID`]), provisioning profile and
+/// signing identity, each unless `is_set` says the environment already
+/// names it.
+pub fn signing_env(
+    signing: &super::IosSigning,
+    is_set: impl Fn(&str) -> bool,
+) -> Vec<(&'static str, String)> {
+    let _ = (signing, is_set);
+    Vec::new()
 }
 
 /// A line `ps` printed for `pid=,…`, as the pid and the rest.
@@ -847,6 +867,108 @@ mod tests {
         assert_eq!(named(&left), ["daemon (pid 401)"]);
         assert!(left[0].stray);
         assert_eq!(asked.into_inner(), [401, 501, 506]);
+    }
+
+    /// The host's processes while agent-device drives the physical iPhone
+    /// `PHONE-1`: its daemon and its runner's `xcodebuild`, the same for a
+    /// Simulator whose UDID happens to be another, and a `simctl` and a
+    /// bridge a Simulator session left, which are no iPhone's.
+    const ON_PHONE: &str = "    1 /sbin/launchd
+  701 /opt/homebrew/bin/node
+  702 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild
+  703 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl
+  704 /Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge
+  705 /Users/<user>/Library/Developer/CoreSimulator/Devices/PHONE-1/data/Containers/Bundle/Application/1/AgentDeviceRunnerUITests-Runner.app/AgentDeviceRunnerUITests-Runner";
+
+    const ON_PHONE_DETAILS: &str = "  701 /opt/homebrew/bin/node /opt/homebrew/lib/node_modules/agent-device/dist/src/internal/daemon.js AGENT_DEVICE_STATE_DIR=/tmp/ad
+  702 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -only-testing AgentDeviceRunnerUITests/RunnerTests/testCommand -xctestrun /Users/<user>/.agent-device/apple-runner/derived/ios-device/cache-1/Build/Products/AgentDeviceRunner.env.session-PHONE-1-owner-701-1-1.xctestrun -destination platform=iOS,id=PHONE-1 AGENT_DEVICE_STATE_DIR=/tmp/ad
+  703 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl spawn PHONE-1 /Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge serve /tmp/agent-device-ax-1-701-1/snapshot.sock --idle-timeout 60 --exit-on-disconnect false
+  704 /Users/<user>/.agent-device/snapshot-source/1/snapshot-bridge serve /tmp/agent-device-ax-1-701-1/snapshot.sock --idle-timeout 60 --exit-on-disconnect false SIMULATOR_UDID=PHONE-1";
+
+    #[test]
+    fn what_is_left_running_beside_an_iphone_is_the_daemon_and_the_runner_s_xcodebuild() {
+        // On a physical iPhone agent-device runs its runner under an
+        // `xcodebuild` on the host and the runner app on the phone, which
+        // the hand-off looks for there; it starts no snapshot bridge, and no
+        // runner app lives under a Simulator's directory.
+        let asked = RefCell::new(Vec::new());
+        let phone = Target::new("PHONE-1", TargetClass::IosDevice);
+        let left = left_running(ON_PHONE, &phone, "/tmp/ad", |pids| {
+            asked.borrow_mut().extend_from_slice(pids);
+            ON_PHONE_DETAILS.to_owned()
+        });
+        assert_eq!(
+            named(&left),
+            ["daemon (pid 701)", "runner's xcodebuild (pid 702)"]
+        );
+        assert!(left.iter().all(|l| !l.device));
+        assert_eq!(asked.into_inner(), [701, 702]);
+    }
+
+    fn signing() -> super::super::IosSigning {
+        super::super::IosSigning {
+            team: "TEAM123456".into(),
+            identity: "Apple Development".into(),
+            profile: "mobile-agent development".into(),
+        }
+    }
+
+    #[test]
+    fn on_an_iphone_agent_device_s_runner_is_signed_manually_for_the_team() {
+        assert_eq!(
+            signing_env(&signing(), |_| false),
+            [
+                ("AGENT_DEVICE_IOS_TEAM_ID", "TEAM123456".to_owned()),
+                (
+                    "AGENT_DEVICE_IOS_BUNDLE_ID",
+                    "dev.mobileagent.agentdevice.runner".to_owned()
+                ),
+                (
+                    "AGENT_DEVICE_IOS_PROVISIONING_PROFILE",
+                    "mobile-agent development".to_owned()
+                ),
+                (
+                    "AGENT_DEVICE_IOS_SIGNING_IDENTITY",
+                    "Apple Development".to_owned()
+                ),
+            ]
+        );
+        // What the person running sets for agent-device is theirs.
+        let set = [
+            "AGENT_DEVICE_IOS_BUNDLE_ID",
+            "AGENT_DEVICE_IOS_SIGNING_IDENTITY",
+        ];
+        let kept: Vec<&str> = signing_env(&signing(), |name| set.contains(&name))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                "AGENT_DEVICE_IOS_TEAM_ID",
+                "AGENT_DEVICE_IOS_PROVISIONING_PROFILE"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_iphone_is_named_by_its_udid_as_a_simulator_is() {
+        let strings = |args: Vec<OsString>| -> Vec<String> {
+            args.into_iter().map(|a| a.into_string().unwrap()).collect()
+        };
+        let phone = Target::new("PHONE-1", TargetClass::IosDevice);
+        assert_eq!(
+            &strings(args(&phone, "s", Path::new("/w/steps.json")))[6..10],
+            ["--platform", "ios", "--udid", "PHONE-1"]
+        );
+        assert_eq!(
+            &strings(close_args(&phone, "s"))[2..6],
+            ["--platform", "ios", "--udid", "PHONE-1"]
+        );
+        assert_eq!(
+            &strings(snapshot_args(&phone, "s"))[2..6],
+            ["--platform", "ios", "--udid", "PHONE-1"]
+        );
     }
 
     #[test]
