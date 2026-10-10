@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-# Builds the Expo fixture: an iOS Simulator .app (PLATFORM=ios, the default) or an Android
-# APK (PLATFORM=android).
+# Builds the Expo fixture: an iOS Simulator .app (PLATFORM=ios, the default), an iOS .app for a
+# physical iPhone (PLATFORM=ios DESTINATION=device), or an Android APK (PLATFORM=android).
 #
 # stdout carries exactly one line, the absolute path of the .app or .apk; all build output goes
-# to stderr, so `app="$(./build.sh)"` works. Exits non-zero when any step fails.
+# to stderr, so `app="$(./build.sh)"` works. Exits non-zero when any step fails, with status 2
+# for a PLATFORM, CONFIGURATION or DESTINATION it does not build.
 #
 # CONFIGURATION=Release (default) embeds the Hermes bundle, so the app runs without Metro.
 # CONFIGURATION=Debug loads JavaScript from Metro, which must be running (`bunx expo start`).
+#
+# DESTINATION=simulator (default) builds for the iOS Simulator without code signing.
+# DESTINATION=device builds for a physical iPhone in a copy of the project under build/device/,
+# which gets its own node_modules/, ios/, pods and derived data, so the project itself is not
+# edited. It signs manually, so xcodebuild registers nothing with the account: the identity, the
+# profile, which must include the device and cover dev.mobileagent.fixture.expo, and the team come
+# from MOBILE_AGENT_IOS_TEAM (required), MOBILE_AGENT_IOS_IDENTITY (default "Apple Development")
+# and MOBILE_AGENT_IOS_PROFILE (default "mobile-agent development"), and the team never enters a
+# tracked file. codesign verifies the bundle once it is built. Without MOBILE_AGENT_IOS_TEAM the
+# script builds nothing and exits with status 3.
 #
 # Android needs an SDK holding the packages the README lists, at ANDROID_HOME (default
 # ANDROID_SDK_ROOT, then $HOME/Library/Android/sdk), and a JDK 17 or newer through JAVA_HOME or
@@ -33,6 +44,33 @@ case "$configuration" in
     exit 2
     ;;
 esac
+
+destination="${DESTINATION:-simulator}"
+case "$platform/$destination" in
+  ios/simulator | ios/device | android/simulator) ;;
+  android/device)
+    echo "build.sh: DESTINATION=device builds for a physical iPhone; PLATFORM=android builds one APK for emulators and devices alike" >&2
+    exit 2
+    ;;
+  *)
+    echo "build.sh: DESTINATION must be simulator or device, got '$destination'" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$destination" = device ]; then
+  team="${MOBILE_AGENT_IOS_TEAM:-}"
+  if [ -z "$team" ]; then
+    echo "build.sh: MOBILE_AGENT_IOS_TEAM is not set; a device build is signed for that development team, so none is built" >&2
+    exit 3
+  fi
+  # The project's sources, without what a build generates, copied into build/device/; the
+  # generated directories already there are left for the next build to reuse.
+  mkdir -p build/device
+  rsync -a --delete --exclude /node_modules --exclude /ios --exclude /android --exclude /build \
+    --exclude /.expo ./ build/device/ >&2
+  cd build/device
+fi
 
 require_sfw() {
   if ! command -v sfw >/dev/null 2>&1; then
@@ -71,16 +109,32 @@ if [ "$platform" = ios ]; then
     echo "$lock_hash" > ios/Pods/.bun-lock-hash
   fi
 
+  if [ "$destination" = device ]; then
+    sdk=iphoneos
+    options=(
+      -destination 'generic/platform=iOS'
+      -sdk iphoneos
+      CODE_SIGN_STYLE=Manual
+      CODE_SIGN_IDENTITY="${MOBILE_AGENT_IOS_IDENTITY:-Apple Development}"
+      DEVELOPMENT_TEAM="$team"
+      PROVISIONING_PROFILE_SPECIFIER="${MOBILE_AGENT_IOS_PROFILE:-mobile-agent development}"
+    )
+  else
+    sdk=iphonesimulator
+    options=(-destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO)
+  fi
   xcodebuild \
     -workspace ios/FixtureExpo.xcworkspace \
     -scheme FixtureExpo \
     -configuration "$configuration" \
-    -destination 'generic/platform=iOS Simulator' \
     -derivedDataPath build \
-    CODE_SIGNING_ALLOWED=NO \
+    "${options[@]}" \
     build >&2
 
-  artifact="$PWD/build/Build/Products/$configuration-iphonesimulator/FixtureExpo.app"
+  artifact="$PWD/build/Build/Products/$configuration-$sdk/FixtureExpo.app"
+  if [ "$destination" = device ] && [ -e "$artifact" ]; then
+    codesign --verify --strict "$artifact" >&2
+  fi
 else
   export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
   if [ ! -d "$ANDROID_HOME/platforms" ]; then

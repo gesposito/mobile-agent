@@ -6,10 +6,10 @@
 # crates/simulator/README.md). agent-android's scripts and the Compose fixture
 # default ANDROID_HOME to $HOME/Library/Android/sdk, the macOS location, so set
 # it there. Only the Compose fixture builds on Linux: the SwiftUI fixture and
-# the Expo fixture's default iOS build need Xcode, and the iOS runner Xcode and
-# MOBILE_AGENT_IOS_TEAM. CI's Linux job runs `just validate` with
-# FIXTURES=compose, and its macOS job with FIXTURES=expo,swiftui and
-# SKIP_AGENT_BUILD=1.
+# the Expo fixture's default iOS build need Xcode, and the iOS runner and the
+# fixtures' device builds Xcode and MOBILE_AGENT_IOS_TEAM, without which they
+# are skipped. CI's Linux job runs `just validate` with FIXTURES=compose, and
+# its macOS job with FIXTURES=expo,swiftui and SKIP_AGENT_BUILD=1.
 
 [private]
 default:
@@ -51,7 +51,11 @@ agent-ios-build:
 codec-test:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the codec cross-check"; elif ! command -v kotlinc >/dev/null 2>&1; then echo "kotlinc not present, skipping the codec cross-check"; elif [ -f agent-android/codec-test.sh ]; then agent-android/codec-test.sh --host-only; else echo "agent-android/codec-test.sh not present, skipping"; fi
 
-# Build the reference fixture apps, or those FIXTURES names, skipping when fixtures/build.sh is absent
+# Check the fixtures' build scripts with fake build tools, without Xcode, a device or the network
+fixtures-test:
+    fixtures/test.sh
+
+# Build the reference fixture apps, or those FIXTURES names, and the iOS ones for a physical iPhone when MOBILE_AGENT_IOS_TEAM is set, skipping when fixtures/build.sh is absent
 fixtures-build:
     if [ -f fixtures/build.sh ]; then fixtures/build.sh; else echo "fixtures/build.sh not present, skipping"; fi
 
@@ -69,5 +73,5 @@ micro *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-paths, test, agent-build, agent-ios-build, codec-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-paths test agent-build agent-ios-build codec-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-paths, test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-paths test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
