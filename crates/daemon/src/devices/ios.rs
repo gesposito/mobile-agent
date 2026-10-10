@@ -732,10 +732,18 @@ pub(crate) fn input_choice(variable: Option<&str>) -> Result<InputChoice, Driver
 }
 
 /// A driver error as the protocol carries it, with its code, a readiness
-/// state's own among them, and retryable flag.
+/// state's own among them, and retryable flag. A runner session that ended
+/// for good (`runner_died`: the runner died again after its restart, or its
+/// restart failed) is `disconnected`, its message kept: the daemon detaches
+/// a target that is, and the next command attaches again, which starts a
+/// new session (design D26 of physical-ios).
 pub(crate) fn error(error: &ios::Error) -> DriverError {
+    let code = match error {
+        ios::Error::RunnerDied { .. } => protocol::code::DISCONNECTED,
+        other => other.code(),
+    };
     DriverError {
-        code: error.code().to_owned(),
+        code: code.to_owned(),
         message: error.to_string(),
         retryable: error.retryable(),
     }

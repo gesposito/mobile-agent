@@ -1,7 +1,8 @@
 //! One thread per target owns the target's mirror. Commands for a target
 //! run on it in arrival order while commands for other targets run on
 //! theirs, and between commands it keeps the mirror current, pumping it
-//! whenever a poll or a frame-driven re-read falls due.
+//! whenever a poll or a frame-driven re-read falls due. A target whose
+//! connection is gone is detached, and the next command attaches it again.
 
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -281,6 +282,17 @@ impl Handle {
     }
 }
 
+/// Whether a failure with `code` says the target's connection is gone, as
+/// the mirror and every driver report it of a target they lost: the
+/// physical iPhone's driver of a runner whose connection fell silent and
+/// whose restart failed among them (design D26 of physical-ios). The
+/// target is then detached, so that the next command attaches it again,
+/// which starts over, rather than fail as the attachment does until the
+/// daemon stops.
+fn gone(code: &str) -> bool {
+    code == mirror::code::DISCONNECTED
+}
+
 /// Detaches the target: dropping its attachment stops what the driver
 /// started for it.
 fn detach(attached: &mut Option<Attached>, status: &Mutex<Status>, report: &ReportSlot) {
@@ -337,15 +349,23 @@ fn serve(
                         info.id
                     )))
                 });
+                // The command has its answer before the target is detached.
+                let lost = matches!(&outcome, Err(failure) if gone(&failure.code));
                 let _ = reply.send(outcome);
+                if lost {
+                    detach(&mut attached, status, report);
+                }
             }
             Ok(Job::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 detach(&mut attached, status, report);
                 return;
             }
             Err(RecvTimeoutError::Timeout) => {
-                if let Some(target) = attached.as_mut() {
-                    let _ = target.mirror.pump();
+                let lost = attached
+                    .as_mut()
+                    .is_some_and(|target| target.mirror.pump().is_err_and(|e| gone(e.code())));
+                if lost {
+                    detach(&mut attached, status, report);
                 }
             }
         }

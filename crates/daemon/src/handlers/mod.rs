@@ -218,6 +218,7 @@ fn status(daemon: &Daemon) -> Outcome {
             let worker = registry.worker_status(&target.id).unwrap_or_default();
             let mut entry = target_json(target);
             entry.insert("attached".into(), worker.attached.into());
+            entry.insert("attaches".into(), worker.attaches.into());
             entry.insert("frameSource".into(), worker.frames.into());
             entry.insert("app".into(), worker.app.into());
             entry.insert("claimedBy".into(), registry.holder(&target.id).into());
