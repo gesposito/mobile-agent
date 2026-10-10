@@ -17,7 +17,7 @@ use crate::provenance::{
     capture_host, capture_xcode, complete_target, utc_timestamp,
 };
 use crate::report::{
-    Measurement, NodeRange, Outcome, Reliability, Report, SCHEMA_VERSION, SampleRecord,
+    Measurement, NodeRange, Outcome, Reads, Reliability, Report, SCHEMA_VERSION, SampleRecord,
 };
 use crate::stats::{micros, summarize};
 use crate::target::Target;
@@ -450,7 +450,7 @@ fn measure(
         error,
         not_measured,
         end_state,
-        reads: None,
+        reads: Reads::of(&samples),
         samples,
     }
 }
@@ -494,8 +494,8 @@ fn record(
             nodes: sample.nodes,
             detail: sample.detail,
             errors,
-            read_us: None,
-            served_from_replica: None,
+            read_us: sample.read.map(|read| read.us),
+            served_from_replica: sample.read.map(|read| read.served_from_replica),
         },
         None => SampleRecord {
             iteration,

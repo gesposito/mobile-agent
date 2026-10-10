@@ -92,8 +92,26 @@ impl Reads {
     /// Over the measured samples among `samples` that say what they cost;
     /// `None` when none says.
     pub fn of(samples: &[SampleRecord]) -> Option<Reads> {
-        let _ = (samples, summarize);
-        None
+        let said: Vec<(u64, bool)> = samples
+            .iter()
+            .filter(|s| !s.warmup)
+            .filter_map(|s| s.read_us.zip(s.served_from_replica))
+            .collect();
+        if said.is_empty() {
+            return None;
+        }
+        let times = |replica: bool| {
+            let us: Vec<u64> = said
+                .iter()
+                .filter(|(_, served)| *served == replica)
+                .map(|(us, _)| *us)
+                .collect();
+            summarize(&us)
+        };
+        Some(Reads {
+            replica: times(true),
+            device: times(false),
+        })
     }
 }
 

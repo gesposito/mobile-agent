@@ -263,12 +263,42 @@ impl GateSet {
                 ));
             }
         }
+        let reads = report
+            .measurements
+            .iter()
+            .filter(|m| under_test.contains(&m.tool.as_str()))
+            .filter_map(read_row)
+            .collect();
         GateReport {
             passed: rows.iter().all(|r| r.status != GateStatus::Fail),
             rows,
-            reads: Vec::new(),
+            reads,
         }
     }
+}
+
+/// The read row of `measurement` when it is a warm or first snapshot on a
+/// physical iPhone whose samples say what they cost the tool.
+fn read_row(measurement: &Measurement) -> Option<ReadRow> {
+    let Subject::Primitive(primitive) = measurement.subject else {
+        return None;
+    };
+    let snapshot = matches!(
+        primitive,
+        Primitive::WarmSnapshot | Primitive::FirstSnapshot
+    );
+    if !snapshot || measurement.target_class != TargetClass::IosDevice {
+        return None;
+    }
+    Some(ReadRow {
+        primitive,
+        tool: measurement.tool.clone(),
+        target: measurement.target.clone(),
+        fixture: measurement.fixture,
+        screen: measurement.screen,
+        wall: measurement.stats,
+        reads: measurement.reads?,
+    })
 }
 
 /// The verdict of one gate on one measurement.
@@ -398,7 +428,54 @@ impl GateReport {
             out.push_str(&format!(" {reported} reported with no verdict."));
         }
         out.push('\n');
+        self.reads_table(&mut out);
         out
+    }
+
+    /// The snapshots on physical iPhones beside the gates, when the run has
+    /// any whose samples say what they cost.
+    fn reads_table(&self, out: &mut String) {
+        if self.reads.is_empty() {
+            return;
+        }
+        out.push_str(
+            "\n### Snapshot reads on physical iPhones\n\nWhat the warm and first \
+             snapshots cost the daemon beside the wall time an agent waits: its own time \
+             to answer (`readMs`) for the snapshots it served from its replica, and for \
+             those that read the phone through the runner, the read the warm \
+             snapshot's limit was set from.\n\n",
+        );
+        let mut table = Table::new(&[
+            "Snapshot",
+            "Tool",
+            "Target",
+            "Fixture",
+            "Screen",
+            "Wall p50 / p95 ms",
+            "Replica n",
+            "Replica p50 / p95 ms",
+            "Read n",
+            "Read p50 / p95 ms",
+        ]);
+        let pair = |summary: Option<Summary>| {
+            or_dash(summary.map(|s| format!("{} / {}", ms(s.p50_us), ms(s.p95_us))))
+        };
+        let count = |summary: Option<Summary>| summary.map_or(0, |s| s.n).to_string();
+        for row in &self.reads {
+            table.row(vec![
+                row.primitive.to_string(),
+                row.tool.clone(),
+                row.target.clone(),
+                or_dash(row.fixture),
+                or_dash(row.screen),
+                pair(row.wall),
+                count(row.reads.replica),
+                pair(row.reads.replica),
+                count(row.reads.device),
+                pair(row.reads.device),
+            ]);
+        }
+        table.render(out);
     }
 }
 

@@ -153,12 +153,14 @@ impl FakeAdapter {
             return Err(AdapterError::new("the scripted series has no durations"));
         }
         let ms = series.ms[attempt as usize % series.ms.len()];
+        let read =
+            (!series.reads.is_empty()).then(|| series.reads[attempt as usize % series.reads.len()]);
         Ok(Sample {
             elapsed: Duration::from_micros((ms * 1000.0).round() as u64),
             clock: series.clock,
             nodes: series.nodes,
             detail: None,
-            read: None,
+            read,
         })
     }
 }

@@ -14,7 +14,9 @@
 //! click's and the settle's replies, spans only the daemon observes. A span
 //! the target cannot produce is reported as not measured, with the reason:
 //! tap to frame change on a target that gives no frames, which `status` says.
-//! Snapshots count the refs in their reply as their nodes. The daemon keeps
+//! Snapshots count the refs in their reply as their nodes, and keep what the
+//! reply says the snapshot cost the daemon (`readMs`, `servedFromReplica`).
+//! The daemon keeps
 //! its agent, and on Android the device's one UI automation role with it,
 //! until it exits, so the adapter's release stops the daemon, whose
 //! `shutdown` answers once it has let go of its targets.
@@ -31,7 +33,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
+use crate::adapter::{Adapter, AdapterError, Clock, Detection, Read, Role, Sample, Scenario};
 use crate::baseline::{
     exit_failure, find_executable, is_executable, maestro, search_path, version_from,
 };
@@ -398,7 +400,10 @@ impl CliAdapter {
             }
             reply = self.call(target, &["snapshot", "-i"])?;
         }
-        Ok(wall(reply.ended() - started, Some(refs(&reply)?), None))
+        Ok(Sample {
+            read: read(&reply),
+            ..wall(reply.ended() - started, Some(refs(&reply)?), None)
+        })
     }
 
     /// Taps [`TAP`] and reads `primitive`'s span from the click's reply, then
@@ -744,7 +749,10 @@ impl Adapter for CliAdapter {
             }
             Primitive::WarmSnapshot => {
                 let reply = self.snapshot(target, screen(scenario)?)?;
-                Ok(wall(reply.elapsed, Some(refs(&reply)?), None))
+                Ok(Sample {
+                    read: read(&reply),
+                    ..wall(reply.elapsed, Some(refs(&reply)?), None)
+                })
             }
             Primitive::TapDispatch | Primitive::TapToFrameChange | Primitive::TapToTreeDelta => {
                 self.tap(target, primitive)
@@ -1018,6 +1026,18 @@ fn refs(reply: &Reply) -> Result<u32, AdapterError> {
         .as_object()
         .map(|refs| u32::try_from(refs.len()).unwrap_or(u32::MAX))
         .ok_or_else(|| AdapterError::new("the snapshot reply has no refs"))
+}
+
+/// What a snapshot reply says the snapshot cost the daemon: its `readMs`,
+/// to the microsecond, and `servedFromReplica`; `None` unless it says both.
+fn read(reply: &Reply) -> Option<Read> {
+    let ms = reply.data["readMs"]
+        .as_f64()
+        .filter(|ms| ms.is_finite() && *ms >= 0.0)?;
+    Some(Read {
+        us: (ms * 1000.0).round() as u64,
+        served_from_replica: reply.data["servedFromReplica"].as_bool()?,
+    })
 }
 
 /// A span a reply gives in milliseconds, to the microsecond.
