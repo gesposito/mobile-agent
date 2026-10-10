@@ -64,11 +64,15 @@ The driver SHALL install an app from a signed bundle, launch it by bundle identi
 - **THEN** the app is in front within the attach budget and the tree read that follows is the app's
 
 ### Requirement: Failure containment
-A device that is unplugged, locked or rebooted SHALL leave the target disconnected with a code and message saying so, every other target unaffected, and a session that reaches it again SHALL start over with fresh refs; a command on a device whose runner is restarting SHALL wait for the restart up to its timeout rather than fail at once.
+A device that is unplugged, locked or rebooted SHALL leave the target disconnected with a code and message saying so, every other target unaffected, and a session that reaches it again SHALL start over with fresh refs; a command on a device whose runner is restarting SHALL wait for the restart up to its timeout rather than fail at once. A runner connection that is lost and not recovered by the restart SHALL release the target in the daemon, so that the next command attaches again, ending the runner left behind first, rather than failing `disconnected` until the daemon stops.
 
 #### Scenario: Cable pulled
 - **WHEN** the device is unplugged during a session
 - **THEN** the next command fails with `disconnected`, the daemon keeps serving its other targets, and plugging the device back in lets a new attach succeed
+
+#### Scenario: Runner connection lost
+- **WHEN** the runner's connection falls silent while the device stays plugged in and its restart fails
+- **THEN** the command in flight fails with `disconnected`, and the next command attaches again within the attach time, with the silent runner ended and the status counting the new attach
 
 ### Requirement: Compatibility statement
 The driver SHALL record, for every private or undocumented interface it uses on the device or in the runner, the iOS and Xcode versions it was validated on, in the compatibility table `doctor` prints, and SHALL refuse with a message naming the version rather than fail silently where a version it does not know changes an interface.
