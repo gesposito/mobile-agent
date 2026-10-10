@@ -207,6 +207,8 @@ struct Shared {
     scale: f64,
     /// The device's iOS version as the attach found it.
     ios_version: Option<String>,
+    /// The battery as the attach's probe read it.
+    battery: Option<ios::Battery>,
     input: InputChoice,
     bundle: PathBuf,
     /// The frame subscription, `None` when it could not start.
@@ -242,7 +244,7 @@ impl Shared {
             capture_rate,
             frame_error: self.frame_error.clone(),
             bundle: Some(self.bundle.clone()),
-            battery: None,
+            battery: self.battery,
         }
     }
 
@@ -309,6 +311,7 @@ fn attach(driver: Arc<IosDriver>, udid: &str) -> Result<Attachment, DriverError>
         udid: udid.to_owned(),
         scale: screen.scale,
         ios_version: connected.device.ios_version.clone(),
+        battery: connected.device.battery,
         input,
         bundle,
         stream,
@@ -887,7 +890,7 @@ fn counted(count: u64, noun: &str) -> String {
 /// with text through the runner; the frames, screenshots polled at the
 /// device's rate; the runner, its agent, state, restarts, start and the
 /// leftovers of a lost session its start ended; the tunnel and the disk
-/// image; the runner bundle.
+/// image; the runner bundle; the battery as the attach read it.
 pub(crate) fn status_report(status: &TargetStatus, facts: &Facts) -> TargetReport {
     let mut data = Map::new();
     let mut lines = Vec::new();
@@ -1047,6 +1050,39 @@ pub(crate) fn status_report(status: &TargetStatus, facts: &Facts) -> TargetRepor
             .map(|bundle| bundle.to_string_lossy().into_owned())
             .into(),
     );
+    match facts.battery {
+        Some(battery) => {
+            let mut parts = Vec::new();
+            if let Some(level) = battery.level {
+                parts.push(format!("{level}%"));
+            }
+            if let Some(charging) = battery.charging {
+                parts.push(if charging { "charging" } else { "not charging" }.to_owned());
+            }
+            if let Some(external) = battery.external_power {
+                parts.push(
+                    if external {
+                        "on external power"
+                    } else {
+                        "on its battery"
+                    }
+                    .to_owned(),
+                );
+            }
+            lines.push(format!("battery: {}, when attached", parts.join(", ")));
+            data.insert(
+                "battery".into(),
+                json!({
+                    "levelPct": battery.level,
+                    "charging": battery.charging,
+                    "externalPower": battery.external_power,
+                }),
+            );
+        }
+        None => {
+            data.insert("battery".into(), Value::Null);
+        }
+    }
     TargetReport { lines, data }
 }
 

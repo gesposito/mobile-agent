@@ -501,8 +501,8 @@ impl InputNotes for FakeSession {
 
 /// What `status` shows about a fake iPhone: what the physical iOS driver
 /// reports of a phone whose runner, the one `agent-ios` builds, said hello,
-/// its input going through `dtuhidd` and its frames from screenshots at the
-/// device's rate.
+/// its input going through `dtuhidd`, its frames from screenshots at the
+/// device's rate, and its battery at 76%, charging on its cable.
 struct DeviceReport(Arc<Shared>);
 
 impl Report for DeviceReport {
@@ -526,6 +526,11 @@ impl Report for DeviceReport {
             frames: self.0.delivered.load(Ordering::Relaxed),
             capture_rate: subscribed.then_some(f64::from(device::CAPTURES_A_SECOND)),
             frame_error: (!subscribed).then(|| "the fake iPhone's screenshots are off".to_owned()),
+            battery: Some(ios::Battery {
+                level: Some(76),
+                charging: Some(true),
+                external_power: Some(true),
+            }),
             ..Facts::default()
         };
         device::status_report(&status, &facts)

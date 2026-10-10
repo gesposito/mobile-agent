@@ -70,7 +70,8 @@ pub fn usb_entries(entries: Vec<MuxEntry>) -> Vec<MuxEntry> {
 }
 
 /// What the probe read, from the values it stored (the description, then
-/// `DeveloperModeStatus` and `PasswordProtected` when the session started),
+/// `DeveloperModeStatus`, `PasswordProtected` and the battery domain when the
+/// session started),
 /// whether the session started, and the image mounter's `CopyDevices`
 /// entries when it was asked.
 pub fn probe(
@@ -149,18 +150,28 @@ pub fn device_info(
         model: text("ProductType"),
         ios_version,
         build: text("BuildVersion"),
-        battery: None,
+        battery: values.get(BATTERY_DOMAIN).and_then(battery),
         probe,
         readiness,
     }
 }
 
 /// The battery lockdown's `com.apple.mobile.battery` domain gives in
-/// `values`; `None` when it gives none of its charge, its charging and its
-/// external power.
+/// `values`: `BatteryCurrentCapacity`, `BatteryIsCharging` and
+/// `ExternalConnected`; `None` when it gives none of the three.
 pub fn battery(values: &Value) -> Option<Battery> {
-    let _ = values;
-    None
+    let values = values.as_dictionary()?;
+    let flag = |key: &str| values.get(key).and_then(Value::as_boolean);
+    let battery = Battery {
+        level: values
+            .get("BatteryCurrentCapacity")
+            .and_then(Value::as_unsigned_integer)
+            .and_then(|level| u8::try_from(level).ok()),
+        charging: flag("BatteryIsCharging"),
+        external_power: flag("ExternalConnected"),
+    };
+    (battery.level.is_some() || battery.charging.is_some() || battery.external_power.is_some())
+        .then_some(battery)
 }
 
 #[cfg(test)]

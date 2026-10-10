@@ -17,7 +17,8 @@ use plist::{Dictionary, Value};
 use tokio::time::timeout;
 
 use crate::discovery::{
-    self, DESCRIPTION_KEYS, DEVELOPER_MODE_DOMAIN, DEVELOPER_MODE_KEY, LOCK_KEY, SCREEN_DOMAIN,
+    self, BATTERY_DOMAIN, DESCRIPTION_KEYS, DEVELOPER_MODE_DOMAIN, DEVELOPER_MODE_KEY, LOCK_KEY,
+    SCREEN_DOMAIN,
 };
 use crate::error::{Error, Result};
 use crate::identity::IdentityCheck;
@@ -353,8 +354,8 @@ pub(crate) async fn list_devices(mut mux: UsbmuxdConnection) -> Result<Vec<MuxEn
 
 /// Reads what readiness needs from the device: its description without a
 /// session, then, inside a session with the pairing record usbmuxd holds,
-/// Developer Mode and the lock, and with Developer Mode on the image
-/// mounter's listing.
+/// Developer Mode, the lock and the battery, and with Developer Mode on the
+/// image mounter's listing.
 async fn probe_device(provider: &UsbmuxdProvider) -> (Dictionary, Probe) {
     let mut values = Dictionary::new();
     let mut lockdown = match LockdownClient::connect(provider).await {
@@ -392,6 +393,11 @@ async fn probe_device(provider: &UsbmuxdProvider) -> (Dictionary, Probe) {
     // not implemented on iOS 26.6.2 (spike S9), so it is never asked.
     if let Ok(value) = lockdown.get_value(Some(LOCK_KEY), None).await {
         values.insert(LOCK_KEY.to_owned(), value);
+    }
+    // The battery, which `devicectl` does not report, for the harness's
+    // provenance.
+    if let Ok(value) = lockdown.get_value(None, Some(BATTERY_DOMAIN)).await {
+        values.insert(BATTERY_DOMAIN.to_owned(), value);
     }
     let developer_mode = values.get(DEVELOPER_MODE_KEY).and_then(Value::as_boolean);
     let images = if developer_mode == Some(true) {
