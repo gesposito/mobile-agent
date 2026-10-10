@@ -1,0 +1,6 @@
+{"label": "open expo system", "wall_ms": 2480.5, "settled": true, "elapsedMs": 2465.085, "firstTreeMs": 1680.357, "ok": true, "error": null}
+{"label": "click system-alert", "wall_ms": 648.8, "ok": true, "error": null}
+{"label": "settle", "wall_ms": 477.5, "data": {"elapsedMs": 466.394, "endedBy": "frame", "frameChanges": 5, "settled": true, "stillChanging": [], "treeChanges": 0, "waited": "settle"}}
+{"label": "full snapshot 0", "title": true, "message": false, "ok_button": true}
+{"label": "full snapshot 1", "title": true, "message": false, "ok_button": true}
+{"label": "click text=OK", "wall_ms": 474.9, "ok": true, "error": null}

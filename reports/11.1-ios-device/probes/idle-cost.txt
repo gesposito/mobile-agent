@@ -1,0 +1,17 @@
+# The idle poll's cost on the host, 2026-10-10 UTC: the SwiftUI fixture's Big tab in front for 30 s,
+# first with no daemon (the app launched through CoreDevice), then attached through mobile-agent and idle;
+# CPU seconds from ps of the daemon and usbmuxd over each window.
+detached start 10:17:04 load { 4.76 4.87 5.23 }
+detached end 10:23:39 usbmuxd cpu .05 s
+attached start 10:23:51 load { 7.01 5.83 5.54 }
+attached end 10:24:23 daemon cpu 3.32 s usbmuxd cpu 2.44 s
+done
+# xctrace record --device <udid> --template 'Activity Monitor' --all-processes --time-limit 30s, detached:
+Starting recording with the Activity Monitor template. Targeting All Processes. Time limit: 30.0 s
+Ctrl-C to stop the recording
+Reached specified time limit, ending recording...
+Recording completed. Saving output file...
+Output file saved as: detached.trace
+# the same, attached and idle:
+Waiting for device to boot
+Timed out waiting for device to boot: local_phone (26.6.2)

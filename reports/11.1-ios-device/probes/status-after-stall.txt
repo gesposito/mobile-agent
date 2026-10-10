@@ -1,0 +1,9 @@
+# mobile-agent status of the iPhone right after the stalled snapshot of reads-expo.jsonl
+# (relaunch 2, after 2.5 s idle), 2026-10-10 about 10:12 UTC; the identifier written as IPHONE-SE-UDID.
+   input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream), the last acknowledged in 53.9 ms; text through the runner, typed or set
+   frames: screenshots polled on DVT and CoreDevice, 10.8 captures a second, 113 received
+   runner: mobile-agent-ios-runner 0.2.0, failed, 0 restarts, disconnected: iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, whic[h ...]
+   disk image: Personalized at /System/Developer
+   battery: 100%, charging, on external power, when attached
+# The phone's process list then still held MobileAgentRunner-Runner (pid 12024) beside testmanagerd,
+# FixtureSwiftUI and FixtureExpo; the daemon's shutdown ended it (no runner left at the next listing).

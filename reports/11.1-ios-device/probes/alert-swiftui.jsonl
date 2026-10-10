@@ -1,0 +1,6 @@
+{"label": "open swiftui system", "wall_ms": 2412.3, "settled": true, "elapsedMs": 2398.804, "firstTreeMs": 1796.97, "ok": true, "error": null}
+{"label": "click system-alert", "wall_ms": 646.4, "ok": true, "error": null}
+{"label": "settle", "wall_ms": 505.5, "data": {"elapsedMs": 492.579, "endedBy": "frame", "frameChanges": 5, "settled": true, "stillChanging": [], "treeChanges": 0, "waited": "settle"}}
+{"label": "full snapshot 0", "title": true, "message": false, "ok_button": true}
+{"label": "full snapshot 1", "title": true, "message": false, "ok_button": true}
+{"label": "click id=inapp-alert-ok", "wall_ms": 419.2, "ok": true, "error": null}

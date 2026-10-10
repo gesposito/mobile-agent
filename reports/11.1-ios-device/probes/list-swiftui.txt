@@ -1,0 +1,156 @@
+== swiftui List tab, full snapshot 0: wall 260.4 ms, readMs 0.126, servedFromReplica True
+- list
+  - cell
+    - button "Row 1" [id=row-1, ref=e1]
+      - text "Row 1"
+  - cell
+    - button "Row 2" [id=row-2, ref=e2]
+      - text "Row 2"
+  - cell
+    - button "Row 3" [id=row-3, ref=e3]
+      - text "Row 3"
+  - cell
+    - button "Row 4" [id=row-4, ref=e4]
+      - text "Row 4"
+  - cell
+    - button "Row 5" [id=row-5, ref=e5]
+      - text "Row 5"
+  - cell
+    - button "Row 6" [id=row-6, ref=e6]
+      - text "Row 6"
+  - cell
+    - button "Row 7" [id=row-7, ref=e7]
+      - text "Row 7"
+  - cell
+    - button "Row 8" [id=row-8, ref=e8]
+      - text "Row 8"
+  - cell
+    - button "Row 9" [id=row-9, ref=e9]
+      - text "Row 9"
+  - cell
+    - button "Row 10" [id=row-10, ref=e10]
+      - text "Row 10"
+  - cell
+    - button "Row 11" [id=row-11, ref=e11]
+      - text "Row 11"
+  - cell
+    - button "Row 13" [id=row-13, ref=e12]
+      - text "Row 13"
+      - image [id=chevron.forward]
+  - text "Vertical scroll bar, 19 pages": 0%
+  (more items below, scroll down to reveal)
+- tablist "Tab Bar"
+  - button "Login" [id=tab-login, ref=e13]
+    - image "account" [id=person.crop.circle]
+  - button "List" [selected, id=tab-list, ref=e14]
+    - image "List" [id=list.bullet]
+  - button "Big" [id=tab-big, ref=e15]
+    - image "square.grid.3x3" [id=square.grid.3x3]
+  - button "Anim" [id=tab-anim, ref=e16]
+    - image "syncing" [id=arrow.triangle.2.circlepath]
+  - button "System" [id=tab-system, ref=e17]
+    - image "Alert" [id=exclamationmark.bubble]
+== swiftui List tab, full snapshot 1: wall 19.2 ms, readMs 0.216, servedFromReplica True
+- list
+  - cell
+    - button "Row 1" [id=row-1, ref=e1]
+      - text "Row 1"
+  - cell
+    - button "Row 2" [id=row-2, ref=e2]
+      - text "Row 2"
+  - cell
+    - button "Row 3" [id=row-3, ref=e3]
+      - text "Row 3"
+  - cell
+    - button "Row 4" [id=row-4, ref=e4]
+      - text "Row 4"
+  - cell
+    - button "Row 5" [id=row-5, ref=e5]
+      - text "Row 5"
+  - cell
+    - button "Row 6" [id=row-6, ref=e6]
+      - text "Row 6"
+  - cell
+    - button "Row 7" [id=row-7, ref=e7]
+      - text "Row 7"
+  - cell
+    - button "Row 8" [id=row-8, ref=e8]
+      - text "Row 8"
+  - cell
+    - button "Row 9" [id=row-9, ref=e9]
+      - text "Row 9"
+  - cell
+    - button "Row 10" [id=row-10, ref=e10]
+      - text "Row 10"
+  - cell
+    - button "Row 11" [id=row-11, ref=e11]
+      - text "Row 11"
+  - cell
+    - button "Row 13" [id=row-13, ref=e12]
+      - text "Row 13"
+      - image [id=chevron.forward]
+  - text "Vertical scroll bar, 19 pages": 0%
+  (more items below, scroll down to reveal)
+- tablist "Tab Bar"
+  - button "Login" [id=tab-login, ref=e13]
+    - image "account" [id=person.crop.circle]
+  - button "List" [selected, id=tab-list, ref=e14]
+    - image "List" [id=list.bullet]
+  - button "Big" [id=tab-big, ref=e15]
+    - image "square.grid.3x3" [id=square.grid.3x3]
+  - button "Anim" [id=tab-anim, ref=e16]
+    - image "syncing" [id=arrow.triangle.2.circlepath]
+  - button "System" [id=tab-system, ref=e17]
+    - image "Alert" [id=exclamationmark.bubble]
+== swiftui List tab, full snapshot 2: wall 180.6 ms, readMs 0.135, servedFromReplica True
+- list
+  - cell
+    - button "Row 1" [id=row-1, ref=e1]
+      - text "Row 1"
+  - cell
+    - button "Row 2" [id=row-2, ref=e2]
+      - text "Row 2"
+  - cell
+    - button "Row 3" [id=row-3, ref=e3]
+      - text "Row 3"
+  - cell
+    - button "Row 4" [id=row-4, ref=e4]
+      - text "Row 4"
+  - cell
+    - button "Row 5" [id=row-5, ref=e5]
+      - text "Row 5"
+  - cell
+    - button "Row 6" [id=row-6, ref=e6]
+      - text "Row 6"
+  - cell
+    - button "Row 7" [id=row-7, ref=e7]
+      - text "Row 7"
+  - cell
+    - button "Row 8" [id=row-8, ref=e8]
+      - text "Row 8"
+  - cell
+    - button "Row 9" [id=row-9, ref=e9]
+      - text "Row 9"
+  - cell
+    - button "Row 10" [id=row-10, ref=e10]
+      - text "Row 10"
+  - cell
+    - button "Row 11" [id=row-11, ref=e11]
+      - text "Row 11"
+  - cell
+    - button "Row 13" [id=row-13, ref=e12]
+      - text "Row 13"
+      - image [id=chevron.forward]
+  - text "Vertical scroll bar, 19 pages": 0%
+  (more items below, scroll down to reveal)
+- tablist "Tab Bar"
+  - button "Login" [id=tab-login, ref=e13]
+    - image "account" [id=person.crop.circle]
+  - button "List" [selected, id=tab-list, ref=e14]
+    - image "List" [id=list.bullet]
+  - button "Big" [id=tab-big, ref=e15]
+    - image "square.grid.3x3" [id=square.grid.3x3]
+  - button "Anim" [id=tab-anim, ref=e16]
+    - image "syncing" [id=arrow.triangle.2.circlepath]
+  - button "System" [id=tab-system, ref=e17]
+    - image "Alert" [id=exclamationmark.bubble]

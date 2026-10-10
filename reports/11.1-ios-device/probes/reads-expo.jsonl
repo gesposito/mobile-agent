@@ -1,0 +1,30 @@
+{"label": "open expo big", "wall_ms": 2872.7, "settled": true, "elapsedMs": 2866.408, "firstTreeMs": 2455.989, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 0", "wall_ms": 452.2, "readMs": 0.592, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 1", "wall_ms": 7.2, "readMs": 0.604, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 2", "wall_ms": 7.2, "readMs": 0.539, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 3", "wall_ms": 7.1, "readMs": 0.567, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 4", "wall_ms": 6.5, "readMs": 0.533, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 5", "wall_ms": 6.6, "readMs": 0.553, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 0", "wall_ms": 472.6, "readMs": 1.449, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 1", "wall_ms": 7.8, "readMs": 0.624, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 2", "wall_ms": 6.1, "readMs": 0.503, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "open expo big", "wall_ms": 2660.7, "settled": true, "elapsedMs": 2654.822, "firstTreeMs": 2451.134, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 0", "wall_ms": 449.3, "readMs": 0.574, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 1", "wall_ms": 7.4, "readMs": 0.555, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 2", "wall_ms": 6.9, "readMs": 0.553, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 3", "wall_ms": 7.3, "readMs": 0.54, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 4", "wall_ms": 7.1, "readMs": 0.544, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 5", "wall_ms": 7.4, "readMs": 0.554, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 0", "wall_ms": 5520.3, "readMs": 0.613, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 1", "wall_ms": 8.2, "readMs": 0.592, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 2", "wall_ms": 2960.3, "readMs": 0.571, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "open expo big", "wall_ms": 2654.4, "settled": true, "elapsedMs": 2647.998, "firstTreeMs": 2444.586, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 0", "wall_ms": 459.5, "readMs": 0.69, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 1", "wall_ms": 7.9, "readMs": 0.609, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 2", "wall_ms": 7.8, "readMs": 0.571, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 3", "wall_ms": 7.1, "readMs": 0.558, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 4", "wall_ms": 7.8, "readMs": 0.581, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 5", "wall_ms": 7.7, "readMs": 0.635, "servedFromReplica": true, "refs": 506, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 0", "wall_ms": 61146.1, "readMs": null, "servedFromReplica": null, "refs": 0, "ok": false, "error": "the daemon did not answer within 30 s"}
+{"label": "relaunch 2 after 2.5 s idle snapshot 1", "wall_ms": 50220.5, "readMs": null, "servedFromReplica": null, "refs": 0, "ok": false, "error": "iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"}
+{"label": "relaunch 2 after 2.5 s idle snapshot 2", "wall_ms": 189.7, "readMs": null, "servedFromReplica": null, "refs": 0, "ok": false, "error": "iOS device IPHONE-SE-UDID is disconnected, its connection was lost (the runner's connection closed before it answered snapshot (the agent is disconnected (nothing arrived from the other side for 3.0 s); reconnect to the target, which restarts or redeploys the agent); the runner is started again); plug it in again over USB, unlocked, and attach again, which starts over"}
