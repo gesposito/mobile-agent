@@ -133,6 +133,12 @@ pub fn call_sites() -> Vec<CallSite> {
             "follows the lock and is read before every launch, on a session kept for it; CoreDevice's com.apple.coredevice.feature.getlockstate is listed but answers that it is not implemented on iOS 26.6.2 (S9), so it is never asked",
         ),
         site(
+            "GetValue BatteryCurrentCapacity, BatteryIsCharging, ExternalConnected in com.apple.mobile.battery",
+            "lockdownd",
+            "iOS 26.6.2 (iPhone SE 3rd generation), Xcode 27.0, macOS 26.6.2: task 6.2's harness run, through the daemon's status",
+            "read in the probe's session, so a status names the battery as the attach found it; devicectl's device info reports none",
+        ),
+        site(
             "CopyDevices",
             "com.apple.mobile.mobile_image_mounter (lockdown)",
             DISCOVERY,
