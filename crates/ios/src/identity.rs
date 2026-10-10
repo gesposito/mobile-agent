@@ -7,12 +7,92 @@
 //! `security find-identity -v -p codesigning` lists the valid identities by
 //! their certificate's SHA-1 and name; `security find-certificate -a -Z -p`
 //! gives each certificate, whose subject's organizational unit is the team.
-//! The name's parenthesized code is the developer's, not the team's.
+//! The name's parenthesized code is the developer's, not the team's. Each
+//! command is ended once it has run [`SECURITY_TIMEOUT`], and the check then
+//! says so.
 
 use std::fmt;
-use std::process::Command;
+use std::io::Read;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use crate::model::TEAM_VARIABLE;
+
+/// How long one `security` command of the identity check may run before it
+/// is ended: about 40 ms on the spike host, while the measured host's
+/// endpoint security held process launches for up to 130.6 s, and the
+/// unbounded check held the daemon's commands with it (task 7.1, design D26
+/// of physical-ios).
+pub const SECURITY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How often a bounded command is looked at to see whether it has ended.
+const RUN_POLL: Duration = Duration::from_millis(5);
+
+/// The `security` the identity check runs: the host's, each command ended
+/// after [`SECURITY_TIMEOUT`], or another program and time in the tests.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Security {
+    pub(crate) program: PathBuf,
+    pub(crate) timeout: Duration,
+}
+
+/// Why a command of the check gave no output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum RunFailure {
+    /// It did not start, or exited with a failure; why.
+    Failed(String),
+    /// It ran past its time and was ended; the command and the time.
+    TimedOut(String),
+}
+
+impl Security {
+    /// The host's `security`, bounded by [`SECURITY_TIMEOUT`].
+    pub(crate) fn host() -> Security {
+        Security {
+            program: PathBuf::from("security"),
+            timeout: SECURITY_TIMEOUT,
+        }
+    }
+
+    /// The command line as messages name it: the program's file name and
+    /// the arguments.
+    fn command(&self, args: &[&str]) -> String {
+        let program = self.program.file_name().map_or_else(
+            || self.program.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        format!("{program} {}", args.join(" "))
+    }
+
+    /// Runs the program with `args` and returns what it printed.
+    fn run(&self, args: &[&str]) -> Result<String, RunFailure> {
+        let command = self.command(args);
+        let output = Command::new(&self.program)
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|error| RunFailure::Failed(format!("{command}: {error}")))?;
+        if !output.status.success() {
+            return Err(RunFailure::Failed(format!(
+                "{command} exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+}
+
+/// Reads `pipe` to its end on a thread of its own.
+fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = pipe.read_to_end(&mut bytes);
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
+}
 
 /// The prefix of an Apple Development identity's name.
 pub const DEVELOPMENT_PREFIX: &str = "Apple Development:";
@@ -276,46 +356,40 @@ pub fn decode_base64(text: &str) -> Option<Vec<u8>> {
 }
 
 /// The host's signing identity for the team in `MOBILE_AGENT_IOS_TEAM`,
-/// through `security` (about 40 ms per command on the spike host).
+/// through `security` (about 40 ms per command on the spike host), each
+/// command ended after [`SECURITY_TIMEOUT`].
 pub fn host_identity() -> IdentityCheck {
     let team = std::env::var(TEAM_VARIABLE).ok();
-    let team = team
-        .as_deref()
-        .map(str::trim)
-        .filter(|team| !team.is_empty());
+    identity_with(team.as_deref(), &Security::host())
+}
+
+/// The signing identity for `team` through `security`: unreadable, naming
+/// the command and its time, when one ran past its timeout.
+pub(crate) fn identity_with(team: Option<&str>, security: &Security) -> IdentityCheck {
+    let team = team.map(str::trim).filter(|team| !team.is_empty());
     let Some(team) = team else {
         return IdentityCheck::NoTeam;
     };
-    let run = |args: &[&str]| -> Result<String, String> {
-        let output = Command::new("security")
-            .args(args)
-            .output()
-            .map_err(|error| format!("security {}: {error}", args.join(" ")))?;
-        if !output.status.success() {
-            return Err(format!(
-                "security {} exited with {}: {}",
-                args.join(" "),
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    };
-    let identities = match run(&["find-identity", "-v", "-p", "codesigning"]) {
+    let identities = match security.run(&["find-identity", "-v", "-p", "codesigning"]) {
         Ok(text) => text,
-        Err(reason) => return IdentityCheck::Unreadable(reason),
+        Err(RunFailure::Failed(reason) | RunFailure::TimedOut(reason)) => {
+            return IdentityCheck::Unreadable(reason);
+        }
     };
     // A keychain without the certificate makes find-certificate exit 44;
     // the identities' check then names no team.
-    let certificates = run(&[
+    let certificates = match security.run(&[
         "find-certificate",
         "-a",
         "-Z",
         "-p",
         "-c",
         "Apple Development",
-    ])
-    .unwrap_or_default();
+    ]) {
+        Ok(text) => text,
+        Err(RunFailure::Failed(_)) => String::new(),
+        Err(RunFailure::TimedOut(reason)) => return IdentityCheck::Unreadable(reason),
+    };
     check(Some(team), &identities, &certificates)
 }
 
@@ -565,5 +639,107 @@ mod tests {
             }
         );
         assert!(!IdentityCheck::Unreadable("security failed".into()).ok());
+    }
+
+    /// A directory of its own for a test's stand-in `security`, removed
+    /// when dropped.
+    #[cfg(unix)]
+    struct Stand {
+        dir: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl Stand {
+        /// A `security` that runs `body` as a shell script, with the
+        /// recorded identities and certificates beside it.
+        fn new(test: &str, body: &str) -> Stand {
+            use std::os::unix::fs::PermissionsExt;
+            let dir =
+                std::env::temp_dir().join(format!("ios-identity-{test}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("the stand-in's directory");
+            std::fs::write(dir.join("identities.txt"), IDENTITIES).expect("identities");
+            let certificates = pem_listing(&[(
+                "0123456789ABCDEF0123456789ABCDEF01234567",
+                certificate("TEAMPLACE1"),
+            )]);
+            std::fs::write(dir.join("certificates.txt"), certificates).expect("certificates");
+            let program = dir.join("security");
+            std::fs::write(&program, format!("#!/bin/sh\n{body}\n")).expect("the script");
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+                .expect("executable");
+            Stand { dir }
+        }
+
+        fn security(&self, timeout: Duration) -> Security {
+            Security {
+                program: self.dir.join("security"),
+                timeout,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Stand {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// Physical-ios, task 9.2: the check runs `security`'s two commands
+    /// through the runner it is given, here a stand-in that prints the
+    /// recorded listings.
+    #[cfg(unix)]
+    #[test]
+    fn the_check_reads_the_identities_and_certificates_security_prints() {
+        let stand = Stand::new(
+            "prints",
+            "case \"$1\" in\n  find-identity) cat \"$(dirname \"$0\")/identities.txt\" ;;\n  find-certificate) cat \"$(dirname \"$0\")/certificates.txt\" ;;\n  *) exit 2 ;;\nesac",
+        );
+        let found = identity_with(Some("TEAMPLACE1"), &stand.security(SECURITY_TIMEOUT));
+        assert_eq!(
+            found,
+            IdentityCheck::Found {
+                name: "Apple Development: placeholder-developer (PLACEHOLD0)".into(),
+                team: "TEAMPLACE1".into(),
+            }
+        );
+    }
+
+    /// Physical-ios, task 9.2 (design D26): a `security` that hangs, as
+    /// the measured host's endpoint security held launches for up to
+    /// 130.6 s, is ended at its timeout, 5 s for the host's, and the check,
+    /// and the readiness that follows from it, name the command and the
+    /// time.
+    #[cfg(unix)]
+    #[test]
+    fn a_security_that_hangs_is_ended_at_its_timeout_and_the_readiness_names_it() {
+        assert_eq!(SECURITY_TIMEOUT, Duration::from_secs(5));
+        assert_eq!(Security::host().timeout, SECURITY_TIMEOUT);
+        let stand = Stand::new("hangs", "exec sleep 5");
+        let timeout = Duration::from_millis(300);
+        let started = Instant::now();
+        let check = identity_with(Some("TEAMPLACE1"), &stand.security(timeout));
+        let took = started.elapsed();
+        assert!(
+            took < Duration::from_secs(2),
+            "the hanging command was ended at its timeout, not waited for: {took:?}"
+        );
+        let IdentityCheck::Unreadable(reason) = &check else {
+            panic!("expected an unreadable keychain, got {check:?}");
+        };
+        assert!(
+            reason.contains("security find-identity -v -p codesigning") && reason.contains("300ms"),
+            "{reason}"
+        );
+        let readiness = crate::readiness::Readiness::NoSigningIdentity {
+            reason: check.reason(),
+        };
+        assert_eq!(readiness.code(), "no_signing_identity");
+        assert!(
+            readiness.message().contains("300ms"),
+            "{}",
+            readiness.message()
+        );
     }
 }

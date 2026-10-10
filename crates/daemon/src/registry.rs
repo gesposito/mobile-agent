@@ -146,6 +146,12 @@ impl Registry {
         self.known.clone()
     }
 
+    /// The targets connected now, as `devices` lists them: every driver
+    /// forgets what it keeps between listings, then lists afresh.
+    pub fn devices(&mut self) -> Vec<TargetInfo> {
+        self.targets(true)
+    }
+
     /// Why drivers failed to list their targets the last time.
     pub fn failures(&self) -> &[String] {
         &self.failures
@@ -407,6 +413,112 @@ mod tests {
             (Duration::from_millis(200)..Duration::from_millis(800)).contains(&took),
             "{took:?}"
         );
+    }
+
+    /// The fake targets of a spec, counting the listings asked of them and
+    /// the times they were told to forget what they keep.
+    struct Counting {
+        fake: FakeDriver,
+        listings: std::sync::atomic::AtomicU32,
+        forgets: std::sync::atomic::AtomicU32,
+    }
+
+    impl Counting {
+        fn new(spec: &str) -> Counting {
+            Counting {
+                fake: FakeDriver::parse(spec).unwrap(),
+                listings: std::sync::atomic::AtomicU32::new(0),
+                forgets: std::sync::atomic::AtomicU32::new(0),
+            }
+        }
+
+        fn listings(&self) -> u32 {
+            self.listings.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn forgets(&self) -> u32 {
+            self.forgets.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl Driver for Counting {
+        fn name(&self) -> &str {
+            "fake"
+        }
+
+        fn discover(&self) -> Result<Vec<TargetInfo>, crate::driver::DriverError> {
+            self.listings
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.fake.discover()
+        }
+
+        fn attach(
+            &self,
+            target: &TargetInfo,
+            options: &AttachOptions,
+        ) -> Result<crate::driver::Attachment, crate::driver::DriverError> {
+            self.fake.attach(target, options)
+        }
+
+        fn forget(&self) {
+            self.forgets
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// Physical-ios, task 9.2 (design D26): a command on a target the
+    /// daemon holds attached is resolved from its attachment, by its id or
+    /// as the one target its session holds, however old the listing, with
+    /// no driver asked: an iPhone's listing probes lockdown and runs
+    /// `security` twice, 150 to 220 ms before each command after a pause. A
+    /// target that is not attached is still listed, and `devices` lists
+    /// afresh, every driver told first to forget what it keeps.
+    #[test]
+    fn an_attached_target_is_resolved_without_a_listing_and_devices_lists_afresh() {
+        let driver = Arc::new(Counting::new("ios-device,ios"));
+        let mut registry = Registry::new(vec![Arc::clone(&driver) as Arc<dyn Driver>]);
+        let phone = registry
+            .targets(true)
+            .into_iter()
+            .find(|target| target.id == "FAKE-IOS-DEVICE-1")
+            .unwrap();
+        registry.claim(&phone, "agent", false).unwrap();
+        registry
+            .handle(&phone)
+            .unwrap()
+            .run(AttachOptions::default(), |_| Ok(Success::new(json!({}))))
+            .unwrap();
+        assert_eq!(driver.listings(), 1);
+        registry.listed = Instant::now().checked_sub(DISCOVERY_TTL * 2);
+        let by_id = Selection {
+            device: Some(phone.id.clone()),
+            platform: None,
+        };
+        assert_eq!(registry.resolve("agent", &by_id).unwrap().id, phone.id);
+        assert_eq!(
+            registry.resolve("agent", &Selection::default()).unwrap().id,
+            phone.id,
+            "the one target the session holds"
+        );
+        assert_eq!(
+            driver.listings(),
+            1,
+            "an attached target asks no driver to list again"
+        );
+        let simulator = Selection {
+            device: Some("FAKE-IOS-1".into()),
+            platform: None,
+        };
+        assert_eq!(
+            registry.resolve("agent", &simulator).unwrap().id,
+            "FAKE-IOS-1"
+        );
+        assert_eq!(driver.listings(), 2, "a target not attached is listed");
+        let listed = registry.devices();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(driver.listings(), 3, "devices lists afresh");
+        assert_eq!(driver.forgets(), 1, "after telling the drivers to forget");
+        registry.stop();
     }
 
     /// Task 8.16: once stopped, the registry starts no worker, so a request

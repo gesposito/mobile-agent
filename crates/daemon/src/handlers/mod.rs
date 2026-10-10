@@ -279,7 +279,7 @@ fn devices(daemon: &Daemon, request: &Request) -> Outcome {
     let selection = selection(request)?;
     let mut registry = daemon.registry();
     let devices: Vec<Value> = registry
-        .targets(true)
+        .devices()
         .iter()
         .filter(|target| selection.platform.is_none_or(|p| target.platform == p))
         .map(|target| {

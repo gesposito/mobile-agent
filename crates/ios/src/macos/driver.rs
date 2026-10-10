@@ -28,6 +28,7 @@ use crate::discovery::{self, usb_entries};
 use crate::driver::{Devices, Frames, Input, Lifecycle, Session};
 use crate::error::{Error, Result};
 use crate::frames::FrameStream;
+use crate::identity::IdentityCheck;
 use crate::model::{
     AttachOptions, Attached, Button, Connected, DeviceInfo, Disconnect, DiskImage, Dispatch,
     FrameOptions, FramePathStatus, InputChoice, InputPath, Installed, Key, LaunchOptions, Launched,
@@ -578,10 +579,18 @@ impl<H: Host> Core<H> {
         self
     }
 
+    /// The host's signing identity.
+    fn identity(&self) -> IdentityCheck {
+        self.host.identity()
+    }
+
+    /// Forgets the signing identity kept, so that the next use checks it.
+    pub(crate) fn forget_identity(&self) {}
+
     pub(crate) fn devices(&self) -> Result<Vec<DeviceInfo>> {
         self.runtime.block_on(async {
             let entries = usb_entries(self.host.list().await?);
-            let identity = self.host.identity();
+            let identity = self.identity();
             let mut devices = Vec::with_capacity(entries.len());
             for entry in &entries {
                 let (values, probe) = self.host.probe(entry).await;
@@ -600,7 +609,7 @@ impl<H: Host> Core<H> {
         self.runtime.block_on(async {
             let entry = self.entry(target).await?;
             let (values, probe) = self.host.probe(&entry).await;
-            let identity = self.host.identity();
+            let identity = self.identity();
             let info = discovery::device_info(target, &values, probe, &identity);
             readiness::assess(info.ios_version.as_deref(), &info.probe, &identity, need).map_err(
                 |readiness| Error::NotReady {
@@ -635,7 +644,7 @@ impl<H: Host> Core<H> {
             }
             entry => entry?,
         };
-        let identity = self.host.identity();
+        let identity = self.identity();
         let not_ready = |readiness| Error::NotReady {
             target: target.to_owned(),
             readiness,
@@ -837,7 +846,7 @@ impl<H: Host> Core<H> {
         self.contained(target, async {
             let started = Instant::now();
             let (slot, connected) = self.connect_target(target).await?;
-            let identity = self.host.identity();
+            let identity = self.identity();
             let device = &connected.device;
             readiness::assess(
                 device.ios_version.as_deref(),
@@ -1254,6 +1263,11 @@ pub(crate) mod tests {
         pub(crate) trust: Trust,
         pub(crate) images: Images,
         pub(crate) identity: IdentityCheck,
+        /// What the next identity checks answer, first first, before
+        /// `identity`.
+        pub(crate) identities: Mutex<std::collections::VecDeque<IdentityCheck>>,
+        /// How many times the identity was checked.
+        pub(crate) identity_checks: std::sync::atomic::AtomicU32,
         pub(crate) device: Arc<FakeDevice>,
         pub(crate) mounter: FakeMounter,
         pub(crate) probed: Mutex<Vec<MuxEntry>>,
@@ -1303,6 +1317,8 @@ pub(crate) mod tests {
                 trust: Trust::Trusted,
                 images: Images::Fixed(Some(Ok(recorded_images()))),
                 identity: identity(),
+                identities: Mutex::new(std::collections::VecDeque::new()),
+                identity_checks: std::sync::atomic::AtomicU32::new(0),
                 device,
                 mounter: FakeMounter::new(true, Err("not called".into()), Err("not called".into())),
                 probed: Mutex::new(Vec::new()),
@@ -1426,7 +1442,13 @@ pub(crate) mod tests {
         }
 
         fn identity(&self) -> IdentityCheck {
-            self.identity.clone()
+            self.identity_checks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.identities
+                .lock()
+                .expect("identities")
+                .pop_front()
+                .unwrap_or_else(|| self.identity.clone())
         }
 
         fn opener(&self, entry: &MuxEntry) -> FakeOpener {
@@ -1561,6 +1583,57 @@ pub(crate) mod tests {
             .require(PHONE, Need::Session)
             .expect("a ready phone");
         assert_eq!(ready.readiness, Readiness::Ready);
+    }
+
+    /// Physical-ios, task 9.2 (design D26): the host's signing identity is
+    /// checked once per driver: a listing checks it, and the attach and the
+    /// commands after it take the identity kept, until `forget_identity`,
+    /// which a `devices` request asks for, makes the next listing check it
+    /// again. A check that failed is not kept: the next use checks again.
+    /// Each check ran `security` twice on the request's path, 162.7 ms at
+    /// p50 for a listing with the SE.
+    #[test]
+    fn the_signing_identity_is_checked_once_and_again_after_a_failure_or_when_forgotten() {
+        let host = FakeHost::ready();
+        host.device.install_runner("0.1.0");
+        host.identities
+            .lock()
+            .expect("identities")
+            .push_back(IdentityCheck::Unreadable(
+                "security find-identity -v -p codesigning did not finish within 5s and was ended"
+                    .into(),
+            ));
+        let core = core(host);
+        let checks = |core: &Core<FakeHost>| {
+            core.host
+                .identity_checks
+                .load(std::sync::atomic::Ordering::SeqCst)
+        };
+        let failed = core.devices().expect("devices");
+        assert_eq!(failed[0].readiness.code(), "no_signing_identity");
+        assert!(
+            failed[0].readiness.message().contains("within 5s"),
+            "{}",
+            failed[0].readiness.message()
+        );
+        assert_eq!(checks(&core), 1);
+        let listed = core.devices().expect("devices");
+        assert_eq!(listed[0].readiness, Readiness::Ready);
+        assert_eq!(checks(&core), 2, "a failed check is not kept");
+        core.require(PHONE, Need::Session).expect("ready");
+        let options = AttachOptions {
+            runner: crate::model::RunnerSpec::new("0.1.0"),
+            target_app: None,
+            timeout: Duration::from_secs(5),
+            input: InputChoice::Auto,
+        };
+        core.attach(PHONE, &options).expect("attaches");
+        core.devices().expect("devices");
+        assert_eq!(checks(&core), 2, "the identity found is kept");
+        core.forget_identity();
+        core.devices().expect("devices");
+        assert_eq!(checks(&core), 3, "checked again once forgotten");
+        core.release(PHONE).expect("releases");
     }
 
     #[test]

@@ -49,6 +49,12 @@ pub trait Driver: Send + Sync {
     fn doctor(&self) -> Map<String, Value> {
         Map::new()
     }
+
+    /// Forgets what the driver keeps between listings, so that the next
+    /// listing reads it afresh: `devices` asks before it lists. The physical
+    /// iPhone driver keeps the host's signing identity (design D26 of
+    /// physical-ios); the others keep nothing.
+    fn forget(&self) {}
 }
 
 /// A target's operating system.
