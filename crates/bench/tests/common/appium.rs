@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -33,6 +34,10 @@ enum Screen {
 /// The app's state and what the server was asked.
 #[derive(Debug)]
 struct State {
+    /// The log the fake `appium` writes a line to as it starts and `ended`
+    /// to as it exits: the server answers `/status` only while that
+    /// process runs, as Appium serves only while it runs.
+    process_log: PathBuf,
     screen: Screen,
     username: String,
     password: String,
@@ -51,11 +56,13 @@ pub struct FakeAppium {
 }
 
 impl FakeAppium {
-    /// A server on a free loopback port, serving until the test ends.
-    pub fn start() -> FakeAppium {
+    /// A server on a free loopback port, serving until the test ends, for
+    /// the fake `appium` that logs its starts and exits to `process_log`.
+    pub fn start(process_log: &Path) -> FakeAppium {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(Mutex::new(State {
+            process_log: process_log.to_owned(),
             screen: Screen::Home,
             username: String::new(),
             password: String::new(),
@@ -151,10 +158,16 @@ fn answer(state: &mut State, method: &str, path: &str, body: &Value) -> (u16, Va
     };
     state.requests.push(logged);
     match (method, segments.as_slice()) {
-        ("GET", ["status"]) => (
-            200,
-            json!({"value": {"ready": true, "message": "The server is ready to accept new connections", "build": {"version": "3.8.0"}}}),
-        ),
+        ("GET", ["status"]) => {
+            let log = std::fs::read_to_string(&state.process_log).unwrap_or_default();
+            if log.lines().last().is_none_or(|line| line == "ended") {
+                return error(503, "unknown error", "Appium is not running");
+            }
+            (
+                200,
+                json!({"value": {"ready": true, "message": "The server is ready to accept new connections", "build": {"version": "3.8.0"}}}),
+            )
+        }
         ("POST", ["session"]) => {
             state.capabilities = body.clone();
             state.session = Some("S1".to_owned());

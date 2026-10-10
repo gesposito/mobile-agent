@@ -199,7 +199,10 @@ fn an_absent_tool_is_noted_as_skipped_and_the_tools_that_ran_are_still_compared(
     assert_eq!(comparison.rows.len(), 1);
     assert_eq!(comparison.rows[0][3], "flow tab-list");
     assert!(
-        md.contains("Skipped: maestro-runner (maestro-runner not found on PATH)."),
+        md.contains(
+            "Skipped: maestro-runner (maestro-runner not found on PATH); webdriveragent \
+             (appium not found on PATH)."
+        ),
         "{md}"
     );
     let json: Value = serde_json::from_str(&report.to_json()).unwrap();

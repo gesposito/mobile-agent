@@ -75,7 +75,13 @@ fn every_adapter_reads_the_golden(platform: Platform, fake: &str, target: Target
             devices.config(&common::scratch(&format!("{name}-cli"))),
         )),
     ];
-    adapters.extend(baselines(&tools.config()));
+    // WebDriverAgent runs on a physical iPhone only; `tests/wda.rs` reads
+    // its goldens there.
+    adapters.extend(
+        baselines(&tools.config())
+            .into_iter()
+            .filter(|a| a.name() != bench::baseline::wda::NAME),
+    );
     let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
     assert_eq!(
         names,

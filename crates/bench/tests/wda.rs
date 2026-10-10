@@ -74,8 +74,8 @@ impl Setup {
              case \"$*\" in\n\
              --version) echo 3.8.0 ;;\n\
              'driver list --installed --json') cat \"$dir/drivers.json\" ;;\n\
-             *) echo \"$@\" >> \"$dir/appium.log\"\n\
-                trap 'echo ended >> \"$dir/appium.log\"; exit 0' TERM\n\
+             *) trap 'echo ended >> \"$dir/appium.log\"; exit 0' TERM\n\
+                echo \"$@\" >> \"$dir/appium.log\"\n\
                 while :; do sleep 0.1; done ;;\n\
              esac\n",
         );
@@ -278,14 +278,14 @@ fn run(setup: &Setup, appium: &FakeAppium) -> (Report, Vec<String>) {
 /// starts WebDriverAgent through the phone's test manager, Appium attaches a
 /// session to the URL the helper prints, each flow's golden check reads the
 /// golden from WebDriverAgent's source, the flows are timed, and the
-/// 500-cell screen's node count is the source's. The release deletes the
+/// 500-cell screen's node count is the source's. Each release deletes the
 /// session, stops Appium and the helper, and ends WebDriverAgent's runner
 /// app on the phone through CoreDevice, before the tool under test takes
 /// the phone back.
 #[test]
 fn the_reference_flows_run_through_webdriveragent_on_an_iphone_and_its_release_ends_its_runner() {
     let setup = Setup::new("wda-flows", &[], true);
-    let appium = FakeAppium::start();
+    let appium = FakeAppium::start(&setup.bin.join("appium.log"));
     let (report, events) = run(&setup, &appium);
 
     let tool = report
@@ -331,6 +331,11 @@ fn the_reference_flows_run_through_webdriveragent_on_an_iphone_and_its_release_e
         )
     );
     assert_eq!(appium.capabilities(), wda::capabilities("PHONE-1", WDA_URL));
+    // The tool under test and WebDriverAgent take turns on the phone, a
+    // golden check and then a timed series of each flow, so each time
+    // WebDriverAgent takes the phone the helper, Appium and a session start
+    // again, and each release ends them.
+    let takes = 6;
     let helper_log = setup.log("wda-helper");
     assert_eq!(
         helper_log,
@@ -338,23 +343,24 @@ fn the_reference_flows_run_through_webdriveragent_on_an_iphone_and_its_release_e
             "--udid PHONE-1 --bundle-id dev.mobileagent.wda.runner.xctrunner",
             "ended"
         ]
+        .repeat(takes)
     );
-    let requests = appium.requests();
     assert_eq!(
-        requests
-            .iter()
-            .filter(|r| r.starts_with("POST /session") && !r.contains("/session/"))
-            .count(),
-        1,
-        "one session for the run: {requests:?}"
+        appium_log.iter().filter(|l| *l == "ended").count(),
+        takes,
+        "{appium_log:?}"
     );
+    assert_eq!(appium_log.last().map(String::as_str), Some("ended"));
+    let requests = appium.requests();
+    let count = |request: &str| requests.iter().filter(|r| *r == request).count();
+    assert_eq!(count("POST /session"), takes, "{requests:?}");
+    assert_eq!(count("DELETE /session/S1"), takes, "{requests:?}");
     assert!(requests.contains(&"POST execute mobile: swipe up".to_owned()));
     assert_eq!(
         requests.last().map(String::as_str),
         Some("DELETE /session/S1")
     );
     assert!(!appium.session_open());
-    assert_eq!(appium_log.last().map(String::as_str), Some("ended"));
 
     let handoff = report
         .handoffs
@@ -382,7 +388,7 @@ fn the_reference_flows_run_through_webdriveragent_on_an_iphone_and_its_release_e
 #[test]
 fn webdriveragent_does_not_start_on_an_iphone_another_tool_s_runner_holds() {
     let setup = Setup::new("wda-held", &[("MobileAgentRunner-Runner", 4242)], true);
-    let appium = FakeAppium::start();
+    let appium = FakeAppium::start(&setup.bin.join("appium.log"));
     let (report, _) = run(&setup, &appium);
     let failed: Vec<&str> = report
         .measurements
