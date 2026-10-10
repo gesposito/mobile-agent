@@ -15,6 +15,9 @@ use crate::snapshot::Role;
 /// `XCUIElementType`.
 pub(crate) const XCUI_PREFIX: &str = "XCUIElementType";
 
+/// XCTest's class of a static text, such as an alert's title and message.
+pub(crate) const XCUI_STATIC_TEXT: &str = "XCUIElementTypeStaticText";
+
 /// The role a class names on its own, if any.
 pub(crate) fn class_role(class: &str) -> Option<Role> {
     if let Some(short) = class.strip_prefix(XCUI_PREFIX) {

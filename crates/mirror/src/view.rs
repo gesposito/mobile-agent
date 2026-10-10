@@ -39,7 +39,8 @@
 //! 10. in XCTest's tree, whose order is the order UIKit draws views in, a
 //!     node listed after a sibling it overlaps cuts what that sibling holds
 //!     within its bounds when it shows something, as `on_top` does
-//!     (rn-app-fixes, design D31).
+//!     (rn-app-fixes, design D31), but for an alert's text, over which
+//!     UIKit draws nothing (physical-ios, design D26).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -686,7 +687,8 @@ fn cover_by_views_on_top(
                     .copied()
                     .filter(|&sibling| sibling != s),
             );
-            hide_under(window, &mut facts[w], s, &mut stack, slack, false, |d| {
+            let spared = |_: usize, _: &Facts| false;
+            hide_under(window, &mut facts[w], s, &mut stack, slack, spared, |d| {
                 covers.push((w, d, Cover::DrawnOver(s)));
             });
         }
@@ -700,23 +702,21 @@ fn cover_by_views_on_top(
 /// reports whole frames, and a node there can hold one outside its own
 /// bounds; such a node lies outside the clip of a scroll container it
 /// overflows, out of view rather than covered, and keeps counting in the
-/// container's hint. With `spare_bars` the walk leaves tab bars and
-/// toolbars alone, with what they hold.
+/// container's hint. The walk leaves alone the nodes `spare` names, with
+/// what they hold.
 fn hide_under(
     window: &Win,
     facts: &mut [Facts],
     s: usize,
     stack: &mut Vec<usize>,
     slack: f64,
-    spare_bars: bool,
+    spare: impl Fn(usize, &Facts) -> bool,
     mut hid: impl FnMut(usize),
 ) {
     let area = facts[s].rect;
     while let Some(d) = stack.pop() {
         let covered = &mut facts[d];
-        if !covered.rect.overlaps(&area)
-            || (spare_bars && matches!(covered.role, Role::Tablist | Role::Toolbar))
-        {
+        if !covered.rect.overlaps(&area) || spare(d, covered) {
             continue;
         }
         if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
@@ -763,6 +763,15 @@ fn drawn_in_order(replica: &Replica) -> bool {
 /// bar listed after content, as UIKit's tab bar is, covers what lies
 /// wholly under it as any later sibling does.
 ///
+/// An alert's static text is spared: UIKit's alert controller draws
+/// nothing over its title and message, while XCTest lists its scroll
+/// views' indicators after the text they scroll, their accessibility frames
+/// 30-point hit areas along the view's edges, which UIKit draws as bars a
+/// few points thick, when at all. The horizontal one's frame holds the
+/// message on an iPhone 17 Simulator and on the SE, which hid the message
+/// from the listing (physical-ios, design D26). XCTest lists each indicator
+/// twice, with one frame, and the second copy still covers the first.
+///
 /// The covers are taken top-most first, parents before their children and
 /// later siblings before earlier ones, so a node two views cover is
 /// recorded under the one drawn last. Overlapping siblings are found by
@@ -782,6 +791,7 @@ fn cover_by_later_siblings(
         let widest = window.nodes.iter().map(|n| n.children.len()).max();
         sweep.active.reserve(widest.unwrap_or(0));
         let mut shows: Option<Vec<bool>> = None;
+        let mut alerted: Option<Vec<bool>> = None;
         for parent in 0..window.nodes.len() {
             let children = &window.nodes[parent].children;
             if children.len() < 2 {
@@ -793,6 +803,7 @@ fn cover_by_later_siblings(
             }
             pairs.sort_unstable_by(|x, y| y.1.cmp(&x.1).then(x.0.cmp(&y.0)));
             let shows = shows.get_or_insert_with(|| showing(window, &facts[w]));
+            let alerted = alerted.get_or_insert_with(|| in_alerts(window, &facts[w]));
             for &(earlier, later) in pairs.iter() {
                 let (e, s) = (children[earlier], children[later]);
                 let f = &facts[w][s];
@@ -801,12 +812,27 @@ fn cover_by_later_siblings(
                 }
                 stack.clear();
                 stack.push(e);
-                hide_under(window, &mut facts[w], s, &mut stack, slack, true, |d| {
+                let spared = |d: usize, f: &Facts| {
+                    matches!(f.role, Role::Tablist | Role::Toolbar)
+                        || (alerted[d] && &*window.nodes[d].class == roles::XCUI_STATIC_TEXT)
+                };
+                hide_under(window, &mut facts[w], s, &mut stack, slack, spared, |d| {
                     covers.push((w, d, Cover::DrawnOver(s)));
                 });
             }
         }
     }
+}
+
+/// Whether each node of `window` is an alert or lies inside one.
+fn in_alerts(window: &Win, facts: &[Facts]) -> Vec<bool> {
+    let mut alerted = Vec::with_capacity(window.nodes.len());
+    // Parents come before their children in the pre-order.
+    for (node, f) in window.nodes.iter().zip(facts) {
+        let inside = node.parent.is_some_and(|parent| alerted[parent]);
+        alerted.push(inside || f.role == Role::Alert);
+    }
+    alerted
 }
 
 /// Scratch space for [`overlapping`], kept across the parents of a view.
