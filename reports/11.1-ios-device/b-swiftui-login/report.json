@@ -1,0 +1,697 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-10T07:52:59Z",
+    "finished_at": "2026-10-10T08:00:23Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.29,
+        3.2,
+        4.24
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "34baba1ec5c12a027a45ed56675486ae9265fa3f",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "swiftui",
+            "bundle": "fixtures/swiftui/build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app",
+            "elapsed_us": 1460080
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "login",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 6662114,
+        "p95_us": 7179829,
+        "max_us": 30166198
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 1,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 2.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "texts": {
+          "login-status": "Welcome, agent"
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6622318,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 593.428 ms; fill id=login-password: method keys, read back as length in 737.948 ms",
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6666456,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 590.117 ms; fill id=login-password: method keys, read back as length in 761.43 ms",
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6594408,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 602.841 ms; fill id=login-password: method keys, read back as length in 747.621 ms",
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6653412,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 606.119 ms; fill id=login-password: method keys, read back as length in 757.728 ms",
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6736316,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 635.187 ms; fill id=login-password: method keys, read back as length in 752.254 ms",
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6274253,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 368.147 ms; fill id=login-password: method keys, read back as length in 323.547 ms",
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6432844,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 390.688 ms; fill id=login-password: method keys, read back as length in 376.721 ms",
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6758717,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 397.905 ms; fill id=login-password: method keys, read back as length in 278.902 ms",
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7179829,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 390.99 ms; fill id=login-password: method keys, read back as length in 761.155 ms",
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 30166198,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 260.414 ms; fill id=login-password: method keys, read back as length in 319.778 ms",
+          "errors": [
+            "mobile-agent click --timeout 10000 -- id=login-submit: daemon_timeout: the daemon did not answer within 30 s"
+          ]
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6310235,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 388.991 ms; fill id=login-password: method keys, read back as length in 245.307 ms",
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7038525,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 409.215 ms; fill id=login-password: method keys, read back as length in 758.345 ms",
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7141384,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 380.951 ms; fill id=login-password: method keys, read back as length in 746.466 ms",
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6998022,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 619.178 ms; fill id=login-password: method keys, read back as length in 328.577 ms",
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6731375,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 268.371 ms; fill id=login-password: method keys, read back as length in 756.687 ms",
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7011260,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 395.877 ms; fill id=login-password: method keys, read back as length in 767.322 ms",
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6801284,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 378.968 ms; fill id=login-password: method keys, read back as length in 757.94 ms",
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7006313,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 313.053 ms; fill id=login-password: method keys, read back as length in 758.43 ms",
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6375303,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 319.062 ms; fill id=login-password: method keys, read back as length in 273.821 ms",
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6960886,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 373.118 ms; fill id=login-password: method keys, read back as length in 757.087 ms",
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6909588,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 609.777 ms; fill id=login-password: method keys, read back as length in 320.814 ms",
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7011759,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 381.704 ms; fill id=login-password: method keys, read back as length in 758.157 ms",
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7026669,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 282.631 ms; fill id=login-password: method keys, read back as length in 758.938 ms",
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6640834,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 294.157 ms; fill id=login-password: method keys, read back as length in 258.178 ms",
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7057597,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 376.789 ms; fill id=login-password: method keys, read back as length in 762.717 ms",
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7028703,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 410.169 ms; fill id=login-password: method keys, read back as length in 757.104 ms",
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7012099,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 342.081 ms; fill id=login-password: method keys, read back as length in 707.175 ms",
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6905322,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 410.938 ms; fill id=login-password: method keys, read back as length in 753.562 ms",
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6092020,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 293.536 ms; fill id=login-password: method keys, read back as length in 359.732 ms",
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6543486,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 589.734 ms; fill id=login-password: method keys, read back as length in 319.879 ms",
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6514687,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 254.179 ms; fill id=login-password: method keys, read back as length in 359.856 ms",
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6438231,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 385.811 ms; fill id=login-password: method keys, read back as length in 254.605 ms",
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6234173,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 307.504 ms; fill id=login-password: method keys, read back as length in 289.611 ms",
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6206465,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 375.547 ms; fill id=login-password: method keys, read back as length in 256.802 ms",
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7060069,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 374.277 ms; fill id=login-password: method keys, read back as length in 760.976 ms",
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6662114,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 379.525 ms; fill id=login-password: method keys, read back as length in 356.027 ms",
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6320501,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 260.689 ms; fill id=login-password: method keys, read back as length in 292.762 ms",
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6035595,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 297.208 ms; fill id=login-password: method keys, read back as length in 337.03 ms",
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6750646,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 381.19 ms; fill id=login-password: method keys, read back as length in 369.409 ms",
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7108510,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 408.838 ms; fill id=login-password: method keys, read back as length in 758.522 ms",
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6487346,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 597.259 ms; fill id=login-password: method keys, read back as length in 326.636 ms",
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6661432,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 359.392 ms; fill id=login-password: method keys, read back as length in 259.229 ms",
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6225735,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 294.392 ms; fill id=login-password: method keys, read back as length in 348.693 ms",
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6197974,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 295.917 ms; fill id=login-password: method keys, read back as length in 349.302 ms",
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6233187,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 298.671 ms; fill id=login-password: method keys, read back as length in 255.692 ms",
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6300563,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 377.529 ms; fill id=login-password: method keys, read back as length in 280.75 ms",
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6100580,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 263.0 ms; fill id=login-password: method keys, read back as length in 752.394 ms",
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7214741,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 378.682 ms; fill id=login-password: method keys, read back as length in 764.37 ms",
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 7117620,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 409.969 ms; fill id=login-password: method keys, read back as length in 754.191 ms",
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6374716,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 400.712 ms; fill id=login-password: method keys, read back as length in 260.799 ms",
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6518994,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 251.366 ms; fill id=login-password: method keys, read back as length in 293.702 ms",
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6461478,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 248.667 ms; fill id=login-password: method keys, read back as length in 267.089 ms",
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 6673252,
+          "nodes": null,
+          "detail": "fill id=login-username: method keys, read back as text in 314.911 ms; fill id=login-password: method keys, read back as length in 278.546 ms",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 2491961,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
