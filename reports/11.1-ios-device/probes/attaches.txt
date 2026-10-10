@@ -1,0 +1,16 @@
+# mobile-agent status of the iPhone after an attach outside the harness's phases, 2026-10-10 UTC.
+# 10:05, after phase h2's lost connection: open --relaunch of the SwiftUI fixture, then status (the derisk).
+   open: {'settled': True, 'elapsedMs': 2158.147, 'firstTreeMs': 1928.853}
+   input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream); text through the runner, typed or set
+   frames: screenshots polled on DVT and CoreDevice, 18.9 captures a second, 19 received
+   runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 749 ms after its start
+   tunnel: 82 RSD services, none missing, opened in 74.4 ms, 1 open
+   disk image: Personalized at /System/Developer
+   battery: 100%, charging, on external power, when attached
+# 10:23, the idle-cost probe: open --relaunch --env FIXTURE_INITIAL_TAB=big, 5 s, a 30 s window, then status.
+   input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream); text through the runner, typed or set
+   frames: screenshots polled on DVT and CoreDevice, 14.2 captures a second, 7 received
+   runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 2856 ms after its start
+   tunnel: 82 RSD services, none missing, opened in 83.1 ms, 1 open
+   disk image: Personalized at /System/Developer
+   battery: 100%, charging, on external power, when attached
