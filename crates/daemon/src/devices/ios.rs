@@ -6,7 +6,8 @@
 //! - Discovery lists every iPhone attached over USB, ready or in the first
 //!   readiness state it has not passed (`device_locked`,
 //!   `developer_mode_off`...), the state's message from `crates/ios` its
-//!   advice. The driver opens on first use.
+//!   advice. The driver opens on first use and keeps the host's signing
+//!   identity once found, until `devices` asks it to forget it.
 //! - Attaching connects the device (readiness, the developer disk image,
 //!   the CoreDevice tunnel), starts the resident runner `agent-ios` builds,
 //!   of this workspace's `agent-ios/VERSION`, installing the bundle
@@ -175,6 +176,14 @@ impl Driver for IosDevices {
         let mut fields = Map::new();
         fields.insert("iosRunner".into(), runner_doctor(&bundle));
         fields
+    }
+
+    /// Forgets the host's signing identity the driver keeps, when it is
+    /// open, so that the listing `devices` makes checks it again.
+    fn forget(&self) {
+        if let Some(driver) = lock(&self.driver).as_ref() {
+            driver.forget_identity();
+        }
     }
 }
 

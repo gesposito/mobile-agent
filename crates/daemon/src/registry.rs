@@ -149,6 +149,9 @@ impl Registry {
     /// The targets connected now, as `devices` lists them: every driver
     /// forgets what it keeps between listings, then lists afresh.
     pub fn devices(&mut self) -> Vec<TargetInfo> {
+        for driver in &self.drivers {
+            driver.forget();
+        }
         self.targets(true)
     }
 
@@ -160,8 +163,12 @@ impl Registry {
     /// The target a command of `session` addresses: the one `selection`
     /// names; else the only connected target of the selected platform; else
     /// the one target of that platform the session holds. Several without a
-    /// choice fail listing them.
+    /// choice fail listing them. A target the daemon holds attached is
+    /// resolved from its attachment, no driver asked.
     pub fn resolve(&mut self, session: &str, selection: &Selection) -> Result<TargetInfo, Failure> {
+        if let Some(target) = self.attached(session, selection) {
+            return Ok(target);
+        }
         let mut targets = self.targets(false);
         let known = |targets: &[TargetInfo]| {
             let admitted: Vec<&TargetInfo> =
@@ -230,6 +237,38 @@ impl Registry {
                     ),
                 )
                 .with_data(data))
+            }
+        }
+    }
+
+    /// The attached target `selection` names by its id, or, when it names
+    /// none, the one attached target of its platform that `session` holds,
+    /// the target the listing would resolve to while it is connected
+    /// (design D26 of physical-ios): an iPhone's listing probes lockdown and
+    /// runs `security` twice, 150 to 220 ms that a command after a pause
+    /// paid with the target attached all along. A name, which the listing
+    /// tells apart from other targets', is left to the listing.
+    fn attached(&self, session: &str, selection: &Selection) -> Option<TargetInfo> {
+        let mut attached = self
+            .workers
+            .values()
+            .filter(|worker| worker.status().attached)
+            .map(Worker::info)
+            .filter(|target| selection.admits(target));
+        match &selection.device {
+            Some(device) => attached.find(|target| target.id == *device).cloned(),
+            None => {
+                let held: Vec<&TargetInfo> = attached
+                    .filter(|target| {
+                        self.claims
+                            .get(&target.id)
+                            .is_some_and(|holder| holder == session)
+                    })
+                    .collect();
+                match held.as_slice() {
+                    [target] => Some((*target).clone()),
+                    _ => None,
+                }
             }
         }
     }

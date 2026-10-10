@@ -171,6 +171,8 @@ type ReportSlot = Arc<Mutex<Option<Arc<dyn Report>>>>;
 
 /// A target's worker thread.
 pub(crate) struct Worker {
+    /// The target as the listing that started the worker found it.
+    info: TargetInfo,
     handle: Handle,
     status: Arc<Mutex<Status>>,
     report: ReportSlot,
@@ -195,6 +197,7 @@ impl Worker {
         let report: ReportSlot = Arc::new(Mutex::new(None));
         let (shared_status, shared_report) = (Arc::clone(&status), Arc::clone(&report));
         let name = format!("target {}", info.id);
+        let target = info.clone();
         let thread = std::thread::Builder::new()
             .name(name)
             .spawn(move || {
@@ -210,6 +213,7 @@ impl Worker {
             })
             .ok();
         Worker {
+            info: target,
             handle: Handle { jobs },
             status,
             report,
@@ -220,6 +224,11 @@ impl Worker {
 
     pub fn handle(&self) -> Handle {
         self.handle.clone()
+    }
+
+    /// The target the worker serves.
+    pub fn info(&self) -> &TargetInfo {
+        &self.info
     }
 
     pub fn status(&self) -> Status {
