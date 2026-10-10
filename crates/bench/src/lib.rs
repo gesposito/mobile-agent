@@ -19,6 +19,7 @@ pub mod flow;
 pub mod gates;
 pub mod handoff;
 pub mod harness;
+pub mod install;
 pub mod markdown;
 pub mod micro;
 pub mod plan;

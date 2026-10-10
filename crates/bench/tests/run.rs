@@ -30,11 +30,12 @@ fn hermetic_path(bin: &Path) -> String {
     format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", bin.display())
 }
 
-/// A gate file no fake run misses: every default gate at a minute.
+/// A gate file no fake run misses: every default gate with a limit at a
+/// minute.
 fn relaxed_gates(dir: &Path) -> PathBuf {
     let mut gates = GateSet::defaults();
     for gate in &mut gates.gates {
-        gate.limit_ms = 60_000.0;
+        gate.limit_ms = gate.limit_ms.map(|_| 60_000.0);
     }
     let path = dir.join("gates.json");
     fs::write(&path, gates.to_json()).unwrap();

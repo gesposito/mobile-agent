@@ -91,8 +91,8 @@ pub fn only(planned: Vec<Series>, primitives: &[Primitive], flows: &[String]) ->
 
 /// The targets `ids` names among `connected`, in the order named and each
 /// once, with the fixtures each runs: `chosen` when given, else every fixture
-/// of its platform (SwiftUI and Expo on a Simulator, Expo and Compose on
-/// Android). Fails when `ids` names no target, on an id no connected target
+/// of its platform (SwiftUI and Expo on a Simulator or an iPhone, Expo and
+/// Compose on Android). Fails when `ids` names no target, on an id no connected target
 /// has, naming the connected ones, and on a chosen fixture a target's
 /// platform lacks.
 pub fn select(
@@ -129,7 +129,9 @@ pub fn select(
                 let names: Vec<String> = available.iter().map(ToString::to_string).collect();
                 let article = match target.class {
                     TargetClass::Simulator => "a",
-                    TargetClass::AndroidEmulator | TargetClass::AndroidDevice => "an",
+                    TargetClass::AndroidEmulator
+                    | TargetClass::AndroidDevice
+                    | TargetClass::IosDevice => "an",
                 };
                 return Err(format!(
                     "the {fixture} fixture does not run on {}, {article} {}; its fixtures are {}",
@@ -176,6 +178,7 @@ mod tests {
             Target::new("emulator-5554", TargetClass::AndroidEmulator),
             Target::new("SIM-1", TargetClass::Simulator),
             Target::new("R58M123", TargetClass::AndroidDevice),
+            Target::new("IPHONE-1", TargetClass::IosDevice),
         ]
     }
 
@@ -185,7 +188,12 @@ mod tests {
 
     #[test]
     fn each_named_target_runs_its_platform_s_fixtures_by_default() {
-        let chosen = select(&connected(), &ids(&["SIM-1", "emulator-5554"]), &[]).unwrap();
+        let chosen = select(
+            &connected(),
+            &ids(&["SIM-1", "emulator-5554", "IPHONE-1"]),
+            &[],
+        )
+        .unwrap();
         let chosen: Vec<(&str, Vec<Fixture>)> = chosen
             .iter()
             .map(|(target, fixtures)| (target.id.as_str(), fixtures.clone()))
@@ -195,6 +203,7 @@ mod tests {
             [
                 ("SIM-1", vec![Fixture::SwiftUi, Fixture::Expo]),
                 ("emulator-5554", vec![Fixture::Expo, Fixture::Compose]),
+                ("IPHONE-1", vec![Fixture::SwiftUi, Fixture::Expo]),
             ]
         );
     }
@@ -221,7 +230,8 @@ mod tests {
         assert_eq!(
             error,
             "no connected target is emulator-5556; mobile-agent devices lists emulator-5554 \
-             (android-emulator), SIM-1 (simulator) and R58M123 (android-device)"
+             (android-emulator), SIM-1 (simulator), R58M123 (android-device) and IPHONE-1 \
+             (ios-device)"
         );
         let error = select(&[], &ids(&["SIM-1"]), &[]).unwrap_err();
         assert_eq!(
@@ -309,6 +319,22 @@ mod tests {
             "the swiftui fixture does not run on emulator-5554, an android-emulator; its \
              fixtures are expo and compose"
         );
+        let error = select(&connected(), &ids(&["IPHONE-1"]), &[Fixture::Compose]).unwrap_err();
+        assert_eq!(
+            error,
+            "the compose fixture does not run on IPHONE-1, an ios-device; its fixtures are \
+             swiftui and expo"
+        );
+    }
+
+    #[test]
+    fn an_iphone_measures_the_simulator_s_primitives_and_flows_on_its_fixtures() {
+        let iphone = Target::new("IPHONE-1", TargetClass::IosDevice);
+        let simulator = Target::new("IPHONE-1", TargetClass::Simulator);
+        let fixtures = [Fixture::SwiftUi, Fixture::Expo];
+        assert_eq!(series(&iphone, &fixtures), series(&simulator, &fixtures));
+        assert_eq!(TargetClass::IosDevice.platform(), Platform::Ios);
+        assert_eq!(TargetClass::IosDevice.to_string(), "ios-device");
     }
 
     #[test]

@@ -595,6 +595,85 @@ mod tests {
     }
 
     #[test]
+    fn an_iphone_is_described_by_the_adapter_not_by_simctl() {
+        // `devices` gives a physical iPhone's model and iOS version, and the
+        // tool under test the rest; simctl knows no phone, even one whose
+        // identifier a Simulator shared.
+        let probe = ScriptedProbe::new().with(
+            "xcrun simctl list devices --json",
+            r#"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-5":[
+                {"udid":"IPHONE-1","name":"x","deviceTypeIdentifier":"com.apple.CoreSimulator.SimDeviceType.iPhone-17"}
+            ]}}"#,
+        );
+        let mut target = Target::new("IPHONE-1", TargetClass::IosDevice);
+        complete_target(&probe, &mut target);
+        assert_eq!(target, Target::new("IPHONE-1", TargetClass::IosDevice));
+    }
+
+    #[test]
+    fn an_iphone_s_runner_paths_and_stated_auto_lock_are_its_environment() {
+        let provenance = |target: Target| Provenance {
+            started_at: "2026-10-10T08:00:00Z".into(),
+            finished_at: "2026-10-10T08:30:00Z".into(),
+            host: capture_host(&mac(), "macos"),
+            xcode: None,
+            commit: None,
+            harness: HarnessInfo {
+                version: "0.1.0".into(),
+                iterations: 50,
+                warmup: 3,
+                retries: 1,
+            },
+            targets: vec![target],
+            tools: Vec::new(),
+        };
+        let mut iphone = Target::new("IPHONE-1", TargetClass::IosDevice);
+        iphone.runner = Some("mobile-agent-ios-runner 0.2.0".into());
+        iphone.input_path = Some("dtuhidd".into());
+        iphone.frame_path = Some("screenshots".into());
+        iphone.auto_lock_off = Some(true);
+        iphone.battery = Some(crate::target::Battery {
+            level_pct: Some(87),
+            charging: Some(true),
+            external_power: Some(true),
+        });
+        let base = provenance(iphone.clone());
+
+        // The battery and the installs are the run's, as the load is.
+        let mut drained = iphone.clone();
+        drained.battery = Some(crate::target::Battery {
+            level_pct: Some(61),
+            charging: Some(false),
+            external_power: Some(false),
+        });
+        drained.installs = vec![crate::target::Install {
+            fixture: crate::fixture::Fixture::SwiftUi,
+            bundle: "fixtures/swiftui/build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app"
+                .into(),
+            elapsed_us: 1_513_000,
+        }];
+        assert_eq!(
+            base.environment_differences(&provenance(drained)),
+            Vec::<String>::new()
+        );
+
+        let mut other = iphone;
+        other.runner = Some("mobile-agent-ios-runner 0.3.0".into());
+        other.input_path = Some("runner".into());
+        other.frame_path = None;
+        other.auto_lock_off = None;
+        assert_eq!(
+            base.environment_differences(&provenance(other)),
+            [
+                "targets[IPHONE-1].runner",
+                "targets[IPHONE-1].input_path",
+                "targets[IPHONE-1].frame_path",
+                "targets[IPHONE-1].auto_lock_off",
+            ]
+        );
+    }
+
+    #[test]
     fn fields_an_adapter_filled_are_kept() {
         let probe = ScriptedProbe::new().with(
             "adb -s R5CT shell getprop",

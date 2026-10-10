@@ -47,7 +47,8 @@ fn p95() -> Statistic {
 
 /// One gate. It applies to every measurement of the tool under test on a
 /// target of `class` whose primitive matches and whose fixture and screen
-/// match where the gate names them.
+/// match where the gate names them. A gate without a limit reports the
+/// statistic with no verdict.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Gate {
     pub class: TargetClass,
@@ -58,8 +59,14 @@ pub struct Gate {
     pub screen: Option<Screen>,
     #[serde(default = "p95")]
     pub statistic: Statistic,
-    /// The statistic must be strictly below this many milliseconds.
-    pub limit_ms: f64,
+    /// The statistic must be strictly below this many milliseconds; `None`
+    /// for a statistic reported with no verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_ms: Option<f64>,
+    /// What the limit assumes, or why there is none, which the gate table
+    /// shows beside the verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 impl Gate {
@@ -71,7 +78,17 @@ impl Gate {
             fixture: None,
             screen: None,
             statistic: Statistic::P95,
-            limit_ms,
+            limit_ms: Some(limit_ms),
+            note: None,
+        }
+    }
+
+    /// The p95 of `primitive` on every fixture and screen, reported with no
+    /// verdict.
+    pub fn reported(class: TargetClass, primitive: Primitive) -> Self {
+        Gate {
+            limit_ms: None,
+            ..Gate::new(class, primitive, 0.0)
         }
     }
 
@@ -79,6 +96,12 @@ impl Gate {
     pub fn on(mut self, fixture: Option<Fixture>, screen: Screen) -> Self {
         self.fixture = fixture;
         self.screen = Some(screen);
+        self
+    }
+
+    /// The same gate with `note`, which the table shows beside it.
+    pub fn noted(mut self, note: &str) -> Self {
+        self.note = Some(note.to_owned());
         self
     }
 
@@ -95,9 +118,9 @@ impl Gate {
         name
     }
 
-    /// The limit in whole microseconds.
-    pub fn limit_us(&self) -> u64 {
-        (self.limit_ms * 1000.0).round() as u64
+    /// The limit in whole microseconds, if the gate has one.
+    pub fn limit_us(&self) -> Option<u64> {
+        self.limit_ms.map(|ms| (ms * 1000.0).round() as u64)
     }
 
     /// Whether the gate judges `measurement`, ignoring which tool made it.
@@ -150,15 +173,14 @@ impl GateSet {
     pub fn from_json(text: &str) -> Result<Self, String> {
         let set: GateSet =
             serde_json::from_str(text).map_err(|e| format!("not a gate file: {e}"))?;
-        if let Some(gate) = set
-            .gates
-            .iter()
-            .find(|g| !(g.limit_ms.is_finite() && g.limit_ms > 0.0))
-        {
+        if let Some((gate, limit)) = set.gates.iter().find_map(|g| {
+            g.limit_ms
+                .filter(|limit| !(limit.is_finite() && *limit > 0.0))
+                .map(|limit| (g, limit))
+        }) {
             return Err(format!(
-                "gate {} has limit {} ms; limits are positive milliseconds",
+                "gate {} has limit {limit} ms; limits are positive milliseconds",
                 gate.name(),
-                gate.limit_ms
             ));
         }
         Ok(set)
@@ -197,6 +219,7 @@ impl GateSet {
                 target,
                 measured_us,
                 status,
+                note: None,
             };
             let judged: Vec<&Measurement> = report
                 .measurements
@@ -212,8 +235,8 @@ impl GateSet {
             }
             for m in judged {
                 let measured = m.stats.as_ref().map(|s| gate.statistic.of(s));
-                let status = match measured {
-                    Some(us) if us < gate.limit_us() => GateStatus::Pass,
+                let status = match (measured, gate.limit_us()) {
+                    (Some(us), Some(limit)) if us < limit => GateStatus::Pass,
                     _ => GateStatus::Fail,
                 };
                 rows.push(row(
@@ -242,6 +265,8 @@ pub enum GateStatus {
     /// gate judges, or the tool could not measure it. Reported, but not a
     /// failure.
     NotMeasured,
+    /// Measured and listed with no verdict: the gate has no limit.
+    Reported,
 }
 
 /// One row of the gate table.
@@ -250,12 +275,16 @@ pub struct GateRow {
     /// [`Gate::name`].
     pub gate: String,
     pub statistic: Statistic,
-    pub limit_us: u64,
+    /// `None` for a gate with no limit, whose row has no verdict.
+    pub limit_us: Option<u64>,
     pub tool: Option<String>,
     pub target: Option<String>,
     /// `None` when not measured or when no iteration succeeded.
     pub measured_us: Option<u64>,
     pub status: GateStatus,
+    /// The gate's note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Every gate's verdict for one run.
@@ -292,7 +321,7 @@ impl GateReport {
                 or_dash(row.tool.as_deref()),
                 or_dash(row.target.as_deref()),
                 row.statistic.id().to_owned(),
-                ms(row.limit_us),
+                or_dash(row.limit_us.map(ms)),
                 match (row.measured_us, row.status) {
                     (Some(us), _) => ms(us),
                     (None, GateStatus::NotMeasured) => "—".to_owned(),
@@ -301,7 +330,7 @@ impl GateReport {
                 match row.status {
                     GateStatus::Pass => "pass",
                     GateStatus::Fail => "FAIL",
-                    GateStatus::NotMeasured => "not measured",
+                    GateStatus::NotMeasured | GateStatus::Reported => "not measured",
                 }
                 .to_owned(),
             ]);
@@ -348,11 +377,11 @@ mod tests {
     fn limits_convert_to_whole_microseconds() {
         assert_eq!(
             Gate::new(TargetClass::Simulator, Primitive::CliStart, 20.0).limit_us(),
-            20_000
+            Some(20_000)
         );
         assert_eq!(
             Gate::new(TargetClass::Simulator, Primitive::TapDispatch, 0.0305).limit_us(),
-            31
+            Some(31)
         );
     }
 
@@ -371,6 +400,24 @@ mod tests {
             )]
         );
         assert_eq!(GateSet::from_json(&set.to_json()), Ok(set));
+    }
+
+    #[test]
+    fn a_gate_file_entry_without_a_limit_reports_its_statistic() {
+        let set = GateSet::from_json(
+            r#"{"gates": [{"class": "ios-device", "primitive": "tap-to-frame-change",
+                           "note": "frames from polled screenshots"}]}"#,
+        )
+        .unwrap();
+        let expected = Gate::reported(TargetClass::IosDevice, Primitive::TapToFrameChange)
+            .noted("frames from polled screenshots");
+        assert_eq!(set.gates, [expected]);
+        assert_eq!(set.gates[0].limit_us(), None);
+        assert_eq!(GateSet::from_json(&set.to_json()), Ok(set));
+        // The file the defaults print names no limit for a reported statistic.
+        let printed = GateSet::defaults().to_json();
+        assert!(printed.contains("\"ios-device\""), "{printed}");
+        assert_eq!(GateSet::from_json(&printed), Ok(GateSet::defaults()));
     }
 
     #[test]

@@ -171,9 +171,203 @@ fn the_defaults_are_the_spec_gates() {
             Gate::new(AndroidEmulator, TapToFrameChange, 67.0),
             Gate::new(AndroidDevice, CliStart, 20.0),
             Gate::new(AndroidDevice, ColdAttach, 1500.0),
+            Gate::new(IosDevice, CliStart, 20.0),
+            Gate::new(IosDevice, ColdAttach, 5000.0)
+                .noted("the runner already installed on the phone"),
+            Gate::new(IosDevice, WarmSnapshot, 1000.0).on(None, Screen::Big),
+            Gate::new(IosDevice, TapDispatch, 150.0)
+                .noted("through the host's input path, dtuhidd"),
+            Gate::reported(IosDevice, TapToFrameChange)
+                .noted("not gated while the phone's frames are polled screenshots"),
         ]
     );
     assert!(gates.iter().all(|g| g.statistic == Statistic::P95));
+}
+
+/// The spec's scenario "iOS device gates": a run on a physical iPhone whose
+/// warm snapshot measures 640 ms at p95, tap dispatch 90 ms and cold attach
+/// 3.1 s, and whose tap to frame change, from polled screenshots, measures
+/// 439 ms.
+fn iphone_script() -> FakeScript {
+    use Fixture::SwiftUi;
+    use Primitive::*;
+    use Screen::{Big, List};
+    FakeScript {
+        tool: "mobile-agent".into(),
+        version: Some("0.2.0".into()),
+        role: Role::UnderTest,
+        targets: vec![Target::new("IPHONE-1", TargetClass::IosDevice)],
+        series: vec![
+            series(
+                "IPHONE-1",
+                Some(SwiftUi),
+                None,
+                ColdAttach,
+                with_p95(2400.0, 3100.0),
+            ),
+            series(
+                "IPHONE-1",
+                Some(SwiftUi),
+                Some(Big),
+                WarmSnapshot,
+                with_p95(550.0, 640.0),
+            ),
+            series(
+                "IPHONE-1",
+                Some(SwiftUi),
+                Some(List),
+                TapDispatch,
+                with_p95(55.0, 90.0),
+            ),
+            series(
+                "IPHONE-1",
+                Some(SwiftUi),
+                Some(List),
+                TapToFrameChange,
+                with_p95(240.0, 439.0),
+            ),
+        ],
+        flows: Vec::new(),
+    }
+}
+
+/// Task 6.2: the three gates pass, the table shows their limits, and tap to
+/// frame change is listed with its value and no verdict.
+#[test]
+fn an_iphone_passes_its_three_gates_and_lists_tap_to_frame_change_with_no_verdict() {
+    let verdict = GateSet::defaults().evaluate(&run(iphone_script()));
+    assert!(verdict.passed, "{}", verdict.table());
+    assert_eq!(verdict.exit_code(), 0);
+    let row = |name: &str| {
+        verdict
+            .rows
+            .iter()
+            .find(|r| r.gate == name)
+            .unwrap_or_else(|| panic!("no row {name} in {}", verdict.table()))
+    };
+    for (name, limit, measured) in [
+        ("ios-device cold-attach", 5_000_000, 3_100_000),
+        ("ios-device warm-snapshot big", 1_000_000, 640_000),
+        ("ios-device tap-dispatch", 150_000, 90_000),
+    ] {
+        let gate = row(name);
+        assert_eq!(gate.status, GateStatus::Pass, "{name}");
+        assert_eq!(
+            (gate.limit_us, gate.measured_us),
+            (Some(limit), Some(measured)),
+            "{name}"
+        );
+        assert_eq!(gate.target.as_deref(), Some("IPHONE-1"), "{name}");
+    }
+    let frames = row("ios-device tap-to-frame-change");
+    assert_eq!(frames.status, GateStatus::Reported);
+    assert_eq!((frames.limit_us, frames.measured_us), (None, Some(439_000)));
+    // CLI start is gated on every class; this run did not measure it.
+    assert_eq!(row("ios-device cli-start").status, GateStatus::NotMeasured);
+    // Only the iPhone's gates apply.
+    assert!(
+        verdict
+            .rows
+            .iter()
+            .all(|r| r.gate.starts_with("ios-device"))
+    );
+
+    let text = verdict.table();
+    let table = gate_table(&text);
+    let cells = |gate: &str| {
+        table
+            .rows
+            .iter()
+            .find(|r| table.cell(r, "Gate") == gate)
+            .unwrap_or_else(|| panic!("no row {gate} in {text}"))
+    };
+    let frames = cells("ios-device tap-to-frame-change");
+    assert_eq!(table.cell(frames, "Limit ms"), "—");
+    assert_eq!(table.cell(frames, "Measured ms"), "439.000");
+    assert_eq!(table.cell(frames, "Result"), "reported");
+    assert_eq!(
+        table.cell(frames, "Note"),
+        "not gated while the phone's frames are polled screenshots"
+    );
+    let attach = cells("ios-device cold-attach");
+    assert_eq!(table.cell(attach, "Limit ms"), "5000.000");
+    assert_eq!(table.cell(attach, "Measured ms"), "3100.000");
+    assert_eq!(table.cell(attach, "Result"), "pass");
+    assert_eq!(
+        table.cell(attach, "Note"),
+        "the runner already installed on the phone"
+    );
+    let snapshot = cells("ios-device warm-snapshot big");
+    assert_eq!(table.cell(snapshot, "Limit ms"), "1000.000");
+    assert_eq!(table.cell(snapshot, "Note"), "—");
+    assert_eq!(
+        table.cell(cells("ios-device tap-dispatch"), "Limit ms"),
+        "150.000"
+    );
+    assert!(
+        text.contains("All 3 gate checks passed. 1 not measured. 1 reported with no verdict."),
+        "{text}"
+    );
+}
+
+/// A reported statistic never fails the run, even when no iteration of its
+/// series succeeded.
+#[test]
+fn a_reported_statistic_never_fails_the_run() {
+    let mut script = iphone_script();
+    let frames = script
+        .series
+        .iter_mut()
+        .find(|s| s.subject == Subject::Primitive(Primitive::TapToFrameChange))
+        .unwrap();
+    frames.fail = (0..WARMUP + ITERATIONS).collect();
+    let verdict = GateSet::defaults().evaluate(&run(script));
+    assert!(verdict.passed, "{}", verdict.table());
+    let row = verdict
+        .rows
+        .iter()
+        .find(|r| r.gate == "ios-device tap-to-frame-change")
+        .unwrap();
+    assert_eq!((row.status, row.measured_us), (GateStatus::Reported, None));
+    let text = verdict.table();
+    let table = gate_table(&text);
+    let row = table
+        .rows
+        .iter()
+        .find(|r| table.cell(r, "Gate") == "ios-device tap-to-frame-change")
+        .unwrap();
+    assert_eq!(table.cell(row, "Measured ms"), "no samples");
+    assert_eq!(table.cell(row, "Result"), "reported");
+}
+
+/// The iPhone's run through the binary: it exits zero, and both outputs carry
+/// the reported row and agree on every number.
+#[test]
+fn an_iphone_run_through_the_binary_exits_zero_and_both_outputs_list_the_reported_row() {
+    let (output, out) = run_binary("gates-binary-iphone", &iphone_script());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let table = gate_table(&stdout);
+    let row = table
+        .rows
+        .iter()
+        .find(|r| table.cell(r, "Gate") == "ios-device tap-to-frame-change")
+        .unwrap_or_else(|| panic!("no reported row in {stdout}"));
+    assert_eq!(table.cell(row, "Result"), "reported");
+    let json: Value =
+        serde_json::from_str(&fs::read_to_string(out.join("report.json")).unwrap()).unwrap();
+    let rows = json["gates"]["rows"].as_array().unwrap();
+    let reported = rows
+        .iter()
+        .find(|r| r["gate"] == "ios-device tap-to-frame-change")
+        .unwrap();
+    assert_eq!(reported["status"], "reported");
+    assert_eq!(reported["limit_us"], Value::Null);
+    assert_eq!(reported["measured_us"], 439_000);
+    let md = fs::read_to_string(out.join("report.md")).unwrap();
+    assert_eq!(common::table(&md, "Gates").rows, table.rows);
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
 }
 
 #[test]
@@ -196,7 +390,7 @@ fn a_missed_gate_fails_the_run_and_the_table_names_the_gate_limit_and_value() {
         .collect();
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0].gate, "simulator warm-snapshot swiftui big");
-    assert_eq!(failed[0].limit_us, 150_000);
+    assert_eq!(failed[0].limit_us, Some(150_000));
     assert_eq!(failed[0].measured_us, Some(210_000));
     assert_eq!(failed[0].target.as_deref(), Some("SIM-1"));
 
@@ -313,7 +507,7 @@ fn the_emulator_tap_to_frame_gate_allows_four_display_frames() {
     };
     let within = row(59.1);
     assert_eq!(within.status, GateStatus::Pass);
-    assert_eq!(within.limit_us, 67_000);
+    assert_eq!(within.limit_us, Some(67_000));
     assert_eq!(row(67.0).status, GateStatus::Fail, "under is strict");
 }
 
@@ -325,7 +519,7 @@ fn restated_gates() -> GateSet {
         if gate.class == TargetClass::AndroidEmulator
             && gate.primitive == Primitive::TapToFrameChange
         {
-            gate.limit_ms = 160.0;
+            gate.limit_ms = Some(160.0);
         }
     }
     gates
@@ -345,7 +539,10 @@ fn gates_are_configurable_per_target_class() {
         .iter()
         .find(|r| r.gate == "android-emulator tap-to-frame-change")
         .unwrap();
-    assert_eq!((row.limit_us, row.measured_us), (160_000, Some(147_000)));
+    assert_eq!(
+        (row.limit_us, row.measured_us),
+        (Some(160_000), Some(147_000))
+    );
 }
 
 #[test]

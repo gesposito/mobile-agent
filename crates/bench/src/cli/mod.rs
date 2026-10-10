@@ -42,7 +42,7 @@ use crate::harness::Subject;
 use crate::primitive::{Primitive, TEXT_ENTRY};
 use crate::process;
 use crate::provenance::Probe;
-use crate::target::{Controller, Target, TargetClass};
+use crate::target::{Battery, Controller, Target, TargetClass};
 
 /// The tool's name in reports.
 pub const TOOL: &str = "mobile-agent";
@@ -140,7 +140,8 @@ pub struct CliAdapter {
 
 /// What `status` says about a target the daemon has attached: the target
 /// entry's `frameSource`, and from its driver's report, whether an Android
-/// emulator's controller answered and why the target gives no frames.
+/// emulator's controller answered and why the target gives no frames, and on
+/// a physical iPhone its runner, its input and frame paths and its battery.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Attached {
     frame_source: Option<bool>,
@@ -148,6 +149,14 @@ struct Attached {
     /// The driver's `warning` and `frameError`, such as the note that the
     /// emulator's control endpoint did not answer and how to enable it.
     why_no_frames: Option<String>,
+    /// On a physical iPhone, the runner's `agent`, as its hello named it.
+    runner: Option<String>,
+    /// On a physical iPhone, the driver's `input`.
+    input_path: Option<String>,
+    /// On a physical iPhone, the driver's `frames`.
+    frame_path: Option<String>,
+    /// On a physical iPhone, the driver's `battery`.
+    battery: Option<Battery>,
 }
 
 /// A command's reply and when its process ran.
@@ -323,8 +332,13 @@ impl CliAdapter {
             return;
         };
         if let Some(attached) = read_attached(&reply.data, target) {
-            self.attached.insert(target.id.clone(), attached);
+            self.keep(target, attached);
         }
+    }
+
+    /// Keeps what `status` said about `target`.
+    fn keep(&mut self, target: &Target, attached: Attached) {
+        self.attached.insert(target.id.clone(), attached);
     }
 
     /// Relaunches `app` on `screen`, then waits until the screen's marker is
@@ -833,6 +847,7 @@ fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
         frame_source: entry["frameSource"].as_bool(),
         controller,
         why_no_frames: (!why.is_empty()).then(|| why.join("; ")),
+        ..Attached::default()
     };
     (attached.frame_source.is_some() || attached.controller.is_some()).then_some(attached)
 }
@@ -1146,6 +1161,16 @@ mod tests {
         );
         simulator.os = Some("iOS 26.5".into());
         assert_eq!(read_devices(&data), Ok(vec![emulator, simulator]));
+        // A physical iPhone, as the daemon's ios driver lists it.
+        let data = json!({"devices": [
+            {"claimedBy": null, "class": "ios-device", "id": "placeholder-udid-phone",
+             "model": "iPhone14,6", "name": "placeholder-iphone", "os": "iOS 26.6.2",
+             "platform": "ios", "state": "ready"}
+        ]});
+        let mut iphone = Target::new("placeholder-udid-phone", TargetClass::IosDevice);
+        iphone.model = Some("iPhone14,6".into());
+        iphone.os = Some("iOS 26.6.2".into());
+        assert_eq!(read_devices(&data), Ok(vec![iphone]));
         assert_eq!(read_devices(&json!({"devices": []})), Ok(Vec::new()));
         let error = read_devices(&json!({"targets": []})).unwrap_err();
         assert!(error.contains("devices"), "{error}");
@@ -1244,7 +1269,7 @@ mod tests {
             Some(Attached {
                 frame_source: Some(true),
                 controller: Some(Controller::On),
-                why_no_frames: None,
+                ..Attached::default()
             })
         );
         let off = status(
@@ -1261,6 +1286,7 @@ mod tests {
                 why_no_frames: Some(
                     "emulator control endpoint unavailable for emulator-5554".into()
                 ),
+                ..Attached::default()
             })
         );
         // A target the daemon has not attached, or does not list, says nothing.
@@ -1282,8 +1308,7 @@ mod tests {
             read_attached(&data, &device),
             Some(Attached {
                 frame_source: Some(false),
-                controller: None,
-                why_no_frames: None,
+                ..Attached::default()
             })
         );
         let simulator = Target::new("SIM-1", TargetClass::Simulator);
@@ -1293,14 +1318,109 @@ mod tests {
             read_attached(&data, &simulator),
             Some(Attached {
                 frame_source: Some(false),
-                controller: None,
                 why_no_frames: Some("no display".into()),
+                ..Attached::default()
             })
         );
         assert_eq!(
             no_frames(&simulator, Some("no display")),
             "SIM-1 gives mobile-agent no frames, so a tap on it has no frame change to time: no \
              display"
+        );
+    }
+
+    /// `status` data for an attached iPhone, as the daemon's ios driver
+    /// reports it with its runner ready (`crates/daemon`, `status_report`).
+    fn iphone_status(battery: Value) -> Value {
+        json!({"targets": [{
+            "id": "placeholder-udid-phone", "platform": "ios", "class": "ios-device",
+            "attached": true, "frameSource": true,
+            "driver": {
+                "input": "dtuhidd",
+                "inputReason": "iOS 26.6.2 takes dtuhidd's reports from the host without a display stream",
+                "lastInputMs": 54.5, "frames": "screenshots", "captureRate": 19.1,
+                "framesReceived": 31, "frameError": null,
+                "runner": {"agent": "mobile-agent-ios-runner 0.2.0", "state": "ready",
+                           "restarts": 0, "handshakeRetries": 0, "replaced": false,
+                           "leftovers": [], "startedMs": 781.0, "lastDeath": null},
+                "battery": battery,
+                "tunnel": null, "diskImage": null, "runnerBundle": null
+            }
+        }]})
+    }
+
+    #[test]
+    fn an_iphone_s_status_names_its_runner_its_input_and_frame_paths_and_its_battery() {
+        let iphone = Target::new("placeholder-udid-phone", TargetClass::IosDevice);
+        let status =
+            iphone_status(json!({"levelPct": 87, "charging": true, "externalPower": true}));
+        assert_eq!(
+            read_attached(&status, &iphone),
+            Some(Attached {
+                frame_source: Some(true),
+                runner: Some("mobile-agent-ios-runner 0.2.0".into()),
+                input_path: Some("dtuhidd".into()),
+                frame_path: Some("screenshots".into()),
+                battery: Some(Battery {
+                    level_pct: Some(87),
+                    charging: Some(true),
+                    external_power: Some(true),
+                }),
+                ..Attached::default()
+            })
+        );
+        // A driver that read no battery leaves it unknown.
+        let without = read_attached(&iphone_status(Value::Null), &iphone).unwrap();
+        assert_eq!(without.battery, None);
+        assert_eq!(
+            without.runner.as_deref(),
+            Some("mobile-agent-ios-runner 0.2.0")
+        );
+    }
+
+    #[test]
+    fn only_an_iphone_s_runner_input_and_frame_paths_are_kept() {
+        // An Android device's driver names its input and frames too; the
+        // report keeps them for physical iPhones only.
+        let device = Target::new("R58M123", TargetClass::AndroidDevice);
+        let data = json!({"targets": [{"id": "R58M123", "attached": true, "frameSource": false,
+            "driver": {"agent": "mobile-agent-android 0.2.0", "input": "agent", "frames": null}}]});
+        let attached = read_attached(&data, &device).unwrap();
+        assert_eq!(
+            (attached.runner, attached.input_path, attached.frame_path),
+            (None, None, None)
+        );
+    }
+
+    #[test]
+    fn describe_fills_in_an_iphone_s_runner_paths_and_its_first_battery() {
+        let iphone = Target::new("placeholder-udid-phone", TargetClass::IosDevice);
+        let mut adapter = CliAdapter::new(CliConfig::new("work"));
+        let first = read_attached(
+            &iphone_status(json!({"levelPct": 87, "charging": true, "externalPower": true})),
+            &iphone,
+        )
+        .unwrap();
+        let later = read_attached(
+            &iphone_status(json!({"levelPct": 85, "charging": false, "externalPower": true})),
+            &iphone,
+        )
+        .unwrap();
+        adapter.keep(&iphone, first);
+        adapter.keep(&iphone, later);
+        let mut described = iphone.clone();
+        adapter.describe(&mut described);
+        assert_eq!(
+            described.runner.as_deref(),
+            Some("mobile-agent-ios-runner 0.2.0")
+        );
+        assert_eq!(described.input_path.as_deref(), Some("dtuhidd"));
+        assert_eq!(described.frame_path.as_deref(), Some("screenshots"));
+        assert_eq!(described.frame_source, Some(true));
+        // The battery as the run first found it.
+        assert_eq!(
+            described.battery.and_then(|battery| battery.level_pct),
+            Some(87)
         );
     }
 

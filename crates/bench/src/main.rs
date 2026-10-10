@@ -148,6 +148,14 @@ struct RunArgs {
     /// Leave out Maestro, maestro-runner and agent-device even when installed
     #[arg(long)]
     no_baselines: bool,
+
+    /// A fixture's device build to install on every physical iPhone of the run before anything runs, through CoreDevice: swiftui or expo, then = and the .app; repeatable
+    #[arg(long = "ios-app", value_name = "FIXTURE=PATH", conflicts_with = "fake")]
+    ios_apps: Vec<String>,
+
+    /// States that every physical iPhone of the run has Auto-Lock off (Never), which no tool can read, so the report records it as stated
+    #[arg(long, conflicts_with = "fake")]
+    auto_lock_off: bool,
 }
 
 #[derive(Args)]
