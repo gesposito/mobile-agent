@@ -216,6 +216,12 @@ pub(crate) struct Replica {
     /// Tree and window events applied, plus deltas found by reads and moves
     /// found by bounds probes.
     pub tree_changes: u64,
+    /// The poll interval of a window that sends no change events on a
+    /// target whose frames come slowly and that has a frame source, which
+    /// the mirror sets (design D26 of physical-ios): frames that change call
+    /// for a re-read of their own, so the poll is left a screen whose frames
+    /// held still that long. `None` polls every poll interval.
+    pub still_poll: Option<Duration>,
     interner: HashMap<String, Arc<str>>,
     /// Where each element is: window and node index.
     index: HashMap<ElementId, (usize, usize)>,
@@ -249,6 +255,7 @@ impl Replica {
             last_stroke: None,
             edit: None,
             tree_changes: 0,
+            still_poll: None,
             interner: HashMap::new(),
             index: HashMap::new(),
         }
@@ -552,6 +559,13 @@ impl Replica {
                 .all(|window| !window.dirty && !window.action_pending)
     }
 
+    /// How long after its latest read began a window that sends no change
+    /// events is polled: the still poll's interval where the mirror set one,
+    /// else the configured poll interval.
+    fn poll_interval(&self, config: &MirrorConfig) -> Duration {
+        self.still_poll.unwrap_or(config.poll_interval)
+    }
+
     /// The read due at `now`, if any.
     pub fn due_read(&self, now: Instant, config: &MirrorConfig) -> Option<ReadRequest> {
         if let Some(reason) = self.need_full {
@@ -569,7 +583,7 @@ impl Replica {
                 Some(ReadReason::Events)
             } else if !window.reread() {
                 None
-            } else if now >= window.read_started + config.poll_interval {
+            } else if now >= window.read_started + self.poll_interval(config) {
                 Some(ReadReason::Poll)
             } else if let Some(reason) = self.edit_due(window, now, config) {
                 Some(reason)
@@ -632,7 +646,7 @@ impl Replica {
             .iter()
             .filter(|w| w.reread())
             .map(|w| {
-                let poll = w.read_started + config.poll_interval;
+                let poll = w.read_started + self.poll_interval(config);
                 if self.edit_due(w, now, config).is_some() {
                     w.read_finished
                 } else if self.frames_changed_since(w.read_started) {

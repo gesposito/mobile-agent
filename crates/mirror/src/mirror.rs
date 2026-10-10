@@ -319,12 +319,18 @@ pub struct Mirror {
 
 impl Mirror {
     /// A mirror over `backend`. Nothing is read until the replica is first
-    /// needed.
+    /// needed. Frames that come slowly and a frame source together make the
+    /// still poll the windows' poll ([`SlowFrames::still_poll_interval`]).
     pub fn new(backend: Backend, config: MirrorConfig) -> Mirror {
+        let mut replica = Replica::new();
+        replica.still_poll = config
+            .slow_frames
+            .filter(|_| backend.frames.is_some())
+            .map(|slow| slow.still_poll_interval);
         Mirror {
             backend,
             config,
-            replica: Replica::new(),
+            replica,
             refs: RefTable::new(),
             listed: Vec::new(),
             delta: None,
