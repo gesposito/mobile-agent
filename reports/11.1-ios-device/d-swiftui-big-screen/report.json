@@ -1,0 +1,698 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-10T08:35:04Z",
+    "finished_at": "2026-10-10T08:40:17Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        3.69,
+        2.62,
+        2.63
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "30b39faf17fe8727fe9e1e12c154a5a7e9acc82b",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "swiftui",
+            "bundle": "fixtures/swiftui/build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app",
+            "elapsed_us": 1461932
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 4689993,
+        "p95_us": 5143901,
+        "max_us": 5176582
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": {
+        "min": 506,
+        "max": 506
+      },
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "counts": {
+          "cell": 500
+        }
+      },
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4668351,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4573396,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4919575,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4618606,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4657737,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4937930,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4656948,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4712356,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4602039,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4606933,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4605281,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4627474,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4754937,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4385524,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4506062,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4715976,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4573985,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4663747,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4615056,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4758103,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4595123,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4656186,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4689993,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4626600,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4657838,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4625722,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4688400,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4789508,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4674674,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4671048,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4667412,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4657870,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4670405,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4718990,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4717054,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4652289,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4745253,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4781233,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4771951,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4744814,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4882319,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4839721,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4917055,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4949630,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 4812851,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5112240,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5053683,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5059059,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5018509,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5031630,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5165590,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5143901,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 5176582,
+          "nodes": 506,
+          "detail": null,
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 2901272,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
