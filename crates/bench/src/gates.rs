@@ -73,13 +73,8 @@ impl Gate {
     /// A p95 gate on every fixture and screen.
     pub fn new(class: TargetClass, primitive: Primitive, limit_ms: f64) -> Self {
         Gate {
-            class,
-            primitive,
-            fixture: None,
-            screen: None,
-            statistic: Statistic::P95,
             limit_ms: Some(limit_ms),
-            note: None,
+            ..Gate::reported(class, primitive)
         }
     }
 
@@ -87,8 +82,13 @@ impl Gate {
     /// verdict.
     pub fn reported(class: TargetClass, primitive: Primitive) -> Self {
         Gate {
+            class,
+            primitive,
+            fixture: None,
+            screen: None,
+            statistic: Statistic::P95,
             limit_ms: None,
-            ..Gate::new(class, primitive, 0.0)
+            note: None,
         }
     }
 
