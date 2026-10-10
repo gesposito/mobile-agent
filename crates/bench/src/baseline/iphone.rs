@@ -25,8 +25,10 @@ pub const RUNNERS: [(&str, &str); 3] = [
 /// The executable of the runner `tool` keeps on a physical iPhone, if it
 /// keeps one.
 pub fn runner_of(tool: &str) -> Option<&'static str> {
-    let _ = tool;
-    None
+    RUNNERS
+        .iter()
+        .find(|(name, _)| *name == tool)
+        .map(|(_, runner)| *runner)
 }
 
 /// A process on the iPhone: its pid and its executable's name.
@@ -39,37 +41,92 @@ pub struct Process {
 /// The arguments of `xcrun` that print the processes of the iPhone `udid`
 /// as CoreDevice's JSON on standard output.
 pub fn processes_args(udid: &str) -> [&str; 8] {
-    let _ = udid;
-    [""; 8]
+    [
+        "devicectl",
+        "device",
+        "info",
+        "processes",
+        "--device",
+        udid,
+        "--json-output",
+        "-",
+    ]
 }
 
 /// The processes in what [`processes_args`] printed:
 /// `result.runningProcesses`, each with its `processIdentifier` and its
-/// `executable`, a file URL, of which the last component is the name.
+/// `executable`, a file URL, of which the last component is the name; an
+/// entry without an executable is left out.
 pub fn processes(json: &str) -> Result<Vec<Process>, String> {
-    let _ = serde_json::from_str::<Value>(json);
-    Ok(Vec::new())
+    let reply: Value = serde_json::from_str(json.trim()).map_err(|_| {
+        format!(
+            "devicectl printed no process listing{}",
+            super::last_line(json)
+                .map(|line| format!(": {line}"))
+                .unwrap_or_default()
+        )
+    })?;
+    let listed = reply["result"]["runningProcesses"]
+        .as_array()
+        .ok_or("devicectl's reply has no result.runningProcesses")?;
+    Ok(listed
+        .iter()
+        .filter_map(|process| {
+            let pid = u32::try_from(process["processIdentifier"].as_u64()?).ok()?;
+            let executable = process["executable"].as_str()?;
+            let name = executable.trim_end_matches('/').rsplit('/').next()?;
+            Some(Process {
+                pid,
+                executable: name.to_owned(),
+            })
+        })
+        .collect())
 }
 
 /// The arguments of `xcrun` that end the process `pid` on the iPhone `udid`:
 /// SIGTERM, or SIGKILL when `kill`.
 pub fn terminate_args<'a>(udid: &'a str, pid: &'a str, kill: bool) -> Vec<&'a str> {
-    let _ = (udid, pid, kill);
-    Vec::new()
+    let mut args = vec![
+        "devicectl",
+        "device",
+        "process",
+        "terminate",
+        "--device",
+        udid,
+        "--pid",
+        pid,
+    ];
+    if kill {
+        args.push("--kill");
+    }
+    args.extend(["--json-output", "-"]);
+    args
 }
 
 /// The runners among `processes`, as their tool, executable and pid.
 pub fn runners(processes: &[Process]) -> Vec<(&'static str, &'static str, u32)> {
-    let _ = processes;
-    Vec::new()
+    processes
+        .iter()
+        .filter_map(|process| {
+            RUNNERS
+                .iter()
+                .find(|(_, runner)| *runner == process.executable)
+                .map(|(tool, runner)| (*tool, *runner, process.pid))
+        })
+        .collect()
 }
 
 /// Why `tool` must not start on the iPhone whose processes are
 /// `processes`: another tool's runner holds its automation session. `None`
 /// when none does.
 pub fn held_by_another(processes: &[Process], tool: &str) -> Option<String> {
-    let _ = (processes, tool);
-    None
+    let (holder, runner, pid) = runners(processes)
+        .into_iter()
+        .find(|(holder, _, _)| *holder != tool)?;
+    Some(format!(
+        "the iPhone's automation session is held by {holder}'s runner {runner} (pid {pid}); \
+         one tool drives a phone at a time"
+    ))
 }
 
 #[cfg(test)]

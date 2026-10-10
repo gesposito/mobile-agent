@@ -1,17 +1,20 @@
 //! Handing a target from one tool to the next. An Android device has one UI
 //! automation owner at a time, and a tool can keep holding the role between
 //! its commands: `mobile-agent`'s daemon keeps its agent until it exits, and
-//! agent-device keeps a snapshot helper until its session is closed. Tools
-//! can also leave device state behind, such as a test input method selected
-//! for text entry, or processes on the host, such as agent-device's daemon,
-//! with its XCTest runner and snapshot bridge on a Simulator. So before
-//! another tool drives a target, and once the run is over, the harness asks
-//! the tool that drove it last to let go ([`Adapter::release`]), waits until
-//! nothing the tool keeps for the target is left running
-//! ([`Adapter::left_running`]), ending itself what the release should have
-//! stopped and did not reach, and puts an Android target's input method
-//! back to the one the run found. Hand-offs happen between series, never
-//! inside one, and each is recorded with its duration.
+//! agent-device keeps a snapshot helper until its session is closed. A
+//! physical iPhone has one automation session, which the XCTest runner app
+//! of the tool driving it holds ([`iphone::RUNNERS`]). Tools can also leave
+//! device state behind, such as a test input method selected for text
+//! entry, or processes on the host, such as agent-device's daemon, with its
+//! XCTest runner and snapshot bridge on a Simulator. So before another tool
+//! drives a target, and once the run is over, the harness asks the tool that
+//! drove it last to let go ([`Adapter::release`]), waits until nothing the
+//! tool keeps for the target is left running ([`Adapter::left_running`], and
+//! on an iPhone the tool's runner app on the phone), ending itself what the
+//! release should have stopped and did not reach, and puts an Android
+//! target's input method back to the one the run found. Hand-offs happen
+//! between series, never inside one, and each is recorded with its
+//! duration.
 
 use std::collections::HashMap;
 use std::thread;
@@ -20,9 +23,10 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, Left};
+use crate::baseline::iphone;
 use crate::provenance::Probe;
 use crate::stats::micros;
-use crate::target::{Platform, Target};
+use crate::target::{Platform, Target, TargetClass};
 
 /// How long a hand-off waits for what a tool left running to end after its
 /// release. On an iOS 26.5 Simulator at a load of 21, agent-device's daemon,
@@ -181,13 +185,16 @@ impl HandOffs {
     }
 
     /// Waits until `tool` has nothing left running for `target`, asking every
-    /// [`EXIT_POLL`] for at most `exit_wait`. A stray, a process the release
-    /// should have stopped and did not reach, is sent SIGTERM through `probe`
-    /// as soon as it is listed, and SIGKILL once it has outlived SIGTERM by
-    /// `kill_after`. A stray is an error naming it and what was sent, however
-    /// it ended, since the release left it behind; any other process still
-    /// running once the wait is over is an error naming it, as is a failure
-    /// to tell.
+    /// [`EXIT_POLL`] for at most `exit_wait`: what [`Adapter::left_running`]
+    /// finds, and on a physical iPhone the tool's runner app on the phone,
+    /// which its release should have ended ([`on_phone`]). A stray, a
+    /// process the release should have stopped and did not reach, is sent
+    /// SIGTERM through `probe` as soon as it is listed, and SIGKILL once it
+    /// has outlived SIGTERM by `kill_after`, with `kill` on the host and
+    /// through CoreDevice on the phone. A stray is an error naming it and
+    /// what was sent, however it ended, since the release left it behind;
+    /// any other process still running once the wait is over is an error
+    /// naming it, as is a failure to tell.
     fn await_exit(
         &self,
         tool: &dyn Adapter,
@@ -196,15 +203,18 @@ impl HandOffs {
     ) -> Result<(), String> {
         let started = Instant::now();
         let mut ending: Vec<Ending> = Vec::new();
+        let runner = (target.class == TargetClass::IosDevice)
+            .then(|| iphone::runner_of(tool.name()))
+            .flatten();
         loop {
-            let left = tool.left_running(target, probe)?;
+            let mut left = tool.left_running(target, probe)?;
+            if let Some(runner) = runner {
+                left.extend(on_phone(probe, &target.id, runner)?);
+            }
             for stray in left.iter().filter(|left| left.stray) {
-                match ending
-                    .iter_mut()
-                    .find(|ending| ending.left.pid == stray.pid)
-                {
+                match ending.iter_mut().find(|ending| same(&ending.left, stray)) {
                     None => {
-                        signal(probe, "TERM", stray.pid);
+                        signal(probe, target, stray, "TERM");
                         ending.push(Ending {
                             left: stray.clone(),
                             termed: Instant::now(),
@@ -214,7 +224,7 @@ impl HandOffs {
                     Some(ending)
                         if !ending.killed && ending.termed.elapsed() >= self.kill_after =>
                     {
-                        signal(probe, "KILL", stray.pid);
+                        signal(probe, target, stray, "KILL");
                         ending.killed = true;
                     }
                     Some(_) => {}
@@ -232,7 +242,7 @@ impl HandOffs {
     /// after the hand-off sent signals to the strays `ending`; none when
     /// nothing is left and there were no strays.
     fn what_was_left(&self, tool: &str, left: &[Left], ending: &[Ending]) -> Result<(), String> {
-        let running = |pid: u32| left.iter().any(|left| left.pid == pid);
+        let running = |stray: &Left| left.iter().any(|left| same(left, stray));
         let mut errors: Vec<String> = ending
             .iter()
             .map(|ending| {
@@ -245,7 +255,7 @@ impl HandOffs {
                     } else {
                         String::new()
                     },
-                    if running(ending.left.pid) {
+                    if running(&ending.left) {
                         format!(
                             "was still running {} after its release",
                             spoken(self.exit_wait)
@@ -258,7 +268,7 @@ impl HandOffs {
             .collect();
         let rest: Vec<String> = left
             .iter()
-            .filter(|left| !ending.iter().any(|ending| ending.left.pid == left.pid))
+            .filter(|left| !ending.iter().any(|ending| same(&ending.left, left)))
             .map(Left::to_string)
             .collect();
         if !rest.is_empty() {
@@ -304,10 +314,44 @@ impl HandOffs {
     }
 }
 
-/// Sends `signal`, `TERM` or `KILL`, to the host's process `pid` with
-/// `kill` through `probe`. Whether it took is told by the next listing.
-fn signal(probe: &dyn Probe, signal: &str, pid: u32) {
-    probe.output("kill", &[&format!("-{signal}"), &pid.to_string()]);
+/// Sends `signal`, `TERM` or `KILL`, to the process `left` through
+/// `probe`: with `kill` on the host, and on the iPhone `target` through
+/// CoreDevice's termination, `--kill` for SIGKILL. Whether it took is told
+/// by the next listing.
+fn signal(probe: &dyn Probe, target: &Target, left: &Left, signal: &str) {
+    let pid = left.pid.to_string();
+    if left.device {
+        probe.output(
+            "xcrun",
+            &iphone::terminate_args(&target.id, &pid, signal == "KILL"),
+        );
+    } else {
+        probe.output("kill", &[&format!("-{signal}"), &pid]);
+    }
+}
+
+/// Whether `a` and `b` are one process: the same pid in the same place.
+fn same(a: &Left, b: &Left) -> bool {
+    a.pid == b.pid && a.device == b.device
+}
+
+/// The processes of `runner` on the iPhone `udid`, as CoreDevice lists them
+/// through `probe`: each a stray, since the release of the tool it belongs
+/// to should have ended it.
+fn on_phone(probe: &dyn Probe, udid: &str, runner: &str) -> Result<Vec<Left>, String> {
+    let json = probe
+        .output("xcrun", &iphone::processes_args(udid))
+        .ok_or_else(|| format!("cannot list the processes of {udid} with devicectl"))?;
+    Ok(iphone::processes(&json)?
+        .into_iter()
+        .filter(|process| process.executable == runner)
+        .map(|process| Left {
+            name: "runner app on the iPhone".to_owned(),
+            pid: process.pid,
+            stray: true,
+            device: true,
+        })
+        .collect())
 }
 
 /// `duration` in whole seconds, such as `30 s`, else in milliseconds.

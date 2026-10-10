@@ -19,7 +19,7 @@ use serde_json::Value;
 use super::{json_document, last_line};
 use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
-use crate::target::Target;
+use crate::target::{Target, TargetClass};
 
 /// How long a `scrollUntilVisible` scrolls before it fails, in milliseconds.
 /// Maestro's default is 20 s. On the Android emulator Maestro 2.10.0, at its
@@ -117,21 +117,31 @@ pub fn maestro_args(target: &Target, file: &Path) -> Vec<OsString> {
 }
 
 /// Why Maestro does not run on a physical iPhone, the note of a run whose
-/// targets are all iPhones.
-pub const IPHONE_NOTE: &str = "";
+/// targets are all iPhones: Maestro 2.11.0 throws "Physical iOS devices are
+/// not yet supported" for one, its device driver an unfinished spike
+/// (mobile-dev-inc/maestro#3609, `docs/research/ios-device.md`).
+pub const IPHONE_NOTE: &str = "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical \
+                               iPhones, its iOS device driver unfinished";
 
 /// Arguments for `maestro-runner`; `team` is the development team its iOS
 /// agent is signed for on a physical iPhone.
 pub fn runner_args(target: &Target, file: &Path, team: Option<&str>) -> Vec<OsString> {
-    let _ = team;
-    vec![
-        "--platform".into(),
-        target.class.platform().id().into(),
-        "--device".into(),
-        target.id.clone().into(),
-        "test".into(),
-        file.as_os_str().to_owned(),
-    ]
+    let mut args = runner_target_args(target, team);
+    args.extend(["test".into(), file.as_os_str().to_owned()]);
+    args
+}
+
+/// `--platform` and `--device` for maestro-runner, with `--team-id` on a
+/// physical iPhone, where its documentation runs its iOS agent signed for
+/// that team (github.com/devicelab-dev/maestro-runner, "Supported Platforms
+/// & Drivers").
+fn runner_target_args(target: &Target, team: Option<&str>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec!["--platform".into(), target.class.platform().id().into()];
+    if let (TargetClass::IosDevice, Some(team)) = (target.class, team) {
+        args.extend(["--team-id".into(), team.into()]);
+    }
+    args.extend(["--device".into(), target.id.clone().into()]);
+    args
 }
 
 /// Arguments for `maestro hierarchy`, which prints the screen's view
@@ -147,14 +157,9 @@ pub fn maestro_hierarchy_args(target: &Target) -> Vec<OsString> {
 /// Arguments for `maestro-runner hierarchy`, which prints the hierarchy as a
 /// tree normalized across its drivers; `team` as for [`runner_args`].
 pub fn runner_hierarchy_args(target: &Target, team: Option<&str>) -> Vec<OsString> {
-    let _ = team;
-    vec![
-        "--platform".into(),
-        target.class.platform().id().into(),
-        "--device".into(),
-        target.id.clone().into(),
-        "hierarchy".into(),
-    ]
+    let mut args = runner_target_args(target, team);
+    args.push("hierarchy".into());
+    args
 }
 
 /// Reads what `maestro hierarchy` prints: a tree of nodes, each with its

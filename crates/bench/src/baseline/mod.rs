@@ -77,8 +77,14 @@ pub struct IosSigning {
 impl IosSigning {
     /// The signing the variables `var` reads name; `None` without a team.
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Option<Self> {
-        let _ = var;
-        None
+        let named = |name: &str| var(name).filter(|value| !value.is_empty());
+        Some(IosSigning {
+            team: named("MOBILE_AGENT_IOS_TEAM")?,
+            identity: named("MOBILE_AGENT_IOS_IDENTITY")
+                .unwrap_or_else(|| "Apple Development".to_owned()),
+            profile: named("MOBILE_AGENT_IOS_PROFILE")
+                .unwrap_or_else(|| "mobile-agent development".to_owned()),
+        })
     }
 
     /// The signing the environment names.
@@ -213,7 +219,94 @@ pub fn baselines(config: &BaselineConfig) -> Vec<Box<dyn Adapter>> {
     BaselineTool::ALL
         .into_iter()
         .map(|tool| Box::new(Baseline::new(tool, config.clone())) as Box<dyn Adapter>)
+        .chain(std::iter::once(
+            Box::new(wda::WebDriverAgent::new(config.clone())) as Box<dyn Adapter>,
+        ))
         .collect()
+}
+
+/// Whether every target of a run on `classes` is a physical iPhone; false
+/// when the classes are not known.
+fn iphones_only(classes: &[TargetClass]) -> bool {
+    !classes.is_empty() && classes.iter().all(|class| *class == TargetClass::IosDevice)
+}
+
+/// The processes of the iPhone `udid`, listed through the `xcrun` found in
+/// `search_path`: what a baseline reads before it starts there.
+fn phone_processes(search_path: &[PathBuf], udid: &str) -> Result<Vec<iphone::Process>, String> {
+    let xcrun = find_executable("xcrun", search_path)
+        .ok_or("xcrun not found on PATH, so the iPhone's processes cannot be listed")?;
+    let finished = process::run(
+        Command::new(xcrun).args(iphone::processes_args(udid)),
+        Duration::from_secs(30),
+    )?;
+    if !finished.status.success() {
+        return Err(format!(
+            "devicectl did not list the processes of {udid}: {}",
+            exit_failure(&finished)
+        ));
+    }
+    iphone::processes(&finished.stdout)
+}
+
+/// Fails, before `tool` starts on the iPhone `target`, when another tool's
+/// runner holds the phone's automation session, which would keep `tool`'s
+/// own runner waiting rather than failing.
+pub(crate) fn check_phone_is_free(
+    search_path: &[PathBuf],
+    target: &Target,
+    tool: &str,
+) -> Result<(), AdapterError> {
+    let processes = phone_processes(search_path, &target.id).map_err(AdapterError::new)?;
+    match iphone::held_by_another(&processes, tool) {
+        Some(held) => Err(AdapterError::new(format!("{tool} did not start: {held}"))),
+        None => Ok(()),
+    }
+}
+
+/// How long a release waits for the runner app it ended on an iPhone to
+/// leave the phone's process list: devicectl's termination returned in
+/// 0.26 s and the runner was gone at the next listing.
+const RUNNER_EXIT: Duration = Duration::from_secs(5);
+
+/// Ends `tool`'s runner app on the iPhone `udid` through `probe` and waits
+/// up to [`RUNNER_EXIT`] for it to leave the process list; returns whether
+/// it ended one.
+pub(crate) fn end_phone_runner(probe: &dyn Probe, udid: &str, tool: &str) -> Result<bool, String> {
+    let runner = iphone::runner_of(tool).ok_or_else(|| format!("{tool} keeps no runner"))?;
+    let listed = |probe: &dyn Probe| -> Result<Vec<u32>, String> {
+        let json = probe
+            .output("xcrun", &iphone::processes_args(udid))
+            .ok_or_else(|| format!("cannot list the processes of {udid} with devicectl"))?;
+        Ok(iphone::processes(&json)?
+            .into_iter()
+            .filter(|process| process.executable == runner)
+            .map(|process| process.pid)
+            .collect())
+    };
+    let pids = listed(probe)?;
+    if pids.is_empty() {
+        return Ok(false);
+    }
+    for pid in &pids {
+        probe
+            .output(
+                "xcrun",
+                &iphone::terminate_args(udid, &pid.to_string(), false),
+            )
+            .ok_or_else(|| format!("devicectl did not end {runner} (pid {pid}) on {udid}"))?;
+    }
+    let started = std::time::Instant::now();
+    while !listed(probe)?.is_empty() {
+        if started.elapsed() >= RUNNER_EXIT {
+            return Err(format!(
+                "{runner} was still running on {udid} {} s after devicectl ended it",
+                RUNNER_EXIT.as_secs()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    Ok(true)
 }
 
 /// A baseline tool driven through its CLI.
@@ -260,6 +353,11 @@ impl Adapter for Baseline {
 
     fn detect(&mut self) -> Detection {
         let name = self.tool.name();
+        if self.tool == BaselineTool::Maestro && iphones_only(&self.config.targets) {
+            return Detection::Absent {
+                note: maestro::IPHONE_NOTE.to_owned(),
+            };
+        }
         let Some(path) = find_executable(name, &self.config.search_path) else {
             return Detection::Absent {
                 note: format!("{name} not found on PATH"),
@@ -278,8 +376,22 @@ impl Adapter for Baseline {
         Detection::Available { version }
     }
 
-    fn supports(&self, _target: &Target, _scenario: &Scenario, subject: &Subject) -> bool {
+    /// Flows only, and Maestro's never on a physical iPhone, which 2.11.0
+    /// refuses.
+    fn supports(&self, target: &Target, _scenario: &Scenario, subject: &Subject) -> bool {
         matches!(subject, Subject::Flow(_))
+            && !(self.tool == BaselineTool::Maestro && target.class == TargetClass::IosDevice)
+    }
+
+    /// On a physical iPhone, agent-device fails the series at once when
+    /// another tool's runner holds the phone.
+    fn prepare(
+        &mut self,
+        target: &Target,
+        _scenario: &Scenario,
+        _subject: &Subject,
+    ) -> Result<(), AdapterError> {
+        self.check_phone(target)
     }
 
     /// Runs the flow through the tool, timed, then, for a flow that records
@@ -304,8 +416,11 @@ impl Adapter for Baseline {
         Ok(flow.golden.observe(&self.read_screen(target)?.elements))
     }
 
-    /// One run of the flow through the tool, then one read of the screen.
+    /// One run of the flow through the tool, then one read of the screen;
+    /// on a physical iPhone, agent-device first checks that no other tool's
+    /// runner holds the phone.
     fn check_flow(&mut self, target: &Target, flow: &Flow) -> Result<EndState, AdapterError> {
+        self.check_phone(target)?;
         self.run_tool(target, flow)?;
         self.end_state(target, flow)
     }
@@ -317,9 +432,11 @@ impl Adapter for Baseline {
     /// series, on a Simulator with its XCTest runner and its snapshot bridge;
     /// it does so even when the close failed, since the daemon ends its
     /// sessions as it stops. On Android it then force-stops agent-device's
-    /// helper apps still running on the device ([`stop_helpers`]). Maestro
-    /// and maestro-runner hold nothing: their driver ends with the process
-    /// that runs a flow.
+    /// helper apps still running on the device ([`stop_helpers`]); on a
+    /// physical iPhone it ends agent-device's runner app on the phone,
+    /// through CoreDevice, should it outlive its `xcodebuild`
+    /// ([`end_phone_runner`]). Maestro and maestro-runner hold nothing:
+    /// their driver ends with the process that runs a flow.
     fn release(
         &mut self,
         target: &Target,
@@ -336,6 +453,7 @@ impl Adapter for Baseline {
         let closed = self
             .agent_device(
                 &path,
+                Some(target),
                 &agent_device::close_args(target, SESSION),
                 "close",
                 agent_device::closed,
@@ -347,6 +465,7 @@ impl Adapter for Baseline {
         let stopped = self
             .agent_device(
                 &path,
+                None,
                 &agent_device::daemon_stop_args(),
                 "daemon stop",
                 agent_device::stopped,
@@ -362,17 +481,33 @@ impl Adapter for Baseline {
             }),
             Platform::Ios => Vec::new(),
         };
+        let runner = target.class == TargetClass::IosDevice
+            && end_phone_runner(probe, &target.id, self.tool.name()).unwrap_or_else(|e| {
+                errors.push(e);
+                false
+            });
         if !errors.is_empty() {
             return Err(AdapterError::new(errors.join("; ")));
         }
-        Ok(agent_device::released(closed, stopped, &helpers, SESSION))
+        let released = agent_device::released(closed, stopped, &helpers, SESSION);
+        Ok(match (released, runner) {
+            (released, false) => released,
+            (Some(done), true) => Some(match done.rsplit_once(" and ") {
+                Some((first, last)) => {
+                    format!("{first}, {last} and ended its runner app on the iPhone")
+                }
+                None => format!("{done} and ended its runner app on the iPhone"),
+            }),
+            (None, true) => Some("ended agent-device's runner app on the iPhone".to_owned()),
+        })
     }
 
     /// What agent-device still runs for the target on the host: its daemon
     /// of the state directory its commands use, a stray once the release's
-    /// stop has returned, and on a Simulator its XCTest runner and its
-    /// snapshot bridge ([`agent_device::left_running`]). For Maestro and
-    /// maestro-runner, nothing.
+    /// stop has returned, on a Simulator its XCTest runner and its snapshot
+    /// bridge, and on a physical iPhone its runner's `xcodebuild`
+    /// ([`agent_device::left_running`]); the runner app on the phone is the
+    /// hand-off's to look for. For Maestro and maestro-runner, nothing.
     fn left_running(&self, target: &Target, probe: &dyn Probe) -> Result<Vec<Left>, String> {
         if self.tool != BaselineTool::AgentDevice {
             return Ok(Vec::new());
@@ -384,6 +519,7 @@ impl Adapter for Baseline {
                 let dir = self
                     .agent_device(
                         path,
+                        None,
                         &agent_device::state_dir_args(),
                         "session state-dir",
                         agent_device::state_dir,
@@ -410,17 +546,54 @@ impl Adapter for Baseline {
 }
 
 impl Baseline {
-    /// Runs agent-device with `args` and reads what it printed with `read`;
-    /// a failure names the command, `what`, and how the process ended.
+    /// The tool's process at `path` for a command on `target`: on a
+    /// physical iPhone agent-device's gets the team's signing for the runner
+    /// it builds there ([`agent_device::signing_env`]), and maestro-runner
+    /// its team as an argument instead ([`maestro::runner_args`]).
+    fn command(&self, path: &Path, target: Option<&Target>) -> Command {
+        let mut command = Command::new(path);
+        if self.tool == BaselineTool::AgentDevice
+            && target.is_some_and(|t| t.class == TargetClass::IosDevice)
+            && let Some(signing) = &self.config.ios_signing
+        {
+            command.envs(agent_device::signing_env(signing, |name| {
+                std::env::var_os(name).is_some()
+            }));
+        }
+        command
+    }
+
+    /// The team maestro-runner's iOS agent is signed for on a physical
+    /// iPhone.
+    fn team(&self) -> Option<&str> {
+        self.config.ios_signing.as_ref().map(|s| s.team.as_str())
+    }
+
+    /// On a physical iPhone, agent-device's check that no other tool's
+    /// runner holds the phone; nothing elsewhere and for the other tools.
+    fn check_phone(&self, target: &Target) -> Result<(), AdapterError> {
+        if self.tool != BaselineTool::AgentDevice || target.class != TargetClass::IosDevice {
+            return Ok(());
+        }
+        check_phone_is_free(&self.config.search_path, target, self.tool.name())
+    }
+
+    /// Runs agent-device with `args`, for `target` when it names one, and
+    /// reads what it printed with `read`; a failure names the command,
+    /// `what`, and how the process ended.
     fn agent_device<T>(
         &self,
         path: &Path,
+        target: Option<&Target>,
         args: &[OsString],
         what: &str,
         read: fn(&str) -> Result<T, String>,
     ) -> Result<T, AdapterError> {
-        let finished = process::run(Command::new(path).args(args), self.config.flow_timeout)
-            .map_err(AdapterError::new)?;
+        let finished = process::run(
+            self.command(path, target).args(args),
+            self.config.flow_timeout,
+        )
+        .map_err(AdapterError::new)?;
         read(&finished.stdout).map_err(|e| {
             AdapterError::new(format!(
                 "agent-device {what} failed: {e}; {}",
@@ -449,7 +622,7 @@ impl Baseline {
                 let args = if self.tool == BaselineTool::Maestro {
                     maestro::maestro_args(target, &file)
                 } else {
-                    maestro::runner_args(target, &file, None)
+                    maestro::runner_args(target, &file, self.team())
                 };
                 (file, maestro::flow_yaml(flow, app), args)
             }
@@ -462,8 +635,11 @@ impl Baseline {
         fs::create_dir_all(&self.config.work_dir)
             .and_then(|()| fs::write(&file, contents))
             .map_err(|e| AdapterError::new(format!("cannot write {}: {e}", file.display())))?;
-        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
-            .map_err(AdapterError::new)?;
+        let finished = process::run(
+            self.command(&path, Some(target)).args(&args),
+            self.config.flow_timeout,
+        )
+        .map_err(AdapterError::new)?;
         let detail = match self.tool {
             BaselineTool::AgentDevice => {
                 let detail = agent_device::outcome(&finished.stdout).map_err(AdapterError::new)?;
@@ -502,7 +678,7 @@ impl Baseline {
                 maestro::read_hierarchy,
             ),
             BaselineTool::MaestroRunner => (
-                maestro::runner_hierarchy_args(target, None),
+                maestro::runner_hierarchy_args(target, self.team()),
                 maestro::read_runner_hierarchy,
             ),
             BaselineTool::AgentDevice => (
@@ -510,8 +686,11 @@ impl Baseline {
                 agent_device::read_snapshot,
             ),
         };
-        let finished = process::run(Command::new(&path).args(&args), self.config.flow_timeout)
-            .map_err(AdapterError::new)?;
+        let finished = process::run(
+            self.command(&path, Some(target)).args(&args),
+            self.config.flow_timeout,
+        )
+        .map_err(AdapterError::new)?;
         read(&finished.stdout).map_err(|e| {
             AdapterError::new(if finished.status.success() {
                 format!("{name} read no screen: {e}")

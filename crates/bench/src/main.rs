@@ -47,7 +47,7 @@ enum Command {
     Gates(GatesArgs),
     /// Print the default gates in the gate file format
     DefaultGates,
-    /// Look for Maestro, maestro-runner and agent-device on PATH and print what was found
+    /// Look for Maestro, maestro-runner, agent-device and Appium's WebDriverAgent on PATH and print what was found
     Baselines,
     /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, and write report.json and report.md
     Micro(MicroArgs),
@@ -168,7 +168,7 @@ struct RunArgs {
     #[arg(long, value_name = "FILE")]
     gates: Option<PathBuf>,
 
-    /// Leave out Maestro, maestro-runner and agent-device even when installed
+    /// Leave out Maestro, maestro-runner, agent-device and WebDriverAgent even when installed
     #[arg(long)]
     no_baselines: bool,
 
@@ -233,17 +233,20 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let dir = args.out.clone().unwrap_or_else(|| {
         PathBuf::from("target/bench").join(compact_timestamp(SystemTime::now()))
     });
-    let mut harness = match &args.fake {
+    let (mut harness, classes) = match &args.fake {
         Some(script) => {
             let fake = FakeAdapter::from_json(&read(script)?)?;
-            Harness::new(config, fake.targets(), fake.series())
+            let classes = fake.targets().iter().map(|t| t.class).collect();
+            let harness = Harness::new(config, fake.targets(), fake.series())
                 .flows(fake.flows())
-                .tool(Box::new(fake))
+                .tool(Box::new(fake));
+            (harness, classes)
         }
         None => mobile_agent(args, config, &dir)?,
     };
     if !args.no_baselines {
-        for baseline in baselines(&BaselineConfig::new(dir.join("flows"))) {
+        let settings = BaselineConfig::new(dir.join("flows")).for_targets(classes);
+        for baseline in baselines(&settings) {
             harness = harness.tool(baseline);
         }
     }
@@ -264,11 +267,15 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
 
 /// The run of mobile-agent through the CLI adapter: the targets `--target`
 /// names among those `mobile-agent devices` lists, each with its fixtures,
-/// and the plan's series and flows for them. On a physical iPhone the
-/// fixtures' builds `--ios-app` names are installed first, and
-/// `--auto-lock-off` is recorded as stated. The golden checks run first, as
-/// in every run, then the timed series.
-fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness, String> {
+/// and the plan's series and flows for them, with the targets' classes. On
+/// a physical iPhone the fixtures' builds `--ios-app` names are installed
+/// first, and `--auto-lock-off` is recorded as stated. The golden checks
+/// run first, as in every run, then the timed series.
+fn mobile_agent(
+    args: &RunArgs,
+    config: RunConfig,
+    dir: &Path,
+) -> Result<(Harness, Vec<TargetClass>), String> {
     let apps = args
         .ios_apps
         .iter()
@@ -333,9 +340,11 @@ fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness
             target.installs.push(installed);
         }
     }
-    Ok(Harness::new(config, targets, series)
+    let classes = targets.iter().map(|t| t.class).collect();
+    let harness = Harness::new(config, targets, series)
         .flows(plan::flows(&fixtures))
-        .tool(Box::new(adapter)))
+        .tool(Box::new(adapter));
+    Ok((harness, classes))
 }
 
 /// Prints each baseline tool as detection finds it.

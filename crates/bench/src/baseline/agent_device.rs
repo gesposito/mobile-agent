@@ -37,7 +37,7 @@ use super::{json_document, last_line};
 use crate::adapter::Left;
 use crate::end_state::{Element, Reading};
 use crate::flow::{Direction, Flow, Selector, Step};
-use crate::target::{Platform, Target};
+use crate::target::{Platform, Target, TargetClass};
 
 /// How long a `wait` step waits.
 pub const ASSERT_TIMEOUT_MS: u64 = 10_000;
@@ -266,6 +266,10 @@ pub fn ps_details(pids: &str) -> [&str; 6] {
 ///   `snapshot-bridge serve` in the Simulator, whose environment names the
 ///   Simulator as `SIMULATOR_UDID`.
 ///
+/// For a physical iPhone, the runner's `xcodebuild`, whose destination names
+/// the phone's UDID: its runner app runs on the phone, where the hand-off
+/// looks for it (`crate::handoff`), and agent-device starts no bridge there.
+///
 /// On Android the daemon reaches the device through `adb` commands, the
 /// longest of which, the snapshot helper's `am instrument -w`, ends with
 /// the session's `close`, so the daemon is all there is to look for.
@@ -282,7 +286,8 @@ pub fn left_running(
     details: impl FnOnce(&[u32]) -> String,
 ) -> Vec<Left> {
     let udid = target.id.as_str();
-    let simulator = target.class.platform() == Platform::Ios;
+    let ios = target.class.platform() == Platform::Ios;
+    let simulator = target.class == TargetClass::Simulator;
     let devices = format!("/Devices/{udid}/");
     let mut left: Vec<(u32, &str)> = Vec::new();
     // The processes whose command line or environment tells whether they
@@ -294,7 +299,8 @@ pub fn left_running(
                 left.push((pid, "runner app"));
             }
             "node" => unsure.push((pid, "node")),
-            name @ ("xcodebuild" | "simctl" | "snapshot-bridge") if simulator => {
+            "xcodebuild" if ios => unsure.push((pid, "xcodebuild")),
+            name @ ("simctl" | "snapshot-bridge") if simulator => {
                 unsure.push((pid, name));
             }
             _ => {}
@@ -352,8 +358,22 @@ pub fn signing_env(
     signing: &super::IosSigning,
     is_set: impl Fn(&str) -> bool,
 ) -> Vec<(&'static str, String)> {
-    let _ = (signing, is_set);
-    Vec::new()
+    [
+        ("AGENT_DEVICE_IOS_TEAM_ID", signing.team.as_str()),
+        ("AGENT_DEVICE_IOS_BUNDLE_ID", RUNNER_BUNDLE_ID),
+        (
+            "AGENT_DEVICE_IOS_PROVISIONING_PROFILE",
+            signing.profile.as_str(),
+        ),
+        (
+            "AGENT_DEVICE_IOS_SIGNING_IDENTITY",
+            signing.identity.as_str(),
+        ),
+    ]
+    .into_iter()
+    .filter(|(name, _)| !is_set(name))
+    .map(|(name, value)| (name, value.to_owned()))
+    .collect()
 }
 
 /// A line `ps` printed for `pid=,…`, as the pid and the rest.
