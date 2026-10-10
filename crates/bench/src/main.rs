@@ -17,12 +17,14 @@ use bench::fixture::Fixture;
 use bench::flow;
 use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
+use bench::install;
 use bench::micro::guard::SystemHost;
 use bench::micro::{self, CargoBench, Settings};
 use bench::plan;
 use bench::primitive::Primitive;
 use bench::provenance::{Probe, SystemProbe, compact_timestamp};
 use bench::report::Report;
+use bench::target::TargetClass;
 use clap::builder::PossibleValuesParser;
 use clap::{Args, Parser, Subcommand};
 
@@ -89,7 +91,8 @@ fn positive(text: &str) -> Result<f64, String> {
 #[derive(Args)]
 struct RunArgs {
     /// A target to measure mobile-agent on, as `mobile-agent devices` lists it:
-    /// a Simulator's UDID or an adb serial; repeatable
+    /// a Simulator's UDID, an adb serial or a physical iPhone's identifier;
+    /// repeatable
     #[arg(
         long = "target",
         value_name = "ID",
@@ -98,7 +101,7 @@ struct RunArgs {
     )]
     targets: Vec<String>,
 
-    /// A fixture app to run on every target: swiftui, expo or compose; repeatable [default: each target's platform's, swiftui and expo on a Simulator, expo and compose on Android]
+    /// A fixture app to run on every target: swiftui, expo or compose; repeatable [default: each target's platform's, swiftui and expo on a Simulator or an iPhone, expo and compose on Android]
     #[arg(long = "fixture", value_name = "FIXTURE", value_parser = ["swiftui", "expo", "compose"], conflicts_with = "fake")]
     fixtures: Vec<String>,
 
@@ -240,9 +243,16 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
 
 /// The run of mobile-agent through the CLI adapter: the targets `--target`
 /// names among those `mobile-agent devices` lists, each with its fixtures,
-/// and the plan's series and flows for them. The golden checks run first, as
+/// and the plan's series and flows for them. On a physical iPhone the
+/// fixtures' builds `--ios-app` names are installed first, and
+/// `--auto-lock-off` is recorded as stated. The golden checks run first, as
 /// in every run, then the timed series.
 fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness, String> {
+    let apps = args
+        .ios_apps
+        .iter()
+        .map(|text| install::parse_app(text))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut settings = CliConfig::new(dir.join("cli"));
     settings.program = args.cli.clone().unwrap_or_else(cli::default_program);
     let mut adapter = CliAdapter::new(settings);
@@ -265,7 +275,7 @@ fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness
     let mut targets = Vec::new();
     let mut series = Vec::new();
     let mut fixtures: Vec<Fixture> = Vec::new();
-    for (target, runs) in plan::select(&connected, &args.targets, &chosen)? {
+    for (mut target, runs) in plan::select(&connected, &args.targets, &chosen)? {
         series.extend(plan::only(
             plan::series(&target, &runs),
             &primitives,
@@ -276,9 +286,32 @@ fn mobile_agent(args: &RunArgs, config: RunConfig, dir: &Path) -> Result<Harness
                 fixtures.push(fixture);
             }
         }
+        if target.class == TargetClass::IosDevice && args.auto_lock_off {
+            target.auto_lock_off = Some(true);
+        }
         targets.push(target);
     }
     fixtures.sort();
+    if !apps.is_empty() && !targets.iter().any(|t| t.class == TargetClass::IosDevice) {
+        return Err(
+            "--ios-app installs on a physical iPhone, and the run has no ios-device target"
+                .to_owned(),
+        );
+    }
+    for target in targets
+        .iter_mut()
+        .filter(|t| t.class == TargetClass::IosDevice)
+    {
+        for (fixture, bundle) in &apps {
+            let installed = install::install(target, *fixture, bundle)?;
+            println!(
+                "installed the {fixture} fixture's build on {} in {} ms",
+                target.id,
+                installed.elapsed_us / 1000
+            );
+            target.installs.push(installed);
+        }
+    }
     Ok(Harness::new(config, targets, series)
         .flows(plan::flows(&fixtures))
         .tool(Box::new(adapter)))

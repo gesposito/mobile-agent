@@ -336,8 +336,12 @@ impl CliAdapter {
         }
     }
 
-    /// Keeps what `status` said about `target`.
-    fn keep(&mut self, target: &Target, attached: Attached) {
+    /// Keeps what `status` said about `target`, with a physical iPhone's
+    /// battery as `status` first gave it in the run.
+    fn keep(&mut self, target: &Target, mut attached: Attached) {
+        if let Some(first) = self.attached.get(&target.id).and_then(|kept| kept.battery) {
+            attached.battery = Some(first);
+        }
         self.attached.insert(target.id.clone(), attached);
     }
 
@@ -805,20 +809,34 @@ impl Adapter for CliAdapter {
     }
 
     /// Whether the emulator's controller answered and whether the target gave
-    /// frames, as `status` last said while the daemon had it attached.
+    /// frames, as `status` last said while the daemon had it attached, and on
+    /// a physical iPhone its runner and its input and frame paths, with its
+    /// battery as `status` first gave it.
     fn describe(&self, target: &mut Target) {
         if let Some(attached) = self.attached.get(&target.id) {
             target.controller = target.controller.or(attached.controller);
             target.frame_source = target.frame_source.or(attached.frame_source);
+            target.runner = target.runner.take().or_else(|| attached.runner.clone());
+            target.input_path = target
+                .input_path
+                .take()
+                .or_else(|| attached.input_path.clone());
+            target.frame_path = target
+                .frame_path
+                .take()
+                .or_else(|| attached.frame_path.clone());
+            target.battery = target.battery.or(attached.battery);
         }
     }
 }
 
 /// What the data of a `status` reply says about `target`: its entry's
 /// `frameSource`, and from its driver's report, on an Android emulator,
-/// whether the controller answered (an `endpoint`) or not (none), and the
-/// driver's `warning` and `frameError`. `None` when the daemon does not list
-/// the target or says nothing about it, as for a target it has not attached.
+/// whether the controller answered (an `endpoint`) or not (none), on a
+/// physical iPhone the runner's `agent`, the `input` and `frames` paths and
+/// the `battery`, and the driver's `warning` and `frameError`. `None` when
+/// the daemon does not list the target or says nothing about it, as for a
+/// target it has not attached.
 fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
     let entry = data["targets"]
         .as_array()?
@@ -843,12 +861,26 @@ fn read_attached(data: &Value, target: &Target) -> Option<Attached> {
                 .collect()
         })
         .unwrap_or_default();
-    let attached = Attached {
+    let mut attached = Attached {
         frame_source: entry["frameSource"].as_bool(),
         controller,
         why_no_frames: (!why.is_empty()).then(|| why.join("; ")),
         ..Attached::default()
     };
+    if let (TargetClass::IosDevice, Some(driver)) = (target.class, driver) {
+        let text = |value: &Value| value.as_str().map(str::to_owned);
+        attached.runner = text(&driver["runner"]["agent"]);
+        attached.input_path = text(&driver["input"]);
+        attached.frame_path = text(&driver["frames"]);
+        let battery = &driver["battery"];
+        attached.battery = battery.is_object().then(|| Battery {
+            level_pct: battery["levelPct"]
+                .as_u64()
+                .and_then(|level| u8::try_from(level).ok()),
+            charging: battery["charging"].as_bool(),
+            external_power: battery["externalPower"].as_bool(),
+        });
+    }
     (attached.frame_source.is_some() || attached.controller.is_some()).then_some(attached)
 }
 

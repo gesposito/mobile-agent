@@ -12,6 +12,7 @@ use crate::harness::Subject;
 use crate::provenance::{Provenance, ToolStatus};
 use crate::report::{Measurement, NodeRange, Report};
 use crate::stats::{Summary, ms};
+use crate::target::{Battery, TargetClass};
 
 /// Renders `report` as markdown.
 pub fn render(report: &Report) -> String {
@@ -170,6 +171,7 @@ fn provenance(out: &mut String, p: &Provenance) {
         ]);
     }
     targets.render(out);
+    iphones(out, p);
 
     out.push_str("### Tools\n\n");
     let mut tools = Table::new(&["Tool", "Role", "Status", "Version", "Note"]);
@@ -191,6 +193,79 @@ fn provenance(out: &mut String, p: &Provenance) {
         ]);
     }
     tools.render(out);
+}
+
+/// The physical iPhones of the run, when it has any: the runner the tool
+/// under test started on each, its input and frame paths, the battery it
+/// read, the Auto-Lock the person running stated and the fixtures' builds
+/// the harness installed.
+fn iphones(out: &mut String, p: &Provenance) {
+    let phones: Vec<_> = p
+        .targets
+        .iter()
+        .filter(|t| t.class == TargetClass::IosDevice)
+        .collect();
+    if phones.is_empty() {
+        return;
+    }
+    out.push_str("### Physical iPhones\n\n");
+    let mut table = Table::new(&[
+        "Target",
+        "Runner",
+        "Input",
+        "Frames",
+        "Battery",
+        "Auto-Lock",
+        "Installed before the run",
+    ]);
+    for t in phones {
+        let installed: Vec<String> = t
+            .installs
+            .iter()
+            .map(|install| format!("{} in {} ms", install.fixture, ms(install.elapsed_us)))
+            .collect();
+        table.row(vec![
+            t.id.clone(),
+            or_dash(t.runner.as_deref()),
+            or_dash(t.input_path.as_deref()),
+            or_dash(t.frame_path.as_deref()),
+            or_dash(t.battery.and_then(battery_cell)),
+            match t.auto_lock_off {
+                Some(true) => "off, as stated",
+                _ => "not stated",
+            }
+            .to_owned(),
+            if installed.is_empty() {
+                "none".to_owned()
+            } else {
+                installed.join("; ")
+            },
+        ]);
+    }
+    table.render(out);
+}
+
+/// A battery as `76%, charging, on external power`, from what was read of
+/// it; `None` when nothing was.
+fn battery_cell(battery: Battery) -> Option<String> {
+    let parts: Vec<String> = [
+        battery.level_pct.map(|level| format!("{level}%")),
+        battery
+            .charging
+            .map(|charging| if charging { "charging" } else { "not charging" }.to_owned()),
+        battery.external_power.map(|external| {
+            if external {
+                "on external power"
+            } else {
+                "on its battery"
+            }
+            .to_owned()
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| parts.join(", "))
 }
 
 fn measurements(out: &mut String, measurements: &[Measurement]) {

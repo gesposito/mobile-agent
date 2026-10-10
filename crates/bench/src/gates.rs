@@ -144,7 +144,7 @@ impl GateSet {
     /// and cold attach, which get p95 too.
     pub fn defaults() -> Self {
         use Primitive::{CliStart, ColdAttach, TapDispatch, TapToFrameChange, WarmSnapshot};
-        use TargetClass::{AndroidDevice, AndroidEmulator, Simulator};
+        use TargetClass::{AndroidDevice, AndroidEmulator, IosDevice, Simulator};
         GateSet {
             gates: vec![
                 Gate::new(Simulator, CliStart, 20.0),
@@ -164,6 +164,20 @@ impl GateSet {
                 Gate::new(AndroidEmulator, TapToFrameChange, 67.0),
                 Gate::new(AndroidDevice, CliStart, 20.0),
                 Gate::new(AndroidDevice, ColdAttach, 1500.0),
+                Gate::new(IosDevice, CliStart, 20.0),
+                // The attach starts the runner's session; installing the
+                // runner would add about 1.1 s (design D20).
+                Gate::new(IosDevice, ColdAttach, 5000.0)
+                    .noted("the runner already installed on the phone"),
+                // Either reference screen: the SwiftUI and Expo Big tabs.
+                Gate::new(IosDevice, WarmSnapshot, 1000.0).on(None, Screen::Big),
+                // The runner's synthesis takes about 290 ms (design D22).
+                Gate::new(IosDevice, TapDispatch, 150.0)
+                    .noted("through the host's input path, dtuhidd"),
+                // Polled screenshots come at most 19 a second, and a tap's
+                // first changed frame 222 to 439 ms at p95 (design D23).
+                Gate::reported(IosDevice, TapToFrameChange)
+                    .noted("not gated while the phone's frames are polled screenshots"),
             ],
         }
     }
@@ -192,7 +206,8 @@ impl GateSet {
     }
 
     /// Judges the tool under test's measurements in `report`. Gates for target
-    /// classes the run has no target of are left out.
+    /// classes the run has no target of are left out, and a gate without a
+    /// limit reports what it would judge with no verdict.
     pub fn evaluate(&self, report: &Report) -> GateReport {
         let under_test: Vec<&str> = report
             .provenance
@@ -219,7 +234,7 @@ impl GateSet {
                 target,
                 measured_us,
                 status,
-                note: None,
+                note: gate.note.clone(),
             };
             let judged: Vec<&Measurement> = report
                 .measurements
@@ -236,6 +251,7 @@ impl GateSet {
             for m in judged {
                 let measured = m.stats.as_ref().map(|s| gate.statistic.of(s));
                 let status = match (measured, gate.limit_us()) {
+                    (_, None) => GateStatus::Reported,
                     (Some(us), Some(limit)) if us < limit => GateStatus::Pass,
                     _ => GateStatus::Fail,
                 };
@@ -314,6 +330,7 @@ impl GateReport {
             "Limit ms",
             "Measured ms",
             "Result",
+            "Note",
         ]);
         for row in &self.rows {
             table.row(vec![
@@ -330,16 +347,22 @@ impl GateReport {
                 match row.status {
                     GateStatus::Pass => "pass",
                     GateStatus::Fail => "FAIL",
-                    GateStatus::NotMeasured | GateStatus::Reported => "not measured",
+                    GateStatus::NotMeasured => "not measured",
+                    GateStatus::Reported => "reported",
                 }
                 .to_owned(),
+                or_dash(row.note.as_deref()),
             ]);
         }
         let mut out = String::new();
         table.render(&mut out);
         let count = |status| self.rows.iter().filter(|r| r.status == status).count();
-        let (failed, unmeasured) = (count(GateStatus::Fail), count(GateStatus::NotMeasured));
-        let checked = self.rows.len() - unmeasured;
+        let (failed, unmeasured, reported) = (
+            count(GateStatus::Fail),
+            count(GateStatus::NotMeasured),
+            count(GateStatus::Reported),
+        );
+        let checked = self.rows.len() - unmeasured - reported;
         if failed > 0 {
             out.push_str(&format!("{failed} of {checked} gate checks failed."));
         } else {
@@ -347,6 +370,9 @@ impl GateReport {
         }
         if unmeasured > 0 {
             out.push_str(&format!(" {unmeasured} not measured."));
+        }
+        if reported > 0 {
+            out.push_str(&format!(" {reported} reported with no verdict."));
         }
         out.push('\n');
         out

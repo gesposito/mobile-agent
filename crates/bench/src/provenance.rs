@@ -3,7 +3,7 @@
 //! commit under test. Everything is read through a [`Probe`], so tests script
 //! the commands' output; the tool under test adds what it found out about a
 //! target while driving it, such as whether an emulator's controller
-//! answered.
+//! answered or a physical iPhone's runner and battery.
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapter::Role;
 use crate::process;
-use crate::target::{Platform, Target};
+use crate::target::{Target, TargetClass};
 
 /// Runs host commands for provenance capture.
 pub trait Probe {
@@ -232,11 +232,15 @@ pub fn capture_commit(probe: &dyn Probe) -> Option<Commit> {
 
 /// Fills the target fields an adapter left empty: from `adb -s <id> shell
 /// getprop` on Android, from `xcrun simctl list devices --json` on the
-/// Simulator.
+/// Simulator. A physical iPhone's model and iOS version come from the
+/// adapter's listing, and the rest from the tool under test.
 pub fn complete_target(probe: &dyn Probe, target: &mut Target) {
-    match target.class.platform() {
-        Platform::Android => complete_android(probe, target),
-        Platform::Ios => complete_simulator(probe, target),
+    match target.class {
+        TargetClass::AndroidEmulator | TargetClass::AndroidDevice => {
+            complete_android(probe, target);
+        }
+        TargetClass::Simulator => complete_simulator(probe, target),
+        TargetClass::IosDevice => {}
     }
 }
 
@@ -328,9 +332,10 @@ fn complete_simulator(probe: &dyn Probe, target: &mut Target) {
 
 impl Provenance {
     /// The environment fields in which `self` and `other` differ, as dotted
-    /// paths such as `host.os` or `targets[emulator-5554].api_level`. Times and
-    /// load averages are run-specific and never listed. An empty list means
-    /// the environments matched.
+    /// paths such as `host.os` or `targets[emulator-5554].api_level`. Times,
+    /// load averages, a phone's battery and the builds installed before the
+    /// run are run-specific and never listed. An empty list means the
+    /// environments matched.
     pub fn environment_differences(&self, other: &Provenance) -> Vec<String> {
         let mut found = Vec::new();
         let (a, b) = (&self.host, &other.host);
@@ -382,6 +387,30 @@ impl Provenance {
                 format!("{name}.frame_source"),
                 &target.frame_source,
                 &theirs.frame_source,
+            );
+            differ(
+                &mut found,
+                format!("{name}.runner"),
+                &target.runner,
+                &theirs.runner,
+            );
+            differ(
+                &mut found,
+                format!("{name}.input_path"),
+                &target.input_path,
+                &theirs.input_path,
+            );
+            differ(
+                &mut found,
+                format!("{name}.frame_path"),
+                &target.frame_path,
+                &theirs.frame_path,
+            );
+            differ(
+                &mut found,
+                format!("{name}.auto_lock_off"),
+                &target.auto_lock_off,
+                &theirs.auto_lock_off,
             );
         }
         for target in &other.targets {
