@@ -29,6 +29,10 @@ impl IosDriver {
     pub fn reset_target(&self, _target: &str) -> Result<()> {
         match *self {}
     }
+
+    pub fn forget_identity(&self) {
+        match *self {}
+    }
 }
 
 impl Devices for IosDriver {

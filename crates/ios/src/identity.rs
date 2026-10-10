@@ -66,22 +66,50 @@ impl Security {
         format!("{program} {}", args.join(" "))
     }
 
-    /// Runs the program with `args` and returns what it printed.
+    /// Runs the program with `args` and returns what it printed, ending it
+    /// once it has run the timeout.
     fn run(&self, args: &[&str]) -> Result<String, RunFailure> {
         let command = self.command(args);
-        let output = Command::new(&self.program)
+        let mut child = Command::new(&self.program)
             .args(args)
             .stdin(Stdio::null())
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|error| RunFailure::Failed(format!("{command}: {error}")))?;
-        if !output.status.success() {
+        let stdout = child.stdout.take().map(drain);
+        let stderr = child.stderr.take().map(drain);
+        let deadline = Instant::now() + self.timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => std::thread::sleep(RUN_POLL),
+                Ok(None) => {
+                    // The readers end once the pipes close with the process;
+                    // they are not waited for.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(RunFailure::TimedOut(format!(
+                        "{command} did not finish within {:?} and was ended",
+                        self.timeout
+                    )));
+                }
+                Err(error) => return Err(RunFailure::Failed(format!("{command}: {error}"))),
+            }
+        };
+        let read = |reader: Option<JoinHandle<String>>| {
+            reader
+                .and_then(|reader| reader.join().ok())
+                .unwrap_or_default()
+        };
+        let (stdout, stderr) = (read(stdout), read(stderr));
+        if !status.success() {
             return Err(RunFailure::Failed(format!(
-                "{command} exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
+                "{command} exited with {status}: {}",
+                stderr.trim()
             )));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(stdout)
     }
 }
 

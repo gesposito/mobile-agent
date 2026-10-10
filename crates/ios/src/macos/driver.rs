@@ -74,6 +74,12 @@ impl IosDriver {
     pub fn reset_target(&self, target: &str) -> Result<()> {
         self.core.reset_target(target)
     }
+
+    /// Forgets the host's signing identity the driver keeps, so that the
+    /// next use checks it again, as a `devices` request asks.
+    pub fn forget_identity(&self) {
+        self.core.forget_identity();
+    }
 }
 
 impl Devices for IosDriver {
@@ -525,6 +531,11 @@ pub(crate) struct Core<H: Host> {
     /// dropped while the tasks serving it can still end on their own.
     targets: Mutex<Slots<H>>,
     pub(crate) host: H,
+    /// The host's signing identity as last found: checked once, and again
+    /// after a check that failed or once forgotten (design D26 of
+    /// physical-ios), since it does not change within a daemon's life and
+    /// each check runs `security` twice.
+    identity: Mutex<Option<IdentityCheck>>,
     runtime: tokio::runtime::Runtime,
     limits: Limits,
     mount_limits: MountLimits,
@@ -557,6 +568,7 @@ impl<H: Host> Core<H> {
         Ok(Core {
             targets: Mutex::new(HashMap::new()),
             host,
+            identity: Mutex::new(None),
             runtime,
             limits: Limits::default(),
             mount_limits: MountLimits::default(),
@@ -579,13 +591,24 @@ impl<H: Host> Core<H> {
         self
     }
 
-    /// The host's signing identity.
+    /// The host's signing identity: the one kept, else checked, and kept
+    /// when found.
     fn identity(&self) -> IdentityCheck {
-        self.host.identity()
+        let mut kept = lock(&self.identity);
+        if let Some(found) = kept.as_ref() {
+            return found.clone();
+        }
+        let checked = self.host.identity();
+        if checked.ok() {
+            *kept = Some(checked.clone());
+        }
+        checked
     }
 
     /// Forgets the signing identity kept, so that the next use checks it.
-    pub(crate) fn forget_identity(&self) {}
+    pub(crate) fn forget_identity(&self) {
+        *lock(&self.identity) = None;
+    }
 
     pub(crate) fn devices(&self) -> Result<Vec<DeviceInfo>> {
         self.runtime.block_on(async {
