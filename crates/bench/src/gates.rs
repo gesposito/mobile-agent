@@ -9,7 +9,7 @@ use crate::fixture::{Fixture, Screen};
 use crate::harness::Subject;
 use crate::markdown::{Table, or_dash};
 use crate::primitive::Primitive;
-use crate::report::{Measurement, Report};
+use crate::report::{Measurement, Reads, Report};
 use crate::stats::{Summary, ms};
 use crate::target::TargetClass;
 
@@ -266,6 +266,7 @@ impl GateSet {
         GateReport {
             passed: rows.iter().all(|r| r.status != GateStatus::Fail),
             rows,
+            reads: Vec::new(),
         }
     }
 }
@@ -303,12 +304,34 @@ pub struct GateRow {
     pub note: Option<String>,
 }
 
+/// A snapshot series of the tool under test on a physical iPhone, with what
+/// its snapshots cost the tool on its own side, which the gate table shows
+/// beside the gates: the warm snapshot's limit was set from the runner's
+/// read, which a snapshot the daemon answers from its replica does not pay,
+/// and the first snapshot after a relaunch can pay the device listing
+/// instead (design D26 of physical-ios).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadRow {
+    pub primitive: Primitive,
+    pub tool: String,
+    pub target: String,
+    pub fixture: Option<Fixture>,
+    pub screen: Option<Screen>,
+    /// The series' statistics on its own clock, an agent's wait.
+    pub wall: Option<Summary>,
+    pub reads: Reads,
+}
+
 /// Every gate's verdict for one run.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateReport {
     /// No row failed.
     pub passed: bool,
     pub rows: Vec<GateRow>,
+    /// The snapshot series on physical iPhones whose samples say what they
+    /// cost the tool, shown beside the gates; none for other runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ReadRow>,
 }
 
 impl GateReport {

@@ -450,6 +450,7 @@ fn measure(
         error,
         not_measured,
         end_state,
+        reads: None,
         samples,
     }
 }
@@ -493,6 +494,8 @@ fn record(
             nodes: sample.nodes,
             detail: sample.detail,
             errors,
+            read_us: None,
+            served_from_replica: None,
         },
         None => SampleRecord {
             iteration,
@@ -503,6 +506,8 @@ fn record(
             nodes: None,
             detail: None,
             errors,
+            read_us: None,
+            served_from_replica: None,
         },
     }
 }

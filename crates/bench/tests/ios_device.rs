@@ -216,6 +216,25 @@ fn a_run_on_an_iphone_installs_the_fixture_and_records_the_phone_s_provenance() 
     assert_eq!(frames.target_class, TargetClass::IosDevice);
     assert_eq!(frames.stats.map(|s| s.n), Some(1), "{:?}", frames.samples);
 
+    // Physical-ios, task 9.4: the warm snapshot's sample carries what the
+    // daemon's reply says it cost, served from the replica, and the gate
+    // table shows it beside the gates.
+    let warm = report
+        .measurements
+        .iter()
+        .find(|m| m.subject == Subject::Primitive(Primitive::WarmSnapshot))
+        .unwrap();
+    let sample = warm.samples.iter().find(|s| !s.warmup).unwrap();
+    assert_eq!(sample.served_from_replica, Some(true), "{sample:?}");
+    assert!(sample.read_us.is_some(), "{sample:?}");
+    let reads = &report.gates.as_ref().unwrap().reads;
+    assert_eq!(reads.len(), 1, "{reads:?}");
+    assert_eq!(reads[0].primitive, Primitive::WarmSnapshot);
+    assert_eq!(reads[0].reads.replica.map(|s| s.n), Some(1));
+    assert_eq!(reads[0].reads.device, None);
+    let read_table = common::table(&md, "Snapshot reads on physical iPhones");
+    assert_eq!(read_table.rows.len(), 1, "{md}");
+
     // The gates are the iPhone's, tap to frame change without a verdict.
     let gates = report.gates.as_ref().unwrap();
     assert!(gates.passed);

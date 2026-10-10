@@ -555,6 +555,7 @@ impl WebDriverAgent {
             clock: Clock::Wall,
             nodes: None,
             detail: (swipes > 0).then(|| format!("{swipes} swipes")),
+            read: None,
         })
     }
 

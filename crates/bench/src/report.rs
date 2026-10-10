@@ -14,7 +14,7 @@ use crate::gates::GateReport;
 use crate::handoff::HandOff;
 use crate::harness::Subject;
 use crate::provenance::Provenance;
-use crate::stats::{Summary, percent};
+use crate::stats::{Summary, percent, summarize};
 use crate::target::TargetClass;
 
 /// Version of the JSON layout, bumped on incompatible changes.
@@ -68,8 +68,33 @@ pub struct Measurement {
     /// golden when it matched, which it must before the flow is timed.
     #[serde(default)]
     pub end_state: Option<EndState>,
+    /// For snapshots whose replies say what they cost the tool, the measured
+    /// ones' time to answer, those served from the replica apart from those
+    /// that read the device.
+    #[serde(default)]
+    pub reads: Option<Reads>,
     /// Every iteration in order, warm-up included and flagged.
     pub samples: Vec<SampleRecord>,
+}
+
+/// What a snapshot series cost the tool on its own side: the time to answer
+/// of the measured snapshots it served from its replica, and of those that
+/// read the device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reads {
+    /// Over the snapshots served from the replica; `None` when none was.
+    pub replica: Option<Summary>,
+    /// Over the snapshots that read the device; `None` when none did.
+    pub device: Option<Summary>,
+}
+
+impl Reads {
+    /// Over the measured samples among `samples` that say what they cost;
+    /// `None` when none says.
+    pub fn of(samples: &[SampleRecord]) -> Option<Reads> {
+        let _ = (samples, summarize);
+        None
+    }
 }
 
 /// Failures and flakes over a series' measured iterations, warm-up excluded.
@@ -134,6 +159,14 @@ pub struct SampleRecord {
     pub detail: Option<String>,
     /// Messages of the failed attempts, in order.
     pub errors: Vec<String>,
+    /// For a snapshot, the tool's own time to answer, when its reply says:
+    /// `mobile-agent`'s `readMs`, in whole microseconds.
+    #[serde(default)]
+    pub read_us: Option<u64>,
+    /// For a snapshot, whether the tool answered from its replica without
+    /// reading the device, when its reply says: `servedFromReplica`.
+    #[serde(default)]
+    pub served_from_replica: Option<bool>,
 }
 
 /// How an iteration ended.

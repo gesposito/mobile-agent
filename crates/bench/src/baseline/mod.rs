@@ -660,6 +660,7 @@ impl Baseline {
             clock: Clock::Wall,
             nodes: None,
             detail,
+            read: None,
         })
     }
 

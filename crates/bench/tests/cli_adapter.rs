@@ -658,6 +658,51 @@ fn a_first_snapshot_follows_a_relaunch_on_the_big_screen_and_counts_its_refs() {
     assert_eq!(count["text"], "500 elements");
 }
 
+/// A snapshot reply that lists the Big screen's last cell, with what the
+/// daemon says the snapshot cost it.
+fn snapshot_reply(read_ms: f64, served_from_replica: bool) -> String {
+    format!(
+        r#"{{"success":true,"data":{{"snapshot":"- cell \"500\" [id=cell-500, ref=e1]","refs":{{"e1":{{"role":"cell","name":"500"}}}},"readMs":{read_ms},"servedFromReplica":{served_from_replica}}},"error":null}}"#
+    )
+}
+
+/// Physical-ios, task 9.4 (design D26): a warm and a first snapshot's
+/// samples carry what the reply says the snapshot cost the daemon, its
+/// `readMs` and `servedFromReplica`, beside the wall time the adapter
+/// reads around the command.
+#[test]
+fn a_snapshot_sample_carries_the_replys_read_time_and_whether_the_replica_served_it() {
+    let iphone = Target::new("IPHONE-1", TargetClass::IosDevice);
+    for (read_ms, replica, us) in [(0.54, true, 540), (438.269, false, 438_269)] {
+        let dir = common::scratch(&format!("cli-snapshot-read-{us}"));
+        let mut settings = CliConfig::new(dir.join("work"));
+        settings.program = stand_in(
+            &dir,
+            &[("snapshot -i", &snapshot_reply(read_ms, replica), 0)],
+        );
+        let mut adapter = CliAdapter::new(settings);
+        adapter.detect();
+        for primitive in [Primitive::WarmSnapshot, Primitive::FirstSnapshot] {
+            let sample = adapter
+                .measure(
+                    &iphone,
+                    &plan::scenario(primitive, Fixture::SwiftUi),
+                    primitive,
+                )
+                .unwrap_or_else(|e| panic!("{primitive}: {e}"));
+            assert_eq!(sample.clock, Clock::Wall, "{primitive}");
+            assert_eq!(
+                sample.read,
+                Some(bench::adapter::Read {
+                    us,
+                    served_from_replica: replica
+                }),
+                "{primitive}"
+            );
+        }
+    }
+}
+
 #[test]
 fn text_entry_fills_the_fixed_string_into_the_username_field() {
     let devices = FakeDevices::new("ios");

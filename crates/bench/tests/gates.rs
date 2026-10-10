@@ -310,6 +310,149 @@ fn an_iphone_passes_its_three_gates_and_lists_tap_to_frame_change_with_no_verdic
     );
 }
 
+/// The iPhone's run of [`iphone_script`] whose warm snapshots say what they
+/// cost the daemon, as the phone's did (`reports/11.1-ios-device/probes/`):
+/// served from the replica in 0.55 ms but for the last two, which read the
+/// phone in 438.269 and 446.781 ms; and a first snapshot after a relaunch,
+/// 177 ms on the wall, every one served from the replica in 0.6 ms.
+fn iphone_reads_script() -> FakeScript {
+    use bench::adapter::Read;
+    let mut script = iphone_script();
+    let replica = |ms: f64| Read {
+        us: (ms * 1000.0).round() as u64,
+        served_from_replica: true,
+    };
+    let warm = script
+        .series
+        .iter_mut()
+        .find(|s| s.subject == Subject::Primitive(Primitive::WarmSnapshot))
+        .unwrap();
+    let mut reads = vec![replica(0.55); warm.ms.len() - 2];
+    for us in [438_269, 446_781] {
+        reads.push(Read {
+            us,
+            served_from_replica: false,
+        });
+    }
+    warm.reads = reads;
+    let mut first = series(
+        "IPHONE-1",
+        Some(Fixture::SwiftUi),
+        Some(Screen::Big),
+        Primitive::FirstSnapshot,
+        with_p95(177.0, 193.0),
+    );
+    first.reads = vec![replica(0.6)];
+    script.series.push(first);
+    script
+}
+
+/// Physical-ios, task 9.4 (design D26): an iPhone run's gate table shows,
+/// beside the gates, what the warm and first snapshots cost the daemon:
+/// the p50 and p95 of the snapshots that read the phone beside those of the
+/// snapshots served from the replica, with their counts; the gates and
+/// their verdicts are the same as without them.
+#[test]
+fn an_iphone_runs_gate_table_shows_the_reads_beside_the_replicas_for_its_snapshots() {
+    let without = GateSet::defaults().evaluate(&run(iphone_script()));
+    let verdict = GateSet::defaults().evaluate(&run(iphone_reads_script()));
+    assert_eq!(verdict.rows, without.rows, "the gates do not change");
+    assert!(verdict.passed);
+    let read = |primitive: Primitive| {
+        verdict
+            .reads
+            .iter()
+            .find(|r| r.primitive == primitive)
+            .unwrap_or_else(|| panic!("no reads of {primitive} in {}", verdict.table()))
+    };
+    let warm = read(Primitive::WarmSnapshot);
+    assert_eq!(
+        (warm.tool.as_str(), warm.target.as_str()),
+        ("mobile-agent", "IPHONE-1")
+    );
+    assert_eq!(
+        (warm.fixture, warm.screen),
+        (Some(Fixture::SwiftUi), Some(Screen::Big))
+    );
+    let replica = warm.reads.replica.expect("served from the replica");
+    assert_eq!((replica.n, replica.p50_us, replica.p95_us), (18, 550, 550));
+    let device = warm.reads.device.expect("read from the phone");
+    assert_eq!(
+        (device.n, device.p50_us, device.p95_us),
+        (2, 438_269, 446_781)
+    );
+    assert_eq!(warm.wall.map(|s| s.p95_us), Some(640_000));
+    let first = read(Primitive::FirstSnapshot);
+    assert_eq!(
+        first.reads.replica.map(|s| (s.n, s.p50_us)),
+        Some((20, 600))
+    );
+    assert_eq!(first.reads.device, None);
+    assert_eq!(verdict.reads.len(), 2, "{:?}", verdict.reads);
+
+    let text = verdict.table();
+    let table = common::table(&text, "Snapshot reads on physical iPhones");
+    let row = |primitive: &str| {
+        table
+            .rows
+            .iter()
+            .find(|r| table.cell(r, "Snapshot") == primitive)
+            .unwrap_or_else(|| panic!("no row {primitive} in {text}"))
+    };
+    let warm = row("warm-snapshot");
+    assert_eq!(table.cell(warm, "Target"), "IPHONE-1");
+    assert_eq!(table.cell(warm, "Wall p50 / p95 ms"), "550.000 / 640.000");
+    assert_eq!(table.cell(warm, "Replica n"), "18");
+    assert_eq!(table.cell(warm, "Replica p50 / p95 ms"), "0.550 / 0.550");
+    assert_eq!(table.cell(warm, "Read n"), "2");
+    assert_eq!(table.cell(warm, "Read p50 / p95 ms"), "438.269 / 446.781");
+    let first = row("first-snapshot");
+    assert_eq!(table.cell(first, "Read n"), "0");
+    assert_eq!(table.cell(first, "Read p50 / p95 ms"), "—");
+}
+
+/// Physical-ios, task 9.4: the JSON report keeps what each snapshot sample
+/// says it cost, `read_us` and `served_from_replica`, and the read rows
+/// beside the gates; the markdown summary shows them, every number of it
+/// in the JSON; a run whose snapshots say nothing of their cost, on a
+/// Simulator here, has no such rows.
+#[test]
+fn the_json_report_keeps_each_snapshots_read_time_and_whether_the_replica_served_it() {
+    let (output, out) = run_binary("gates-binary-iphone-reads", &iphone_reads_script());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
+    let text = fs::read_to_string(out.join("report.json")).unwrap();
+    let json: Value = serde_json::from_str(&text).unwrap();
+    let warm = json["measurements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["primitive"] == "warm-snapshot")
+        .unwrap();
+    let samples = warm["samples"].as_array().unwrap();
+    let last = samples.last().unwrap();
+    assert_eq!(last["read_us"], 446_781, "{last}");
+    assert_eq!(last["served_from_replica"], false, "{last}");
+    let measured = samples.iter().find(|s| s["warmup"] == false).unwrap();
+    assert_eq!(
+        (&measured["read_us"], &measured["served_from_replica"]),
+        (&Value::from(550), &Value::from(true))
+    );
+    assert_eq!(warm["reads"]["device"]["p95_us"], 446_781, "{warm}");
+    let rows = json["gates"]["reads"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    let report = Report::from_json(&text).unwrap();
+    assert_eq!(report.gates.as_ref().unwrap().reads.len(), 2);
+    let md = fs::read_to_string(out.join("report.md")).unwrap();
+    let table = common::table(&md, "Snapshot reads on physical iPhones");
+    assert_eq!(table.rows.len(), 2, "{md}");
+    common::assert_every_markdown_number_is_in_the_json(&md, &json);
+
+    let verdict = GateSet::defaults().evaluate(&run(script(140.0)));
+    assert!(verdict.reads.is_empty(), "{:?}", verdict.reads);
+    assert!(!verdict.table().contains("Snapshot reads"));
+}
+
 /// A reported statistic never fails the run, even when no iteration of its
 /// series succeeded.
 #[test]

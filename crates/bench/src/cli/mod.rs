@@ -1083,6 +1083,7 @@ fn wall(elapsed: Duration, nodes: Option<u32>, detail: Option<String>) -> Sample
         clock: Clock::Wall,
         nodes,
         detail,
+        read: None,
     }
 }
 
@@ -1092,6 +1093,7 @@ fn tool(elapsed: Duration, detail: Option<String>) -> Sample {
         clock: Clock::Tool,
         nodes: None,
         detail,
+        read: None,
     }
 }
 

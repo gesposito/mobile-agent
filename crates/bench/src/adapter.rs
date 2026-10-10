@@ -47,6 +47,17 @@ pub enum Clock {
     Tool,
 }
 
+/// What a snapshot cost the tool on its own side, as its reply says:
+/// `mobile-agent`'s `readMs`, the daemon's time to answer, device reads
+/// included, and `servedFromReplica`, whether it answered from its replica
+/// without reading the device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Read {
+    /// The time to answer, in whole microseconds.
+    pub us: u64,
+    pub served_from_replica: bool,
+}
+
 /// One successful attempt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sample {
@@ -57,6 +68,9 @@ pub struct Sample {
     pub nodes: Option<u32>,
     /// Anything else worth keeping with the sample, such as a text entry method.
     pub detail: Option<String>,
+    /// For a snapshot, what it cost the tool on its own side, when its reply
+    /// says.
+    pub read: Option<Read>,
 }
 
 /// A failed attempt: the tool ran and did not do what the primitive or flow

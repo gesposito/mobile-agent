@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::adapter::{Adapter, AdapterError, Clock, Detection, Role, Sample, Scenario};
+use crate::adapter::{Adapter, AdapterError, Clock, Detection, Read, Role, Sample, Scenario};
 use crate::end_state::EndState;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::Flow;
@@ -57,6 +57,10 @@ pub struct FakeSeries {
     /// The end state a flow series reports; the flow's golden when absent.
     #[serde(default)]
     pub end_state: Option<EndState>,
+    /// What each snapshot cost the tool on its own side, one per attempt in
+    /// order, starting over when exhausted; none when empty.
+    #[serde(default)]
+    pub reads: Vec<Read>,
 }
 
 impl FakeSeries {
@@ -78,6 +82,7 @@ impl FakeSeries {
             nodes: None,
             clock: Clock::Tool,
             end_state: None,
+            reads: Vec::new(),
         }
     }
 }
@@ -153,6 +158,7 @@ impl FakeAdapter {
             clock: series.clock,
             nodes: series.nodes,
             detail: None,
+            read: None,
         })
     }
 }
