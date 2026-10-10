@@ -690,7 +690,9 @@ and scale from lockdown, and subscribes to the screen:
   their capture rate and the count received, or why the screen could not
   be subscribed to; the runner, its agent, state, restarts, how long its
   hello took and the runners of a lost session its start ended; the
-  tunnel; the disk image; the runner bundle.
+  tunnel; the disk image; the runner bundle; the battery as the attach's
+  probe read it from lockdown, which the harness records in a run's
+  provenance.
 - doctor: `iosRunner`, the runner bundle an attach installs (`bundle`) and
   the version its hello must name (`version`); the compatibility table's
   device rows, the supported range (iOS 17.4 up to but not including 27,
@@ -723,7 +725,11 @@ are its lines; the JSON fields beside them are `input`, `inputReason`,
 `lastInputMs`, `frames`, `captureRate`, `framesReceived`, `frameError`,
 `runner {agent, state, restarts, handshakeRetries, replaced, leftovers,
 startedMs, lastDeath}`, `tunnel {opens, openedMs, services, missing}`,
-`diskImage {type, path}` and `runnerBundle`.
+`diskImage {type, path}`, `runnerBundle` and `battery {levelPct, charging,
+externalPower}`, null when the probe read none; with one, a line such as
+`battery: 100%, not charging, on external power, when attached`, the SE's
+on 2026-10-10, follows the runner bundle's. The fake iPhone reports 76%,
+charging, on external power.
 
 ### The Android driver
 
@@ -1022,7 +1028,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.8, Simulator adapter) | (listing, keys, errors, doctor table, status, display, text) | `devices::simulator::tests::*` |
 | (task 8.8, Android adapter) | (listing, readiness, display, launch, status, errors) | `devices::android::tests::*` |
 | Device discovery and readiness, spec `ios-device-driver` (task 5.1 of physical-ios) | Ready device listed; Device not ready | `devices::ios::tests::a_ready_iphone_is_listed_with_its_name_model_and_ios_version`, `devices::ios::tests::an_unready_iphone_is_listed_in_its_state_with_the_step_as_advice`, `fake::tests::ios_device_fakes_take_default_ids_and_the_ios_device_class`, `fake::tests::an_unready_fake_iphone_is_listed_in_its_state_and_refuses_an_attach`, `ios_device::devices_lists_a_fake_iphone_in_the_ios_device_class`; the CLI's `doctor::each_iphone_is_listed_in_its_readiness_state_with_the_daemons_step`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone` |
-| One resident runner per session, spec `ios-device-driver` (task 5.1) | Runner stays up (the status names the runner's agent and restarts) | `devices::ios::tests::the_status_names_the_input_path_the_frames_with_their_rate_and_the_runner`, `fake::tests::a_fake_iphone_reports_dtuhidd_screenshots_and_its_runner`, `ios_device::status_names_a_fake_iphones_input_frames_and_runner` |
+| One resident runner per session, spec `ios-device-driver` (task 5.1) | Runner stays up (the status names the runner's agent and restarts) | `devices::ios::tests::the_status_names_the_input_path_the_frames_with_their_rate_and_the_runner`, `fake::tests::a_fake_iphone_reports_dtuhidd_screenshots_and_its_runner`, `ios_device::status_names_a_fake_iphones_input_frames_and_runner`; the battery the attach read, for the harness's provenance (task 6.2): `devices::ios::tests::the_status_names_the_battery_the_attach_read` |
 | Compatibility statement, spec `ios-device-driver` (task 5.1) | Table lists the device paths | `devices::ios::tests::the_compatibility_rows_are_the_supported_range_then_every_call_site`, `ios_device::a_daemon_with_the_ios_driver_names_its_runner_bundle_and_the_device_rows`; the CLI's `doctor::the_iphone_checks_need_macos_and_the_device_rows_fill_the_table` |
 | Frames and screenshots from the host; Foreground tree read (windows without events), spec `ios-device-driver` (task 5.2 of physical-ios, design D23) | Frame change after a tap (settle on slow frames, with and without them; the re-reads of windows without events) | `worker::tests::on_a_fake_iphone_a_snapshot_right_after_a_tap_shows_what_the_tap_did`, `worker::tests::a_fake_iphones_windows_are_re_read_on_the_poll_and_on_frame_changes`, `worker::tests::settle_on_a_fake_iphone_holds_for_the_first_changed_frame_after_a_tap`, `worker::tests::settle_on_a_fake_iphone_without_frames_re_reads_every_minimum_interval`, `fake::realtime::tests::a_fake_iphones_frames_come_at_the_devices_rate`; the mirror's `replica::with_slow_frames_*` and `settle::with_slow_frames_*`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone` |
 | (task 5.1, the iPhone driver's registration and adapter) | (`ios` registered only when named, the runner bundle, the input variable, errors, keys) | `driver::tests::the_ios_driver_registers_only_when_named`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `devices::ios::tests::the_runner_bundle_is_the_built_one_or_the_one_the_variable_names`, `devices::ios::tests::the_input_variable_takes_auto_dtuhidd_or_runner`, `devices::ios::tests::driver_errors_keep_their_code_and_retryable_flag`, `devices::ios::tests::keyboard_codes_become_keys_and_consumer_codes_buttons`; the driver's screen in `crates/ios`, `macos::driver::tests::the_screen_is_the_devices_pixels_and_scale_from_lockdown` |
