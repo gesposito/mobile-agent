@@ -308,11 +308,20 @@ also counts).
   navigation bar before the content its controller draws it over, which
   runs under it (the SwiftUI fixture's List tab), and `visibility` already
   cuts every bar out of what lies beside it; a tab bar listed after a list
-  covers the rows wholly under it, as on Android. The risk is 10.28's: a
+  covers the rows wholly under it, as on Android. An alert's static text
+  is spared too (design D26 of physical-ios): UIKit's alert controller
+  draws nothing over its title and message, while XCTest lists the scroll
+  indicators of the scroll view that holds them after them, their
+  accessibility frames 30-point hit areas along the view's edges, which
+  UIKit draws as bars a few points thick, the horizontal one wholly over
+  the message on an iPhone 17 Simulator and on the SE (`alert-message-ios`,
+  `alert-message-se`); XCTest lists each indicator twice with one frame,
+  and the second copy still covers the first. The risk is 10.28's: a
   later sibling transparent where it spans an earlier one hides it as if
   drawn, and nothing in the tree tells; the smoke test's and Bluesky's
-  screens showed none, and a screen that does is recorded here and the
-  rule gated further. On either platform, acting on what a view drawn over
+  screens showed none, the alert's indicators are such siblings, and a
+  screen that shows another is recorded here and the rule gated further.
+  On either platform, acting on what a view drawn over
   it covers names the node a tap there would land on, the innermost one of
   the view that holds the element's bounds and shows something itself,
   else the view, by its role and name or as an `overlay` when it is a
@@ -525,6 +534,8 @@ apps, in device points with the scale beside them:
 | `grid-rn` | Expo Big tab on the API 36 emulator, 1,049 nodes as spike S1 counted them: the status bar's 28 and the app's 1,021, its 500 cells in a 20-column grid, each a clickable view group holding a text view with its number, all on screen |
 | `login-ios` | SwiftUI login read by the Simulator's in-guest reader |
 | `alert` | the SwiftUI login under its in-app alert, with the covered screen still in the read |
+| `alert-message-ios` | the SwiftUI System tab under its in-app alert, read by the Simulator's in-guest reader on an iPhone 17 (physical-ios task 9.5): the title and message in a scroll view followed by its scroll indicators, each listed twice, their 30-point frames along the view's edges, the horizontal one over the message |
+| `alert-message-se` | the same alert as the runner reads it on an iPhone SE (3rd generation), where the message fits and each indicator reads 1 page |
 | `system-alert` | a location prompt in SpringBoard's tree |
 | `login-translator` | the SwiftUI login as the host translator flattens it (fallback backend) |
 | `sparse` | an application root alone |
@@ -663,6 +674,7 @@ cargo test -p mirror
 | | Heading under a fixed footer on iOS | `interactive::a_footer_drawn_after_a_heading_on_ios_hides_it`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
 | | Card under a sticky header | `interactive::a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
 | | (rn-app-fixes 1.1: a floating button over a list's last row; bars spared, a tab bar covering what lies wholly under it; overlapping siblings in any order) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, and the unit tests `view::tests::*` |
+| | (physical-ios task 9.5, design D26: an alert's message under its scroll indicators' frames) | `interactive::an_alerts_message_is_listed_once_under_it_on_the_simulator_and_the_phone` |
 | | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so` |
 | | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
