@@ -55,6 +55,7 @@ fn status_names_a_fake_iphones_input_frames_and_runner() {
     let phone = target(&status, "FAKE-IOS-DEVICE-1");
     assert_eq!(phone["class"], "ios-device", "{phone}");
     assert_eq!(phone["attached"], true, "{phone}");
+    assert_eq!(phone["attaches"], 1, "{phone}");
     assert_eq!(phone["frameSource"], true, "{phone}");
     let driver = &phone["driver"];
     assert_eq!(driver["input"], "dtuhidd", "{phone}");

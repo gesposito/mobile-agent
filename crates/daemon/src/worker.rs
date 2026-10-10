@@ -153,6 +153,8 @@ impl Attached {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Status {
     pub attached: bool,
+    /// How many times the worker attached the target.
+    pub attaches: u32,
     /// Whether the attached target has a frame source; `None` until it is
     /// attached.
     pub frames: Option<bool>,
@@ -279,6 +281,14 @@ impl Handle {
     }
 }
 
+/// Detaches the target: dropping its attachment stops what the driver
+/// started for it.
+fn detach(attached: &mut Option<Attached>, status: &Mutex<Status>, report: &ReportSlot) {
+    *lock(report) = None;
+    *attached = None;
+    lock(status).attached = false;
+}
+
 fn serve(
     info: &TargetInfo,
     driver: &dyn Driver,
@@ -302,6 +312,7 @@ fn serve(
                         Ok(attachment) => {
                             let mut current = lock(status);
                             current.attached = true;
+                            current.attaches += 1;
                             current.frames = Some(attachment.backend.frames.is_some());
                             current.error = None;
                             drop(current);
@@ -320,9 +331,7 @@ fn serve(
                     None => continue,
                 };
                 let outcome = result.unwrap_or_else(|_| {
-                    *lock(report) = None;
-                    attached = None;
-                    lock(status).attached = false;
+                    detach(&mut attached, status, report);
                     Err(Failure::internal(format!(
                         "the command failed unexpectedly on {}; the daemon detached the target and attaches again on the next command",
                         info.id
@@ -331,10 +340,7 @@ fn serve(
                 let _ = reply.send(outcome);
             }
             Ok(Job::Stop) | Err(RecvTimeoutError::Disconnected) => {
-                // Dropping the attachment detaches the target.
-                *lock(report) = None;
-                drop(attached);
-                lock(status).attached = false;
+                detach(&mut attached, status, report);
                 return;
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -679,6 +685,139 @@ mod tests {
             .snapshot(&SnapshotOptions::interactive())
             .unwrap();
         assert!(after.text.contains("id=tab-login"), "{}", after.text);
+    }
+
+    /// A tap at a point of `target`'s screen, through the mirror.
+    fn tap_point(target: &mut Attached) -> Outcome {
+        target
+            .mirror
+            .act(&Action::Tap {
+                target: Target::Point(mirror::Point::new(20.0, 20.0)),
+                hold: None,
+            })
+            .map(|_| Success::new(serde_json::json!({})))
+            .map_err(Failure::from)
+    }
+
+    /// An interactive snapshot of `target`'s screen.
+    fn look(target: &mut Attached) -> Outcome {
+        target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .map(|_| Success::new(serde_json::json!({})))
+            .map_err(Failure::from)
+    }
+
+    /// The runner a fake iPhone's worker reports, as JSON.
+    fn runner_of(worker: &Worker) -> serde_json::Value {
+        let report = worker.report().expect("attached").report();
+        serde_json::Value::Object(report.data)["runner"].clone()
+    }
+
+    /// Physical-ios, task 9.3 (design D26; spec `ios-device-driver`,
+    /// "Runner connection lost"): on a fake iPhone whose runner's connection
+    /// is lost and whose restart fails, the command in flight fails
+    /// `disconnected` and the worker detaches the target; the next command
+    /// attaches again, which ends the runner the loss left on the phone
+    /// before its own starts, and succeeds; the status counts the new
+    /// attach. A fake Simulator served by its own worker beside it is
+    /// untouched.
+    #[test]
+    fn a_lost_runner_connection_detaches_the_target_and_the_next_command_attaches_again() {
+        let fake = Arc::new(
+            FakeDriver::parse("ios-device,ios")
+                .unwrap()
+                .with_lost_runner(Duration::from_millis(300)),
+        );
+        let driver: Arc<dyn Driver> = Arc::clone(&fake) as Arc<dyn Driver>;
+        let listed = driver.discover().unwrap();
+        let phone = Worker::spawn(listed[0].clone(), Arc::clone(&driver));
+        let simulator = Worker::spawn(listed[1].clone(), Arc::clone(&driver));
+        let run = |worker: &Worker, task: fn(&mut Attached) -> Outcome| {
+            worker.handle().run(AttachOptions::default(), task)
+        };
+        run(&phone, look).expect("the phone serves");
+        run(&simulator, look).expect("the Simulator serves");
+        assert_eq!(phone.status().attaches, 1);
+        let silent = fake.runners_on(&listed[0].id);
+        assert_eq!(silent.len(), 1, "{silent:?}");
+
+        std::thread::sleep(Duration::from_millis(400));
+        let lost = run(&phone, tap_point).expect_err("the runner's connection is lost");
+        assert_eq!(lost.code, "disconnected", "{lost:?}");
+        assert!(
+            lost.message.contains("starting it again failed"),
+            "{lost:?}"
+        );
+        // The command has its answer first, then the worker detaches.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while phone.status().attached && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            !phone.status().attached,
+            "detached once the loss was reported"
+        );
+        assert!(phone.report().is_none());
+        assert_eq!(
+            fake.runners_on(&listed[0].id),
+            silent,
+            "the silent runner is still on the phone"
+        );
+
+        run(&phone, tap_point).expect("attached again, the tap goes through");
+        let status = phone.status();
+        assert!(status.attached);
+        assert_eq!(status.attaches, 2, "the status counts the new attach");
+        let runner = runner_of(&phone);
+        assert_eq!(runner["leftovers"], serde_json::json!(silent), "{runner}");
+        assert_eq!(runner["state"], "ready", "{runner}");
+        let now = fake.runners_on(&listed[0].id);
+        assert_eq!(now.len(), 1);
+        assert_ne!(now, silent, "the new attach's own runner");
+
+        let untouched = simulator.status();
+        assert!(untouched.attached);
+        assert_eq!(untouched.attaches, 1);
+        run(&simulator, tap_point).expect("the Simulator still serves");
+        for worker in [phone, simulator] {
+            worker.signal_stop();
+            worker.join(Instant::now() + Duration::from_secs(2));
+        }
+    }
+
+    /// Physical-ios, task 9.3 (design D26): a loss a poll between commands
+    /// finds, here on a fake iPhone without screenshots, whose windows are
+    /// polled every second, detaches the target too, so the next command
+    /// attaches again rather than fail first.
+    #[test]
+    fn a_lost_runner_connection_a_poll_finds_detaches_the_target_before_the_next_command() {
+        let driver: Arc<dyn Driver> = Arc::new(
+            FakeDriver::parse("ios-device")
+                .unwrap()
+                .with_device_frames(false)
+                .with_lost_runner(Duration::from_millis(300)),
+        );
+        let phone = Worker::spawn(driver.discover().unwrap().remove(0), driver);
+        phone
+            .handle()
+            .run(AttachOptions::default(), look)
+            .expect("serves");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while phone.status().attached && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !phone.status().attached,
+            "the poll's failed read detached it"
+        );
+        phone
+            .handle()
+            .run(AttachOptions::default(), look)
+            .expect("attached again");
+        assert_eq!(phone.status().attaches, 2);
+        phone.signal_stop();
+        phone.join(Instant::now() + Duration::from_secs(2));
     }
 
     #[test]

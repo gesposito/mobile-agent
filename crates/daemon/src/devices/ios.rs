@@ -1466,6 +1466,26 @@ mod tests {
         assert_eq!(refused.code, "launch_failed");
     }
 
+    /// Physical-ios, task 9.3 (design D26): a runner session that ended for
+    /// good, the runner dead again after its restart or its restart failed
+    /// (`runner_died`), reaches the daemon as `disconnected`, its message
+    /// kept, so that the worker detaches the target and the next command
+    /// attaches again, as after a lost connection the driver reports so.
+    #[test]
+    fn a_runner_that_died_and_could_not_start_again_is_disconnected() {
+        let died = error(&ios::Error::RunnerDied {
+            target: PHONE.into(),
+            cause: "its connection closed: eof; starting it again failed: no hello".into(),
+        });
+        assert_eq!(died.code, "disconnected", "{died:?}");
+        assert!(!died.retryable);
+        assert!(
+            died.message.contains("died and could not be started again")
+                && died.message.contains("no hello"),
+            "{died:?}"
+        );
+    }
+
     /// Task 5.1: iOS key codes are keyboard usages with the HID modifier
     /// byte, or consumer-page buttons, as on the Simulator.
     #[test]

@@ -21,7 +21,9 @@
 //! mode types it key by key as a Simulator does. A keyboard can come up some
 //! time after a field took the focus, shown then with a frame, and the
 //! placeholder app's layout moves its submit button above the keyboard some
-//! time after that, in no frame.
+//! time after that, in no frame. A fake iPhone's runner can lose its
+//! connection some time after the attach, its restart failing: its tree
+//! reads and input then fail `disconnected`.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -40,7 +42,7 @@ use protocol::message::{Rotation, TextMethod};
 
 use super::app::{self, Device, Entry};
 use super::tree::{self, Win};
-use super::{Timing, Typing};
+use super::{FakeRunner, Timing, Typing};
 use crate::devices::ios::{self as device, Facts};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
@@ -145,6 +147,10 @@ struct Shared {
     /// their interval, frames showing only at captures; `None` for a
     /// stream. Its frames off, the screenshots could not be subscribed to.
     captures: Option<Captures>,
+    /// For a fake iPhone, the runner its attach started.
+    runner: Option<FakeRunner>,
+    /// When the target was attached.
+    attached_at: Instant,
 }
 
 /// A fake iPhone's screenshots.
@@ -177,7 +183,12 @@ impl Drop for Shared {
     /// The target is detached once every part of it is dropped, which takes
     /// the stop time on the thread that drops the last one, as the Android
     /// agent's stop takes its time on the thread that detaches the target.
+    /// A fake iPhone's runner is released, but one whose connection was
+    /// lost, which stays on the phone.
     fn drop(&mut self) {
+        if let Some(runner) = &self.runner {
+            runner.release(self.lost().is_some());
+        }
         if !self.stop.is_zero() {
             std::thread::sleep(self.stop);
         }
@@ -243,6 +254,26 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Shared {
+    /// What a fake iPhone's tree reads and input fail with once its runner's
+    /// connection was lost: the physical driver's `disconnected` for a
+    /// runner whose connection fell silent and whose restart failed.
+    fn lost(&self) -> Option<BackendError> {
+        let runner = self.runner.as_ref()?;
+        let after = runner.lost?;
+        (Instant::now() >= self.attached_at + after).then(|| {
+            BackendError::new(
+                protocol::code::DISCONNECTED,
+                format!(
+                    "iOS device {} is disconnected, its connection was lost (the runner's \
+                     connection closed before it answered (the agent is disconnected (nothing \
+                     arrived from the other side for 3.0 s)); starting it again failed); plug it \
+                     in again over USB, unlocked, and attach again, which starts over",
+                    runner.target
+                ),
+            )
+        })
+    }
+
     /// Advances the fake clock to the system clock and returns the time.
     fn sync(&self) -> Instant {
         let fake = self.target.clock().now();
@@ -507,13 +538,26 @@ struct DeviceReport(Arc<Shared>);
 
 impl Report for DeviceReport {
     fn report(&self) -> TargetReport {
+        let state = match self.0.lost() {
+            Some(lost) => ios::RunnerState::Failed {
+                code: "disconnected",
+                message: lost.message,
+            },
+            None => ios::RunnerState::Ready,
+        };
         let runner = ios::RunnerStatus {
-            state: ios::RunnerState::Ready,
+            state,
             agent: Some(agent_ios::AGENT.to_owned()),
             capabilities: protocol::Capabilities::TREE
                 | protocol::Capabilities::INPUT
                 | protocol::Capabilities::SCREENSHOT
                 | protocol::Capabilities::TEXT_SET,
+            leftovers: self
+                .0
+                .runner
+                .as_ref()
+                .map(|runner| runner.leftovers.clone())
+                .unwrap_or_default(),
             ..ios::RunnerStatus::starting("the hello")
         };
         let status = ios::TargetStatus {
@@ -545,7 +589,8 @@ impl Report for DeviceReport {
 /// activates and how long detaching it takes. With `fling`, a stroke whose
 /// finger lifts moving glides the list on; `typing` says how its fields take
 /// text whose method the target may choose. With `keyboard`, its keyboard
-/// stays up over every screen of the fixture apps.
+/// stays up over every screen of the fixture apps. A fake iPhone's `runner`
+/// is the one its attach started.
 pub(crate) fn attach(
     platform: Platform,
     frames: Frames,
@@ -553,6 +598,7 @@ pub(crate) fn attach(
     fling: bool,
     typing: Typing,
     keyboard: bool,
+    runner: Option<FakeRunner>,
 ) -> Attachment {
     let subscribed = match frames {
         Frames::Screenshots { subscribed } => Some(subscribed),
@@ -599,6 +645,8 @@ pub(crate) fn attach(
             every: device::CAPTURE_INTERVAL,
             subscribed,
         }),
+        runner,
+        attached_at: Instant::now(),
     });
     shared.show(&lock(&shared.device), Change::Content);
     let part = || Part {
@@ -641,6 +689,9 @@ struct Part {
 impl TreeSource for Part {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
         self.shared.sync();
+        if let Some(lost) = self.shared.lost() {
+            return Err(lost);
+        }
         self.target.read(request)
     }
 }
@@ -687,6 +738,9 @@ impl InputSink for Part {
             std::thread::sleep(wait);
         }
         self.shared.sync();
+        if let Some(lost) = self.shared.lost() {
+            return Err(lost);
+        }
         let mut ack = self.target.perform(input)?;
         let mut device = lock(&self.shared.device);
         let before = device.screen();
@@ -852,6 +906,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
@@ -893,6 +948,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
@@ -906,6 +962,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
@@ -942,6 +999,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         assert_eq!(
             phone.config.slow_frames,
@@ -982,6 +1040,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         assert_eq!(simulator.config.slow_frames, None);
         simulator.apps.launch(app::FIXTURE, &anim).unwrap();
@@ -1005,6 +1064,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -1024,6 +1084,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
+            None,
         );
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");

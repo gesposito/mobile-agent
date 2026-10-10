@@ -18,7 +18,10 @@
 //! frames are screenshots, in the `ios-device` class, whose `status` names
 //! its input, frames and runner as the physical iOS driver names them, and
 //! which [`FakeDriver::with_readiness`] can list in a readiness state that
-//! refuses an attach, as that driver lists a phone that is not ready. A latency
+//! refuses an attach, as that driver lists a phone that is not ready. Each
+//! attach of a fake iPhone starts a runner of its own, ending the ones a
+//! lost session left on the phone first, and [`FakeDriver::with_lost_runner`]
+//! loses the first one's connection, its restart failing. A latency
 //! (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
@@ -54,7 +57,8 @@ mod app;
 mod realtime;
 mod tree;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use realtime::Frames;
@@ -140,6 +144,84 @@ impl Typing {
     }
 }
 
+/// The runner processes fake iPhones started, across their attaches.
+#[derive(Debug, Default)]
+struct PhoneRunners {
+    /// The pid the next runner takes.
+    next_pid: u32,
+    /// The runner processes on each phone, by its id.
+    running: HashMap<String, Vec<u32>>,
+    /// How many times each phone was attached.
+    attaches: HashMap<String, u32>,
+}
+
+/// What a fake driver's iPhones keep across attaches: their runner
+/// processes, shared by the driver's clones.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Runners(Arc<Mutex<PhoneRunners>>);
+
+impl PartialEq for Runners {
+    fn eq(&self, other: &Runners) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Runners {}
+
+impl Runners {
+    fn state(&self) -> MutexGuard<'_, PhoneRunners> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Starts the runner of an attach of the phone `id`: the runners a lost
+    /// session left on it are ended first, and the first attach's loses its
+    /// connection `lost` after the attach, when given.
+    fn start(&self, id: &str, lost: Option<Duration>) -> FakeRunner {
+        let mut state = self.state();
+        let attaches = state.attaches.entry(id.to_owned()).or_default();
+        *attaches += 1;
+        let first = *attaches == 1;
+        state.next_pid += 1;
+        let pid = 1000 + state.next_pid;
+        let leftovers = state.running.insert(id.to_owned(), vec![pid]);
+        FakeRunner {
+            runners: self.clone(),
+            target: id.to_owned(),
+            pid,
+            leftovers: leftovers.unwrap_or_default(),
+            lost: lost.filter(|_| first),
+        }
+    }
+}
+
+/// The runner of one attach of a fake iPhone.
+#[derive(Debug)]
+pub(crate) struct FakeRunner {
+    runners: Runners,
+    pub target: String,
+    pub pid: u32,
+    /// The runners a lost session left on the phone, ended before it
+    /// started.
+    pub leftovers: Vec<u32>,
+    /// How long after the attach its connection is lost, its restart
+    /// failing, when it is.
+    pub lost: Option<Duration>,
+}
+
+impl FakeRunner {
+    /// Ends the runner as a release does, unless its connection was lost:
+    /// a silent runner stays on the phone until the next attach ends it.
+    pub fn release(&self, lost: bool) {
+        if lost {
+            return;
+        }
+        let mut state = self.runners.state();
+        if let Some(running) = state.running.get_mut(&self.target) {
+            running.retain(|&pid| pid != self.pid);
+        }
+    }
+}
+
 /// Fake targets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FakeDriver {
@@ -155,6 +237,11 @@ pub struct FakeDriver {
     keyboard: bool,
     /// Whether fake iPhones' screenshots can be subscribed to.
     device_frames: bool,
+    /// The runner processes of the fake iPhones.
+    runners: Runners,
+    /// How long after its first attach a fake iPhone's runner loses its
+    /// connection, its restart failing, when it does.
+    lost_runner: Option<Duration>,
 }
 
 impl FakeDriver {
@@ -243,6 +330,8 @@ impl FakeDriver {
             typing: Typing::Whole,
             keyboard: false,
             device_frames: true,
+            runners: Runners::default(),
+            lost_runner: None,
         })
     }
 
@@ -322,6 +411,29 @@ impl FakeDriver {
         self
     }
 
+    /// These targets, a fake iPhone's runner losing its connection `after`
+    /// the phone's first attach, its restart failing, as a physical iPhone's
+    /// runner did when its connection fell silent in the measured run
+    /// (design D26 of physical-ios): from then on that attachment's tree
+    /// reads and input fail `disconnected` with the physical driver's
+    /// message, its status names the runner failed with no restart, and its
+    /// process stays on the phone, where the next attach ends it before its
+    /// own runner starts, naming it among the leftovers.
+    pub fn with_lost_runner(mut self, after: Duration) -> FakeDriver {
+        self.lost_runner = Some(after);
+        self
+    }
+
+    /// The runner processes on the fake iPhone `id` now, by pid.
+    pub fn runners_on(&self, id: &str) -> Vec<u32> {
+        self.runners
+            .state()
+            .running
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// These targets, the fake iPhone `id` listed in the readiness state
     /// `code` with `advice`, as the physical iOS driver lists a phone that
     /// is not ready (`crates/ios`'s readiness states and messages); an
@@ -393,6 +505,8 @@ impl Driver for FakeDriver {
             }
             TargetClass::AndroidEmulator | TargetClass::AndroidDevice => Frames::None,
         };
+        let runner = (target.class == TargetClass::IosDevice)
+            .then(|| self.runners.start(&target.id, self.lost_runner));
         let mut attachment = realtime::attach(
             target.platform,
             frames,
@@ -400,6 +514,7 @@ impl Driver for FakeDriver {
             self.fling,
             self.typing,
             self.keyboard,
+            runner,
         );
         if target.class == TargetClass::AndroidEmulator
             && self.controller == EmulatorController::Off
