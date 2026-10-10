@@ -485,8 +485,15 @@ the one of those targets the session already holds. Several without a
 choice fail with `ambiguous_target`, a `device` naming none with
 `target_not_found`, and no target with `no_target`; the first two list the
 candidates' ids, platforms and names in the message and as
-`data.candidates`. Target listings are reused for 2 s; `devices` and an
-unknown `device` ask the drivers again.
+`data.candidates`. A target the daemon holds attached is resolved from its
+attachment, with no driver asked, when `device` names it by its id, or when
+no `device` is given and it is the one target of the platform the session
+holds (design D26 of physical-ios): an iPhone's listing probes lockdown and
+the keychain, so a command after a pause paid 150 to 220 ms for it with the
+target attached all along. Otherwise target listings are reused for 2 s,
+and an unknown `device` asks the drivers again; `devices` always does,
+each driver first forgetting what it keeps between listings (`Driver::forget`),
+as the iPhone driver forgets the signing identity it checked.
 
 ## Timeouts and idle exit
 
@@ -567,13 +574,15 @@ the Android driver everywhere, unless fake targets are named, which stand
 in for them (`--drivers` names drivers to register beside fakes, or
 `none`). The physical iPhone driver registers on macOS only when
 `--drivers` names `ios` (`devices::OPT_IN`): with the team exported, its
-listing runs `security` for the runner's signing identity on every
-listing, 45 ms at p50 and 53 ms at p95 with no phone attached (84 ms the
-first time), and probes each phone through lockdown, 163 ms at p50 with the
-SE attached, while a phone whose lockdown never answers holds the listing
-for the probe's 10 s timeout, the target registry waiting on it
-(2026-10-10, task 5.1, a throwaway program against a fake usbmuxd socket
-and the real one, load about 4). Discovery merges every driver's targets,
+listing ran `security` for the runner's signing identity on every listing,
+45 ms at p50 and 53 ms at p95 with no phone attached (84 ms the first
+time), and probes each phone through lockdown, 163 ms at p50 with the SE
+attached, while a phone whose lockdown never answers holds the listing for
+the probe's 10 s timeout, the target registry waiting on it (2026-10-10,
+task 5.1, a throwaway program against a fake usbmuxd socket and the real
+one, load about 4). The identity is checked once per daemon and kept while
+it is found, checked again after a check that failed or when `devices`
+asks, each `security` command ended after 5 s (design D26). Discovery merges every driver's targets,
 device drivers first; the Simulator and iPhone drivers fill `doctor`'s
 Xcode compatibility table through `Driver::compatibility`, and a driver adds
 fields of its own to `doctor`'s reply through `Driver::doctor`, as the
@@ -1044,6 +1053,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 | (task 10.11, settle without frames) | (`open` waits out a screen moving without change events and a window the platform animates in) | the mirror's `settle::without_frames_settle_waits_until_probed_bounds_hold_still_and_the_replica_has_them` and `settle::without_frames_settle_waits_while_a_window_is_drawn_transformed`, and the Android session's `session::tests::a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted`; against an emulator on the agent path, `devices::open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest` |
+| (physical-ios task 9.2, design D26: an attached target resolved without a listing; `devices` lists afresh) | (a command on an attached target asks no driver; a target not attached is listed; `devices` tells the drivers to forget, then lists) | `registry::tests::an_attached_target_is_resolved_without_a_listing_and_devices_lists_afresh`; the iPhone driver's cached signing identity in `crates/ios`, `macos::driver::tests::the_signing_identity_is_checked_once_and_again_after_a_failure_or_when_forgotten` |
 | (task 8.16, shutdown waits for the targets) | (`shutdown` answers once the targets have stopped and the files are gone, bounded by 5 s) | `lifecycle::shutdown_answers_once_the_targets_have_stopped_and_the_socket_is_gone`, `lifecycle::a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply`, `registry::tests::stopping_names_the_targets_still_detaching_when_the_wait_is_over`, `registry::tests::a_stopped_registry_starts_no_worker`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the CLI's `lifecycle::shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket` and `lifecycle::a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket` |
 | (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
 | (task 10.14, overscroll without frames) | (a click right after the settle that follows a stroke to the end of a list opens the row) | the mirror's `settle::without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change` and their controls; against an emulator on the agent path, `devices::the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path` |
