@@ -172,7 +172,7 @@ Conventions a driver follows:
 | input the mirror injected, for windows without events | those windows, when the tree is next needed; on a target whose frames come slowly (`slow_frames`), once the first frame that changed after the input arrived, at most `first_frame_wait` (500 ms) after the input | `action` |
 | frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
 | text the mirror pasted or set into a field of such a window, not typed as keys, until a read shows the field's text changed, the next input, or 1 s after the text | the field's window, as soon as a frame changes after its last read began; without frames, as soon as that read ends (task 10.29) | `frames`; `action` without frames |
-| 1 s since such a window's last read began | it | `poll` |
+| 1 s since such a window's last read began; on a target whose frames come slowly (`slow_frames`) and that has a frame source, `still_poll_interval` (10 s), since frames that change re-read the window as the row above says | it | `poll` |
 | while settling without frames, bounds probes found anchors held still where the replica does not have them | their windows, cache cleared | `moved` |
 | sequence gap, driver's out-of-sync report, reconnection, another backend | every window, identities started over | `resync` |
 
@@ -355,11 +355,12 @@ the reasons in this order, each with advice:
 | `DEFAULT_QUIET_WINDOW` | 200 ms | spike S1: content changes every 101 to 116 ms, gaps up to 187 ms inside a scroll |
 | `DEFAULT_SETTLE_MAX` | 3 s | design D8 |
 | `DEFAULT_POLL_INTERVAL` | 1 s | chosen here; spike S1 measured cold Compose reads at 21 to 349 ms |
+| `DEFAULT_STILL_POLL_INTERVAL` | 10 s | design D26 of physical-ios: the poll of a window without events on a target whose frames come slowly and that has a frame source, where frames that change call for their own re-read; a physical iPhone's 450 to 650 ms reads on the 1 s poll kept its worker reading when 47 to 60% of idle snapshots arrived, which waited up to 733 ms (`reports/11.1-ios-device.md`, finding 2) |
 | `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval, but for the window of a field text was just pasted or set into (task 10.29) |
 | `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
 | `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
 | `DEFAULT_OVERSCROLL` | 500 ms | task 10.14: on the API 36 emulator the Expo list pulled against its end drew its stretch for 333 to 383 ms after the finger lifted; 117 ms beyond the longest |
-| `slow_frames` | none | design D23 of physical-ios: `SlowFrames { capture_interval, first_frame_wait }`, which the driver's attachment sets for frames that come slowly, a physical iPhone's polled screenshots, about 19 a second (a 52.6 ms interval) |
+| `slow_frames` | none | design D23 of physical-ios: `SlowFrames { capture_interval, first_frame_wait, still_poll_interval }`, which the driver's attachment sets for frames that come slowly, a physical iPhone's polled screenshots, about 19 a second (a 52.6 ms interval) |
 | `DEFAULT_FIRST_FRAME_WAIT` | 500 ms | design D23 of physical-ios: how long the re-read after input, and settle after it, hold for the input's first changed frame on such a target; spike S11 saw a tap's first changed frame 222 to 439 ms after its acknowledgement at p95 |
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
@@ -586,7 +587,12 @@ cargo test -p mirror
   (design D23 of physical-ios): read at once, it would show the screen
   before the change, and the frame-driven re-read that catches the change
   comes a minimum interval after a read that costs about half a second
-  there.
+  there. The spec's target whose frames are a change signal and whose
+  reads cost more than a frame interval is one the driver sets
+  `slow_frames` for and that has a frame source: there the poll waits
+  `still_poll_interval`, 10 s, since frames that change call for a re-read
+  of their own (design D26 of physical-ios), so a read happens once the
+  frames changed since the read before, or once the bound has passed.
 - *Settle predicate*: the quiet window counts from the last observed change
   or injected input. A screen that has been quiet that long settles at once,
   and a tap that changes nothing settles one window after the tap. On a
@@ -650,6 +656,7 @@ cargo test -p mirror
 | | First snapshot after attach | `replica::the_first_snapshot_after_attach_acquires_the_whole_tree_then_applies_events`, `replica::recorded_event_sequences_replay_to_the_trees_a_cold_read_returns`, `replica::a_window_change_reads_every_window` |
 | Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path`, `replica::without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path` |
 | | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
+| | Idle event-less window with still frames (physical-ios task 9.1, design D26) | `replica::with_slow_frames_a_still_screen_is_polled_once_every_still_poll_interval`, `replica::with_slow_frames_a_frame_change_since_the_last_read_brings_the_poll_back`, `replica::without_slow_frames_or_without_a_frame_source_the_poll_stays_at_one_second`; through the daemon's fake iPhone, `worker::tests::an_idle_fake_iphone_with_still_frames_is_not_polled_where_others_are` and `worker::tests::a_fake_iphones_windows_are_re_read_on_frame_changes_and_polled_when_still` |
 | Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
 | | (task 7.11: fields in labelled containers) | `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_android`, `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_ios`, `editables::a_container_names_only_its_single_unlabelled_field`, `editables::a_labelled_container_whose_field_the_platform_hides_gets_a_ref`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs`, `editables::fields_below_the_fold_are_hinted_once_each`, `editables::a_named_field_under_an_alert_is_covered_and_its_ref_says_which_field`, `editables::fields_in_identically_labelled_containers_collide` |
 | | (task 7.12: labelled controls without traits) | `controls::labelled_controls_without_traits_on_the_hosting_provider_sheet_get_refs`, `controls::language_rows_get_refs_and_those_below_the_fold_are_hinted`, `controls::a_labelled_control_under_an_alert_is_covered`, `controls::inside_a_clickable_ancestor_such_controls_name_it_and_get_no_ref`, `controls::identical_labelled_controls_collide`, `controls::nodes_with_more_than_static_text_below_them_or_no_label_are_no_such_controls`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs` |
