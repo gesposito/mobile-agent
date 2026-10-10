@@ -106,9 +106,23 @@ pub struct DeviceInfo {
     pub ios_version: Option<String>,
     /// Lockdown's `BuildVersion`, such as `23G90`.
     pub build: Option<String>,
+    /// The battery, from lockdown's `com.apple.mobile.battery` domain once a
+    /// session started; `None` when the probe read none.
+    pub battery: Option<Battery>,
     pub probe: Probe,
     /// What stands between the device and a session, or `Ready`.
     pub readiness: Readiness,
+}
+
+/// The battery as lockdown's `com.apple.mobile.battery` domain gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Battery {
+    /// `BatteryCurrentCapacity`, the charge in percent.
+    pub level: Option<u8>,
+    /// `BatteryIsCharging`.
+    pub charging: Option<bool>,
+    /// `ExternalConnected`: on a charger or the host's power.
+    pub external_power: Option<bool>,
 }
 
 /// The CoreDevice tunnel to a device and the services its RSD handshake

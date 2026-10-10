@@ -195,6 +195,8 @@ pub(crate) struct Facts {
     pub frame_error: Option<String>,
     /// The runner bundle an attach installs.
     pub bundle: Option<PathBuf>,
+    /// The battery as the attach's probe read it.
+    pub battery: Option<ios::Battery>,
 }
 
 /// What the parts of one target's backend share.
@@ -240,6 +242,7 @@ impl Shared {
             capture_rate,
             frame_error: self.frame_error.clone(),
             bundle: Some(self.bundle.clone()),
+            battery: None,
         }
     }
 
@@ -1069,6 +1072,7 @@ mod tests {
             model: Some("iPhone14,6".into()),
             ios_version: Some("26.6.2".into()),
             build: Some("23G90".into()),
+            battery: None,
             probe: Probe {
                 trust: Trust::Trusted,
                 developer_mode: Some(true),
@@ -1180,7 +1184,48 @@ mod tests {
             bundle: Some(PathBuf::from(
                 "/placeholder/agent-ios/dist/MobileAgentRunner-Runner.app",
             )),
+            battery: None,
         }
+    }
+
+    /// Task 6.2: the status names the battery the attach's probe read, which
+    /// the harness records in a run's provenance; a probe that read none
+    /// leaves it null.
+    #[test]
+    fn the_status_names_the_battery_the_attach_read() {
+        let charging = Facts {
+            battery: Some(ios::Battery {
+                level: Some(76),
+                charging: Some(true),
+                external_power: Some(true),
+            }),
+            ..facts()
+        };
+        let report = status_report(&status(), &charging);
+        let data = Value::Object(report.data.clone());
+        assert_eq!(
+            data["battery"],
+            json!({"levelPct": 76, "charging": true, "externalPower": true}),
+            "{data}"
+        );
+        assert!(
+            report
+                .lines
+                .iter()
+                .any(|line| line == "battery: 76%, charging, on external power, when attached"),
+            "{:?}",
+            report.lines
+        );
+        let report = status_report(&status(), &facts());
+        assert_eq!(report.data["battery"], Value::Null);
+        assert!(
+            report
+                .lines
+                .iter()
+                .all(|line| !line.starts_with("battery:")),
+            "{:?}",
+            report.lines
+        );
     }
 
     /// Task 5.1, spec `ios-device-driver` "Runner stays up": the status

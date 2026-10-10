@@ -7,7 +7,7 @@
 use plist::{Dictionary, Value};
 
 use crate::identity::IdentityCheck;
-use crate::model::{Connection, DeviceInfo, DiskImage, MuxEntry, Probe, Trust};
+use crate::model::{Battery, Connection, DeviceInfo, DiskImage, MuxEntry, Probe, Trust};
 use crate::readiness;
 
 /// The lockdown values that describe a device, read without a session.
@@ -27,6 +27,9 @@ pub const DEVELOPER_MODE_DOMAIN: &str = "com.apple.security.mac.amfi";
 pub const LOCK_KEY: &str = "PasswordProtected";
 /// The lockdown domain that gives the screen's pixels and scale.
 pub const SCREEN_DOMAIN: &str = "com.apple.mobile.iTunes";
+/// The lockdown domain that gives the battery, read inside a session; the
+/// probe stores its dictionary under the domain's name.
+pub const BATTERY_DOMAIN: &str = "com.apple.mobile.battery";
 
 /// The screen `values`, lockdown's `com.apple.mobile.iTunes` domain, give:
 /// `ScreenWidth` and `ScreenHeight` in pixels and `ScreenScaleFactor`, 750,
@@ -146,9 +149,18 @@ pub fn device_info(
         model: text("ProductType"),
         ios_version,
         build: text("BuildVersion"),
+        battery: None,
         probe,
         readiness,
     }
+}
+
+/// The battery lockdown's `com.apple.mobile.battery` domain gives in
+/// `values`; `None` when it gives none of its charge, its charging and its
+/// external power.
+pub fn battery(values: &Value) -> Option<Battery> {
+    let _ = values;
+    None
 }
 
 #[cfg(test)]
@@ -220,6 +232,54 @@ pub(crate) mod tests {
             vec![entry("placeholder-udid-phone", 1, Connection::Usb)]
         );
         assert!(usb_entries(Vec::new()).is_empty());
+    }
+
+    /// Lockdown's battery domain as the phone gives it inside a session, on
+    /// its cable and charging.
+    fn battery_values() -> Value {
+        let mut battery = Dictionary::new();
+        battery.insert("BatteryCurrentCapacity".into(), Value::Integer(76.into()));
+        battery.insert("BatteryIsCharging".into(), Value::Boolean(true));
+        battery.insert("ExternalChargeCapable".into(), Value::Boolean(true));
+        battery.insert("ExternalConnected".into(), Value::Boolean(true));
+        battery.insert("FullyCharged".into(), Value::Boolean(false));
+        battery.insert("GasGaugeCapability".into(), Value::Boolean(true));
+        battery.insert("HasBattery".into(), Value::Boolean(true));
+        Value::Dictionary(battery)
+    }
+
+    #[test]
+    fn the_battery_domain_gives_the_charge_and_whether_it_charges_on_external_power() {
+        let charging = Battery {
+            level: Some(76),
+            charging: Some(true),
+            external_power: Some(true),
+        };
+        assert_eq!(battery(&battery_values()), Some(charging));
+        let mut values = recorded_values();
+        values.insert(BATTERY_DOMAIN.into(), battery_values());
+        let read = probe(&values, Trust::Trusted, Some(Ok(recorded_images())));
+        let info = device_info("placeholder-udid-phone", &values, read, &identity());
+        assert_eq!(info.battery, Some(charging));
+        // A probe that read no battery domain gives no battery.
+        let values = recorded_values();
+        let read = probe(&values, Trust::Trusted, Some(Ok(recorded_images())));
+        assert_eq!(
+            device_info("placeholder-udid-phone", &values, read, &identity()).battery,
+            None
+        );
+        let mut partial = Dictionary::new();
+        partial.insert("BatteryCurrentCapacity".into(), Value::Integer(100.into()));
+        assert_eq!(
+            battery(&Value::Dictionary(partial)),
+            Some(Battery {
+                level: Some(100),
+                charging: None,
+                external_power: None,
+            })
+        );
+        assert_eq!(battery(&Value::Dictionary(Dictionary::new())), None);
+        assert_eq!(battery(&Value::Boolean(true)), None);
     }
 
     #[test]

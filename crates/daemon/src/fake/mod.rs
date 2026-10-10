@@ -413,6 +413,7 @@ impl Driver for FakeDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn typing_modes_are_named_whole_keys_reorder_or_max_with_a_length() {
@@ -551,6 +552,12 @@ mod tests {
         assert_eq!(data["frames"], "screenshots", "{data}");
         assert_eq!(data["runner"]["agent"], agent_ios::AGENT, "{data}");
         assert_eq!(data["runner"]["restarts"], 0, "{data}");
+        // A phone on its cable, charging, as the harness's tests read it.
+        assert_eq!(
+            data["battery"],
+            json!({"levelPct": 76, "charging": true, "externalPower": true}),
+            "{data}"
+        );
         let text = report.lines.join("\n");
         assert!(
             text.contains("input: dtuhidd")
