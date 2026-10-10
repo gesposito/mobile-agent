@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-10T12:30:16Z",
+    "finished_at": "2026-10-10T12:30:45Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        4.04,
+        5.46,
+        5.37
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "14be48ea9b077a0302aba6386251162459a605b7",
+      "dirty": true
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "expo",
+            "bundle": "fixtures/expo/build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app",
+            "elapsed_us": 31656878
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, its iOS device driver unfinished"
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      },
+      {
+        "name": "webdriveragent",
+        "role": "baseline",
+        "status": "available",
+        "version": "16.14.1 (Appium 3.8.0, XCUITest driver 12.16.0)",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: mobile-agent open --relaunch -- dev.mobileagent.fixture.expo: launch_failed: DVT refused to launch dev.mobileagent.fixture.expo: com.apple.dt.deviceprocesscontrolservice 2: Request to launch dev.mobileagent.fixture.expo failed.",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "agent-device",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: COMMAND_FAILED: Batch failed at step 1 (open): Failed to launch iOS app: The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712))",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    },
+    {
+      "tool": "webdriveragent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "big-screen",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: POST /session/75b1f743-3d77-4530-9aff-56cbe9da14b4/execute/sync failed with 400: invalid argument: Error Domain=FBSOpenApplicationServiceErrorDomain Code=1 \"The request to open \"dev.mobileagent.fixture.expo\" failed.\" UserInfo={BSErrorCodeDescription=RequestDenied, NSUnderlyingError=0x107b222e0 {Error Domain=FBSOpenApplicationErrorDomain Code=3 \"Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user.\" UserInfo={BSErrorCodeDescription=Security, NSLocalizedFailureReason=Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user.}}, NSLocalizedDescription=The request to open \"dev.mobileagent.fixture.expo\" failed., FBSOpenApplicationRequestID=0xc9e8, NSLocalizedFailureReason=The request was denied by service delegate (SBMainWorkspace) for reason: Security (\"Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user\").} / the check run failed: POST /session/75b1f743-3d77-4530-9aff-56cbe9da14b4/execute/sync failed with 400: invalid argument: Error Domain=FBSOpenApplicationServiceErrorDomain Code=1 \"The request to open \"dev.mobileagent.fixture.expo\" failed.\" UserInfo={BSErrorCodeDescription=RequestDenied, NSUnderlyingError=0x107b22310 {Error Domain=FBSOpenApplicationErrorDomain Code=3 \"Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user.\" UserInfo={BSErrorCodeDescription=Security, NSLocalizedFailureReason=Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user.}}, NSLocalizedDescription=The request to open \"dev.mobileagent.fixture.expo\" failed., FBSOpenApplicationRequestID=0x9f3c, NSLocalizedFailureReason=The request was denied by service delegate (SBMainWorkspace) for reason: Security (\"Unable to launch dev.mobileagent.fixture.expo because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user\").}",
+      "not_measured": null,
+      "end_state": null,
+      "samples": []
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 1397976,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 3546166,
+      "released": "stopped agent-device's daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": null,
+      "elapsed_us": 1480974,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
