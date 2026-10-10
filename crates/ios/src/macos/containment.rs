@@ -283,6 +283,66 @@ fn a_command_made_while_the_runner_starts_again_waits_for_it_within_its_timeout(
     assert_eq!(status.restarts, 1);
 }
 
+/// Physical-ios, task 9.3: a call in flight when the runner's connection
+/// falls silent, the phone staying listed and ready, fails `disconnected`
+/// (`lost`) once three pings went unanswered, and containment fails the
+/// session with that error and closes the phone's connections, so no
+/// restart is counted, as the phone's status read after the measured run's
+/// stall (`reports/11.1-ios-device/probes/status-after-stall.txt`: failed,
+/// 0 restarts, the runner's process still on the phone); the next attach
+/// starts over, the silent runner ended by then at the latest, and the
+/// other phone is untouched.
+#[test]
+fn a_call_in_flight_when_the_runner_falls_silent_fails_the_session_until_the_next_attach() {
+    let core = core(two_phones());
+    for target in [PHONE, OTHER] {
+        core.attach(target, &options()).expect("attaches");
+    }
+    let silent = core.host.device.runner().expect("a runner").pid;
+    core.host.device.silence_runner();
+    let error = core
+        .call(PHONE, snapshot(), Duration::from_secs(10))
+        .expect_err("no answer");
+    assert_eq!(error.code(), "disconnected", "{error}");
+    assert_eq!(kind(&error), Some(Disconnect::Lost), "{error}");
+    assert!(error.to_string().contains("nothing arrived"), "{error}");
+    let failed = core
+        .status(PHONE)
+        .expect("status")
+        .runner
+        .expect("a runner");
+    assert!(
+        matches!(
+            failed.state,
+            RunnerState::Failed {
+                code: "disconnected",
+                ..
+            }
+        ),
+        "{failed:?}"
+    );
+    assert_eq!(failed.restarts, 0, "{failed:?}");
+    let again = core
+        .call(PHONE, snapshot(), WAIT)
+        .expect_err("the session stays failed");
+    assert_eq!(again.code(), "disconnected", "{again}");
+    let attached = core.attach(PHONE, &options()).expect("attaches again");
+    assert_eq!(attached.runner.state, RunnerState::Ready);
+    assert_eq!(attached.runner.restarts, 0, "a new session");
+    assert_ne!(
+        core.host.device.runner().map(|runner| runner.pid),
+        Some(silent),
+        "the silent runner is ended"
+    );
+    core.call(PHONE, snapshot(), WAIT)
+        .expect("the new runner serves");
+    assert!(matches!(
+        core.call(OTHER, snapshot(), WAIT)
+            .expect("the other phone's runner serves"),
+        Reply::Snapshot(_)
+    ));
+}
+
 #[test]
 fn no_hot_path_reads_the_process_list() {
     let core = core(two_phones());

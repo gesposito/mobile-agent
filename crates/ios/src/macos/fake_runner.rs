@@ -13,7 +13,8 @@
 //! protocol's `AgentSession`, saying hello with the installed version,
 //! answering snapshots, input, text and screenshots, and closing when the
 //! runner's process ends. A runner left from a lost session says hello and
-//! closes the connection, as S10's did after its cable pull.
+//! closes the connection, as S10's did after its cable pull, and a runner
+//! that fell silent keeps its connection and answers nothing on it.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -254,6 +255,20 @@ pub(crate) async fn serve_runner(
     pulls.borrow_and_update();
     let mut buffer = vec![0u8; 64 * 1024];
     loop {
+        if device.runner_state().silent {
+            // A silent runner holds its connection and answers nothing
+            // until its process ends or the cable is pulled.
+            loop {
+                tokio::select! {
+                    changed = deaths.changed() => {
+                        if changed.is_err() || device.runner().is_none_or(|now| now.pid != runner.pid) {
+                            return;
+                        }
+                    }
+                    _ = pulls.changed() => return,
+                }
+            }
+        }
         while let Some(event) = session.poll_event() {
             match event {
                 // A runner left from a lost session closes the connection

@@ -1186,6 +1186,52 @@ mod tests {
         );
     }
 
+    /// Physical-ios, task 9.3: a runner whose connection falls silent, its
+    /// process alive, with no call in flight, is found gone by the
+    /// supervisor after three silent pings, ended, and started again once,
+    /// the restart counted: the restart ends the silent process before it
+    /// starts the new one.
+    #[test]
+    fn a_runner_that_falls_silent_is_ended_and_started_again_once() {
+        let core = core(with_runner(VERSION));
+        core.attach(PHONE, &options()).expect("attaches");
+        let silent = core.host.device.runner().expect("a runner").pid;
+        core.host.device.silence_runner();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            let status = core
+                .status(PHONE)
+                .expect("status")
+                .runner
+                .expect("a runner");
+            if (status.restarts == 1 && status.state == RunnerState::Ready)
+                || Instant::now() >= deadline
+            {
+                break status;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(status.state, RunnerState::Ready, "{status:?}");
+        assert_eq!(status.restarts, 1, "{status:?}");
+        assert!(
+            status
+                .last_death
+                .as_deref()
+                .is_some_and(|death| death.contains("nothing arrived")),
+            "{status:?}"
+        );
+        assert_eq!(
+            signalled(&core.host.device),
+            vec![silent],
+            "the silent runner was ended"
+        );
+        let runner = core.host.device.runner().expect("a new runner");
+        assert_ne!(runner.pid, silent);
+        assert_eq!(core.host.test_manager.started().len(), 2);
+        core.call(PHONE, snapshot(), WAIT)
+            .expect("served by the new runner");
+    }
+
     #[test]
     fn release_stops_the_runner_and_its_session() {
         let core = core(with_runner(VERSION));

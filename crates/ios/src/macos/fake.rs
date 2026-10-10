@@ -154,6 +154,9 @@ pub(crate) struct RunnerState {
     pub(crate) connections: u32,
     /// The requests the runner served, by method name.
     pub(crate) served: Vec<String>,
+    /// Whether the runner process serving has fallen silent: it keeps its
+    /// connection and answers nothing on it.
+    pub(crate) silent: bool,
 }
 
 /// A runner process of the fake device.
@@ -404,11 +407,13 @@ impl FakeDevice {
             ),
         });
         drop(dvt);
-        self.runner_state().running = Some(RunningRunner {
+        let mut runner = self.runner_state();
+        runner.running = Some(RunningRunner {
             pid,
             version: version.to_owned(),
             stale,
         });
+        runner.silent = false;
         pid
     }
 
@@ -425,6 +430,14 @@ impl FakeDevice {
             self.dvt().processes.retain(|process| process.pid != pid);
         }
         self.runner_deaths.send_modify(|deaths| *deaths += 1);
+    }
+
+    /// Makes the runner process fall silent: it keeps its connection open
+    /// and answers nothing on it, pings included, while its process stays,
+    /// as the phone's runner did in the measured run (task 9.3), so the
+    /// host's session declares the connection gone after three silent pings.
+    pub(crate) fn silence_runner(&self) {
+        self.runner_state().silent = true;
     }
 
     /// The requests the runner served, by method name.
