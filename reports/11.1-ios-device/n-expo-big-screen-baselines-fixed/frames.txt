@@ -1,0 +1,2 @@
+20:42:28 before n-expo-big-screen-baselines-fixed: open 3970 ms ok True; after 15 s captureRate 16.7, pollers [('dvt', 143, 0, None), ('coreDevice', 141, 0, None)], runner ('ready', 0); screenshot 195 ms ok True; shutdown 792 ms
+21:00:21 after n-expo-big-screen-baselines-fixed: open 5105 ms ok True; after 15 s captureRate 14.8, pollers [('dvt', 135, 0, None), ('coreDevice', 133, 0, None)], runner ('ready', 0); screenshot 188 ms ok True; shutdown 875 ms
