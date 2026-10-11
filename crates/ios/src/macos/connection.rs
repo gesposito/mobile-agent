@@ -4,6 +4,14 @@
 //! session what arrives, writes what it queues, acts on its deadlines and
 //! liveness (pings every second, the runner declared gone after three
 //! silent ones), and hands each response to the call waiting for it.
+//!
+//! A runner whose worker never comes back from a call keeps answering pings
+//! from its session, so its connection lives: the task tells it stalled
+//! (design D26 of physical-ios) when two calls in a row are answered
+//! `deadline_exceeded` or `busy` with no other answer between them, or when
+//! calls waited the silence bound with no answer to any of them, and then
+//! closes the connection, failing the calls waiting as stalled, so that the
+//! supervisor ends the runner and starts it again as it does a dead one.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,6 +26,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+
+use super::runner::STALL_CALLS;
 
 /// Why a call got no reply from the runner.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -184,6 +194,79 @@ fn failure(error: ProtocolError, sent: bool) -> CallFailure {
     }
 }
 
+/// What tells a runner stalled while its connection lives: its answers in a
+/// row that were refusals of a call it never got to, and how long calls
+/// have waited for any answer.
+struct StallWatch {
+    silence: Duration,
+    /// The calls in a row answered `deadline_exceeded` or `busy` since the
+    /// last other answer, each as its code and message.
+    refused: Vec<String>,
+    /// Since when calls have waited with no answer: the last answer, or the
+    /// first call sent after it; `None` while none waits.
+    waiting_since: Option<Instant>,
+}
+
+impl StallWatch {
+    fn new(silence: Duration) -> StallWatch {
+        StallWatch {
+            silence,
+            refused: Vec::new(),
+            waiting_since: None,
+        }
+    }
+
+    /// A call was sent at `now` while `waiting` others waited.
+    fn sent(&mut self, waiting: usize, now: Instant) {
+        if waiting == 0 {
+            self.waiting_since = Some(now);
+        }
+    }
+
+    /// `answer` came at `now`, `waiting` calls still waiting; why the runner
+    /// counts as stalled, when it does from this answer on.
+    fn answered(
+        &mut self,
+        answer: &Result<Reply, ProtocolError>,
+        waiting: usize,
+        now: Instant,
+    ) -> Option<String> {
+        self.waiting_since = (waiting > 0).then_some(now);
+        match answer {
+            Err(error) if error.code == code::DEADLINE_EXCEEDED || error.code == code::BUSY => {
+                self.refused
+                    .push(format!("{} ({})", error.code, error.message));
+            }
+            _ => self.refused.clear(),
+        }
+        (self.refused.len() >= STALL_CALLS as usize).then(|| {
+            format!(
+                "{STALL_CALLS} calls in a row were answered deadline_exceeded or busy, with no \
+                 other answer between them: {}",
+                self.refused.join(", then ")
+            )
+        })
+    }
+
+    /// When the calls waiting stall the runner, if none is answered first.
+    fn deadline(&self) -> Option<Instant> {
+        self.waiting_since.map(|since| since + self.silence)
+    }
+
+    /// Why the runner counts as stalled at `now`, when calls have waited the
+    /// silence bound with no answer by then.
+    fn silent(&self, now: Instant) -> Option<String> {
+        self.deadline()
+            .filter(|deadline| now >= *deadline)
+            .map(|_| {
+                format!(
+                    "calls waited {:?} with no answer to any of them, the connection alive",
+                    self.silence
+                )
+            })
+    }
+}
+
 /// The connection's task.
 async fn serve(
     mut stream: Box<dyn ReadWrite>,
@@ -192,11 +275,13 @@ async fn serve(
     ready: oneshot::Sender<Result<Negotiated, String>>,
     silence: Duration,
 ) {
-    let _ = silence;
     let mut session = HostSession::new(HostConfig::default(), Instant::now());
     let mut pending: HashMap<u32, oneshot::Sender<Result<Reply, CallFailure>>> = HashMap::new();
     let mut ready = Some(ready);
     let mut buffer = vec![0u8; 256 * 1024];
+    let mut stalls = StallWatch::new(silence);
+    // Why the runner stalled, once it did: the session is closing for it.
+    let mut stalled: Option<String> = None;
     loop {
         while let Some(bytes) = session.poll_transmit() {
             if stream.write_all(&bytes).await.is_err() {
@@ -212,19 +297,42 @@ async fn serve(
                     }
                 }
                 HostEvent::Response { id, result, .. } => {
-                    if let Some(reply) = pending.remove(&id) {
-                        let _ = reply.send(result.map_err(|error| failure(error, true)));
+                    let Some(reply) = pending.remove(&id) else {
+                        continue;
+                    };
+                    // The session closing for a stall answers the calls
+                    // left waiting.
+                    if let Some(why) = &stalled {
+                        let _ = reply.send(Err(CallFailure::Stalled(why.clone())));
+                        continue;
+                    }
+                    match stalls.answered(&result, pending.len(), Instant::now()) {
+                        Some(why) => {
+                            let _ = reply.send(Err(CallFailure::Stalled(why.clone())));
+                            stalled = Some(why);
+                            session.close();
+                        }
+                        None => {
+                            let _ = reply.send(result.map_err(|error| failure(error, true)));
+                        }
                     }
                 }
                 HostEvent::Closed(reason) => {
-                    let reason = reason.to_string();
+                    let (closing, failed) = match stalled.take() {
+                        Some(why) => (Closed::Stalled(why.clone()), CallFailure::Stalled(why)),
+                        None => {
+                            let reason = reason.to_string();
+                            (Closed::Ended(reason.clone()), CallFailure::Lost(reason))
+                        }
+                    };
+                    let reason = closing.reason().to_owned();
                     if let Some(ready) = ready.take() {
                         let _ = ready.send(Err(reason.clone()));
                     }
                     for (_, reply) in pending.drain() {
-                        let _ = reply.send(Err(CallFailure::Lost(reason.clone())));
+                        let _ = reply.send(Err(failed.clone()));
                     }
-                    closed.send_replace(Some(Closed::Ended(reason.clone())));
+                    closed.send_replace(Some(closing));
                     commands.close();
                     while let Ok(command) = commands.try_recv() {
                         if let Command::Call { reply, .. } = command {
@@ -242,6 +350,11 @@ async fn serve(
             .poll_timeout()
             .map(tokio::time::Instant::from_std)
             .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
+        // The calls waiting stall the runner once they waited the silence
+        // bound, unless an answer comes first.
+        let wake = stalls.deadline().map_or(wake, |quiet| {
+            wake.min(tokio::time::Instant::from_std(quiet))
+        });
         tokio::select! {
             read = stream.read(&mut buffer) => match read {
                 Ok(0) | Err(_) => session.receive_eof(Instant::now()),
@@ -249,8 +362,10 @@ async fn serve(
             },
             command = commands.recv() => match command {
                 Some(Command::Call { call, deadline, reply }) => {
-                    match session.send_request(call, Some(deadline), Instant::now()) {
+                    let now = Instant::now();
+                    match session.send_request(call, Some(deadline), now) {
                         Ok(id) => {
+                            stalls.sent(pending.len(), now);
                             pending.insert(id, reply);
                         }
                         Err(error) => {
@@ -260,7 +375,16 @@ async fn serve(
                 }
                 Some(Command::Close) | None => session.close(),
             },
-            () = tokio::time::sleep_until(wake) => session.handle_timeout(Instant::now()),
+            () = tokio::time::sleep_until(wake) => {
+                let now = Instant::now();
+                match stalls.silent(now) {
+                    Some(why) => {
+                        stalled = Some(why);
+                        session.close();
+                    }
+                    None => session.handle_timeout(now),
+                }
+            }
         }
     }
 }

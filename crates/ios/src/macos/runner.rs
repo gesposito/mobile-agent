@@ -11,7 +11,11 @@
 //! hello with another version is replaced by the bundle the caller gives.
 //! Once it serves, a supervisor task watches the connection and the test
 //! manager's session, starts the runner again once when either ends, and
-//! reports the restart in the target's status.
+//! reports the restart in the target's status. A runner that stalls, its
+//! connection alive while it answers calls `busy` or nothing past the
+//! bounds below, is treated as died (design D26 of physical-ios): the
+//! connection closes for it, the restart ends its process first, and the
+//! call that found it stalled fails `runner_stalled`.
 
 use std::future::Future;
 use std::path::Path;
@@ -591,8 +595,9 @@ async fn wait_hello<L: Link>(
 }
 
 /// Watches the runner of `session` until it is released: when its
-/// connection closes or the test manager's session ends, the runner died,
-/// and it is started again once; a runner that dies again, or whose restart
+/// connection closes, for a stall too, or the test manager's session ends,
+/// the runner died, and it is started again once, the start ending the
+/// process left first; a runner that dies or stalls again, or whose restart
 /// fails, fails the session. It runs on a thread of its own, driven by the
 /// runtime's handle, since rustc cannot show the generic restart's future
 /// `Send` for every lifetime it borrows.
@@ -712,11 +717,12 @@ pub(crate) async fn call(session: &RunnerSession, call: Call, timeout: Duration)
                         });
                     }
                     Err(CallFailure::Stalled(cause)) => {
-                        return Err(Error::RunnerStalled {
-                            target: session.target.clone(),
+                        let stall = Stall {
                             method,
                             cause,
-                        });
+                            deadline,
+                        };
+                        return Err(after_stall(session, &mut changes, &connection, stall).await);
                     }
                     // The connection was gone before the call was written:
                     // the supervisor is starting the runner again.
@@ -745,6 +751,55 @@ pub(crate) async fn call(session: &RunnerSession, call: Call, timeout: Duration)
                 });
             }
         }
+    }
+}
+
+/// A call the stalled runner failed: its method, why the runner counts as
+/// stalled, and the call's deadline.
+struct Stall {
+    method: String,
+    cause: String,
+    deadline: Instant,
+}
+
+/// What a call the stalled runner failed reports once the supervisor acted
+/// on the stall, which closed `connection`: `runner_stalled`, which can be
+/// repeated, while the runner starts again, or the session's failure once
+/// the stall failed it, the runner having been started again already.
+async fn after_stall(
+    session: &RunnerSession,
+    changes: &mut watch::Receiver<u64>,
+    connection: &Arc<RunnerConnection>,
+    stall: Stall,
+) -> Error {
+    // The supervisor acts at once; the wait is bounded all the same, by the
+    // call's deadline and at least a second.
+    let until = stall.deadline.max(Instant::now() + Duration::from_secs(1));
+    loop {
+        changes.borrow_and_update();
+        let (state, current) = session.current();
+        let same = current.is_some_and(|current| Arc::ptr_eq(&current, connection));
+        match state {
+            RunnerState::Failed { .. } => return session.failure(),
+            RunnerState::Stopped => {
+                return Error::NotAttached {
+                    target: session.target.clone(),
+                };
+            }
+            RunnerState::Ready if same => {}
+            _ => break,
+        }
+        if !matches!(
+            tokio::time::timeout_at(until.into(), changes.changed()).await,
+            Ok(Ok(()))
+        ) {
+            break;
+        }
+    }
+    Error::RunnerStalled {
+        target: session.target.clone(),
+        method: stall.method,
+        cause: stall.cause,
     }
 }
 
