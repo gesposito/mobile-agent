@@ -693,6 +693,12 @@ pub struct FrameStats {
     /// Captures or decodes that failed, and the first failure.
     pub failures: u64,
     pub failure: Option<String>,
+    /// Connections each poller opened again after its captures failed,
+    /// DVT's first.
+    pub reopens: [u32; 2],
+    /// Why each poller was left out of the frames, DVT's first; `None`
+    /// while it polls.
+    pub left_out: [Option<String>; 2],
     /// The rows at the top of a delivered frame left out as the status bar.
     pub status_bar_rows: u32,
     pub elapsed: Duration,

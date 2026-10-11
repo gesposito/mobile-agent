@@ -18,6 +18,7 @@ use plist::{Dictionary, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
 use super::fake::FakeDevice;
+use crate::model::Capture;
 
 /// The service a fake RemoteXPC connection reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +100,11 @@ fn windows() -> Vec<u8> {
 
 /// Serves one connection to `service` until the client closes it.
 pub(crate) async fn serve_xpc(device: Arc<FakeDevice>, stream: DuplexStream, service: XpcService) {
+    let connection = if service == XpcService::ScreenCapture {
+        device.capture_connection(Capture::CoreDevice.index())
+    } else {
+        0
+    };
     let (mut reader, mut writer) = tokio::io::split(stream);
     if writer.write_all(&windows()).await.is_err() {
         return;
@@ -144,7 +150,10 @@ pub(crate) async fn serve_xpc(device: Arc<FakeDevice>, stream: DuplexStream, ser
                     None
                 }
                 XpcService::ScreenCapture | XpcService::Display => {
-                    core_device(&device, service, &request).await
+                    match core_device(&device, service, connection, &request).await {
+                        Ok(reply) => reply,
+                        Err(Dropped) => return,
+                    }
                 }
             };
             if let Some(reply) = reply {
@@ -234,20 +243,33 @@ fn universal(device: &FakeDevice, request: &Value) -> Option<Dictionary> {
     None
 }
 
-/// A CoreDevice invocation, answered in CoreDevice's output envelope.
+/// A connection the fake device dropped instead of answering.
+struct Dropped;
+
+/// A CoreDevice invocation through the connection numbered `connection`,
+/// answered in CoreDevice's output envelope, or not answered when the fake
+/// does not serve it; `Err` when the device drops the connection instead.
 async fn core_device(
     device: &FakeDevice,
     service: XpcService,
+    connection: u64,
     request: &Value,
-) -> Option<Dictionary> {
-    let feature = request
-        .as_dictionary()?
-        .get("CoreDevice.featureIdentifier")?
-        .as_string()?;
+) -> Result<Option<Dictionary>, Dropped> {
+    let Some(feature) = request
+        .as_dictionary()
+        .and_then(|request| request.get("CoreDevice.featureIdentifier"))
+        .and_then(Value::as_string)
+    else {
+        return Ok(None);
+    };
     let mut output = Dictionary::new();
     match (service, feature) {
         (XpcService::ScreenCapture, "com.apple.coredevice.feature.capturescreenshot") => {
-            output.insert("image".into(), Value::Data(device.capture(1).await));
+            let png = device
+                .capture(Capture::CoreDevice.index(), connection)
+                .await
+                .ok_or(Dropped)?;
+            output.insert("image".into(), Value::Data(png));
         }
         (XpcService::Display, "com.apple.coredevice.feature.getmediasupportinfo") => {
             let features = device.features();
@@ -265,11 +287,11 @@ async fn core_device(
                 }),
             );
         }
-        _ => return None,
+        _ => return Ok(None),
     }
     let mut reply = Dictionary::new();
     reply.insert("CoreDevice.output".into(), Value::Dictionary(output));
-    Some(reply)
+    Ok(Some(reply))
 }
 
 /// An Indigo event.

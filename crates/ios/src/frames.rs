@@ -251,6 +251,8 @@ pub(crate) trait FrameFeed: Send + Sync {
     /// Frame `sequence`, held, as a JPEG of exactly `width` by `height`.
     fn encode(&self, sequence: u64, width: u32, height: u32, quality: u8) -> Result<Vec<u8>>;
     fn stats(&self) -> FrameStats;
+    /// Closes the connection `connection`'s poller captures on.
+    fn close_connection(&self, connection: Capture);
 }
 
 /// A frame subscription: the frame on screen when it started, then one
@@ -289,6 +291,13 @@ impl FrameStream {
 
     pub fn stats(&self) -> FrameStats {
         self.feed.stats()
+    }
+
+    /// Closes the connection `connection`'s poller captures on, as a
+    /// dropped connection closes: the device tests' way to see the poller
+    /// open it again (task 9.8 of physical-ios).
+    pub fn close_connection(&self, connection: Capture) {
+        self.feed.close_connection(connection);
     }
 }
 

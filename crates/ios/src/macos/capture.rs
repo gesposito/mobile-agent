@@ -253,6 +253,10 @@ impl FrameFeed for Polled {
     fn stats(&self) -> FrameStats {
         self.shared.pipeline().stats()
     }
+
+    fn close_connection(&self, connection: Capture) {
+        let _ = connection;
+    }
 }
 
 /// `pixels`, packed BGRA of `width` by `height`, scaled to `to` (no larger)
@@ -506,7 +510,7 @@ mod tests {
 
     use super::*;
     use crate::frames::tests::screen;
-    use crate::macos::driver::tests::{FakeHost, PHONE, core};
+    use crate::macos::driver::tests::{FakeHost, PHONE, SHORT, core};
 
     /// A JPEG's width and height, from its start-of-frame segment.
     fn jpeg_size(data: &[u8]) -> (u32, u32) {
@@ -697,6 +701,184 @@ mod tests {
                 .as_deref()
                 .is_some_and(|reason| reason.contains("later")),
             "{stream:?}"
+        );
+    }
+
+    /// The stream's stats once `done` holds, within `wait`.
+    fn stats_once(
+        stream: &crate::frames::FrameStream,
+        wait: Duration,
+        done: impl Fn(&FrameStats) -> bool,
+    ) -> FrameStats {
+        let deadline = Instant::now() + wait;
+        loop {
+            let stats = stream.stats();
+            if done(&stats) || Instant::now() >= deadline {
+                return stats;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// Physical-ios, task 9.8 (design D26): a poller whose connection stops
+    /// answering, the other connection's captures going on, reopens its
+    /// connection and channel once two captures in a row timed out, and
+    /// polls on through the new one.
+    #[test]
+    fn a_poller_whose_captures_time_out_twice_in_a_row_reopens_its_connection_and_polls_on() {
+        let core = core(showing(screen(|_, _| 120, false)));
+        let stream = core.frames(PHONE, &polling()).expect("subscribed");
+        stream
+            .next(Duration::from_secs(1))
+            .expect("the first frame");
+        core.host.device.stall_capture_connections(Capture::Dvt);
+        let core_device = core.host.device.captures()[1];
+        let stats = stats_once(&stream, Duration::from_secs(4), |stats| {
+            stats.reopens[0] == 1
+        });
+        assert_eq!(stats.reopens, [1, 0], "{stats:?}");
+        assert!(stats.failures >= 2, "two timed out first: {stats:?}");
+        let dvt = core.host.device.captures()[0];
+        std::thread::sleep(Duration::from_millis(200));
+        let served = core.host.device.captures();
+        assert!(served[0] > dvt, "DVT's new connection captures: {served:?}");
+        assert!(served[1] > core_device, "CoreDevice's went on: {served:?}");
+        assert_eq!(stream.stats().left_out, [None, None]);
+    }
+
+    /// Physical-ios, task 9.8 (design D26): a poller whose captures still
+    /// time out after its connection was reopened, as DVT's `takeScreenshot`
+    /// answered none on any connection in task 9.6
+    /// (`probes/dvt-screenshot-fixed.txt`), is left out of the frames, the
+    /// stats saying why, and the other connection's poller goes on: a
+    /// change on screen is still a frame.
+    #[test]
+    fn a_poller_still_failing_after_its_reopen_is_left_out_and_the_other_polls_on() {
+        let core = core(showing(screen(|_, _| 120, false)));
+        let stream = core.frames(PHONE, &polling()).expect("subscribed");
+        stream
+            .next(Duration::from_secs(1))
+            .expect("the first frame");
+        core.host.device.stall_captures(Capture::Dvt);
+        let stats = stats_once(&stream, Duration::from_secs(6), |stats| {
+            stats.left_out[0].is_some()
+        });
+        let why = stats.left_out[0].clone().expect("DVT's poller left out");
+        assert!(why.contains("takeScreenshot"), "{why}");
+        assert_eq!(stats.reopens, [1, 0], "{stats:?}");
+        assert_eq!(stats.left_out[1], None, "{stats:?}");
+        let core_device = core.host.device.captures()[1];
+        core.host.device.show(screen(
+            |x, y| if (x, y) == (40, 90) { 200 } else { 120 },
+            false,
+        ));
+        let changed = stream
+            .next(Duration::from_secs(1))
+            .expect("the change is a frame");
+        assert_eq!(changed.source, Capture::CoreDevice);
+        assert!(core.host.device.captures()[1] > core_device);
+    }
+
+    /// Physical-ios, task 9.8 (design D26): a poller whose connection
+    /// closes, as a dropped connection does, opens it again at once and
+    /// captures at its next turn, so the frames lose one capture interval:
+    /// the gap between its captures across the drop is two intervals.
+    #[test]
+    fn a_poller_whose_connection_closes_opens_it_again_within_a_capture_interval() {
+        let core = core(showing(screen(|_, _| 120, false)));
+        let options = FrameOptions {
+            max_fps: 10,
+            ..polling()
+        };
+        let every = pace(options.max_fps, 2).expect("paced");
+        let stream = core.frames(PHONE, &options).expect("subscribed");
+        stream
+            .next(Duration::from_secs(1))
+            .expect("the first frame");
+        std::thread::sleep(every);
+        core.host.device.drop_capture_connection(Capture::Dvt);
+        let stats = stats_once(&stream, Duration::from_secs(2), |stats| {
+            stats.reopens[0] == 1
+        });
+        assert_eq!(stats.reopens, [1, 0], "{stats:?}");
+        let reopened = core.host.device.served(Capture::Dvt).len();
+        let deadline = Instant::now() + every * 3;
+        while core.host.device.served(Capture::Dvt).len() == reopened && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let served = core.host.device.served(Capture::Dvt);
+        assert!(served.len() > reopened, "DVT captures again");
+        let gap = served
+            .windows(2)
+            .map(|pair| pair[1] - pair[0])
+            .max()
+            .expect("captures");
+        assert!(
+            gap <= every * 2 + Duration::from_millis(150),
+            "{gap:?} between two captures, against {every:?} a turn"
+        );
+    }
+
+    /// Physical-ios, task 9.8: the stream's test hook closes a poller's
+    /// connection, which the poller opens again, as it does a dropped one,
+    /// so the device test can see the reopen on the phone.
+    #[test]
+    fn the_test_hook_closes_a_pollers_connection_and_the_poller_opens_it_again() {
+        let core = core(showing(screen(|_, _| 120, false)));
+        let stream = core.frames(PHONE, &polling()).expect("subscribed");
+        stream
+            .next(Duration::from_secs(1))
+            .expect("the first frame");
+        stream.close_connection(Capture::Dvt);
+        let stats = stats_once(&stream, Duration::from_secs(2), |stats| {
+            stats.reopens[0] == 1
+        });
+        assert_eq!(stats.reopens, [1, 0], "{stats:?}");
+        let dvt = core.host.device.captures()[0];
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(core.host.device.captures()[0] > dvt, "DVT captures again");
+    }
+
+    /// Physical-ios, task 9.8 (design D26): the on-demand screenshot takes
+    /// CoreDevice's capture when DVT's screenshot does not answer, as it
+    /// answered none in task 9.6, and keeps to it, so the next one waits for
+    /// no timeout; the connection it keeps for that is listed open.
+    #[test]
+    fn the_screenshot_takes_the_other_connection_when_its_own_fails_and_keeps_to_it() {
+        let png = screen(|_, _| 120, false);
+        let core = core(showing(png.clone()));
+        core.host.device.stall_captures(Capture::Dvt);
+        let native = ScreenshotOptions {
+            max_dimension: 0,
+            quality: 90,
+            format: ImageFormat::Png,
+        };
+        let started = Instant::now();
+        let shot = core
+            .screenshot(PHONE, &native)
+            .expect("a screenshot through CoreDevice");
+        assert_eq!(shot.data, png, "the device's own bytes");
+        assert!(
+            started.elapsed() >= SHORT.reply,
+            "DVT was asked first: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(core.host.device.captures(), [0, 1]);
+        let started = Instant::now();
+        core.screenshot(PHONE, &native)
+            .expect("a screenshot through CoreDevice again");
+        assert!(
+            started.elapsed() < SHORT.reply,
+            "straight to CoreDevice: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(core.host.device.captures(), [0, 2]);
+        assert!(
+            core.status(PHONE)
+                .expect("status")
+                .services_open
+                .contains(&crate::services::SCREEN_CAPTURE),
+            "the screenshot's CoreDevice connection is kept"
         );
     }
 

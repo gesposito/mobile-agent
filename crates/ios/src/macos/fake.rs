@@ -18,7 +18,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use idevice::dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader};
 
@@ -39,7 +39,7 @@ use super::host::Link;
 use super::image::Mounter;
 use super::tunnel::Opener;
 use crate::discovery::tests::recorded_images;
-use crate::model::{RUNNER_BUNDLE_ID, RUNNER_PORT};
+use crate::model::{Capture, RUNNER_BUNDLE_ID, RUNNER_PORT};
 use crate::services;
 
 /// CoreDevice's display service, asked whether it lists media features.
@@ -135,13 +135,25 @@ struct LinkState {
 }
 
 /// The fake device's screen: the PNG captured, how long a capture takes,
-/// the captures each service took, and the display service's features.
+/// the captures each service took, and the display service's features;
+/// for each service, DVT's then CoreDevice's, the connections that serve
+/// it, numbered as they open, and those that answer no capture.
 #[derive(Default)]
 struct Screen {
     png: Vec<u8>,
     delay: Duration,
     captures: [u64; 2],
+    /// When each capture was served, by service.
+    served: [Vec<Instant>; 2],
     features: u64,
+    /// The number the next connection to each service takes.
+    next_connection: [u64; 2],
+    /// Connections numbered below this answer no capture.
+    stalled_below: [u64; 2],
+    /// Whether every connection answers no capture, new ones too.
+    stalled: [bool; 2],
+    /// Whether the next capture closes its connection instead.
+    dropping: [bool; 2],
 }
 
 /// The runner on the fake device: the version installed, which its hello
@@ -305,18 +317,68 @@ impl FakeDevice {
         self.screen().features = features;
     }
 
-    /// A capture of the screen on `service`, after the capture delay.
-    pub(crate) async fn capture(&self, service: usize) -> Vec<u8> {
-        let delay = self.screen().delay;
+    /// The number a new connection to the capture service `service` takes.
+    pub(crate) fn capture_connection(&self, service: usize) -> u64 {
+        let mut screen = self.screen();
+        screen.next_connection[service] += 1;
+        screen.next_connection[service] - 1
+    }
+
+    /// A capture of the screen on `service`, through its connection
+    /// `connection`, after the capture delay; `None` closes the connection
+    /// instead, and a stalled connection never answers.
+    pub(crate) async fn capture(&self, service: usize, connection: u64) -> Option<Vec<u8>> {
+        let (delay, stalled, dropping) = {
+            let mut screen = self.screen();
+            let stalled = screen.stalled[service] || connection < screen.stalled_below[service];
+            (
+                screen.delay,
+                stalled,
+                std::mem::take(&mut screen.dropping[service]),
+            )
+        };
+        if dropping {
+            return None;
+        }
+        if stalled {
+            std::future::pending::<()>().await;
+        }
         tokio::time::sleep(delay).await;
         let mut screen = self.screen();
         screen.captures[service] += 1;
-        screen.png.clone()
+        screen.served[service].push(Instant::now());
+        Some(screen.png.clone())
     }
 
     /// Captures taken so far: DVT's, then CoreDevice's.
     pub(crate) fn captures(&self) -> [u64; 2] {
         self.screen().captures
+    }
+
+    /// When each capture on `connection`'s service was served.
+    pub(crate) fn served(&self, connection: Capture) -> Vec<Instant> {
+        self.screen().served[connection.index()].clone()
+    }
+
+    /// Makes `connection`'s service answer no capture on the connections
+    /// open now; a connection opened after answers again.
+    pub(crate) fn stall_capture_connections(&self, connection: Capture) {
+        let mut screen = self.screen();
+        let service = connection.index();
+        screen.stalled_below[service] = screen.next_connection[service];
+    }
+
+    /// Makes `connection`'s service answer no capture on any connection,
+    /// new ones too, as DVT's `takeScreenshot` answered none in task 9.6
+    /// (`probes/dvt-screenshot-fixed.txt`).
+    pub(crate) fn stall_captures(&self, connection: Capture) {
+        self.screen().stalled[connection.index()] = true;
+    }
+
+    /// Makes the next capture on `connection`'s service close its
+    /// connection instead of answering, as a dropped connection does.
+    pub(crate) fn drop_capture_connection(&self, connection: Capture) {
+        self.screen().dropping[connection.index()] = true;
     }
 
     pub(crate) fn features(&self) -> u64 {
@@ -960,6 +1022,7 @@ fn arg(value: &AuxValue) -> Arg {
 /// Serves one DVT connection: its capabilities first, then channels and
 /// the calls on them, until the driver closes it or the device does.
 pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
+    let connection = device.capture_connection(Capture::Dvt.index());
     let (mut reader, mut writer) = tokio::io::split(stream);
     if writer.write_all(&capabilities()).await.is_err() {
         return;
@@ -1000,9 +1063,11 @@ pub(crate) async fn serve_dvt(device: Arc<FakeDevice>, stream: DuplexStream) {
             }
         };
         let reply = match reply {
-            Some(Reply::Screenshot) => {
-                Some(Reply::Data(Some(Value::Data(device.capture(0).await))))
-            }
+            Some(Reply::Screenshot) => match device.capture(Capture::Dvt.index(), connection).await
+            {
+                Some(png) => Some(Reply::Data(Some(Value::Data(png)))),
+                None => return,
+            },
             other => other,
         };
         if launch && let Some(Reply::Data(Some(pid))) = &reply {
