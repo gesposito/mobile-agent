@@ -256,13 +256,13 @@ pub fn call_sites() -> Vec<CallSite> {
             "takeScreenshot",
             "DVT's com.apple.instruments.server.services.screenshot",
             FRAMES,
-            "a PNG, 8-bit for most screens and 16-bit with an ICC profile for the home screen's wallpaper (S11); polled on a connection of its own for frames, and on the kept channel for screenshots",
+            "a PNG, 8-bit for most screens and 16-bit with an ICC profile for the home screen's wallpaper (S11); polled on a connection of its own for frames, opened again once two captures in a row time out, and on the kept channel for screenshots",
         ),
         site(
             "capturescreenshot with requestedFormat png",
             "com.apple.coredevice.screencaptureservice",
             FRAMES,
-            "the second frame connection; JPEG requests are refused (S9)",
+            "the second frame connection, and the screenshot's where DVT's fails (physical-ios task 9.8); JPEG requests are refused (S9)",
         ),
         site(
             "getmediasupportinfo",
