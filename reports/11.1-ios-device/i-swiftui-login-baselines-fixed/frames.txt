@@ -1,0 +1,2 @@
+16:31:14 before i-swiftui-login-baselines-fixed: open 13365 ms ok False; after 15 s captureRate None, pollers [], runner (None, None); screenshot 187 ms ok False (DVT's capabilities failed on the device: device socket io failed: remote server connection closed); shutdown 24 ms
+16:47:04 after i-swiftui-login-baselines-fixed: open 1321 ms ok False; after 15 s captureRate None, pollers [], runner (None, None); screenshot 2038 ms ok True; shutdown 733 ms
