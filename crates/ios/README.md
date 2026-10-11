@@ -44,7 +44,8 @@ src/
     image.rs       the Mounter seam: the disk image's check and mount, idevice then devicectl
     dvt.rs         DVT's channels on connections of their own, the calls written by hand
     runner.rs      the TestManager seam and the runner's session: start, supervisor, calls, stop
-    connection.rs  the protocol's HostSession over the runner's socket, on a task of its own
+    connection.rs  the protocol's HostSession over the runner's socket, on a task of its own,
+                   and what tells the runner stalled while its connection lives
     hid.rs         dtuhidd's two connections and the reports and events each input writes
     capture.rs     the two screenshot pollers, the pipeline's thread, screenshots, frame paths
     driver.rs      IosDriver over Core, which keeps each target's tunnel, channels, runner,
@@ -59,7 +60,8 @@ tests/
   tunnel.rs        task 3.2 on the device
   lifecycle.rs     task 3.3 on the device, and the install series (ignored)
   runner.rs        task 3.4 on the device: fifty commands, one runner process
-  input.rs         task 3.8 on the device, the input series and the lock button (ignored)
+  input.rs         task 3.8 on the device, the input series and the lock button (ignored),
+                   and task 9.7's 120 emptying fills in one session (ignored)
   frames.rs        task 3.5 on the device, and the measured minute (ignored)
   containment.rs   tasks 3.4 and 3.6 on the device: the pulled cable (ignored)
   fixtures/        recorded values: usbmuxd's listing, lockdown's values, CopyDevices,
@@ -326,6 +328,31 @@ be repeated). `Session::release` ends the supervisor, which closes the
 connection and the test manager's session; XCTest ends the runner, and any
 runner process still running is signalled.
 
+A runner that stops answering while its connection lives is treated as
+died too (design D26 of physical-ios). Its worker runs one call at a time
+and its session answers pings meanwhile, so a worker that never comes back
+from an XCTest call, as the phone's did from the 43rd emptying text set of
+every session in task 9.6 (`reports/11.1-ios-device/probes/text-hang-swiftui-*.jsonl`),
+leaves the connection alive, answering that call `deadline_exceeded` at its
+deadline and every later one `busy`. The connection counts the runner
+stalled at the second call in a row answered `deadline_exceeded` or `busy`
+with no other answer between them (`STALL_CALLS`), or once calls have
+waited 30 s with no answer to any of them, the answers to pings aside
+(`STALL_SILENCE`; both beside `RESTARTS` in `src/macos/runner.rs`), and
+closes. The supervisor then starts the runner again once, the start ending
+the stuck process through DVT first, the restart counted and `last_death`
+naming the stall (`it stalled: ...`). The call that found the runner
+stalled fails `runner_stalled`, which can be repeated and waits for the
+restart; one refusal alone stays the caller's to repeat; a second stall in
+the session fails it as `runner_died`, which the daemon reports as
+`disconnected` and detaches on. A healthy runner pays nothing for this: no
+call is added, and the silence bound is one deadline on calls already
+waiting, past the 10 s and 500 ms of grace the daemon gives a snapshot or a
+text set, so only a call given a longer deadline can meet it; one the
+runner works on longer than that is ended as stalled, which typing over
+about 1,800 characters at 60 a second would be. `release` ends a stuck
+runner's process through DVT's process control, asking the runner nothing.
+
 On the phone, with spike S10's runner (`mobile-agent-ios-runner 0.1.0`),
 in the device test's functional run (a debug build, load 4.1, so not a
 measurement): the attach took 3.2 s, the hello 2.2 s after the start;
@@ -497,6 +524,13 @@ the runner again once, the restart counted
 The daemon detaches a target once a command fails `disconnected`, and
 reports `runner_died` as `disconnected`, so its next command attaches
 again, which starts over (task 9.3, design D26 of physical-ios).
+
+A runner that stalls while its connection lives (Runner session) is no
+disconnect: the call that finds it fails `runner_stalled` and is not
+contained, its restart keeps the phone's tunnel and connections, input
+through `dtuhidd` goes on meanwhile, and another phone is untouched
+(`macos::containment::a_stalled_runner_is_started_again_with_the_phones_connections_kept_and_the_other_phone_untouched`,
+task 9.7).
 
 On the phone, with a person pulling the cable and plugging it back twice
 (`containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, a
@@ -690,7 +724,11 @@ lasts as long as it and the cable; scripted starts fail the handshake, miss
 the test manager, wait for an approval or start slowly. The runner serves
 the protocol's `AgentSession` on its port, saying hello with the installed
 version (an installed bundle's `CFBundleShortVersionString`); one left from
-a lost session says hello and closes the connection, as S10's did.
+a lost session says hello and closes the connection, as S10's did. A
+runner can fall silent, pings included; get stuck, keeping the next
+request, which its session answers `deadline_exceeded` at its deadline, and
+answering every later one `busy`, as the phone's did in task 9.6; or answer
+pings and no request.
 
 The tests in `tests/` drive the phone. Each checks `MOBILE_AGENT_IOS_UDID`
 first; when it is unset, as in CI, the test prints why it skipped and
@@ -712,6 +750,8 @@ cargo test -p ios --test input -- --ignored --nocapture input_series
 # with a person at the phone
 cargo test -p ios --test input -- --ignored --nocapture the_lock_button
 cargo test -p ios --test containment -- --ignored --nocapture
+# task 9.7's device check, once the phone was restarted
+cargo test -p ios --test input -- --ignored --nocapture one_hundred_twenty_emptying_fills_in_one_session
 ```
 
 The tests ask for the runner `agent-ios` builds, by its version
@@ -742,5 +782,6 @@ has another version; nothing else is installed and no setting is changed.
 | Input actions without idle waits | Tap dispatched | `input::a_tap_reaches_the_screen_and_the_home_button_the_home_screen`, `input::input_series`, `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `macos::hid::tests::a_tap_is_a_main_touchscreen_contact_held_then_released_and_acknowledged_at_the_release`, `macos::hid::tests::a_long_press_holds_its_contact_for_its_hold`, `macos::hid::tests::a_resting_swipe_rests_before_it_moves_one_pixel_on_and_lifts`, `macos::hid::tests::a_moving_swipe_lifts_at_the_end_of_its_path`, `macos::hid::tests::the_home_button_is_an_indigo_button_event_down_held_then_up`, `macos::hid::tests::lock_and_volume_take_their_consumer_usages`, `macos::hid::tests::a_key_is_an_indigo_keyboard_event_with_its_modifiers_held_around_it`, `macos::hid::tests::keys_are_typed_on_a_virtual_keyboard_registered_then_removed`, `macos::hid::tests::a_point_off_the_screen_is_refused_before_any_report`, `macos::hid::tests::the_connections_to_dtuhidd_are_kept_and_opened_again_after_the_tunnel_dropped`, `macos::hid::tests::an_ios_whose_dtuhidd_takes_no_report_goes_through_the_runner_or_is_refused`, `touch::tests::points_map_to_the_touchscreen_space_and_off_screen_points_are_refused`, `touch::tests::a_tap_is_a_contact_held_50_ms_then_a_release_at_the_same_point`, `touch::tests::a_moving_swipe_reports_every_16_ms_along_its_line_and_lifts_at_its_end`, `touch::tests::a_resting_swipe_stays_still_60_ms_then_moves_one_pixel_on_and_lifts_there`, `touch::tests::a_swipe_that_leaves_the_screen_is_refused`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream` |
 | Frames and screenshots from the host | Frame change after a tap | `frames::screenshots_frame_paths_and_a_frame_for_a_tap_come_from_the_phone`, `frames::frames_series`, `macos::capture::tests::frames_are_polled_on_dvt_and_coredevice_side_by_side`, `macos::capture::tests::a_still_screen_counts_no_frame_after_the_first`, `macos::capture::tests::a_change_on_screen_is_the_next_frame`, `macos::capture::tests::frames_are_throttled_to_the_rate_asked_for`, `macos::capture::tests::a_held_frame_encodes_as_a_jpeg_of_the_size_asked_for`, `macos::capture::tests::the_screenshot_is_the_devices_png_at_full_size_or_scaled_to_a_long_edge`, `macos::capture::tests::the_display_stream_and_avfoundation_say_why_they_are_off`, `macos::capture::tests::the_pace_spreads_the_rate_over_the_connections`, `frames::tests::identical_pngs_are_skipped_before_decoding`, `frames::tests::a_frame_is_a_pixel_below_the_status_bar_more_than_two_levels_from_the_last_frame`, `frames::tests::a_change_inside_the_devices_status_bar_is_no_frame`, `frames::tests::the_status_bar_comes_from_the_devices_screen`, `frames::tests::no_still_frame_is_counted_through_one_level_noise_and_drift_is_measured_from_the_last_frame`, `frames::tests::frames_are_scaled_to_the_long_edge_asked_for_and_held_for_encoding`, `frames::tests::eight_and_sixteen_bit_pngs_become_bgra`, `frames::tests::a_png_that_does_not_decode_is_a_failure_not_a_frame` (settle on these frames is the mirror's, task 5.2) |
 | Failure containment | Runner connection lost (the driver's side; the daemon's release and new attach are in `crates/daemon/README.md`) | `macos::containment::a_call_in_flight_when_the_runner_falls_silent_fails_the_session_until_the_next_attach`, `macos::runner::tests::a_runner_that_falls_silent_is_ended_and_started_again_once` |
+| Failure containment; One resident runner per session | (a runner that stalls, its connection alive, treated as died: task 9.7, design D26 of physical-ios) | `macos::connection::tests::two_calls_in_a_row_answered_deadline_exceeded_or_busy_stall_the_runner`, `macos::connection::tests::an_answer_between_two_refusals_keeps_the_runner_serving`, `macos::connection::tests::a_call_left_unanswered_past_the_silence_bound_stalls_the_runner_though_it_answers_pings`, `macos::runner::tests::a_runner_stuck_on_a_call_is_ended_and_started_again_once_at_its_second_refusal`, `macos::runner::tests::a_runner_that_answers_no_call_for_the_silence_bound_is_ended_and_started_again_once`, `macos::runner::tests::a_second_stall_in_the_session_fails_it_as_a_runner_that_died`, `macos::runner::tests::a_release_ends_a_stuck_runners_process_through_dvt_within_five_seconds`, `macos::containment::a_stalled_runner_is_started_again_with_the_phones_connections_kept_and_the_other_phone_untouched`; on the phone, `input::one_hundred_twenty_emptying_fills_in_one_session` |
 | Failure containment | Cable pulled | `containment::a_pulled_cable_is_reported_and_a_replug_attaches_again`, `macos::containment::a_pulled_cable_fails_the_phones_commands_as_unplugged_and_spares_the_other_phone`, `macos::containment::a_replugged_phone_attaches_again_and_starts_over`, `macos::containment::a_replugged_phone_takes_commands_again_under_its_new_usbmuxd_number`, `macos::containment::every_command_on_a_pulled_phone_fails_as_unplugged_until_it_is_back`, `macos::containment::a_locked_phone_fails_input_as_locked_and_keeps_its_connections`, `macos::containment::a_rebooted_phone_is_told_apart_and_attaches_again_once_unlocked`, `macos::containment::a_command_made_while_the_runner_starts_again_waits_for_it_within_its_timeout`, `macos::containment::no_hot_path_reads_the_process_list`, `macos::containment::a_device_that_refuses_lockdown_until_its_first_unlock_reads_as_rebooted`, `macos::tunnel::tests::a_tunnel_that_dropped_is_opened_again_once`, `macos::tunnel::tests::a_device_that_is_gone_is_disconnected_with_the_cause`, `macos::driver::tests::a_call_after_the_tunnel_dropped_goes_through_a_new_tunnel`, `macos::dvt::tests::a_call_on_a_connection_that_closed_fails_and_the_channel_is_done`, `macos::dvt::tests::a_call_without_a_reply_times_out_and_ends_the_channel`, `macos::driver::tests::a_launch_whose_dvt_never_answers_times_out` |
 | Compatibility statement | Table lists the device paths | `compat::tests::every_call_site_names_the_ios_and_xcode_it_was_validated_on`, `compat::tests::the_table_renders_the_range_and_every_call_site`, `compat::tests::ios_17_4_up_to_27_is_supported`, `compat::tests::host_input_is_gated_on_an_ios_that_takes_reports_without_a_stream`, `readiness::tests::an_ios_outside_the_supported_range_is_refused_naming_the_version` |

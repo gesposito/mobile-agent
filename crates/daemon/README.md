@@ -715,10 +715,11 @@ and scale from lockdown, and subscribes to the screen:
   acknowledgement, text through the runner; the frames, `screenshots` with
   their capture rate and the count received, or why the screen could not
   be subscribed to; the runner, its agent, state, restarts, how long its
-  hello took and the runners of a lost session its start ended; the
-  tunnel; the disk image; the runner bundle; the battery as the attach's
-  probe read it from lockdown, which the harness records in a run's
-  provenance.
+  hello took and the runners of a lost session its start ended, and in
+  `lastDeath` why it was last started again, `it stalled: ...` for a
+  runner that stopped answering while its connection lived; the tunnel;
+  the disk image; the runner bundle; the battery as the attach's probe
+  read it from lockdown, which the harness records in a run's provenance.
 - doctor: `iosRunner`, the runner bundle an attach installs (`bundle`) and
   the version its hello must name (`version`); the compatibility table's
   device rows, the supported range (iOS 17.4 up to but not including 27,
@@ -732,8 +733,9 @@ in the workspace this daemon was built in, as the Android driver finds its
 jar, or the one `MOBILE_AGENT_IOS_RUNNER_APP` names, a relative path taken
 from the workspace's root; a failure about the runner while no bundle is
 built there names `just agent-ios-build`. Dropping the attachment releases
-the runner, which ends its process, and closes what the driver opened for
-the device.
+the runner, which ends its process through DVT's process control, a
+stalled runner's included, asking it nothing, and closes what the driver
+opened for the device.
 
 `status` for the SE after an `open` (2026-10-10, the identifier and the home
 directory cut):
@@ -902,7 +904,15 @@ connection that long after the attach, its restart failing, as a physical
 iPhone's fell silent in the measured run: that attachment's tree reads and
 input then fail `disconnected` with the physical driver's message, its
 `status` names the runner failed with no restart, and its process stays
-on the phone until the next attach ends it.
+on the phone until the next attach ends it. `FakeDriver::stall_runner(id)`
+stalls the runner of the phone's attachment, as a physical iPhone's
+stalled on the 43rd emptying fill of every session in physical-ios task
+9.6: the next tree read or text entry, which go through the runner, fails
+as the physical driver fails the call that finds a runner stalled,
+`runner_stalled` at the first stall since the attach, its `status` then
+counting a restart with the stall as `lastDeath`, and `disconnected` from
+the second, the session failed, whose release ends the stalled runner;
+taps, swipes and keys go through `dtuhidd` and meet no stall.
 Emulators, Simulators and fake iPhones have a frame source; Android devices
 have none, as design D7 has it, so `screenshot` answers them with
 `no_frame`. Every change shows
@@ -987,9 +997,15 @@ is not ready (`device_locked`, `developer_mode_off`, `disk_image_unmounted`,
 `runner_version_mismatch`, `invalid_bundle` and the rest, an app that is
 not installed being `app_not_found` and a runner that died and could not be
 started again (the driver's `runner_died`) `disconnected`, its message
-kept, so that the worker detaches the target; the adapter adds
-`invalid_argument` for a `MOBILE_AGENT_IOS_INPUT` other than `auto`,
-`dtuhidd` or `runner`. The Android adapter's are:
+kept, so that the worker detaches the target; a call the driver failed
+because the runner stalled, its connection alive (two calls in a row
+answered `busy` or `deadline_exceeded`, or none answered for 30 s), keeps
+its `runner_stalled`, which can be repeated: the runner is started again,
+a tree read retries it and waits for the restart, and the target stays
+attached, while a second stall in the session is `runner_died`, so
+`disconnected`; the adapter adds `invalid_argument` for a
+`MOBILE_AGENT_IOS_INPUT` other than `auto`, `dtuhidd` or `runner`. The
+Android adapter's are:
 
 | Code | When |
 |---|---|
@@ -1079,6 +1095,7 @@ Worked around here without changing `crates/mirror`:
 | (task 8.12, the mirror's timing) | (spans, settle signals and catch-up from `Mirror::timestamps`, `frame_changes_since` and `drain`; launches and stops noted with `note_window_change`) | the CLI's `commands::open_and_close_are_window_changes_that_a_settle_waits_out`; with the outputs of the task 8.9 rows, the catch-up rows above and the CLI's `spans::*` and `commands::*` unchanged |
 | (task 10.11, settle without frames) | (`open` waits out a screen moving without change events and a window the platform animates in) | the mirror's `settle::without_frames_settle_waits_until_probed_bounds_hold_still_and_the_replica_has_them` and `settle::without_frames_settle_waits_while_a_window_is_drawn_transformed`, and the Android session's `session::tests::a_settle_without_frames_probes_the_agent_and_reads_the_moved_window_evicted`; against an emulator on the agent path, `devices::open_on_the_agent_path_waits_for_the_expo_screen_to_come_to_rest` |
 | Failure containment, spec `ios-device-driver` (physical-ios task 9.3, design D26) | Runner connection lost (on the fake iPhone) | `worker::tests::a_lost_runner_connection_detaches_the_target_and_the_next_command_attaches_again`, `worker::tests::a_lost_runner_connection_a_poll_finds_detaches_the_target_before_the_next_command`, `devices::ios::tests::a_runner_that_died_and_could_not_start_again_is_disconnected`, `ios_device::status_names_a_fake_iphones_input_frames_and_runner` (`attaches`); the driver's side in `crates/ios`, `macos::containment::a_call_in_flight_when_the_runner_falls_silent_fails_the_session_until_the_next_attach` and `macos::runner::tests::a_runner_that_falls_silent_is_ended_and_started_again_once` |
+| Failure containment, spec `ios-device-driver` (physical-ios task 9.7, design D26) | (a runner that stalls, its connection alive, on the fake iPhone: kept attached at the first stall, detached at the second, ended by the release and the stop) | `worker::tests::a_fake_iphones_stalled_runner_is_started_again_and_a_second_stall_detaches_the_target`, `devices::ios::tests::a_call_the_stalled_runner_failed_can_be_repeated_and_a_second_stall_is_disconnected`; the driver's side in `crates/ios`'s README (task 9.7's row) |
 | (physical-ios task 9.2, design D26: an attached target resolved without a listing; `devices` lists afresh) | (a command on an attached target asks no driver; a target not attached is listed; `devices` tells the drivers to forget, then lists) | `registry::tests::an_attached_target_is_resolved_without_a_listing_and_devices_lists_afresh`; the iPhone driver's cached signing identity in `crates/ios`, `macos::driver::tests::the_signing_identity_is_checked_once_and_again_after_a_failure_or_when_forgotten` |
 | (task 8.16, shutdown waits for the targets) | (`shutdown` answers once the targets have stopped and the files are gone, bounded by 5 s) | `lifecycle::shutdown_answers_once_the_targets_have_stopped_and_the_socket_is_gone`, `lifecycle::a_target_still_stopping_after_5_s_is_named_in_the_shutdown_reply`, `registry::tests::stopping_names_the_targets_still_detaching_when_the_wait_is_over`, `registry::tests::a_stopped_registry_starts_no_worker`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the CLI's `lifecycle::shutdown_returns_once_the_daemon_has_stopped_its_targets_and_removed_its_socket` and `lifecycle::a_command_right_after_shutdown_starts_a_fresh_daemon_without_meeting_the_old_socket` |
 | (task 10.12, the emulator controller switch) | (the setting leaves emulators' controllers unused; `status` and `doctor` report it) | `controller::the_switch_puts_an_emulators_input_and_frames_on_the_agent_path`, `controller::without_the_switch_an_emulator_takes_the_controllers_path`, `controller::the_flag_beats_the_variable_and_a_value_other_than_auto_or_off_stops_the_start`, `server::tests::the_emulator_controller_flag_takes_auto_or_off`, `driver::tests::the_emulator_controller_setting_is_auto_or_off`, `devices::android::tests::the_controller_setting_off_puts_an_emulator_on_the_agent_path`, `fake::tests::the_controller_setting_off_puts_fake_emulators_on_the_agent_path`; against an emulator that serves the controller, `devices::the_controller_switch_leaves_a_served_controller_unused` |
