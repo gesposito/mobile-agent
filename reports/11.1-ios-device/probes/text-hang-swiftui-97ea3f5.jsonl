@@ -1,0 +1,218 @@
+{"label": "load before", "load1": 6.05, "variant": "relaunch never"}
+{"label": "open swiftui login before entry 0", "start_s": 0.006, "wall_ms": 4994.5, "settled": true, "elapsedMs": 1828.482, "firstTreeMs": 1155.247, "ok": true, "error": null}
+{"label": "entry 0 fill", "start_s": 5.001, "wall_ms": 2203.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 0 wait text", "start_s": 7.205, "wall_ms": 498.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 0 get value", "start_s": 7.704, "wall_ms": 390.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 0 clear", "start_s": 8.094, "wall_ms": 1072.9, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 0 settle", "start_s": 9.167, "wall_ms": 203.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 1 fill", "start_s": 9.371, "wall_ms": 1588.1, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 1 wait text", "start_s": 10.96, "wall_ms": 488.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 1 get value", "start_s": 11.449, "wall_ms": 402.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 1 clear", "start_s": 11.852, "wall_ms": 1060.7, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 1 settle", "start_s": 12.913, "wall_ms": 210.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 2 fill", "start_s": 13.123, "wall_ms": 1582.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 2 wait text", "start_s": 14.706, "wall_ms": 447.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 2 get value", "start_s": 15.154, "wall_ms": 449.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 2 clear", "start_s": 15.604, "wall_ms": 1094.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 2 settle", "start_s": 16.699, "wall_ms": 201.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 3 fill", "start_s": 16.9, "wall_ms": 2011.1, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 3 wait text", "start_s": 18.912, "wall_ms": 449.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 3 get value", "start_s": 19.362, "wall_ms": 469.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 3 clear", "start_s": 19.831, "wall_ms": 1098.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 3 settle", "start_s": 20.93, "wall_ms": 202.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 4 fill", "start_s": 21.132, "wall_ms": 1537.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 4 wait text", "start_s": 22.67, "wall_ms": 478.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 4 get value", "start_s": 23.149, "wall_ms": 413.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 4 clear", "start_s": 23.563, "wall_ms": 1067.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 4 settle", "start_s": 24.63, "wall_ms": 208.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 5 fill", "start_s": 24.839, "wall_ms": 2032.3, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 5 wait text", "start_s": 26.872, "wall_ms": 448.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 5 get value", "start_s": 27.32, "wall_ms": 495.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 5 clear", "start_s": 27.816, "wall_ms": 991.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 5 settle", "start_s": 28.808, "wall_ms": 209.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 6 fill", "start_s": 29.017, "wall_ms": 1593.2, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 6 wait text", "start_s": 30.611, "wall_ms": 487.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 6 get value", "start_s": 31.1, "wall_ms": 399.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 6 clear", "start_s": 31.5, "wall_ms": 1063.6, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 6 settle", "start_s": 32.564, "wall_ms": 204.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 7 fill", "start_s": 32.769, "wall_ms": 1399.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 7 wait text", "start_s": 34.169, "wall_ms": 490.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 7 get value", "start_s": 34.661, "wall_ms": 392.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 7 clear", "start_s": 35.054, "wall_ms": 668.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 7 settle", "start_s": 35.723, "wall_ms": 205.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 8 fill", "start_s": 35.929, "wall_ms": 1583.8, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 8 wait text", "start_s": 37.514, "wall_ms": 437.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 8 get value", "start_s": 37.952, "wall_ms": 6.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 8 clear", "start_s": 37.958, "wall_ms": 549.1, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 8 settle", "start_s": 38.508, "wall_ms": 210.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 9 fill", "start_s": 38.719, "wall_ms": 2216.8, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 9 wait text", "start_s": 40.936, "wall_ms": 487.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 9 get value", "start_s": 41.424, "wall_ms": 399.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 9 clear", "start_s": 41.824, "wall_ms": 1081.9, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 9 settle", "start_s": 42.906, "wall_ms": 208.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 10 fill", "start_s": 43.114, "wall_ms": 2114.1, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 10 wait text", "start_s": 45.229, "wall_ms": 443.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 10 get value", "start_s": 45.673, "wall_ms": 166.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 10 clear", "start_s": 45.84, "wall_ms": 703.6, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 10 settle", "start_s": 46.544, "wall_ms": 209.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 11 fill", "start_s": 46.753, "wall_ms": 1578.6, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 11 wait text", "start_s": 48.332, "wall_ms": 445.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 11 get value", "start_s": 48.778, "wall_ms": 15.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 11 clear", "start_s": 48.794, "wall_ms": 548.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 11 settle", "start_s": 49.343, "wall_ms": 209.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 12 fill", "start_s": 49.552, "wall_ms": 2230.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 12 wait text", "start_s": 51.783, "wall_ms": 447.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 12 get value", "start_s": 52.231, "wall_ms": 440.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 12 clear", "start_s": 52.672, "wall_ms": 1106.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 12 settle", "start_s": 53.778, "wall_ms": 209.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 13 fill", "start_s": 53.988, "wall_ms": 1997.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 13 wait text", "start_s": 55.986, "wall_ms": 434.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 13 get value", "start_s": 56.421, "wall_ms": 186.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 13 clear", "start_s": 56.608, "wall_ms": 542.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 13 settle", "start_s": 57.151, "wall_ms": 201.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 14 fill", "start_s": 57.353, "wall_ms": 1761.6, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 14 wait text", "start_s": 59.115, "wall_ms": 180.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 14 get value", "start_s": 59.296, "wall_ms": 9.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 14 clear", "start_s": 59.306, "wall_ms": 580.1, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 14 settle", "start_s": 59.886, "wall_ms": 210.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 15 fill", "start_s": 60.096, "wall_ms": 1597.5, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 15 wait text", "start_s": 61.694, "wall_ms": 475.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 15 get value", "start_s": 62.171, "wall_ms": 406.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 15 clear", "start_s": 62.578, "wall_ms": 1072.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 15 settle", "start_s": 63.651, "wall_ms": 208.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 16 fill", "start_s": 63.86, "wall_ms": 1600.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 16 wait text", "start_s": 65.461, "wall_ms": 16.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 16 get value", "start_s": 65.478, "wall_ms": 11.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 16 clear", "start_s": 65.49, "wall_ms": 535.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 16 settle", "start_s": 66.026, "wall_ms": 209.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 17 fill", "start_s": 66.236, "wall_ms": 2247.0, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 17 wait text", "start_s": 68.483, "wall_ms": 462.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 17 get value", "start_s": 68.946, "wall_ms": 412.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 17 clear", "start_s": 69.359, "wall_ms": 1269.1, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 17 settle", "start_s": 70.629, "wall_ms": 435.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 18 fill", "start_s": 71.064, "wall_ms": 1762.5, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 18 wait text", "start_s": 72.827, "wall_ms": 542.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 18 get value", "start_s": 73.371, "wall_ms": 365.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 18 clear", "start_s": 73.737, "wall_ms": 542.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 18 settle", "start_s": 74.28, "wall_ms": 209.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 19 fill", "start_s": 74.49, "wall_ms": 2247.9, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 19 wait text", "start_s": 76.738, "wall_ms": 452.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 19 get value", "start_s": 77.191, "wall_ms": 434.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 19 clear", "start_s": 77.626, "wall_ms": 1047.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 19 settle", "start_s": 78.674, "wall_ms": 200.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 20 fill", "start_s": 78.875, "wall_ms": 2048.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 20 wait text", "start_s": 80.925, "wall_ms": 437.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 20 get value", "start_s": 81.363, "wall_ms": 190.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 20 clear", "start_s": 81.553, "wall_ms": 660.6, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 20 settle", "start_s": 82.214, "wall_ms": 210.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 21 fill", "start_s": 82.426, "wall_ms": 1605.6, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 21 wait text", "start_s": 84.032, "wall_ms": 487.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 21 get value", "start_s": 84.521, "wall_ms": 391.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 21 clear", "start_s": 84.913, "wall_ms": 1077.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 21 settle", "start_s": 85.99, "wall_ms": 204.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 22 fill", "start_s": 86.195, "wall_ms": 1540.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 22 wait text", "start_s": 87.736, "wall_ms": 494.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 22 get value", "start_s": 88.231, "wall_ms": 405.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 22 clear", "start_s": 88.637, "wall_ms": 1078.2, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 22 settle", "start_s": 89.716, "wall_ms": 204.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 23 fill", "start_s": 89.921, "wall_ms": 1585.1, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 23 wait text", "start_s": 91.506, "wall_ms": 494.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 23 get value", "start_s": 92.001, "wall_ms": 394.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 23 clear", "start_s": 92.396, "wall_ms": 1091.5, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 23 settle", "start_s": 93.488, "wall_ms": 210.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 24 fill", "start_s": 93.7, "wall_ms": 1588.9, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 24 wait text", "start_s": 95.289, "wall_ms": 11.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 24 get value", "start_s": 95.301, "wall_ms": 10.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 24 clear", "start_s": 95.311, "wall_ms": 550.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 24 settle", "start_s": 95.862, "wall_ms": 208.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 25 fill", "start_s": 96.071, "wall_ms": 2253.6, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 25 wait text", "start_s": 98.325, "wall_ms": 470.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 25 get value", "start_s": 98.796, "wall_ms": 406.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 25 clear", "start_s": 99.203, "wall_ms": 1099.7, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 25 settle", "start_s": 100.303, "wall_ms": 207.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 26 fill", "start_s": 100.511, "wall_ms": 1564.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 26 wait text", "start_s": 102.076, "wall_ms": 17.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 26 get value", "start_s": 102.094, "wall_ms": 11.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 26 clear", "start_s": 102.106, "wall_ms": 561.8, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 26 settle", "start_s": 102.668, "wall_ms": 210.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 27 fill", "start_s": 102.879, "wall_ms": 1801.0, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 27 wait text", "start_s": 104.681, "wall_ms": 17.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 27 get value", "start_s": 104.699, "wall_ms": 11.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 27 clear", "start_s": 104.71, "wall_ms": 536.2, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 27 settle", "start_s": 105.247, "wall_ms": 203.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 28 fill", "start_s": 105.451, "wall_ms": 1741.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 28 wait text", "start_s": 107.193, "wall_ms": 15.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 28 get value", "start_s": 107.209, "wall_ms": 11.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 28 clear", "start_s": 107.221, "wall_ms": 532.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 28 settle", "start_s": 107.753, "wall_ms": 204.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 29 fill", "start_s": 107.958, "wall_ms": 2268.8, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 29 wait text", "start_s": 110.228, "wall_ms": 485.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 29 get value", "start_s": 110.714, "wall_ms": 389.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 29 clear", "start_s": 111.104, "wall_ms": 1073.6, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 29 settle", "start_s": 112.178, "wall_ms": 206.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 30 fill", "start_s": 112.385, "wall_ms": 1594.5, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 30 wait text", "start_s": 113.98, "wall_ms": 439.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 30 get value", "start_s": 114.42, "wall_ms": 14.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 30 clear", "start_s": 114.435, "wall_ms": 523.0, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 30 settle", "start_s": 114.959, "wall_ms": 208.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 31 fill", "start_s": 115.168, "wall_ms": 1763.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 31 wait text", "start_s": 116.932, "wall_ms": 196.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 31 get value", "start_s": 117.129, "wall_ms": 11.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 31 clear", "start_s": 117.141, "wall_ms": 660.2, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 31 settle", "start_s": 117.801, "wall_ms": 209.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 32 fill", "start_s": 118.011, "wall_ms": 1589.1, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 32 wait text", "start_s": 119.601, "wall_ms": 490.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 32 get value", "start_s": 120.091, "wall_ms": 403.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 32 clear", "start_s": 120.495, "wall_ms": 1078.9, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 32 settle", "start_s": 121.574, "wall_ms": 210.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 33 fill", "start_s": 121.785, "wall_ms": 1578.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 33 wait text", "start_s": 123.364, "wall_ms": 5.7, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 33 get value", "start_s": 123.37, "wall_ms": 5.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 33 clear", "start_s": 123.375, "wall_ms": 564.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 33 settle", "start_s": 123.94, "wall_ms": 206.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 34 fill", "start_s": 124.147, "wall_ms": 2185.3, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 34 wait text", "start_s": 126.333, "wall_ms": 516.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 34 get value", "start_s": 126.849, "wall_ms": 381.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 34 clear", "start_s": 127.231, "wall_ms": 1127.1, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 34 settle", "start_s": 128.358, "wall_ms": 210.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 35 fill", "start_s": 128.569, "wall_ms": 2044.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 35 wait text", "start_s": 130.614, "wall_ms": 436.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 35 get value", "start_s": 131.05, "wall_ms": 173.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 35 clear", "start_s": 131.223, "wall_ms": 673.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 35 settle", "start_s": 131.897, "wall_ms": 210.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 36 fill", "start_s": 132.108, "wall_ms": 1587.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 36 wait text", "start_s": 133.696, "wall_ms": 504.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 36 get value", "start_s": 134.202, "wall_ms": 390.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 36 clear", "start_s": 134.592, "wall_ms": 1088.6, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 36 settle", "start_s": 135.681, "wall_ms": 209.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 37 fill", "start_s": 135.891, "wall_ms": 2069.6, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 37 wait text", "start_s": 137.961, "wall_ms": 453.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 37 get value", "start_s": 138.415, "wall_ms": 508.9, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 37 clear", "start_s": 138.925, "wall_ms": 1017.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 37 settle", "start_s": 139.942, "wall_ms": 198.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 38 fill", "start_s": 140.142, "wall_ms": 1534.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 38 wait text", "start_s": 141.677, "wall_ms": 505.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 38 get value", "start_s": 142.183, "wall_ms": 394.6, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 38 clear", "start_s": 142.578, "wall_ms": 1096.3, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 38 settle", "start_s": 143.675, "wall_ms": 209.0, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 39 fill", "start_s": 143.884, "wall_ms": 2037.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 39 wait text", "start_s": 145.922, "wall_ms": 438.2, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 39 get value", "start_s": 146.361, "wall_ms": 455.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 39 clear", "start_s": 146.817, "wall_ms": 1051.4, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 39 settle", "start_s": 147.869, "wall_ms": 207.3, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 40 fill", "start_s": 148.077, "wall_ms": 1588.8, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 40 wait text", "start_s": 149.666, "wall_ms": 487.1, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 40 get value", "start_s": 150.153, "wall_ms": 394.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 40 clear", "start_s": 150.548, "wall_ms": 1090.7, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 40 settle", "start_s": 151.64, "wall_ms": 211.4, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 41 fill", "start_s": 151.852, "wall_ms": 2064.7, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 41 wait text", "start_s": 153.917, "wall_ms": 448.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 41 get value", "start_s": 154.366, "wall_ms": 465.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 41 clear", "start_s": 154.832, "wall_ms": 1075.7, "ok": true, "method": "direct", "error": null, "code": null}
+{"label": "entry 41 settle", "start_s": 155.908, "wall_ms": 208.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 42 fill", "start_s": 156.117, "wall_ms": 1590.4, "ok": true, "method": "keys", "error": null, "code": null}
+{"label": "entry 42 wait text", "start_s": 157.708, "wall_ms": 437.5, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 42 get value", "start_s": 158.146, "wall_ms": 13.8, "ok": true, "method": null, "error": null, "code": null}
+{"label": "entry 42 clear", "start_s": 158.16, "wall_ms": 10013.3, "ok": false, "method": null, "error": "the runner refused text_set: the text_set request 299 did not finish within its 9999 ms deadline", "code": "deadline_exceeded"}
+{"label": "after the failure snapshot", "start_s": 168.174, "wall_ms": 9874.5, "readMs": null, "servedFromReplica": null, "refs": 0, "replicaRevision": null, "ok": false, "error": "the runner refused snapshot: the runner is still serving request 299", "code": "busy"}
+{"label": "load after", "load1": 2.57}
