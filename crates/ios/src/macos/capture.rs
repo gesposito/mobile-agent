@@ -1098,6 +1098,47 @@ mod tests {
         assert!(core.host.device.captures()[0] > dvt, "DVT captures again");
     }
 
+    /// Physical-ios, task 9.8: a tunnel the driver closed itself, here
+    /// containing a phone whose runner fell silent with a call in flight,
+    /// is not opened again by the pollers whose connections it closed: they
+    /// are left out, and the next command opens the tunnel.
+    #[test]
+    fn the_pollers_open_no_tunnel_the_driver_closed() {
+        let host = showing(screen(|_, _| 120, false));
+        host.device.install_runner("0.1.0");
+        let core = core(host);
+        let options = crate::model::AttachOptions {
+            runner: crate::model::RunnerSpec::new("0.1.0"),
+            target_app: None,
+            timeout: Duration::from_secs(5),
+            input: crate::model::InputChoice::Auto,
+        };
+        core.attach(PHONE, &options).expect("attaches");
+        let stream = core.frames(PHONE, &polling()).expect("subscribed");
+        stream
+            .next(Duration::from_secs(1))
+            .expect("the first frame");
+        let opens = core.host.device.opens();
+        core.host.device.silence_runner();
+        let lost = core
+            .call(
+                PHONE,
+                protocol::message::Call::Snapshot(protocol::message::SnapshotParams::default()),
+                Duration::from_secs(10),
+            )
+            .expect_err("the runner fell silent");
+        assert_eq!(lost.code(), "disconnected", "{lost}");
+        let stats = stats_once(&stream, Duration::from_secs(2), |stats| {
+            stats.left_out.iter().all(Option::is_some)
+        });
+        assert!(
+            stats.left_out.iter().all(Option::is_some),
+            "both left out: {stats:?}"
+        );
+        assert_eq!(stats.reopens, [0, 0], "{stats:?}");
+        assert_eq!(core.host.device.opens(), opens, "no tunnel opened again");
+    }
+
     /// Physical-ios, task 9.8 (design D26): the on-demand screenshot takes
     /// CoreDevice's capture when DVT's screenshot does not answer, as it
     /// answered none in task 9.6, and keeps to it, so the next one waits for
