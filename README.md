@@ -8,7 +8,7 @@ mobile-agent drives Android devices, Android emulators, iOS Simulators and physi
 |---|---|---|
 | macOS host | Simulator, Android and physical iPhone drivers, the iPhone's only when `MOBILE_AGENT_DRIVERS` names `ios` | macOS 26.6.2, Apple M1 Max |
 | Linux host | Android driver only; the Simulator and iPhone drivers build as stubs | CI builds and tests it on `ubuntu-latest`, without a device |
-| Xcode | 26.0 up to, not including, 28; other versions are refused with `unsupported_xcode` | Xcode 27.0 (27A266a); CI also builds with Xcode 26 |
+| Xcode | for the Simulator driver, 26.0 up to, not including, 28; other versions are refused with `unsupported_xcode`. The iPhone's runner is built from Xcode's `XCTRunner.app` and iPhoneOS SDK, tried with 27.0 alone | Xcode 27.0 (27A266a); CI also builds with Xcode 26 |
 | iOS Simulator | booted Simulators; no gate on the runtime version | iOS 26.5 (23F77), iPhone 17 |
 | Android emulator | fast path through the emulator's gRPC controller when it answers, the agent's path with `--emulator-controller off` | API 36, arm64, Pixel 8 profile, Android Emulator 37.1.11 |
 | Android agent | minimum API 26: the dex is built with `--min-api 26`, and a platform member that exists only from a later level is read behind a check of the level (`agent-android/src/dev/mobileagent/agent/Levels.kt`) | API 36 on the emulator; API 27 (Android 8.1) on a Nexus 5X, from agent 0.4.3 |
