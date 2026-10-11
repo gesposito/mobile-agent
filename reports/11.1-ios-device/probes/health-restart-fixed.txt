@@ -1,0 +1,15 @@
+# Task 9.6's health check after the maintainer restarted the iPhone SE, 2026-10-11 UTC, the same release build as phase a2
+# (daemon 0.1.0+e6ec30.18dd6d8c9fc32bc2), one daemon and one runner session throughout, no other session on the phone.
+11:18:06 open --relaunch of the SwiftUI fixture's Login tab: 4096 ms with the attach (first tree 1127 ms, settled at 1806 ms);
+         status: runner 0.2.0 ready, 0 restarts, hello 787 ms after its start, no approval asked; the disk image personalized at
+         /System/Developer; 10.2 captures a second, 9 received
+11:18:10 to 11:18:44 three `screenshot` commands through DVT: 10256, 10967 and 10166 ms, each failing with
+         timeout: DVT's reply to takeScreenshot did not happen within 10s
+11:18:53 and 11:18:58 status: 11.1 captures a second, 9 received, both times
+11:19:15 to 11:21:57 the harness's text entry steps alone, up to 60 entries, no relaunch (text-hang-swiftui-restart-fixed.jsonl):
+         entries 0 to 41 whole; entry 42's emptying fill failed after 10012 ms with
+         deadline_exceeded: the runner refused text_set: the text_set request 291 did not finish within its 9999 ms deadline,
+         and the snapshot after it with busy: the runner is still serving request 291
+11:22:14 shutdown: 2142 ms, stopped, no runner process left on the phone
+# Loads: 3.20 at 11:19:15, 5.85 at 11:21:57 (another agent's builds), no launch hold (3.9 to 6.5 ms).
+# Both faults of the morning (probes/dvt-screenshot-fixed.txt, text-hang-swiftui-*.jsonl) outlast the restart.
