@@ -6,7 +6,9 @@
 //! tap lands on `row-1`, at (187.5, 46) points on the iPhone SE (3rd
 //! generation), and the fixture is launched again afterwards.
 //! `frames_series` is the measurement, run on a quiet host:
-//! `cargo test -p ios --test frames -- --ignored --nocapture frames_series`.
+//! `cargo test -p ios --test frames -- --ignored --nocapture frames_series`;
+//! `a_dvt_connection_closed_mid_session_is_opened_again` is task 9.8's
+//! device check, the same way.
 
 #![cfg(target_os = "macos")]
 
@@ -16,8 +18,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use ios::{
-    FrameOptions, FramePath, Frames, ImageFormat, Input, IosDriver, LaunchOptions, Lifecycle,
-    Point, ScreenshotOptions,
+    Capture, FrameOptions, FramePath, Frames, ImageFormat, Input, IosDriver, LaunchOptions,
+    Lifecycle, Point, ScreenshotOptions,
 };
 
 const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
@@ -222,4 +224,66 @@ fn frames_series() {
     assert_eq!(counted, 0, "no frame of a still screen counted");
     assert!(rate >= 15.0, "at least 15 captures a second: {rate:.1}");
     assert!(share < 25.0, "under a quarter of a core: {share:.1}%");
+}
+
+/// Physical-ios, task 9.8 (design D26), the device check: DVT's poller's
+/// connection, closed mid-session through the stream's test hook as a
+/// dropped connection closes, is opened again, and the poller captures again
+/// within a capture interval or so of its own, CoreDevice's poller going on
+/// meanwhile. Prints DVT's capture interval over five seconds before the
+/// close, the time to the reopen and to the first capture after it, and the
+/// stats, for the record to set beside the interval.
+#[test]
+#[ignore = "a device check of about ten seconds"]
+fn a_dvt_connection_closed_mid_session_is_opened_again() {
+    let Some(udid) = common::gated("a_dvt_connection_closed_mid_session_is_opened_again") else {
+        return;
+    };
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    on_the_list(&driver, &udid);
+    let stream = driver
+        .frames(&udid, &FrameOptions::default())
+        .expect("subscribed");
+    stream
+        .next(Duration::from_secs(3))
+        .expect("the first frame");
+    let window = Duration::from_secs(5);
+    let before = stream.stats();
+    std::thread::sleep(window);
+    let at_close = stream.stats();
+    let captured = at_close.captures[0] - before.captures[0];
+    assert!(captured > 0, "DVT's poller captures: {at_close:?}");
+    let interval = window / u32::try_from(captured).unwrap_or(u32::MAX);
+    let closed = Instant::now();
+    stream.close_connection(Capture::Dvt);
+    let until = |done: &dyn Fn(&ios::FrameStats) -> bool| {
+        while closed.elapsed() < Duration::from_secs(10) {
+            if done(&stream.stats()) {
+                return Some(closed.elapsed());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        None
+    };
+    let reopened = until(&|stats| stats.reopens[0] >= 1);
+    let counted = stream.stats().captures[0];
+    let captures_again = until(&|stats| stats.captures[0] > counted);
+    let stats = stream.stats();
+    eprintln!(
+        "DVT's poller: a capture every {:.1} ms over {window:?} before the close ({captured} \
+         captures); after the close, reopened at {reopened:?} and capturing again at \
+         {captures_again:?}; CoreDevice's {} captures during; {stats:?}",
+        interval.as_secs_f64() * 1e3,
+        stats.captures[1] - at_close.captures[1],
+    );
+    drop(stream);
+    assert_eq!(stats.reopens, [1, 0], "{stats:?}");
+    assert_eq!(stats.left_out, [None, None], "{stats:?}");
+    let again = captures_again.expect("DVT's poller captures again");
+    assert!(
+        again < Duration::from_secs(1),
+        "{again:?} to capture again, against a capture every {interval:?}"
+    );
+    on_the_list(&driver, &udid);
 }
