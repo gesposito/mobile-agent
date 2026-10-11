@@ -20,8 +20,9 @@
 //! which [`FakeDriver::with_readiness`] can list in a readiness state that
 //! refuses an attach, as that driver lists a phone that is not ready. Each
 //! attach of a fake iPhone starts a runner of its own, ending the ones a
-//! lost session left on the phone first, and [`FakeDriver::with_lost_runner`]
-//! loses the first one's connection, its restart failing. A latency
+//! lost session left on the phone first, [`FakeDriver::with_lost_runner`]
+//! loses the first one's connection, its restart failing, and
+//! [`FakeDriver::stall_runner`] stalls the runner serving. A latency
 //! (`MOBILE_AGENT_FAKE_LATENCY_MS`) delays every change,
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
@@ -153,6 +154,9 @@ struct PhoneRunners {
     running: HashMap<String, Vec<u32>>,
     /// How many times each phone was attached.
     attaches: HashMap<String, u32>,
+    /// The stalls [`FakeDriver::stall_runner`] put each phone's runner
+    /// through since its attach.
+    stalls: HashMap<String, u32>,
 }
 
 /// What a fake driver's iPhones keep across attaches: their runner
@@ -184,6 +188,7 @@ impl Runners {
         state.next_pid += 1;
         let pid = 1000 + state.next_pid;
         let leftovers = state.running.insert(id.to_owned(), vec![pid]);
+        state.stalls.remove(id);
         FakeRunner {
             runners: self.clone(),
             target: id.to_owned(),
@@ -209,6 +214,16 @@ pub(crate) struct FakeRunner {
 }
 
 impl FakeRunner {
+    /// The stalls its phone's runner was put through since the attach.
+    pub fn stalls(&self) -> u32 {
+        self.runners
+            .state()
+            .stalls
+            .get(&self.target)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Ends the runner as a release does, unless its connection was lost:
     /// a silent runner stays on the phone until the next attach ends it.
     pub fn release(&self, lost: bool) {
@@ -422,6 +437,25 @@ impl FakeDriver {
     pub fn with_lost_runner(mut self, after: Duration) -> FakeDriver {
         self.lost_runner = Some(after);
         self
+    }
+
+    /// Stalls the runner of the fake iPhone `id`'s attachment, as a physical
+    /// iPhone's stalled on the 43rd emptying fill of every session in task
+    /// 9.6 of physical-ios: the next tree read or text entry, which go
+    /// through the runner, fails as the physical driver fails the call that
+    /// finds a runner stalled (design D26), `runner_stalled`, which can be
+    /// repeated, at the first stall since the attach, the runner started
+    /// again and its status counting the restart; `disconnected` from the
+    /// second, the session failed as a runner that died again after its
+    /// restart, and a release ends the stalled runner. Taps, swipes and keys
+    /// go through `dtuhidd`, which a stalled runner leaves alone.
+    pub fn stall_runner(&self, id: &str) {
+        *self
+            .runners
+            .state()
+            .stalls
+            .entry(id.to_owned())
+            .or_default() += 1;
     }
 
     /// The runner processes on the fake iPhone `id` now, by pid.

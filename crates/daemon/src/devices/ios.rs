@@ -1494,6 +1494,34 @@ mod tests {
         );
     }
 
+    /// Physical-ios, task 9.7 (design D26): a call the driver fails because
+    /// the runner stalled keeps its `runner_stalled` code and can be
+    /// repeated, so a read retries it, waiting for the runner's restart, and
+    /// the worker keeps the target attached; a second stall, which fails the
+    /// session as a runner that died again after its restart, reaches the
+    /// daemon as `disconnected`, which detaches the target.
+    #[test]
+    fn a_call_the_stalled_runner_failed_can_be_repeated_and_a_second_stall_is_disconnected() {
+        let cause = "2 calls in a row were answered deadline_exceeded or busy";
+        let stalled = error(&ios::Error::RunnerStalled {
+            target: PHONE.into(),
+            method: "text_set".into(),
+            cause: cause.into(),
+        });
+        assert_eq!(stalled.code, "runner_stalled", "{stalled:?}");
+        assert!(stalled.retryable, "{stalled:?}");
+        assert!(
+            stalled.message.contains("stalled on text_set") && stalled.message.contains(cause),
+            "{stalled:?}"
+        );
+        let again = error(&ios::Error::RunnerDied {
+            target: PHONE.into(),
+            cause: format!("it stalled: {cause}, after it was started again once"),
+        });
+        assert_eq!(again.code, "disconnected", "{again:?}");
+        assert!(!again.retryable);
+    }
+
     /// Task 5.1: iOS key codes are keyboard usages with the HID modifier
     /// byte, or consumer-page buttons, as on the Simulator.
     #[test]

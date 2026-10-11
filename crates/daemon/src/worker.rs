@@ -840,6 +840,85 @@ mod tests {
         phone.join(Instant::now() + Duration::from_secs(2));
     }
 
+    /// Text through the runner of `target`, into the field with the focus,
+    /// if any.
+    fn enter_text(target: &mut Attached) -> Outcome {
+        target
+            .mirror
+            .act(&Action::Text {
+                text: String::new(),
+                into: None,
+                method: protocol::message::TextMethod::DIRECT,
+            })
+            .map(|_| Success::new(serde_json::json!({})))
+            .map_err(Failure::from)
+    }
+
+    /// Physical-ios, task 9.7 (design D26; spec `ios-device-driver`,
+    /// "Failure containment"): on a fake iPhone whose runner stalls, as the
+    /// phone's did on its 43rd emptying fill in task 9.6, the command that
+    /// meets the stall fails `runner_stalled`, and the worker keeps the
+    /// target attached, its status counting the runner's restart and naming
+    /// the stall; the next command is served by the same attachment. The
+    /// command that meets a second stall fails `disconnected`, and the
+    /// worker detaches the target, whose release ends the stalled runner, so
+    /// the next command attaches again; stopping the worker of a phone whose
+    /// runner stalled ends the runner within the daemon's 5 s stop.
+    #[test]
+    fn a_fake_iphones_stalled_runner_is_started_again_and_a_second_stall_detaches_the_target() {
+        let fake = Arc::new(FakeDriver::parse("ios-device").unwrap());
+        let driver: Arc<dyn Driver> = Arc::clone(&fake) as Arc<dyn Driver>;
+        let info = driver.discover().unwrap().remove(0);
+        let phone = Worker::spawn(info.clone(), Arc::clone(&driver));
+        let run =
+            |task: fn(&mut Attached) -> Outcome| phone.handle().run(AttachOptions::default(), task);
+        run(look).expect("the phone serves");
+
+        fake.stall_runner(&info.id);
+        let stalled = run(enter_text).expect_err("the stall");
+        assert_eq!(stalled.code, "runner_stalled", "{stalled:?}");
+        assert!(stalled.message.contains("stalled"), "{stalled:?}");
+        let status = phone.status();
+        assert!(status.attached, "kept attached");
+        assert_eq!(status.attaches, 1);
+        let runner = runner_of(&phone);
+        assert_eq!(runner["restarts"], 1, "{runner}");
+        assert_eq!(runner["state"], "ready", "{runner}");
+        assert!(
+            runner["lastDeath"]
+                .as_str()
+                .is_some_and(|death| death.contains("stalled")),
+            "{runner}"
+        );
+        run(enter_text).expect("served after the restart");
+        assert_eq!(phone.status().attaches, 1, "no new attach");
+
+        fake.stall_runner(&info.id);
+        let lost = run(enter_text).expect_err("the second stall");
+        assert_eq!(lost.code, "disconnected", "{lost:?}");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while phone.status().attached && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!phone.status().attached, "detached at the second stall");
+        assert!(
+            fake.runners_on(&info.id).is_empty(),
+            "the release ended the stalled runner"
+        );
+        run(enter_text).expect("attached again");
+        assert_eq!(phone.status().attaches, 2);
+
+        fake.stall_runner(&info.id);
+        let stopping = Instant::now();
+        phone.signal_stop();
+        assert!(phone.join(stopping + crate::registry::STOP_WAIT), "stopped");
+        assert!(stopping.elapsed() < crate::registry::STOP_WAIT);
+        assert!(
+            fake.runners_on(&info.id).is_empty(),
+            "the stop ended the stalled runner"
+        );
+    }
+
     #[test]
     fn a_target_without_frames_never_waits() {
         let mut target = attached("android:R58M123", Duration::from_millis(60));

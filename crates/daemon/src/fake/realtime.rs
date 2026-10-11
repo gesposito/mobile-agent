@@ -23,7 +23,9 @@
 //! placeholder app's layout moves its submit button above the keyboard some
 //! time after that, in no frame. A fake iPhone's runner can lose its
 //! connection some time after the attach, its restart failing: its tree
-//! reads and input then fail `disconnected`.
+//! reads and input then fail `disconnected`. It can stall too: the tree read
+//! or text entry that meets the stall fails as the physical driver fails it,
+//! `runner_stalled` at the first stall and `disconnected` from the second.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -149,6 +151,9 @@ struct Shared {
     captures: Option<Captures>,
     /// For a fake iPhone, the runner its attach started.
     runner: Option<FakeRunner>,
+    /// For a fake iPhone, the stalls of its runner a tree read or text
+    /// entry met so far.
+    stalls_met: Mutex<u32>,
     /// When the target was attached.
     attached_at: Instant,
 }
@@ -272,6 +277,38 @@ impl Shared {
                 ),
             )
         })
+    }
+
+    /// What a fake iPhone's tree read or text entry, which go through its
+    /// runner, fails with once the runner was stalled since the call before:
+    /// the physical driver's `runner_stalled`, which can be repeated, at
+    /// the first stall, its runner started again; from the second on, the
+    /// session failed as a runner that died again after its restart, which
+    /// the adapter reports as `disconnected`.
+    fn stalled(&self) -> Option<BackendError> {
+        let runner = self.runner.as_ref()?;
+        let stalls = runner.stalls();
+        let mut met = lock(&self.stalls_met);
+        if stalls > *met {
+            *met += 1;
+        } else if *met < 2 {
+            return None;
+        }
+        let cause = "2 calls in a row were answered deadline_exceeded or busy, with no other \
+                     answer between them";
+        let error = if *met == 1 {
+            ios::Error::RunnerStalled {
+                target: runner.target.clone(),
+                method: "text_set".to_owned(),
+                cause: cause.to_owned(),
+            }
+        } else {
+            ios::Error::RunnerDied {
+                target: runner.target.clone(),
+                cause: format!("it stalled: {cause}, after it was started again once"),
+            }
+        };
+        Some(device::error(&error))
     }
 
     /// Advances the fake clock to the system clock and returns the time.
@@ -538,10 +575,15 @@ struct DeviceReport(Arc<Shared>);
 
 impl Report for DeviceReport {
     fn report(&self) -> TargetReport {
+        let stalls = *lock(&self.0.stalls_met);
         let state = match self.0.lost() {
             Some(lost) => ios::RunnerState::Failed {
                 code: "disconnected",
                 message: lost.message,
+            },
+            None if stalls >= 2 => ios::RunnerState::Failed {
+                code: "runner_died",
+                message: "the runner stalled again after it was started again once".to_owned(),
             },
             None => ios::RunnerState::Ready,
         };
@@ -552,12 +594,18 @@ impl Report for DeviceReport {
                 | protocol::Capabilities::INPUT
                 | protocol::Capabilities::SCREENSHOT
                 | protocol::Capabilities::TEXT_SET,
+            restarts: stalls.min(1),
             leftovers: self
                 .0
                 .runner
                 .as_ref()
                 .map(|runner| runner.leftovers.clone())
                 .unwrap_or_default(),
+            last_death: (stalls > 0).then(|| {
+                "it stalled: 2 calls in a row were answered deadline_exceeded or busy, with no \
+                 other answer between them"
+                    .to_owned()
+            }),
             ..ios::RunnerStatus::starting("the hello")
         };
         let status = ios::TargetStatus {
@@ -646,6 +694,7 @@ pub(crate) fn attach(
             subscribed,
         }),
         runner,
+        stalls_met: Mutex::new(0),
         attached_at: Instant::now(),
     });
     shared.show(&lock(&shared.device), Change::Content);
@@ -689,7 +738,7 @@ struct Part {
 impl TreeSource for Part {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
         self.shared.sync();
-        if let Some(lost) = self.shared.lost() {
+        if let Some(lost) = self.shared.lost().or_else(|| self.shared.stalled()) {
             return Err(lost);
         }
         self.target.read(request)
@@ -740,6 +789,12 @@ impl InputSink for Part {
         self.shared.sync();
         if let Some(lost) = self.shared.lost() {
             return Err(lost);
+        }
+        // Text goes through the runner, the rest through dtuhidd.
+        if matches!(input, Input::Text { .. })
+            && let Some(stalled) = self.shared.stalled()
+        {
+            return Err(stalled);
         }
         let mut ack = self.target.perform(input)?;
         let mut device = lock(&self.shared.device);
