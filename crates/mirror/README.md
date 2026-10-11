@@ -535,7 +535,7 @@ apps, in device points with the scale beside them:
 | `login-ios` | SwiftUI login read by the Simulator's in-guest reader |
 | `alert` | the SwiftUI login under its in-app alert, with the covered screen still in the read |
 | `alert-message-ios` | the SwiftUI System tab under its in-app alert, read by the Simulator's in-guest reader on an iPhone 17 (physical-ios task 9.5): the title and message in a scroll view followed by its scroll indicators, each listed twice, their 30-point frames along the view's edges, the horizontal one over the message |
-| `alert-message-se` | the same alert as the runner reads it on an iPhone SE (3rd generation), where the message fits and each indicator reads 1 page |
+| `alert-message-se` | the same alert as the runner read it on an iPhone SE (3rd generation), the alert's view an `XCUIElementTypeAlert`, where the message fits and each indicator reads 1 page; the glass views and the app window's wrappers trimmed |
 | `system-alert` | a location prompt in SpringBoard's tree |
 | `login-translator` | the SwiftUI login as the host translator flattens it (fallback backend) |
 | `sparse` | an application root alone |

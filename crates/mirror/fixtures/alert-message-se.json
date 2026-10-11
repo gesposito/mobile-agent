@@ -1,84 +1,95 @@
 {
-  "description": "The same in-app alert on a physical iPhone SE (3rd generation), 375 by 667 points, as the runner reads it (physical-ios task 9.5): the alert controller's views of alert-message-ios centred on the smaller screen, where the message fits its scroll view, so both of that view's indicators read 1 page, as the phone's listing names them (reports/11.1-ios-device/probes/alert-swiftui.txt); the message lies wholly inside the horizontal indicator's frame. The app's window keeps the System tab under the alert, trimmed. iOS points, scale 2.",
+  "description": "The same in-app alert on a physical iPhone SE (3rd generation), 375 by 667 points, as the runner read it on 2026-10-11 (physical-ios task 9.5, reports/11.1-ios-device/probes/alert-tree-swiftui-9x.txt): XCTest names the alert controller's view XCUIElementTypeAlert, the message fits its scroll view, so both of that view's indicators read 1 page, and it lies wholly inside the horizontal indicator's frame. The glass views below the alert's content and the app window's wrappers are trimmed. iOS points, scale 2.",
   "backend": {"name": "ios-runner", "fallback": false},
   "scale": 2,
   "windows": [
     {
-      "id": 1073741825, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.swiftui",
+      "id": 1073763256, "kind": "application", "layer": 1, "package": "dev.mobileagent.fixture.swiftui",
       "title": "In-app alert", "bounds": [0, 0, 375, 667], "flags": ["active", "focused"], "events": false, "modal": true,
       "root": {"class": "UITransitionView", "bounds": [0, 0, 375, 667], "children": [
         {"class": "UIView", "bounds": [0, 0, 375, 667]},
         {"class": "UIView", "bounds": [0, 0, 375, 667]},
-        {"class": "_UIAlertControllerPhoneTVMacView", "desc": "In-app alert", "bounds": [27.5, 271.5, 347.5, 423.5], "children": [
-          {"class": "UIView", "bounds": [27.5, 271.5, 347.5, 423.5], "children": [
-            {"class": "_UIAlertControllerInterfaceActionGroupView", "bounds": [27.5, 271.5, 347.5, 423.5], "children": [
-              {"class": "_UIAlertBackground", "bounds": [27.5, 271.5, 347.5, 423.5]},
-              {"class": "UIView", "bounds": [27.5, 271.5, 347.5, 423.5], "children": [
-                {"class": "XCUIElementTypeScrollView", "bounds": [27.5, 271.5, 347.5, 343.5], "flags": ["scrollable"], "children": [
-                  {"class": "_UIAlertControllerLayoutObservingContainerView", "bounds": [27.5, 271.5, 347.5, 343.5], "children": [
-                    {"class": "XCUIElementTypeStaticText", "desc": "In-app alert", "bounds": [57.5, 293.5, 317.5, 313.5]},
-                    {"class": "XCUIElementTypeStaticText", "desc": "This alert is presented by the app.", "bounds": [57.5, 321, 317.5, 339]}
+        {"class": "XCUIElementTypeAlert", "desc": "In-app alert", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+          {"class": "UIView", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+            {"class": "_UIAlertControllerInterfaceActionGroupView", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+              {"class": "_UIAlertBackground", "bounds": [27.5, 267.5, 347.5, 419.5]},
+              {"class": "UIView", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+                {"class": "XCUIElementTypeScrollView", "bounds": [27.5, 267.5, 347.5, 339.5], "flags": ["scrollable"], "children": [
+                  {"class": "_UIAlertControllerLayoutObservingContainerView", "bounds": [27.5, 267.5, 347.5, 339.5], "children": [
+                    {"class": "XCUIElementTypeStaticText", "desc": "In-app alert", "bounds": [57.5, 289.5, 317.5, 310]},
+                    {"class": "XCUIElementTypeStaticText", "desc": "This alert is presented by the app.", "bounds": [57.5, 317, 317.5, 335]}
                   ]},
-                  {"class": "_UIAlertControllerGradientView", "bounds": [27.5, 341.5, 347.5, 343.5]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 271.5, 344.5, 343.5], "children": [
-                    {"class": "UIView", "bounds": [341.5, 232.5, 344.5, 268.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 267.5, 344.5, 339.5], "children": [
+                    {"class": "UIView", "bounds": [341.5, 228.5, 344.5, 264.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 310.5, 347.5, 340.5], "children": [
-                    {"class": "UIView", "bounds": [0, 337.5, 24.5, 340.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 306.5, 347.5, 336.5], "children": [
+                    {"class": "UIView", "bounds": [-11.5, 333.5, 24.5, 336.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 271.5, 344.5, 343.5], "children": [
-                    {"class": "UIView", "bounds": [341.5, 232.5, 344.5, 268.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 267.5, 344.5, 339.5], "children": [
+                    {"class": "UIView", "bounds": [341.5, 228.5, 344.5, 264.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 310.5, 347.5, 340.5], "children": [
-                    {"class": "UIView", "bounds": [0, 337.5, 24.5, 340.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 306.5, 347.5, 336.5], "children": [
+                    {"class": "UIView", "bounds": [-11.5, 333.5, 24.5, 336.5]}
                   ]}
                 ]},
-                {"class": "XCUIElementTypeScrollView", "bounds": [27.5, 343.5, 347.5, 423.5], "flags": ["scrollable"], "children": [
-                  {"class": "_UIInterfaceActionSeparatableSequenceView", "bounds": [27.5, 343.5, 347.5, 423.5], "children": [
-                    {"class": "UIStackView", "bounds": [43.5, 359.5, 331.5, 407.5], "children": [
-                      {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.5, 359.5, 331.5, 407.5], "flags": ["clickable"], "children": [
-                        {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.5, 359.5, 331.5, 407.5], "flags": ["clickable"]}
+                {"class": "XCUIElementTypeScrollView", "bounds": [27.5, 339.5, 347.5, 419.5], "flags": ["scrollable"], "children": [
+                  {"class": "_UIInterfaceActionSeparatableSequenceView", "bounds": [27.5, 339.5, 347.5, 419.5], "children": [
+                    {"class": "UIStackView", "bounds": [43.5, 355.5, 331.5, 403.5], "children": [
+                      {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.5, 355.5, 331.5, 403.5], "flags": ["clickable"], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.5, 355.5, 331.5, 403.5], "flags": ["clickable"]}
                       ]}
                     ]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 343.5, 344.5, 423.5], "children": [
-                    {"class": "UIView", "bounds": [341.5, 433.5, 344.5, 440.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 339.5, 344.5, 419.5], "children": [
+                    {"class": "UIView", "bounds": [341.5, 429.5, 344.5, 436.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 390.5, 347.5, 420.5], "children": [
-                    {"class": "UIView", "bounds": [117.5, 417.5, 124.5, 420.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 386.5, 347.5, 416.5], "children": [
+                    {"class": "UIView", "bounds": [117.5, 413.5, 124.5, 416.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 343.5, 344.5, 423.5], "children": [
-                    {"class": "UIView", "bounds": [341.5, 433.5, 344.5, 440.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.5, 339.5, 344.5, 419.5], "children": [
+                    {"class": "UIView", "bounds": [341.5, 429.5, 344.5, 436.5]}
                   ]},
-                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 390.5, 347.5, 420.5], "children": [
-                    {"class": "UIView", "bounds": [117.5, 417.5, 124.5, 420.5]}
+                  {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.5, 386.5, 347.5, 416.5], "children": [
+                    {"class": "UIView", "bounds": [117.5, 413.5, 124.5, 416.5]}
                   ]}
                 ]}
               ]}
             ]}
           ]},
-          {"class": "UIKit._GlassGroupView", "bounds": [27.5, 271.5, 347.5, 423.5], "children": [
-            {"class": "UIKit._UIMaterialDefinitionView", "bounds": [27.5, 271.5, 347.5, 423.5]}
+          {"class": "UIKit._GlassGroupView", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+            {"class": "_TtC5UIKitP33_0A8B4DB961B57EBA158E8356A5AC0B1F19GlassGroupLayerView", "bounds": [27.5, 267.5, 347.5, 419.5], "children": [
+              {"class": "UIKit._UIMaterialDefinitionView", "bounds": [27.5, 267.5, 347.5, 419.5]}
+            ]}
           ]}
         ]}
       ]}
     },
     {
-      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui",
+      "id": 21432, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui",
       "title": "FixtureSwiftUI", "bounds": [0, 0, 375, 667], "events": false,
       "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 375, 667], "children": [
         {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 375, 667], "children": [
-          {"class": "SwiftUI.AccessibilityNode", "bounds": [0, 0, 375, 667], "children": [
-            {"class": "XCUIElementTypeButton", "id": "system-permission", "desc": "Request location permission", "bounds": [16, 36, 254.5, 70.5], "flags": ["clickable"]},
-            {"class": "XCUIElementTypeStaticText", "id": "system-permission-status", "desc": "Permission: unknown", "bounds": [16, 86.5, 177.5, 106.5]},
-            {"class": "XCUIElementTypeButton", "id": "system-alert", "desc": "Show in-app alert", "bounds": [16, 122.5, 174.5, 157], "flags": ["clickable"]}
+          {"class": "UIResponder", "bounds": [0, 0, 375, 667], "children": [
+            {"class": "XCUIElementTypeButton", "id": "system-permission", "desc": "Request location permission", "bounds": [16, 36, 255, 70.5], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeStaticText", "id": "system-permission-status", "desc": "Permission: denied", "bounds": [16, 86.5, 160.5, 107]},
+            {"class": "XCUIElementTypeButton", "id": "system-alert", "desc": "Show in-app alert", "bounds": [16, 123, 174.5, 157.5], "flags": ["clickable"]}
           ]},
-          {"class": "XCUIElementTypeTabBar", "desc": "Tab Bar", "bounds": [0, 580, 375, 667], "children": [
-            {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [16, 588, 82, 642], "flags": ["clickable"]},
-            {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [88, 588, 162, 642], "flags": ["clickable"]},
-            {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [162, 588, 226, 642], "flags": ["clickable"]},
-            {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [226, 588, 292, 642], "flags": ["clickable"]},
-            {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [292, 588, 358, 642], "flags": ["clickable", "selected"]}
+          {"class": "XCUIElementTypeTabBar", "desc": "Tab Bar", "bounds": [0, 584, 375, 667], "children": [
+            {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [25, 588, 99, 642], "flags": ["clickable"], "children": [
+              {"class": "XCUIElementTypeImage", "id": "person.crop.circle", "desc": "account", "bounds": [48, 594, 75.5, 621.5]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [88, 588, 162, 642], "flags": ["clickable"], "children": [
+              {"class": "XCUIElementTypeImage", "id": "list.bullet", "desc": "List", "bounds": [110, 597.5, 139.5, 618.5]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [150.5, 588, 224.5, 642], "flags": ["clickable"], "children": [
+              {"class": "XCUIElementTypeImage", "id": "square.grid.3x3", "desc": "square.grid.3x3", "bounds": [173.5, 595, 202.5, 621.5]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [213.5, 588, 287.5, 642], "flags": ["clickable"], "children": [
+              {"class": "XCUIElementTypeImage", "id": "arrow.triangle.2.circlepath", "desc": "syncing", "bounds": [236, 594, 264.5, 621.5]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [276, 588, 350, 642], "flags": ["clickable", "selected"], "children": [
+              {"class": "XCUIElementTypeImage", "id": "exclamationmark.bubble", "desc": "Alert", "bounds": [297, 594.5, 328.5, 622.5]}
+            ]}
           ]}
         ]}
       ]}
