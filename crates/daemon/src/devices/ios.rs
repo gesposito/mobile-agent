@@ -33,8 +33,10 @@
 //!   replaces it.
 //! - Apps launch through DVT's process control with their launch
 //!   environment; a relaunch ends the running instance first.
-//! - Screenshots come from DVT on demand; `status` names the input path,
-//!   the frames and their capture rate, the runner and the tunnel.
+//! - Screenshots come from DVT on demand, from CoreDevice where DVT's
+//!   fails; `status` names the input path, the frames and their capture
+//!   rate, a screenshot poller reopened or left out, the runner and the
+//!   tunnel.
 //! - Dropping the attachment releases the runner, which ends its process,
 //!   and closes what the driver opened for the device.
 
@@ -254,10 +256,29 @@ impl Shared {
     }
 
     fn facts(&self) -> Facts {
-        let capture_rate = self.stream.as_ref().and_then(|stream| {
-            let stats = stream.stats();
+        let stats = self.stream.as_ref().map(FrameStream::stats);
+        let pollers: Vec<Poller> = stats
+            .as_ref()
+            .map(|stats| {
+                [ios::Capture::Dvt, ios::Capture::CoreDevice]
+                    .into_iter()
+                    .map(|connection| Poller {
+                        connection,
+                        captures: stats.captures[connection.index()],
+                        reopens: stats.reopens[connection.index()],
+                        left_out: stats.left_out[connection.index()].clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // A poller left out of the frames counts no more.
+        let capture_rate = stats.as_ref().and_then(|stats| {
             let seconds = stats.elapsed.as_secs_f64();
-            let captures: u64 = stats.captures.iter().sum();
+            let captures: u64 = pollers
+                .iter()
+                .filter(|poller| poller.left_out.is_none())
+                .map(|poller| poller.captures)
+                .sum();
             (seconds > 0.0).then(|| (captures as f64 / seconds * 10.0).round() / 10.0)
         });
         Facts {
@@ -266,7 +287,7 @@ impl Shared {
             last_input: *lock(&self.last_input),
             frames: self.frames.load(Ordering::Relaxed),
             capture_rate,
-            pollers: Vec::new(),
+            pollers,
             frame_error: self.frame_error.clone(),
             bundle: Some(self.bundle.clone()),
             battery: self.battery,
@@ -910,6 +931,14 @@ fn path_name(path: InputPath) -> &'static str {
     }
 }
 
+/// A screenshot connection's name in `status`'s lines.
+fn connection_name(connection: ios::Capture) -> &'static str {
+    match connection {
+        ios::Capture::Dvt => "DVT",
+        ios::Capture::CoreDevice => "CoreDevice",
+    }
+}
+
 /// `count` and `noun`, plural unless the count is one.
 fn counted(count: u64, noun: &str) -> String {
     if count == 1 {
@@ -921,9 +950,11 @@ fn counted(count: u64, noun: &str) -> String {
 
 /// What `status` shows about an attached iPhone: the input path and why,
 /// with text through the runner; the frames, screenshots polled at the
-/// device's rate; the runner, its agent, state, restarts, start and the
-/// leftovers of a lost session its start ended; the tunnel and the disk
-/// image; the runner bundle; the battery as the attach read it.
+/// device's rate, on the connections still polled, a poller that reopened
+/// its connection or was left out named with why; the runner, its agent,
+/// state, restarts, start and the leftovers of a lost session its start
+/// ended; the tunnel and the disk image; the runner bundle; the battery as
+/// the attach read it.
 pub(crate) fn status_report(status: &TargetStatus, facts: &Facts) -> TargetReport {
     let mut data = Map::new();
     let mut lines = Vec::new();
@@ -954,10 +985,40 @@ pub(crate) fn status_report(status: &TargetStatus, facts: &Facts) -> TargetRepor
                 || "no capture yet".to_owned(),
                 |rate| format!("{rate:.1} captures a second"),
             );
-            lines.push(format!(
-                "frames: screenshots polled on DVT and CoreDevice, {rate}, {} received",
-                facts.frames
-            ));
+            let polling: Vec<&str> = if facts.pollers.is_empty() {
+                vec!["DVT", "CoreDevice"]
+            } else {
+                facts
+                    .pollers
+                    .iter()
+                    .filter(|poller| poller.left_out.is_none())
+                    .map(|poller| connection_name(poller.connection))
+                    .collect()
+            };
+            let mut line = if polling.is_empty() {
+                format!(
+                    "frames: screenshots no longer polled, {} received",
+                    facts.frames
+                )
+            } else {
+                format!(
+                    "frames: screenshots polled on {}, {rate}, {} received",
+                    polling.join(" and "),
+                    facts.frames
+                )
+            };
+            for poller in &facts.pollers {
+                let name = connection_name(poller.connection);
+                match (&poller.left_out, poller.reopens) {
+                    (Some(why), _) => line.push_str(&format!("; {name} left out: {why}")),
+                    (None, 0) => {}
+                    (None, 1) => line.push_str(&format!("; {name}'s connection reopened once")),
+                    (None, reopens) => {
+                        line.push_str(&format!("; {name}'s connection reopened {reopens} times"))
+                    }
+                }
+            }
+            lines.push(line);
             data.insert("frames".into(), "screenshots".into());
         }
         Some(failure) => {
@@ -968,6 +1029,24 @@ pub(crate) fn status_report(status: &TargetStatus, facts: &Facts) -> TargetRepor
         }
     }
     data.insert("captureRate".into(), facts.capture_rate.into());
+    data.insert(
+        "pollers".into(),
+        facts
+            .pollers
+            .iter()
+            .map(|poller| {
+                json!({
+                    "connection": match poller.connection {
+                        ios::Capture::Dvt => "dvt",
+                        ios::Capture::CoreDevice => "coreDevice",
+                    },
+                    "captures": poller.captures,
+                    "reopens": poller.reopens,
+                    "leftOut": poller.left_out,
+                })
+            })
+            .collect(),
+    );
     data.insert("framesReceived".into(), facts.frames.into());
     data.insert("frameError".into(), facts.frame_error.clone().into());
 
