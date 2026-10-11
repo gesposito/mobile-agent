@@ -1,0 +1,2 @@
+15:59:56 before g2-expo-list-scroll-fixed: open 3800 ms ok True; after 15 s captureRate 8.5, pollers [('dvt', 0, 0, None), ('coreDevice', 144, 0, None)], runner ('ready', 0); screenshot 10344 ms ok True; shutdown 1192 ms
+16:24:45 after g2-expo-list-scroll-fixed: open 4797 ms ok True; after 15 s captureRate None, pollers [], runner ('ready', 0); screenshot 279 ms ok True; shutdown 631 ms

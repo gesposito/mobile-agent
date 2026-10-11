@@ -1,0 +1,802 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-11T16:00:29Z",
+    "finished_at": "2026-10-11T16:24:44Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.02,
+        2.49,
+        3.39
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "b334d8ed7f068344b924c8035c1e0aa0fd85fb48",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "expo",
+            "bundle": "fixtures/expo/build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app",
+            "elapsed_us": 2659408
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 25749859,
+        "p95_us": 33046161,
+        "max_us": 54251532
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26006338,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25141184,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25935802,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 24827856,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25566857,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25457367,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25870167,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25848527,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25984342,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25877956,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25817385,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26145208,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25684281,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25954017,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25843050,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26412634,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25851239,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25749859,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26263772,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25954893,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26196022,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25983087,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26299716,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25697537,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26260868,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26452644,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26201633,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26352056,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25439690,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25835592,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25254582,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25604529,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25253187,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25569193,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25185234,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25206946,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25798865,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25555311,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25484940,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25497659,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25393059,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25785659,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25519557,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25298173,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25707012,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25532298,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25101850,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25511942,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25090464,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25691708,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 54251532,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 50872393,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 33046161,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 1955922,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
