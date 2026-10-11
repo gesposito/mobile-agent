@@ -1,0 +1,157 @@
+# The SwiftUI fixture's System tab under its in-app alert, read by the runner on the iPhone SE, 2026-10-11 08:25 UTC (physical-ios task 9.5), in the mirror fixtures' JSON shape at 2 pixels a point (flags_raw is the read's flags), each window after its WINDOW line, then the mirror's full listing of the read; crates/mirror/fixtures/alert-message-se.json is this read with the glass views and the app window's wrappers trimmed; the identifier written as IPHONE-SE-UDID.
+WINDOW id=1073763256 kind=WindowType(application) layer=1 title=Some("In-app alert") modal=true events=Some(false) owner=None flags=active | focused bounds=[0, 0, 375, 667]
+{"class": "UITransitionView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+  {"class": "UIView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible"},
+  {"class": "UIView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible"},
+  {"class": "XCUIElementTypeAlert", "desc": "In-app alert", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+    {"class": "UIView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+      {"class": "_UIAlertControllerInterfaceActionGroupView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+        {"class": "_UIAlertBackground", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible"},
+        {"class": "UIView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+          {"class": "XCUIElementTypeScrollView", "bounds": [27.500, 267.500, 347.500, 339.500], "flags_raw": "enabled | scrollable | visible", "children": [
+            {"class": "_UIAlertControllerLayoutObservingContainerView", "bounds": [27.500, 267.500, 347.500, 339.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "XCUIElementTypeStaticText", "desc": "In-app alert", "bounds": [57.500, 289.500, 317.500, 310], "flags_raw": "enabled | visible"},
+              {"class": "XCUIElementTypeStaticText", "desc": "This alert is presented by the app.", "bounds": [57.500, 317, 317.500, 335], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.500, 267.500, 344.500, 339.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [341.500, 228.500, 344.500, 264.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.500, 306.500, 347.500, 336.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [-11.500, 333.500, 24.500, 336.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.500, 267.500, 344.500, 339.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [341.500, 228.500, 344.500, 264.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.500, 306.500, 347.500, 336.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [-11.500, 333.500, 24.500, 336.500], "flags_raw": "enabled | visible"}
+            ]}
+          ]},
+          {"class": "XCUIElementTypeScrollView", "bounds": [27.500, 339.500, 347.500, 419.500], "flags_raw": "enabled | scrollable | visible", "children": [
+            {"class": "_UIInterfaceActionSeparatableSequenceView", "bounds": [27.500, 339.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIStackView", "bounds": [43.500, 355.500, 331.500, 403.500], "flags_raw": "enabled | visible", "children": [
+                {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.500, 355.500, 331.500, 403.500], "flags_raw": "clickable | enabled | visible", "children": [
+                  {"class": "XCUIElementTypeButton", "id": "inapp-alert-ok", "desc": "OK", "bounds": [43.500, 355.500, 331.500, 403.500], "flags_raw": "clickable | enabled | visible"}
+                ]}
+              ]}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.500, 339.500, 344.500, 419.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [341.500, 429.500, 344.500, 436.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.500, 386.500, 347.500, 416.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [117.500, 413.500, 124.500, 416.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Vertical scroll bar, 1 page", "bounds": [314.500, 339.500, 344.500, 419.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [341.500, 429.500, 344.500, 436.500], "flags_raw": "enabled | visible"}
+            ]},
+            {"class": "_UIScrollViewScrollIndicator", "text": "0%", "desc": "Horizontal scroll bar, 1 page", "bounds": [27.500, 386.500, 347.500, 416.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [117.500, 413.500, 124.500, 416.500], "flags_raw": "enabled | visible"}
+            ]}
+          ]}
+        ]}
+      ]}
+    ]},
+    {"class": "UIKit._GlassGroupView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+      {"class": "_TtC5UIKitP33_0A8B4DB961B57EBA158E8356A5AC0B1F19GlassGroupLayerView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+        {"class": "UIKit._UIMaterialDefinitionView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+          {"class": "_TtC5UIKitP33_ACD4A08F4BE9D00246F2A9C24A80CA8817UISDFBackdropView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+            {"class": "UIKit.UISDFView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+              {"class": "UIView", "bounds": [27.500, 267.500, 402.500, 934.500], "flags_raw": "enabled | visible"}
+            ]}
+          ]},
+          {"class": "UIKit.UISDFView", "bounds": [27.500, 267.500, 347.500, 419.500], "flags_raw": "enabled | visible", "children": [
+            {"class": "_UIPortalView", "bounds": [27.500, 267.500, 402.500, 934.500], "flags_raw": "enabled | visible"}
+          ]}
+        ]}
+      ]}
+    ]}
+  ]}
+]}
+WINDOW id=21432 kind=WindowType(application) layer=0 title=Some("FixtureSwiftUI") modal=false events=Some(false) owner=None flags=empty bounds=[0, 0, 375, 667]
+{"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+  {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+    {"class": "UITransitionView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+      {"class": "UIDropShadowView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+        {"class": "UIView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+          {"class": "UIResponder", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+            {"class": "UILayoutContainerView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+              {"class": "UITransitionView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+                {"class": "UIViewControllerWrapperView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+                  {"class": "UIView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+                    {"class": "UIResponder", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+                      {"class": "XCUIElementTypeButton", "id": "system-permission", "desc": "Request location permission", "bounds": [16, 36, 255, 70.500], "flags_raw": "clickable | enabled | visible"},
+                      {"class": "XCUIElementTypeStaticText", "id": "system-permission-status", "desc": "Permission: denied", "bounds": [16, 86.500, 160.500, 107], "flags_raw": "enabled | visible"},
+                      {"class": "XCUIElementTypeButton", "id": "system-alert", "desc": "Show in-app alert", "bounds": [16, 123, 174.500, 157.500], "flags_raw": "clickable | enabled | visible"}
+                    ]}
+                  ]}
+                ]}
+              ]},
+              {"class": "UIKit._UITabBarContainerWrapperView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                {"class": "UIKit._UITabBarContainerView", "bounds": [0, 0, 375, 667], "flags_raw": "enabled | visible", "children": [
+                  {"class": "XCUIElementTypeTabBar", "desc": "Tab Bar", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                    {"class": "UIKit._UITabBarPlatterView", "bounds": [21, 584, 354, 646], "flags_raw": "enabled | visible", "children": [
+                      {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2711DestOutView", "bounds": [21, 584, 95, 638], "flags_raw": "enabled | visible"},
+                      {"class": "_TtCC5UIKit20_UITabBarPlatterViewP33_022AA364308030F4627162921FD6D31A11ContentView", "bounds": [21, 584, 354, 646], "flags_raw": "enabled | visible", "children": [
+                        {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [25, 588, 99, 642], "flags_raw": "clickable | enabled | visible", "children": [
+                          {"class": "XCUIElementTypeImage", "id": "person.crop.circle", "desc": "account", "bounds": [48, 594, 75.500, 621.500], "flags_raw": "enabled | visible"}
+                        ]},
+                        {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [88, 588, 162, 642], "flags_raw": "clickable | enabled | visible", "children": [
+                          {"class": "XCUIElementTypeImage", "id": "list.bullet", "desc": "List", "bounds": [110, 597.500, 139.500, 618.500], "flags_raw": "enabled | visible"}
+                        ]},
+                        {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [150.500, 588, 224.500, 642], "flags_raw": "clickable | enabled | visible", "children": [
+                          {"class": "XCUIElementTypeImage", "id": "square.grid.3x3", "desc": "square.grid.3x3", "bounds": [173.500, 595, 202.500, 621.500], "flags_raw": "enabled | visible"}
+                        ]},
+                        {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [213.500, 588, 287.500, 642], "flags_raw": "clickable | enabled | visible", "children": [
+                          {"class": "XCUIElementTypeImage", "id": "arrow.triangle.2.circlepath", "desc": "syncing", "bounds": [236, 594, 264.500, 621.500], "flags_raw": "enabled | visible"}
+                        ]},
+                        {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [276, 588, 350, 642], "flags_raw": "clickable | enabled | selected | visible", "children": [
+                          {"class": "XCUIElementTypeImage", "id": "exclamationmark.bubble", "desc": "Alert", "bounds": [297, 594.500, 328.500, 622.500], "flags_raw": "enabled | visible"}
+                        ]}
+                      ]},
+                      {"class": "_UILiquidLensView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible", "children": [
+                        {"class": "UIView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible", "children": [
+                          {"class": "_UITabSelectionView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible"},
+                          {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2714ClearGlassView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible", "children": [
+                            {"class": "UIView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible", "children": [
+                              {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB277SDFView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible", "children": [
+                                {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2714SDFElementView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible"}
+                              ]},
+                              {"class": "_UIPortalView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible"}
+                            ]},
+                            {"class": "UIView", "bounds": [276, 588, 350, 642], "flags_raw": "enabled | visible"}
+                          ]}
+                        ]}
+                      ]}
+                    ]}
+                  ]}
+                ]},
+                {"class": "UIKit._GlassGroupView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                  {"class": "_TtC5UIKitP33_0A8B4DB961B57EBA158E8356A5AC0B1F19GlassGroupLayerView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                    {"class": "UIKit._UIMaterialDefinitionView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                      {"class": "_TtC5UIKitP33_ACD4A08F4BE9D00246F2A9C24A80CA8817UISDFBackdropView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                        {"class": "UIKit.UISDFView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                          {"class": "UIView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible"}
+                        ]}
+                      ]},
+                      {"class": "UIKit.UISDFView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible", "children": [
+                        {"class": "_UIPortalView", "bounds": [0, 584, 375, 667], "flags_raw": "enabled | visible"}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    ]}
+  ]}
+]}
+LISTING:
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "This alert is presented by the app."
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [id=inapp-alert-ok, ref=e1]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%

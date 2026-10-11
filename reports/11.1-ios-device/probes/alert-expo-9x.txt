@@ -1,0 +1,18 @@
+== expo System tab with the in-app alert, full snapshot 0: wall 148.7 ms, readMs 0.038, servedFromReplica True
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "This alert is presented by the app."
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [ref=e16]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+== expo System tab with the in-app alert, full snapshot 1: wall 10.1 ms, readMs 0.046, servedFromReplica True
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "This alert is presented by the app."
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [ref=e16]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%

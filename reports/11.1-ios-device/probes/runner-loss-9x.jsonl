@@ -1,0 +1,14 @@
+{"label": "load before", "load1": 7.96}
+{"label": "open swiftui login", "start_s": 0.008, "wall_ms": 2711.8, "settled": true, "elapsedMs": 2703.346, "firstTreeMs": 2233.047, "ok": true, "error": null}
+{"label": "snapshot before", "start_s": 2.72, "wall_ms": 143.2, "readMs": 0.06, "servedFromReplica": true, "refs": 8, "ok": true, "error": null}
+{"label": "status before", "attached": true, "attaches": 1, "runner_state": "ready", "runner_restarts": 0, "runner_lastDeath": null}
+{"label": "runner processes before end 1", "pids": [21438]}
+{"label": "end 1", "pid": 21438, "ended_s": 4.561, "ok": true, "output": "Sent signal to terminate process sent to pid 21438"}
+{"label": "after end 1 fill", "start_s": 4.561, "wall_ms": 3270.9, "ok": true, "error": null, "since_end_s": 0.0, "done_since_end_s": 3.271}
+{"label": "status after end 1", "attached": true, "attaches": 1, "runner_state": "ready", "runner_restarts": 1, "runner_lastDeath": "\"its connection closed: the other side closed the connection\""}
+{"label": "runner processes before end 2", "pids": [21474]}
+{"label": "end 2", "pid": 21474, "ended_s": 8.609, "ok": true, "output": "Sent signal to terminate process sent to pid 21474"}
+{"label": "after end 2 fill", "start_s": 8.609, "wall_ms": 19.2, "ok": false, "error": "the runner on iOS device IPHONE-SE-UDID died and could not be started again (its connection closed: the other side closed the connection, after it was started again once); attach again, which starts a new session", "code": "disconnected", "since_end_s": 0.0, "done_since_end_s": 0.019}
+{"label": "after end 2 snapshot 0", "start_s": 8.629, "wall_ms": 3401.7, "readMs": 237.844, "servedFromReplica": false, "refs": 8, "ok": true, "error": null, "since_end_s": 0.02, "done_since_end_s": 3.422}
+{"label": "status after end 2", "attached": true, "attaches": 2, "runner_state": "ready", "runner_restarts": 0, "runner_lastDeath": null}
+{"label": "load after", "load1": 6.88}

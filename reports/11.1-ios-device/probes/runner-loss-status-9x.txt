@@ -1,0 +1,49 @@
+# mobile-agent status of the iPhone SE around runner-loss-9x.jsonl (physical-ios task 9.3), 2026-10-11 08:29 UTC: before the runner's process is ended with devicectl, after the first end, which the supervisor's restart serves, and after the second, which the daemon detached and attached again; the identifier written as IPHONE-SE-UDID, the checkout as <repo>.
+## status before the runner is ended
+daemon: running, pid 39582, version 0.1.0+e72da0.18dd39cc24df9b0f, up 226 s, idle timeout 3600000 ms
+socket: <socket-dir>/daemon.sock
+targets:
+  IPHONE-SE-UDID  ios  local_phone  ready, attached, frames, claimed by default, app dev.mobileagent.fixture.swiftui
+IPHONE-SE-UDID:
+    input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream), the last acknowledged in 53.5 ms; text through the runner, typed or set
+    frames: screenshots polled on DVT and CoreDevice, 14.3 captures a second, 140 received
+    runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 750 ms after its start
+    tunnel: 82 RSD services, none missing, opened in 65.5 ms, 1 open
+    disk image: Personalized at /System/Developer
+    runner bundle: <repo>/agent-ios/dist/MobileAgentRunner-Runner.app
+    battery: 100%, not charging, on external power, when attached
+sessions:
+  default: IPHONE-SE-UDID
+
+## status after end 1
+daemon: running, pid 39582, version 0.1.0+e72da0.18dd39cc24df9b0f, up 231 s, idle timeout 3600000 ms
+socket: <socket-dir>/daemon.sock
+targets:
+  IPHONE-SE-UDID  ios  local_phone  ready, attached, frames, claimed by default, app dev.mobileagent.fixture.swiftui
+IPHONE-SE-UDID:
+    input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream), the last acknowledged in 2070.6 ms; text through the runner, typed or set
+    frames: screenshots polled on DVT and CoreDevice, 14.3 captures a second, 146 received
+    runner: mobile-agent-ios-runner 0.2.0, ready, 1 restart, hello 825 ms after its start
+    tunnel: 82 RSD services, none missing, opened in 65.5 ms, 1 open
+    disk image: Personalized at /System/Developer
+    runner bundle: <repo>/agent-ios/dist/MobileAgentRunner-Runner.app
+    battery: 100%, not charging, on external power, when attached
+sessions:
+  default: IPHONE-SE-UDID
+
+## status after end 2
+daemon: running, pid 39582, version 0.1.0+e72da0.18dd39cc24df9b0f, up 235 s, idle timeout 3600000 ms
+socket: <socket-dir>/daemon.sock
+targets:
+  IPHONE-SE-UDID  ios  local_phone  ready, attached, frames, claimed by default, app dev.mobileagent.fixture.swiftui
+IPHONE-SE-UDID:
+    input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream); text through the runner, typed or set
+    frames: screenshots polled on DVT and CoreDevice, 17.3 captures a second, 0 received
+    runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 774 ms after its start
+    tunnel: 82 RSD services, none missing, opened in 74.9 ms, 1 open
+    disk image: Personalized at /System/Developer
+    runner bundle: <repo>/agent-ios/dist/MobileAgentRunner-Runner.app
+    battery: 100%, not charging, on external power, when attached
+sessions:
+  default: IPHONE-SE-UDID
+

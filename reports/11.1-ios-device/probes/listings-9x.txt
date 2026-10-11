@@ -1,0 +1,8 @@
+# tree::the_fixtures_screens_list_through_the_mirror_as_on_the_simulator on the iPhone SE, 2026-10-11 08:24 UTC (physical-ios task 9.5): the phone's listings of the four screens against the Simulator's in crates/ios/tests/fixtures/listings/, page counts and scroll hints aside; the 1-minute load 17.06 at the start (loads-9x.txt), so the times are functional, not a measurement; the identifier written as IPHONE-SE-UDID.
+running 1 test
+swiftui-big: 546 nodes, 512 listed lines, 0 differing from the Simulator's (listed in 18.213583ms)
+expo-big: 529 nodes, 508 listed lines, 0 differing from the Simulator's (listed in 28.499875ms)
+swiftui-login-keyboard: 114 nodes, 17 listed lines, 0 differing from the Simulator's (listed in 7.183958ms)
+swiftui-alert: 88 nodes, 8 listed lines, 0 differing from the Simulator's (listed in 4.352125ms)
+test the_fixtures_screens_list_through_the_mirror_as_on_the_simulator ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 18.25s

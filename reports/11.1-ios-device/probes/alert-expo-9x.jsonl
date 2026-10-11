@@ -1,0 +1,8 @@
+{"label": "load before", "load1": 12.64}
+{"label": "open expo system", "start_s": 0.016, "wall_ms": 1863.5, "settled": true, "elapsedMs": 1851.086, "firstTreeMs": 1554.153, "ok": true, "error": null}
+{"label": "click system-alert", "start_s": 1.88, "wall_ms": 845.7, "ok": true, "error": null}
+{"label": "settle", "start_s": 2.725, "wall_ms": 548.3, "data": {"elapsedMs": 538.488, "endedBy": "frame", "frameChanges": 7, "settled": true, "stillChanging": [], "treeChanges": 0, "waited": "settle"}, "ok": true, "error": null}
+{"label": "full snapshot 0", "start_s": 3.274, "wall_ms": 148.7, "readMs": 0.038, "servedFromReplica": true, "refs": 1, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "full snapshot 1", "start_s": 3.423, "wall_ms": 10.1, "readMs": 0.046, "servedFromReplica": true, "refs": 1, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "click id=inapp-alert-ok", "start_s": 3.433, "wall_ms": 10020.9, "ok": false, "error": "no element matches id inapp-alert-ok after 10004 ms; the screen shows revision 6, 2 windows, 1 elements with refs, read 36 ms ago:\n- button \"OK\" [ref=e16]", "code": "element_not_found"}
+{"label": "click @e16 (the OK button, which has no identifier on React Native)", "wall_ms": 310.3, "ok": true, "error": null}
