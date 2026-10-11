@@ -64,7 +64,7 @@ The driver SHALL install an app from a signed bundle, launch it by bundle identi
 - **THEN** the app is in front within the attach budget and the tree read that follows is the app's
 
 ### Requirement: Failure containment
-A device that is unplugged, locked or rebooted SHALL leave the target disconnected with a code and message saying so, every other target unaffected, and a session that reaches it again SHALL start over with fresh refs; a command on a device whose runner is restarting SHALL wait for the restart up to its timeout rather than fail at once. A runner connection that is lost and not recovered by the restart SHALL release the target in the daemon, so that the next command attaches again, ending the runner left behind first, rather than failing `disconnected` until the daemon stops.
+A device that is unplugged, locked or rebooted SHALL leave the target disconnected with a code and message saying so, every other target unaffected, and a session that reaches it again SHALL start over with fresh refs; a command on a device whose runner is restarting SHALL wait for the restart up to its timeout rather than fail at once. A runner connection that is lost and not recovered by the restart SHALL release the target in the daemon, so that the next command attaches again, ending the runner left behind first, rather than failing `disconnected` until the daemon stops. A runner whose connection stays open but that answers `busy` or nothing past a bound SHALL be treated as died: ended and started again once, the call in flight failing with a retryable code naming the stall, and a second stall in the session releasing the target as a lost connection does. A screenshot connection whose captures time out SHALL be reopened once and, failing again, left out and named in the target's status beside the capture rate, the on-demand screenshot taking the other connection.
 
 #### Scenario: Cable pulled
 - **WHEN** the device is unplugged during a session
@@ -73,6 +73,14 @@ A device that is unplugged, locked or rebooted SHALL leave the target disconnect
 #### Scenario: Runner connection lost
 - **WHEN** the runner's connection falls silent while the device stays plugged in and its restart fails
 - **THEN** the command in flight fails with `disconnected`, and the next command attaches again within the attach time, with the silent runner ended and the status counting the new attach
+
+#### Scenario: Runner stalls with its connection open
+- **WHEN** two calls in a row are answered `busy` or run out their deadline with no answer between them
+- **THEN** the call in flight fails with a retryable code naming the stall, the runner's process is ended and started again once with the restart counted, and a second stall in the session fails it as a lost connection
+
+#### Scenario: Screenshot connection stops answering
+- **WHEN** one of the two screenshot connections times out on two captures in a row
+- **THEN** it is reopened once; if it fails again it is left out, the status names it beside the capture rate of the connection still polling, and an on-demand screenshot is served through that connection
 
 ### Requirement: Compatibility statement
 The driver SHALL record, for every private or undocumented interface it uses on the device or in the runner, the iOS and Xcode versions it was validated on, in the compatibility table `doctor` prints, and SHALL refuse with a message naming the version rather than fail silently where a version it does not know changes an interface.
