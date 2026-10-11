@@ -1,0 +1,27 @@
+[
+  {
+    "command": "open",
+    "input": {
+      "app": "dev.mobileagent.fixture.swiftui",
+      "platform": "ios",
+      "relaunch": true
+    }
+  },
+  {
+    "command": "press",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"tab-big\""
+      }
+    }
+  },
+  {
+    "command": "wait",
+    "input": {
+      "kind": "selector",
+      "selector": "id=\"cell-500\"",
+      "timeoutMs": 10000
+    }
+  }
+]

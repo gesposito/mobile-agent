@@ -1,0 +1,2 @@
+18:21:52 before k-swiftui-big-screen-baselines-fixed: open 3861 ms ok True; after 15 s captureRate 15.9, pollers [('dvt', 136, 0, None), ('coreDevice', 134, 0, None)], runner ('ready', 0); screenshot 216 ms ok True; shutdown 824 ms
+18:39:21 after k-swiftui-big-screen-baselines-fixed: open 4075 ms ok True; after 15 s captureRate 15.1, pollers [('dvt', 128, 0, None), ('coreDevice', 130, 0, None)], runner ('ready', 0); screenshot 204 ms ok True; shutdown 849 ms
