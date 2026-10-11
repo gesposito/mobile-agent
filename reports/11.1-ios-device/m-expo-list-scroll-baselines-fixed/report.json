@@ -1,0 +1,1582 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-11T19:41:26Z",
+    "finished_at": "2026-10-11T20:22:56Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.46,
+        4.0,
+        4.44
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "ef941a578b5619c803ad679c93d287d254680309",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "expo",
+            "bundle": "fixtures/expo/build/device/build/Build/Products/Release-iphoneos/FixtureExpo.app",
+            "elapsed_us": 2976576
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      },
+      {
+        "name": "maestro",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "Maestro runs iOS flows on Simulators only; 2.11.0 refuses physical iPhones, its iOS device driver unfinished"
+      },
+      {
+        "name": "maestro-runner",
+        "role": "baseline",
+        "status": "skipped",
+        "version": null,
+        "note": "maestro-runner not found on PATH"
+      },
+      {
+        "name": "agent-device",
+        "role": "baseline",
+        "status": "available",
+        "version": "0.21.14",
+        "note": null
+      },
+      {
+        "name": "webdriveragent",
+        "role": "baseline",
+        "status": "available",
+        "version": "16.14.1 (Appium 3.8.0, XCUITest driver 12.16.0)",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 28377159,
+        "p95_us": 28882588,
+        "max_us": 155789629
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26593687,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25031644,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 25313968,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27263585,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27491669,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28443913,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27879014,
+          "nodes": null,
+          "detail": "23 strokes, visible 0.96",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28844171,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28522707,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28569462,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28575580,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28882588,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27111935,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26925824,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28767075,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28724085,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28573862,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28721680,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28742641,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28656723,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28221214,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28188617,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27204439,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28287844,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26816306,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28111210,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28643352,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28516082,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28579916,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28452412,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28163743,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28792472,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28610751,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27563043,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27802300,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28368059,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27442096,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28335261,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28276193,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 26764049,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28393377,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28405043,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28377159,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 31504062,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 155789629,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27456303,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28497955,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27252047,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28363084,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27082918,
+          "nodes": null,
+          "detail": "22 strokes, visible 0.54",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 27627705,
+          "nodes": null,
+          "detail": "22 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28804330,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 28641390,
+          "nodes": null,
+          "detail": "23 strokes, visible 1.0",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    },
+    {
+      "tool": "agent-device",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "the check run failed: COMMAND_FAILED: Batch failed at step 3 (scroll): scroll down spent its 12-pass budget without id=\"row-200\" becoming visible",
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": []
+    },
+    {
+      "tool": "webdriveragent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "expo",
+      "screen": null,
+      "flow": "list-scroll",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 47,
+        "p50_us": 10404347,
+        "p95_us": 10671339,
+        "max_us": 10693456
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 3,
+        "flakes": 4,
+        "failure_rate_pct": 6.0,
+        "flake_rate_pct": 8.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": {
+        "present": {
+          "detail-200": true
+        }
+      },
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s",
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10627338,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10257287,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10671339,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10499097,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s",
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10404347,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10414440,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10693456,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10392289,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10311418,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10497705,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10493311,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10509670,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 10671139,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10637169,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10424565,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10585180,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10356277,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10407192,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 10510334,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 10371674,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10325773,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10344048,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s",
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10252469,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10413160,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s",
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10225803,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "flake",
+          "attempts": 2,
+          "us": 10315442,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [
+            "detail-200 showed nothing rather than \"Detail 200\" after 10 s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10236397,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 9727623,
+          "nodes": null,
+          "detail": "8 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10661826,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10477401,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10327434,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10575872,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10305751,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10332561,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10384125,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10324386,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10358732,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10386127,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10623197,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10678062,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10455180,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10403149,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10418321,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10393685,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10392421,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10443570,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10529015,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10373921,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 10298100,
+          "nodes": null,
+          "detail": "9 swipes",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "agent-device",
+      "elapsed_us": 2186167,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "agent-device",
+      "to": "webdriveragent",
+      "elapsed_us": 1827893,
+      "released": "closed agent-device session mobile-agent-bench and stopped its daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": "mobile-agent",
+      "elapsed_us": 2435436,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": "webdriveragent",
+      "elapsed_us": 2233664,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    },
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "webdriveragent",
+      "to": null,
+      "elapsed_us": 15805413,
+      "released": "deleted its Appium session, stopped Appium and the helper holding WebDriverAgent's test, and ended WebDriverAgent's runner app on the iPhone",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}

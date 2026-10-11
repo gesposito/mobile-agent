@@ -1,0 +1,2 @@
+19:41:03 before m-expo-list-scroll-baselines-fixed: open 4039 ms ok True; after 15 s captureRate 16.3, pollers [('dvt', 141, 0, None), ('coreDevice', 137, 0, None)], runner ('ready', 0); screenshot 154 ms ok True; shutdown 823 ms
+20:22:57 after m-expo-list-scroll-baselines-fixed: open 4972 ms ok True; after 15 s captureRate 16.5, pollers [('dvt', 146, 0, None), ('coreDevice', 145, 0, None)], runner ('ready', 0); screenshot 201 ms ok True; shutdown 774 ms
