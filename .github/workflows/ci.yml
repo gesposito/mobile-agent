@@ -178,7 +178,11 @@ jobs:
       - name: just validate
         if: steps.xcode.outputs.available == 'true'
         env:
-          # macOS builds the Apple-side fixtures; the Linux job builds the Android agent and the Compose fixture.
+          # macOS builds the Apple-side fixtures, and builds and tests the iPhone driver (crates/ios, on
+          # its fake device) and the runner's crate (agent-ios, on the host); their device tests skip
+          # without MOBILE_AGENT_IOS_UDID, so nothing runs against a phone. Without MOBILE_AGENT_IOS_TEAM
+          # the fixtures' device builds skip; SKIP_AGENT_BUILD skips the iOS runner's signed bundle and
+          # the Android agent, which the Linux job builds with the Compose fixture.
           FIXTURES: expo,swiftui
           SKIP_AGENT_BUILD: "1"
         run: just validate
