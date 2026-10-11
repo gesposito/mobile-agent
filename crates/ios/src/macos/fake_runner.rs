@@ -14,7 +14,10 @@
 //! answering snapshots, input, text and screenshots, and closing when the
 //! runner's process ends. A runner left from a lost session says hello and
 //! closes the connection, as S10's did after its cable pull, and a runner
-//! that fell silent keeps its connection and answers nothing on it.
+//! that fell silent keeps its connection and answers nothing on it. A stuck
+//! runner keeps the next request it takes, as the real runner's worker
+//! keeps a call XCTest never returns from, and answers the later ones
+//! `busy`; a muted one answers pings and no request.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -254,6 +257,9 @@ pub(crate) async fn serve_runner(
     let mut pulls = device.pulls.subscribe();
     pulls.borrow_and_update();
     let mut buffer = vec![0u8; 64 * 1024];
+    // The request a stuck runner's worker keeps, as the real runner's
+    // `busy` names it.
+    let mut kept: Option<u32> = None;
     loop {
         if device.runner_state().silent {
             // A silent runner holds its connection and answers nothing
@@ -279,11 +285,27 @@ pub(crate) async fn serve_runner(
                 }
                 AgentEvent::Ready(_) => {}
                 AgentEvent::Request(request) => {
-                    device
-                        .runner_state()
-                        .served
-                        .push(request.call.method().to_string());
-                    session.respond(request.id, answer(&request.call));
+                    let mut state = device.runner_state();
+                    state.served.push(request.call.method().to_string());
+                    let (stuck, muted) = (state.stuck, state.muted);
+                    drop(state);
+                    match kept {
+                        // A muted runner leaves every request unanswered.
+                        _ if muted => {}
+                        Some(running) => {
+                            session.respond(
+                                request.id,
+                                Err(protocol::Error::new(
+                                    code::BUSY,
+                                    format!("the runner is still serving request {running}"),
+                                )),
+                            );
+                        }
+                        None if stuck => kept = Some(request.id),
+                        None => {
+                            session.respond(request.id, answer(&request.call));
+                        }
+                    }
                 }
                 AgentEvent::Closed(_) => return,
             }
@@ -295,12 +317,15 @@ pub(crate) async fn serve_runner(
             .poll_timeout()
             .map(tokio::time::Instant::from_std)
             .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
+        // A muted runner's session answers no passed deadline; it still
+        // answers the host's pings, which it reads.
+        let timed = !device.runner_state().muted;
         tokio::select! {
             read = stream.read(&mut buffer) => match read {
                 Ok(0) | Err(_) => session.receive_eof(Instant::now()),
                 Ok(read) => session.receive(&buffer[..read], Instant::now()),
             },
-            () = tokio::time::sleep_until(wake) => session.handle_timeout(Instant::now()),
+            () = tokio::time::sleep_until(wake), if timed => session.handle_timeout(Instant::now()),
             changed = deaths.changed() => {
                 if changed.is_err() || device.runner().is_none_or(|now| now.pid != runner.pid) {
                     return;

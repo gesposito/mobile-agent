@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use protocol::message::{Call, Reply, SnapshotParams};
+use protocol::message::{Call, Reply, SnapshotParams, TextMethod, TextParams};
 
 use crate::discovery::tests::recorded_images;
 use crate::macos::driver::tests::{FakeHost, Images, Other, PHONE, core};
@@ -341,6 +341,61 @@ fn a_call_in_flight_when_the_runner_falls_silent_fails_the_session_until_the_nex
             .expect("the other phone's runner serves"),
         Reply::Snapshot(_)
     ));
+}
+
+/// Physical-ios, task 9.7 (design D26): a runner that stalls, its worker
+/// never back from a text set while its connection stays alive, is
+/// contained as a runner that died rather than as a lost connection: the
+/// call answered `busy` fails `runner_stalled`, its supervisor starts the
+/// runner again, and the phone's tunnel and `dtuhidd` connections stay, so
+/// input goes on meanwhile; the other phone's runner serves throughout.
+#[test]
+fn a_stalled_runner_is_started_again_with_the_phones_connections_kept_and_the_other_phone_untouched()
+ {
+    let core = core(two_phones());
+    for target in [PHONE, OTHER] {
+        core.attach(target, &options()).expect("attaches");
+    }
+    tap(&core, PHONE).expect("taps");
+    let opens = core.host.device.opens();
+    core.host.device.stall_runner();
+    let kept = core
+        .call(
+            PHONE,
+            Call::TextSet(TextParams {
+                text: String::new(),
+                node: None,
+                mode: Some(TextMethod::DIRECT),
+            }),
+            Duration::from_millis(200),
+        )
+        .expect_err("the worker keeps the text set");
+    assert_eq!(kept.code(), "deadline_exceeded", "{kept}");
+    let error = core
+        .call(PHONE, snapshot(), WAIT)
+        .expect_err("answered busy");
+    assert_eq!(error.code(), "runner_stalled", "{error}");
+    assert_eq!(kind(&error), None, "not a disconnect: {error}");
+    tap(&core, PHONE).expect("input goes on through dtuhidd");
+    let status = runner_once(&core, PHONE, |status| {
+        status.restarts == 1 && status.state == RunnerState::Ready
+    });
+    assert_eq!(status.restarts, 1, "{status:?}");
+    core.call(PHONE, snapshot(), WAIT)
+        .expect("the new runner serves");
+    assert_eq!(core.host.device.opens(), opens, "the tunnel was kept");
+    assert!(matches!(
+        core.call(OTHER, snapshot(), WAIT)
+            .expect("the other phone's runner serves"),
+        Reply::Snapshot(_)
+    ));
+    assert_eq!(
+        core.status(OTHER)
+            .expect("status")
+            .runner
+            .map(|runner| runner.restarts),
+        Some(0)
+    );
 }
 
 #[test]

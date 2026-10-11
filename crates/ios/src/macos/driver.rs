@@ -1511,6 +1511,7 @@ pub(crate) mod tests {
         hello: Duration::from_millis(500),
         approval_grace: Duration::from_millis(100),
         retry_pause: Duration::from_millis(10),
+        stall_silence: runner::STALL_SILENCE,
     };
 
     pub(crate) fn core(host: FakeHost) -> Core<FakeHost> {

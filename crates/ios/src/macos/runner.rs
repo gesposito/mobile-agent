@@ -28,7 +28,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
-use super::connection::{CallFailure, RunnerConnection};
+use super::connection::{CallFailure, Closed, RunnerConnection};
 use super::driver::{Slot, Target};
 use super::host::{Host, Link, describe};
 use super::tunnel::Limits;
@@ -61,6 +61,10 @@ pub(crate) struct SessionLimits {
     /// The pause before a start the test manager did not answer is made
     /// again.
     pub retry_pause: Duration,
+    /// How long a connection's calls may wait with no answer to any of
+    /// them, the runner's answers to pings aside, before the runner counts
+    /// as stalled: [`STALL_SILENCE`].
+    pub stall_silence: Duration,
 }
 
 impl Default for SessionLimits {
@@ -70,6 +74,7 @@ impl Default for SessionLimits {
             hello: Duration::from_secs(2),
             approval_grace: Duration::from_secs(3),
             retry_pause: Duration::from_secs(2),
+            stall_silence: STALL_SILENCE,
         }
     }
 }
@@ -172,6 +177,22 @@ pub(crate) trait TestManager: Send + Sync + 'static {
 /// so a runner that dies again fails the session, and a new attach starts
 /// over.
 pub(crate) const RESTARTS: u32 = 1;
+
+/// How many calls in a row a runner may answer `deadline_exceeded` or
+/// `busy`, with no other answer between them, before it counts as stalled
+/// and is treated as died (design D26 of physical-ios): the second, so that
+/// a call that ran out its deadline alone stays the caller's to repeat,
+/// while a runner whose worker never came back from a call, as the phone's
+/// did from a text set in task 9.6, is ended at the call after it, which it
+/// answers `busy`.
+pub(crate) const STALL_CALLS: u32 = 2;
+
+/// How long calls may wait with no answer to any of them, the runner's
+/// answers to pings aside, before the runner counts as stalled (design D26
+/// of physical-ios): past the 10 s deadline the daemon gives a snapshot or
+/// a text set and its 500 ms grace, so it ends a runner left on a call only
+/// where the call's own deadline is longer.
+pub(crate) const STALL_SILENCE: Duration = Duration::from_secs(30);
 
 /// A runner that said hello: the connection to it and the test manager's
 /// session that started it.
@@ -557,7 +578,8 @@ async fn wait_hello<L: Link>(
             awaiting = true;
         }
         if let Ok(stream) = link.connect(port).await
-            && let Ok(connection) = RunnerConnection::open(stream, limits.hello).await
+            && let Ok(connection) =
+                RunnerConnection::open(stream, limits.hello, limits.stall_silence).await
         {
             return Hello::Ready(connection, xc);
         }
@@ -584,7 +606,10 @@ pub(crate) async fn supervise<H: Host>(
     let mut stopping = session.stopping.subscribe();
     loop {
         let cause = tokio::select! {
-            reason = live.connection.closed() => format!("its connection closed: {reason}"),
+            closed = live.connection.closed() => match closed {
+                Closed::Ended(reason) => format!("its connection closed: {reason}"),
+                Closed::Stalled(why) => format!("it stalled: {why}"),
+            },
             outcome = &mut live.xc => format!(
                 "the test manager's session ended: {}",
                 match outcome {
@@ -684,6 +709,13 @@ pub(crate) async fn call(session: &RunnerSession, call: Call, timeout: Duration)
                                 "the runner's connection closed before it answered {method} \
                                  ({cause}); the runner is started again"
                             ),
+                        });
+                    }
+                    Err(CallFailure::Stalled(cause)) => {
+                        return Err(Error::RunnerStalled {
+                            target: session.target.clone(),
+                            method,
+                            cause,
                         });
                     }
                     // The connection was gone before the call was written:
@@ -880,10 +912,13 @@ mod tests {
 
     use plist::{Dictionary, Value};
     use protocol::Capabilities;
-    use protocol::message::{Call, Reply, ScreenshotParams, SnapshotParams, TapParams};
+    use protocol::message::{
+        Call, Reply, ScreenshotParams, SnapshotParams, TapParams, TextMethod, TextParams,
+    };
 
     use super::*;
-    use crate::macos::driver::tests::{FakeHost, PHONE, core};
+    use crate::macos::driver::Core;
+    use crate::macos::driver::tests::{FakeHost, PHONE, SHORT, SHORT_MOUNTS, SHORT_SESSION, core};
     use crate::macos::dvt::{PROCESS_CONTROL, SEND_SIGNAL};
     use crate::macos::fake::{Arg, FakeDevice, RUNNER_EXECUTABLE};
     use crate::macos::fake_runner::Start;
@@ -1230,6 +1265,202 @@ mod tests {
         assert_eq!(core.host.test_manager.started().len(), 2);
         core.call(PHONE, snapshot(), WAIT)
             .expect("served by the new runner");
+    }
+
+    /// The emptying `fill` the phone's runner stalled on in task 9.6: an
+    /// empty text set on the focused field.
+    fn emptying() -> Call {
+        Call::TextSet(TextParams {
+            text: String::new(),
+            node: None,
+            mode: Some(TextMethod::DIRECT),
+        })
+    }
+
+    /// Stalls the runner of `core` as the phone's stalled in task 9.6: its
+    /// worker keeps a text set, which its session answers
+    /// `deadline_exceeded` at the deadline, and a call after it is answered
+    /// `busy`, which stalls the runner; returns that call's error.
+    fn stall(core: &Core<FakeHost>) -> Error {
+        core.host.device.stall_runner();
+        let kept = core
+            .call(PHONE, emptying(), Duration::from_millis(200))
+            .expect_err("the worker keeps the text set");
+        assert_eq!(kept.code(), "deadline_exceeded", "{kept}");
+        core.call(PHONE, snapshot(), WAIT)
+            .expect_err("the call after it is answered busy")
+    }
+
+    /// Physical-ios, task 9.7 (design D26): a runner whose worker never came
+    /// back from a call, its connection alive and its pings answered, is
+    /// treated as died at the second call in a row it refuses: one
+    /// `deadline_exceeded` alone leaves it serving, the call answered `busy`
+    /// after it fails `runner_stalled`, which can be repeated, and the
+    /// supervisor ends the stuck process through DVT and starts the runner
+    /// again once, the restart counted and the stall named as its last
+    /// death; the repeated call is served by the new runner.
+    #[test]
+    fn a_runner_stuck_on_a_call_is_ended_and_started_again_once_at_its_second_refusal() {
+        let core = core(with_runner(VERSION));
+        core.attach(PHONE, &options()).expect("attaches");
+        let stuck = core.host.device.runner().expect("a runner").pid;
+        core.host.device.stall_runner();
+        let kept = core
+            .call(PHONE, emptying(), Duration::from_millis(200))
+            .expect_err("the worker keeps the text set");
+        assert_eq!(kept.code(), "deadline_exceeded", "{kept}");
+        let alone = core
+            .status(PHONE)
+            .expect("status")
+            .runner
+            .expect("a runner");
+        assert_eq!(
+            (alone.state.clone(), alone.restarts),
+            (RunnerState::Ready, 0),
+            "one refusal alone: {alone:?}"
+        );
+        let error = core
+            .call(PHONE, snapshot(), WAIT)
+            .expect_err("the call after it is answered busy");
+        assert_eq!(error.code(), "runner_stalled", "{error}");
+        assert!(error.retryable(), "{error}");
+        assert!(error.to_string().contains("busy"), "{error}");
+        let status = runner_once(&core, |status| {
+            status.restarts == 1 && status.state == RunnerState::Ready
+        });
+        assert_eq!(status.state, RunnerState::Ready, "{status:?}");
+        assert_eq!(status.restarts, 1, "{status:?}");
+        assert!(
+            status
+                .last_death
+                .as_deref()
+                .is_some_and(|death| death.contains("stalled")),
+            "{status:?}"
+        );
+        assert_eq!(
+            signalled(&core.host.device),
+            vec![stuck],
+            "the stuck runner was ended through DVT"
+        );
+        assert_ne!(
+            core.host.device.runner().map(|runner| runner.pid),
+            Some(stuck)
+        );
+        assert_eq!(core.host.test_manager.started().len(), 2);
+        core.call(PHONE, snapshot(), WAIT)
+            .expect("the repeated call is served by the new runner");
+    }
+
+    /// Physical-ios, task 9.7 (design D26): a runner that answers its pings
+    /// and no call, its connection alive, is treated as died once calls
+    /// waited the silence bound with no answer, before the call's own
+    /// deadline: the call fails `runner_stalled`, the runner is ended and
+    /// started again once, the restart counted.
+    #[test]
+    fn a_runner_that_answers_no_call_for_the_silence_bound_is_ended_and_started_again_once() {
+        let core = Core::new(with_runner(VERSION))
+            .expect("the runtime starts")
+            .with_limits(SHORT, SHORT_MOUNTS)
+            .with_session_limits(SessionLimits {
+                stall_silence: Duration::from_millis(300),
+                ..SHORT_SESSION
+            });
+        core.attach(PHONE, &options()).expect("attaches");
+        let muted = core.host.device.runner().expect("a runner").pid;
+        core.host.device.mute_runner();
+        let started = Instant::now();
+        let error = core
+            .call(PHONE, snapshot(), Duration::from_secs(5))
+            .expect_err("no answer");
+        assert_eq!(error.code(), "runner_stalled", "{error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "stalled at the silence bound, not the call's deadline: {:?}",
+            started.elapsed()
+        );
+        let status = runner_once(&core, |status| {
+            status.restarts == 1 && status.state == RunnerState::Ready
+        });
+        assert_eq!(status.restarts, 1, "{status:?}");
+        assert_eq!(signalled(&core.host.device), vec![muted]);
+        core.call(PHONE, snapshot(), WAIT)
+            .expect("served by the new runner");
+    }
+
+    /// Physical-ios, task 9.7 (design D26): a second stall in the session
+    /// fails it as a runner that died again after its restart
+    /// (`runner_died`, which the daemon reports as `disconnected` and
+    /// detaches on, task 9.3): the call in flight fails with the session's
+    /// error, naming the stall, and so does every later call, the status
+    /// keeping its one restart; the stuck runner stays until a release or
+    /// the next attach, which ends it before its own runner starts.
+    #[test]
+    fn a_second_stall_in_the_session_fails_it_as_a_runner_that_died() {
+        let core = core(with_runner(VERSION));
+        core.attach(PHONE, &options()).expect("attaches");
+        assert_eq!(stall(&core).code(), "runner_stalled");
+        runner_once(&core, |status| {
+            status.restarts == 1 && status.state == RunnerState::Ready
+        });
+        let second = core.host.device.runner().expect("the new runner").pid;
+        let error = stall(&core);
+        assert_eq!(error.code(), "runner_died", "{error}");
+        let message = error.to_string();
+        assert!(
+            message.contains("stalled") && message.contains("after it was started again once"),
+            "{message}"
+        );
+        let status = runner_once(&core, |status| {
+            matches!(status.state, RunnerState::Failed { .. })
+        });
+        assert!(
+            matches!(
+                status.state,
+                RunnerState::Failed {
+                    code: "runner_died",
+                    ..
+                }
+            ),
+            "{status:?}"
+        );
+        assert_eq!(status.restarts, 1, "{status:?}");
+        let later = core
+            .call(PHONE, snapshot(), WAIT)
+            .expect_err("the session failed");
+        assert_eq!(later.code(), "runner_died", "{later}");
+        let attached = core.attach(PHONE, &options()).expect("attaches again");
+        assert_eq!(attached.runner.restarts, 0, "a new session");
+        assert_eq!(attached.runner.leftovers, vec![second]);
+        core.call(PHONE, snapshot(), WAIT)
+            .expect("the new session's runner serves");
+    }
+
+    /// Physical-ios, task 9.7 (design D26): a release of a target whose
+    /// runner is stuck ends the runner's process through DVT within the
+    /// release's 5 s, asking the runner nothing.
+    #[test]
+    fn a_release_ends_a_stuck_runners_process_through_dvt_within_five_seconds() {
+        let core = core(with_runner(VERSION));
+        core.attach(PHONE, &options()).expect("attaches");
+        let stuck = core.host.device.runner().expect("a runner").pid;
+        core.host.device.stall_runner();
+        core.call(PHONE, emptying(), Duration::from_millis(200))
+            .expect_err("the worker keeps the text set");
+        let asked = core.host.device.runner_served().len();
+        let started = Instant::now();
+        let released = core.release(PHONE).expect("releases");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(released.ended, vec![stuck]);
+        assert!(core.host.device.runner().is_none());
+        assert_eq!(
+            core.host.device.runner_served().len(),
+            asked,
+            "the runner was asked nothing"
+        );
     }
 
     #[test]

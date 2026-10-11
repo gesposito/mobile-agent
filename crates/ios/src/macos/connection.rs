@@ -30,6 +30,29 @@ pub(crate) enum CallFailure {
     Lost(String),
     /// The runner, or the session on its behalf, answered with an error.
     Refused(ProtocolError),
+    /// The runner stalled, its connection alive, and this side closed the
+    /// connection: why it counts as stalled.
+    Stalled(String),
+}
+
+/// Why a connection to the runner closed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Closed {
+    /// The session ended: the runner closed it or fell silent, or this side
+    /// closed it.
+    Ended(String),
+    /// This side closed it because the runner stalled: why it counts as
+    /// stalled.
+    Stalled(String),
+}
+
+impl Closed {
+    /// Why, in words.
+    pub(crate) fn reason(&self) -> &str {
+        match self {
+            Closed::Ended(reason) | Closed::Stalled(reason) => reason,
+        }
+    }
 }
 
 enum Command {
@@ -44,22 +67,24 @@ enum Command {
 /// A live connection to the runner. Dropping it closes the connection.
 pub(crate) struct RunnerConnection {
     commands: mpsc::Sender<Command>,
-    closed: watch::Receiver<Option<String>>,
+    closed: watch::Receiver<Option<Closed>>,
     negotiated: Negotiated,
     task: JoinHandle<()>,
 }
 
 impl RunnerConnection {
     /// Takes `stream`, a connection to the runner's port, and waits up to
-    /// `wait` for the runner's hello, which it sends as it accepts.
+    /// `wait` for the runner's hello, which it sends as it accepts. Calls
+    /// that wait `silence` with no answer to any of them stall the runner.
     pub(crate) async fn open(
         stream: Box<dyn ReadWrite>,
         wait: Duration,
+        silence: Duration,
     ) -> Result<RunnerConnection, String> {
         let (commands, receiver) = mpsc::channel(16);
         let (closed_sender, closed) = watch::channel(None);
         let (ready, hello) = oneshot::channel();
-        let task = tokio::spawn(serve(stream, receiver, closed_sender, ready));
+        let task = tokio::spawn(serve(stream, receiver, closed_sender, ready, silence));
         match timeout(wait, hello).await {
             Ok(Ok(Ok(negotiated))) => Ok(RunnerConnection {
                 commands,
@@ -110,12 +135,15 @@ impl RunnerConnection {
 
     /// Why the connection closed, once it has.
     pub(crate) fn closed_reason(&self) -> Option<String> {
-        self.closed.borrow().clone()
+        self.closed
+            .borrow()
+            .as_ref()
+            .map(|closed| closed.reason().to_owned())
     }
 
     /// Waits until the connection closes and says why. The future owns
     /// what it reads, so a task can hold it beside others.
-    pub(crate) fn closed(&self) -> impl Future<Output = String> + Send + 'static {
+    pub(crate) fn closed(&self) -> impl Future<Output = Closed> + Send + 'static {
         let mut closed = self.closed.clone();
         async move {
             loop {
@@ -124,7 +152,7 @@ impl RunnerConnection {
                     return reason;
                 }
                 if closed.changed().await.is_err() {
-                    return "the runner's connection ended".to_owned();
+                    return Closed::Ended("the runner's connection ended".to_owned());
                 }
             }
         }
@@ -160,9 +188,11 @@ fn failure(error: ProtocolError, sent: bool) -> CallFailure {
 async fn serve(
     mut stream: Box<dyn ReadWrite>,
     mut commands: mpsc::Receiver<Command>,
-    closed: watch::Sender<Option<String>>,
+    closed: watch::Sender<Option<Closed>>,
     ready: oneshot::Sender<Result<Negotiated, String>>,
+    silence: Duration,
 ) {
+    let _ = silence;
     let mut session = HostSession::new(HostConfig::default(), Instant::now());
     let mut pending: HashMap<u32, oneshot::Sender<Result<Reply, CallFailure>>> = HashMap::new();
     let mut ready = Some(ready);
@@ -194,7 +224,7 @@ async fn serve(
                     for (_, reply) in pending.drain() {
                         let _ = reply.send(Err(CallFailure::Lost(reason.clone())));
                     }
-                    closed.send_replace(Some(reason.clone()));
+                    closed.send_replace(Some(Closed::Ended(reason.clone())));
                     commands.close();
                     while let Ok(command) = commands.try_recv() {
                         if let Command::Call { reply, .. } = command {
@@ -232,5 +262,197 @@ async fn serve(
             },
             () = tokio::time::sleep_until(wake) => session.handle_timeout(Instant::now()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use protocol::message::SnapshotParams;
+    use protocol::session::{AgentConfig, AgentEvent, AgentSession};
+    use protocol::snapshot::{Snapshot, Truncation};
+    use tokio::io::DuplexStream;
+
+    use super::*;
+    use crate::macos::runner::STALL_SILENCE;
+
+    const WAIT: Duration = Duration::from_secs(2);
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("a runtime")
+    }
+
+    /// What the scripted runner does with a request it takes.
+    enum Answer {
+        /// Answers it so.
+        With(Result<Reply, ProtocolError>),
+        /// Keeps it: no answer, not even its session's at the deadline.
+        Never,
+    }
+
+    fn refusal(code: &str) -> Answer {
+        Answer::With(Err(ProtocolError::new(
+            code,
+            format!("the scripted runner answers {code}"),
+        )))
+    }
+
+    fn served() -> Answer {
+        Answer::With(Ok(Reply::Snapshot(Snapshot {
+            strings: Vec::new(),
+            windows: Vec::new(),
+            node_count: 0,
+            truncated: Truncation::EMPTY,
+            seq: 0,
+        })))
+    }
+
+    fn snapshot() -> Call {
+        Call::Snapshot(SnapshotParams::default())
+    }
+
+    /// The runner's end of the connection: the protocol's `AgentSession` on
+    /// `stream`, answering the requests it takes with `answers` in turn and
+    /// keeping those past them, and answering every ping; its session
+    /// answers no passed deadline.
+    async fn runner(mut stream: DuplexStream, answers: Vec<Answer>) {
+        let config = AgentConfig {
+            agent: "placeholder-runner 0.0.0".into(),
+            capabilities: Capabilities::TREE,
+            ..AgentConfig::default()
+        };
+        let mut session = AgentSession::new(config, Instant::now());
+        let mut answers: VecDeque<Answer> = answers.into();
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            while let Some(event) = session.poll_event() {
+                match event {
+                    AgentEvent::Request(request) => {
+                        if let Some(Answer::With(result)) = answers.pop_front() {
+                            session.respond(request.id, result);
+                        }
+                    }
+                    AgentEvent::Closed(_) => return,
+                    AgentEvent::Ready(_) => {}
+                }
+            }
+            while let Some(bytes) = session.poll_transmit() {
+                if stream.write_all(&bytes).await.is_err() {
+                    return;
+                }
+            }
+            match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => return,
+                Ok(read) => session.receive(&buffer[..read], Instant::now()),
+            }
+        }
+    }
+
+    /// A connection to the scripted runner, its calls stalling the runner
+    /// once they waited `silence` with no answer.
+    async fn connect(answers: Vec<Answer>, silence: Duration) -> RunnerConnection {
+        let (client, server) = tokio::io::duplex(1 << 20);
+        tokio::spawn(runner(server, answers));
+        RunnerConnection::open(Box::new(client), WAIT, silence)
+            .await
+            .expect("the runner's hello")
+    }
+
+    /// Physical-ios, task 9.7 (design D26): two calls in a row answered
+    /// `deadline_exceeded` or `busy` with the connection alive, as the
+    /// phone's runner answered the call after the text set its worker never
+    /// came back from (`probes/text-hang-swiftui-*.jsonl`), stall the
+    /// runner: the second call fails as stalled, naming both answers, and
+    /// the connection closes as stalled, so that the supervisor ends the
+    /// runner and starts it again; no later call is sent.
+    #[test]
+    fn two_calls_in_a_row_answered_deadline_exceeded_or_busy_stall_the_runner() {
+        runtime().block_on(async {
+            let connection = connect(
+                vec![refusal(code::DEADLINE_EXCEEDED), refusal(code::BUSY)],
+                STALL_SILENCE,
+            )
+            .await;
+            let first = connection.call(snapshot(), WAIT).await;
+            assert!(
+                matches!(&first, Err(CallFailure::Refused(error)) if error.code == code::DEADLINE_EXCEEDED),
+                "one refusal alone is the caller's to repeat: {first:?}"
+            );
+            let second = connection.call(snapshot(), WAIT).await;
+            let Err(CallFailure::Stalled(why)) = second else {
+                panic!("the second refusal stalls the runner: {second:?}");
+            };
+            assert!(
+                why.contains(code::DEADLINE_EXCEEDED) && why.contains(code::BUSY),
+                "{why}"
+            );
+            let closed = timeout(WAIT, connection.closed()).await.expect("closed");
+            assert_eq!(closed, Closed::Stalled(why));
+            let after = connection.call(snapshot(), WAIT).await;
+            assert!(matches!(after, Err(CallFailure::NotSent(_))), "{after:?}");
+        });
+    }
+
+    /// Physical-ios, task 9.7: an answer between two refusals, a reply or
+    /// a refusal of another code, which the runner's worker gave, keeps the
+    /// runner serving, and so does a refusal alone.
+    #[test]
+    fn an_answer_between_two_refusals_keeps_the_runner_serving() {
+        runtime().block_on(async {
+            let codes = [
+                Some(code::BUSY),
+                None,
+                Some(code::DEADLINE_EXCEEDED),
+                Some(code::WINDOW_CHANGED),
+                Some(code::BUSY),
+                None,
+            ];
+            let answers = codes
+                .iter()
+                .map(|code| code.map_or_else(served, refusal))
+                .collect();
+            let connection = connect(answers, STALL_SILENCE).await;
+            for expected in codes {
+                let answered = connection.call(snapshot(), WAIT).await;
+                match (expected, &answered) {
+                    (None, Ok(_)) => {}
+                    (Some(code), Err(CallFailure::Refused(error))) if error.code == code => {}
+                    _ => panic!("{expected:?} expected: {answered:?}"),
+                }
+            }
+            assert_eq!(connection.closed_reason(), None, "the connection serves");
+        });
+    }
+
+    /// Physical-ios, task 9.7: a call the runner leaves unanswered while it
+    /// answers pings, the connection alive, stalls the runner once calls
+    /// waited the silence bound with no answer to any of them, before the
+    /// call's own deadline: the call fails as stalled and the connection
+    /// closes so. The host pings after a second without hearing anything,
+    /// so the runner answered a ping before the bound.
+    #[test]
+    fn a_call_left_unanswered_past_the_silence_bound_stalls_the_runner_though_it_answers_pings() {
+        runtime().block_on(async {
+            let silence = Duration::from_millis(1500);
+            let connection = connect(vec![Answer::Never], silence).await;
+            let started = Instant::now();
+            let answered = connection.call(snapshot(), Duration::from_secs(10)).await;
+            let waited = started.elapsed();
+            let Err(CallFailure::Stalled(why)) = answered else {
+                panic!("stalled at the silence bound: {answered:?}");
+            };
+            assert!(why.contains("1.5s"), "{why}");
+            assert!(
+                waited >= silence && waited < silence + Duration::from_secs(1),
+                "{waited:?}"
+            );
+            let closed = timeout(WAIT, connection.closed()).await.expect("closed");
+            assert!(matches!(closed, Closed::Stalled(_)), "{closed:?}");
+        });
     }
 }

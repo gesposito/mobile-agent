@@ -81,6 +81,14 @@ pub enum Error {
     RunnerStart { target: String, reason: String },
     /// The runner died again after its restart, or its restart failed.
     RunnerDied { target: String, cause: String },
+    /// The runner stalled on a call, its connection alive (design D26 of
+    /// physical-ios): it answered calls `busy` or nothing past the stall's
+    /// bounds, and is started again; the call and why it counts as stalled.
+    RunnerStalled {
+        target: String,
+        method: String,
+        cause: String,
+    },
     /// No runner session is attached to the target.
     NotAttached { target: String },
     /// The device's RSD handshake does not list the test manager, which the
@@ -121,6 +129,7 @@ impl Error {
             Error::RunnerVersion { .. } => "runner_version_mismatch",
             Error::RunnerStart { .. } => "runner_start_failed",
             Error::RunnerDied { .. } => "runner_died",
+            Error::RunnerStalled { .. } => "runner_stalled",
             Error::NotAttached { .. } => "not_attached",
             Error::TestManagerMissing { .. } => Readiness::DiskImageUnmounted.code(),
             Error::InvalidArgument { .. } => "invalid_argument",
@@ -136,11 +145,11 @@ impl Error {
     }
 
     /// Whether repeating the same request can succeed without a person
-    /// changing anything: a wait that ran out, or a runner error it says so
-    /// of.
+    /// changing anything: a wait that ran out, a call the stalled runner
+    /// failed, which its restart serves, or a runner error it says so of.
     pub fn retryable(&self) -> bool {
         match self {
-            Error::Timeout { .. } => true,
+            Error::Timeout { .. } | Error::RunnerStalled { .. } => true,
             Error::Runner { error, .. } => error.retryable,
             _ => false,
         }
@@ -250,6 +259,15 @@ impl fmt::Display for Error {
                 f,
                 "the runner on iOS device {target} died and could not be started again ({cause}); \
                  attach again, which starts a new session"
+            ),
+            Error::RunnerStalled {
+                target,
+                method,
+                cause,
+            } => write!(
+                f,
+                "the runner on iOS device {target} stalled on {method} ({cause}) and is started \
+                 again; repeat the request, which waits for it"
             ),
             Error::NotAttached { target } => write!(
                 f,

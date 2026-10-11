@@ -157,6 +157,14 @@ pub(crate) struct RunnerState {
     /// Whether the runner process serving has fallen silent: it keeps its
     /// connection and answers nothing on it.
     pub(crate) silent: bool,
+    /// Whether the runner process serving is stuck: its worker keeps the
+    /// next request it takes, which its session answers `deadline_exceeded`
+    /// at the request's deadline, and every later request is answered
+    /// `busy`, its pings still answered.
+    pub(crate) stuck: bool,
+    /// Whether the runner process serving answers pings and nothing else:
+    /// no request, not even its session's answer to a passed deadline.
+    pub(crate) muted: bool,
 }
 
 /// A runner process of the fake device.
@@ -414,6 +422,8 @@ impl FakeDevice {
             stale,
         });
         runner.silent = false;
+        runner.stuck = false;
+        runner.muted = false;
         pid
     }
 
@@ -438,6 +448,23 @@ impl FakeDevice {
     /// host's session declares the connection gone after three silent pings.
     pub(crate) fn silence_runner(&self) {
         self.runner_state().silent = true;
+    }
+
+    /// Makes the runner process serving get stuck on the next request it
+    /// takes, as the phone's runner did on the 43rd emptying fill of every
+    /// session in task 9.6 (`probes/text-hang-swiftui-*.jsonl`): its worker
+    /// keeps that request, which its session answers `deadline_exceeded` at
+    /// the request's deadline, and answers every later one `busy`, while
+    /// its connection stays alive, pings answered, until its process ends.
+    pub(crate) fn stall_runner(&self) {
+        self.runner_state().stuck = true;
+    }
+
+    /// Makes the runner process serving answer pings and nothing else, its
+    /// connection alive: no request is answered, not even by its session at
+    /// the request's deadline.
+    pub(crate) fn mute_runner(&self) {
+        self.runner_state().muted = true;
     }
 
     /// The requests the runner served, by method name.
