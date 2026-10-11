@@ -1,0 +1,2 @@
+16:50:10 before i2-swiftui-login-baselines-fixed: open 3795 ms ok True; after 15 s captureRate 15.8, pollers [('dvt', 135, 0, None), ('coreDevice', 134, 0, None)], runner ('ready', 0); screenshot 212 ms ok True; shutdown 832 ms
+17:12:36 after i2-swiftui-login-baselines-fixed: open 4039 ms ok True; after 15 s captureRate 15.4, pollers [('dvt', 132, 0, None), ('coreDevice', 130, 0, None)], runner ('ready', 0); screenshot 188 ms ok True; shutdown 833 ms

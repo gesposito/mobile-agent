@@ -1,0 +1,55 @@
+[
+  {
+    "command": "open",
+    "input": {
+      "app": "dev.mobileagent.fixture.swiftui",
+      "platform": "ios",
+      "relaunch": true
+    }
+  },
+  {
+    "command": "fill",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"login-username\""
+      },
+      "text": "agent"
+    }
+  },
+  {
+    "command": "fill",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"login-password\""
+      },
+      "text": "hunter2"
+    }
+  },
+  {
+    "command": "press",
+    "input": {
+      "target": {
+        "kind": "selector",
+        "selector": "id=\"login-submit\""
+      }
+    }
+  },
+  {
+    "command": "wait",
+    "input": {
+      "kind": "text",
+      "text": "Welcome, agent",
+      "timeoutMs": 10000
+    }
+  },
+  {
+    "command": "is",
+    "input": {
+      "predicate": "text",
+      "selector": "id=\"login-status\"",
+      "value": "Welcome, agent"
+    }
+  }
+]
