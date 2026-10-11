@@ -1,0 +1,24 @@
+# Task 9.6's checks after the iPhone SE was rebooted, 2026-10-11 UTC (the maintainer's first attempt, before 11:18, had not
+# rebooted it: probes/health-restart-fixed.txt). One session on the phone at a time.
+13:37:16 the first runner start after the reboot, phase a2's build (daemon 0.1.0+e6ec30.18dd6d8c9fc32bc2): open --relaunch of the
+         SwiftUI Login tab 10826 ms with the attach (first tree 1102 ms, settled at 1735 ms); the runner 0.2.0 said hello 6110 ms
+         after its start, the maintainer approving Enable UI Automation at the phone; the disk image personalized at /System/Developer,
+         mounted by the driver; shutdown 752 ms
+# The branch rebased onto main 51de99f (tasks 9.7 and 9.8), the release CLI, daemon and bench built again at 9a13a43:
+#   daemon 0.1.0+e87090.18dd7d37380c9c86; the CLI and the bench byte for byte the earlier builds; agent-ios/build.sh 0.2.0, not installed
+13:39:08 and 13:41:26 task 9.7's device check, cargo test -p ios --test input -- --ignored one_hundred_twenty_emptying_fills_in_one_session
+         (debug build): failed twice in its setup, before any fill, 2.9 and 2.8 s into the test, with
+           tab-login is on screen (crates/ios/tests/input.rs:134)
+         the runner's read after the launch listing row-1 and no tab-login; the 1-minute load 12.51 and 4.07 at the starts
+13:43    the daemon's listing of the same List tab: button "Login" [id=tab-login] among the five tabs; status 19.3 captures a second,
+         DVT's poller 423 captures and CoreDevice's 421, none reopened or left out; the test's runner left from its panic ended by the
+         attach (1 runner left from a lost session)
+13:44:12 to 13:50:20 the same check as 9.6's text probe through the daemon (fills-120-swiftui-fixed.jsonl): 120 of the harness's text
+         entries in one session, every one whole; the 1-minute load 3.47 before and 2.69 after
+13:51:22 task 9.8's device check, cargo test -p ios --test frames -- --ignored a_dvt_connection_closed_mid_session_is_opened_again: passed
+         in 11.2 s, the 1-minute load 3.18:
+           DVT's poller: a capture every 100.0 ms over 5s before the close (50 captures); after the close, reopened at 28.5 ms
+           and capturing again at 143.6 ms; CoreDevice's 1 captures during; reopens [1, 0], left out [None, None]
+13:52:02 open --relaunch of the SwiftUI Big tab 1839 ms, then three screenshots through the daemon: 239, 619 and 182 ms, 562x1000
+         JPEGs from the capture; status 13.5 captures a second 5 s after the attach, DVT's poller 22 captures and CoreDevice's 20,
+         the runner ready with 0 restarts; shutdown 759 ms, no runner process left on the phone

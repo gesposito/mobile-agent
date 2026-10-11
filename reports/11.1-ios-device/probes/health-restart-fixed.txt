@@ -1,4 +1,5 @@
-# Task 9.6's health check after the maintainer restarted the iPhone SE, 2026-10-11 UTC, the same release build as phase a2
+# Task 9.6's health check after the maintainer's first attempt to restart the iPhone SE, which had not rebooted it (as the
+# maintainer said before the reboot that preceded 13:37, probes/health-reboot-fixed.txt), 2026-10-11 UTC, the same release build as phase a2
 # (daemon 0.1.0+e6ec30.18dd6d8c9fc32bc2), one daemon and one runner session throughout, no other session on the phone.
 11:18:06 open --relaunch of the SwiftUI fixture's Login tab: 4096 ms with the attach (first tree 1127 ms, settled at 1806 ms);
          status: runner 0.2.0 ready, 0 restarts, hello 787 ms after its start, no approval asked; the disk image personalized at
@@ -12,4 +13,5 @@
          and the snapshot after it with busy: the runner is still serving request 291
 11:22:14 shutdown: 2142 ms, stopped, no runner process left on the phone
 # Loads: 3.20 at 11:19:15, 5.85 at 11:21:57 (another agent's builds), no launch hold (3.9 to 6.5 ms).
-# Both faults of the morning (probes/dvt-screenshot-fixed.txt, text-hang-swiftui-*.jsonl) outlast the restart.
+# Both faults of the morning (probes/dvt-screenshot-fixed.txt, text-hang-swiftui-*.jsonl) were still there; the reboot before 13:37
+# cleared both (probes/health-reboot-fixed.txt).
