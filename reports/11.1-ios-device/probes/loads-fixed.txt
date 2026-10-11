@@ -1,0 +1,65 @@
+# Task 9.6's probes, 2026-10-11 UTC, one daemon of the build at 9a13a43 (daemon 0.1.0+e87090.18dd7d37380c9c86), 15:49 to 15:55:
+# each probe's host check before and after, the frame pollers after it (DVT's left out since phase e3, probes/dvt-left-out-fixed.txt),
+# and the sampler every 20 s; the probes' own files carry the load before and after too.
+# reads swiftui: before
+2026-10-11T15:49:34Z load1=1.92 load5=4.65 load15=4.85 launch_ms=5.3 busy=[] top=[46.4%, 35.7%, 31.3%]
+# exit 0
+2026-10-11T15:49:51Z load1=2.33 load5=4.56 load15=4.81 launch_ms=5.1 busy=[] top=[45.4%, 8.0%, 5.7%]
+# status: attached True attaches 1 captureRate 8.2 pollers [('dvt', 0, 0, None), ('coreDevice', 127, 0, None)] runner ready 0
+# reads expo: before
+2026-10-11T15:49:51Z load1=2.33 load5=4.56 load15=4.81 launch_ms=5.0 busy=[] top=[45.4%, 17.3%, 8.6%]
+# exit 0
+2026-10-11T15:50:07Z load1=2.12 load5=4.40 load15=4.75 launch_ms=5.0 busy=[] top=[43.9%, 14.2%, 7.9%]
+# status: attached True attaches 1 captureRate 8.1 pollers [('dvt', 0, 1, None), ('coreDevice', 249, 0, None)] runner ready 0
+# idle swiftui: before
+2026-10-11T15:50:07Z load1=2.12 load5=4.40 load15=4.75 launch_ms=3.5 busy=[] top=[44.3%, 18.5%, 7.8%]
+# exit 0
+2026-10-11T15:51:11Z load1=2.13 load5=4.01 load15=4.57 launch_ms=5.2 busy=[] top=[46.1%, 8.5%, 7.2%]
+# status: attached True attaches 1 captureRate 8.2 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 781, 0, None)] runner ready 0
+# idle expo: before
+2026-10-11T15:51:11Z load1=2.13 load5=4.01 load15=4.57 launch_ms=5.2 busy=[] top=[46.9%, 19.2%, 8.8%]
+# exit 0
+2026-10-11T15:52:14Z load1=2.30 load5=3.69 load15=4.41 launch_ms=6.7 busy=[] top=[47.3%, 27.9%, 14.2%]
+# status: attached True attaches 1 captureRate 8.4 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 1320, 0, None)] runner ready 0
+# after-open swiftui: before
+2026-10-11T15:52:14Z load1=2.30 load5=3.69 load15=4.41 launch_ms=6.6 busy=[] top=[49.2%, 28.7%, 7.6%]
+# exit 0
+2026-10-11T15:53:00Z load1=1.85 load5=3.36 load15=4.25 launch_ms=5.6 busy=[] top=[48.6%, 14.6%, 6.1%]
+# status: attached True attaches 1 captureRate 7.9 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 1607, 0, None)] runner ready 0
+# after-open expo: before
+2026-10-11T15:53:00Z load1=1.85 load5=3.36 load15=4.25 launch_ms=6.0 busy=[] top=[48.6%, 17.9%, 9.1%]
+# exit 0
+2026-10-11T15:53:42Z load1=1.94 load5=3.19 load15=4.15 launch_ms=4.7 busy=[] top=[46.3%, 7.4%, 5.3%]
+# status: attached True attaches 1 captureRate 7.6 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 1871, 0, None)] runner ready 0
+# alert swiftui: before
+2026-10-11T15:53:43Z load1=1.94 load5=3.19 load15=4.15 launch_ms=4.9 busy=[] top=[47.3%, 17.4%, 9.0%]
+# exit 0
+2026-10-11T15:53:47Z load1=1.95 load5=3.17 load15=4.13 launch_ms=4.4 busy=[] top=[44.9%, 19.1%, 8.5%]
+# status: attached True attaches 1 captureRate 7.6 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 1904, 0, None)] runner ready 0
+# alert expo: before
+2026-10-11T15:53:47Z load1=1.95 load5=3.17 load15=4.13 launch_ms=4.9 busy=[] top=[47.3%, 23.9%, 9.2%]
+# exit 0
+2026-10-11T15:53:51Z load1=1.79 load5=3.12 load15=4.11 launch_ms=4.7 busy=[] top=[46.0%, 9.4%, 9.2%]
+# status: attached True attaches 1 captureRate 7.6 pollers [('dvt', 0, 1, "2 captures in a row failed again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s"), ('coreDevice', 1942, 0, None)] runner ready 0
+# idle cost: before
+2026-10-11T15:53:51Z load1=1.79 load5=3.12 load15=4.11 launch_ms=4.3 busy=[] top=[47.8%, 18.2%, 9.9%]
+# exit 0
+2026-10-11T15:55:08Z load1=1.59 load5=2.75 load15=3.88 launch_ms=5.4 busy=[] top=[46.2%, 8.1%, 8.0%]
+# status: attached True attaches 1 captureRate 8.5 pollers [('dvt', 0, 1, None), ('coreDevice', 316, 0, None)] runner ready 0
+# during, every 20 s (one sampler process)
+2026-10-11T15:49:54Z load1=2.33 load5=4.56 load15=4.81 launch_ms=7.4 busy=[] top=[110.1%, 44.8%, 21.0%]
+2026-10-11T15:50:14Z load1=2.43 load5=4.43 load15=4.75 launch_ms=12.5 busy=[] top=[46.7%, 22.0%, 13.3%]
+2026-10-11T15:50:34Z load1=2.44 load5=4.30 load15=4.70 launch_ms=13.5 busy=[] top=[112.7%, 60.3%, 49.6%]
+2026-10-11T15:50:54Z load1=2.45 load5=4.19 load15=4.65 launch_ms=6.2 busy=[] top=[148.3%, 45.4%, 15.0%]
+2026-10-11T15:51:14Z load1=2.13 load5=4.01 load15=4.57 launch_ms=17.7 busy=[] top=[46.4%, 21.0%, 11.4%]
+2026-10-11T15:51:34Z load1=1.80 load5=3.81 load15=4.49 launch_ms=15.4 busy=[] top=[46.5%, 22.0%, 18.9%]
+2026-10-11T15:51:54Z load1=2.29 load5=3.79 load15=4.47 launch_ms=6.8 busy=[] top=[106.8%, 45.5%, 17.4%]
+2026-10-11T15:52:14Z load1=2.30 load5=3.69 load15=4.41 launch_ms=7.5 busy=[] top=[47.3%, 27.9%, 14.2%]
+2026-10-11T15:52:34Z load1=2.14 load5=3.57 load15=4.35 launch_ms=15.2 busy=[] top=[47.5%, 12.6%, 8.9%]
+2026-10-11T15:52:54Z load1=2.01 load5=3.45 load15=4.29 launch_ms=7.8 busy=[] top=[87.9%, 46.5%, 15.1%]
+2026-10-11T15:53:14Z load1=2.02 load5=3.35 load15=4.24 launch_ms=14.8 busy=[] top=[46.3%, 18.9%, 18.9%]
+2026-10-11T15:53:34Z load1=1.58 load5=3.17 load15=4.15 launch_ms=14.2 busy=[] top=[47.1%, 10.8%, 7.7%]
+2026-10-11T15:53:54Z load1=1.79 load5=3.12 load15=4.11 launch_ms=11.2 busy=[] top=[105.9%, 45.2%, 22.3%]
+2026-10-11T15:54:14Z load1=1.63 load5=3.00 load15=4.04 launch_ms=15.5 busy=[] top=[49.6%, 22.0%, 9.2%]
+2026-10-11T15:54:34Z load1=1.60 load5=2.90 load15=3.98 launch_ms=17.3 busy=[] top=[43.9%, 12.8%, 9.0%]
+2026-10-11T15:54:54Z load1=1.66 load5=2.83 load15=3.93 launch_ms=20.9 busy=[] top=[77.9%, 46.6%, 14.5%]

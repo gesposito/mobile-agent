@@ -1,0 +1,7 @@
+{"label": "load before", "load1": 1.95}
+{"label": "open expo system", "start_s": 0.006, "wall_ms": 2223.4, "settled": true, "elapsedMs": 2214.19, "firstTreeMs": 1252.088, "ok": true, "error": null}
+{"label": "click system-alert", "start_s": 2.23, "wall_ms": 473.4, "ok": true, "error": null}
+{"label": "settle", "start_s": 2.704, "wall_ms": 599.9, "data": {"elapsedMs": 581.386, "endedBy": "frame", "frameChanges": 4, "settled": true, "stillChanging": [], "treeChanges": 0, "waited": "settle"}, "ok": true, "error": null}
+{"label": "full snapshot 0", "start_s": 3.305, "wall_ms": 152.7, "readMs": 0.742, "servedFromReplica": true, "refs": 1, "replicaRevision": 55, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "full snapshot 1", "start_s": 3.458, "wall_ms": 16.6, "readMs": 0.107, "servedFromReplica": true, "refs": 1, "replicaRevision": 55, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "click ref e18232 (the OK button, which has no identifier on React Native)", "start_s": 3.475, "wall_ms": 397.6, "ok": true, "error": null}

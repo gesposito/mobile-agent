@@ -1,0 +1,44 @@
+{"label": "load before", "load1": 2.3}
+{"label": "open swiftui big", "start_s": 0.007, "wall_ms": 2693.8, "settled": true, "elapsedMs": 2684.444, "firstTreeMs": 2474.73, "ok": true, "error": null}
+{"label": "round 0 pause 0 ms snapshot 0", "start_s": 2.701, "wall_ms": 677.8, "readMs": 2.594, "servedFromReplica": true, "refs": 506, "replicaRevision": 9, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 0 ms snapshot 1", "start_s": 3.38, "wall_ms": 18.7, "readMs": 1.406, "servedFromReplica": true, "refs": 506, "replicaRevision": 9, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 3.4, "wall_ms": 2440.5, "settled": true, "elapsedMs": 2425.036, "firstTreeMs": 2218.985, "ok": true, "error": null}
+{"label": "round 0 pause 150 ms snapshot 0", "start_s": 5.995, "wall_ms": 510.3, "readMs": 1.57, "servedFromReplica": true, "refs": 506, "replicaRevision": 10, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 150 ms snapshot 1", "start_s": 6.507, "wall_ms": 18.6, "readMs": 0.913, "servedFromReplica": true, "refs": 506, "replicaRevision": 10, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 6.526, "wall_ms": 2532.2, "settled": true, "elapsedMs": 2521.052, "firstTreeMs": 2320.789, "ok": true, "error": null}
+{"label": "round 0 pause 300 ms snapshot 0", "start_s": 9.36, "wall_ms": 365.6, "readMs": 0.634, "servedFromReplica": true, "refs": 506, "replicaRevision": 11, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 300 ms snapshot 1", "start_s": 9.726, "wall_ms": 8.9, "readMs": 0.664, "servedFromReplica": true, "refs": 506, "replicaRevision": 11, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 9.736, "wall_ms": 2509.1, "settled": true, "elapsedMs": 2500.336, "firstTreeMs": 2301.591, "ok": true, "error": null}
+{"label": "round 0 pause 450 ms snapshot 0", "start_s": 12.698, "wall_ms": 221.2, "readMs": 1.067, "servedFromReplica": true, "refs": 506, "replicaRevision": 12, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 450 ms snapshot 1", "start_s": 12.921, "wall_ms": 10.7, "readMs": 0.791, "servedFromReplica": true, "refs": 506, "replicaRevision": 12, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 12.932, "wall_ms": 2540.5, "settled": true, "elapsedMs": 2523.86, "firstTreeMs": 2323.944, "ok": true, "error": null}
+{"label": "round 0 pause 600 ms snapshot 0", "start_s": 16.083, "wall_ms": 21.9, "readMs": 1.658, "servedFromReplica": true, "refs": 506, "replicaRevision": 13, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 600 ms snapshot 1", "start_s": 16.106, "wall_ms": 16.6, "readMs": 1.215, "servedFromReplica": true, "refs": 506, "replicaRevision": 13, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 16.124, "wall_ms": 2410.5, "settled": true, "elapsedMs": 2394.941, "firstTreeMs": 2190.024, "ok": true, "error": null}
+{"label": "round 0 pause 800 ms snapshot 0", "start_s": 19.342, "wall_ms": 11.8, "readMs": 0.892, "servedFromReplica": true, "refs": 506, "replicaRevision": 14, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 800 ms snapshot 1", "start_s": 19.355, "wall_ms": 11.1, "readMs": 0.791, "servedFromReplica": true, "refs": 506, "replicaRevision": 14, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 19.366, "wall_ms": 2519.8, "settled": true, "elapsedMs": 2508.494, "firstTreeMs": 2307.76, "ok": true, "error": null}
+{"label": "round 0 pause 1200 ms snapshot 0", "start_s": 23.096, "wall_ms": 7.1, "readMs": 0.654, "servedFromReplica": true, "refs": 506, "replicaRevision": 15, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 0 pause 1200 ms snapshot 1", "start_s": 23.104, "wall_ms": 7.1, "readMs": 0.594, "servedFromReplica": true, "refs": 506, "replicaRevision": 15, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 23.111, "wall_ms": 2493.9, "settled": true, "elapsedMs": 2487.501, "firstTreeMs": 2288.664, "ok": true, "error": null}
+{"label": "round 1 pause 0 ms snapshot 0", "start_s": 25.605, "wall_ms": 672.6, "readMs": 1.677, "servedFromReplica": true, "refs": 506, "replicaRevision": 16, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 0 ms snapshot 1", "start_s": 26.279, "wall_ms": 14.7, "readMs": 1.017, "servedFromReplica": true, "refs": 506, "replicaRevision": 16, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 26.295, "wall_ms": 2484.1, "settled": true, "elapsedMs": 2473.048, "firstTreeMs": 2265.888, "ok": true, "error": null}
+{"label": "round 1 pause 150 ms snapshot 0", "start_s": 28.939, "wall_ms": 502.2, "readMs": 1.274, "servedFromReplica": true, "refs": 506, "replicaRevision": 17, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 150 ms snapshot 1", "start_s": 29.442, "wall_ms": 16.2, "readMs": 1.191, "servedFromReplica": true, "refs": 506, "replicaRevision": 17, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 29.459, "wall_ms": 2449.5, "settled": true, "elapsedMs": 2432.362, "firstTreeMs": 2233.898, "ok": true, "error": null}
+{"label": "round 1 pause 300 ms snapshot 0", "start_s": 32.211, "wall_ms": 362.4, "readMs": 1.375, "servedFromReplica": true, "refs": 506, "replicaRevision": 18, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 300 ms snapshot 1", "start_s": 32.575, "wall_ms": 15.6, "readMs": 0.989, "servedFromReplica": true, "refs": 506, "replicaRevision": 18, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 32.591, "wall_ms": 2550.2, "settled": true, "elapsedMs": 2536.193, "firstTreeMs": 2332.924, "ok": true, "error": null}
+{"label": "round 1 pause 450 ms snapshot 0", "start_s": 35.604, "wall_ms": 211.2, "readMs": 1.896, "servedFromReplica": true, "refs": 506, "replicaRevision": 19, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 450 ms snapshot 1", "start_s": 35.816, "wall_ms": 17.7, "readMs": 1.37, "servedFromReplica": true, "refs": 506, "replicaRevision": 19, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 35.835, "wall_ms": 2437.6, "settled": true, "elapsedMs": 2423.8, "firstTreeMs": 2218.018, "ok": true, "error": null}
+{"label": "round 1 pause 600 ms snapshot 0", "start_s": 38.875, "wall_ms": 49.6, "readMs": 0.683, "servedFromReplica": true, "refs": 506, "replicaRevision": 20, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 600 ms snapshot 1", "start_s": 38.925, "wall_ms": 12.4, "readMs": 0.779, "servedFromReplica": true, "refs": 506, "replicaRevision": 20, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 38.938, "wall_ms": 2461.3, "settled": true, "elapsedMs": 2451.564, "firstTreeMs": 2253.739, "ok": true, "error": null}
+{"label": "round 1 pause 800 ms snapshot 0", "start_s": 42.201, "wall_ms": 22.5, "readMs": 1.736, "servedFromReplica": true, "refs": 506, "replicaRevision": 21, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 800 ms snapshot 1", "start_s": 42.224, "wall_ms": 18.8, "readMs": 1.466, "servedFromReplica": true, "refs": 506, "replicaRevision": 21, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "open swiftui big", "start_s": 42.244, "wall_ms": 2560.5, "settled": true, "elapsedMs": 2541.203, "firstTreeMs": 2338.677, "ok": true, "error": null}
+{"label": "round 1 pause 1200 ms snapshot 0", "start_s": 46.015, "wall_ms": 23.4, "readMs": 1.701, "servedFromReplica": true, "refs": 506, "replicaRevision": 22, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "round 1 pause 1200 ms snapshot 1", "start_s": 46.04, "wall_ms": 17.2, "readMs": 1.311, "servedFromReplica": true, "refs": 506, "replicaRevision": 22, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.swiftui"}
+{"label": "load after", "load1": 1.93}

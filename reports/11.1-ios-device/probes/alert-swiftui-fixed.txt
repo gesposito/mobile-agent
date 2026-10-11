@@ -1,0 +1,18 @@
+== swiftui System tab with the in-app alert, full snapshot 0: wall 147.2 ms, readMs 0.663, servedFromReplica True
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "This alert is presented by the app."
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [id=inapp-alert-ok, ref=e18224]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+== swiftui System tab with the in-app alert, full snapshot 1: wall 17.1 ms, readMs 0.139, servedFromReplica True
+- alert "In-app alert"
+  - text "In-app alert"
+  - text "This alert is presented by the app."
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%
+  - button "OK" [id=inapp-alert-ok, ref=e18224]
+  - text "Vertical scroll bar, 1 page": 0%
+  - text "Horizontal scroll bar, 1 page": 0%

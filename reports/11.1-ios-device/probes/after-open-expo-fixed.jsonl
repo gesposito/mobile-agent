@@ -1,0 +1,44 @@
+{"label": "load before", "load1": 1.85}
+{"label": "open expo big", "start_s": 0.007, "wall_ms": 2340.5, "settled": true, "elapsedMs": 2331.517, "firstTreeMs": 2123.764, "ok": true, "error": null}
+{"label": "round 0 pause 0 ms snapshot 0", "start_s": 2.349, "wall_ms": 454.5, "readMs": 0.964, "servedFromReplica": true, "refs": 506, "replicaRevision": 24, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 0 ms snapshot 1", "start_s": 2.804, "wall_ms": 12.4, "readMs": 0.876, "servedFromReplica": true, "refs": 506, "replicaRevision": 24, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 2.818, "wall_ms": 2540.8, "settled": true, "elapsedMs": 2530.089, "firstTreeMs": 2331.664, "ok": true, "error": null}
+{"label": "round 0 pause 150 ms snapshot 0", "start_s": 5.512, "wall_ms": 313.1, "readMs": 3.082, "servedFromReplica": true, "refs": 506, "replicaRevision": 26, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 150 ms snapshot 1", "start_s": 5.827, "wall_ms": 26.8, "readMs": 1.499, "servedFromReplica": true, "refs": 506, "replicaRevision": 26, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 5.855, "wall_ms": 2248.0, "settled": true, "elapsedMs": 2231.478, "firstTreeMs": 1934.909, "ok": true, "error": null}
+{"label": "round 0 pause 300 ms snapshot 0", "start_s": 8.405, "wall_ms": 163.6, "readMs": 2.102, "servedFromReplica": true, "refs": 506, "replicaRevision": 28, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 300 ms snapshot 1", "start_s": 8.57, "wall_ms": 20.2, "readMs": 1.462, "servedFromReplica": true, "refs": 506, "replicaRevision": 28, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 8.591, "wall_ms": 2515.4, "settled": true, "elapsedMs": 2499.012, "firstTreeMs": 2292.983, "ok": true, "error": null}
+{"label": "round 0 pause 450 ms snapshot 0", "start_s": 11.567, "wall_ms": 17.9, "readMs": 1.27, "servedFromReplica": true, "refs": 506, "replicaRevision": 30, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 450 ms snapshot 1", "start_s": 11.586, "wall_ms": 16.4, "readMs": 1.241, "servedFromReplica": true, "refs": 506, "replicaRevision": 30, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 11.604, "wall_ms": 2493.9, "settled": true, "elapsedMs": 2480.054, "firstTreeMs": 2274.294, "ok": true, "error": null}
+{"label": "round 0 pause 600 ms snapshot 0", "start_s": 14.708, "wall_ms": 22.7, "readMs": 1.785, "servedFromReplica": true, "refs": 506, "replicaRevision": 32, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 600 ms snapshot 1", "start_s": 14.732, "wall_ms": 17.0, "readMs": 1.335, "servedFromReplica": true, "refs": 506, "replicaRevision": 32, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 14.75, "wall_ms": 2140.9, "settled": true, "elapsedMs": 2125.299, "firstTreeMs": 1912.81, "ok": true, "error": null}
+{"label": "round 0 pause 800 ms snapshot 0", "start_s": 17.694, "wall_ms": 25.6, "readMs": 1.673, "servedFromReplica": true, "refs": 506, "replicaRevision": 34, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 800 ms snapshot 1", "start_s": 17.721, "wall_ms": 17.4, "readMs": 1.319, "servedFromReplica": true, "refs": 506, "replicaRevision": 34, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 17.739, "wall_ms": 2152.2, "settled": true, "elapsedMs": 2139.624, "firstTreeMs": 1931.774, "ok": true, "error": null}
+{"label": "round 0 pause 1200 ms snapshot 0", "start_s": 21.096, "wall_ms": 21.6, "readMs": 1.705, "servedFromReplica": true, "refs": 506, "replicaRevision": 36, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 0 pause 1200 ms snapshot 1", "start_s": 21.119, "wall_ms": 16.3, "readMs": 1.374, "servedFromReplica": true, "refs": 506, "replicaRevision": 36, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 21.136, "wall_ms": 2223.5, "settled": true, "elapsedMs": 2210.525, "firstTreeMs": 2001.403, "ok": true, "error": null}
+{"label": "round 1 pause 0 ms snapshot 0", "start_s": 23.36, "wall_ms": 449.3, "readMs": 0.688, "servedFromReplica": true, "refs": 506, "replicaRevision": 38, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 0 ms snapshot 1", "start_s": 23.809, "wall_ms": 9.4, "readMs": 0.614, "servedFromReplica": true, "refs": 506, "replicaRevision": 38, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 23.819, "wall_ms": 2183.2, "settled": true, "elapsedMs": 2174.305, "firstTreeMs": 1966.379, "ok": true, "error": null}
+{"label": "round 1 pause 150 ms snapshot 0", "start_s": 26.156, "wall_ms": 322.7, "readMs": 2.059, "servedFromReplica": true, "refs": 506, "replicaRevision": 40, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 150 ms snapshot 1", "start_s": 26.48, "wall_ms": 18.4, "readMs": 1.411, "servedFromReplica": true, "refs": 506, "replicaRevision": 40, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 26.5, "wall_ms": 2180.0, "settled": true, "elapsedMs": 2163.663, "firstTreeMs": 1954.896, "ok": true, "error": null}
+{"label": "round 1 pause 300 ms snapshot 0", "start_s": 28.991, "wall_ms": 140.5, "readMs": 1.816, "servedFromReplica": true, "refs": 506, "replicaRevision": 42, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 300 ms snapshot 1", "start_s": 29.133, "wall_ms": 21.1, "readMs": 1.469, "servedFromReplica": true, "refs": 506, "replicaRevision": 42, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 29.155, "wall_ms": 2168.4, "settled": true, "elapsedMs": 2151.007, "firstTreeMs": 1942.938, "ok": true, "error": null}
+{"label": "round 1 pause 450 ms snapshot 0", "start_s": 31.781, "wall_ms": 22.8, "readMs": 1.665, "servedFromReplica": true, "refs": 506, "replicaRevision": 43, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 450 ms snapshot 1", "start_s": 31.804, "wall_ms": 16.8, "readMs": 1.365, "servedFromReplica": true, "refs": 506, "replicaRevision": 43, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 31.822, "wall_ms": 2286.5, "settled": true, "elapsedMs": 2272.343, "firstTreeMs": 2074.562, "ok": true, "error": null}
+{"label": "round 1 pause 600 ms snapshot 0", "start_s": 34.719, "wall_ms": 25.0, "readMs": 1.803, "servedFromReplica": true, "refs": 506, "replicaRevision": 45, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 600 ms snapshot 1", "start_s": 34.746, "wall_ms": 16.7, "readMs": 1.301, "servedFromReplica": true, "refs": 506, "replicaRevision": 45, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 34.763, "wall_ms": 2470.6, "settled": true, "elapsedMs": 2456.109, "firstTreeMs": 2258.406, "ok": true, "error": null}
+{"label": "round 1 pause 800 ms snapshot 0", "start_s": 38.036, "wall_ms": 25.0, "readMs": 1.947, "servedFromReplica": true, "refs": 506, "replicaRevision": 47, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 800 ms snapshot 1", "start_s": 38.063, "wall_ms": 18.3, "readMs": 1.414, "servedFromReplica": true, "refs": 506, "replicaRevision": 47, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "open expo big", "start_s": 38.082, "wall_ms": 2211.4, "settled": true, "elapsedMs": 2196.695, "firstTreeMs": 1987.698, "ok": true, "error": null}
+{"label": "round 1 pause 1200 ms snapshot 0", "start_s": 41.504, "wall_ms": 23.1, "readMs": 1.469, "servedFromReplica": true, "refs": 506, "replicaRevision": 49, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "round 1 pause 1200 ms snapshot 1", "start_s": 41.528, "wall_ms": 16.8, "readMs": 1.45, "servedFromReplica": true, "refs": 506, "replicaRevision": 49, "ok": true, "error": null, "origin": "dev.mobileagent.fixture.expo"}
+{"label": "load after", "load1": 1.94}

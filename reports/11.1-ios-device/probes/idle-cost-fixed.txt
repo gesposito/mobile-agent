@@ -1,0 +1,14 @@
+# The idle poll's cost on the host, 2026-10-11 UTC (task 9.6, the fixed daemon): the SwiftUI fixture's Big tab
+# in front for 30 s, first with no daemon (the app launched through CoreDevice), then attached through
+# mobile-agent and idle; CPU seconds from ps of the daemon and usbmuxd over each window.
+detached start 15:53:59 load { 1.81 3.10 4.10 }
+detached end 15:54:29 usbmuxd cpu 0.00 s
+open: ok True, wall 3669.6 ms, settled True, elapsedMs 1737.673
+attached start 15:54:38 load { 1.47 2.85 3.96 }
+attached end 15:55:08 daemon cpu 1.41 s usbmuxd cpu 2.30 s
+attached and idle: the daemon 4.7% and usbmuxd 7.7% of a core
+# status after the attached window:
+    input: dtuhidd (iOS 26.6.2 takes dtuhidd's reports from the host without a display stream); text through the runner, typed or set
+    frames: screenshots polled on DVT and CoreDevice, 8.5 captures a second, 7 received; DVT's connection reopened once
+    runner: mobile-agent-ios-runner 0.2.0, ready, 0 restarts, hello 760 ms after its start
+    battery: 100%, not charging, on external power, when attached

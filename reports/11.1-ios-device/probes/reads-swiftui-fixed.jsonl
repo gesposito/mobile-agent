@@ -1,0 +1,32 @@
+{"label": "load before", "load1": 1.92}
+{"label": "open swiftui big", "start_s": 0.007, "wall_ms": 3931.8, "settled": true, "elapsedMs": 1753.287, "firstTreeMs": 1697.835, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 0", "start_s": 3.94, "wall_ms": 690.2, "readMs": 665.554, "servedFromReplica": false, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 1", "start_s": 4.631, "wall_ms": 20.3, "readMs": 0.948, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 2", "start_s": 4.652, "wall_ms": 12.6, "readMs": 0.811, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 3", "start_s": 4.665, "wall_ms": 10.9, "readMs": 0.894, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 4", "start_s": 4.677, "wall_ms": 10.0, "readMs": 0.733, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 5", "start_s": 4.687, "wall_ms": 9.9, "readMs": 0.719, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 0", "start_s": 7.202, "wall_ms": 22.7, "readMs": 1.251, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 1", "start_s": 7.226, "wall_ms": 15.9, "readMs": 0.905, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 2", "start_s": 7.243, "wall_ms": 11.0, "readMs": 0.677, "servedFromReplica": true, "refs": 506, "replicaRevision": 1, "ok": true, "error": null}
+{"label": "open swiftui big", "start_s": 7.255, "wall_ms": 1902.2, "settled": true, "elapsedMs": 1894.008, "firstTreeMs": 1690.908, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 0", "start_s": 9.157, "wall_ms": 552.5, "readMs": 0.787, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 1", "start_s": 9.71, "wall_ms": 9.3, "readMs": 0.72, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 2", "start_s": 9.72, "wall_ms": 8.3, "readMs": 0.681, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 3", "start_s": 9.729, "wall_ms": 7.6, "readMs": 0.612, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 4", "start_s": 9.737, "wall_ms": 7.3, "readMs": 0.625, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 5", "start_s": 9.745, "wall_ms": 7.3, "readMs": 0.587, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 0", "start_s": 12.256, "wall_ms": 23.5, "readMs": 1.44, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 1", "start_s": 12.281, "wall_ms": 21.4, "readMs": 1.248, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 2", "start_s": 12.303, "wall_ms": 15.9, "readMs": 1.086, "servedFromReplica": true, "refs": 506, "replicaRevision": 2, "ok": true, "error": null}
+{"label": "open swiftui big", "start_s": 12.32, "wall_ms": 1910.5, "settled": true, "elapsedMs": 1895.416, "firstTreeMs": 1694.318, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 0", "start_s": 14.231, "wall_ms": 546.7, "readMs": 2.583, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 1", "start_s": 14.779, "wall_ms": 19.4, "readMs": 1.282, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 2", "start_s": 14.8, "wall_ms": 16.1, "readMs": 1.115, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 3", "start_s": 14.817, "wall_ms": 16.0, "readMs": 0.978, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 4", "start_s": 14.833, "wall_ms": 14.0, "readMs": 0.89, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 5", "start_s": 14.848, "wall_ms": 10.6, "readMs": 0.707, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 0", "start_s": 17.36, "wall_ms": 19.9, "readMs": 1.479, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 1", "start_s": 17.381, "wall_ms": 17.4, "readMs": 1.137, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 2", "start_s": 17.399, "wall_ms": 16.6, "readMs": 1.004, "servedFromReplica": true, "refs": 506, "replicaRevision": 3, "ok": true, "error": null}
+{"label": "load after", "load1": 2.33}

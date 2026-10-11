@@ -1,0 +1,7 @@
+{"label": "load before", "load1": 1.94}
+{"label": "open swiftui system", "start_s": 0.011, "wall_ms": 2189.3, "settled": true, "elapsedMs": 2176.807, "firstTreeMs": 1698.837, "ok": true, "error": null}
+{"label": "click system-alert", "start_s": 2.201, "wall_ms": 531.5, "ok": true, "error": null}
+{"label": "settle", "start_s": 2.733, "wall_ms": 533.7, "data": {"elapsedMs": 513.961, "endedBy": "frame", "frameChanges": 3, "settled": true, "stillChanging": [], "treeChanges": 0, "waited": "settle"}, "ok": true, "error": null}
+{"label": "full snapshot 0", "start_s": 3.267, "wall_ms": 147.2, "readMs": 0.663, "servedFromReplica": true, "refs": 1, "replicaRevision": 51, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "full snapshot 1", "start_s": 3.415, "wall_ms": 17.1, "readMs": 0.139, "servedFromReplica": true, "refs": 1, "replicaRevision": 51, "ok": true, "error": null, "title": true, "message": true, "ok_button": true}
+{"label": "click id=inapp-alert-ok", "start_s": 3.433, "wall_ms": 358.8, "ok": true, "error": null}

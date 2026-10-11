@@ -1,0 +1,32 @@
+{"label": "load before", "load1": 2.33}
+{"label": "open expo big", "start_s": 0.007, "wall_ms": 1956.1, "settled": true, "elapsedMs": 1948.395, "firstTreeMs": 1497.656, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 0", "start_s": 1.963, "wall_ms": 452.2, "readMs": 1.254, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 1", "start_s": 2.416, "wall_ms": 17.6, "readMs": 1.025, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 2", "start_s": 2.435, "wall_ms": 10.2, "readMs": 0.845, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 3", "start_s": 2.446, "wall_ms": 8.5, "readMs": 0.714, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 4", "start_s": 2.455, "wall_ms": 8.0, "readMs": 0.646, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 snapshot 5", "start_s": 2.463, "wall_ms": 7.9, "readMs": 0.644, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 0", "start_s": 4.974, "wall_ms": 23.3, "readMs": 1.516, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 1", "start_s": 4.998, "wall_ms": 16.8, "readMs": 1.095, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "relaunch 0 after 2.5 s idle snapshot 2", "start_s": 5.016, "wall_ms": 15.9, "readMs": 0.983, "servedFromReplica": true, "refs": 506, "replicaRevision": 4, "ok": true, "error": null}
+{"label": "open expo big", "start_s": 5.032, "wall_ms": 1826.3, "settled": true, "elapsedMs": 1810.421, "firstTreeMs": 1528.247, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 0", "start_s": 6.86, "wall_ms": 457.9, "readMs": 1.293, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 1", "start_s": 7.319, "wall_ms": 17.7, "readMs": 1.255, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 2", "start_s": 7.337, "wall_ms": 14.3, "readMs": 0.971, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 3", "start_s": 7.352, "wall_ms": 12.8, "readMs": 0.773, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 4", "start_s": 7.366, "wall_ms": 11.9, "readMs": 0.761, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 snapshot 5", "start_s": 7.378, "wall_ms": 10.3, "readMs": 0.732, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 0", "start_s": 9.894, "wall_ms": 15.6, "readMs": 1.262, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 1", "start_s": 9.911, "wall_ms": 15.9, "readMs": 1.123, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "relaunch 1 after 2.5 s idle snapshot 2", "start_s": 9.928, "wall_ms": 14.8, "readMs": 1.13, "servedFromReplica": true, "refs": 506, "replicaRevision": 5, "ok": true, "error": null}
+{"label": "open expo big", "start_s": 9.943, "wall_ms": 1865.4, "settled": true, "elapsedMs": 1854.722, "firstTreeMs": 1559.822, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 0", "start_s": 11.809, "wall_ms": 479.1, "readMs": 1.761, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 1", "start_s": 12.289, "wall_ms": 20.0, "readMs": 1.23, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 2", "start_s": 12.31, "wall_ms": 15.0, "readMs": 0.893, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 3", "start_s": 12.326, "wall_ms": 12.5, "readMs": 0.789, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 4", "start_s": 12.339, "wall_ms": 10.3, "readMs": 0.764, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 snapshot 5", "start_s": 12.35, "wall_ms": 8.9, "readMs": 0.716, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 0", "start_s": 14.861, "wall_ms": 27.9, "readMs": 1.498, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 1", "start_s": 14.89, "wall_ms": 17.5, "readMs": 1.165, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "relaunch 2 after 2.5 s idle snapshot 2", "start_s": 14.909, "wall_ms": 16.2, "readMs": 1.158, "servedFromReplica": true, "refs": 506, "replicaRevision": 6, "ok": true, "error": null}
+{"label": "load after", "load1": 2.12}
