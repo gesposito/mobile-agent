@@ -1,0 +1,14 @@
+# DVT's screenshot failing again on the iPhone SE, 2026-10-11 UTC, about 1 h 40 min after the reboot (probes/health-reboot-fixed.txt),
+# with 9.6's build at 9a13a43 (daemon 0.1.0+e87090.18dd7d37380c9c86), which holds task 9.8's reopen and fallback.
+15:18    phase e3, the 21st of its 53 cold attaches and every one after: device_error: DVT's capabilities failed on the device: device
+         socket io failed: remote server connection closed (e3-expo-primitives-fixed/report.json: cold-attach 33 of 50 failed, and the
+         first 8 first-snapshot iterations, with one service_missing among them); e3's screenshot series: 9 of 50 flaked on
+         CoreDevice's capturescreenshot failed on the device: device returned an error
+15:31:30 open --relaunch of the SwiftUI Big tab through a new daemon: 4651 ms, settled
+         three screenshots: 10713 ms (DVT's 10 s timeout, then served by CoreDevice), 710 ms (served), 10170 ms (failed: CoreDevice's
+         capturescreenshot failed on the device: device returned an error)
+         status: captureRate 8.1, pollers DVT 0 captures 1 reopen, CoreDevice 198 captures
+15:33    status: frames: screenshots polled on CoreDevice, 8.0 captures a second, 9 received; DVT left out: 2 captures in a row failed
+         again on the connection it opened again, the last: DVT's reply to takeScreenshot did not happen within 10s
+         pollers: DVT 0 captures, 1 reopen, left out; CoreDevice 467 captures, 0 reopens
+         shutdown 864 ms
