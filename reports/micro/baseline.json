@@ -1,26 +1,26 @@
 {
   "schema_version": 1,
   "provenance": {
-    "started_at": "2026-10-09T15:53:26Z",
-    "finished_at": "2026-10-09T16:05:24Z",
+    "started_at": "2026-10-11T21:31:06Z",
+    "finished_at": "2026-10-11T21:42:41Z",
     "host": {
       "hardware": "Apple M1 Max",
       "cpu_cores": 10,
       "memory_bytes": 68719476736,
       "os": "macOS 26.6.2 (25G83)",
       "load_average": [
-        2.1,
-        2.8,
-        4.32
+        3.11,
+        3.65,
+        3.72
       ]
     },
     "load_average_end": [
-      2.26,
-      2.72,
-      3.54
+      4.08,
+      2.82,
+      2.99
     ],
     "commit": {
-      "sha": "abf42edb9498ca5ecbe908fed62d04ad54a754cd",
+      "sha": "8a46e414a29050698e9cf2c789f547c369bd5cc2",
       "dirty": false
     },
     "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)",
@@ -35,16 +35,16 @@
     },
     "guard": {
       "max_load": 4.0,
-      "waited_s": 30
+      "waited_s": 90
     }
   },
   "benchmarks": [
     {
       "id": "android/frame-hasher/key-540x1200",
-      "median_ns": 52683,
+      "median_ns": 52477,
       "spread_ns": {
-        "low": 52658,
-        "high": 52729
+        "low": 52435,
+        "high": 52513
       },
       "samples": 100,
       "allocations": null,
@@ -52,10 +52,10 @@
     },
     {
       "id": "daemon/socket/snapshot-interactive-big",
-      "median_ns": 791254,
+      "median_ns": 773836,
       "spread_ns": {
-        "low": 788455,
-        "high": 793926
+        "low": 772648,
+        "high": 776120
       },
       "samples": 100,
       "allocations": null,
@@ -63,10 +63,10 @@
     },
     {
       "id": "daemon/wire/parse-snapshot-request",
-      "median_ns": 358,
+      "median_ns": 365,
       "spread_ns": {
-        "low": 358,
-        "high": 359
+        "low": 365,
+        "high": 366
       },
       "samples": 100,
       "allocations": 8,
@@ -74,10 +74,10 @@
     },
     {
       "id": "daemon/wire/reply-snapshot-big",
-      "median_ns": 90733,
+      "median_ns": 93149,
       "spread_ns": {
-        "low": 90641,
-        "high": 90814
+        "low": 92910,
+        "high": 93603
       },
       "samples": 100,
       "allocations": 21,
@@ -85,10 +85,10 @@
     },
     {
       "id": "mirror/delta_snapshot/one-change-list",
-      "median_ns": 56686,
+      "median_ns": 56687,
       "spread_ns": {
-        "low": 56625,
-        "high": 56755
+        "low": 56611,
+        "high": 56728
       },
       "samples": 100,
       "allocations": 1243,
@@ -96,10 +96,10 @@
     },
     {
       "id": "mirror/diff/one-change-list",
-      "median_ns": 45116,
+      "median_ns": 44778,
       "spread_ns": {
-        "low": 44936,
-        "high": 45553
+        "low": 44733,
+        "high": 44831
       },
       "samples": 100,
       "allocations": 893,
@@ -107,10 +107,10 @@
     },
     {
       "id": "mirror/pump/first-read-grid",
-      "median_ns": 96873,
+      "median_ns": 95775,
       "spread_ns": {
-        "low": 96712,
-        "high": 96997
+        "low": 95669,
+        "high": 95884
       },
       "samples": 100,
       "allocations": 2092,
@@ -118,10 +118,10 @@
     },
     {
       "id": "mirror/pump/first-read-grid-rn",
-      "median_ns": 192993,
+      "median_ns": 191992,
       "spread_ns": {
-        "low": 192453,
-        "high": 193429
+        "low": 191001,
+        "high": 193608
       },
       "samples": 100,
       "allocations": 4180,
@@ -129,10 +129,10 @@
     },
     {
       "id": "mirror/pump/first-read-list",
-      "median_ns": 9129,
+      "median_ns": 9074,
       "spread_ns": {
-        "low": 9119,
-        "high": 9144
+        "low": 9064,
+        "high": 9103
       },
       "samples": 100,
       "allocations": 201,
@@ -140,10 +140,10 @@
     },
     {
       "id": "mirror/pump/one-change-grid",
-      "median_ns": 213958,
+      "median_ns": 213329,
       "spread_ns": {
-        "low": 213624,
-        "high": 214347
+        "low": 213015,
+        "high": 213743
       },
       "samples": 100,
       "allocations": 3117,
@@ -151,10 +151,10 @@
     },
     {
       "id": "mirror/pump/one-change-grid-rn",
-      "median_ns": 416865,
+      "median_ns": 415155,
       "spread_ns": {
-        "low": 415642,
-        "high": 418719
+        "low": 414590,
+        "high": 415747
       },
       "samples": 100,
       "allocations": 7337,
@@ -162,10 +162,10 @@
     },
     {
       "id": "mirror/pump/resync-grid",
-      "median_ns": 89669,
+      "median_ns": 89046,
       "spread_ns": {
-        "low": 89337,
-        "high": 89981
+        "low": 88859,
+        "high": 89205
       },
       "samples": 100,
       "allocations": 2068,
@@ -173,10 +173,10 @@
     },
     {
       "id": "mirror/pump/resync-grid-rn",
-      "median_ns": 180512,
+      "median_ns": 177625,
       "spread_ns": {
-        "low": 180285,
-        "high": 180991
+        "low": 177344,
+        "high": 177964
       },
       "samples": 100,
       "allocations": 4153,
@@ -184,10 +184,10 @@
     },
     {
       "id": "mirror/pump/unchanged-grid",
-      "median_ns": 214473,
+      "median_ns": 213683,
       "spread_ns": {
-        "low": 214053,
-        "high": 215112
+        "low": 212894,
+        "high": 214523
       },
       "samples": 100,
       "allocations": 3114,
@@ -195,10 +195,10 @@
     },
     {
       "id": "mirror/pump/unchanged-grid-rn",
-      "median_ns": 416342,
+      "median_ns": 416323,
       "spread_ns": {
-        "low": 415685,
-        "high": 418040
+        "low": 414969,
+        "high": 417599
       },
       "samples": 100,
       "allocations": 7334,
@@ -206,10 +206,10 @@
     },
     {
       "id": "mirror/pump/unchanged-list",
-      "median_ns": 19980,
+      "median_ns": 19956,
       "spread_ns": {
-        "low": 19903,
-        "high": 20030
+        "low": 19916,
+        "high": 19997
       },
       "samples": 100,
       "allocations": 348,
@@ -217,10 +217,10 @@
     },
     {
       "id": "mirror/pump/window-added-grid-rn",
-      "median_ns": 419400,
+      "median_ns": 418598,
       "spread_ns": {
-        "low": 417454,
-        "high": 420704
+        "low": 417578,
+        "high": 419444
       },
       "samples": 100,
       "allocations": 7352,
@@ -228,10 +228,10 @@
     },
     {
       "id": "mirror/pump/window-added-list",
-      "median_ns": 20930,
+      "median_ns": 20823,
       "spread_ns": {
-        "low": 20865,
-        "high": 21048
+        "low": 20785,
+        "high": 20888
       },
       "samples": 100,
       "allocations": 369,
@@ -239,10 +239,10 @@
     },
     {
       "id": "mirror/pump/window-removed-grid-rn",
-      "median_ns": 416330,
+      "median_ns": 418149,
       "spread_ns": {
-        "low": 415589,
-        "high": 417377
+        "low": 416938,
+        "high": 418871
       },
       "samples": 100,
       "allocations": 7338,
@@ -250,10 +250,10 @@
     },
     {
       "id": "mirror/pump/window-removed-list",
-      "median_ns": 20260,
+      "median_ns": 20409,
       "spread_ns": {
-        "low": 20209,
-        "high": 20328
+        "low": 20359,
+        "high": 20447
       },
       "samples": 100,
       "allocations": 352,
@@ -261,10 +261,10 @@
     },
     {
       "id": "mirror/scroll_viewport/list",
-      "median_ns": 7508,
+      "median_ns": 7463,
       "spread_ns": {
-        "low": 7497,
-        "high": 7538
+        "low": 7437,
+        "high": 7479
       },
       "samples": 100,
       "allocations": 183,
@@ -272,10 +272,10 @@
     },
     {
       "id": "mirror/settle/frames-grid",
-      "median_ns": 126,
+      "median_ns": 128,
       "spread_ns": {
-        "low": 126,
-        "high": 127
+        "low": 128,
+        "high": 128
       },
       "samples": 100,
       "allocations": 0,
@@ -283,10 +283,10 @@
     },
     {
       "id": "mirror/settle/frames-grid-rn",
-      "median_ns": 126,
+      "median_ns": 128,
       "spread_ns": {
-        "low": 126,
-        "high": 126
+        "low": 128,
+        "high": 128
       },
       "samples": 100,
       "allocations": 0,
@@ -294,10 +294,10 @@
     },
     {
       "id": "mirror/settle/no-frames-grid",
-      "median_ns": 217065,
+      "median_ns": 219242,
       "spread_ns": {
-        "low": 216598,
-        "high": 217773
+        "low": 218890,
+        "high": 219409
       },
       "samples": 100,
       "allocations": 3116,
@@ -305,10 +305,10 @@
     },
     {
       "id": "mirror/settle/no-frames-grid-rn",
-      "median_ns": 151,
+      "median_ns": 152,
       "spread_ns": {
-        "low": 151,
-        "high": 151
+        "low": 152,
+        "high": 153
       },
       "samples": 100,
       "allocations": 0,
@@ -316,10 +316,10 @@
     },
     {
       "id": "mirror/snapshot/full-bluesky-typeahead-android",
-      "median_ns": 20055,
+      "median_ns": 19205,
       "spread_ns": {
-        "low": 20010,
-        "high": 20101
+        "low": 19181,
+        "high": 19221
       },
       "samples": 100,
       "allocations": 406,
@@ -327,10 +327,10 @@
     },
     {
       "id": "mirror/snapshot/full-grid",
-      "median_ns": 327110,
+      "median_ns": 324131,
       "spread_ns": {
-        "low": 326346,
-        "high": 328130
+        "low": 323255,
+        "high": 324652
       },
       "samples": 100,
       "allocations": 8176,
@@ -338,10 +338,10 @@
     },
     {
       "id": "mirror/snapshot/full-grid-rn",
-      "median_ns": 499509,
+      "median_ns": 481455,
       "spread_ns": {
-        "low": 491754,
-        "high": 505634
+        "low": 480984,
+        "high": 482302
       },
       "samples": 100,
       "allocations": 12260,
@@ -349,10 +349,10 @@
     },
     {
       "id": "mirror/snapshot/full-list",
-      "median_ns": 23000,
+      "median_ns": 21943,
       "spread_ns": {
-        "low": 22955,
-        "high": 23050
+        "low": 21882,
+        "high": 21993
       },
       "samples": 100,
       "allocations": 580,
@@ -360,10 +360,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-again-bluesky-typeahead-android",
-      "median_ns": 17645,
+      "median_ns": 17465,
       "spread_ns": {
-        "low": 17604,
-        "high": 17687
+        "low": 17411,
+        "high": 17528
       },
       "samples": 100,
       "allocations": 363,
@@ -371,10 +371,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-again-grid",
-      "median_ns": 347952,
+      "median_ns": 348353,
       "spread_ns": {
-        "low": 347704,
-        "high": 348450
+        "low": 346990,
+        "high": 349084
       },
       "samples": 100,
       "allocations": 7633,
@@ -382,10 +382,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-again-grid-rn",
-      "median_ns": 430907,
+      "median_ns": 433030,
       "spread_ns": {
-        "low": 430553,
-        "high": 431233
+        "low": 431757,
+        "high": 433483
       },
       "samples": 100,
       "allocations": 9166,
@@ -393,10 +393,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-again-list",
-      "median_ns": 19955,
+      "median_ns": 19923,
       "spread_ns": {
-        "low": 19938,
-        "high": 19976
+        "low": 19872,
+        "high": 19945
       },
       "samples": 100,
       "allocations": 515,
@@ -404,10 +404,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-bluesky-typeahead-android",
-      "median_ns": 18509,
+      "median_ns": 18532,
       "spread_ns": {
-        "low": 18449,
-        "high": 18587
+        "low": 18479,
+        "high": 18596
       },
       "samples": 100,
       "allocations": 389,
@@ -415,10 +415,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-grid",
-      "median_ns": 324394,
+      "median_ns": 322075,
       "spread_ns": {
-        "low": 324073,
-        "high": 324720
+        "low": 321305,
+        "high": 322974
       },
       "samples": 100,
       "allocations": 8156,
@@ -426,10 +426,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-grid-rn",
-      "median_ns": 408067,
+      "median_ns": 409075,
       "spread_ns": {
-        "low": 407023,
-        "high": 409444
+        "low": 408289,
+        "high": 409658
       },
       "samples": 100,
       "allocations": 9689,
@@ -437,10 +437,10 @@
     },
     {
       "id": "mirror/snapshot/interactive-list",
-      "median_ns": 20976,
+      "median_ns": 21039,
       "spread_ns": {
-        "low": 20910,
-        "high": 21067
+        "low": 20992,
+        "high": 21073
       },
       "samples": 100,
       "allocations": 544,
@@ -451,7 +451,7 @@
       "median_ns": 14,
       "spread_ns": {
         "low": 14,
-        "high": 15
+        "high": 14
       },
       "samples": 100,
       "allocations": 0,
@@ -459,10 +459,10 @@
     },
     {
       "id": "mirror/visibility/row-list",
-      "median_ns": 7463,
+      "median_ns": 7460,
       "spread_ns": {
-        "low": 7456,
-        "high": 7467
+        "low": 7453,
+        "high": 7470
       },
       "samples": 100,
       "allocations": 183,
@@ -470,10 +470,10 @@
     },
     {
       "id": "mirror/wait/events-typing",
-      "median_ns": 64001,
+      "median_ns": 64230,
       "spread_ns": {
-        "low": 63881,
-        "high": 64115
+        "low": 64174,
+        "high": 64274
       },
       "samples": 100,
       "allocations": 1061,
@@ -481,10 +481,10 @@
     },
     {
       "id": "mirror/wait/holds-list",
-      "median_ns": 7743,
+      "median_ns": 7780,
       "spread_ns": {
-        "low": 7724,
-        "high": 7756
+        "low": 7775,
+        "high": 7786
       },
       "samples": 100,
       "allocations": 184,
@@ -492,10 +492,10 @@
     },
     {
       "id": "protocol/decode/events-10k",
-      "median_ns": 828577,
+      "median_ns": 830968,
       "spread_ns": {
-        "low": 827402,
-        "high": 829349
+        "low": 830149,
+        "high": 831576
       },
       "samples": 100,
       "allocations": 8975,
@@ -503,10 +503,10 @@
     },
     {
       "id": "protocol/decode/requests-1k",
-      "median_ns": 133835,
+      "median_ns": 132227,
       "spread_ns": {
-        "low": 133269,
-        "high": 135476
+        "low": 131905,
+        "high": 132480
       },
       "samples": 100,
       "allocations": 217,
@@ -516,8 +516,8 @@
       "id": "protocol/decode/response-snapshot",
       "median_ns": 1749,
       "spread_ns": {
-        "low": 1746,
-        "high": 1758
+        "low": 1744,
+        "high": 1751
       },
       "samples": 100,
       "allocations": 17,
@@ -525,10 +525,10 @@
     },
     {
       "id": "protocol/decode/snapshot-1049",
-      "median_ns": 243293,
+      "median_ns": 243050,
       "spread_ns": {
-        "low": 242558,
-        "high": 243711
+        "low": 242836,
+        "high": 243266
       },
       "samples": 100,
       "allocations": 2104,
@@ -536,10 +536,10 @@
     },
     {
       "id": "protocol/decode/snapshot-500",
-      "median_ns": 125884,
+      "median_ns": 124653,
       "spread_ns": {
-        "low": 124981,
-        "high": 128028
+        "low": 124373,
+        "high": 124882
       },
       "samples": 100,
       "allocations": 765,
@@ -547,10 +547,10 @@
     },
     {
       "id": "protocol/encode/events-10k",
-      "median_ns": 726581,
+      "median_ns": 726422,
       "spread_ns": {
-        "low": 725765,
-        "high": 727930
+        "low": 725804,
+        "high": 726723
       },
       "samples": 100,
       "allocations": 0,
@@ -558,10 +558,10 @@
     },
     {
       "id": "protocol/encode/requests-1k",
-      "median_ns": 72063,
+      "median_ns": 73327,
       "spread_ns": {
-        "low": 71973,
-        "high": 72148
+        "low": 73254,
+        "high": 73425
       },
       "samples": 100,
       "allocations": 0,
@@ -569,10 +569,10 @@
     },
     {
       "id": "protocol/encode/response-snapshot",
-      "median_ns": 691,
+      "median_ns": 698,
       "spread_ns": {
-        "low": 690,
-        "high": 694
+        "low": 697,
+        "high": 701
       },
       "samples": 100,
       "allocations": 0,
@@ -580,10 +580,10 @@
     },
     {
       "id": "protocol/encode/snapshot-1049",
-      "median_ns": 110596,
+      "median_ns": 110595,
       "spread_ns": {
-        "low": 110392,
-        "high": 110689
+        "low": 110513,
+        "high": 110719
       },
       "samples": 100,
       "allocations": 0,
@@ -591,10 +591,10 @@
     },
     {
       "id": "protocol/encode/snapshot-500",
-      "median_ns": 54795,
+      "median_ns": 55292,
       "spread_ns": {
-        "low": 54689,
-        "high": 54959
+        "low": 55240,
+        "high": 55340
       },
       "samples": 100,
       "allocations": 0,
@@ -602,10 +602,10 @@
     },
     {
       "id": "protocol/frame-decoder/events-10k",
-      "median_ns": 42877,
+      "median_ns": 43047,
       "spread_ns": {
-        "low": 42766,
-        "high": 43083
+        "low": 42911,
+        "high": 43143
       },
       "samples": 100,
       "allocations": 2,
@@ -613,10 +613,10 @@
     },
     {
       "id": "protocol/to_vec/events-10k",
-      "median_ns": 1453450,
+      "median_ns": 1461950,
       "spread_ns": {
-        "low": 1450870,
-        "high": 1456388
+        "low": 1459963,
+        "high": 1463553
       },
       "samples": 100,
       "allocations": 30040,
@@ -624,10 +624,10 @@
     },
     {
       "id": "protocol/to_vec/requests-1k",
-      "median_ns": 154210,
+      "median_ns": 156081,
       "spread_ns": {
-        "low": 153707,
-        "high": 154999
+        "low": 155940,
+        "high": 156418
       },
       "samples": 100,
       "allocations": 3092,
@@ -635,10 +635,10 @@
     },
     {
       "id": "protocol/to_vec/response-snapshot",
-      "median_ns": 944,
+      "median_ns": 943,
       "spread_ns": {
         "low": 942,
-        "high": 950
+        "high": 945
       },
       "samples": 100,
       "allocations": 7,
@@ -646,10 +646,10 @@
     },
     {
       "id": "protocol/to_vec/snapshot-1049",
-      "median_ns": 111876,
+      "median_ns": 112240,
       "spread_ns": {
-        "low": 111612,
-        "high": 111996
+        "low": 112160,
+        "high": 112317
       },
       "samples": 100,
       "allocations": 14,
@@ -657,10 +657,10 @@
     },
     {
       "id": "protocol/to_vec/snapshot-500",
-      "median_ns": 57650,
+      "median_ns": 57033,
       "spread_ns": {
-        "low": 57358,
-        "high": 57781
+        "low": 56936,
+        "high": 57093
       },
       "samples": 100,
       "allocations": 13,
@@ -668,10 +668,10 @@
     },
     {
       "id": "protocol/write_frame/events-10k",
-      "median_ns": 726024,
+      "median_ns": 735642,
       "spread_ns": {
-        "low": 724956,
-        "high": 727774
+        "low": 734848,
+        "high": 736140
       },
       "samples": 100,
       "allocations": 0,
@@ -679,10 +679,10 @@
     },
     {
       "id": "protocol/write_frame/requests-1k",
-      "median_ns": 73079,
+      "median_ns": 74191,
       "spread_ns": {
-        "low": 72948,
-        "high": 73190
+        "low": 74115,
+        "high": 74284
       },
       "samples": 100,
       "allocations": 0,
@@ -690,10 +690,10 @@
     },
     {
       "id": "protocol/write_frame/response-snapshot",
-      "median_ns": 693,
+      "median_ns": 699,
       "spread_ns": {
-        "low": 693,
-        "high": 694
+        "low": 697,
+        "high": 700
       },
       "samples": 100,
       "allocations": 0,
@@ -701,10 +701,10 @@
     },
     {
       "id": "protocol/write_frame/snapshot-1049",
-      "median_ns": 110470,
+      "median_ns": 110441,
       "spread_ns": {
-        "low": 110288,
-        "high": 110764
+        "low": 110354,
+        "high": 110568
       },
       "samples": 100,
       "allocations": 0,
@@ -712,10 +712,10 @@
     },
     {
       "id": "protocol/write_frame/snapshot-500",
-      "median_ns": 55056,
+      "median_ns": 55366,
       "spread_ns": {
-        "low": 54896,
-        "high": 55246
+        "low": 55331,
+        "high": 55426
       },
       "samples": 100,
       "allocations": 0,
@@ -723,10 +723,10 @@
     },
     {
       "id": "simulator/content_hash/460x1000",
-      "median_ns": 106792,
+      "median_ns": 107053,
       "spread_ns": {
-        "low": 106738,
-        "high": 106875
+        "low": 106966,
+        "high": 107155
       },
       "samples": 100,
       "allocations": null,
@@ -734,10 +734,10 @@
     },
     {
       "id": "simulator/encode/460x1000-q80",
-      "median_ns": 933233,
+      "median_ns": 944122,
       "spread_ns": {
-        "low": 932184,
-        "high": 936170
+        "low": 943336,
+        "high": 944498
       },
       "samples": 100,
       "allocations": null,
@@ -745,10 +745,10 @@
     },
     {
       "id": "simulator/pipeline/frame-to-jpeg",
-      "median_ns": 2252005,
+      "median_ns": 2250436,
       "spread_ns": {
-        "low": 2249462,
-        "high": 2258128
+        "low": 2248917,
+        "high": 2251201
       },
       "samples": 100,
       "allocations": null,
@@ -756,10 +756,10 @@
     },
     {
       "id": "simulator/pixels_hash/460x1000",
-      "median_ns": 100708,
+      "median_ns": 100569,
       "spread_ns": {
-        "low": 100602,
-        "high": 100798
+        "low": 100380,
+        "high": 100700
       },
       "samples": 100,
       "allocations": null,
@@ -767,10 +767,10 @@
     },
     {
       "id": "simulator/scale_bgra/1206x2622-to-460x1000",
-      "median_ns": 1094559,
+      "median_ns": 1092623,
       "spread_ns": {
-        "low": 1093986,
-        "high": 1095090
+        "low": 1092308,
+        "high": 1092918
       },
       "samples": 100,
       "allocations": null,
@@ -778,10 +778,10 @@
     },
     {
       "id": "simulator/thumbnail_hash/460x1000",
-      "median_ns": 115456,
+      "median_ns": 114893,
       "spread_ns": {
-        "low": 115139,
-        "high": 115844
+        "low": 114833,
+        "high": 114951
       },
       "samples": 100,
       "allocations": null,
