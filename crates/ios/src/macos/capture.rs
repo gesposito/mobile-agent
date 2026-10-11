@@ -4,13 +4,22 @@
 //! the pipeline (`crate::frames`) on a thread of its own; and the on-demand
 //! screenshot through DVT, at the native size or scaled and encoded.
 //!
+//! A poller whose connection stops answering is reopened and, if that does
+//! not help, left out (design D26 of physical-ios): two captures in a row
+//! that fail, or one whose connection closed, make it open its connection
+//! and channel again, once; failing the same way on the new connection, it
+//! leaves the frames to the other poller, and the stats say why. The
+//! on-demand screenshot takes CoreDevice's capture when DVT's fails, and
+//! keeps to the connection that served. A healthy connection pays nothing
+//! for either.
+//!
 //! The display stream and AVFoundation are later additions: the display
 //! service of iOS 26.6.2 lists no media feature and refuses the stream, and
 //! AVFoundation needs the macOS camera permission (S11). `frame_paths`
 //! says which path serves and why the others do not.
 
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use idevice::ReadWrite;
@@ -18,12 +27,12 @@ use idevice::core_device::{
     DisplayServiceClient, ImageFormat as CaptureFormat, ScreenCaptureServiceClient,
 };
 use plist::Value;
-use tokio::sync::watch;
+use tokio::sync::{Notify, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
-use super::driver::Target;
-use super::dvt::{self, DvtChannel};
+use super::driver::{Slot, Target, dvt_channel};
+use super::dvt::{self, CallError, DvtChannel};
 use super::host::{Host, describe};
 use super::tunnel::Limits;
 use crate::error::{Error, Result};
@@ -37,6 +46,14 @@ use crate::model::{
 pub(crate) const SCREENSHOT: &str = "com.apple.instruments.server.services.screenshot";
 /// Its one call, answered with the screen as a PNG.
 pub(crate) const TAKE_SCREENSHOT: &str = "takeScreenshot";
+
+/// How many captures in a row may fail on a poller's connection before the
+/// poller opens it again, once, or, on the connection it opened again, is
+/// left out (design D26 of physical-ios): the second, so that one capture
+/// slower than the wait costs no connection, where DVT's `takeScreenshot`
+/// answered none of 106 on a degraded phone in task 9.6. A connection that
+/// closed is opened again at once.
+pub(crate) const MISSES: u32 = 2;
 
 pub(crate) type ScreenCapture = ScreenCaptureServiceClient<Box<dyn ReadWrite>>;
 pub(crate) type DisplayService = DisplayServiceClient<Box<dyn ReadWrite>>;
@@ -69,6 +86,14 @@ pub(crate) fn png_size(png: &[u8]) -> Option<(u32, u32)> {
     })
 }
 
+/// The capture connection beside `connection`.
+fn other(connection: Capture) -> Capture {
+    match connection {
+        Capture::Dvt => Capture::CoreDevice,
+        Capture::CoreDevice => Capture::Dvt,
+    }
+}
+
 /// What a poller hands the pipeline.
 enum Taken {
     Png {
@@ -81,6 +106,22 @@ enum Taken {
         source: Capture,
         reason: String,
     },
+    /// The poller opened its connection again.
+    Reopened {
+        source: Capture,
+    },
+    /// The poller left the frames to the other one; why.
+    LeftOut {
+        source: Capture,
+        reason: String,
+    },
+}
+
+/// Why a capture brought no picture.
+struct Missed {
+    reason: String,
+    /// Whether its connection takes no more captures: it closed.
+    closed: bool,
 }
 
 /// One connection's capture client.
@@ -97,25 +138,100 @@ impl Poller {
         }
     }
 
-    async fn capture(&mut self, wait: Duration) -> std::result::Result<Vec<u8>, String> {
+    /// One capture, waiting `wait` for it. A reply that does not come in
+    /// time leaves the connection as it is: DVT's channel waits for it and
+    /// sends the next capture once it came, and CoreDevice's next request
+    /// takes it for its own, an earlier picture, so two captures in a row
+    /// that time out tell a connection that stopped answering.
+    async fn capture(&mut self, wait: Duration) -> std::result::Result<Vec<u8>, Missed> {
         match self {
-            Poller::Dvt(channel) => {
-                let reply = channel
-                    .call(take_screenshot(), wait)
-                    .await
-                    .map_err(|error| format!("DVT's takeScreenshot: {error:?}"))?;
-                screenshot_png(&reply)
-            }
+            Poller::Dvt(channel) => match channel.call_patiently(take_screenshot(), wait).await {
+                Ok(reply) => screenshot_png(&reply).map_err(|reason| Missed {
+                    reason: format!("DVT's takeScreenshot: {reason}"),
+                    closed: false,
+                }),
+                Err(CallError::TimedOut(after)) => Err(Missed {
+                    reason: format!(
+                        "DVT's reply to takeScreenshot did not happen within {after:?}"
+                    ),
+                    closed: false,
+                }),
+                Err(CallError::NotSent(cause) | CallError::Closed(cause)) => Err(Missed {
+                    reason: format!("DVT's takeScreenshot: {cause}"),
+                    closed: true,
+                }),
+            },
             Poller::CoreDevice(client) => {
-                timeout(wait, client.take_screenshot(None, CaptureFormat::Png))
-                    .await
-                    .map_err(|_| {
-                        format!("CoreDevice's capturescreenshot did not answer within {wait:?}")
-                    })?
-                    .map_err(|error| {
-                        format!("CoreDevice's capturescreenshot: {}", describe(&error))
-                    })
+                match timeout(wait, client.take_screenshot(None, CaptureFormat::Png)).await {
+                    Ok(Ok(png)) => Ok(png),
+                    Ok(Err(error)) => Err(Missed {
+                        reason: format!("CoreDevice's capturescreenshot: {}", describe(&error)),
+                        closed: true,
+                    }),
+                    Err(_) => Err(Missed {
+                        reason: format!(
+                            "CoreDevice's capturescreenshot did not answer within {wait:?}"
+                        ),
+                        closed: false,
+                    }),
+                }
             }
+        }
+    }
+}
+
+/// Opens a poller's connection and channel again: the poller's connection
+/// in, the new poller out once it opened, or why it could not.
+pub(crate) type Reopen =
+    Arc<dyn Fn(Capture) -> oneshot::Receiver<std::result::Result<Poller, String>> + Send + Sync>;
+
+/// The reopener of the pollers of `slot`'s target, through its tunnel. Each
+/// reopen runs on a thread of its own, driven by `runtime`, as the runner's
+/// supervisor does, since rustc cannot show the generic connection's future
+/// `Send` for every lifetime it borrows; it holds the target's lock only to
+/// connect.
+pub(crate) fn reopener<H: Host>(
+    slot: Weak<Slot<H>>,
+    runtime: tokio::runtime::Handle,
+    limits: Limits,
+) -> Reopen {
+    Arc::new(move |connection| {
+        let (opened, receiver) = oneshot::channel();
+        let (slot, runtime) = (slot.clone(), runtime.clone());
+        // A thread that could not start drops `opened`, which fails the
+        // reopen.
+        let _ = std::thread::Builder::new()
+            .name("ios-capture-reopen".into())
+            .spawn(move || {
+                let poller = match slot.upgrade() {
+                    Some(slot) => runtime
+                        .block_on(reopen(&slot, connection, limits))
+                        .map_err(|error| error.to_string()),
+                    None => Err("the driver no longer holds the target".to_owned()),
+                };
+                let _ = opened.send(poller);
+            });
+        receiver
+    })
+}
+
+/// A new capture client on `connection` through the tunnel of `slot`'s
+/// target.
+async fn reopen<H: Host>(slot: &Slot<H>, connection: Capture, limits: Limits) -> Result<Poller> {
+    match connection {
+        Capture::Dvt => {
+            let client = slot.state.lock().await.tunnel.connect().await?;
+            Ok(Poller::Dvt(dvt_channel(client, SCREENSHOT, limits).await?))
+        }
+        Capture::CoreDevice => {
+            let client = slot
+                .state
+                .lock()
+                .await
+                .tunnel
+                .connect::<ScreenCapture>()
+                .await?;
+            Ok(Poller::CoreDevice(Box::new(client)))
         }
     }
 }
@@ -127,19 +243,35 @@ pub(crate) fn pace(max_fps: u32, pollers: u32) -> Option<Duration> {
     (max_fps > 0).then(|| Duration::from_secs(u64::from(pollers)) / max_fps)
 }
 
-/// Polls `poller` until the subscription ends or a capture fails.
-async fn poll(
-    mut poller: Poller,
+/// How a poller requests its captures and when it gives up on one.
+#[derive(Clone, Copy)]
+struct Schedule {
     every: Option<Duration>,
     offset: Duration,
     wait: Duration,
+}
+
+/// Polls `poller` until the subscription ends, opening its connection again
+/// through `reopen` once [`MISSES`] captures in a row failed or one found
+/// it closed, and leaving the frames to the other poller when the same
+/// befalls the connection it opened again before any capture served.
+/// `close` closes the connection, as the stream's test hook asks.
+async fn poll(
+    mut poller: Poller,
+    schedule: Schedule,
     taken: Sender<Taken>,
     mut stop: watch::Receiver<bool>,
+    reopen: Reopen,
+    close: Arc<Notify>,
 ) {
     let source = poller.source();
-    let mut next = tokio::time::Instant::now() + offset;
+    let mut next = tokio::time::Instant::now() + schedule.offset;
+    // Captures in a row that failed on this connection.
+    let mut misses = 0;
+    // Whether the connection was opened again since a capture last served.
+    let mut reopened = false;
     loop {
-        if let Some(every) = every {
+        if let Some(every) = schedule.every {
             tokio::select! {
                 () = tokio::time::sleep_until(next) => {}
                 _ = stop.changed() => return,
@@ -151,21 +283,76 @@ async fn poll(
         }
         let requested = Instant::now();
         let captured = tokio::select! {
-            captured = poller.capture(wait) => captured,
+            captured = poller.capture(schedule.wait) => captured,
+            () = close.notified() => Err(Missed {
+                reason: "the stream's test hook closed the connection".to_owned(),
+                closed: true,
+            }),
             _ = stop.changed() => return,
         };
-        let message = match captured {
-            Ok(png) => Taken::Png {
-                png,
-                source,
-                requested,
-                arrived: Instant::now(),
-            },
-            Err(reason) => Taken::Failed { source, reason },
+        let missed = match captured {
+            Ok(png) => {
+                (misses, reopened) = (0, false);
+                let arrived = Instant::now();
+                let message = Taken::Png {
+                    png,
+                    source,
+                    requested,
+                    arrived,
+                };
+                if taken.send(message).is_err() {
+                    return;
+                }
+                continue;
+            }
+            Err(missed) => missed,
         };
-        let failed = matches!(message, Taken::Failed { .. });
-        if taken.send(message).is_err() || failed {
+        misses += 1;
+        let reason = missed.reason.clone();
+        if taken.send(Taken::Failed { source, reason }).is_err() {
             return;
+        }
+        if !missed.closed && misses < MISSES {
+            continue;
+        }
+        if reopened {
+            let reason = if missed.closed {
+                format!(
+                    "its connection closed again after it was opened again: {}",
+                    missed.reason
+                )
+            } else {
+                format!(
+                    "{misses} captures in a row failed again on the connection it opened \
+                     again, the last: {}",
+                    missed.reason
+                )
+            };
+            let _ = taken.send(Taken::LeftOut { source, reason });
+            return;
+        }
+        let opened = tokio::select! {
+            opened = reopen(source) => opened,
+            _ = stop.changed() => return,
+        };
+        match opened {
+            Ok(Ok(new)) => {
+                poller = new;
+                (misses, reopened) = (0, true);
+                if taken.send(Taken::Reopened { source }).is_err() {
+                    return;
+                }
+            }
+            failed => {
+                let why = failed.unwrap_or_else(|_| Err("the reopen did not start".to_owned()));
+                let reason = format!(
+                    "its connection could not be opened again ({}), after {}",
+                    why.err().unwrap_or_default(),
+                    missed.reason
+                );
+                let _ = taken.send(Taken::LeftOut { source, reason });
+                return;
+            }
         }
     }
 }
@@ -201,6 +388,8 @@ fn run_pipeline(taken: Receiver<Taken>, shared: Arc<Shared>) {
                 }
             }
             Taken::Failed { source, reason } => shared.pipeline().failed(source, &reason),
+            Taken::Reopened { source } => shared.pipeline().reopened(source),
+            Taken::LeftOut { source, reason } => shared.pipeline().left_out(source, &reason),
         }
     }
     shared.queue.close();
@@ -212,6 +401,8 @@ struct Polled {
     shared: Arc<Shared>,
     stop: watch::Sender<bool>,
     pollers: Vec<JoinHandle<()>>,
+    /// What closes each poller's connection, DVT's first.
+    closes: [Arc<Notify>; 2],
 }
 
 impl Drop for Polled {
@@ -255,7 +446,7 @@ impl FrameFeed for Polled {
     }
 
     fn close_connection(&self, connection: Capture) {
-        let _ = connection;
+        self.closes[connection.index()].notify_one();
     }
 }
 
@@ -334,6 +525,7 @@ impl<H: Host> Target<H> {
         options: &FrameOptions,
         limits: Limits,
         runtime: &tokio::runtime::Handle,
+        reopen: Reopen,
     ) -> Result<crate::frames::FrameStream> {
         let screen = self.screen().await?;
         let dvt = self.open_channel(SCREENSHOT, limits).await?;
@@ -345,20 +537,26 @@ impl<H: Host> Target<H> {
         });
         let (taken, receiver) = mpsc::channel();
         let (stop, stopping) = watch::channel(false);
+        let closes = [Arc::new(Notify::new()), Arc::new(Notify::new())];
         let every = pace(options.max_fps, pollers.len() as u32);
         let count = pollers.len() as u32;
         let handles = pollers
             .into_iter()
             .enumerate()
             .map(|(index, poller)| {
-                let offset = every.map_or(Duration::ZERO, |every| every * index as u32 / count);
+                let schedule = Schedule {
+                    every,
+                    offset: every.map_or(Duration::ZERO, |every| every * index as u32 / count),
+                    wait: limits.reply,
+                };
+                let close = Arc::clone(&closes[poller.source().index()]);
                 runtime.spawn(poll(
                     poller,
-                    every,
-                    offset,
-                    limits.reply,
+                    schedule,
                     taken.clone(),
                     stopping.clone(),
+                    Arc::clone(&reopen),
+                    close,
                 ))
             })
             .collect();
@@ -375,27 +573,27 @@ impl<H: Host> Target<H> {
             shared,
             stop,
             pollers: handles,
+            closes,
         })))
     }
 
-    /// The screen now, through DVT's screenshot channel: the device's PNG
-    /// at the native size, or scaled to `options.max_dimension` and
-    /// encoded as `options.format`.
+    /// The screen now: the device's PNG at the native size, or scaled to
+    /// `options.max_dimension` and encoded as `options.format`, through
+    /// DVT's screenshot channel, or CoreDevice's capture once DVT's failed
+    /// where CoreDevice's served.
     pub(crate) async fn screenshot(
         &mut self,
         options: &ScreenshotOptions,
         limits: Limits,
     ) -> Result<Screenshot> {
         let started = Instant::now();
-        let reply = self
-            .call(SCREENSHOT, take_screenshot(), true, limits)
-            .await?;
-        let png = screenshot_png(&reply).map_err(|reason| Error::Device {
-            call: "DVT's takeScreenshot".into(),
-            reason,
-        })?;
+        let (png, connection) = self.screenshot_png(limits).await?;
         let unreadable = |reason: String| Error::Device {
-            call: "DVT's takeScreenshot".into(),
+            call: match connection {
+                Capture::Dvt => "DVT's takeScreenshot",
+                Capture::CoreDevice => "CoreDevice's capturescreenshot",
+            }
+            .into(),
             reason,
         };
         if options.format == ImageFormat::Png && options.max_dimension == 0 {
@@ -423,6 +621,67 @@ impl<H: Host> Target<H> {
             data,
             elapsed: started.elapsed(),
         })
+    }
+
+    /// The screen as the device's PNG, and the connection it came on: the
+    /// one the last screenshot came on, DVT's at first, else the other,
+    /// which the next screenshot then takes first. When both fail, the
+    /// first one's failure is the screenshot's.
+    async fn screenshot_png(&mut self, limits: Limits) -> Result<(Vec<u8>, Capture)> {
+        let first = self.screenshots;
+        let failure = match self.take_png(first, limits).await {
+            Ok(png) => return Ok((png, first)),
+            Err(failure) => failure,
+        };
+        let second = other(first);
+        match self.take_png(second, limits).await {
+            Ok(png) => {
+                self.screenshots = second;
+                Ok((png, second))
+            }
+            Err(_) => Err(failure),
+        }
+    }
+
+    /// The screen as the device's PNG through `connection`: DVT's kept
+    /// screenshot channel, or CoreDevice's screen capture, kept once used.
+    async fn take_png(&mut self, connection: Capture, limits: Limits) -> Result<Vec<u8>> {
+        if connection == Capture::Dvt {
+            let reply = self
+                .call(SCREENSHOT, take_screenshot(), true, limits)
+                .await?;
+            return screenshot_png(&reply).map_err(|reason| Error::Device {
+                call: "DVT's takeScreenshot".into(),
+                reason,
+            });
+        }
+        if self.screen_capture.is_none() {
+            let client = self.tunnel.connect::<ScreenCapture>().await?;
+            self.screen_capture = Some(Box::new(client));
+        }
+        let client = self
+            .screen_capture
+            .as_mut()
+            .expect("CoreDevice's screen capture was just connected");
+        let taken = timeout(
+            limits.reply,
+            client.take_screenshot(None, CaptureFormat::Png),
+        )
+        .await;
+        let failure = match taken {
+            Ok(Ok(png)) => return Ok(png),
+            Ok(Err(error)) => Error::Device {
+                call: "CoreDevice's capturescreenshot".into(),
+                reason: describe(&error),
+            },
+            Err(_) => Error::Timeout {
+                what: "CoreDevice's reply to capturescreenshot".into(),
+                after: limits.reply,
+            },
+        };
+        // A connection that failed a capture is not kept for the next.
+        self.screen_capture = None;
+        Err(failure)
     }
 
     /// Which frame path serves the device, and why the others do not: the

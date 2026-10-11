@@ -221,6 +221,16 @@ impl Pipeline {
         self.stats.dropped += 1;
     }
 
+    /// `source`'s poller opened its connection again.
+    pub fn reopened(&mut self, source: Capture) {
+        self.stats.reopens[source.index()] += 1;
+    }
+
+    /// `source`'s poller left the frames to the other one, for `reason`.
+    pub fn left_out(&mut self, source: Capture, reason: &str) {
+        self.stats.left_out[source.index()] = Some(reason.to_owned());
+    }
+
     pub fn stats(&self) -> FrameStats {
         FrameStats {
             elapsed: self.started.elapsed(),

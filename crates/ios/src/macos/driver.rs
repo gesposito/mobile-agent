@@ -30,14 +30,15 @@ use crate::error::{Error, Result};
 use crate::frames::FrameStream;
 use crate::identity::IdentityCheck;
 use crate::model::{
-    AttachOptions, Attached, Button, Connected, DeviceInfo, Disconnect, DiskImage, Dispatch,
-    FrameOptions, FramePathStatus, InputChoice, InputPath, Installed, Key, LaunchOptions, Launched,
-    MountReport, MuxEntry, Point, Release, Released, Screen, Screenshot, ScreenshotOptions, Swipe,
-    TargetStatus, Terminated, Trust,
+    AttachOptions, Attached, Button, Capture, Connected, DeviceInfo, Disconnect, DiskImage,
+    Dispatch, FrameOptions, FramePathStatus, InputChoice, InputPath, Installed, Key, LaunchOptions,
+    Launched, MountReport, MuxEntry, Point, Release, Released, Screen, Screenshot,
+    ScreenshotOptions, Swipe, TargetStatus, Terminated, Trust,
 };
 use crate::readiness::{self, Need, Readiness};
 use crate::touch;
 
+use super::capture::{self, ScreenCapture};
 use super::dvt::{self, CallError, DvtChannel};
 use super::hid::{HidClients, HidInput};
 use super::host::{Host, Link, UsbHost, describe};
@@ -194,6 +195,12 @@ pub(crate) struct Target<H: Host> {
     /// DVT's channels by identifier, each on a connection of its own, kept
     /// for the target's lifetime: a new connection costs 25 to 37 ms (S9).
     channels: BTreeMap<&'static str, DvtChannel>,
+    /// The connection the on-demand screenshot takes first: DVT's channel,
+    /// until it fails where CoreDevice's capture serves.
+    pub(crate) screenshots: Capture,
+    /// CoreDevice's screen capture, kept once the on-demand screenshot
+    /// took it.
+    pub(crate) screen_capture: Option<Box<ScreenCapture>>,
 }
 
 impl<H: Host> Target<H> {
@@ -206,10 +213,23 @@ impl<H: Host> Target<H> {
                 .channels
                 .keys()
                 .copied()
+                .chain(
+                    self.screen_capture
+                        .is_some()
+                        .then_some(crate::services::SCREEN_CAPTURE),
+                )
                 .chain(self.hid.open())
                 .collect(),
             runner: None,
         }
+    }
+
+    /// Closes the service connections kept for the target: DVT's channels,
+    /// CoreDevice's screen capture and `dtuhidd`'s.
+    fn close_connections(&mut self) {
+        self.channels.clear();
+        self.screen_capture = None;
+        self.hid.close();
     }
 
     /// The device's screen, read from lockdown once.
@@ -252,28 +272,8 @@ impl<H: Host> Target<H> {
         identifier: &'static str,
         limits: Limits,
     ) -> Result<DvtChannel> {
-        let mut client: RemoteServerClient<Box<dyn ReadWrite>> = self.tunnel.connect().await?;
-        match timeout(limits.reply, client.read_message(0)).await {
-            Ok(Ok(_capabilities)) => {}
-            Ok(Err(error)) => {
-                return Err(Error::Device {
-                    call: "DVT's capabilities".into(),
-                    reason: describe(&error),
-                });
-            }
-            Err(_) => {
-                return Err(Error::Timeout {
-                    what: "DVT's capabilities".into(),
-                    after: limits.reply,
-                });
-            }
-        }
-        DvtChannel::open(client, identifier, limits.reply)
-            .await
-            .map_err(|reason| Error::Device {
-                call: format!("opening DVT's {identifier}"),
-                reason,
-            })
+        let client = self.tunnel.connect().await?;
+        dvt_channel(client, identifier, limits).await
     }
 
     /// Sends `call` on the channel `identifier` and returns its reply. A
@@ -383,6 +383,37 @@ impl<H: Host> Target<H> {
             reason,
         })
     }
+}
+
+/// The channel `identifier` on `client`, a new DVT connection. DVT sends the
+/// services it publishes first, which are read before the channel opens, as
+/// `idevice`'s own process-control tool reads them.
+pub(crate) async fn dvt_channel(
+    mut client: RemoteServerClient<Box<dyn ReadWrite>>,
+    identifier: &'static str,
+    limits: Limits,
+) -> Result<DvtChannel> {
+    match timeout(limits.reply, client.read_message(0)).await {
+        Ok(Ok(_capabilities)) => {}
+        Ok(Err(error)) => {
+            return Err(Error::Device {
+                call: "DVT's capabilities".into(),
+                reason: describe(&error),
+            });
+        }
+        Err(_) => {
+            return Err(Error::Timeout {
+                what: "DVT's capabilities".into(),
+                after: limits.reply,
+            });
+        }
+    }
+    DvtChannel::open(client, identifier, limits.reply)
+        .await
+        .map_err(|reason| Error::Device {
+            call: format!("opening DVT's {identifier}"),
+            reason,
+        })
 }
 
 /// How long the runner gets for one input it synthesizes.
@@ -998,21 +1029,26 @@ impl<H: Host> Core<H> {
         }
         self.runtime.block_on(async {
             let mut state = slot.state.lock().await;
-            state.channels.clear();
-            state.hid.close();
+            state.close_connections();
             state.tunnel.close().await;
         });
         Ok(())
     }
 
     /// Subscribes to `target`'s frames: screenshots polled on DVT and
-    /// CoreDevice.
+    /// CoreDevice, each poller opening its connection again through the
+    /// target's tunnel when its captures fail.
     pub(crate) fn frames(&self, target: &str, options: &FrameOptions) -> Result<FrameStream> {
         self.contained(target, async {
             let slot = self.connected(target).await?;
+            let reopen = capture::reopener(
+                Arc::downgrade(&slot),
+                self.runtime.handle().clone(),
+                self.limits,
+            );
             let mut state = slot.state.lock().await;
             let stream = state
-                .frames(options, self.limits, self.runtime.handle())
+                .frames(options, self.limits, self.runtime.handle(), reopen)
                 .await;
             *lock(&slot.snapshot) = state.snapshot();
             stream
@@ -1190,8 +1226,7 @@ impl<H: Host> Core<H> {
             drop(session.stop());
         }
         let mut state = slot.state.lock().await;
-        state.channels.clear();
-        state.hid.close();
+        state.close_connections();
         state.tunnel.close().await;
         *lock(&slot.snapshot) = state.snapshot();
         drop(state);
@@ -1227,6 +1262,8 @@ impl<H: Host> Core<H> {
                     hid: HidClients::default(),
                     disk_image: None,
                     channels: BTreeMap::new(),
+                    screenshots: Capture::Dvt,
+                    screen_capture: None,
                 }),
                 snapshot: Mutex::new(TargetStatus::default()),
                 runner: Mutex::new(None),

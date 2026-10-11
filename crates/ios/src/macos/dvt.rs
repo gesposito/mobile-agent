@@ -307,6 +307,23 @@ impl DvtChannel {
     /// Sends `call` and waits up to `wait` for its reply. A reply that does
     /// not come ends the channel, so that it cannot answer a later call.
     pub(crate) async fn call(&self, call: Call, wait: Duration) -> Result<Message, CallError> {
+        let answered = self.call_patiently(call, wait).await;
+        if matches!(answered, Err(CallError::TimedOut(_))) {
+            self.task.abort();
+        }
+        answered
+    }
+
+    /// Sends `call` and waits up to `wait` for its reply, as `call` does,
+    /// but a reply that does not come leaves the channel waiting for it: the
+    /// next call goes once it came, its own wait running meanwhile, so two
+    /// calls in a row that time out tell a channel that stopped answering
+    /// from one slow reply.
+    pub(crate) async fn call_patiently(
+        &self,
+        call: Call,
+        wait: Duration,
+    ) -> Result<Message, CallError> {
         let (reply, answer) = oneshot::channel();
         if self.requests.send(Request { call, reply }).await.is_err() {
             return Err(CallError::NotSent(format!(
@@ -320,10 +337,7 @@ impl DvtChannel {
                 "{}'s task ended",
                 self.identifier
             ))),
-            Err(_) => {
-                self.task.abort();
-                Err(CallError::TimedOut(wait))
-            }
+            Err(_) => Err(CallError::TimedOut(wait)),
         }
     }
 
