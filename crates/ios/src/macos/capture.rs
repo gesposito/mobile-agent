@@ -189,7 +189,7 @@ pub(crate) type Reopen =
 /// reopen runs on a thread of its own, driven by `runtime`, as the runner's
 /// supervisor does, since rustc cannot show the generic connection's future
 /// `Send` for every lifetime it borrows; it holds the target's lock only to
-/// connect.
+/// connect, and opens no tunnel the driver closed.
 pub(crate) fn reopener<H: Host>(
     slot: Weak<Slot<H>>,
     runtime: tokio::runtime::Handle,
@@ -204,9 +204,7 @@ pub(crate) fn reopener<H: Host>(
             .name("ios-capture-reopen".into())
             .spawn(move || {
                 let poller = match slot.upgrade() {
-                    Some(slot) => runtime
-                        .block_on(reopen(&slot, connection, limits))
-                        .map_err(|error| error.to_string()),
+                    Some(slot) => runtime.block_on(reopen(&slot, connection, limits)),
                     None => Err("the driver no longer holds the target".to_owned()),
                 };
                 let _ = opened.send(poller);
@@ -216,21 +214,27 @@ pub(crate) fn reopener<H: Host>(
 }
 
 /// A new capture client on `connection` through the tunnel of `slot`'s
-/// target.
-async fn reopen<H: Host>(slot: &Slot<H>, connection: Capture, limits: Limits) -> Result<Poller> {
+/// target, unless the driver closed that tunnel, at a reset or after the
+/// device dropped: the next command opens it.
+async fn reopen<H: Host>(
+    slot: &Slot<H>,
+    connection: Capture,
+    limits: Limits,
+) -> std::result::Result<Poller, String> {
+    let mut target = slot.state.lock().await;
+    if !target.tunnel.is_open() {
+        return Err("the driver closed the target's tunnel".to_owned());
+    }
     match connection {
         Capture::Dvt => {
-            let client = slot.state.lock().await.tunnel.connect().await?;
-            Ok(Poller::Dvt(dvt_channel(client, SCREENSHOT, limits).await?))
+            let client = target.tunnel.connect().await.map_err(|e| e.to_string())?;
+            drop(target);
+            let channel = dvt_channel(client, SCREENSHOT, limits).await;
+            channel.map(Poller::Dvt).map_err(|e| e.to_string())
         }
         Capture::CoreDevice => {
-            let client = slot
-                .state
-                .lock()
-                .await
-                .tunnel
-                .connect::<ScreenCapture>()
-                .await?;
+            let client = target.tunnel.connect::<ScreenCapture>().await;
+            let client = client.map_err(|e| e.to_string())?;
             Ok(Poller::CoreDevice(Box::new(client)))
         }
     }

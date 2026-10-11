@@ -195,6 +195,12 @@ impl<O: Opener> Tunnel<O> {
         }
     }
 
+    /// Whether a tunnel is open: one opened and not closed since, though it
+    /// may have dropped.
+    pub(crate) fn is_open(&self) -> bool {
+        self.link.is_some()
+    }
+
     /// What the open tunnel's handshake listed, `None` before one opened.
     pub(crate) fn status(&self) -> Option<TunnelStatus> {
         let link = self.link.as_ref()?;
