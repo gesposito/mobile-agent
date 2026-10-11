@@ -4,6 +4,11 @@
 //! tests run these helpers on the fake device's SwiftUI fixture, whose reads
 //! come in the shapes the phone gave them (`src/macos/setups.rs`), so a setup
 //! is checked there before it runs on the phone.
+//!
+//! A helper acts on what the runner's reads give: SwiftUI sets the tab bar's
+//! identifiers after the first rows show, so the read after the one that
+//! listed `row-1` can lack `tab-login` (task 9.7's device check), and a tap
+//! waits until its element is in the tree.
 
 use std::time::{Duration, Instant};
 
@@ -14,6 +19,10 @@ use protocol::snapshot::{Bounds, Node, NodeFlags, Snapshot};
 pub const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
 /// The iPhone SE (3rd generation)'s points to pixels.
 pub const SCALE: f64 = 2.0;
+/// How long a tap waits for its element to show in the tree: SwiftUI sets
+/// identifiers up to a second after a launch, and a read of a 500-cell
+/// screen takes about 0.5 s on the phone.
+pub const ELEMENT_WAIT: Duration = Duration::from_secs(5);
 
 pub fn find<'a>(node: &'a Node, id: &str) -> Option<&'a Node> {
     if node.res_id.as_deref() == Some(id) {
@@ -94,15 +103,19 @@ pub fn on_the_list_with<D: Lifecycle + Session>(driver: &D, udid: &str, options:
     .expect("the List tab shows row-1");
 }
 
-/// A tap on `id`, and how long until `expected` showed in the tree.
+/// A tap on `id` once the tree shows it, within [`ELEMENT_WAIT`], and how
+/// long until `expected` showed in the tree.
 pub fn tap_on<D: Session + Input>(
     driver: &D,
     udid: &str,
     id: &str,
     expected: &str,
 ) -> (Dispatch, Option<Duration>) {
-    let read = snapshot(driver, udid);
-    let target = bounds(&read, id).unwrap_or_else(|| panic!("{id} is on screen"));
+    let (read, _) = wait_for(driver, udid, ELEMENT_WAIT, |read| {
+        bounds(read, id).is_some()
+    })
+    .unwrap_or_else(|| panic!("{id} is on screen within {ELEMENT_WAIT:?}"));
+    let target = bounds(&read, id).expect("the read shows it");
     let dispatch = driver.tap(udid, center(target)).expect("the tap is sent");
     let reached = wait_for(driver, udid, Duration::from_secs(3), |read| {
         bounds(read, expected).is_some()
