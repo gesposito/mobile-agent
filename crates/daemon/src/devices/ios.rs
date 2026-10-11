@@ -200,12 +200,27 @@ pub(crate) struct Facts {
     pub frames: u64,
     /// Captures a second over both connections so far.
     pub capture_rate: Option<f64>,
+    /// The screenshot pollers, DVT's first, as the subscription counted
+    /// them; none when the attachment counts none.
+    pub pollers: Vec<Poller>,
     /// Why the screen could not be subscribed to.
     pub frame_error: Option<String>,
     /// The runner bundle an attach installs.
     pub bundle: Option<PathBuf>,
     /// The battery as the attach's probe read it.
     pub battery: Option<ios::Battery>,
+}
+
+/// One of the frames' screenshot pollers, as the subscription counted it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Poller {
+    /// The connection it captures on.
+    pub connection: ios::Capture,
+    pub captures: u64,
+    /// Connections it opened again after its captures failed.
+    pub reopens: u32,
+    /// Why it was left out of the frames, once it was.
+    pub left_out: Option<String>,
 }
 
 /// What the parts of one target's backend share.
@@ -251,6 +266,7 @@ impl Shared {
             last_input: *lock(&self.last_input),
             frames: self.frames.load(Ordering::Relaxed),
             capture_rate,
+            pollers: Vec::new(),
             frame_error: self.frame_error.clone(),
             bundle: Some(self.bundle.clone()),
             battery: self.battery,
@@ -1233,12 +1249,94 @@ mod tests {
             last_input: None,
             frames: 34,
             capture_rate: Some(19.1),
+            pollers: Vec::new(),
             frame_error: None,
             bundle: Some(PathBuf::from(
                 "/placeholder/agent-ios/dist/MobileAgentRunner-Runner.app",
             )),
             battery: None,
         }
+    }
+
+    /// Physical-ios, task 9.8 (design D26): a screenshot poller left out of
+    /// the frames, its captures failing again after its connection was
+    /// reopened, as DVT's did in task 9.6 (`probes/dvt-screenshot-fixed.txt`),
+    /// is named in the frames' line with why, beside the capture rate of the
+    /// poller left, and each poller's captures, reopens and why it was left
+    /// out are in `pollers`; a reopened poller that polls on is named with
+    /// its reopen, and healthy pollers leave the line as it was.
+    #[test]
+    fn the_status_names_a_poller_left_out_of_the_frames_beside_the_capture_rate() {
+        let why = "its captures timed out twice in a row again on the connection it opened \
+                   again: DVT's reply to takeScreenshot did not happen within 10s";
+        let left = Facts {
+            capture_rate: Some(8.4),
+            pollers: vec![
+                Poller {
+                    connection: ios::Capture::Dvt,
+                    captures: 3,
+                    reopens: 1,
+                    left_out: Some(why.into()),
+                },
+                Poller {
+                    connection: ios::Capture::CoreDevice,
+                    captures: 512,
+                    reopens: 0,
+                    left_out: None,
+                },
+            ],
+            ..facts()
+        };
+        let report = status_report(&status(), &left);
+        let frames = report
+            .lines
+            .iter()
+            .find(|line| line.starts_with("frames:"))
+            .expect("a frames line");
+        assert!(
+            frames.starts_with("frames: screenshots polled on CoreDevice, 8.4 captures a second"),
+            "{frames}"
+        );
+        assert!(
+            frames.contains("DVT left out") && frames.contains("takeScreenshot"),
+            "{frames}"
+        );
+        let data = Value::Object(report.data.clone());
+        assert_eq!(data["captureRate"], 8.4, "{data}");
+        assert_eq!(
+            data["pollers"],
+            json!([
+                {"connection": "dvt", "captures": 3, "reopens": 1, "leftOut": why},
+                {"connection": "coreDevice", "captures": 512, "reopens": 0, "leftOut": null},
+            ]),
+            "{data}"
+        );
+
+        let reopened = Facts {
+            pollers: vec![
+                Poller {
+                    connection: ios::Capture::Dvt,
+                    captures: 300,
+                    reopens: 1,
+                    left_out: None,
+                },
+                Poller {
+                    connection: ios::Capture::CoreDevice,
+                    captures: 310,
+                    reopens: 0,
+                    left_out: None,
+                },
+            ],
+            ..facts()
+        };
+        let report = status_report(&status(), &reopened);
+        assert!(
+            report.lines.iter().any(|line| line.starts_with(
+                "frames: screenshots polled on DVT and CoreDevice, 19.1 captures a second"
+            ) && line.contains("DVT's connection reopened once")),
+            "{:?}",
+            report.lines
+        );
     }
 
     /// Task 6.2: the status names the battery the attach's probe read, which
