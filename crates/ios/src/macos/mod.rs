@@ -10,6 +10,8 @@ mod dvt;
 #[cfg(test)]
 mod fake;
 #[cfg(test)]
+mod fake_fixture;
+#[cfg(test)]
 mod fake_runner;
 #[cfg(test)]
 mod fake_xpc;
@@ -17,6 +19,8 @@ mod hid;
 mod host;
 mod image;
 mod runner;
+#[cfg(test)]
+mod setups;
 mod tunnel;
 
 pub use driver::IosDriver;

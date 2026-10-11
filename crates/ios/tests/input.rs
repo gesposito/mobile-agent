@@ -19,17 +19,15 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use ios::{
-    AttachOptions, Button, Dispatch, FrameOptions, Frames, ImageFormat, Input, InputPath,
-    IosDriver, Key, LaunchOptions, Lifecycle, Modifiers, Point, ScreenshotOptions, Session, Swipe,
-    decode_png,
+use common::swiftui::{
+    SCALE, SWIFTUI, bounds, center, enter, find, on_the_focused_username, on_the_list_with,
+    snapshot, tap_on, wait_for,
 };
-use protocol::message::{Call, KeyParams, Reply, SnapshotParams, TextMethod, TextParams};
-use protocol::snapshot::{Bounds, Node, Snapshot};
-
-const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
-/// The iPhone SE (3rd generation)'s points to pixels.
-const SCALE: f64 = 2.0;
+use ios::{
+    AttachOptions, Button, FrameOptions, Frames, ImageFormat, Input, InputPath, IosDriver, Key,
+    LaunchOptions, Lifecycle, Modifiers, Point, ScreenshotOptions, Session, Swipe, decode_png,
+};
+use protocol::message::{Call, KeyParams, TextMethod, TextParams};
 
 fn milliseconds(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e3
@@ -39,105 +37,9 @@ fn rank(sorted: &[f64], percent: usize) -> f64 {
     sorted[(sorted.len() * percent).div_ceil(100) - 1]
 }
 
-fn find<'a>(node: &'a Node, id: &str) -> Option<&'a Node> {
-    if node.res_id.as_deref() == Some(id) {
-        return Some(node);
-    }
-    node.children.iter().find_map(|child| find(child, id))
-}
-
-/// The bounds of the node `id` in `snapshot`, in pixels.
-fn bounds(snapshot: &Snapshot, id: &str) -> Option<Bounds> {
-    snapshot
-        .windows
-        .iter()
-        .filter_map(|window| window.root.as_ref())
-        .find_map(|root| find(root, id))
-        .map(|node| node.bounds)
-}
-
-fn center(bounds: Bounds) -> Point {
-    Point::new(
-        f64::from(bounds.left + bounds.right) / 2.0 / SCALE,
-        f64::from(bounds.top + bounds.bottom) / 2.0 / SCALE,
-    )
-}
-
-/// The tree, read again while the foreground changes during a read, as it
-/// does when a tap or the home button switches apps (`window_changed`).
-fn snapshot(driver: &IosDriver, udid: &str) -> Snapshot {
-    loop {
-        let read = driver.call(
-            udid,
-            Call::Snapshot(SnapshotParams::default()),
-            Duration::from_secs(10),
-        );
-        match read {
-            Ok(Reply::Snapshot(snapshot)) => return snapshot,
-            Ok(other) => panic!("a snapshot was answered with {other:?}"),
-            Err(error) if error.retryable() => continue,
-            Err(error) => panic!("the runner reads the tree: {error}"),
-        }
-    }
-}
-
-/// The first snapshot within `wait` where `done` holds, and when.
-fn wait_for(
-    driver: &IosDriver,
-    udid: &str,
-    wait: Duration,
-    done: impl Fn(&Snapshot) -> bool,
-) -> Option<(Snapshot, Duration)> {
-    let started = Instant::now();
-    loop {
-        let read = snapshot(driver, udid);
-        if done(&read) {
-            return Some((read, started.elapsed()));
-        }
-        if started.elapsed() >= wait {
-            return None;
-        }
-    }
-}
-
 /// The fixture on its List tab, the runner attached, `row-1` on screen.
 fn on_the_list(driver: &IosDriver, udid: &str) {
     on_the_list_with(driver, udid, AttachOptions::new(common::runner()));
-}
-
-/// The fixture on its List tab, the runner attached with `options`.
-fn on_the_list_with(driver: &IosDriver, udid: &str, options: AttachOptions) {
-    driver
-        .launch(
-            udid,
-            SWIFTUI,
-            &LaunchOptions::new()
-                .env("FIXTURE_INITIAL_TAB", "list")
-                .terminating_running(),
-        )
-        .expect("the SwiftUI fixture launches; install it first");
-    driver.attach(udid, &options).expect("the runner starts");
-    wait_for(driver, udid, Duration::from_secs(10), |read| {
-        bounds(read, "row-1").is_some()
-    })
-    .expect("the List tab shows row-1");
-}
-
-/// A tap on `id`, and how long until `expected` showed in the tree.
-fn tap_on(
-    driver: &IosDriver,
-    udid: &str,
-    id: &str,
-    expected: &str,
-) -> (Dispatch, Option<Duration>) {
-    let read = snapshot(driver, udid);
-    let target = bounds(&read, id).unwrap_or_else(|| panic!("{id} is on screen"));
-    let dispatch = driver.tap(udid, center(target)).expect("the tap is sent");
-    let reached = wait_for(driver, udid, Duration::from_secs(3), |read| {
-        bounds(read, expected).is_some()
-    })
-    .map(|(_, after)| after);
-    (dispatch, reached)
 }
 
 #[test]
@@ -436,52 +338,6 @@ fn value_of(driver: &IosDriver, udid: &str, id: &str) -> Option<String> {
         .filter_map(|window| window.root.as_ref())
         .find_map(|root| find(root, id))
         .and_then(|node| node.text.clone())
-}
-
-/// Enters `text` into the focused field through the runner, as `mode` asks,
-/// and returns the method it reports and how long it took.
-fn enter(
-    driver: &IosDriver,
-    udid: &str,
-    text: &str,
-    mode: Option<TextMethod>,
-) -> (TextMethod, Duration) {
-    let sent = Instant::now();
-    let reply = driver
-        .call(
-            udid,
-            Call::TextSet(TextParams {
-                text: text.to_owned(),
-                node: None,
-                mode,
-            }),
-            Duration::from_secs(30),
-        )
-        .unwrap_or_else(|error| panic!("the runner enters {text:?}: {error}"));
-    match reply {
-        Reply::Text(ack) => (ack.method, sent.elapsed()),
-        other => panic!("text was answered with {other:?}"),
-    }
-}
-
-/// The SwiftUI fixture's Login tab with `login-username` focused through
-/// the runner's taps, its text set empty.
-fn on_the_focused_username(driver: &IosDriver, udid: &str) {
-    tap_on(driver, udid, "tab-login", "login-username");
-    let read = snapshot(driver, udid);
-    let field = bounds(&read, "login-username").expect("the username field");
-    driver
-        .tap(udid, center(field))
-        .expect("the field is tapped");
-    wait_for(driver, udid, Duration::from_secs(5), |read| {
-        read.windows
-            .iter()
-            .filter_map(|window| window.root.as_ref())
-            .find_map(|root| find(root, "login-username"))
-            .is_some_and(|node| node.flags.contains(protocol::snapshot::NodeFlags::FOCUSED))
-    })
-    .expect("the username field has keyboard focus");
-    enter(driver, udid, "", Some(TextMethod::DIRECT));
 }
 
 /// Task 4.5: with the session asking for the runner's synthesis, taps,

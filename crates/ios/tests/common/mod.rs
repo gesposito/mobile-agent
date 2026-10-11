@@ -18,6 +18,8 @@
 
 #![allow(dead_code)]
 
+pub mod swiftui;
+
 use std::sync::{Mutex, MutexGuard};
 
 /// The variable that enables the device tests.

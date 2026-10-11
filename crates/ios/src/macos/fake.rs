@@ -10,7 +10,9 @@
 //! processes, records every call with its arguments decoded, and refuses a
 //! launch with an archived `NSError` as the phone does. A primitive pid in a
 //! signal drops the connection, as `kill_app`'s did on iOS 26.6.2 (S9). Its
-//! usbmuxd side, [`FakeLink`], reads the lock and installs bundles.
+//! usbmuxd side, [`FakeLink`], reads the lock and installs bundles. It can
+//! show the SwiftUI fixture (`fake_fixture.rs`), which its DVT launches, its
+//! `dtuhidd` taps and its runner reads.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -26,6 +28,7 @@ use super::capture::{SCREENSHOT, TAKE_SCREENSHOT};
 use super::dvt::{
     DEVICE_INFO, IS_RUNNING_PID, LAUNCH, PROCESS_CONTROL, RUNNING_PROCESSES, SEND_SIGNAL,
 };
+use super::fake_fixture::{self, FakeFixture};
 use idevice::provider::RsdProvider;
 use idevice::xpc::{XPCMessage, XPCObject};
 use idevice::{IdeviceError, ReadWrite};
@@ -236,6 +239,9 @@ pub(crate) struct FakeDevice {
     screen: Mutex<Screen>,
     /// The virtual keyboards registered, with what they were created with.
     keyboards: Mutex<Vec<(u64, Dictionary)>>,
+    /// The SwiftUI fixture the runner reads, when the device shows it;
+    /// without it the runner reads an empty tree.
+    fixture: Mutex<Option<FakeFixture>>,
 }
 
 impl fmt::Debug for FakeDevice {
@@ -293,7 +299,23 @@ impl FakeDevice {
             hid: Mutex::new(Vec::new()),
             keyboards: Mutex::new(Vec::new()),
             screen: Mutex::new(Screen::default()),
+            fixture: Mutex::new(None),
         })
+    }
+
+    /// Installs the SwiftUI fixture and shows it: DVT's launches start it,
+    /// `dtuhidd`'s touches tap it, and the runner reads it and enters text
+    /// into it.
+    pub(crate) fn show_fixture(&self, fixture: FakeFixture) {
+        self.install_app(fake_fixture::SWIFTUI, fake_fixture::EXECUTABLE);
+        *self.fixture() = Some(fixture);
+    }
+
+    /// The SwiftUI fixture, when the device shows it.
+    pub(crate) fn fixture(&self) -> MutexGuard<'_, Option<FakeFixture>> {
+        self.fixture
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn screen(&self) -> MutexGuard<'_, Screen> {
@@ -385,7 +407,12 @@ impl FakeDevice {
         self.screen().features
     }
 
+    /// Records what `dtuhidd` took; a touch reaches the fixture shown.
     pub(crate) fn record_hid(&self, event: HidEvent) {
+        let touch = match event {
+            HidEvent::Touch { state, x, y } => Some((state, x, y)),
+            _ => None,
+        };
         self.hid
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -393,6 +420,9 @@ impl FakeDevice {
                 at: std::time::Instant::now(),
                 event,
             });
+        if let (Some((state, x, y)), Some(fixture)) = (touch, self.fixture().as_mut()) {
+            fixture.touch(state, x, y);
+        }
     }
 
     /// What `dtuhidd` took, in order, with when.
@@ -672,6 +702,17 @@ impl FakeDevice {
                                         "/var/containers/Bundle/Application/PLACEHOLDER/{executable}.app/{executable}"
                                     ),
                                 });
+                                if bundle == fake_fixture::SWIFTUI
+                                    && let Some(fixture) = self.fixture().as_mut()
+                                {
+                                    let environment = match args.get(2) {
+                                        Some(Arg::Archived(Value::Dictionary(environment))) => {
+                                            Some(environment)
+                                        }
+                                        _ => None,
+                                    };
+                                    fixture.launch(environment);
+                                }
                                 Reply::Data(Some(pid_value(pid)))
                             }
                         }

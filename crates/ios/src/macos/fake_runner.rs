@@ -11,13 +11,14 @@
 //!
 //! [`serve_runner`] is the runner's end of a connection to its port: the
 //! protocol's `AgentSession`, saying hello with the installed version,
-//! answering snapshots, input, text and screenshots, and closing when the
-//! runner's process ends. A runner left from a lost session says hello and
-//! closes the connection, as S10's did after its cable pull, and a runner
-//! that fell silent keeps its connection and answers nothing on it. A stuck
-//! runner keeps the next request it takes, as the real runner's worker
-//! keeps a call XCTest never returns from, and answers the later ones
-//! `busy`; a muted one answers pings and no request.
+//! answering snapshots, input, text and screenshots, the snapshots and text
+//! from the SwiftUI fixture when the fake device shows it, and closing when
+//! the runner's process ends. A runner left from a lost session says hello
+//! and closes the connection, as S10's did after its cable pull, and a
+//! runner that fell silent keeps its connection and answers nothing on it.
+//! A stuck runner keeps the next request it takes, as the real runner's
+//! worker keeps a call XCTest never returns from, and answers the later
+//! ones `busy`; a muted one answers pings and no request.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -206,22 +207,32 @@ async fn session(
     Err("test runner disconnected before the test plan completed".into())
 }
 
-/// What the fake runner answers `call` with.
-fn answer(call: &Call) -> std::result::Result<Reply, protocol::Error> {
+/// What the fake runner answers `call` with: the device's SwiftUI fixture's
+/// tree and its text entry when the device shows it, an empty tree and
+/// text set otherwise.
+fn answer(device: &FakeDevice, call: &Call) -> std::result::Result<Reply, protocol::Error> {
     match call {
-        Call::Snapshot(_) => Ok(Reply::Snapshot(Snapshot {
-            strings: Vec::new(),
-            windows: Vec::new(),
-            node_count: 0,
-            truncated: Truncation::EMPTY,
-            seq: 0,
+        Call::Snapshot(_) => Ok(Reply::Snapshot(match device.fixture().as_mut() {
+            Some(fixture) => fixture.read(),
+            None => Snapshot {
+                strings: Vec::new(),
+                windows: Vec::new(),
+                node_count: 0,
+                truncated: Truncation::EMPTY,
+                seq: 0,
+            },
         })),
         Call::Tap(_) | Call::Swipe(_) | Call::Key(_) => {
             Ok(Reply::Input(InputAck { accepted: true }))
         }
-        Call::TextSet(_) => Ok(Reply::Text(TextAck {
-            method: TextMethod::DIRECT,
-        })),
+        Call::TextSet(params) => match device.fixture().as_mut() {
+            Some(fixture) => fixture
+                .enter(&params.text, params.mode)
+                .map(|method| Reply::Text(TextAck { method })),
+            None => Ok(Reply::Text(TextAck {
+                method: TextMethod::DIRECT,
+            })),
+        },
         Call::Screenshot(_) => Ok(Reply::Screenshot(Screenshot {
             format: ImageFormat::PNG,
             width: 750,
@@ -303,7 +314,7 @@ pub(crate) async fn serve_runner(
                         }
                         None if stuck => kept = Some(request.id),
                         None => {
-                            session.respond(request.id, answer(&request.call));
+                            session.respond(request.id, answer(&device, &request.call));
                         }
                     }
                 }

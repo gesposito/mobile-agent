@@ -13,6 +13,11 @@
 // The platform-neutral parts are used only by the macOS driver.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+// The device tests' helpers name the crate `ios`, as the device tests do;
+// the crate's own tests run them on the fake device (`macos/setups.rs`).
+#[cfg(test)]
+extern crate self as ios;
+
 mod bundle;
 mod compat;
 mod discovery;
