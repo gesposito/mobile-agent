@@ -1,0 +1,1619 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-11T09:55:53Z",
+    "finished_at": "2026-10-11T10:16:46Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        1.28,
+        2.41,
+        2.73
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "cbb4112a7dfa8bdd8f8bbe1ca222f7099cca3903",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "swiftui",
+            "bundle": "fixtures/swiftui/build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app",
+            "elapsed_us": 2023438
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": "big",
+      "primitive": "screenshot",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s",
+            "mobile-agent screenshot -- <repo>/reports/11.1-ios-device/a4-swiftui-primitives-fixed/cli/screenshot-IPHONE-SE-UDID.jpg: timeout: DVT's reply to takeScreenshot did not happen within 10s"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": "list",
+      "primitive": "settle",
+      "clock": "tool",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 50,
+        "p50_us": 382081,
+        "p95_us": 397659,
+        "max_us": 399938
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 0,
+        "flakes": 0,
+        "failure_rate_pct": 0.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 377754,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 374334,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 378442,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 374081,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 362257,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 381186,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 365400,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 390814,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 381459,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382875,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 367410,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 369879,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 364715,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 378017,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382523,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 381394,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 388678,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382561,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 386233,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 379477,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 376799,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 385554,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 377121,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382876,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 389919,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 380884,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 387591,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 387724,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 391697,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 365885,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 369105,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 379520,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 390976,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 383384,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 375672,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382081,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 377587,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 377357,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 388311,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 379883,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 397659,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 389750,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 370647,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 399344,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 378040,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 373916,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 399938,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 392388,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 391442,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 395104,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 388060,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 383213,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 382539,
+          "nodes": null,
+          "detail": "ended by frame",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 2641639,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": null
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
