@@ -1,0 +1,26 @@
+# a3-swiftui-primitives-fixed: before
+2026-10-11T09:27:23Z load1=2.32 load5=2.99 load15=3.16 launch_ms=4.8 busy=[] top=[63.8%, 45.1%, 39.8%]
+# a3-swiftui-primitives-fixed: during, every 20 s
+2026-10-11T09:27:43Z load1=2.21 load5=2.93 load15=3.13 launch_ms=3.6 busy=[] top=[64.3%, 37.9%, 12.2%]
+2026-10-11T09:28:04Z load1=2.63 load5=2.96 load15=3.14 launch_ms=5.0 busy=[] top=[64.9%, 40.2%, 20.2%]
+2026-10-11T09:28:24Z load1=2.18 load5=2.84 load15=3.09 launch_ms=4.4 busy=[] top=[24.9%, 16.8%, 15.7%]
+2026-10-11T09:28:44Z load1=2.02 load5=2.76 load15=3.05 launch_ms=4.7 busy=[] top=[19.5%, 16.5%, 12.7%]
+2026-10-11T09:29:04Z load1=1.84 load5=2.67 load15=3.01 launch_ms=4.1 busy=[] top=[19.8%, 11.0%, 9.7%]
+2026-10-11T09:29:24Z load1=1.65 load5=2.57 load15=2.97 launch_ms=4.6 busy=[] top=[17.3%, 13.8%, 13.3%]
+2026-10-11T09:29:44Z load1=1.51 load5=2.49 load15=2.93 launch_ms=4.0 busy=[] top=[43.6%, 20.9%, 12.3%]
+2026-10-11T09:30:05Z load1=1.16 load5=2.34 load15=2.87 launch_ms=4.3 busy=[] top=[14.6%, 10.2%, 9.0%]
+2026-10-11T09:30:25Z load1=1.41 load5=2.32 load15=2.84 launch_ms=5.6 busy=[] top=[11.8%, 9.4%, 7.2%]
+2026-10-11T09:30:45Z load1=1.15 load5=2.20 load15=2.79 launch_ms=4.3 busy=[] top=[16.2%, 12.2%, 11.9%]
+2026-10-11T09:31:05Z load1=1.51 load5=2.20 load15=2.77 launch_ms=5.4 busy=[] top=[9.4%, 9.3%, 5.9%]
+2026-10-11T09:31:25Z load1=2.04 load5=2.29 load15=2.79 launch_ms=3.9 busy=[] top=[15.5%, 12.7%, 6.9%]
+2026-10-11T09:31:46Z load1=4.66 load5=2.85 load15=2.98 launch_ms=4.8 busy=[] top=[11.5%, 6.1%, 5.9%]
+2026-10-11T09:32:06Z load1=4.12 load5=2.86 load15=2.98 launch_ms=5.1 busy=[] top=[10.7%, 8.7%, 8.2%]
+2026-10-11T09:32:26Z load1=4.72 load5=3.12 load15=3.07 launch_ms=4.2 busy=[] top=[8.6%, 7.7%, 7.6%]
+2026-10-11T09:32:46Z load1=3.60 load5=2.96 load15=3.02 launch_ms=3.9 busy=[] top=[9.7%, 5.8%, 5.5%]
+2026-10-11T09:33:06Z load1=3.34 load5=2.95 load15=3.01 launch_ms=4.8 busy=[] top=[15.9%, 11.7%, 8.9%]
+2026-10-11T09:33:26Z load1=2.68 load5=2.82 load15=2.96 launch_ms=4.6 busy=[] top=[7.7%, 7.0%, 6.9%]
+2026-10-11T09:33:47Z load1=2.13 load5=2.69 load15=2.91 launch_ms=4.5 busy=[] top=[14.8%, 13.1%, 7.5%]
+2026-10-11T09:34:07Z load1=2.24 load5=2.67 load15=2.90 launch_ms=6.7 busy=[] top=[141.5%, 31.7%, 22.2%]
+# a3-swiftui-primitives-fixed: after
+2026-10-11T09:34:08Z load1=2.38 load5=2.69 load15=2.90 launch_ms=4.5 busy=[] top=[22.9%, 13.2%, 7.6%]
+# a3-swiftui-primitives-fixed: bench 09:27:23 to 09:34:08 UTC, exit 0

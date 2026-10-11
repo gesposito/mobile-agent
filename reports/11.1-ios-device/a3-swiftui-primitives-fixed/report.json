@@ -1,0 +1,881 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "started_at": "2026-10-11T09:27:26Z",
+    "finished_at": "2026-10-11T09:34:08Z",
+    "host": {
+      "hardware": "Apple M1 Max",
+      "cpu_cores": 10,
+      "memory_bytes": 68719476736,
+      "os": "macOS 26.6.2 (25G83)",
+      "load_average": [
+        2.29,
+        2.98,
+        3.15
+      ]
+    },
+    "xcode": "Xcode 27.0 (27A266a)",
+    "commit": {
+      "sha": "210eec708a1fe6842dfea414afa044b88593d339",
+      "dirty": false
+    },
+    "harness": {
+      "version": "0.1.0",
+      "iterations": 50,
+      "warmup": 3,
+      "retries": 1
+    },
+    "targets": [
+      {
+        "id": "IPHONE-SE-UDID",
+        "class": "ios-device",
+        "model": "iPhone14,6",
+        "os": "iOS 26.6.2",
+        "api_level": null,
+        "controller": null,
+        "frame_source": true,
+        "runner": "mobile-agent-ios-runner 0.2.0",
+        "input_path": "dtuhidd",
+        "frame_path": "screenshots",
+        "battery": {
+          "level_pct": 100,
+          "charging": false,
+          "external_power": true
+        },
+        "auto_lock_off": true,
+        "installs": [
+          {
+            "fixture": "swiftui",
+            "bundle": "fixtures/swiftui/build/Build/Products/Debug-iphoneos/FixtureSwiftUI.app",
+            "elapsed_us": 2488250
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "mobile-agent",
+        "role": "under-test",
+        "status": "available",
+        "version": "0.1.0",
+        "note": null
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": "login",
+      "primitive": "text-entry",
+      "clock": "wall",
+      "iterations": 50,
+      "warmup": 3,
+      "stats": {
+        "n": 39,
+        "p50_us": 1595446,
+        "p95_us": 2270767,
+        "max_us": 2273086
+      },
+      "reliability": {
+        "iterations": 50,
+        "failures": 11,
+        "flakes": 0,
+        "failure_rate_pct": 22.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": null,
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": [
+        {
+          "iteration": 0,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2081541,
+          "nodes": null,
+          "detail": "method keys, read back as text in 753.291 ms; cleared: method direct, read back as text in 410.473 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 1,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1569913,
+          "nodes": null,
+          "detail": "method keys, read back as text in 742.013 ms; cleared: method direct, read back as text in 357.212 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 2,
+          "warmup": true,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1585292,
+          "nodes": null,
+          "detail": "method keys, read back as text in 761.62 ms; cleared: method direct, read back as text in 378.965 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 3,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1583296,
+          "nodes": null,
+          "detail": "method keys, read back as text in 749.734 ms; cleared: method direct, read back as text in 366.841 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 4,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1595446,
+          "nodes": null,
+          "detail": "method keys, read back as text in 757.405 ms; cleared: method direct, read back as text in 332.338 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 5,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1525980,
+          "nodes": null,
+          "detail": "method keys, read back as text in 691.542 ms; cleared: method direct, read back as text in 383.92 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 6,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1527589,
+          "nodes": null,
+          "detail": "method keys, read back as text in 695.837 ms; cleared: method direct, read back as text in 352.159 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 7,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1585592,
+          "nodes": null,
+          "detail": "method keys, read back as text in 751.09 ms; cleared: method direct, read back as text in 386.848 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 8,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1580040,
+          "nodes": null,
+          "detail": "method keys, read back as text in 746.972 ms; cleared: method direct, read back as text in 405.018 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 9,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1086067,
+          "nodes": null,
+          "detail": "method keys, read back as text in 264.883 ms; cleared: method direct, read back as text in 294.268 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 10,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2257399,
+          "nodes": null,
+          "detail": "method keys, read back as text in 741.94 ms; cleared: method direct, read back as text in 375.787 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 11,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1572462,
+          "nodes": null,
+          "detail": "method keys, read back as text in 735.113 ms; cleared: method direct, read back as text in 384.685 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 12,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1573089,
+          "nodes": null,
+          "detail": "method keys, read back as text in 734.958 ms; cleared: method direct, read back as text in 371.268 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 13,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1578228,
+          "nodes": null,
+          "detail": "method keys, read back as text in 737.076 ms; cleared: method direct, read back as text in 370.034 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 14,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1573885,
+          "nodes": null,
+          "detail": "method keys, read back as text in 739.524 ms; cleared: method direct, read back as text in 366.719 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 15,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1086052,
+          "nodes": null,
+          "detail": "method keys, read back as text in 260.857 ms; cleared: method direct, read back as text in 300.711 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 16,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2159533,
+          "nodes": null,
+          "detail": "method keys, read back as text in 756.94 ms; cleared: method direct, read back as text in 270.66 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 17,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2207000,
+          "nodes": null,
+          "detail": "method keys, read back as text in 691.61 ms; cleared: method direct, read back as text in 378.243 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 18,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1590031,
+          "nodes": null,
+          "detail": "method keys, read back as text in 754.182 ms; cleared: method direct, read back as text in 274.816 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 19,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2215693,
+          "nodes": null,
+          "detail": "method keys, read back as text in 705.648 ms; cleared: method direct, read back as text in 385.784 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 20,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1098107,
+          "nodes": null,
+          "detail": "method keys, read back as text in 258.132 ms; cleared: method direct, read back as text in 328.806 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 21,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2270402,
+          "nodes": null,
+          "detail": "method keys, read back as text in 753.081 ms; cleared: method direct, read back as text in 279.301 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 22,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2254013,
+          "nodes": null,
+          "detail": "method keys, read back as text in 747.697 ms; cleared: method direct, read back as text in 297.079 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 23,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2273086,
+          "nodes": null,
+          "detail": "method keys, read back as text in 749.9 ms; cleared: method direct, read back as text in 165.393 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 24,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1809388,
+          "nodes": null,
+          "detail": "method keys, read back as text in 744.224 ms; cleared: method direct, read back as text in 427.855 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 25,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1582099,
+          "nodes": null,
+          "detail": "method keys, read back as text in 754.782 ms; cleared: method direct, read back as text in 387.195 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 26,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1597495,
+          "nodes": null,
+          "detail": "method keys, read back as text in 753.992 ms; cleared: method direct, read back as text in 263.313 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 27,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2202598,
+          "nodes": null,
+          "detail": "method keys, read back as text in 712.778 ms; cleared: method direct, read back as text in 380.108 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 28,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1593371,
+          "nodes": null,
+          "detail": "method keys, read back as text in 754.413 ms; cleared: method direct, read back as text in 298.132 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 29,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2213553,
+          "nodes": null,
+          "detail": "method keys, read back as text in 709.311 ms; cleared: method direct, read back as text in 384.862 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 30,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1536114,
+          "nodes": null,
+          "detail": "method keys, read back as text in 696.419 ms; cleared: method direct, read back as text in 399.863 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 31,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1075905,
+          "nodes": null,
+          "detail": "method keys, read back as text in 250.615 ms; cleared: method direct, read back as text in 320.781 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 32,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2243208,
+          "nodes": null,
+          "detail": "method keys, read back as text in 730.896 ms; cleared: method direct, read back as text in 394.136 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 33,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1577274,
+          "nodes": null,
+          "detail": "method keys, read back as text in 740.703 ms; cleared: method direct, read back as text in 316.549 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 34,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2262057,
+          "nodes": null,
+          "detail": "method keys, read back as text in 759.805 ms; cleared: method direct, read back as text in 311.506 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 35,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2266927,
+          "nodes": null,
+          "detail": "method keys, read back as text in 758.165 ms; cleared: method direct, read back as text in 340.123 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 36,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2270767,
+          "nodes": null,
+          "detail": "method keys, read back as text in 744.784 ms; cleared: method direct, read back as text in 291.262 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 37,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2260461,
+          "nodes": null,
+          "detail": "method keys, read back as text in 752.199 ms; cleared: method direct, read back as text in 387.485 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 38,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1568353,
+          "nodes": null,
+          "detail": "method keys, read back as text in 732.892 ms; cleared: method direct, read back as text in 312.468 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 39,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 2266757,
+          "nodes": null,
+          "detail": "method keys, read back as text in 759.696 ms; cleared: method direct, read back as text in 273.152 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 40,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1782952,
+          "nodes": null,
+          "detail": "method keys, read back as text in 273.412 ms; cleared: method direct, read back as text in 264.85 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 41,
+          "warmup": false,
+          "outcome": "pass",
+          "attempts": 1,
+          "us": 1763928,
+          "nodes": null,
+          "detail": "method keys, read back as text in 243.033 ms; cleared: method direct, read back as text in 263.628 ms",
+          "errors": [],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 42,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username : deadline_exceeded: the runner refused text_set: the text_set request 294 did not finish within its 9999 ms deadline",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 43,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 44,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 45,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 46,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 47,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 48,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 49,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 50,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 51,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        },
+        {
+          "iteration": 52,
+          "warmup": false,
+          "outcome": "fail",
+          "attempts": 2,
+          "us": null,
+          "nodes": null,
+          "detail": null,
+          "errors": [
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294",
+            "mobile-agent fill --timeout 10000 -- id=login-username abcdefghijklmnopqrstuvwxyz0123456789: busy: the runner refused snapshot: the runner is still serving request 294"
+          ],
+          "read_us": null,
+          "served_from_replica": null
+        }
+      ]
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": "big",
+      "primitive": "screenshot",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "preparation failed: mobile-agent open --relaunch --env FIXTURE_INITIAL_TAB=big -- dev.mobileagent.fixture.swiftui: busy: the runner refused snapshot: the runner is still serving request 294",
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": []
+    },
+    {
+      "tool": "mobile-agent",
+      "target": "IPHONE-SE-UDID",
+      "target_class": "ios-device",
+      "fixture": "swiftui",
+      "screen": "list",
+      "primitive": "settle",
+      "clock": null,
+      "iterations": 50,
+      "warmup": 3,
+      "stats": null,
+      "reliability": {
+        "iterations": 50,
+        "failures": 50,
+        "flakes": 0,
+        "failure_rate_pct": 100.0,
+        "flake_rate_pct": 0.0
+      },
+      "nodes": null,
+      "error": "preparation failed: mobile-agent open --relaunch --env FIXTURE_INITIAL_TAB=list -- dev.mobileagent.fixture.swiftui: busy: the runner refused snapshot: the runner is still serving request 294",
+      "not_measured": null,
+      "end_state": null,
+      "reads": null,
+      "samples": []
+    }
+  ],
+  "handoffs": [
+    {
+      "target": "IPHONE-SE-UDID",
+      "from": "mobile-agent",
+      "to": null,
+      "elapsed_us": 7105202,
+      "released": "stopped the daemon",
+      "input_method": null,
+      "error": "mobile-agent left runner app on the iPhone (pid 21968) running after its release; the hand-off sent it SIGTERM, and it exited"
+    }
+  ],
+  "gates": {
+    "passed": true,
+    "rows": [
+      {
+        "gate": "ios-device cli-start",
+        "statistic": "p95",
+        "limit_us": 20000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device cold-attach",
+        "statistic": "p95",
+        "limit_us": 5000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "the runner already installed on the phone"
+      },
+      {
+        "gate": "ios-device warm-snapshot big",
+        "statistic": "p95",
+        "limit_us": 1000000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured"
+      },
+      {
+        "gate": "ios-device tap-dispatch",
+        "statistic": "p95",
+        "limit_us": 150000,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "through the host's input path, dtuhidd"
+      },
+      {
+        "gate": "ios-device tap-to-frame-change",
+        "statistic": "p95",
+        "limit_us": null,
+        "tool": null,
+        "target": null,
+        "measured_us": null,
+        "status": "not-measured",
+        "note": "not gated while the phone's frames are polled screenshots"
+      }
+    ]
+  }
+}
