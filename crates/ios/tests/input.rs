@@ -762,3 +762,76 @@ fn runner_input_series() {
     assert_eq!(missed, 0, "every tap reached the screen");
     assert_eq!(whole, [20, 20], "every entry landed whole");
 }
+
+/// Physical-ios, task 9.7 (design D26), the device check: 120 emptying
+/// fills of `login-username` in one session, each the harness's 36
+/// characters typed, then set empty, as task 9.6's text probes entered them
+/// through the daemon, where the 43rd emptying set stalled every session on
+/// a phone whose developer services had degraded
+/// (`reports/11.1-ios-device/probes/text-hang-swiftui-*.jsonl`). Every call
+/// that fails is printed with its fill and code, and so are the runner's
+/// restarts: a stall shows as a set refused `deadline_exceeded`, the next
+/// call failing `runner_stalled` and a restart counted, the session going
+/// on, and a second stall as `runner_died`, after which the test attaches
+/// again. Run once the phone was restarted; it passes when no call failed.
+#[test]
+#[ignore = "a device check of a few minutes, run after the phone's restart"]
+fn one_hundred_twenty_emptying_fills_in_one_session() {
+    use ios::Devices;
+    let Some(udid) = common::gated("one_hundred_twenty_emptying_fills_in_one_session") else {
+        return;
+    };
+    let _device = common::exclusive();
+    let driver = IosDriver::open().expect("the driver opens");
+    on_the_list(&driver, &udid);
+    on_the_focused_username(&driver, &udid);
+    let set = |text: &str, mode: TextMethod| {
+        driver.call(
+            &udid,
+            Call::TextSet(TextParams {
+                text: text.to_owned(),
+                node: None,
+                mode: Some(mode),
+            }),
+            Duration::from_secs(10),
+        )
+    };
+    let started = Instant::now();
+    let mut failed = Vec::new();
+    let mut attaches = 1;
+    for fill in 0..120 {
+        for (text, mode) in [(TEXT_ENTRY, TextMethod::KEYS), ("", TextMethod::DIRECT)] {
+            if let Err(error) = set(text, mode) {
+                eprintln!(
+                    "fill {fill}, {} set: {} after {:.1} s: {error}",
+                    if text.is_empty() { "emptying" } else { "typed" },
+                    error.code(),
+                    started.elapsed().as_secs_f64()
+                );
+                failed.push((fill, error.code()));
+                if error.code() == "runner_died" {
+                    driver
+                        .attach(&udid, &AttachOptions::new(common::runner()))
+                        .expect("attaches again");
+                    attaches += 1;
+                }
+            }
+        }
+    }
+    let runner = driver
+        .status(&udid)
+        .expect("status")
+        .runner
+        .expect("a runner");
+    eprintln!(
+        "120 emptying fills in {:.1} s: {} calls failed {failed:?}; {attaches} attach(es), the \
+         last session's runner {} with {} restart(s), last death {:?}",
+        started.elapsed().as_secs_f64(),
+        failed.len(),
+        runner.state.name(),
+        runner.restarts,
+        runner.last_death
+    );
+    driver.release(&udid).expect("releases");
+    assert!(failed.is_empty(), "every set was answered: {failed:?}");
+}
