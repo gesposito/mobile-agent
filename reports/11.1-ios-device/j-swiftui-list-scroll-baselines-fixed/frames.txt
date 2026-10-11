@@ -1,0 +1,2 @@
+17:37:54 before j-swiftui-list-scroll-baselines-fixed: open 3948 ms ok True; after 15 s captureRate 15.9, pollers [('dvt', 136, 0, None), ('coreDevice', 135, 0, None)], runner ('ready', 0); screenshot 177 ms ok True; shutdown 810 ms
+18:16:43 after j-swiftui-list-scroll-baselines-fixed: open 3977 ms ok True; after 15 s captureRate 15.4, pollers [('dvt', 133, 0, None), ('coreDevice', 129, 0, None)], runner ('ready', 0); screenshot 219 ms ok True; shutdown 824 ms
