@@ -1,0 +1,2 @@
+19:07:34 before l-expo-login-baselines-fixed: open 4851 ms ok True; after 15 s captureRate 16.8, pollers [('dvt', 149, 0, None), ('coreDevice', 150, 0, None)], runner ('ready', 0); screenshot 184 ms ok True; shutdown 798 ms
+19:31:19 after l-expo-login-baselines-fixed: open 4687 ms ok True; after 15 s captureRate 16.0, pollers [('dvt', 142, 0, None), ('coreDevice', 140, 0, None)], runner ('ready', 0); screenshot 212 ms ok True; shutdown 820 ms
