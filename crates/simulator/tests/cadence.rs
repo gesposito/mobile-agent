@@ -59,7 +59,7 @@ fn empty(driver: &SimulatorDriver, udid: &str, identifier: &str) {
 }
 
 /// One typed entry: how long typing took, how long the field then took to
-/// show the whole entry, and what it showed last.
+/// show the whole text, and what it showed last.
 #[derive(Debug)]
 struct Typed {
     elapsed: Duration,
@@ -68,25 +68,32 @@ struct Typed {
 }
 
 impl Typed {
-    fn whole(&self) -> bool {
-        self.text.as_deref() == Some(ENTRY)
+    fn whole(&self, text: &str) -> bool {
+        self.text.as_deref() == Some(text)
     }
 }
 
-/// Types the entry into the focused, empty field `cadence` apart, then reads
-/// the field until it has shown the whole entry for [`HOLD`], or for
+/// Types `text` into the focused, empty field `cadence` apart, then reads
+/// the field until it has shown the whole text for [`HOLD`], or for
 /// [`READ_BACK`] after the last key.
-fn type_entry(driver: &SimulatorDriver, udid: &str, identifier: &str, cadence: Cadence) -> Typed {
+fn type_entry(
+    driver: &SimulatorDriver,
+    udid: &str,
+    identifier: &str,
+    text: &str,
+    cadence: Cadence,
+) -> Typed {
     let entry = driver
-        .type_text_at(udid, ENTRY, TextMethod::Keyboard, cadence)
-        .expect("the entry is typed");
+        .type_text_at(udid, text, TextMethod::Keyboard, cadence)
+        .expect("the text is typed");
     assert_eq!(entry.method, TextMethod::Keyboard);
+    let expected = text;
     let typed = Instant::now();
     let mut whole_since: Option<Instant> = None;
     let mut shown = None;
     loop {
         let text = value(driver, udid, identifier);
-        if text.as_deref() == Some(ENTRY) {
+        if text.as_deref() == Some(expected) {
             let since = *whole_since.get_or_insert_with(Instant::now);
             shown.get_or_insert_with(|| since - typed);
             if since.elapsed() >= HOLD {
@@ -117,6 +124,104 @@ fn focus_expo_username(driver: &SimulatorDriver, udid: &str) {
     common::show_expo(driver, udid, "login");
     driver.tap(udid, expo::USERNAME).expect("a tap");
     thread::sleep(Duration::from_millis(1500));
+}
+
+/// Relaunches the SwiftUI fixture on Login and focuses its username field
+/// where a read puts it, leaving the keyboard time to slide in.
+fn focus_swiftui_username(driver: &SimulatorDriver, udid: &str) {
+    common::show_swiftui(driver, udid, "login");
+    let tree = common::snapshot_until(driver, udid, Duration::from_secs(10), |tree| {
+        tree.find(USERNAME).is_some()
+    });
+    let field = tree.find(USERNAME).expect("the username field");
+    driver.tap(udid, tree.center(field)).expect("a tap");
+    thread::sleep(Duration::from_millis(1500));
+}
+
+/// The cadence a fresh read of the screen calls for.
+fn cadence_of_screen(driver: &SimulatorDriver, udid: &str) -> Cadence {
+    let tree = driver
+        .snapshot(udid, &TreeOptions::default())
+        .expect("the tree is read");
+    Cadence::for_read(&tree.snapshot)
+}
+
+/// Task 3.5: a React Native field's keys go at React Native's cadence and a
+/// native field's at the native cadence, each told from a read of its
+/// screen, and both fields take the text whole.
+#[test]
+fn a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence() {
+    let Some(udid) = common::gated(
+        "a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence",
+    ) else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = common::driver();
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    let text = "cadence0test";
+    let gaps = text.chars().count() as u32 - 1;
+
+    focus_expo_username(&driver, &udid);
+    let cadence = cadence_of_screen(&driver, &udid);
+    assert_eq!(cadence, Cadence::REACT_NATIVE, "the Expo fixture's screen");
+    let typed = type_entry(&driver, &udid, USERNAME, text, cadence);
+    assert!(
+        typed.elapsed >= Cadence::REACT_NATIVE.gap * gaps,
+        "{gaps} gaps of {:?} took {:?}",
+        Cadence::REACT_NATIVE.gap,
+        typed.elapsed
+    );
+    assert!(typed.whole(text), "the field shows {:?}", typed.text);
+
+    focus_swiftui_username(&driver, &udid);
+    let cadence = cadence_of_screen(&driver, &udid);
+    assert_eq!(cadence, Cadence::NATIVE, "the SwiftUI fixture's screen");
+    let typed = type_entry(&driver, &udid, USERNAME, text, cadence);
+    assert!(
+        typed.elapsed < Cadence::REACT_NATIVE.gap * gaps,
+        "{gaps} native gaps took {:?}, as long as React Native's would",
+        typed.elapsed
+    );
+    assert!(typed.whole(text), "the field shows {:?}", typed.text);
+}
+
+/// Spec scenario "React Native field typed whole" (simulator-driver, "Text
+/// entry"): the 36-character entry, typed twenty times into the Expo
+/// fixture's username field at the cadence a read of its screen calls for,
+/// reads back whole every time.
+#[test]
+fn a_react_native_field_takes_the_36_character_entry_whole_twenty_times() {
+    let Some(udid) =
+        common::gated("a_react_native_field_takes_the_36_character_entry_whole_twenty_times")
+    else {
+        return;
+    };
+    let _serial = common::exclusive();
+    let driver = common::driver();
+    let _restore = ExpoOnLogin {
+        driver: &driver,
+        udid: udid.clone(),
+    };
+    focus_expo_username(&driver, &udid);
+    let cadence = cadence_of_screen(&driver, &udid);
+    assert_eq!(cadence, Cadence::REACT_NATIVE, "the Expo fixture's screen");
+    empty(&driver, &udid, USERNAME);
+    let mut lost = Vec::new();
+    for run in 0..20 {
+        let typed = type_entry(&driver, &udid, USERNAME, ENTRY, cadence);
+        if !typed.whole(ENTRY) {
+            lost.push((run, typed.text));
+        }
+        empty(&driver, &udid, USERNAME);
+    }
+    assert!(
+        lost.is_empty(),
+        "runs the field did not show whole: {lost:?}"
+    );
 }
 
 fn percentile(sorted: &[Duration], p: f64) -> Duration {
@@ -156,8 +261,8 @@ fn the_36_character_entry_at_three_cadences() {
     for trial in 0..trials {
         for turn in 0..cadences.len() {
             let index = (trial + turn) % cadences.len();
-            let typed = type_entry(&driver, &udid, USERNAME, cadences[index]);
-            if !typed.whole() {
+            let typed = type_entry(&driver, &udid, USERNAME, ENTRY, cadences[index]);
+            if !typed.whole(ENTRY) {
                 eprintln!(
                     "trial {trial}, {:?} apart: the field shows {:?}",
                     cadences[index].gap, typed.text
@@ -182,7 +287,7 @@ fn the_36_character_entry_at_three_cadences() {
         "| gap | whole | typing p50 / p95 / max (ms) | shown after the last key p50 / p95 (ms) |"
     );
     for (cadence, typed) in cadences.iter().zip(&results) {
-        let whole = typed.iter().filter(|t| t.whole()).count();
+        let whole = typed.iter().filter(|t| t.whole(ENTRY)).count();
         let mut elapsed: Vec<Duration> = typed.iter().map(|t| t.elapsed).collect();
         elapsed.sort();
         let mut shown: Vec<Duration> = typed.iter().filter_map(|t| t.shown).collect();
