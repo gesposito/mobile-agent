@@ -14,15 +14,18 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, visibility, covered_by, scroll_viewport, uncovered
+                timestamps, note_window_change, visibility, covered_by, scroll_viewport,
+                scroll_container_in, uncovered, field_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
-  view.rs       roles, names, visibility, what modals and views drawn over others cut, scroll hints
-  visibility.rs how much of an element is in view: its visible bounds, share and cut edge; the
-                visible bounds of the scroll container under a point; what of an area the
-                system and keyboard windows above it leave a stroke
+  view.rs       roles, names, visibility, what modals, views drawn over others, bars and pinned
+                headers cover, tabs by their row, scroll hints
+  visibility.rs how much of an element is in view: its visible bounds, the part a tap reaches,
+                its share and cut edge; the visible bounds of the scroll container under a
+                point, or of the one showing the most of an area; what of an area the system
+                and keyboard windows above it leave a stroke
   roles.rs      roles from Android widget classes, XCUIElementType names and UIKit classes
-  render.rs     listings and agent-browser's snapshot lines
+  render.rs     listings and agent-browser's snapshot lines, what the keyboard covers of them
   refs.rs       eN refs: parsing, issuing, stale detection
   verdict.rs    quality verdicts and their advice
   settle.rs     settle options and results
@@ -232,8 +235,8 @@ also counts).
 
 - Names are normalized (no-break spaces become spaces, zero-width characters
   go) and JSON-escaped as agent-browser escapes them. Attributes come in the
-  order `checked=`, `selected`, `disabled`, `focused`, `id=`, `ref=`; a value
-  follows `: ` when it differs from the name.
+  order `checked=`, `selected`, `disabled`, `focused`, `visible=`, `id=`,
+  `ref=`; a value follows `: ` when it differs from the name.
 - An element's name is its own label, else the labels of its non-actionable
   descendants, which are then not listed again. A tapped container takes the
   control role a child carries (Material in Compose), and a node repeating its
@@ -262,14 +265,29 @@ also counts).
   over the field. A selected one gets a ref whatever it holds: React Native
   exposes a tab this way on iOS, with no trait but `selected`, and the
   smoke test's selected tab, which also showed its label under its icon,
-  got none (D35).
+  got none (D35). The other tabs of such a bar have neither the trait nor
+  anything else to tell them by (the acceptance run of 2026-10-12 found an
+  unselected tab holding its icon's glyph as a text whose only child is its
+  own text, and no ref for it), so the labelled generic nodes laid out in
+  one row with a selected one among its siblings, each overlapping it over
+  at least half the height of the shorter, list as tabs with refs, the
+  selected one with its state; a row without a selected node, or inside an
+  actionable element, changes nothing (rn-app-fixes, design D40).
   An interactive listing (`SnapshotOptions::interactive()`) keeps only
   elements with refs, as agent-browser's `-i`. A full listing leaves out
   window roots and unnamed, unidentified generic containers, texts and images,
   listing their children in their place.
 - Application windows come first, then system bars; a keyboard window is one
-  `- keyboard` line. The top-most modal, a modal window or an alert or dialog
-  node, cuts everything it covers. A view marked modal (the `modal` node
+  `- keyboard` line. An interactive listing leaves out the elements that lie
+  wholly under a keyboard window, bounded by what the keyboard draws (tasks
+  10.21 and 10.25), and counts them in the keyboard's place,
+  `(2 more actionable items under the keyboard, close it to reveal)`; an
+  element partly under one says how much of its bounds shows, `visible=35%`,
+  a whole percent and at least 1, in either listing (rn-app-fixes, design
+  D38): in the acceptance run of 2026-10-12 the elements under the keyboard
+  stayed listed, and clicks on a submit button 1 to 35% in view tapped its
+  centre on the keyboard. The top-most modal, a modal window or an alert or
+  dialog node, cuts everything it covers. A view marked modal (the `modal` node
   flag) cuts what its siblings hold within its bounds (task 10.22):
   assistive technology, and XCTest's tree, leave out every sibling, but a
   sibling outside the view is in sight and a tap reaches it, as Bluesky's
@@ -304,12 +322,25 @@ also counts).
   button, a create screen's floating button over a list's last row, a
   feed's sticky header over the post scrolled under it; and Bluesky's
   typeahead, listed after the Explore page it is drawn over, which the
-  order covers without its modal flag. Bars are spared: XCTest lists a
-  navigation bar before the content its controller draws it over, which
-  runs under it (the SwiftUI fixture's List tab), and `visibility` already
-  cuts every bar out of what lies beside it; a tab bar listed after a list
-  covers the rows wholly under it, as on Android. An alert's static text
-  is spared too (design D26 of physical-ios): UIKit's alert controller
+  order covers without its modal flag. A node reported disabled counts as
+  showing something, since UIKit hit-tests a disabled control as an enabled
+  one and the touch goes nowhere (rn-app-fixes, design D38): in the
+  acceptance run a control mostly under a disabled button was tapped on the
+  button. Bars are spared from the siblings listed after them, since XCTest
+  lists a navigation bar before the content its controller draws it over,
+  which runs under it (the SwiftUI fixture's List tab); instead a bar by its
+  class (`XCUIElementTypeNavigationBar`, `XCUIElementTypeTabBar`,
+  `XCUIElementTypeToolbar`) covers what its later siblings hold within its
+  bounds, and a header the app pins across a scrolling sibling's top, a
+  view listed before it that does not scroll, spans its width and reaches
+  from its top or above to its top or below, short of its bottom, covers
+  what that sibling holds within its bounds, whatever the order, the
+  sibling covering none of it (D38): React Native lists its header before
+  the list it is drawn over, and the rows the list scrolled up past its top
+  lie in the header's frame, where the acceptance run found a 44-point row
+  at 2 points still listed. A tab bar listed after a list covers the rows
+  wholly under it, as on Android. An alert's static text is spared too
+  (design D26 of physical-ios): UIKit's alert controller
   draws nothing over its title and message, while XCTest lists the scroll
   indicators of the scroll view that holds them after them, their
   accessibility frames 30-point hit areas along the view's edges, which
@@ -321,11 +352,15 @@ also counts).
   drawn, and nothing in the tree tells; the smoke test's and Bluesky's
   screens showed none, the alert's indicators are such siblings, and a
   screen that shows another is recorded here and the rule gated further.
-  On either platform, acting on what a view drawn over
-  it covers names the node a tap there would land on, the innermost one of
-  the view that holds the element's bounds and shows something itself,
-  else the view, by its role and name or as an `overlay` when it is a
-  plain container, and advises bringing the element out from under it
+  A view that covers part of an element leaves it listed, and a tap on it
+  goes to the part a tap reaches (`visibility`, below). On either platform,
+  acting on what a view drawn over it covers, all of it or so much that no
+  part a tap reaches is left, names the node a tap at the element's centre
+  would land on, the innermost one of the view that holds that point and
+  shows something itself, else the view, by its role and name, as an
+  `overlay` when it is a plain container or as a `disabled control` when it
+  is a disabled one, else a bar there, else the `keyboard` when its window
+  holds the point, and advises bringing the element out from under it
   rather than acting on the cover: the smoke test's tap on that heading
   accepted the consent.
 - Scroll hints come from actionable nodes outside a container's viewport when
@@ -339,11 +374,14 @@ also counts).
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
 - Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow. A
   ref names one control: its element, and for an element without an
-  identifier, also its accessible name. An element keeps its ref while it
-  survives, and without an identifier, while it keeps its name; renamed, it
-  is another control, which the next snapshot gives a fresh ref, and the old
-  ref is refused as stale from the moment the rename is read. `removed_refs`
-  lists the refs the previous snapshot listed and this one does not.
+  identifier, also its accessible name, or else its role and place. An
+  element keeps its ref while it survives, and without an identifier, while
+  it keeps its name, or its role and its position among its parent's
+  children, as a field whose label changes once it holds text does
+  (rn-app-fixes, design D39); renamed and moved, it is another control,
+  which the next snapshot gives a fresh ref, and the old ref is refused as
+  stale from the moment the change is read. `removed_refs` lists the refs
+  the previous snapshot listed and this one does not.
 
 Every snapshot carries a `Verdict`: the backend, whether it is degraded, and
 the reasons in this order, each with advice:
@@ -445,8 +483,18 @@ the reasons in this order, each with advice:
   above its window, and tab bars and toolbars of its window that neither
   hold it nor scroll with it. A bar cuts the bounds where it spans them
   from one side to the other and reaches an edge, and one over all of
-  them leaves nothing. `fraction` is the share of the element's bounds
-  inside them. Android reports bounds clipped to every ancestor, so an
+  them leaves nothing. What a tap reaches, `reachable`, is the largest
+  rectangle of the element's bounds inside them less every view drawn over
+  part of it, at least 8 points on each side (`REACH_FLOOR`), or as long as
+  the element on a side where it is shorter, and a tap on the element goes
+  to its centre; `None` when no such rectangle is left (rn-app-fixes,
+  design D37): in the acceptance run of 2026-10-12 a tap at the centre of a
+  card 70% under a sticky header pressed the header, and a tap on a heading
+  half under a footer's button pressed the button. A view over part of the
+  element and across it also cuts the visible bounds, on the side the
+  element fits in with the least movement, which `scroll --until` aims a
+  stroke for. `fraction` is the share of the element's bounds a tap
+  reaches. Android reports bounds clipped to every ancestor, so an
   element its list cuts off reads as the part that shows (a row of 48
   points read as 1.2 points tall at the Expo list's edge on the API 36
   emulator), while iOS reports whole frames: an element whose bounds end,
@@ -455,10 +503,13 @@ the reasons in this order, each with advice:
   and how much of it lies beyond is unknown. A container without scroll
   semantics cannot tell, and cuts nothing.
 - `covered_by` tells, the same way, what covers an element: the top-most
-  modal, a view marked modal or a view drawn over it, named as an action
-  on its ref names it when it fails with `element_covered`. A covered
-  element is not in view whatever share of it `visibility` finds inside
-  its visible bounds, which leave covers out.
+  modal, a view marked modal or a view drawn over all of it, or what a tap
+  at its centre would land on when the views over part of it leave nothing
+  a tap reaches, named as an action on its ref names it when it fails with
+  `element_covered`. The keyboard is named `keyboard` (`KEYBOARD`); the
+  daemon reads the windows again before it refuses a tap for it, since the
+  keyboard moves a layout without an event. A covered element has no part
+  a tap reaches.
 - `scroll_viewport` tells, the same way, the visible bounds of the scroll
   container a stroke through a point moves (task 10.16): the innermost
   node on screen and not covered that scrolls along the stroke's axis, or
@@ -467,6 +518,17 @@ the reasons in this order, each with advice:
   it gets. The daemon bounds each stroke of `scroll --until` that looks
   for its element to three quarters of their extent along the axis, so
   that no element passes through them between two looks.
+- `scroll_container_in` tells, the same way, what shows of the scroll
+  container that shows the most of an area (rn-app-fixes, design D41):
+  among the nodes on screen and not covered that scroll along the axis, in
+  the top-most window that has one, the one whose visible bounds share the
+  most of it. With the keyboard up the daemon strokes a scroll only through
+  that part of what `uncovered` leaves, below a pinned header and above the
+  keyboard: in the acceptance run of 2026-10-12 `scroll up 300` came down on
+  the header at 119.5 points and moved nothing.
+- `field_within` tells the one field a node holds, with a ref for it, when
+  it holds exactly one (D39): `fill` and `type` given an identifier on a
+  node that takes no text enter the text into that field.
 - `uncovered` tells, the same way, what of an area a stroke may go
   through (task 10.32): the area less the system and input-method windows
   above the window of an element, or for the screen above the window in
@@ -511,8 +573,8 @@ the reasons in this order, each with advice:
 |---|:-:|---|
 | `stale_ref` | no | the ref's element is gone, or the replica was rebuilt after it was issued; take a new snapshot |
 | `unknown_ref` | no | not a ref this mirror issued |
-| `element_covered` | no | a modal, or a view drawn over it, covers the ref's element |
-| `element_offscreen` | no | the ref's element is scrolled out of view |
+| `element_covered` | no | a modal, a view drawn over all of it, or views, bars or the keyboard over so much of it that less than 8 points a side are left, cover the ref's element; the message names what a tap at its centre would land on |
+| `element_offscreen` | no | the ref's element is out of view: none of it shows, or too little for a tap with nothing named over its centre |
 | `wait_timeout` | yes | the condition did not hold in time; the error carries the screen |
 | `no_frame` | yes | no frame source, or no frame yet |
 | `disconnected` | no | the target is gone |
@@ -551,8 +613,14 @@ apps, in device points with the scale beside them:
 | `consent-ios` | a React Native consent screen on iOS in XCTest's classes, no flags (rn-app-fixes, design D31): a footer listed after the scroll view, holding Accept and continue over the heading the content is scrolled to (placeholder names) |
 | `create-ios` | a React Native create screen on iOS: a floating button listed after the list, over its last row and partly over the row before (placeholder names) |
 | `feed-ios` | a React Native feed on iOS: a sticky header listed after the list, over the post scrolled under it, the first post above the screen (placeholder names) |
-| `tabbar-ios` | a React Native tab bar on iOS (rn-app-fixes, design D35): three tabs, labelled `Other`s over their icon's empty text, the middle one selected and also showing its label, a text whose only child is its own text (placeholder names) |
+| `tabbar-ios` | a React Native tab bar on iOS (rn-app-fixes, design D35 and D40): three tabs, labelled `Other`s, the middle one selected and also showing its label, a text whose only child is its own text, the other two holding their icon's glyph likewise (placeholder names) |
 | `members-ios` | a React Native members screen on iOS: checkboxes React Native announces only in their value (`checkbox, checked`), a heading and a text each repeated by their only child, and the list's two scroll bars likewise (placeholder names) |
+| `consent-footer-ios` | a React Native consent screen on iOS in the structure of the acceptance run of 2026-10-12 (rn-app-fixes, design D37): two footer buttons listed after the scroll view, a 22-point heading with its lower half under the secondary one, a 12-point text with its upper 9 points under the primary one (placeholder names) |
+| `create-disabled-ios` | a React Native creation tab on iOS (D37, D38): its disabled 56-point primary button listed after the scroll view, over 38 of the 48 points of the paste control and the button beside it, and a tab bar whose first tab holds its icon's glyph (placeholder names) |
+| `feed-sticky-ios` | a React Native feed on iOS (D37): the sticky header listed before the list, a card 70% above the list's top in the header's frame, twelve cards above the screen (placeholder names) |
+| `header-top-ios` | a React Native list on iOS with the keyboard up (D38, D41): a plain header listed before the list, its frame down to the list's top, a 44-point row at 2 points in it, a field with the focus and a button partly under the keyboard (placeholder names) |
+| `form-keyboard-ios` | a React Native sign-in form on iOS with the keyboard up (D37, D38): the submit button 3.67 of its 48 points above the keyboard's top, two links under the keyboard (placeholder names) |
+| `sheet-ios` | a React Native paste sheet on iOS (D39): a title field without an identifier in an unidentified view among four of one class, which gains a counter at the focus, the field's name changing with its text (placeholder names) |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -634,14 +702,19 @@ cargo test -p mirror
   `sibling_collision` rather than merging them (design D5, Risks).
 - *Stable refs* keeps a ref while its element survives. The replica pairs
   the only sibling of a class without an identifier with the only such
-  sibling in the next read, so an element can survive a screen transition
-  as another control: Bluesky's Forgot password? became the forgot-password
-  form's Next, and its ref with it (second run, finding 6). A ref's
-  identity therefore includes the accessible name of an element without an
-  identifier. A control renamed in place, such as a counter's label, also
-  gets a fresh ref; an identified element keeps its ref under any name.
-  Element identities, and with them deltas and structural diffs, still
-  follow the element.
+  sibling in the next read, and siblings of a class and identifier that
+  neither their content nor an identified descendant tells apart by their
+  position among their parent's children, so an element can survive a
+  screen transition as another control: Bluesky's Forgot password? became
+  the forgot-password form's Next, and its ref with it (second run, finding
+  6). A ref's identity therefore includes the accessible name of an
+  element without an identifier, or else its role and that position: a
+  control renamed in place, such as a field whose label changes once it
+  holds text (rn-app-fixes, design D39) or a counter's label, keeps its
+  ref, while Next, one position before where Forgot password? sat, gets a
+  fresh one; an identified element keeps its ref under any name. Element
+  identities, and with them deltas and structural diffs, still follow the
+  element.
 - *Quality verdict*: a root-only application window is reported as sparse
   without inspecting the frame; the advice points to the frame.
 - *Resynchronization* also covers a read that comes back from another
@@ -675,12 +748,18 @@ cargo test -p mirror
 | | Card under a sticky header | `interactive::a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it`, `visibility::what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view` |
 | | (rn-app-fixes 1.1: a floating button over a list's last row; bars spared, a tab bar covering what lies wholly under it; overlapping siblings in any order) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, and the unit tests `view::tests::*` |
 | | (physical-ios task 9.5, design D26: an alert's message under its scroll indicators' frames) | `interactive::an_alerts_message_is_listed_once_under_it_on_the_simulator_and_the_phone` |
-| | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so` |
+| | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so`, `controls::a_row_without_a_selected_node_lists_no_tabs` (rn-app-fixes 3.4, design D40) |
+| | Control under a disabled button | `interactive::a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows`; partly under it, `interactive::a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it` (rn-app-fixes 3.1, design D38) |
+| | Control behind a header listed first | `interactive::a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it`, `interactive::a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it`, `interactive::acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header` (D38) |
+| | Elements under the keyboard | `interactive::what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_how_much_shows`, `interactive::a_tap_on_a_button_partly_under_the_keyboard_lands_on_what_shows_or_is_refused_naming_it` (rn-app-fixes 3.2, design D38) |
+| | Ref across a label change | `controls::a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place`, `controls::a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android`; the fill by that ref in the daemon, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (rn-app-fixes 3.3, design D39) |
 | | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
-| | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
+| | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
+| | Card partly under a sticky header | `interactive::a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view`, `visibility::visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it`; the click's warning in the daemon, `handlers::act::tests::a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning` (rn-app-fixes 3.1, design D37) |
+| | Heading half under a footer button | `interactive::a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows`; by ref, identifier and text selector in the daemon, `handlers::act::tests::clicks_on_what_footer_buttons_cover_in_part_tap_what_shows_or_are_refused_naming_the_button`, and `scroll --until` judging arrival by the same part, `handlers::act::tests::scroll_until_does_not_call_a_control_mostly_under_a_disabled_button_visible` (D37) |
 | | Submit button moved by the keyboard | in the daemon, which reads the windows again (`note_window_change`, `pump`) before it taps an element none of which `visibility` finds in view: `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, and the rest of its row in `crates/daemon/README.md` |
 | Settle predicate | Screen settles | `settle::a_transition_settles_shortly_after_it_ends_and_reports_the_elapsed_time`, `settle::the_quiet_window_defaults_to_200_ms_and_the_maximum_to_3_s`, `settle::frame_callbacks_without_pixel_changes_do_not_hold_the_wait`, `settle::a_screen_that_has_been_quiet_settles_at_once`, `settle::the_default_window_does_not_end_inside_a_scroll_while_150_ms_would`, `settle::without_frames_an_event_less_window_is_re_read_while_waiting`, `settle::a_launch_noted_to_the_mirror_holds_settle_until_the_app_has_drawn`, `settle::a_launch_counts_as_a_change_whether_noted_or_reported_as_a_window_event` |
 | Windows without change events; Frames and screenshots from the host, spec `ios-device-driver` (physical-ios task 5.2, design D23) | (a target whose frames come slowly: the re-read after input waits for the first changed frame; settle's floor of two captures and its hold after input; without frames, the probe-less path) | `replica::with_slow_frames_a_re_read_after_input_waits_for_the_first_changed_frame`, `replica::with_slow_frames_a_re_read_after_input_that_changes_no_frame_waits_out_the_wait`, `replica::with_slow_frames_but_no_frame_source_a_re_read_after_input_reads_at_once`, `settle::with_slow_frames_settle_waits_at_least_two_capture_intervals_without_a_change`, `settle::with_slow_frames_settle_after_input_holds_for_its_first_changed_frame`, `settle::without_frames_a_slow_frame_target_settles_on_rereads_every_minimum_interval`; through the daemon's fake iPhone, its `worker::tests` and `fake::realtime::tests::a_fake_iphones_frames_come_at_the_devices_rate` |
@@ -693,7 +772,7 @@ cargo test -p mirror
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
 | Replica maintained from device events | (task 7.10: timing and draining for the daemon) | `timestamps::nothing_has_happened_before_the_first_read_and_the_first_read_gives_its_span`, `timestamps::the_last_frame_and_frame_change_come_from_the_frames_the_mirror_took_in`, `timestamps::only_the_latest_1024_frame_changes_are_kept`, `timestamps::the_last_tree_change_is_an_event_arrival_or_the_end_of_a_read_that_found_a_delta`, `timestamps::the_last_action_is_when_the_mirror_injected_input`, `timestamps::drain_takes_in_what_arrived_without_reading_the_tree` |
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
-| (what covers an element) | (named as `element_covered` names it) | `visibility::what_covers_an_element_is_named_as_an_action_on_its_ref_names_it` |
+| (what covers an element) | (named as `element_covered` names it; the part a tap reaches beside the covers) | `visibility::what_covers_an_element_is_named_as_an_action_on_its_ref_names_it`, `visibility::visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it`, and the unit tests `visibility::tests::*` |
 | (task 10.15, how much of an element is in view) | (the share in view, the cut edge, the bars) | `visibility::a_row_inside_its_list_is_wholly_in_view_within_the_list_s_bounds`, `visibility::a_row_android_clips_at_the_bottom_edge_of_a_list_that_scrolls_on_is_cut_there`, `visibility::a_row_android_clips_at_the_top_edge_of_a_list_that_scrolls_back_is_cut_there`, `visibility::a_row_at_the_edge_of_a_list_that_cannot_scroll_that_way_is_whole`, `visibility::without_scroll_semantics_an_edge_is_no_cut`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds`, `visibility::an_element_outside_any_scroll_container_is_measured_against_its_window`, and the unit tests `visibility::tests::*` |
 | (task 10.16, the scroll container a stroke moves) | (its visible bounds, the bars, the axis) | `visibility::a_stroke_through_a_list_moves_the_list_and_its_visible_bounds_are_its_own`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, `visibility::a_stroke_moves_the_innermost_container_that_scrolls_along_its_axis`, `visibility::a_point_outside_every_scroll_container_has_none` |
 | (task 10.21, the keyboard over an iOS app) | (only what its input views cover is cut) | `visibility::the_ios_keyboard_cuts_from_its_prediction_bar_down`, and in the Simulator's reader `elements::tests::the_keyboard_window_covers_the_input_views_it_holds_not_the_screen`, `elements::tests::a_keyboard_sliding_in_covers_only_its_part_on_screen`, `elements::tests::a_keyboard_window_that_shows_nothing_covers_nothing` |

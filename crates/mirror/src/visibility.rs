@@ -42,10 +42,13 @@ pub struct Visibility {
     /// The element's bounds as the replica has them, in points.
     pub bounds: Rect,
     /// The visible bounds: the element's window, clipped by the scroll
-    /// containers that hold the element, less the bars drawn over them.
+    /// containers that hold the element, less the bars drawn over them, and
+    /// less the side of each view drawn over part of the element and across
+    /// it that the element does not fit in with the least movement.
     pub viewport: Rect,
-    /// The share of `bounds` inside `viewport`, from 0 to 1; 0 for bounds
-    /// without an area.
+    /// The share of `bounds` a tap reaches, from 0 to 1: inside the visible
+    /// bounds before the views drawn over part of the element, less those
+    /// views; 0 for bounds without an area or an element covered whole.
     pub fraction: f64,
     /// The edge of the scroll containers' bounds that `bounds` ends at while
     /// a container holding the element can still scroll toward it, as its
