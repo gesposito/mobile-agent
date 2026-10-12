@@ -567,17 +567,15 @@ fn same(actual: Option<Rect>, expected: Rect) -> bool {
     })
 }
 
-/// Rn-app-fixes D37 (task 3.1; sections 1a, 1b and 2 of the masked
-/// listings): what of an element a tap reaches is its bounds inside its
-/// visible bounds less every view drawn over it, and the tap goes to the
-/// centre of the largest rectangle of that, at least 8 points on each
-/// side. The consent screen's heading keeps its upper 11 points above the
-/// secondary footer button, half of it; the feed's card the 35 of its 116
-/// points below its list's top, where the header is drawn; the creation
-/// tab's paste control its lower 10 points below the disabled primary
-/// button. The 12-point text under the primary button keeps 3 points below
-/// it, too few, and what covers it is the button, which a tap at its centre
-/// would hit.
+/// Rn-app-fixes D37 (task 3.1; sections 1a and 2 of the masked listings):
+/// what of an element a tap reaches is its bounds inside its visible bounds
+/// less every view drawn over it, and the tap goes to the centre of the
+/// largest rectangle of that, at least 8 points on each side. The consent
+/// screen's heading keeps its upper 11 points above the secondary footer
+/// button, half of it; the feed's card the 35 of its 116 points below its
+/// list's top, where the header is drawn. The 12-point text under the
+/// primary button keeps 3 points below it, too few, and what covers it is
+/// the button, which a tap at its centre would hit.
 #[test]
 fn visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it() {
     let (_, mut consent) = support::mirror_on("consent-footer-ios");
@@ -606,16 +604,50 @@ fn visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it()
         "{seen:?}"
     );
     assert!(close(seen.fraction, 35.0 / 116.0), "{seen:?}");
+}
 
+/// Rn-app-fixes D45, scenario "Strip clipped by the scroll view" (task 4.3;
+/// task 3.7, N6): on the creation tab as the third acceptance run met it,
+/// the paste control's lower 10 points lie below the disabled primary
+/// button, under the footer drawn over the list's lower part, outside what
+/// the list shows; the control sits in a row whose frame ends at the
+/// footer's top, so nothing in the tree puts the footer over the control,
+/// and the run counted those points reachable, tapped them and opened
+/// nothing. What a tap reaches is clipped by the visible bounds of every
+/// scroll container above the element, as a stroke through the list knows
+/// them, before the views over it are taken away: the control keeps no part
+/// to tap, and what covers it is the disabled button, which a tap at its
+/// centre would hit. With the list ending above the footer, as the second
+/// acceptance run read the tab, the 10 points take the tap (design D38).
+#[test]
+fn what_a_tap_reaches_is_clipped_by_what_its_scroll_view_shows() {
     let (_, mut create) = support::mirror_on("create-disabled-ios");
     let paste = element(&mut create, "placeholder-id-8");
+    assert_eq!(
+        create.scroll_viewport(Point::new(201.0, 400.0), true),
+        Some(Rect::new(0.0, 122.0, 402.0, 764.0))
+    );
     let seen = create.visibility(paste).expect("the paste control");
+    assert_eq!(seen.reachable, None, "{seen:?}");
+    assert_eq!(seen.fraction, 0.0, "{seen:?}");
+    assert_eq!(
+        create.covered_by(paste).as_deref(),
+        Some("button \"placeholder-button-21\"")
+    );
+
+    let mut open = Screen::load("create-disabled-ios");
+    let content = &mut open.0["windows"][0]["root"]["children"][0]["children"][0]["children"];
+    content[1]["bounds"] = json!([0, 122, 402, 791]);
+    content[3] = content[3]["children"][0].clone();
+    let mut open = mirror_showing(&open);
+    let paste = element(&mut open, "placeholder-id-8");
+    let seen = open.visibility(paste).expect("the paste control");
     assert!(
         same(seen.reachable, Rect::new(205.0, 764.0, 382.0, 774.0)),
         "{seen:?}"
     );
     assert!(close(seen.fraction, 10.0 / 48.0), "{seen:?}");
-    assert_eq!(create.covered_by(paste), None);
+    assert_eq!(open.covered_by(paste), None);
 }
 
 /// Task 10.16: a stroke through the middle of the Expo list moves the list,

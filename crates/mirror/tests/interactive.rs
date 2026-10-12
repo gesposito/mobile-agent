@@ -1046,15 +1046,28 @@ fn a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view() {
     }
 }
 
+/// The creation tab as the second acceptance run read it (section 1b of the
+/// masked listings): its list ends above the tab bar, which no footer
+/// holds, so nothing but the disabled button lies over the paste control.
+fn creation_open() -> Screen {
+    let mut screen = Screen::load("create-disabled-ios");
+    let content = &mut screen.0["windows"][0]["root"]["children"][0]["children"][0]["children"];
+    content[1]["bounds"] = json!([0, 122, 402, 791]);
+    content[3] = content[3]["children"][0].clone();
+    screen
+}
+
 /// D37 and D38 (task 3.1; section 1b of the masked listings): on the
 /// creation tab the paste control lies 38 of its 48 points under the
 /// disabled primary button drawn after the tab's list, and the acceptance
 /// run's taps at its centre landed on the disabled button, twice, doing
-/// nothing. The control stays listed, and a tap goes to the centre of its
-/// lower 10 points, below the button.
+/// nothing. With the list ending above the tab bar, as that run read it,
+/// the control stays listed, and a tap goes to the centre of its lower 10
+/// points, below the button.
 #[test]
 fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
-    let (target, mut mirror) = mirror_on("create-disabled-ios");
+    let target = FakeTarget::new(creation_open().read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
     let snapshot = mirror.snapshot(&interactive()).unwrap();
     // The section's 23 lines, and the tab bar's first tab, a tab beside the
     // selected one (design D40).
@@ -1097,6 +1110,125 @@ fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_heade
     assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
     assert!(error.to_string().contains("overlay"), "{error}");
     assert!(target.inputs().is_empty());
+}
+
+/// Rn-app-fixes D45, scenario "Strip clipped by the scroll view" (task 4.3;
+/// task 3.7, N6): on the creation tab as the third acceptance run met it,
+/// the lower 10 points of the paste control and of the button beside it lie
+/// below the disabled primary button, under the footer drawn over the
+/// list's lower part, outside what the list shows. Neither keeps a part a
+/// tap reaches, so the interactive listing leaves both out, the list's hint
+/// counting them below, and a tap on the paste control by the ref the full
+/// listing gives it is refused naming the disabled button, which a tap at
+/// its centre would hit, rather than tapping the strip, which opened
+/// nothing in the run.
+#[test]
+fn a_control_whose_strip_below_a_floating_button_lies_under_a_footer_is_left_out_and_refused() {
+    let (target, mut mirror) = mirror_on("create-disabled-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for left in ["placeholder-button-19", "placeholder-button-20"] {
+        assert!(listing.by_name(left).is_none(), "{left}:\n{}", listing.text);
+    }
+    assert!(
+        listing
+            .text
+            .contains("- heading \"placeholder-heading-24\" [ref=e17]\n(2 more actionable items below, scroll down to reveal)\n- button \"placeholder-button-21\""),
+        "{}",
+        listing.text
+    );
+    let paste = mirror
+        .snapshot(&full())
+        .unwrap()
+        .by_identifier("placeholder-id-8")
+        .expect("in the full listing")
+        .reference
+        .unwrap();
+    let error = tap_on(&mut mirror, paste).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("button \"placeholder-button-21\""),
+        "{error}"
+    );
+    assert!(target.inputs().is_empty());
+}
+
+/// The organizations list of section 3 of the masked listings as the third
+/// acceptance run met it (task 3.7, N7): the header is listed after the
+/// view that holds the list rather than before the list, so it pins
+/// nothing, and the rows the list has scrolled up behind it lie outside the
+/// list's bounds, out of view rather than covered.
+fn header_after_its_list() -> Screen {
+    let mut screen = Screen::load("header-top-ios");
+    let content = &mut screen.0["windows"][1]["root"]["children"][0]["children"][0]["children"];
+    let (header, list) = (content[0].clone(), content[1].clone());
+    *content = json!([
+        {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [list]},
+        header,
+    ]);
+    screen
+}
+
+/// Rn-app-fixes D45, scenario "Partly covered elements marked" (task 4.3;
+/// task 3.7, N7): the third acceptance run's interactive listings gave no
+/// sign of the consent screen's heading half under a footer button or of
+/// the feed's card 70% under the header, and listed a card scrolled above
+/// the list's top and the rows behind the organizations list's header,
+/// which a tap reaches none of. The interactive listing marks each element
+/// a tap reaches part of with the share it reaches, and leaves out each one
+/// it reaches nothing of, which the list's hint counts, whatever covers it:
+/// here the header, the status bar's place above it and a list's edge. The
+/// keyboard's marks stay as they were (see the keyboard's tests).
+#[test]
+fn partly_covered_elements_say_how_much_shows_and_those_a_tap_cannot_reach_are_counted() {
+    let (_, mut consent) = mirror_on("consent-footer-ios");
+    let text = consent.snapshot(&interactive()).unwrap().text;
+    assert!(
+        text.contains("\n- heading \"placeholder-heading-9\" [visible=50%, ref=e9]\n"),
+        "{text}"
+    );
+
+    let (_, mut feed) = mirror_on("feed-sticky-ios");
+    assert_eq!(
+        feed.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- button \"placeholder-button-1\" [id=placeholder-id-1, ref=e1]",
+            "- heading \"placeholder-heading-1\" [ref=e2]",
+            "- button \"placeholder-button-2\" [id=placeholder-id-2, ref=e3]: placeholder-value-1",
+            "(13 more actionable items above, scroll up to reveal)",
+            "- button \"placeholder-button-4\" [visible=30%, id=placeholder-id-4, ref=e4]",
+            "- button \"placeholder-button-5\" [id=placeholder-id-5, ref=e5]",
+            "- button \"placeholder-button-6\" [id=placeholder-id-6, ref=e6]",
+            "- button \"placeholder-button-7\" [id=placeholder-id-7, ref=e7]",
+            "(more items below, scroll down to reveal)",
+            "- tab \"placeholder-heading-1\" [selected, ref=e8]",
+            "- tab \"placeholder-generic-1\" [ref=e9]",
+            "- tab \"placeholder-generic-2\" [ref=e10]",
+        ])
+    );
+
+    let target = FakeTarget::new(header_after_its_list().read());
+    let mut organizations = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = organizations.snapshot(&interactive()).unwrap();
+    for behind in [
+        "placeholder-button-2",
+        "placeholder-heading-2",
+        "placeholder-heading-3",
+    ] {
+        assert!(
+            listing.by_name(behind).is_none(),
+            "{behind}:\n{}",
+            listing.text
+        );
+    }
+    assert!(
+        listing
+            .text
+            .starts_with("(6 more actionable items above, scroll up to reveal)\n"),
+        "{}",
+        listing.text
+    );
 }
 
 /// Rn-app-fixes D38, scenario "Elements under the keyboard" (task 3.2;
