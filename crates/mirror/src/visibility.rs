@@ -274,7 +274,7 @@ impl<'a> Sight<'a> {
         let bounds = facts[c].rect;
         let pixel = pixel(replica);
         let shown = view.over_part(w, c).fold(shown, |shown, (_, cover)| {
-            across(shown, &bounds, &cover, pixel)
+            across(shown, &bounds, &cover, pixel, Carry::ANY)
         });
         if self.shown.is_none() {
             self.shown = Some(((w, c), shown));
@@ -331,8 +331,9 @@ impl<'a> Sight<'a> {
             .fold(before, |shown, c| shown.intersect(&self.shows(w, c)));
         let whole = view.cover(replica, w, i);
         let over: Vec<(Cover, Rect)> = view.over_part(w, i).collect();
+        let carry = Carry::of(window, containers.clone());
         let viewport = over.iter().fold(shown, |viewport, (_, cover)| {
-            across(viewport, &bounds, cover, pixel)
+            across(viewport, &bounds, cover, pixel, carry)
         });
         let in_view = bounds.intersect(&shown);
         let holes: Vec<Rect> = over.iter().map(|&(_, cover)| cover).collect();
@@ -505,14 +506,53 @@ pub(crate) fn beside(rect: &Rect, keyboards: &[Rect]) -> Option<f64> {
     (under > 0.0).then(|| (1.0 - under / area).clamp(0.0, 1.0))
 }
 
+/// Which ways a stroke can carry an element along each axis, toward its
+/// start (up or left) and toward its end (down or right).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Carry {
+    vertical: (bool, bool),
+    horizontal: (bool, bool),
+}
+
+impl Carry {
+    /// Every way, for what no stroke is asked to carry.
+    const ANY: Carry = Carry {
+        vertical: (true, true),
+        horizontal: (true, true),
+    };
+
+    /// The ways the scroll containers `containers` of `window`, from the
+    /// innermost out, carry what they hold (rn-app-fixes, design D46): up
+    /// or left when one of them scrolls forward along that axis, its content
+    /// moving that way, and down or right when one scrolls back; every way
+    /// when one says nothing of the ways it scrolls, or when there is none.
+    fn of(window: &Win, containers: impl Iterator<Item = usize> + Clone) -> Carry {
+        if containers.clone().next().is_none() {
+            return Carry::ANY;
+        }
+        let way = |side: Direction| {
+            containers.clone().any(|c| {
+                let scroll = window.nodes[c].scroll;
+                scroll.is_none() || can_scroll(scroll, side)
+            })
+        };
+        Carry {
+            vertical: (way(Direction::Below), way(Direction::Above)),
+            horizontal: (way(Direction::Right), way(Direction::Left)),
+        }
+    }
+}
+
 /// `viewport` less the side of `cover`, a view drawn over part of an element
 /// at `bounds`, where the element does not go: one across the element's
 /// width keeps what lies above it or below it, one down its height what
 /// lies left or right of it, whichever side the element fits in with the
 /// least movement, or the one that fits it, or, when neither does, the one
-/// with more room. Any other cover, or one beside the element, is a hole
-/// that leaves the visible bounds as they are.
-fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64) -> Rect {
+/// with more room, of the sides a stroke can `carry` the element to: a list
+/// that stands at its top cannot bring what it holds below a floating button
+/// (rn-app-fixes, design D46). Any other cover, or one beside the element,
+/// is a hole that leaves the visible bounds as they are.
+fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64, carry: Carry) -> Rect {
     if !cover.overlaps(bounds) {
         return viewport;
     }
@@ -522,12 +562,8 @@ fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64) -> Rect {
     match (wide, tall) {
         (true, false) => {
             let range = (viewport.top, viewport.bottom);
-            if before(
-                range,
-                (cover.top, cover.bottom),
-                (bounds.top, bounds.bottom),
-                pixel,
-            ) {
+            let spans = ((cover.top, cover.bottom), (bounds.top, bounds.bottom));
+            if before(range, spans, pixel, carry.vertical) {
                 left.bottom = left.bottom.min(cover.top);
             } else {
                 left.top = left.top.max(cover.bottom);
@@ -535,12 +571,8 @@ fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64) -> Rect {
         }
         (false, true) => {
             let range = (viewport.left, viewport.right);
-            if before(
-                range,
-                (cover.left, cover.right),
-                (bounds.left, bounds.right),
-                pixel,
-            ) {
+            let spans = ((cover.left, cover.right), (bounds.left, bounds.right));
+            if before(range, spans, pixel, carry.horizontal) {
                 left.right = left.right.min(cover.left);
             } else {
                 left.left = left.left.max(cover.right);
@@ -552,15 +584,23 @@ fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64) -> Rect {
 }
 
 /// Whether an element spanning `element` along an axis goes before a cover
-/// spanning `cover` inside `range`, rather than after it (see [`across`]).
-fn before(range: (f64, f64), cover: (f64, f64), element: (f64, f64), pixel: f64) -> bool {
+/// spanning `cover` inside `range`, rather than after it (see [`across`]),
+/// a stroke carrying it toward the axis's start and its end as `carry`
+/// says.
+fn before(
+    range: (f64, f64),
+    (cover, element): ((f64, f64), (f64, f64)),
+    pixel: f64,
+    (to_start, to_end): (bool, bool),
+) -> bool {
     let length = element.1 - element.0;
     let (room_before, room_after) = (cover.0 - range.0, range.1 - cover.1);
     let fits = |room: f64| room >= length - pixel;
-    match (fits(room_before), fits(room_after)) {
+    match (fits(room_before) && to_start, fits(room_after) && to_end) {
         (true, true) => (element.1 - cover.0).max(0.0) <= (cover.1 - element.0).max(0.0),
         (true, false) => true,
         (false, true) => false,
+        (false, false) if to_start != to_end => to_start,
         (false, false) => room_before >= room_after,
     }
 }
@@ -965,26 +1005,26 @@ mod tests {
         let heading = Rect::new(33.0, 709.0, 90.33, 731.0);
         let footer = Rect::new(20.0, 720.0, 382.0, 764.0);
         assert_eq!(
-            across(list, &heading, &footer, PIXEL),
+            across(list, &heading, &footer, PIXEL, Carry::ANY),
             Rect::new(0.0, 62.0, 402.0, 720.0)
         );
         let card = Rect::new(37.0, 41.0, 365.0, 157.0);
         let header = Rect::new(0.0, 0.0, 402.0, 122.0);
         let full = Rect::new(0.0, 0.0, 402.0, 791.0);
         assert_eq!(
-            across(full, &card, &header, PIXEL),
+            across(full, &card, &header, PIXEL, Carry::ANY),
             Rect::new(0.0, 122.0, 402.0, 791.0)
         );
         let tab = Rect::new(0.0, 122.0, 402.0, 791.0);
         let paste = Rect::new(205.0, 726.0, 382.0, 774.0);
         let disabled = Rect::new(20.0, 708.0, 382.0, 764.0);
         assert_eq!(
-            across(tab, &paste, &disabled, PIXEL),
+            across(tab, &paste, &disabled, PIXEL, Carry::ANY),
             Rect::new(0.0, 122.0, 402.0, 708.0)
         );
         let inside = Rect::new(50.0, 715.0, 70.0, 725.0);
-        assert_eq!(across(list, &heading, &inside, PIXEL), list);
+        assert_eq!(across(list, &heading, &inside, PIXEL, Carry::ANY), list);
         let beside = Rect::new(300.0, 700.0, 380.0, 780.0);
-        assert_eq!(across(list, &heading, &beside, PIXEL), list);
+        assert_eq!(across(list, &heading, &beside, PIXEL, Carry::ANY), list);
     }
 }
