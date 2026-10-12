@@ -152,11 +152,11 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
-| `fill` | `target`, `text`, `timeout` | `filled`, `ref` (the field's, also when an identifier named the node around it), `method` (how the text the field holds went in: `keys` or `direct`, which is a paste on iOS and a set on Android), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; `false` when it showed nothing to read back; null when it was not read back), `readFrom` (where the read-back took the text from: `value`; `descendants` for a field without a value of its own; `name` for one with nothing below it whose accessible name the entry changed; null unless verified), `reason` (`no_value_to_read` when `verified` is false, else null), `readBackMs` (from the end of the entry to the read-back taking the field's text, or to its giving up on a field with nothing to read; null when not read back), `retried` (whether the text went in again in one piece) |
+| `fill` | `target`, `text`, `timeout` | `filled`, `ref` (the field's, also when an identifier named the node around it; null for a node holding no field, whose keyboard took the text), `method` (how the text the field holds went in: `keys` or `direct`, which is a paste on iOS and a set on Android), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; `false` when it showed nothing to read back; null when it was not read back), `readFrom` (where the read-back took the text from: `value`; `descendants` for a field without a value of its own; `name` for one with nothing below it whose accessible name the entry changed, compared by the part that changed; null unless verified), `reason` (`no_value_to_read` when `verified` is false, else null), `readBackMs` (from the end of the entry to the read-back taking the field's text, or to its giving up on a field with nothing to read; null when not read back), `retried` (whether the text went in again in one piece) |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
-| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`, `from` and `to` (where the last stroke came down and lifted, as `[x, y]`: every stroke's without `until`, null when it made none); with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow |
+| `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`, `from` and `to` (where the last stroke came down and lifted, as `[x, y]`: every stroke's without `until`, null when it made none); with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow; a scroll with `until` that stops gives its last stroke's `from` and `to` in its failure's data |
 | `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
 | `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}` |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height` |
@@ -223,7 +223,15 @@ most 1.5 s, so a check never races a moving list; it stops once the element
 is on screen, not covered and mostly in view, and fails with
 `element_not_found` when two strokes in a row change nothing (the content
 stopped moving), when no stroke along its axis brings more of an element on
-screen in, after 50 strokes, or at its timeout. It looks for the element
+screen in, after 50 strokes, or at its timeout, naming its last stroke's
+start and end, in the message and as `data.from` and `data.to`, and what
+moved after it: the element by how many points which way, else the screen,
+else nothing (design D46: the third acceptance run's scroll gave up after
+strokes that went the other way, its reply naming only the step). A stroke
+that brings an element in aims at the side of a view across it that the
+element's list can carry it to, as `Visibility::viewport` keeps it, where
+that run's strokes aimed below a floating button pushed a list standing at
+its top, which a plain scroll then moved. It looks for the element
 only between strokes, and a stroke whose finger lifts moving flings the
 content on: a 600-point stroke over 300 ms carried the fixtures' lists
 1,103 to 1,319 points on the API 36 emulator, where they show about 780,
@@ -311,11 +319,20 @@ below it whose accessible name the entry changed is read back through the
 name (design D39), as a React Native code input on iOS spells the digits
 it holds in its name (in the acceptance run of 2026-10-12 all 7 fills of a
 code replied `verified: false` while the name spelled the digits, and a
-wrong code went unreported): what follows the name the field had before
-the entry when the name keeps it in front, as a label, else the whole
-name, compared as a value is and, for a text without spaces, also without
-the spaces a name may spell its characters with; the reply's `readFrom`
-says `name`. A name that did not change is a label, never compared. A
+wrong code went unreported): the part of the name the entry changed, what
+lies between the words the names before and after the entry share at
+their start and at their end, the names cut into words at spaces, commas,
+dashes and underscores, compared with the text, both without those
+separators (design D43), as a code field names its six boxes, each its
+digit or a dash, before its label: "–, –, –, –, –, –, Verification code,
+required" becomes "1, 2, 3, 4, 5, 6, Verification code, required", where
+the third acceptance run compared the whole name and failed every right
+code with `text_mismatch`. The part takes in the shared words next to it
+when they spell the text with it, as a code entered over one it starts as
+does; a part that shows only bullets tells nothing but the text's length
+and is other text, which `text_mismatch` names by its count. The reply's
+`readFrom` says `name`, and a mismatch names the part that changed. A name
+that did not change is a label, never compared. A
 field that shows none of these, as iOS reads a React Native field inside a
 view marked accessible (a labelled node with nothing below it), cannot be
 read back: once the
@@ -346,8 +363,21 @@ input's view failed `invalid_argument` on the step's second visit (4 of
 4), while a click on the identifier and a `type` worked. A field with an
 area takes a tap of its own, as any field does; one without, which a tap
 cannot reach, takes the tap on the node around it unless it has the focus,
-and the text as the field in focus. An identifier on a node that holds no
-field, or several, still fails `invalid_argument`. A field whose label
+and the text as the field in focus. An identifier on a node that takes no
+text, holds no field (`Mirror::fields_within`) and has no ref sends `fill`
+and `type` to the input a tap on it focuses (design D44): on the third
+acceptance run's second visit the code input's view held nothing, the
+app's input not in the tree, and `fill` and `type` by its identifier
+failed `invalid_argument` while a click on it raised the keyboard and an
+untargeted `type` landed the code. The node is tapped where a tap reaches
+it, the keyboard's window awaited up to 1 s on either platform, and the
+text goes untargeted to the input in focus, `fill` reading it back
+through the node found again by its identifier, its value, descendants or
+name; the reply's `ref` is null and a warning names the node and says the
+keyboard it brought up carried the text. No keyboard after the second, or
+a field the tree shows with the focus after the tap, which the keyboard
+would serve instead, fails `invalid_argument` as before; a node holding
+several fields fails at once. A field whose label
 changes once it holds text keeps its ref across the change, and its view
 its identity when it gains a counter at the focus (`crates/mirror/README.md`,
 Snapshots), so a `fill` by that ref reads the field back, where in the
@@ -414,8 +444,10 @@ the tap went in becomes a warning. So does a tap on an element that was not
 mostly in view as `scroll --until` has it (task 10.15), naming the point
 the tap went to and saying to bring the element in first. The tap goes to
 the centre of the part of the element a tap reaches (`Visibility::reachable`,
-design D37): its bounds within what shows of them, less every view drawn
-over part of it, the largest rectangle left that is at least 8 points on
+design D37): its bounds within what shows of them, and within what each
+scroll container around it shows (design D45: on the third acceptance run
+a tap on a control's strip under a footer drawn over its list opened
+nothing), less every view drawn over part of it, the largest rectangle left that is at least 8 points on
 each side, or as long as the element where it is shorter. The centre of
 its bounds may lie on what covers it: on iOS, whose frames are whole, the
 centre of a row the tab bar covers lies on the tab bar, and in the
@@ -899,14 +931,21 @@ settle windows take real time, and a device model:
   names: `consent`, a heading half under the secondary one of two footer
   buttons listed after the content and a 12-point text under the primary
   one; `creation`, a list under a header listed before it, which a stroke
-  scrolls, and a disabled button drawn after it over most of a control;
+  scrolls and which says which ways it scrolls, a disabled button drawn
+  after it over most of a control and a footer drawn after that over the
+  list's lower part and the rest of the control, and `creation-open`, the
+  same without the footer;
   `feed`, a card partly above its list's top, where the header listed
   before the list is drawn; `list`, a header listed before a list down to
   122 points and a field in the list that brings the keyboard up, and
   `list-low`, the header down to 430 points, which leaves 109 points of
   the list above the keyboard; `code`, a code field whose name spells the
   digits it holds, and `code-again`, the field without an area inside an
-  identified node, as on the step's second visit; `sheet`, a field without
+  identified node, as on the step's second visit; `code-named`, the code
+  field named by its boxes, each its digit or a dash, before its label,
+  `code-masked`, a bullet for each digit, and `code-bare`, its node holding
+  no field, a tap on it focusing an input outside the tree, as the third
+  acceptance run met the step on its two visits (design D43, D44); `sheet`, a field without
   an identifier whose view gains a counter at the focus and whose name
   changes with its text, in the structure of the acceptance run of
   2026-10-12 (design D37 to D41); and by default the form with the shapes
@@ -1039,7 +1078,7 @@ source and reports the agent's paths, as a real emulator does.
 | `target_not_found` | `device` names no connected target; `data.candidates` |
 | `target_claimed` | another session holds the target; `data.holder` |
 | `app_not_found` | the target has no such app |
-| `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, and `data.visible` for an element on screen |
+| `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, `data.from` and `data.to` for the last stroke, and `data.visible` for an element on screen |
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
 | `covered_by_keyboard` | the keyboard covers what a scroll strokes, but for too little for a stroke longer than the tap threshold or less than 120 points along the scroll's axis, and a stroke that came down on it would type; the message names what it covers and how to close the keyboard; `data.strokes` |
@@ -1178,9 +1217,11 @@ Worked around here without changing `crates/mirror`:
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 | Single coordinate contract (design D32) | Submit button moved by the keyboard | `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning`, `handlers::act::tests::a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until`, `handlers::act::tests::a_click_on_a_button_a_footer_is_drawn_over_fails_covered_without_a_read_or_a_tap` |
 | Text entry verification (design D33) | Composite code field; Value that cannot be read back; Mismatch | `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified`, `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` |
-| Single coordinate contract (design D37, D38) | Card partly under a sticky header; Heading half under a footer button (the tap on the part a tap reaches with its warning, by ref, identifier and text selector; `scroll --until` judging arrival by that part) | `handlers::act::tests::a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning`, `handlers::act::tests::clicks_on_what_footer_buttons_cover_in_part_tap_what_shows_or_are_refused_naming_the_button`, `handlers::act::tests::a_click_on_a_control_mostly_under_a_disabled_button_taps_the_part_below_it`, `handlers::act::tests::scroll_until_does_not_call_a_control_mostly_under_a_disabled_button_visible`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_the_part_in_view_with_a_warning`; the mirror's rows of these scenarios |
+| Single coordinate contract (design D37, D38) | Card partly under a sticky header; Heading half under a footer button (the tap on the part a tap reaches with its warning, by ref, identifier and text selector; `scroll --until` judging arrival by that part) | `handlers::act::tests::a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning`, `handlers::act::tests::clicks_on_what_footer_buttons_cover_in_part_tap_what_shows_or_are_refused_naming_the_button`, `handlers::act::tests::scroll_until_does_not_call_a_control_mostly_under_a_disabled_button_visible`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_the_part_in_view_with_a_warning`; the mirror's rows of these scenarios |
 | (design D41, strokes inside the reachable container) | (with the keyboard up a scroll strokes below a pinned header and above the keyboard; under 120 points it fails `covered_by_keyboard`) | `handlers::act::tests::a_scroll_with_the_keyboard_up_strokes_inside_the_list_below_its_header`, `handlers::act::tests::a_scroll_of_a_list_the_keyboard_leaves_less_than_120_points_of_fails_naming_it` |
 | Text entry verification (design D39) | Code field that names its digits; Identifier on the field's wrapper; Ref across a label change | `handlers::act::tests::a_fill_of_a_code_into_a_field_whose_name_spells_it_is_verified_through_the_name`, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_fields_wrapper_go_into_the_field`, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` |
+| Text entry verification (design D43, D44) | Name with a fixed suffix; Node without a field that raises the keyboard | `handlers::act::tests::a_name_shows_the_text_in_the_part_the_entry_changed`, `handlers::act::tests::a_fill_of_a_code_into_a_field_named_by_its_boxes_compares_what_the_entry_changed`, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_node_that_raises_the_keyboard_go_to_the_input_it_focuses`, `handlers::act::tests::an_identifier_on_a_node_whose_tap_raises_no_keyboard_still_takes_no_text` |
+| Single coordinate contract (design D45, D46) | Strip clipped by the scroll view (the click by identifier refused naming the disabled button); a scroll that stops naming its last stroke | `handlers::act::tests::a_click_on_a_control_whose_strip_below_a_disabled_button_lies_under_a_footer_is_refused`, `handlers::act::tests::scroll_until_on_the_creation_tab_strokes_the_way_a_plain_scroll_moves_the_list`, `handlers::act::tests::scroll_until_strokes_toward_a_side_the_list_can_carry_the_control_to`, `handlers::act::tests::a_scroll_until_that_stops_names_its_last_stroke_and_what_moved`; the mirror's rows of these scenarios |
 | Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
 | Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
