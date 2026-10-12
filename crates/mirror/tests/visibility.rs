@@ -647,6 +647,39 @@ fn what_a_tap_reaches_is_clipped_by_what_its_scroll_view_shows() {
     assert_eq!(open.covered_by(paste), None);
 }
 
+/// Rn-app-fixes D46 (task 4.4; task 3.7's N5): with nothing drawn over the
+/// creation tab's list below the disabled button, the paste control 38 of
+/// whose 48 points the button covers fits below it with the least movement,
+/// 38 points down, but the list stands at its top and cannot carry its
+/// content down, so a stroke aiming there moves nothing, as the third
+/// acceptance run's three strokes did. The visible bounds keep the side
+/// above the button, 74 points up, where a stroke can carry the control; a
+/// list that can scroll back keeps the side of least movement.
+#[test]
+fn a_view_across_an_element_keeps_the_side_its_list_can_carry_it_to() {
+    let mut open = Screen::load("create-disabled-ios");
+    let content = &mut open.0["windows"][0]["root"]["children"][0]["children"][0]["children"];
+    content.as_array_mut().unwrap().truncate(3);
+    let mut at_top = mirror_showing(&open);
+    let seen = visibility(&mut at_top, "placeholder-id-8");
+    assert_eq!(
+        seen.viewport,
+        Rect::new(0.0, 122.0, 402.0, 708.0),
+        "{seen:?}"
+    );
+
+    let mut scrolled = open.clone();
+    scrolled.0["windows"][0]["root"]["children"][0]["children"][0]["children"][1]["scroll"] =
+        json!({"axis": "vertical", "back": true, "forward": true});
+    let mut scrolled = mirror_showing(&scrolled);
+    let seen = visibility(&mut scrolled, "placeholder-id-8");
+    assert_eq!(
+        seen.viewport,
+        Rect::new(0.0, 764.0, 402.0, 874.0),
+        "{seen:?}"
+    );
+}
+
 /// Task 10.16: a stroke through the middle of the Expo list moves the list,
 /// whose visible bounds are its own inside its window.
 #[test]
