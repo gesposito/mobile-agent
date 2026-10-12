@@ -208,25 +208,38 @@ fn aimed_at(element: Element) -> (Target, Option<Ref>, Option<Element>) {
 
 /// A ref for the element an argument names, for text entry: a selector's
 /// element gets one from an interactive listing if no snapshot listed it.
+/// An identifier that names a node taking no text and holding exactly one
+/// field gives the field's ref, with the node it named (rn-app-fixes,
+/// design D39): on the acceptance run's code step the identifier named a
+/// React Native code input's view, around a field without an area.
 pub(crate) fn text_ref(
     target: &mut Attached,
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<Ref, Failure> {
+) -> Result<(Ref, Option<Element>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
-            Ok(*reference)
+            Ok((*reference, None))
         }
         Aim::Select(selector) => {
             let element = find(target, selector, timeout)?;
-            listed_ref(target, &element, &selector.to_string())
+            let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
+            if selector.identifier.is_some()
+                && !takes_text
+                && let Some(field) = target.mirror.field_within(element.id)
+                && let Some(reference) = field.reference
+            {
+                return Ok((reference, Some(element)));
+            }
+            Ok((listed_ref(target, &element, &selector.to_string())?, None))
         }
         Aim::Exact(text) => {
             let element = find_exact(target, text, timeout)?;
-            listed_ref(target, &element, &format!("exact text {text:?}"))
+            let reference = listed_ref(target, &element, &format!("exact text {text:?}"))?;
+            Ok((reference, None))
         }
     }
 }

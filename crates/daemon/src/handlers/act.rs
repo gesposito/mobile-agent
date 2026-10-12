@@ -616,6 +616,8 @@ enum Source {
     Value,
     /// Its descendants' values or texts, joined in order.
     Descendants,
+    /// Its accessible name, which changed with the entry.
+    Name,
 }
 
 impl Source {
@@ -623,6 +625,7 @@ impl Source {
         match self {
             Source::Value => "value",
             Source::Descendants => "descendants",
+            Source::Name => "name",
         }
     }
 }
@@ -634,7 +637,10 @@ enum Reading {
     Own(Option<String>),
     /// What its descendants show, their values or texts joined in order.
     Below(String),
-    /// Nothing: no value of its own and nothing below it.
+    /// Its accessible name, which is not the name it had before the entry.
+    Name(String),
+    /// Nothing: no value of its own, nothing below it, and its name as it
+    /// was before the entry.
     Nothing,
 }
 
@@ -642,8 +648,11 @@ enum Reading {
 /// it has one, or when it is a text field, whose empty value the platform
 /// reports as none; else its descendants' values or texts, joined in the
 /// order of the full listing, as a React Native code input built of boxes
-/// keeps its characters in its boxes' texts; else nothing.
-fn reading(target: &mut Attached, element: &Element) -> Result<Reading, Failure> {
+/// keeps its characters in its boxes' texts; else its accessible name when
+/// it is not `before`, the name it had before the entry, as a React Native
+/// code input that spells its digits in its name (design D39); else
+/// nothing. A name that did not change is a label, never compared.
+fn reading(target: &mut Attached, element: &Element, before: &str) -> Result<Reading, Failure> {
     let own = element
         .value
         .as_deref()
@@ -653,10 +662,27 @@ fn reading(target: &mut Attached, element: &Element) -> Result<Reading, Failure>
     }
     let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
     let below = shown_below(&listing.elements, element.id);
-    Ok(if below.is_empty() {
-        Reading::Nothing
-    } else {
+    Ok(if !below.is_empty() {
         Reading::Below(below)
+    } else if element.name != before {
+        Reading::Name(element.name.clone())
+    } else {
+        Reading::Nothing
+    })
+}
+
+/// How a field whose name is `name`, `before` before the entry, shows the
+/// `text` `fill` entered (design D39): what follows the name it had when
+/// it keeps that name in front, as a label, or else the whole name,
+/// compared as a value is ([`compare`]), and, for a text without spaces,
+/// also without the spaces a name may spell its characters with.
+fn compare_name(name: &str, before: &str, text: &str) -> Option<Shown> {
+    let shown = name
+        .strip_prefix(before)
+        .map_or(name, |rest| rest.trim_start_matches([',', ':', ' ']));
+    compare(Some(shown), "", text).or_else(|| {
+        let squeezed: String = shown.chars().filter(|c| !c.is_whitespace()).collect();
+        (!text.contains(char::is_whitespace) && squeezed == text).then_some(Shown::Text)
     })
 }
 
@@ -733,13 +759,13 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
 /// fall due meanwhile. What the field shows at the bound stands. A field
 /// that shows nothing to read back once the screen has held still since a
 /// settle's quiet window after the entry ([`READ_BACK_HOLD`]) is
-/// unreadable.
+/// unreadable. `before` is the field's name before `fill` entered the text.
 fn read_back(
     target: &mut Attached,
     reference: Ref,
     text: &str,
-    entered: Instant,
-    method: Option<TextMethod>,
+    (entered, method): (Instant, Option<TextMethod>),
+    before: &str,
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
     let quiet = entered + READ_BACK_HOLD;
@@ -750,7 +776,7 @@ fn read_back(
             Err(MirrorError::StaleRef { .. }) => return Ok(ReadBack::Gone),
             Err(error) => return Err(error.into()),
         };
-        let reading = reading(target, &element)?;
+        let reading = reading(target, &element, before)?;
         let now = Instant::now();
         let after = now.saturating_duration_since(entered);
         let rereads = target.mirror.next_wakeup().is_some();
@@ -764,6 +790,7 @@ fn read_back(
                 compare(Some(below), &element.name, text),
                 Source::Descendants,
             ),
+            Reading::Name(name) => (compare_name(name, before, text), Source::Name),
             Reading::Nothing => (None, Source::Value),
         };
         match (shown, reading) {
@@ -774,7 +801,7 @@ fn read_back(
                 return Ok(ReadBack::Unreadable { after });
             }
             (None, Reading::Own(value)) if now >= deadline => return Ok(ReadBack::Other(value)),
-            (None, Reading::Below(below)) if now >= deadline => {
+            (None, Reading::Below(below) | Reading::Name(below)) if now >= deadline => {
                 return Ok(ReadBack::Other(Some(below)));
             }
             _ => {}
@@ -818,8 +845,23 @@ fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<
     if element.focused || keyboard_up(target)? {
         return Ok(());
     }
-    let mut aimed = Target::Ref(reference);
-    sight(target, "fill", &element, given, &mut aimed)?;
+    let aimed = Target::Ref(reference);
+    tap_to_focus(target, &element, given, aimed, "fill")?;
+    Ok(())
+}
+
+/// Taps `element`, which `given` names, as `aimed`, to give the focus to the
+/// field it is or holds, as `action`, the command, does; on iOS waits, as
+/// [`ready_keyboard`] does, until the replica shows the keyboard's window, at
+/// most [`KEYBOARD_WAIT`] from the tap.
+fn tap_to_focus(
+    target: &mut Attached,
+    element: &Element,
+    given: &str,
+    mut aimed: Target,
+    action: &str,
+) -> Result<(), Failure> {
+    sight(target, action, element, given, &mut aimed)?;
     let tapped = Instant::now();
     let outcome = target.mirror.act(&Action::Tap {
         target: aimed,
@@ -827,6 +869,9 @@ fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<
     })?;
     if !outcome.accepted {
         return Err(rejected("tap that focuses the field"));
+    }
+    if target.info.platform != Platform::Ios {
+        return Ok(());
     }
     let deadline = tapped + KEYBOARD_WAIT;
     loop {
@@ -841,17 +886,17 @@ fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<
     }
 }
 
-/// Enters `text` into the field `reference` names as `method` asks; says
-/// the method the target used.
+/// Enters `text` into the field `into` names, or the focused field, as
+/// `method` asks; says the method the target used.
 fn enter(
     target: &mut Attached,
-    reference: Ref,
+    into: Option<Ref>,
     text: &str,
     method: TextMethod,
 ) -> Result<Option<TextMethod>, Failure> {
     let outcome = target.mirror.act(&Action::Text {
         text: text.to_owned(),
-        into: Some(reference),
+        into,
         method,
     })?;
     if !outcome.accepted {
@@ -947,6 +992,49 @@ fn filled(
     }))
 }
 
+/// Gets `field`, which an identifier `given` named through `holder`, a node
+/// that takes no text around it, ready for text, and says which field to
+/// enter the text into: a field with an area takes a tap of its own, as any
+/// field does ([`ready_keyboard`] on iOS); one without an area, as a React
+/// Native code input's, which a tap cannot reach, takes the tap on the
+/// node around it, and the text as the field in focus (design D39), as a
+/// click on the node and a `type` did in the acceptance run.
+fn ready_held(
+    target: &mut Attached,
+    (field, holder): (&Element, &Element),
+    given: &str,
+    action: &str,
+) -> Result<Option<Ref>, Failure> {
+    let reference = field.reference;
+    if !field.bounds.is_empty() {
+        if action == "fill"
+            && target.info.platform == Platform::Ios
+            && let Some(reference) = reference
+        {
+            ready_keyboard(target, reference, given)?;
+        }
+        return Ok(reference);
+    }
+    if !field.focused {
+        let aimed = Target::Point(holder.bounds.center());
+        tap_to_focus(target, holder, given, aimed, action)?;
+    }
+    Ok(None)
+}
+
+/// The warning of an entry into `field` that an identifier `given` named
+/// through the node around it.
+fn held_field(given: &str, field: &Element) -> String {
+    let reference = field
+        .reference
+        .map(|r| format!(" @{r}"))
+        .unwrap_or_default();
+    format!(
+        "{given} takes no text itself, so the text went into the {} {:?}{reference} it holds",
+        field.role, field.name
+    )
+}
+
 /// The warning of a fill whose field `given` showed nothing to read back.
 fn unreadable(given: &str) -> String {
     format!(
@@ -980,7 +1068,10 @@ fn mismatch(given: &str, reference: Ref, text: &str, value: Option<&str>, tries:
 /// the target chooses, and reads the field back, holding typed text
 /// [`READ_BACK_HOLD`] and taking text that went in in one piece from the
 /// first read that shows it, from the field's value or, for a field without
-/// one, through its descendants (see [`reading`]). A field that shows other
+/// one, through its descendants, or through its name when the entry changed
+/// it (see [`reading`]). An identifier that names a node taking no text
+/// around exactly one field fills that field, which the reply's warning
+/// names (see [`ready_held`]). A field that shows other
 /// text gets the text again in one piece, pasted on a Simulator, set through
 /// the runner on a physical iPhone and set directly on Android, and is read
 /// back again; a field that still shows
@@ -994,35 +1085,53 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let text = text_param(request)?;
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
-    let reference = aim::text_ref(target, session, &aim, timeout(request)?)?;
+    let (reference, holder) = aim::text_ref(target, session, &aim, timeout(request)?)?;
     let (platform, class) = (target.info.platform, target.info.class);
-    if platform == Platform::Ios {
-        ready_keyboard(target, reference, given)?;
-    }
-    let first = enter(target, reference, &text, TextMethod::AUTO)?;
+    let (into, held) = match &holder {
+        Some(holder) => {
+            let field = target.mirror.resolve(reference)?;
+            let into = ready_held(target, (&field, holder), given, "fill")?;
+            (into, Some(held_field(given, &field)))
+        }
+        None => {
+            if platform == Platform::Ios {
+                ready_keyboard(target, reference, given)?;
+            }
+            (Some(reference), None)
+        }
+    };
+    // What a read-back takes a changed name as (design D39).
+    let before = target.mirror.resolve(reference)?.name;
+    let note = |warning: Option<String>| match (held.clone(), warning) {
+        (Some(held), Some(warning)) => Some(format!("{held}; {warning}")),
+        (held, warning) => held.or(warning),
+    };
+    let first = enter(target, into, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
-        return Ok(filled(given, reference, first, Check::Skipped, false));
+        return Ok(filled(given, reference, first, Check::Skipped, false).warn(note(None)));
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let value = match read_back(target, reference, &text, entered, first)? {
+    let value = match read_back(target, reference, &text, (entered, first), &before)? {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
-            return Ok(filled(given, reference, first, check, false));
+            return Ok(filled(given, reference, first, check, false).warn(note(None)));
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
-            return Ok(filled(given, reference, first, check, false).warn(Some(unreadable(given))));
+            return Ok(
+                filled(given, reference, first, check, false).warn(note(Some(unreadable(given))))
+            );
         }
         ReadBack::Gone => {
             return Ok(filled(given, reference, first, Check::Skipped, false)
-                .warn(Some(gone(entered_by(class, first)))));
+                .warn(note(Some(gone(entered_by(class, first))))));
         }
         ReadBack::Other(value) => value,
     };
     let first_by = entered_by(class, first);
-    let second = match enter(target, reference, &text, TextMethod::DIRECT) {
+    let second = match enter(target, into, &text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
             let tries = format!(
@@ -1041,19 +1150,19 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
             described(value.as_deref())
         )
     };
-    match read_back(target, reference, &text, entered, second)? {
+    match read_back(target, reference, &text, (entered, second), &before)? {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
-            Ok(filled(given, reference, second, check, true).warn(Some(again())))
+            Ok(filled(given, reference, second, check, true).warn(note(Some(again()))))
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
             let warning = format!("{}; {}", again(), unreadable(given));
-            Ok(filled(given, reference, second, check, true).warn(Some(warning)))
+            Ok(filled(given, reference, second, check, true).warn(note(Some(warning))))
         }
         ReadBack::Gone => {
             let warning = format!("{}; {}", again(), gone(second_by));
-            Ok(filled(given, reference, second, Check::Skipped, true).warn(Some(warning)))
+            Ok(filled(given, reference, second, Check::Skipped, true).warn(note(Some(warning))))
         }
         ReadBack::Other(still) => {
             let tries = if first_by == second_by {
@@ -1071,12 +1180,20 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
 
 pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request) -> Outcome {
     let text = text_param(request)?;
-    let into = match request.str("target") {
+    let (into, held) = match request.str("target") {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            Some(aim::text_ref(target, session, &aim, timeout(request)?)?)
+            let (reference, holder) = aim::text_ref(target, session, &aim, timeout(request)?)?;
+            match holder {
+                Some(holder) => {
+                    let field = target.mirror.resolve(reference)?;
+                    let into = ready_held(target, (&field, &holder), given, "type")?;
+                    (into, Some((reference, held_field(given, &field))))
+                }
+                None => (Some(reference), None),
+            }
         }
-        None => None,
+        None => (None, None),
     };
     let outcome = target.mirror.act(&Action::Text {
         text: text.clone(),
@@ -1088,11 +1205,13 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
             "text; type takes a text field or the focused field",
         ));
     }
+    let named = held.as_ref().map(|&(reference, _)| reference).or(into);
     Ok(Success::new(json!({
         "typed": text,
-        "ref": reference_json(into),
+        "ref": reference_json(named),
         "method": method_name(outcome.method),
-    })))
+    }))
+    .warn(held.map(|(_, warning)| warning)))
 }
 
 pub(super) fn press(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
