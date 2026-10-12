@@ -2073,6 +2073,49 @@ mod tests {
         assert_eq!(shows(Some("it’s"), "Username", "it's"), None);
     }
 
+    /// Design D43: a name is compared by the part of it the entry changed,
+    /// what lies between what the names before and after share at their
+    /// start and their end, with the separators a name spells characters
+    /// with left out of it and of the text: the boxes of the acceptance
+    /// run's code field before its label, a code after a label, a name
+    /// in front of a label, a cleared field's dashes. Other digits, digits
+    /// missing, and bullets for each digit, which tell nothing but the
+    /// text's length, are other text.
+    #[test]
+    fn a_name_shows_the_text_in_the_part_the_entry_changed() {
+        let shows = |name: &str, before: &str, text: &str| compare_name(name, before, text);
+        let empty = "–, –, –, –, –, –, Verification code, required";
+        let code = "1, 2, 3, 4, 5, 6, Verification code, required";
+        assert_eq!(shows(code, empty, "123456"), Some(Shown::Text));
+        assert_eq!(
+            shows(
+                "placeholder-generic-2, 1 2 3 4 5 6",
+                "placeholder-generic-2",
+                "123456"
+            ),
+            Some(Shown::Text)
+        );
+        assert_eq!(
+            shows("Smoke Org, Name, required", "Name, required", "Smoke Org"),
+            Some(Shown::Text)
+        );
+        assert_eq!(shows(empty, code, ""), Some(Shown::Text));
+        let wrong = "1, 2, 3, 4, 9, 9, Verification code, required";
+        assert_eq!(shows(wrong, empty, "123456"), None);
+        let short = "1, 2, 3, 4, –, –, Verification code, required";
+        assert_eq!(shows(short, empty, "123456"), None);
+        let masked = "•, •, •, •, •, •, Verification code, required";
+        assert_eq!(shows(masked, empty, "123456"), None);
+        assert_eq!(
+            shows(
+                "placeholder-generic-2, ••••••",
+                "placeholder-generic-2",
+                "123456"
+            ),
+            None
+        );
+    }
+
     /// A screen that turns to landscape once `turned` is set.
     struct Turning(Arc<AtomicBool>);
 
@@ -3082,6 +3125,59 @@ mod tests {
             "{}",
             success.data
         );
+    }
+
+    /// Design D43, defect 3 of the third acceptance run (task 4.1; task
+    /// 3.7): the code step's field names its six boxes before its label, a
+    /// dash for each empty one, "–, –, –, –, –, –, Verification code,
+    /// required" before the entry and "1, 2, 3, 4, 5, 6, Verification code,
+    /// required" after, and every fill compared the code with the whole
+    /// name, typed it, pasted it and failed with `text_mismatch`, the code
+    /// right every time. The read-back compares the part of the name the
+    /// entry changed, its separators left out: the code is verified through
+    /// the name, typed once; a field that keeps four of the six digits fails
+    /// naming the part that changed, not the label; and one that shows a
+    /// bullet for each digit, which tells only the code's length, fails
+    /// naming that length, keeping the code out of the message.
+    #[test]
+    fn a_fill_of_a_code_into_a_field_named_by_its_boxes_compares_what_the_entry_changed() {
+        let (mut target, sent) = typed_board("code-named", Typing::Keys);
+        let success = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "name", "{data}");
+        assert_eq!(data["retried"], false, "{data}");
+        let texts = sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, input)| matches!(input, Input::Text { .. }))
+            .count();
+        assert_eq!(texts, 1, "the code went in once");
+
+        let (mut short, _) = typed_board("code-named", Typing::Max(4));
+        let failure = fill_in(&mut short, "#placeholder-id-3", "123456").unwrap_err();
+        assert_eq!(failure.code, TEXT_MISMATCH, "{}", failure.message);
+        assert!(
+            failure
+                .message
+                .contains("holds \"1, 2, 3, 4\" where fill entered \"123456\""),
+            "the message names the part that changed: {}",
+            failure.message
+        );
+        assert_eq!(failure.data.unwrap_or_default()["value"], "1, 2, 3, 4");
+
+        let (mut masked, _) = typed_board("code-masked", Typing::Keys);
+        let failure = fill_in(&mut masked, "#placeholder-id-3", "123456").unwrap_err();
+        assert_eq!(failure.code, TEXT_MISMATCH, "{}", failure.message);
+        assert!(
+            failure
+                .message
+                .contains("holds 6 masked characters where fill entered 6 characters"),
+            "{}",
+            failure.message
+        );
+        assert!(!failure.message.contains("123456"), "{}", failure.message);
     }
 
     /// Design D39, N1 of the acceptance run (task 3.3; section 4 of the

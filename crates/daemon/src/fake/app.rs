@@ -244,7 +244,10 @@ impl FormField {
             (Board::Form, "placeholder-code") => Some(FormField::Code),
             (Board::Form, "placeholder-secret") => Some(FormField::Secret),
             (Board::List | Board::ListLow, LIST_FIELD) => Some(FormField::Query),
-            (Board::Code | Board::CodeAgain, CODE_FIELD | CODE_INPUT) => Some(FormField::Pin),
+            (
+                Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked,
+                CODE_FIELD | CODE_INPUT,
+            ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
             _ => None,
         }
@@ -286,6 +289,12 @@ enum Board {
     /// The code step on its second visit (section 4): the code field's node
     /// holds a field without an area, and so gets no ref.
     CodeAgain,
+    /// The code step as the third acceptance run met it (task 3.7): the
+    /// code field is a labelled node without traits named by its six boxes,
+    /// each the digit it holds or a dash, then by its label.
+    CodeNamed,
+    /// The same step with the field's boxes masked: a bullet for each digit.
+    CodeMasked,
     /// The paste sheet (section 7): the title field, without an identifier,
     /// in one of four unidentified views of one class, which gains a counter
     /// when the field takes the focus; its name changes once it holds text.
@@ -302,6 +311,8 @@ impl Board {
             "list-low" => Board::ListLow,
             "code" => Board::Code,
             "code-again" => Board::CodeAgain,
+            "code-named" => Board::CodeNamed,
+            "code-masked" => Board::CodeMasked,
             "sheet" => Board::Sheet,
             _ => Board::Form,
         }
@@ -1284,9 +1295,31 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
-        Board::Code | Board::CodeAgain => code_content(kit, forms),
+        Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked => {
+            code_content(kit, forms)
+        }
         Board::Sheet => sheet_content(kit, forms),
     }
+}
+
+/// The code field's name on the code step of the third acceptance run
+/// (task 3.7): its boxes, each the digit it holds, a bullet in the digit's
+/// place when `masked`, or a dash when empty, then its label.
+fn boxes_name(pin: &str, masked: bool) -> String {
+    let mut parts: Vec<String> = pin
+        .chars()
+        .take(CODE_BOXES)
+        .map(|digit| {
+            if masked {
+                "\u{2022}".to_owned()
+            } else {
+                digit.to_string()
+            }
+        })
+        .collect();
+    parts.resize(CODE_BOXES, "\u{2013}".to_owned());
+    parts.extend(["Verification code".to_owned(), "required".to_owned()]);
+    parts.join(", ")
 }
 
 /// The code step (section 4 of the masked listings): the step's 12-point
@@ -1295,13 +1328,16 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
 /// resend button, the submit button and the status line. On the second
 /// visit the code field's node also holds a field without an area, which
 /// the tree reports as off the screen, so the node gets no ref; and two
-/// more labelled nodes with identifiers hold no field and two of them.
+/// more labelled nodes with identifiers hold no field and two of them. On
+/// the step as the third acceptance run met it, the field's name spells its
+/// boxes before its label ([`boxes_name`]).
 fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let digits: Vec<String> = forms.pin.chars().map(String::from).collect();
-    let name = if digits.is_empty() {
-        "placeholder-generic-2".to_owned()
-    } else {
-        format!("placeholder-generic-2, {}", digits.join(" "))
+    let name = match forms.board {
+        Board::CodeNamed => boxes_name(&forms.pin, false),
+        Board::CodeMasked => boxes_name(&forms.pin, true),
+        _ if digits.is_empty() => "placeholder-generic-2".to_owned(),
+        _ => format!("placeholder-generic-2, {}", digits.join(" ")),
     };
     let hidden = |key: &str| {
         kit.field(
