@@ -25,6 +25,12 @@ use crate::worker::{Attached, Outcome};
 /// How long a swipe takes when the command names no duration.
 const SWIPE_DURATION: Duration = Duration::from_millis(300);
 
+/// The least of the scrolled area a scroll strokes through with the keyboard
+/// up, along the scroll's axis, in points (design D41): less, and what the
+/// keyboard and a header pinned over the list leave holds no stroke that
+/// moves the list's content, and the scroll asks to close the keyboard.
+const STROKE_ROOM: f64 = 120.0;
+
 /// How far `swipe` and `scroll` move when the command names no distance,
 /// in points, as agent-browser's default of 300 pixels.
 const DEFAULT_DISTANCE: f64 = 300.0;
@@ -294,7 +300,7 @@ fn sight(
     given: &str,
     aimed: &mut Target,
 ) -> Result<Option<Visibility>, Failure> {
-    if let Some(refused) = covered(target, element, given, aimed) {
+    if let Some(refused) = covered(target, element, given, aimed, false) {
         return refused;
     }
     let Some(seen) = target.mirror.visibility(element.id) else {
@@ -308,7 +314,7 @@ fn sight(
     }
     target.mirror.note_window_change();
     target.mirror.pump()?;
-    if let Some(refused) = covered(target, element, given, aimed) {
+    if let Some(refused) = covered(target, element, given, aimed, true) {
         return refused;
     }
     let Some(seen) = target.mirror.visibility(element.id) else {
@@ -337,14 +343,21 @@ fn sight(
 /// ref the mirror's own, which `sight` leaves to it; for a point,
 /// `element_covered` naming what a tap at the element's centre would land
 /// on, with advice to bring the element out from under it rather than to
-/// press it, which on a consent screen accepts the consent.
+/// press it, which on a consent screen accepts the consent. The keyboard
+/// covers nothing until the windows were `read_again`: its coming up moves
+/// a layout without an event (design D32), and the read finds the element
+/// where it is.
 fn covered(
     target: &Attached,
     element: &Element,
     given: &str,
     aimed: &Target,
+    read_again: bool,
 ) -> Option<Result<Option<Visibility>, Failure>> {
     let by = target.mirror.covered_by(element.id)?;
+    if !read_again && by == mirror::KEYBOARD {
+        return None;
+    }
     Some(match aimed {
         Target::Ref(_) => Ok(None),
         Target::Point(_) => Err(Failure::new(
@@ -1208,9 +1221,14 @@ fn longest_in(area: &Rect, vertical: bool) -> f64 {
 /// the focused field 49 times (task 10.32). A window cuts the bounds as it
 /// cuts visible bounds, only where it spans them from one side to the
 /// other, so one floating inside them, as Gboard's stylus toolbar, cuts
-/// nothing. Fails with `covered_by_keyboard`, after `strokes` strokes,
-/// when the keyboard leaves too little of them for a stroke longer than a
-/// tap, where the bounds alone take one.
+/// nothing. With the keyboard up the stroke goes through what shows of the
+/// scroll container that shows the most of what is left, less a header the
+/// app pins over it (design D41): the acceptance run's `scroll up 300`
+/// stroked the middle of what the keyboard left of the screen, on a fixed
+/// header, and moved nothing. Fails with `covered_by_keyboard`, after
+/// `strokes` strokes, when the keyboard leaves too little for a stroke
+/// longer than a tap, where the bounds alone take one, or less than
+/// [`STROKE_ROOM`] of bounds as long as that.
 fn stroke_area(
     target: &Attached,
     scrolled: &Scrolled,
@@ -1218,18 +1236,25 @@ fn stroke_area(
     strokes: u32,
 ) -> Result<Rect, Failure> {
     let uncovered = target.mirror.uncovered(scrolled.bounds, scrolled.element);
+    let mut area = uncovered.area;
+    if uncovered.keyboard
+        && let Some(shown) = target.mirror.scroll_container_in(area, vertical)
+    {
+        area = area.intersect(&shown);
+    }
     let platform = target.info.platform;
     let slop = tap_slop(platform);
-    if uncovered.keyboard
-        && longest_in(&uncovered.area, vertical) <= slop
-        && longest_in(&scrolled.bounds, vertical) > slop
-    {
-        let covered = if uncovered.area.is_empty() {
+    let short =
+        longest_in(&area, vertical) <= slop && longest_in(&scrolled.bounds, vertical) > slop;
+    let cramped =
+        extent(&area, vertical) < STROKE_ROOM && extent(&scrolled.bounds, vertical) >= STROKE_ROOM;
+    if uncovered.keyboard && (short || cramped) {
+        let covered = if area.is_empty() {
             format!("the keyboard covers {}", scrolled.name)
         } else {
             format!(
-                "the keyboard covers all but {} points of {}, too few for a stroke longer than a tap",
-                points(extent(&uncovered.area, vertical)),
+                "the keyboard covers all but {} points of {}, too few for a stroke that moves it",
+                points(extent(&area, vertical)),
                 scrolled.name
             )
         };
@@ -1245,7 +1270,7 @@ fn stroke_area(
         )
         .with_data(json!({"strokes": strokes})));
     }
-    Ok(uncovered.area)
+    Ok(area)
 }
 
 fn point_param(request: &Request, key: &str) -> Result<Option<Point>, Failure> {
