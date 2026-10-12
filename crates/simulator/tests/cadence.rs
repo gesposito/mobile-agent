@@ -9,7 +9,11 @@ mod common;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use simulator::{Cadence, Input, Key, Modifiers, SimulatorDriver, TextMethod, Tree, TreeOptions};
+use protocol::snapshot::NodeFlags;
+use simulator::{
+    Cadence, ForegroundTree, Input, Key, Modifiers, Point, SimulatorDriver, TextMethod, Tree,
+    TreeOptions,
+};
 
 use common::{ExpoOnLogin, expo};
 
@@ -118,24 +122,53 @@ fn type_entry(
     }
 }
 
-/// Relaunches the Expo fixture on Login and focuses its username field,
-/// leaving the keyboard time to slide in (S3: about 1.2 s).
+/// Whether `tree` is a read of `bundle`, the application in front. Both
+/// fixtures name their username field alike, so a read taken while the
+/// other one is still in front must not count.
+fn of(tree: &ForegroundTree, bundle: &str) -> bool {
+    tree.foreground.bundle_id.as_deref() == Some(bundle)
+}
+
+/// Taps `bundle`'s username field at `at` until a read shows it focused,
+/// since the first tap after a launch can come before the field takes
+/// input, then leaves the keyboard time to slide in (S3: about 1.2 s).
+fn focus_username(driver: &SimulatorDriver, udid: &str, bundle: &str, at: Point) {
+    for _ in 0..3 {
+        driver.tap(udid, at).expect("a tap on the username field");
+        let focused = common::wait_for(Duration::from_secs(3), || {
+            driver
+                .snapshot(udid, &TreeOptions::default())
+                .ok()
+                .filter(|tree| of(tree, bundle))
+                .and_then(|tree| {
+                    let field = tree.find(USERNAME)?;
+                    Some(field.flags.contains(NodeFlags::FOCUSED))
+                })
+                .unwrap_or(false)
+        });
+        if focused {
+            thread::sleep(Duration::from_millis(1500));
+            return;
+        }
+    }
+    panic!("the username field never took the focus");
+}
+
+/// Relaunches the Expo fixture on Login and focuses its username field.
 fn focus_expo_username(driver: &SimulatorDriver, udid: &str) {
     common::show_expo(driver, udid, "login");
-    driver.tap(udid, expo::USERNAME).expect("a tap");
-    thread::sleep(Duration::from_millis(1500));
+    focus_username(driver, udid, common::EXPO_BUNDLE, expo::USERNAME);
 }
 
 /// Relaunches the SwiftUI fixture on Login and focuses its username field
-/// where a read puts it, leaving the keyboard time to slide in.
+/// where a read puts it.
 fn focus_swiftui_username(driver: &SimulatorDriver, udid: &str) {
     common::show_swiftui(driver, udid, "login");
     let tree = common::snapshot_until(driver, udid, Duration::from_secs(10), |tree| {
-        tree.find(USERNAME).is_some()
+        of(tree, common::SWIFTUI_BUNDLE) && tree.find(USERNAME).is_some()
     });
     let field = tree.find(USERNAME).expect("the username field");
-    driver.tap(udid, tree.center(field)).expect("a tap");
-    thread::sleep(Duration::from_millis(1500));
+    focus_username(driver, udid, common::SWIFTUI_BUNDLE, tree.center(field));
 }
 
 /// The cadence a fresh read of the screen calls for.
