@@ -12,6 +12,7 @@
 // The platform-neutral helpers are used only by the macOS driver.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+mod cadence;
 mod compat;
 mod driver;
 mod error;
@@ -31,6 +32,7 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 
+pub use cadence::Cadence;
 pub use compat::{CallSite, Compatibility, Row, Status};
 pub use driver::{Frames, Input, Lifecycle, Tree};
 pub use error::{Error, Failure, Result, TreeFailure};

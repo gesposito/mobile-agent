@@ -5,6 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cadence::Cadence;
 use crate::driver::{Frames, Input, Lifecycle, Tree};
 use crate::error::{Error, Result};
 use crate::frames::FrameStream;
@@ -138,7 +139,13 @@ impl Input for SimulatorDriver {
         match *self {}
     }
 
-    fn type_text(&self, _target: &str, _text: &str, _method: TextMethod) -> Result<TextEntry> {
+    fn type_text_at(
+        &self,
+        _target: &str,
+        _text: &str,
+        _method: TextMethod,
+        _cadence: Cadence,
+    ) -> Result<TextEntry> {
         match *self {}
     }
 

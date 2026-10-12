@@ -9,6 +9,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cadence::Cadence;
 use crate::error::Result;
 use crate::frames::FrameStream;
 use crate::model::{
@@ -79,8 +80,21 @@ pub trait Input {
     /// A key press, with its modifiers held around it.
     fn key(&self, target: &str, key: Key) -> Result<Dispatch>;
 
-    /// Enters `text` into the focused field and reports how.
-    fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry>;
+    /// Enters `text` into the focused field and reports how, typing its keys
+    /// at the native cadence.
+    fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry> {
+        self.type_text_at(target, text, method, Cadence::NATIVE)
+    }
+
+    /// Enters `text` into the focused field and reports how, typing its keys
+    /// `cadence` apart; a paste has no keys to pace.
+    fn type_text_at(
+        &self,
+        target: &str,
+        text: &str,
+        method: TextMethod,
+        cadence: Cadence,
+    ) -> Result<TextEntry>;
 
     /// Opens the device's input session, as its first input would, without
     /// sending any input: dtuhidd gets its activation probe (spike S3), and

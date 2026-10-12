@@ -11,6 +11,7 @@ use protocol::message::SnapshotParams;
 use protocol::snapshot::Snapshot;
 use simulator_reader::codes;
 
+use crate::cadence::Cadence;
 use crate::compat::{self, Compatibility, Row, Status};
 use crate::driver::{Frames, Input, Lifecycle, Tree};
 use crate::error::{Error, Failure, Result, TreeFailure};
@@ -42,9 +43,6 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(120);
 /// The longest string `TextMethod::Auto` types key by key; longer ones are
 /// pasted, since typing takes a few tens of milliseconds a character.
 const KEYBOARD_LIMIT: usize = 32;
-/// The pause between typed characters. S3 typed exactly with 60 ms; this
-/// shorter one kept every character and its order in the fixture's fields.
-const KEY_GAP: Duration = Duration::from_millis(15);
 /// The TCC service behind "Paste from Other Apps". Without it the first
 /// paste of text that `devicectl` put on the pasteboard asks the user to
 /// allow pasting from dtpasteboardd, and the text never arrives.
@@ -885,7 +883,13 @@ impl Input for SimulatorDriver {
         })
     }
 
-    fn type_text(&self, target: &str, text: &str, method: TextMethod) -> Result<TextEntry> {
+    fn type_text_at(
+        &self,
+        target: &str,
+        text: &str,
+        method: TextMethod,
+        cadence: Cadence,
+    ) -> Result<TextEntry> {
         self.contain(target, || {
             let start = Instant::now();
             let characters = text.chars().count();
@@ -910,7 +914,7 @@ impl Input for SimulatorDriver {
                 self.with_input(target, |target, transport| {
                     for (index, &key) in keys.iter().enumerate() {
                         if index > 0 {
-                            thread::sleep(KEY_GAP);
+                            thread::sleep(cadence.gap);
                         }
                         target.key(transport, key)?;
                     }
