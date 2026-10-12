@@ -661,15 +661,7 @@ impl Mirror {
         let view = View::build(&self.replica);
         let window = &self.replica.windows[w];
         let facts = &view.windows[w];
-        let mut fields = Vec::new();
-        let mut stack: Vec<usize> = window.nodes[i].children.clone();
-        while let Some(d) = stack.pop() {
-            if view::field(&window.nodes[d], facts[d].role) && !facts[d].absorbed {
-                fields.push(d);
-            }
-            stack.extend(window.nodes[d].children.iter().copied());
-        }
-        let [d] = fields[..] else {
+        let [d] = fields_below(window, facts, i)[..] else {
             return None;
         };
         let (node, facts) = (&window.nodes[d], &facts[d]);
@@ -680,6 +672,19 @@ impl Mirror {
             self.replica.generation,
         );
         Some(element(window, node, facts, Some(reference)))
+    }
+
+    /// How many fields `holder` holds, as the replica has it now: the nodes
+    /// below the element that take text, as [`Mirror::field_within`] looks
+    /// for them. An identifier `fill` or `type` is given can name a node
+    /// that holds none, the app's input outside the tree, as a React Native
+    /// code input's view on the acceptance run's second visit to the code
+    /// step (rn-app-fixes, design D44). `None` when the replica no longer
+    /// holds the element.
+    pub fn fields_within(&self, holder: ElementId) -> Option<usize> {
+        let (w, i) = self.replica.locate(holder)?;
+        let view = View::build(&self.replica);
+        Some(fields_below(&self.replica.windows[w], &view.windows[w], i).len())
     }
 
     /// How much of `element` is in view as the replica has it now, without
@@ -1420,6 +1425,20 @@ impl Mirror {
 /// the replica pairs only the children of nodes it paired.
 fn place(node: &RNode) -> u32 {
     node.position
+}
+
+/// The nodes below node `i` of `window` that take text and are not folded
+/// into another, by index, `facts` being the window's.
+fn fields_below(window: &Win, facts: &[Facts], i: usize) -> Vec<usize> {
+    let mut fields = Vec::new();
+    let mut stack: Vec<usize> = window.nodes[i].children.clone();
+    while let Some(d) = stack.pop() {
+        if view::field(&window.nodes[d], facts[d].role) && !facts[d].absorbed {
+            fields.push(d);
+        }
+        stack.extend(window.nodes[d].children.iter().copied());
+    }
+    fields
 }
 
 /// An element as snapshots list it.
