@@ -1891,7 +1891,11 @@ fn in_view(seen: &Visibility) -> String {
 /// Fails with `element_not_found` once the content stops moving or no
 /// stroke along the axis brings more of the element in, after
 /// [`UNTIL_STROKES`] strokes, or at the command's timeout; an element on
-/// screen then gives its share in view as `data.visible`.
+/// screen then gives its share in view as `data.visible`, and the failure
+/// names the last stroke's start and end, as `data.from` and `data.to`, and
+/// what moved after it ([`after_stroke`]): the third acceptance run's scroll
+/// stopped after strokes that went the other way, which its reply did not
+/// say (rn-app-fixes, design D46).
 fn scroll_until(
     target: &mut Attached,
     session: &str,
@@ -1907,6 +1911,9 @@ fn scroll_until(
     let mut strokes = 0u32;
     let mut still = 0u32;
     let mut last = None;
+    // Where the element was when the last stroke went, and whether the
+    // screen changed after it.
+    let (mut was, mut changed) = (None, false);
     loop {
         target.catch_up()?;
         let found = aim::on_screen(target, session, &aim)?;
@@ -1965,25 +1972,32 @@ fn scroll_until(
             None
         };
         if let Some(reason) = reason {
-            let (message, data) = match seen {
+            let count = if strokes == 1 { "stroke" } else { "strokes" };
+            let last_one = last.map_or_else(String::new, |(from, to)| {
+                let now = found.as_ref().map(|element| element.bounds);
+                format!(
+                    ", the last from {from} to {to}, {}",
+                    after_stroke(was, now, changed, vertical)
+                )
+            });
+            let (place, mut data) = match seen {
                 Some(seen) => (
-                    format!(
-                        "{until} was on screen but not mostly in view ({}) after {strokes} strokes of {} points {}: {reason}; take a snapshot to see where the content is",
-                        in_view(&seen),
-                        points(reach),
-                        direction.name()
-                    ),
+                    format!("on screen but not mostly in view ({})", in_view(&seen)),
                     json!({"strokes": strokes, "until": until, "visible": share(seen.fraction)}),
                 ),
                 None => (
-                    format!(
-                        "{until} was not on screen after {strokes} strokes of {} points {}: {reason}; take a snapshot to see where the content is",
-                        points(reach),
-                        direction.name()
-                    ),
+                    "not on screen".to_owned(),
                     json!({"strokes": strokes, "until": until}),
                 ),
             };
+            if let Some((from, to)) = last {
+                data["from"] = at(from);
+                data["to"] = at(to);
+            }
+            let message = format!(
+                "{until} was {place} after {strokes} {count} scrolling {}{last_one}: {reason}; take a snapshot to see where the content is",
+                direction.name()
+            );
             return Err(Failure::new(code::ELEMENT_NOT_FOUND, message).with_data(data));
         }
         let (finger, length, duration) = match next {
@@ -2003,6 +2017,7 @@ fn scroll_until(
         }
         strokes += 1;
         last = Some((from, to));
+        was = found.as_ref().map(|element| element.bounds);
         target.mirror.settle(&SettleOptions {
             max: UNTIL_SETTLE.min(deadline.saturating_duration_since(Instant::now())),
             ..SettleOptions::default()
@@ -2012,11 +2027,40 @@ fn scroll_until(
         // reads it called for have run, such as the full read after a
         // window event.
         target.mirror.pump()?;
-        if target.mirror.revision() == revision {
-            still += 1;
-        } else {
+        changed = target.mirror.revision() != revision;
+        if changed {
             still = 0;
+        } else {
+            still += 1;
         }
+    }
+}
+
+/// What moved after a scroll's last stroke, as its failure says it: the
+/// element, `was` where it was before the stroke and `now` where it is,
+/// along the vertical axis or the horizontal one, or else the screen, when
+/// it `changed`, or nothing.
+fn after_stroke(was: Option<Rect>, now: Option<Rect>, changed: bool, vertical: bool) -> String {
+    if let (Some(was), Some(now)) = (was, now) {
+        let shift = if vertical {
+            now.top - was.top
+        } else {
+            now.left - was.left
+        };
+        if shift.abs() >= EDGE {
+            let way = match (vertical, shift > 0.0) {
+                (true, true) => "down",
+                (true, false) => "up",
+                (false, true) => "right",
+                (false, false) => "left",
+            };
+            return format!("after which it moved {} points {way}", points(shift.abs()));
+        }
+    }
+    if changed {
+        "after which the screen changed".to_owned()
+    } else {
+        "after which nothing moved".to_owned()
     }
 }
 
