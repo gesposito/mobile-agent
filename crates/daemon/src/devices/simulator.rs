@@ -17,7 +17,8 @@
 //!   points; iOS key codes are keyboard usages or consumer-page buttons.
 //!   Text for a field taps it, waits for its focus and, unless keys were
 //!   asked for, selects what it holds so the text replaces it, deleting it
-//!   for an empty text. The input
+//!   for an empty text; typed keys go at the cadence the latest read calls
+//!   for, React Native's on a screen React Native draws. The input
 //!   session can start ahead of the first input, which then does not wait
 //!   for dtuhidd to activate.
 //! - Apps launch with their launch environment, and a running app comes to
@@ -196,9 +197,13 @@ impl Shared {
         node_center(snapshot, *scale, handle)
     }
 
-    /// The cadence for keys typed into a field of the latest read.
+    /// The cadence for keys typed into a field of the latest read: React
+    /// Native's on a screen React Native draws, the native one otherwise and
+    /// before any read.
     fn cadence(&self) -> Cadence {
-        Cadence::NATIVE
+        lock(&self.last)
+            .as_ref()
+            .map_or(Cadence::NATIVE, |(snapshot, _)| Cadence::for_read(snapshot))
     }
 }
 
