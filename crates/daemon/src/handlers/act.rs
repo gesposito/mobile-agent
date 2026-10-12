@@ -2914,6 +2914,122 @@ mod tests {
         }
     }
 
+    /// The placeholder app on a fake Simulator, showing `board`, its fields
+    /// taking text as `typing` says, and the inputs it is sent.
+    fn typed_board(board: &str, typing: Typing) -> (Attached, Sent) {
+        let driver = FakeDriver::parse("ios").unwrap().with_typing(typing);
+        recorded(
+            &driver,
+            PLACEHOLDER,
+            &[&format!("PLACEHOLDER_SCREEN={board}")],
+        )
+    }
+
+    /// Design D39 (task 3.3; section 4 of the masked listings): on the code
+    /// step's first visit the code field is a labelled node without traits
+    /// whose accessible name spells the digits it holds, neither a value nor
+    /// anything below it, so every fill of the acceptance run answered
+    /// `verified: false`, `no_value_to_read`, and a wrong code went
+    /// unreported. The read-back takes the field's name when it changed
+    /// with the entry: the code is verified through it, and a field that
+    /// keeps four of the six digits fails with `text_mismatch` naming what
+    /// it holds after the retry. A name that did not change is a label and
+    /// is not compared: the form's secret field, whose name stays, is
+    /// unverified as before.
+    #[test]
+    fn a_fill_of_a_code_into_a_field_whose_name_spells_it_is_verified_through_the_name() {
+        let (mut target, _) = typed_board("code", Typing::Keys);
+        let success = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "name", "{data}");
+        assert_eq!(data["retried"], false, "{data}");
+
+        let (mut short, _) = typed_board("code", Typing::Max(4));
+        let failure = fill_in(&mut short, "#placeholder-id-3", "123456").unwrap_err();
+        assert_eq!(failure.code, TEXT_MISMATCH, "{}", failure.message);
+        assert!(
+            failure.message.contains("1 2 3 4") && failure.message.contains("\"123456\""),
+            "the message names both: {}",
+            failure.message
+        );
+
+        let driver = FakeDriver::parse("ios").unwrap().with_typing(Typing::Keys);
+        let (mut form, _) = recorded(&driver, PLACEHOLDER, &[]);
+        let success = fill_in(&mut form, "#placeholder-secret", "agent").unwrap();
+        assert_eq!(success.data["verified"], false, "{}", success.data);
+        assert_eq!(
+            success.data["reason"], "no_value_to_read",
+            "{}",
+            success.data
+        );
+    }
+
+    /// Design D39, N1 of the acceptance run (task 3.3; section 4 of the
+    /// masked listings): on the code step's second visit the code field's
+    /// identifier named a labelled node holding a field without an area,
+    /// which got no ref, and `fill` and `type` by the identifier failed
+    /// with `invalid_argument`, while a click on it and a `type` worked. An
+    /// identifier that names a node taking no text and holding exactly one
+    /// field targets that field, which the reply names; a node holding no
+    /// field, or two, still fails with `invalid_argument`.
+    #[test]
+    fn fill_and_type_by_the_identifier_of_a_fields_wrapper_go_into_the_field() {
+        let (mut target, _) = typed_board("code-again", Typing::Keys);
+        let success = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "value", "{data}");
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("#placeholder-id-3") && warning.contains("textbox"),
+            "the reply names the field: {warning}"
+        );
+
+        let (mut typing, _) = typed_board("code-again", Typing::Keys);
+        let type_in = json!({"action": "type", "target": "#placeholder-id-3", "text": "42"});
+        let typed =
+            super::type_text(&mut typing, "default", &request(&type_in.to_string())).unwrap();
+        assert!(typed.warning.unwrap_or_default().contains("textbox"));
+        assert!(
+            text_of(&mut typing, "#placeholder-id-3")
+                .as_str()
+                .is_some_and(|name| name.ends_with("4 2")),
+            "the field took the keys"
+        );
+
+        for wrapper in ["#placeholder-id-4", "#placeholder-id-5"] {
+            let failure = fill_in(&mut target, wrapper, "1").unwrap_err();
+            assert_eq!(
+                failure.code, "invalid_argument",
+                "{wrapper}: {}",
+                failure.message
+            );
+        }
+    }
+
+    /// Design D39, N2 of the acceptance run (task 3.3; section 7 of the
+    /// masked listings): on the paste sheet a fill by the ref of the title
+    /// field, whose view gains a counter when the field takes the focus and
+    /// whose name changes once it holds text, failed with `stale_ref`
+    /// before anything was typed. The field keeps its ref across both, and
+    /// the fill by it reads the field back.
+    #[test]
+    fn a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back() {
+        let (mut target, _) = typed_board("sheet", Typing::Keys);
+        let field = ref_named(&mut target, "placeholder-textbox-1");
+        let success = fill_in(&mut target, &field, "placeholder-value").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "value", "{data}");
+        assert_eq!(data["ref"], field, "{data}");
+        assert_eq!(
+            held(&mut target, &field),
+            "placeholder-value",
+            "the field holds the text under its new name"
+        );
+    }
+
     /// Design D33: `text_mismatch` stays for a field that reads back other
     /// text after the text went in again in one piece, and names both the
     /// text entered and what the field holds, read from its value or through

@@ -228,6 +228,13 @@ enum FormField {
     Secret,
     /// The list's field, a text field that brings the keyboard up.
     Query,
+    /// The code step's field: on the first visit a labelled node without
+    /// traits whose name spells the digits it holds, on the second a
+    /// field without an area inside such a node.
+    Pin,
+    /// The paste sheet's title field, which has no identifier and whose
+    /// name changes once it holds text.
+    Title,
 }
 
 impl FormField {
@@ -237,6 +244,8 @@ impl FormField {
             (Board::Form, "placeholder-code") => Some(FormField::Code),
             (Board::Form, "placeholder-secret") => Some(FormField::Secret),
             (Board::List | Board::ListLow, LIST_FIELD) => Some(FormField::Query),
+            (Board::Code | Board::CodeAgain, CODE_FIELD | CODE_INPUT) => Some(FormField::Pin),
+            (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
             _ => None,
         }
     }
@@ -271,6 +280,16 @@ enum Board {
     /// The list under a header down to 430 points, which leaves 109 points
     /// of the list above the keyboard.
     ListLow,
+    /// The code step on its first visit (section 4): the code field is a
+    /// labelled node without traits whose name spells the digits it holds.
+    Code,
+    /// The code step on its second visit (section 4): the code field's node
+    /// holds a field without an area, and so gets no ref.
+    CodeAgain,
+    /// The paste sheet (section 7): the title field, without an identifier,
+    /// in one of four unidentified views of one class, which gains a counter
+    /// when the field takes the focus; its name changes once it holds text.
+    Sheet,
 }
 
 impl Board {
@@ -281,6 +300,9 @@ impl Board {
             "feed" => Board::Feed,
             "list" => Board::List,
             "list-low" => Board::ListLow,
+            "code" => Board::Code,
+            "code-again" => Board::CodeAgain,
+            "sheet" => Board::Sheet,
             _ => Board::Form,
         }
     }
@@ -288,6 +310,16 @@ impl Board {
 
 /// The list's field.
 const LIST_FIELD: &str = "placeholder-id-2";
+
+/// The code step's field: the labelled node with the identifier.
+const CODE_FIELD: &str = "placeholder-id-3";
+
+/// The field inside the code step's node on its second visit, which the app
+/// gives no identifier.
+const CODE_INPUT: &str = "placeholder-code-input";
+
+/// The paste sheet's title field, which the app gives no identifier.
+const TITLE_FIELD: &str = "placeholder-title";
 
 /// The creation tab's list, in points.
 const CREATION_LIST: [f64; 4] = [0.0, 122.0, 402.0, 791.0];
@@ -307,6 +339,10 @@ struct Forms {
     secret: String,
     /// What the list's field holds.
     query: String,
+    /// What the code step's field holds.
+    pin: String,
+    /// What the paste sheet's title field holds.
+    title: String,
     focus: Option<FormField>,
     status: String,
     /// Whether the layout has moved the submit button above the keyboard,
@@ -325,6 +361,8 @@ impl Forms {
             code: String::new(),
             secret: String::new(),
             query: String::new(),
+            pin: String::new(),
+            title: String::new(),
             focus: None,
             status: match board {
                 Board::Form => "Not submitted",
@@ -357,6 +395,8 @@ impl Forms {
             FormField::Code => &mut self.code,
             FormField::Secret => &mut self.secret,
             FormField::Query => &mut self.query,
+            FormField::Pin => &mut self.pin,
+            FormField::Title => &mut self.title,
         }
     }
 
@@ -1244,7 +1284,151 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
+        Board::Code | Board::CodeAgain => code_content(kit, forms),
+        Board::Sheet => sheet_content(kit, forms),
     }
+}
+
+/// The code step (section 4 of the masked listings): the step's 12-point
+/// heading, the code field, a labelled node without traits with the
+/// identifier, whose name spells the digits it holds after its label, a
+/// resend button, the submit button and the status line. On the second
+/// visit the code field's node also holds a field without an area, which
+/// the tree reports as off the screen, so the node gets no ref; and two
+/// more labelled nodes with identifiers hold no field and two of them.
+fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let digits: Vec<String> = forms.pin.chars().map(String::from).collect();
+    let name = if digits.is_empty() {
+        "placeholder-generic-2".to_owned()
+    } else {
+        format!("placeholder-generic-2, {}", digits.join(" "))
+    };
+    let hidden = |key: &str| {
+        kit.field(
+            key,
+            "",
+            &forms.pin,
+            false,
+            forms.focus == Some(FormField::Pin),
+            [20.0, 518.67, 20.0, 518.67],
+        )
+        .key(key)
+        .set(protocol::snapshot::NodeFlags::VISIBLE, false)
+    };
+    let mut field = kit.generic(CODE_FIELD, &name, [20.0, 518.67, 382.0, 574.67]);
+    let mut content = vec![
+        kit.heading(
+            "placeholder-heading-2",
+            "placeholder-heading-2",
+            [32.0, 494.67, 144.67, 506.67],
+        )
+        .key("placeholder-heading-2"),
+    ];
+    if forms.board == Board::CodeAgain {
+        field = field.child(hidden(CODE_INPUT));
+        content.push(
+            kit.generic(
+                "placeholder-id-4",
+                "placeholder-generic-3",
+                [20.0, 420.0, 382.0, 460.0],
+            )
+            .child(kit.image("placeholder-image-1", [28.0, 424.0, 60.0, 456.0])),
+        );
+        content.push(
+            kit.generic(
+                "placeholder-id-5",
+                "placeholder-generic-4",
+                [20.0, 464.0, 382.0, 488.0],
+            )
+            .children([hidden("placeholder-pair-1"), hidden("placeholder-pair-2")]),
+        );
+    }
+    content.extend([
+        field,
+        kit.button(
+            "placeholder-button-4",
+            "placeholder-button-4",
+            [8.0, 586.67, 107.33, 618.67],
+        )
+        .key("placeholder-button-4"),
+        kit.button(
+            "placeholder-id-2",
+            "placeholder-button-3",
+            [20.0, 638.67, 382.0, 686.67],
+        ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 700.0, 382.0, 720.0],
+        ),
+    ]);
+    content
+}
+
+/// The paste sheet (section 7 of the masked listings): a heading, a close
+/// button, a label, the title field without an identifier in an
+/// unidentified view, which also holds a counter while the field has the
+/// focus, a second label, a field with an identifier in another such view,
+/// the disabled primary button and a second close button identical to the
+/// first. The title field's name changes once it holds text.
+fn sheet_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let focused = forms.focus == Some(FormField::Title);
+    let name = if forms.title.is_empty() {
+        "placeholder-textbox-1"
+    } else {
+        "placeholder-textbox-3"
+    };
+    let mut view = kit.group([20.0, 212.0, 382.0, 268.0]).child(
+        kit.field(
+            TITLE_FIELD,
+            name,
+            &forms.title,
+            false,
+            focused,
+            [28.0, 216.0, 374.0, 260.0],
+        )
+        .key(TITLE_FIELD),
+    );
+    if focused {
+        view = view.child(kit.label(None, "placeholder-text-1", [300.0, 262.0, 374.0, 268.0]));
+    }
+    let label = |text: &str, rect: [f64; 4]| kit.group(rect).desc(text);
+    let close = |key: &str, rect: [f64; 4]| kit.button(key, "placeholder-button-1", rect).key(key);
+    vec![
+        kit.group([0.0, 120.0, kit.width(), kit.height()])
+            .children([
+                kit.heading(
+                    "placeholder-heading-1",
+                    "placeholder-heading-1",
+                    [20.0, 140.0, 330.0, 172.0],
+                )
+                .key("placeholder-heading-1"),
+                close("placeholder-close-1", [338.0, 136.0, 382.0, 176.0]),
+                label("placeholder-generic-1", [20.0, 188.0, 382.0, 208.0]),
+                view,
+                label("placeholder-generic-2", [20.0, 284.0, 382.0, 304.0]),
+                kit.group([20.0, 308.0, 382.0, 364.0]).child(kit.field(
+                    "placeholder-id-1",
+                    "placeholder-textbox-2",
+                    "",
+                    false,
+                    false,
+                    [28.0, 312.0, 374.0, 356.0],
+                )),
+                kit.button(
+                    "placeholder-id-2",
+                    "placeholder-button-2",
+                    [20.0, 380.0, 382.0, 428.0],
+                )
+                .set(protocol::snapshot::NodeFlags::ENABLED, false),
+                close("placeholder-close-2", [338.0, 440.0, 382.0, 480.0]),
+                kit.label(
+                    Some("placeholder-status"),
+                    &forms.status,
+                    [20.0, 500.0, 382.0, 520.0],
+                ),
+            ]),
+    ]
 }
 
 /// The list with the keyboard up (section 3 of the masked listings): a
