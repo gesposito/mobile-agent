@@ -2151,9 +2151,9 @@ mod tests {
     /// start and their end, with the separators a name spells characters
     /// with left out of it and of the text: the boxes of the acceptance
     /// run's code field before its label, a code after a label, a name
-    /// in front of a label, a cleared field's dashes. Other digits, digits
-    /// missing, and bullets for each digit, which tell nothing but the
-    /// text's length, are other text.
+    /// in front of a label, a cleared field's dashes, a code entered over
+    /// one it starts as. Other digits, digits missing, and bullets for each
+    /// digit, which tell nothing but the text's length, are other text.
     #[test]
     fn a_name_shows_the_text_in_the_part_the_entry_changed() {
         let shows = |name: &str, before: &str, text: &str| compare_name(name, before, text);
@@ -2175,6 +2175,10 @@ mod tests {
         assert_eq!(shows(empty, code, ""), Some(Shown::Text));
         let wrong = "1, 2, 3, 4, 9, 9, Verification code, required";
         assert_eq!(shows(wrong, empty, "123456"), None);
+        // A code entered over one it starts as: the words the entry wrote
+        // again count with those it changed.
+        assert_eq!(shows(code, wrong, "123456"), Some(Shown::Text));
+        assert_eq!(shows(wrong, code, "123456"), None);
         let short = "1, 2, 3, 4, –, –, Verification code, required";
         assert_eq!(shows(short, empty, "123456"), None);
         let masked = "•, •, •, •, •, •, Verification code, required";
