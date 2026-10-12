@@ -53,7 +53,17 @@ pub struct Visibility {
     /// leave out whatever lies beyond. `None` when the bounds end at no such
     /// edge.
     pub cut: Option<Direction>,
+    /// Where a tap reaches the element: the largest rectangle of `bounds`
+    /// inside `viewport`, at least [`REACH_FLOOR`] points on each side, or
+    /// as long as the element is on a side where it is shorter; a tap goes
+    /// to its centre. `None` when no such rectangle is left.
+    pub reachable: Option<Rect>,
 }
+
+/// The least a tap needs of an element on each side, in points: less than
+/// this left of it between the covers and the edges of what shows, and a
+/// tap aimed at it may land beside it.
+pub const REACH_FLOOR: f64 = 8.0;
 
 /// What of an area a stroke may go through: the area less the system and
 /// input-method windows above the window it lies in (task 10.32), since a
@@ -183,7 +193,24 @@ pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibili
         viewport,
         fraction: share(&bounds, &viewport),
         cut,
+        reachable: largest(&bounds, &[bounds.intersect(&viewport)]),
     }
+}
+
+/// The largest of `pieces`, parts of an element at `bounds`, that is at
+/// least [`REACH_FLOOR`] points on each side, or as long as the element is
+/// on a side where it is shorter.
+fn largest(bounds: &Rect, pieces: &[Rect]) -> Option<Rect> {
+    let (wide, tall) = (
+        REACH_FLOOR.min(bounds.width()),
+        REACH_FLOOR.min(bounds.height()),
+    );
+    let area = |piece: &Rect| piece.width() * piece.height();
+    pieces
+        .iter()
+        .filter(|piece| !piece.is_empty() && piece.width() >= wide && piece.height() >= tall)
+        .copied()
+        .reduce(|best, piece| if area(&piece) > area(&best) { piece } else { best })
 }
 
 /// The visible bounds of the scroll container that a stroke along the

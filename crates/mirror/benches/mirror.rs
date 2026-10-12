@@ -572,6 +572,7 @@ fn views(group: &mut Group<'_>, list: &Fixture) {
                 viewport: Rect::new(0.0, 72.0, 408.0, 840.0),
                 fraction: 1.0,
                 cut: None,
+                reachable: Some(Rect::new(0.0, 168.0, 408.0, 216.0)),
             };
             assert_eq!(visibility, Some(expected));
         },

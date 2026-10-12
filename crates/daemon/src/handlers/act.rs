@@ -2045,6 +2045,7 @@ mod tests {
             viewport,
             fraction: shown.width() * shown.height() / (bounds.width() * bounds.height()),
             cut,
+            reachable: (!shown.is_empty()).then_some(shown),
         }
     }
 
