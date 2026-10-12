@@ -17,8 +17,11 @@
 //!   points; iOS key codes are keyboard usages or consumer-page buttons.
 //!   Text for a field taps it, waits for its focus and, unless keys were
 //!   asked for, selects what it holds so the text replaces it, deleting it
-//!   for an empty text; typed keys go at the cadence the latest read calls
-//!   for, React Native's on a screen React Native draws. The input
+//!   for an empty text, and for keys whose first letter is a capital, which
+//!   then wait for a read that shows the field empty, since autocorrection
+//!   rewrites the first word of keys typed over the selection; typed keys
+//!   go at the cadence the latest read calls for, React Native's on a
+//!   screen React Native draws. The input
 //!   session can start ahead of the first input, which then does not wait
 //!   for dtuhidd to activate.
 //! - Apps launch with their launch environment, and a running app comes to
@@ -72,8 +75,11 @@ const READ_RETRY: Duration = Duration::from_millis(100);
 /// How long text waits for the field it tapped to take the focus.
 const FOCUS_WAIT: Duration = Duration::from_millis(1500);
 
-/// How long text whose field was emptied first waits for a read that shows
-/// the field empty.
+/// How long text whose field was emptied first ([`empties_first`]) waits
+/// for a read that shows the field empty; on the iOS 26.5 Simulator the
+/// first or second read did, 48 to 102 ms after the delete (task 4.5 of
+/// `rn-app-fixes`). A field that never reads empty, as one that formats its
+/// text, gets the keys at the bound.
 const EMPTY_WAIT: Duration = Duration::from_secs(1);
 
 /// How long the finger of a swipe released resting rests at the end of its
@@ -531,7 +537,8 @@ impl HostInput {
 /// The keys that ready a field text tapped for `text`, entered as `method`
 /// asks: unless keys were asked for, Command-A selects what the field holds,
 /// so the text replaces it, and for an empty text, which types or pastes
-/// nothing, the delete key then deletes what it selected.
+/// nothing, and for keys whose first letter is a capital
+/// ([`empties_first`]), the delete key then deletes what it selected.
 fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
     if method == WireMethod::KEYS {
         return Vec::new();
@@ -551,15 +558,34 @@ fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
 }
 
 /// Whether text that replaces what a field holds goes in only once a read
-/// shows the field empty.
-fn empties_first(_text: &str, _method: WireMethod) -> bool {
-    false
+/// shows the field empty: keys whose first letter is a capital (task 4.5
+/// of `rn-app-fixes`). Typed over what Command-A selected in the field just
+/// tapped, keys were rewritten at the first space by autocorrection, the
+/// first word's capital lost ("smoke Org" for "Smoke Org"), in 74 of 80
+/// SwiftUI entries and 62 of 68 React Native ones on the iOS 26.5
+/// Simulator, whatever the field's auto-capitalization, and in none of 12
+/// without autocorrection; with the selection deleted and a read showing
+/// the field empty first, in none of 160. A lower-case first letter loses
+/// nothing to the rewrite, a paste types no keys, and `type` selects
+/// nothing.
+fn empties_first(text: &str, method: WireMethod) -> bool {
+    method != WireMethod::KEYS
+        && text.starts_with(|c: char| c.is_ascii_uppercase())
+        && text_method(method).resolve(text) == TextMethod::Keyboard
 }
 
 /// What the focused editable node of an application window of `snapshot`
 /// shows; `None` when no node has the focus or it shows nothing.
-fn focused_text(_snapshot: &Snapshot) -> Option<&str> {
-    None
+fn focused_text(snapshot: &Snapshot) -> Option<&str> {
+    let focused = NodeFlags::FOCUSED | NodeFlags::EDITABLE;
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.kind != WindowType::INPUT_METHOD)
+        .filter_map(|window| window.root.as_ref())
+        .find_map(|root| find(root, |node| node.flags.contains(focused)))
+        .and_then(|node| node.text.as_deref())
+        .filter(|text| !text.is_empty())
 }
 
 /// Whether an application window of `snapshot` has a focused editable node.
