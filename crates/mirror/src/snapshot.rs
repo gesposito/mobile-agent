@@ -122,10 +122,12 @@ pub struct Element {
     pub selected: bool,
     /// For checkable elements.
     pub checked: Option<bool>,
-    /// For an element the keyboard lies over part of, the share of its
-    /// bounds beside the keyboard, in whole percent and at least 1, which
-    /// the listing gives as `visible=`.
-    pub beside_keyboard: Option<u8>,
+    /// For an element only partly in view, the share of it in view, in
+    /// whole percent and at least 1, which the listing gives as `visible=`:
+    /// the share of its bounds beside the keyboard, when the keyboard lies
+    /// over part of it, and in an interactive listing the share a tap
+    /// reaches, when that is less.
+    pub visible: Option<u8>,
     /// Whether the element can be acted on.
     pub actionable: bool,
     /// The window holding the element.

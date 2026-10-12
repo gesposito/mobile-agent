@@ -512,10 +512,11 @@ fn what_covers_an_element_is_named_as_an_action_on_its_ref_names_it() {
 }
 
 /// Rn-app-fixes D31, scenario "Card under a sticky header": on iOS what a
-/// view drawn after it covers is covered, not out of view. Its bounds lie
-/// inside its visible bounds, but a tap reaches none of it (design D37):
-/// `visibility` finds none of it in view and no part to tap, and
-/// `covered_by` names the view over it as a refused action does. What lies
+/// view drawn after it covers is covered, not out of view: a tap reaches
+/// none of it (design D37), `visibility` finds none of it in view and no
+/// part to tap, and `covered_by` names the view over it as a refused action
+/// does, though its visible bounds, as its scroll view's, leave out what
+/// the view hides (design D45). What lies
 /// beside a cover, as the link above the consent screen's footer and the
 /// post that touches the feed header's edge, is not covered.
 #[test]
@@ -530,10 +531,6 @@ fn what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view() {
             "{fixture}: {covered}"
         );
         let seen = mirror.visibility(id).expect("the replica holds it");
-        assert!(
-            seen.viewport.contains(seen.bounds.center()),
-            "{fixture}: {seen:?}"
-        );
         assert_eq!(seen.fraction, 0.0, "{fixture}: {seen:?}");
         assert_eq!(seen.reachable, None, "{fixture}: {seen:?}");
     }

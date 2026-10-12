@@ -61,6 +61,7 @@ use crate::geometry::{Point, Rect};
 use crate::replica::{RNode, Replica, Win};
 use crate::roles;
 use crate::snapshot::{Direction, HintSource, Role, ScrollHint};
+use crate::visibility::Reaches;
 
 /// Why a node is not shown although it exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +137,7 @@ pub(crate) struct View {
     covers: Vec<(usize, usize, Cover)>,
     /// What lies over part of a node, a view marked modal or a view drawn
     /// over it that overlaps the node without holding it: window, node,
-    /// cover.
+    /// cover, by window and node, each node's covers in the order recorded.
     partial: Vec<(usize, usize, Cover)>,
 }
 
@@ -155,6 +156,7 @@ impl View {
             cover_by_later_siblings(replica, &mut windows, &mut covers);
             cover_by_bars_and_headers(replica, &mut windows, &mut covers);
         }
+        covers.partial.sort_by_key(|&(w, i, _)| (w, i));
         View {
             windows,
             modal,
@@ -189,9 +191,12 @@ impl View {
     /// The views that lie over part of node `i` of window `w` without
     /// holding all of it, with their bounds.
     pub fn over_part(&self, w: usize, i: usize) -> impl Iterator<Item = (Cover, Rect)> + '_ {
-        self.partial
+        let from = self
+            .partial
+            .partition_point(|&(cw, ci, _)| (cw, ci) < (w, i));
+        self.partial[from..]
             .iter()
-            .filter(move |&&(cw, ci, _)| (cw, ci) == (w, i))
+            .take_while(move |&&(cw, ci, _)| (cw, ci) == (w, i))
             .map(|&(_, _, cover)| (cover, self.bounds_of(cover)))
     }
 
@@ -896,8 +901,11 @@ fn drawn_in_order(replica: &Replica) -> bool {
 /// 30-point hit areas along the view's edges, which UIKit draws as bars a
 /// few points thick, when at all. The horizontal one's frame holds the
 /// message on an iPhone 17 Simulator and on the SE, which hid the message
-/// from the listing (physical-ios, design D26). XCTest lists each indicator
-/// twice, with one frame, and the second copy still covers the first.
+/// from the listing (physical-ios, design D26). For the same reason a
+/// scroll indicator ([`SCROLL_INDICATOR`]) covers nothing but its own copy,
+/// which XCTest lists after it, with one frame: over part of an alert's
+/// button its frame left a tap 61% of it, which the interactive listing
+/// marks (rn-app-fixes, design D45).
 ///
 /// The covers are taken top-most first, parents before their children and
 /// later siblings before earlier ones, so a node two views cover is
@@ -941,9 +949,11 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
                 }
                 stack.clear();
                 stack.push(e);
+                let indicator = |n: usize| &*window.nodes[n].class == SCROLL_INDICATOR;
                 let spared = |d: usize, f: &Facts| {
                     matches!(f.role, Role::Tablist | Role::Toolbar)
                         || (alerted[d] && &*window.nodes[d].class == roles::XCUI_STATIC_TEXT)
+                        || (indicator(s) && !indicator(d))
                 };
                 hide_under(
                     window,
@@ -960,6 +970,11 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
         }
     }
 }
+
+/// The class of a scroll view's indicator in XCTest's tree, its frame a
+/// 30-point hit area along the view's edge that UIKit draws as a bar a few
+/// points thick while the view scrolls (physical-ios, design D26).
+const SCROLL_INDICATOR: &str = "_UIScrollViewScrollIndicator";
 
 /// The classes of the bars UIKit draws over the content its controllers
 /// lay out under them, which XCTest lists before or after that content.
@@ -1262,7 +1277,18 @@ pub(crate) fn scrolls(node: &RNode, facts: &Facts) -> bool {
 
 /// Scroll hints per container: `(window index, node index, hint)`, in
 /// pre-order of containers and, per container, above, left, below, right.
-pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, ScrollHint)> {
+/// An element is counted when it is off the screen or outside its
+/// container's bounds, and, given `reach`, the share of each element an
+/// interactive listing shows that a tap reaches
+/// ([`crate::visibility::listed`]), also when a tap reaches none of it
+/// inside them, as under a view drawn over it, on the side of the
+/// container's middle it lies on along the axis the container scrolls
+/// (rn-app-fixes, design D45).
+pub(crate) fn hints(
+    replica: &Replica,
+    view: &View,
+    reach: Option<&Reaches<'_>>,
+) -> Vec<(usize, usize, ScrollHint)> {
     let mut out = Vec::new();
     for (w, window) in replica.windows.iter().enumerate() {
         let facts = &view.windows[w];
@@ -1292,10 +1318,15 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
                 continue;
             };
             let viewport = facts[s].rect.intersect(&area);
-            if f.visible && f.rect.overlaps(&viewport) {
+            let reached = reach.is_none_or(|reach| reach.of(w, x) != Some(0.0));
+            if f.visible && f.rect.overlaps(&viewport) && reached {
                 continue;
             }
             let r = &f.rect;
+            let horizontal = window.nodes[s]
+                .scroll
+                .is_some_and(|scroll| scroll.axis == ScrollAxis::HORIZONTAL);
+            let (middle, centre) = (viewport.center(), r.center());
             let direction = if r.top >= viewport.bottom {
                 Direction::Below
             } else if r.bottom <= viewport.top {
@@ -1304,8 +1335,18 @@ pub(crate) fn hints(replica: &Replica, view: &View) -> Vec<(usize, usize, Scroll
                 Direction::Right
             } else if r.right <= viewport.left {
                 Direction::Left
-            } else {
+            } else if reached {
                 continue;
+            } else if horizontal {
+                if centre.x < middle.x {
+                    Direction::Left
+                } else {
+                    Direction::Right
+                }
+            } else if centre.y < middle.y {
+                Direction::Above
+            } else {
+                Direction::Below
             };
             counts[s][slot(direction)] += 1;
         }

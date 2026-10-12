@@ -508,13 +508,19 @@ impl Mirror {
 
     /// A snapshot of the replica, acquiring it first when none exists.
     /// Listed elements that are actionable, content with a name, or labelled
-    /// controls without traits get refs.
+    /// controls without traits get refs. An interactive snapshot leaves out
+    /// an element a tap reaches none of, counting it in its scroll
+    /// container's hint, and marks one a tap reaches only part of with that
+    /// share (rn-app-fixes, design D45).
     pub fn snapshot(&mut self, options: &SnapshotOptions) -> Result<Snapshot, MirrorError> {
         self.pump()?;
         let now = self.now();
         let view = View::build(&self.replica);
-        let found = view::hints(&self.replica, &view);
-        let lines = render::listing(&self.replica, &view, &found, options);
+        let reach = options
+            .interactive
+            .then(|| visibility::listed(&self.replica, &view));
+        let found = view::hints(&self.replica, &view, reach.as_ref());
+        let lines = render::listing(&self.replica, &view, &found, options, reach.as_ref());
         let mut elements = Vec::new();
         let mut text = Vec::with_capacity(lines.len());
         let mut listed = Vec::new();
@@ -524,7 +530,7 @@ impl Mirror {
                     w,
                     i,
                     depth,
-                    beside,
+                    visible,
                 } => {
                     let window = &self.replica.windows[w];
                     let node = &window.nodes[i];
@@ -543,7 +549,7 @@ impl Mirror {
                     }
                     let mut listed_element = element(window, node, facts, reference);
                     listed_element.depth = depth;
-                    listed_element.beside_keyboard = beside;
+                    listed_element.visible = visible;
                     text.push(render::element_line(&listed_element));
                     elements.push(listed_element);
                 }
@@ -1455,7 +1461,7 @@ fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) ->
         focused: node.flags.contains(NodeFlags::FOCUSED),
         selected: node.flags.contains(NodeFlags::SELECTED),
         checked: facts.checked,
-        beside_keyboard: None,
+        visible: None,
         actionable: facts.actionable,
         window: window.id,
         depth: node.depth as usize,
@@ -1499,7 +1505,7 @@ fn keyboard(window: &Win, scale: f64) -> Element {
         focused: false,
         selected: false,
         checked: None,
-        beside_keyboard: None,
+        visible: None,
         actionable: false,
         window: window.id,
         depth: 0,

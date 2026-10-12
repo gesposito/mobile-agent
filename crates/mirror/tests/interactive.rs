@@ -593,7 +593,7 @@ fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
     let profile = snapshot
         .by_identifier("searchAutoCompleteResult-placeholder-4")
         .unwrap();
-    assert_eq!(profile.beside_keyboard, Some(86));
+    assert_eq!(profile.visible, Some(86));
     assert!(
         snapshot
             .text
@@ -740,7 +740,8 @@ fn a_footer_drawn_after_a_heading_on_ios_hides_it() {
 }
 
 /// D31: on the create screen a floating button drawn after the list lies
-/// over its last row, which is left out; the row it only overlaps stays.
+/// over its last row, which is left out; the row it only overlaps stays,
+/// marked with the share of it a tap reaches (design D45).
 #[test]
 fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
     let (_, mut mirror) = mirror_on("create-ios");
@@ -750,8 +751,9 @@ fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
         "(more items above, scroll up to reveal)".to_owned(),
     ];
     expected.extend((1..=9).map(|n| {
+        let visible = if n == 9 { "visible=88%, " } else { "" };
         format!(
-            "- button \"Placeholder option {n}\" [id=placeholder-option-{n}, ref=e{}]",
+            "- button \"Placeholder option {n}\" [{visible}id=placeholder-option-{n}, ref=e{}]",
             n + 2
         )
     }));
@@ -903,10 +905,11 @@ fn a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it() {
 /// image, which shows neither a ref nor a name, over the paste control
 /// moved up wholly within it. The paste control is left out, and a tap on
 /// it is refused naming the disabled control; the button beside it, only
-/// partly under the view, stays.
+/// partly under the view, stays. The list ends above the tab bar, as the
+/// second acceptance run read the tab ([`creation_open`]).
 #[test]
 fn a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows() {
-    let screen = Screen::load("create-disabled-ios");
+    let screen = creation_open();
     let silent = screen.patched(json!([
         {"find": "placeholder-id-8", "bounds": [205, 712, 382, 760]},
         {"find": "placeholder-id-9", "class": "RCTViewComponentView", "desc": null, "off": ["clickable"],

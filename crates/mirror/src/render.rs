@@ -5,13 +5,13 @@
 //! which is one `- keyboard` line, or in an interactive listing a line that
 //! counts what lies wholly under it. Within a window, a node is listed when
 //! it is visible and not absorbed or covered, and, in an interactive
-//! listing, when it has a ref, as agent-browser's `-i`, and does not lie
-//! wholly under the keyboard (rn-app-fixes, design D38); in a full listing, unnamed
-//! generic containers, containers whose label names the field inside them,
-//! unnamed text and images and window roots are skipped and their children
-//! listed in their place. Scroll hints sit next to their
-//! container's children: content above or to the left before them, below or
-//! to the right after them.
+//! listing, when it has a ref, as agent-browser's `-i`, does not lie wholly
+//! under the keyboard (rn-app-fixes, design D38) and has a part a tap
+//! reaches (design D45); in a full listing, unnamed generic containers,
+//! containers whose label names the field inside them, unnamed text and
+//! images and window roots are skipped and their children listed in their
+//! place. Scroll hints sit next to their container's children: content
+//! above or to the left before them, below or to the right after them.
 
 use protocol::snapshot::{WindowFlags, WindowType};
 
@@ -20,17 +20,19 @@ use crate::json;
 use crate::replica::{RNode, Replica};
 use crate::snapshot::{Direction, Element, Role, ScrollHint, SnapshotOptions};
 use crate::view::{Facts, Hidden, View};
+use crate::visibility::{Reaches, beside, keyboards_above};
 
 /// One line of a listing.
 pub(crate) enum Line {
-    /// Node `i` of window `w`, and the share of it beside the keyboard, in
-    /// whole percent and at least 1, when the keyboard lies over part of
-    /// it.
+    /// Node `i` of window `w`, and the share of it in view, in whole percent
+    /// and at least 1, when only part of it is: beside the keyboard, when
+    /// the keyboard lies over part of it, and in an interactive listing the
+    /// share a tap reaches, when that is less.
     Element {
         w: usize,
         i: usize,
         depth: usize,
-        beside: Option<u8>,
+        visible: Option<u8>,
     },
     /// A keyboard window.
     Keyboard { w: usize },
@@ -77,18 +79,22 @@ fn listed_in_full(facts: &Facts, node: &RNode) -> bool {
     }
 }
 
-/// The lines of a listing.
+/// The lines of a listing; `reach` is the share of each element an
+/// interactive listing shows that a tap reaches
+/// ([`crate::visibility::listed`]).
 pub(crate) fn listing(
     replica: &Replica,
     view: &View,
     hints: &[(usize, usize, ScrollHint)],
     options: &SnapshotOptions,
+    reach: Option<&Reaches<'_>>,
 ) -> Vec<Line> {
     let mut walker = Walker {
         replica,
         view,
         hints,
         options,
+        reach,
         lines: Vec::new(),
         under_keyboard: 0,
     };
@@ -105,11 +111,7 @@ pub(crate) fn listing(
             continue;
         }
         if !window.nodes.is_empty() {
-            let keyboards: Vec<Rect> = replica.windows[..w]
-                .iter()
-                .filter(|above| above.kind == WindowType::INPUT_METHOD)
-                .map(|above| Rect::from_pixels(above.bounds, replica.scale))
-                .collect();
+            let keyboards = keyboards_above(replica, w);
             walker.walk(w, 0, 0, &keyboards);
         }
     }
@@ -121,6 +123,7 @@ struct Walker<'a> {
     view: &'a View,
     hints: &'a [(usize, usize, ScrollHint)],
     options: &'a SnapshotOptions,
+    reach: Option<&'a Reaches<'a>>,
     lines: Vec<Line>,
     /// The elements with refs an interactive listing has left out under the
     /// keyboard so far.
@@ -141,9 +144,11 @@ impl Walker<'_> {
         if under && facts.visible && facts.bears_ref && !facts.absorbed {
             self.under_keyboard += 1;
         }
+        let reached = self.reach.and_then(|reach| reach.of(w, i));
         let shown = facts.visible
             && !facts.absorbed
             && !under
+            && reached != Some(0.0)
             && if self.options.interactive {
                 facts.bears_ref
             } else {
@@ -153,14 +158,11 @@ impl Walker<'_> {
             if self.options.max_depth.is_some_and(|max| depth > max) {
                 return;
             }
-            let beside = beside
-                .filter(|&share| share > 0.0)
-                .map(|share| ((share * 100.0).round() as u8).max(1));
             self.lines.push(Line::Element {
                 w,
                 i,
                 depth,
-                beside,
+                visible: share_in_view(beside, reached),
             });
         }
         let inner = if shown { depth + 1 } else { depth };
@@ -182,22 +184,19 @@ impl Walker<'_> {
     }
 }
 
-/// The share of `rect` beside the keyboards at `keyboards`, 0 for one wholly
-/// under them; `None` when none of them lies over it. The keyboards' bounds
-/// are what the drivers say a keyboard draws (tasks 10.21, 10.25).
-fn beside(rect: &Rect, keyboards: &[Rect]) -> Option<f64> {
-    let area = rect.width() * rect.height();
-    if keyboards.is_empty() || area <= 0.0 {
-        return None;
+/// The share of an element in view a listing gives as `visible=`, in whole
+/// percent and at least 1: the share `beside` the keyboard, when the
+/// keyboard lies over part of it, or the share a tap reaches, `reached`,
+/// when that is less (rn-app-fixes, design D45); without the keyboard over
+/// it, the share a tap reaches when it is less than all to the whole
+/// percent. `None` otherwise.
+fn share_in_view(beside: Option<f64>, reached: Option<f64>) -> Option<u8> {
+    let percent = |share: f64| ((share * 100.0).round() as u8).max(1);
+    match (beside.filter(|&share| share > 0.0), reached) {
+        (Some(share), reached) => Some(percent(reached.map_or(share, |r| share.min(r)))),
+        (None, Some(reached)) if (reached * 100.0).round() < 100.0 => Some(percent(reached)),
+        _ => None,
     }
-    let under: f64 = keyboards
-        .iter()
-        .map(|keyboard| {
-            let shared = rect.intersect(keyboard);
-            shared.width() * shared.height()
-        })
-        .sum();
-    (under > 0.0).then(|| (1.0 - under / area).clamp(0.0, 1.0))
 }
 
 /// An identifier as an attribute value: bare when it cannot be misread.
@@ -215,8 +214,7 @@ fn attribute(value: &str) -> String {
 
 /// An element as agent-browser prints it:
 /// `- role "name" [checked=…, selected, disabled, focused, visible=…, id=…, ref=eN]: value`,
-/// `visible=` giving the share in view of an element the keyboard lies over
-/// part of.
+/// `visible=` giving the share in view of an element only partly in view.
 pub(crate) fn element_line(element: &Element) -> String {
     let mut line = "  ".repeat(element.depth);
     line.push_str("- ");
@@ -238,7 +236,7 @@ pub(crate) fn element_line(element: &Element) -> String {
     if element.focused {
         attrs.push("focused".to_owned());
     }
-    if let Some(share) = element.beside_keyboard {
+    if let Some(share) = element.visible {
         attrs.push(format!("visible={share}%"));
     }
     if let Some(identifier) = &element.identifier {
