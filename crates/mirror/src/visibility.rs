@@ -34,7 +34,7 @@ use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowFlags, WindowTyp
 use crate::geometry::{Point, Rect};
 use crate::replica::{Replica, Win};
 use crate::snapshot::{Direction, Role};
-use crate::view::{self, Hidden, View};
+use crate::view::{self, Cover, CoverName, Hidden, View};
 
 /// How much of an element is in view.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -170,11 +170,35 @@ fn inside(
 /// How much of node `i` of window `w` is in view, `view` being the
 /// replica's view.
 pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibility {
+    reach(replica, view, w, i).0
+}
+
+/// How much of node `i` of window `w` is in view and where a tap reaches it
+/// (rn-app-fixes, design D37), and what covers it as an action on it names
+/// the cover: the view that covers all of it, or, when the views drawn over
+/// part of it leave no part of it in view that a tap reaches, what a tap at
+/// its centre would land on, one of those views or a bar. `None` for the
+/// cover when something of it is left to tap, or nothing of it lies in its
+/// visible bounds before the covers, out of view rather than covered, or
+/// nothing named lies at its centre.
+///
+/// The visible bounds are the window clipped by the node's scroll
+/// containers less the bars drawn over them, each view over part of the
+/// node and across it then keeping the side the node fits in with the
+/// least movement ([`across`]), which a stroke that brings it in aims for.
+/// What a tap reaches is the node's bounds inside the visible bounds
+/// before those views, less every one of them.
+pub(crate) fn reach(
+    replica: &Replica,
+    view: &View,
+    w: usize,
+    i: usize,
+) -> (Visibility, Option<CoverName>) {
     let window = &replica.windows[w];
     let bounds = view.windows[w][i].rect;
     let pixel = pixel(replica);
     let containers = containers_around(window, view, w, i);
-    let (clip, viewport) = inside(replica, view, w, i, &containers);
+    let (clip, shown) = inside(replica, view, w, i, &containers);
     let cut = [
         Direction::Below,
         Direction::Above,
@@ -188,13 +212,200 @@ pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibili
                 .iter()
                 .any(|&c| can_scroll(window.nodes[c].scroll, side))
     });
-    Visibility {
+    let whole = view.cover(replica, w, i);
+    let over: Vec<(Cover, Rect)> = view.over_part(w, i).collect();
+    let viewport = over.iter().fold(shown, |viewport, (_, cover)| {
+        across(viewport, &bounds, cover, pixel)
+    });
+    let in_view = bounds.intersect(&shown);
+    let holes: Vec<Rect> = over.iter().map(|&(_, cover)| cover).collect();
+    let (pieces, area) = if whole.is_some() || in_view.is_empty() {
+        (Vec::new(), 0.0)
+    } else {
+        (maximal(in_view, &holes), disjoint_area(in_view, &holes))
+    };
+    let reachable = largest(&bounds, &pieces);
+    let full = bounds.width() * bounds.height();
+    let fraction = if full > 0.0 {
+        (area / full).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let covered = whole.or_else(|| {
+        if reachable.is_some() || in_view.is_empty() {
+            return None;
+        }
+        let at = bounds.center();
+        over.iter()
+            .rev()
+            .find(|(_, cover)| cover.contains(at))
+            .map(|&(cover, _)| view.name(replica, cover, at))
+            .or_else(|| {
+                bar_at(replica, view, w, i, &containers, at).map(|b| view.name_bar(replica, w, b))
+            })
+    });
+    let seen = Visibility {
         bounds,
         viewport,
-        fraction: share(&bounds, &viewport),
+        fraction,
         cut,
-        reachable: largest(&bounds, &[bounds.intersect(&viewport)]),
+        reachable,
+    };
+    (seen, covered)
+}
+
+/// `viewport` less the side of `cover`, a view drawn over part of an element
+/// at `bounds`, where the element does not go: one across the element's
+/// width keeps what lies above it or below it, one down its height what
+/// lies left or right of it, whichever side the element fits in with the
+/// least movement, or the one that fits it, or, when neither does, the one
+/// with more room. Any other cover, or one beside the element, is a hole
+/// that leaves the visible bounds as they are.
+fn across(viewport: Rect, bounds: &Rect, cover: &Rect, pixel: f64) -> Rect {
+    if !cover.overlaps(bounds) {
+        return viewport;
     }
+    let wide = cover.left <= bounds.left + pixel && cover.right >= bounds.right - pixel;
+    let tall = cover.top <= bounds.top + pixel && cover.bottom >= bounds.bottom - pixel;
+    let mut left = viewport;
+    match (wide, tall) {
+        (true, false) => {
+            let range = (viewport.top, viewport.bottom);
+            if before(
+                range,
+                (cover.top, cover.bottom),
+                (bounds.top, bounds.bottom),
+                pixel,
+            ) {
+                left.bottom = left.bottom.min(cover.top);
+            } else {
+                left.top = left.top.max(cover.bottom);
+            }
+        }
+        (false, true) => {
+            let range = (viewport.left, viewport.right);
+            if before(
+                range,
+                (cover.left, cover.right),
+                (bounds.left, bounds.right),
+                pixel,
+            ) {
+                left.right = left.right.min(cover.left);
+            } else {
+                left.left = left.left.max(cover.right);
+            }
+        }
+        _ => {}
+    }
+    left
+}
+
+/// Whether an element spanning `element` along an axis goes before a cover
+/// spanning `cover` inside `range`, rather than after it (see [`across`]).
+fn before(range: (f64, f64), cover: (f64, f64), element: (f64, f64), pixel: f64) -> bool {
+    let length = element.1 - element.0;
+    let (room_before, room_after) = (cover.0 - range.0, range.1 - cover.1);
+    let fits = |room: f64| room >= length - pixel;
+    match (fits(room_before), fits(room_after)) {
+        (true, true) => (element.1 - cover.0).max(0.0) <= (cover.1 - element.0).max(0.0),
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) => room_before >= room_after,
+    }
+}
+
+/// The maximal rectangles of `area` that none of `holes` overlaps: each
+/// hole leaves of a rectangle it overlaps the parts above, below, left and
+/// right of it, and a rectangle another holds goes.
+fn maximal(area: Rect, holes: &[Rect]) -> Vec<Rect> {
+    let mut free = vec![area];
+    for hole in holes {
+        let mut next: Vec<Rect> = Vec::with_capacity(free.len() + 3);
+        for r in free {
+            if !r.overlaps(hole) {
+                next.push(r);
+                continue;
+            }
+            next.extend(
+                [
+                    Rect::new(r.left, r.top, r.right, hole.top),
+                    Rect::new(r.left, hole.bottom, r.right, r.bottom),
+                    Rect::new(r.left, r.top, hole.left, r.bottom),
+                    Rect::new(hole.right, r.top, r.right, r.bottom),
+                ]
+                .into_iter()
+                .filter(|piece| !piece.is_empty()),
+            );
+        }
+        free = next
+            .iter()
+            .enumerate()
+            .filter(|&(k, r)| {
+                !next
+                    .iter()
+                    .enumerate()
+                    .any(|(j, other)| j != k && holds_rect(other, r) && (other != r || j < k))
+            })
+            .map(|(_, r)| *r)
+            .collect();
+    }
+    free
+}
+
+/// Whether `outer` holds all of `inner`.
+fn holds_rect(outer: &Rect, inner: &Rect) -> bool {
+    inner.left >= outer.left
+        && inner.top >= outer.top
+        && inner.right <= outer.right
+        && inner.bottom <= outer.bottom
+}
+
+/// The area of `area` that none of `holes` overlaps, in square points:
+/// each hole leaves of a rectangle it overlaps the bands above and below
+/// it and, between them, the parts left and right of it, which do not
+/// overlap.
+fn disjoint_area(area: Rect, holes: &[Rect]) -> f64 {
+    let mut free = vec![area];
+    for hole in holes {
+        let mut next: Vec<Rect> = Vec::with_capacity(free.len() + 3);
+        for r in free {
+            if !r.overlaps(hole) {
+                next.push(r);
+                continue;
+            }
+            let (top, bottom) = (r.top.max(hole.top), r.bottom.min(hole.bottom));
+            next.extend(
+                [
+                    Rect::new(r.left, r.top, r.right, hole.top),
+                    Rect::new(r.left, hole.bottom, r.right, r.bottom),
+                    Rect::new(r.left, top, hole.left, bottom),
+                    Rect::new(hole.right, top, r.right, bottom),
+                ]
+                .into_iter()
+                .filter(|piece| !piece.is_empty()),
+            );
+        }
+        free = next;
+    }
+    free.iter().map(|r| r.width() * r.height()).sum()
+}
+
+/// The tab bar or toolbar of window `w` drawn over node `i`, whose scroll
+/// containers are `containers`, that holds `at`, among those [`bars`] cuts
+/// its visible bounds by.
+fn bar_at(
+    replica: &Replica,
+    view: &View,
+    w: usize,
+    i: usize,
+    containers: &[usize],
+    at: Point,
+) -> Option<usize> {
+    let window = &replica.windows[w];
+    view.windows[w]
+        .iter()
+        .enumerate()
+        .position(|(b, f)| node_bar(window, view, w, b, i, containers) && f.rect.contains(at))
 }
 
 /// The largest of `pieces`, parts of an element at `bounds`, that is at
@@ -210,7 +421,13 @@ fn largest(bounds: &Rect, pieces: &[Rect]) -> Option<Rect> {
         .iter()
         .filter(|piece| !piece.is_empty() && piece.width() >= wide && piece.height() >= tall)
         .copied()
-        .reduce(|best, piece| if area(&piece) > area(&best) { piece } else { best })
+        .reduce(|best, piece| {
+            if area(&piece) > area(&best) {
+                piece
+            } else {
+                best
+            }
+        })
 }
 
 /// The visible bounds of the scroll container that a stroke along the
@@ -248,18 +465,12 @@ pub(crate) fn scroller_at(
         })?;
         let mut containers = vec![c];
         containers.extend(containers_around(window, view, w, c));
-        Some(inside(replica, view, w, c, &containers).1)
+        let shown = inside(replica, view, w, c, &containers).1;
+        let pixel = pixel(replica);
+        Some(view.over_part(w, c).fold(shown, |shown, (_, cover)| {
+            across(shown, &facts[c].rect, &cover, pixel)
+        }))
     })
-}
-
-/// The share of `bounds` inside `viewport`.
-fn share(bounds: &Rect, viewport: &Rect) -> f64 {
-    let area = bounds.width() * bounds.height();
-    if area <= 0.0 {
-        return 0.0;
-    }
-    let shown = bounds.intersect(viewport);
-    (shown.width() * shown.height() / area).clamp(0.0, 1.0)
 }
 
 /// Whether `bounds` ends at `clip`'s edge on `side`, within `pixel`, rather
@@ -299,18 +510,25 @@ fn can_scroll(scroll: Option<Scroll>, side: Direction) -> bool {
 fn bars(replica: &Replica, view: &View, w: usize, i: usize, containers: &[usize]) -> Vec<Rect> {
     let mut out: Vec<Rect> = windows_above(replica, w).map(|(_, bar)| bar).collect();
     let window = &replica.windows[w];
-    let facts = &view.windows[w];
-    for (b, f) in facts.iter().enumerate() {
-        if !matches!(f.role, Role::Tablist | Role::Toolbar) || !f.visible || f.hidden != Hidden::No
-        {
-            continue;
+    for (b, f) in view.windows[w].iter().enumerate() {
+        if node_bar(window, view, w, b, i, containers) {
+            out.push(f.rect);
         }
-        if holds(window, b, i) || containers.iter().any(|&c| holds(window, c, b)) {
-            continue;
-        }
-        out.push(f.rect);
     }
     out
+}
+
+/// Whether node `b` of window `w` is a tab bar or toolbar on screen drawn
+/// over node `i`, whose scroll containers are `containers`: neither
+/// holding it nor inside one of its scroll containers, which scroll it
+/// with the node.
+fn node_bar(window: &Win, view: &View, w: usize, b: usize, i: usize, containers: &[usize]) -> bool {
+    let f = &view.windows[w][b];
+    matches!(f.role, Role::Tablist | Role::Toolbar)
+        && f.visible
+        && f.hidden == Hidden::No
+        && !holds(window, b, i)
+        && !containers.iter().any(|&c| holds(window, c, b))
 }
 
 /// Whether node `outer` of `window` is node `inner` or one of its
@@ -396,12 +614,85 @@ mod tests {
         assert!(cut_by(list, &keyboard, PIXEL).is_empty());
     }
 
+    /// What covers leave of an area: its largest rectangles, which may
+    /// overlap, and its area, counted once.
     #[test]
-    fn the_share_in_view_is_by_area_and_zero_without_one() {
-        let viewport = Rect::new(0.0, 0.0, 400.0, 800.0);
-        assert_eq!(share(&Rect::new(0.0, 776.0, 400.0, 824.0), &viewport), 0.5);
-        assert_eq!(share(&Rect::new(0.0, 100.0, 400.0, 148.0), &viewport), 1.0);
-        assert_eq!(share(&Rect::new(0.0, 900.0, 400.0, 948.0), &viewport), 0.0);
-        assert_eq!(share(&Rect::new(0.0, 100.0, 400.0, 100.0), &viewport), 0.0);
+    fn what_holes_leave_of_an_area_is_its_maximal_rectangles_and_its_area_once() {
+        let card = Rect::new(0.0, 0.0, 100.0, 100.0);
+        assert_eq!(maximal(card, &[]), [card]);
+        // A corner cut out leaves two rectangles that overlap in the other
+        // corner, and three quarters of the area.
+        let corner = Rect::new(50.0, 50.0, 150.0, 150.0);
+        assert_eq!(
+            maximal(card, &[corner]),
+            [
+                Rect::new(0.0, 0.0, 100.0, 50.0),
+                Rect::new(0.0, 0.0, 50.0, 100.0)
+            ]
+        );
+        assert_eq!(disjoint_area(card, &[corner]), 7500.0);
+        // A band across the middle leaves what lies above and below it.
+        let band = Rect::new(-10.0, 40.0, 110.0, 60.0);
+        assert_eq!(
+            maximal(card, &[band]),
+            [
+                Rect::new(0.0, 0.0, 100.0, 40.0),
+                Rect::new(0.0, 60.0, 100.0, 100.0)
+            ]
+        );
+        assert_eq!(disjoint_area(card, &[band]), 8000.0);
+        // A hole that holds the area leaves nothing.
+        let over = Rect::new(-1.0, -1.0, 101.0, 101.0);
+        assert!(maximal(card, &[over]).is_empty());
+        assert_eq!(disjoint_area(card, &[over, corner]), 0.0);
+    }
+
+    /// A tap needs 8 points of an element on each side, or all of it on a
+    /// side where it is shorter.
+    #[test]
+    fn a_tap_goes_to_the_largest_part_at_least_8_points_on_each_side() {
+        let row = Rect::new(0.0, 0.0, 300.0, 48.0);
+        let thin = Rect::new(0.0, 0.0, 300.0, 7.0);
+        let low = Rect::new(0.0, 38.0, 300.0, 48.0);
+        assert_eq!(largest(&row, &[thin, low]), Some(low));
+        assert_eq!(largest(&row, &[thin]), None);
+        let dot = Rect::new(0.0, 0.0, 6.0, 6.0);
+        assert_eq!(largest(&dot, &[dot]), Some(dot));
+        assert_eq!(largest(&row, &[]), None);
+    }
+
+    /// A cover across an element keeps the side of it the element fits in
+    /// with the least movement: above a footer button the heading half
+    /// under it, below a header the card most of whose top it covers, and
+    /// above a disabled button the control 38 of whose 48 points it covers,
+    /// where 27 points below it would not hold the control. A cover that
+    /// spans neither way is a hole that keeps the visible bounds.
+    #[test]
+    fn a_cover_across_an_element_keeps_the_side_it_fits_in_with_the_least_movement() {
+        let list = Rect::new(0.0, 62.0, 402.0, 874.0);
+        let heading = Rect::new(33.0, 709.0, 90.33, 731.0);
+        let footer = Rect::new(20.0, 720.0, 382.0, 764.0);
+        assert_eq!(
+            across(list, &heading, &footer, PIXEL),
+            Rect::new(0.0, 62.0, 402.0, 720.0)
+        );
+        let card = Rect::new(37.0, 41.0, 365.0, 157.0);
+        let header = Rect::new(0.0, 0.0, 402.0, 122.0);
+        let full = Rect::new(0.0, 0.0, 402.0, 791.0);
+        assert_eq!(
+            across(full, &card, &header, PIXEL),
+            Rect::new(0.0, 122.0, 402.0, 791.0)
+        );
+        let tab = Rect::new(0.0, 122.0, 402.0, 791.0);
+        let paste = Rect::new(205.0, 726.0, 382.0, 774.0);
+        let disabled = Rect::new(20.0, 708.0, 382.0, 764.0);
+        assert_eq!(
+            across(tab, &paste, &disabled, PIXEL),
+            Rect::new(0.0, 122.0, 402.0, 708.0)
+        );
+        let inside = Rect::new(50.0, 715.0, 70.0, 725.0);
+        assert_eq!(across(list, &heading, &inside, PIXEL), list);
+        let beside = Rect::new(300.0, 700.0, 380.0, 780.0);
+        assert_eq!(across(list, &heading, &beside, PIXEL), list);
     }
 }

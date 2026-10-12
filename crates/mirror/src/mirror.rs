@@ -642,9 +642,11 @@ impl Mirror {
     }
 
     /// How much of `element` is in view as the replica has it now, without
-    /// reading the target: the share of its bounds inside the visible bounds
-    /// of what holds it, and the edge its bounds may have been clipped at.
-    /// `None` when the replica no longer holds the element.
+    /// reading the target: the share of its bounds a tap reaches, inside
+    /// the visible bounds of what holds it and under no view drawn over it,
+    /// the largest part of it a tap goes to, and the edge its bounds may
+    /// have been clipped at (rn-app-fixes, design D37). `None` when the
+    /// replica no longer holds the element.
     pub fn visibility(&self, element: ElementId) -> Option<Visibility> {
         let (w, i) = self.replica.locate(element)?;
         let view = View::build(&self.replica);
@@ -652,15 +654,19 @@ impl Mirror {
     }
 
     /// What covers `element` as the replica has it now, without reading the
-    /// target: the top-most modal, a view marked modal or a view drawn over
-    /// it, named as an action on its ref names it when it fails with
-    /// `element_covered`. An element that is covered is not in view however
-    /// much of it [`Mirror::visibility`] finds inside its visible bounds.
-    /// `None` when nothing covers it or the replica no longer holds it.
+    /// target, named as an action on its ref names it when it fails with
+    /// `element_covered`: the top-most modal, a view marked modal or a view
+    /// drawn over it that covers all of it, or what a tap at its centre
+    /// would land on when the views over part of it leave no part of it in
+    /// view that a tap reaches, at least 8 points on each side (design
+    /// D37). `None` when it is not covered so, or the replica no longer
+    /// holds it.
     pub fn covered_by(&self, element: ElementId) -> Option<String> {
         let (w, i) = self.replica.locate(element)?;
         let view = View::build(&self.replica);
-        view.cover(&self.replica, w, i).map(|cover| cover.by)
+        visibility::reach(&self.replica, &view, w, i)
+            .1
+            .map(|cover| cover.by)
     }
 
     /// The visible bounds of the scroll container that a stroke along the
@@ -734,8 +740,11 @@ impl Mirror {
         }
     }
 
-    /// The point an action aims at, in device points: a ref's element must
-    /// be on screen and not covered.
+    /// The point an action aims at, in device points: for a ref, the centre
+    /// of the largest part of its element a tap reaches, which must be at
+    /// least 8 points on each side, else the action fails covered or out of
+    /// view as [`Mirror::covered_by`] and [`Mirror::visibility`] tell
+    /// (rn-app-fixes, design D37).
     fn aim(&mut self, target: &Target) -> Result<Point, MirrorError> {
         let reference = match target {
             Target::Point(point) => return Ok(*point),
@@ -744,18 +753,18 @@ impl Mirror {
         self.pump()?;
         let (w, i) = self.locate_ref(reference)?;
         let view = View::build(&self.replica);
-        let facts = &view.windows[w][i];
-        if let Some(cover) = view.cover(&self.replica, w, i) {
+        let (seen, covered) = visibility::reach(&self.replica, &view, w, i);
+        if let Some(cover) = covered {
             return Err(MirrorError::Covered {
                 reference,
                 by: cover.by,
                 drawn_over: cover.drawn_over,
             });
         }
-        if !facts.visible {
-            return Err(MirrorError::Offscreen { reference });
+        match seen.reachable {
+            Some(part) => Ok(part.center()),
+            None => Err(MirrorError::Offscreen { reference }),
         }
-        Ok(facts.rect.center())
     }
 
     /// Who owns the foreground: the owner of the active window, else of the

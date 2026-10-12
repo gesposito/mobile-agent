@@ -40,14 +40,22 @@
 //!     node listed after a sibling it overlaps cuts what that sibling holds
 //!     within its bounds when it shows something, as `on_top` does
 //!     (rn-app-fixes, design D31), but for an alert's text, over which
-//!     UIKit draws nothing (physical-ios, design D26).
+//!     UIKit draws nothing (physical-ios, design D26); and a bar, or a
+//!     header the app pins across the top of a scrolling sibling, cuts
+//!     what its later siblings hold within its bounds, whatever the order
+//!     (rn-app-fixes, design D38).
+//!
+//! A disabled control shows something wherever showing decides a cover:
+//! UIKit hit-tests it as an enabled one, and the touch goes nowhere
+//! (design D38). What a cover overlaps without holding it whole is kept
+//! with the cover, for the part of it a tap reaches (design D37).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use protocol::snapshot::{NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollUnit, WindowType};
 
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 use crate::replica::{RNode, Replica, Win};
 use crate::roles;
 use crate::snapshot::{Direction, HintSource, Role, ScrollHint};
@@ -64,7 +72,7 @@ pub(crate) enum Hidden {
 
 /// What covers a node, by window and node index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Cover {
+pub(crate) enum Cover {
     /// A modal window, named by its title.
     Window(usize),
     /// Node `i` of window `w`, named by its role and name, or as `noun`
@@ -75,8 +83,8 @@ enum Cover {
         i: usize,
         noun: &'static str,
     },
-    /// Node `i` of the covered node's window, drawn over it.
-    DrawnOver(usize),
+    /// Node `s` of window `w`, the covered node's, drawn over it.
+    DrawnOver { w: usize, s: usize },
 }
 
 /// How errors name what covers a node.
@@ -124,6 +132,10 @@ pub(crate) struct View {
     /// What covers each node that a view marked modal or a view drawn over
     /// it hid: window, node, cover.
     covers: Vec<(usize, usize, Cover)>,
+    /// What lies over part of a node, a view marked modal or a view drawn
+    /// over it that overlaps the node without holding it: window, node,
+    /// cover.
+    partial: Vec<(usize, usize, Cover)>,
 }
 
 impl View {
@@ -133,24 +145,25 @@ impl View {
             .iter()
             .map(|w| window_facts(w, replica.scale))
             .collect();
-        let mut covers = Vec::new();
+        let mut covers = Covers::default();
         let modal = cut(replica, &mut windows);
         cover_by_modal_views(replica, &mut windows, &mut covers);
         cover_by_views_on_top(replica, &mut windows, &mut covers);
         if drawn_in_order(replica) {
             cover_by_later_siblings(replica, &mut windows, &mut covers);
+            cover_by_bars_and_headers(replica, &mut windows, &mut covers);
         }
         View {
             windows,
             modal,
-            covers,
+            covers: covers.whole,
+            partial: covers.partial,
         }
     }
 
     /// How errors name what covers node `i` of window `w`, if something
-    /// does. A view drawn over it is named after the innermost node of it
-    /// that holds the covered node's bounds and shows something itself,
-    /// where a tap on the covered node would land, else after the view.
+    /// covers all of it: what a tap at its centre would land on (see
+    /// [`View::name`]).
     pub fn cover(&self, replica: &Replica, w: usize, i: usize) -> Option<CoverName> {
         if self.windows[w][i].hidden != Hidden::Covered {
             return None;
@@ -161,37 +174,86 @@ impl View {
             .find(|&&(cw, ci, _)| (cw, ci) == (w, i))
             .map(|&(_, _, cover)| cover)
             .or(self.modal);
+        let at = self.windows[w][i].rect.center();
         Some(match cover {
-            Some(Cover::Window(m)) => CoverName {
-                by: format!(
-                    "dialog {:?}",
-                    replica.windows[m].title.as_deref().unwrap_or_default()
-                ),
-                drawn_over: false,
-            },
-            Some(Cover::Node { w, i, noun }) => CoverName {
-                by: cover_label(&self.windows[w][i], noun),
-                drawn_over: false,
-            },
-            Some(Cover::DrawnOver(s)) => {
-                let lies_under = holder(
-                    &replica.windows[w],
-                    &self.windows[w],
-                    s,
-                    &self.windows[w][i].rect,
-                    pixel(replica),
-                );
-                CoverName {
-                    by: cover_label(&self.windows[w][lies_under], "overlay"),
-                    drawn_over: true,
-                }
-            }
+            Some(cover) => self.name(replica, cover, at),
             None => CoverName {
                 by: "modal".to_owned(),
                 drawn_over: false,
             },
         })
     }
+
+    /// The views that lie over part of node `i` of window `w` without
+    /// holding all of it, with their bounds.
+    pub fn over_part(&self, w: usize, i: usize) -> impl Iterator<Item = (Cover, Rect)> + '_ {
+        self.partial
+            .iter()
+            .filter(move |&&(cw, ci, _)| (cw, ci) == (w, i))
+            .map(|&(_, _, cover)| (cover, self.bounds_of(cover)))
+    }
+
+    /// The bounds of what `cover` names, in points; a modal window's cover
+    /// the screen, which `Rect::default` stands for nowhere.
+    fn bounds_of(&self, cover: Cover) -> Rect {
+        match cover {
+            Cover::Node { w, i, .. } => self.windows[w][i].rect,
+            Cover::DrawnOver { w, s } => self.windows[w][s].rect,
+            Cover::Window(_) => Rect::default(),
+        }
+    }
+
+    /// How errors name `cover` as what a tap at `at` would land on. A view
+    /// drawn over a node is named after the innermost node of it that
+    /// holds `at` and shows something itself, else after the view, as a
+    /// plain container is called when it says neither its role nor a name:
+    /// an overlay, or a disabled control.
+    pub fn name(&self, replica: &Replica, cover: Cover, at: Point) -> CoverName {
+        match cover {
+            Cover::Window(m) => CoverName {
+                by: format!(
+                    "dialog {:?}",
+                    replica.windows[m].title.as_deref().unwrap_or_default()
+                ),
+                drawn_over: false,
+            },
+            Cover::Node { w, i, noun } => CoverName {
+                by: cover_label(&replica.windows[w].nodes[i], &self.windows[w][i], noun),
+                drawn_over: false,
+            },
+            Cover::DrawnOver { w, s } => {
+                let window = &replica.windows[w];
+                let lies_under = holder(window, &self.windows[w], s, at);
+                CoverName {
+                    by: cover_label(
+                        &window.nodes[lies_under],
+                        &self.windows[w][lies_under],
+                        "overlay",
+                    ),
+                    drawn_over: true,
+                }
+            }
+        }
+    }
+}
+
+impl View {
+    /// How errors name node `b` of window `w`, a bar drawn over a node, as
+    /// what a tap at the node's centre would land on: by its role and name.
+    pub fn name_bar(&self, replica: &Replica, w: usize, b: usize) -> CoverName {
+        CoverName {
+            by: cover_label(&replica.windows[w].nodes[b], &self.windows[w][b], "bar"),
+            drawn_over: true,
+        }
+    }
+}
+
+/// The covers a view's passes record: what covers each node it hid, and
+/// what lies over part of a node.
+#[derive(Default)]
+struct Covers {
+    whole: Vec<(usize, usize, Cover)>,
+    partial: Vec<(usize, usize, Cover)>,
 }
 
 /// One physical pixel in points: bounds within it of each other meet.
@@ -597,12 +659,9 @@ fn cover_below(replica: &Replica, facts: &mut [Vec<Facts>], w: usize) {
 /// Bluesky's header does, a sibling of its typeahead only because React
 /// Native flattens the views between them. A node is judged by its own
 /// bounds, so a container that reaches outside the view stays while what it
-/// holds inside is hidden. Records the view as the cover of what it hid.
-fn cover_by_modal_views(
-    replica: &Replica,
-    facts: &mut [Vec<Facts>],
-    covers: &mut Vec<(usize, usize, Cover)>,
-) {
+/// holds inside is hidden. Records the view as the cover of what it hid,
+/// and of what it overlaps without holding.
+fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     for (w, window) in replica.windows.iter().enumerate() {
         if window.kind == WindowType::INPUT_METHOD {
@@ -633,7 +692,9 @@ fn cover_by_modal_views(
                 let covered = &mut facts[w][d];
                 if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
                     covered.hidden = Hidden::Covered;
-                    covers.push((w, d, cover));
+                    covers.whole.push((w, d, cover));
+                } else if covered.hidden == Hidden::No && covered.rect.overlaps(&area) {
+                    covers.partial.push((w, d, cover));
                 }
                 stack.extend(window.nodes[d].children.iter().copied());
             }
@@ -657,12 +718,9 @@ fn cover_by_modal_views(
 /// only when it has an area, since Android clips a node's bounds to its
 /// ancestors' and leaves one scrolled out of its list with none, so that the
 /// rows below a list keep counting in its hint under a tab bar drawn over
-/// its bottom. Records the view as the cover of what it hid.
-fn cover_by_views_on_top(
-    replica: &Replica,
-    facts: &mut [Vec<Facts>],
-    covers: &mut Vec<(usize, usize, Cover)>,
-) {
+/// its bottom. Records the view as the cover of what it hid, and of what it
+/// overlaps without holding.
+fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     let mut stack = Vec::new();
     for (w, window) in replica.windows.iter().enumerate() {
@@ -688,22 +746,39 @@ fn cover_by_views_on_top(
                     .filter(|&sibling| sibling != s),
             );
             let spared = |_: usize, _: &Facts| false;
-            hide_under(window, &mut facts[w], s, &mut stack, slack, spared, |d| {
-                covers.push((w, d, Cover::DrawnOver(s)));
-            });
+            hide_under(
+                window,
+                &mut facts[w],
+                s,
+                &mut stack,
+                slack,
+                spared,
+                |d, whole| {
+                    record(covers, whole, (w, d, Cover::DrawnOver { w, s }));
+                },
+            );
         }
     }
 }
 
+/// Records that `cover` covers its node, whole or in part.
+fn record(covers: &mut Covers, whole: bool, cover: (usize, usize, Cover)) {
+    if whole {
+        covers.whole.push(cover);
+    } else {
+        covers.partial.push(cover);
+    }
+}
+
 /// Hides the nodes on `stack` and below them that lie within the bounds of
-/// node `s` of `window`, a view drawn over them, and calls `hid` with each.
-/// What a node holds lies within its bounds as Android clips them, so the
-/// walk does not enter a node without an area in the view's bounds. iOS
-/// reports whole frames, and a node there can hold one outside its own
-/// bounds; such a node lies outside the clip of a scroll container it
-/// overflows, out of view rather than covered, and keeps counting in the
-/// container's hint. The walk leaves alone the nodes `spare` names, with
-/// what they hold.
+/// node `s` of `window`, a view drawn over them, and calls `hid` with each
+/// and `true`, and with each it overlaps without holding and `false`. What
+/// a node holds lies within its bounds as Android clips them, so the walk
+/// does not enter a node without an area in the view's bounds. iOS reports
+/// whole frames, and a node there can hold one outside its own bounds; such
+/// a node lies outside the clip of a scroll container it overflows, out of
+/// view rather than covered, and keeps counting in the container's hint.
+/// The walk leaves alone the nodes `spare` names, with what they hold.
 fn hide_under(
     window: &Win,
     facts: &mut [Facts],
@@ -711,7 +786,7 @@ fn hide_under(
     stack: &mut Vec<usize>,
     slack: f64,
     spare: impl Fn(usize, &Facts) -> bool,
-    mut hid: impl FnMut(usize),
+    mut hid: impl FnMut(usize, bool),
 ) {
     let area = facts[s].rect;
     while let Some(d) = stack.pop() {
@@ -719,9 +794,12 @@ fn hide_under(
         if !covered.rect.overlaps(&area) || spare(d, covered) {
             continue;
         }
-        if covered.hidden == Hidden::No && within(&covered.rect, &area, slack) {
-            covered.hidden = Hidden::Covered;
-            hid(d);
+        if covered.hidden == Hidden::No {
+            let whole = within(&covered.rect, &area, slack);
+            if whole {
+                covered.hidden = Hidden::Covered;
+            }
+            hid(d, whole);
         }
         stack.extend(window.nodes[d].children.iter().copied());
     }
@@ -775,12 +853,10 @@ fn drawn_in_order(replica: &Replica) -> bool {
 /// The covers are taken top-most first, parents before their children and
 /// later siblings before earlier ones, so a node two views cover is
 /// recorded under the one drawn last. Overlapping siblings are found by
-/// [`overlapping`].
-fn cover_by_later_siblings(
-    replica: &Replica,
-    facts: &mut [Vec<Facts>],
-    covers: &mut Vec<(usize, usize, Cover)>,
-) {
+/// [`overlapping`]. A header the app pins across a scrolling sibling's top
+/// ([`pinned_over`]) is drawn over that sibling whatever the order, and the
+/// sibling covers none of it.
+fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     let mut sweep = Sweep::default();
     let mut stack = Vec::new();
@@ -807,7 +883,11 @@ fn cover_by_later_siblings(
             for &(earlier, later) in pairs.iter() {
                 let (e, s) = (children[earlier], children[later]);
                 let f = &facts[w][s];
-                if !shows[s] || !f.visible || f.hidden != Hidden::No {
+                if !shows[s]
+                    || !f.visible
+                    || f.hidden != Hidden::No
+                    || pinned_over(window, &facts[w], e, s, slack)
+                {
                     continue;
                 }
                 stack.clear();
@@ -816,12 +896,131 @@ fn cover_by_later_siblings(
                     matches!(f.role, Role::Tablist | Role::Toolbar)
                         || (alerted[d] && &*window.nodes[d].class == roles::XCUI_STATIC_TEXT)
                 };
-                hide_under(window, &mut facts[w], s, &mut stack, slack, spared, |d| {
-                    covers.push((w, d, Cover::DrawnOver(s)));
-                });
+                hide_under(
+                    window,
+                    &mut facts[w],
+                    s,
+                    &mut stack,
+                    slack,
+                    spared,
+                    |d, whole| {
+                        record(covers, whole, (w, d, Cover::DrawnOver { w, s }));
+                    },
+                );
             }
         }
     }
+}
+
+/// The classes of the bars UIKit draws over the content its controllers
+/// lay out under them, which XCTest lists before or after that content.
+const BAR_CLASSES: [&str; 3] = [
+    "XCUIElementTypeNavigationBar",
+    "XCUIElementTypeTabBar",
+    "XCUIElementTypeToolbar",
+];
+
+/// Whether node `h` of `window`, listed before its sibling `c`, is a header
+/// the app pins across `c`'s top: `c` scrolls and `h` does not, and `h`
+/// spans `c`'s width from an edge at or above `c`'s top to one at or below
+/// it, short of `c`'s bottom. A React Native header listed before its list
+/// is drawn over what the list scrolls up past its top, which XCTest's
+/// whole frames put in the header's frame.
+fn pinned_over(window: &Win, facts: &[Facts], h: usize, c: usize, slack: f64) -> bool {
+    let (header, list) = (&facts[h].rect, &facts[c].rect);
+    scrolls(&window.nodes[c], &facts[c])
+        && !scrolls(&window.nodes[h], &facts[h])
+        && header.left <= list.left + slack
+        && header.right >= list.right - slack
+        && header.top <= list.top + slack
+        && header.bottom >= list.top - slack
+        && header.bottom < list.bottom - slack
+}
+
+/// Hides, in a tree whose order is its drawing order ([`drawn_in_order`]),
+/// what a bar or a pinned header covers of the siblings listed after it,
+/// whatever the order (rn-app-fixes, design D38). XCTest lists a navigation
+/// bar before the content its controller draws it over, and a React Native
+/// header before the list it is drawn over, the rows the list scrolled up
+/// past its top lying in the header's frame (the acceptance run's 44-point
+/// row at 2 points): a bar by its class ([`BAR_CLASSES`]) covers what its
+/// later siblings hold within its bounds, and a header pinned across a
+/// scrolling sibling's top ([`pinned_over`]) what that sibling holds within
+/// its bounds, when the header shows something. A sibling is entered
+/// whatever its own bounds, since what it holds may lie outside them; below
+/// it the walk follows [`hide_under`]. A parent's children are compared
+/// only where one of them is a bar or scrolls, so a grid's cells cost
+/// nothing.
+fn cover_by_bars_and_headers(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
+    let slack = pixel(replica);
+    let mut stack = Vec::new();
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind == WindowType::INPUT_METHOD {
+            continue;
+        }
+        let bar = |n: usize| BAR_CLASSES.contains(&&*window.nodes[n].class);
+        let mut shows: Option<Vec<bool>> = None;
+        for parent in 0..window.nodes.len() {
+            let children = &window.nodes[parent].children;
+            if children.len() < 2 {
+                continue;
+            }
+            for (k, &c) in children.iter().enumerate() {
+                let scrolling = scrolls(&window.nodes[c], &facts[w][c]);
+                if !scrolling && !bar(c) {
+                    continue;
+                }
+                let shows = shows.get_or_insert_with(|| showing(window, &facts[w]));
+                let mut over = |cover: usize, under: usize, facts: &mut [Facts]| {
+                    let f = &facts[cover];
+                    if shows[cover] && f.visible && f.hidden == Hidden::No {
+                        cover_sibling(window, facts, (w, cover, under), slack, &mut stack, covers);
+                    }
+                };
+                if scrolling {
+                    for &h in &children[..k] {
+                        if pinned_over(window, &facts[w], h, c, slack) {
+                            over(h, c, &mut facts[w]);
+                        }
+                    }
+                }
+                if bar(c) {
+                    for &s in &children[k + 1..] {
+                        over(c, s, &mut facts[w]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Hides what node `cover` of window `w`, a bar or a pinned header, covers
+/// of its sibling `under`: the sibling itself when it lies within the
+/// cover's bounds, and below it what [`hide_under`] finds, the sibling
+/// entered whatever its own bounds.
+fn cover_sibling(
+    window: &Win,
+    facts: &mut [Facts],
+    (w, cover, under): (usize, usize, usize),
+    slack: f64,
+    stack: &mut Vec<usize>,
+    covers: &mut Covers,
+) {
+    let area = facts[cover].rect;
+    let sibling = &mut facts[under];
+    if sibling.hidden == Hidden::No && sibling.rect.overlaps(&area) {
+        let whole = within(&sibling.rect, &area, slack);
+        if whole {
+            sibling.hidden = Hidden::Covered;
+        }
+        record(covers, whole, (w, under, Cover::DrawnOver { w, s: cover }));
+    }
+    stack.clear();
+    stack.extend(window.nodes[under].children.iter().copied());
+    let spared = |_: usize, f: &Facts| matches!(f.role, Role::Tablist | Role::Toolbar);
+    hide_under(window, facts, cover, stack, slack, spared, |d, whole| {
+        record(covers, whole, (w, d, Cover::DrawnOver { w, s: cover }));
+    });
 }
 
 /// Whether each node of `window` is an alert or lies inside one.
@@ -915,20 +1114,19 @@ fn overlapping<'s>(
     pairs
 }
 
-/// The node of `window` that a tap on a node at `covered` would land on
-/// below node `cover`, a view drawn over it: the innermost node of the
-/// view, or the one drawn last, whose bounds hold `covered`, to within
-/// `slack`, and that shows something itself, on screen with a ref or a
-/// name; else the view itself.
-fn holder(window: &Win, facts: &[Facts], cover: usize, covered: &Rect, slack: f64) -> usize {
+/// The node of `window` that a tap at `at` would land on below node
+/// `cover`, a view drawn over it: the innermost node of the view, or the
+/// one drawn last, whose bounds hold `at` and that shows something itself
+/// ([`shows_itself`]); else the view itself.
+fn holder(window: &Win, facts: &[Facts], cover: usize, at: Point) -> usize {
     let mut found = cover;
     let mut stack = vec![cover];
     while let Some(n) = stack.pop() {
         let f = &facts[n];
-        if !within(covered, &f.rect, slack) {
+        if !f.rect.contains(at) {
             continue;
         }
-        if f.visible && (f.bears_ref || !f.name.is_empty()) && n > found {
+        if shows_itself(&window.nodes[n], f) && n > found {
             found = n;
         }
         stack.extend(window.nodes[n].children.iter().copied());
@@ -936,12 +1134,22 @@ fn holder(window: &Win, facts: &[Facts], cover: usize, covered: &Rect, slack: f6
     found
 }
 
-/// Whether each node of `window`, or a node below it, is on screen with a
-/// ref or a name.
+/// Whether a node shows something itself: it is on screen with a ref or a
+/// name, or a disabled control, which UIKit hit-tests as an enabled one
+/// (rn-app-fixes, design D38).
+fn shows_itself(node: &RNode, facts: &Facts) -> bool {
+    facts.visible
+        && (facts.bears_ref || !facts.name.is_empty() || !node.flags.contains(NodeFlags::ENABLED))
+}
+
+/// Whether each node of `window`, or a node below it, shows something
+/// itself ([`shows_itself`]).
 fn showing(window: &Win, facts: &[Facts]) -> Vec<bool> {
-    let mut shows: Vec<bool> = facts
+    let mut shows: Vec<bool> = window
+        .nodes
         .iter()
-        .map(|f| f.visible && (f.bears_ref || !f.name.is_empty()))
+        .zip(facts)
+        .map(|(node, f)| shows_itself(node, f))
         .collect();
     // Children come after their parent in the pre-order.
     for i in (0..window.nodes.len()).rev() {
@@ -964,9 +1172,14 @@ fn within(inner: &Rect, outer: &Rect, slack: f64) -> bool {
 
 /// How errors name a view that covers what lies under it: by its role and
 /// name, or as `noun` (a modal view, an overlay) when it says neither, as a
-/// plain container.
-fn cover_label(facts: &Facts, noun: &str) -> String {
+/// plain container, or as a disabled control when it is one.
+fn cover_label(node: &RNode, facts: &Facts, noun: &str) -> String {
     let plain = matches!(facts.role, Role::Generic | Role::Group);
+    let noun = if node.flags.contains(NodeFlags::ENABLED) {
+        noun
+    } else {
+        "disabled control"
+    };
     match (plain, facts.name.is_empty()) {
         (true, true) => noun.to_owned(),
         (true, false) => format!("{noun} {:?}", facts.name),

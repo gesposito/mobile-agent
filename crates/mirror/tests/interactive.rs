@@ -606,6 +606,8 @@ fn without_typeahead(screen: &Screen) -> Screen {
     Screen(value)
 }
 
+/// The refusal names what a tap at the topic row's centre would land on
+/// (rn-app-fixes, design D37): the typeahead's row there, a button.
 #[test]
 fn acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code() {
     let screen = Screen::load("bluesky-typeahead-android");
@@ -635,7 +637,12 @@ fn acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code() {
         })
         .unwrap_err();
     assert_eq!(error.code(), code::ELEMENT_COVERED);
-    assert!(error.to_string().contains("overlay"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("lies under the button \"View placeholder-4's profile\""),
+        "{error}"
+    );
     assert_eq!(
         mirror.resolve(topic).unwrap().identifier.as_deref(),
         Some("placeholder-topic-1"),
@@ -970,8 +977,8 @@ fn a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows() 
     );
 
     let mut lower = screen.clone();
-    lower.0["windows"][0]["root"]["children"][0]["children"][0]["children"][0]["children"][21]
-        ["bounds"] = json!([33, 714, 90.33, 736]);
+    lower.0["windows"][0]["root"]["children"][0]["children"][0]["children"][0]["children"][21]["bounds"] =
+        json!([33, 714, 90.33, 736]);
     let target = FakeTarget::new(lower.read());
     let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
     let heading = mirror
@@ -984,7 +991,9 @@ fn a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows() 
     let error = tap_on(&mut mirror, heading).unwrap_err();
     assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
     assert!(
-        error.to_string().contains("button \"placeholder-button-1\""),
+        error
+            .to_string()
+            .contains("button \"placeholder-button-1\""),
         "{error}"
     );
     assert!(target.inputs().is_empty());
@@ -1051,8 +1060,8 @@ fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
 fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header() {
     let screen = Screen::load("header-top-ios");
     let mut below = screen.clone();
-    below.0["windows"][1]["root"]["children"][0]["children"][0]["children"][1]["children"][4]
-        ["bounds"] = json!([38, 126, 364, 170]);
+    below.0["windows"][1]["root"]["children"][0]["children"][0]["children"][1]["children"][4]["bounds"] =
+        json!([38, 126, 364, 170]);
     let target = FakeTarget::new(below.read());
     target.at(ms(100), Step::Show(screen.read()));
     target.at(ms(100), Step::Frame(1));
