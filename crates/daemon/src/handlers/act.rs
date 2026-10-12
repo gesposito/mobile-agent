@@ -671,19 +671,89 @@ fn reading(target: &mut Attached, element: &Element, before: &str) -> Result<Rea
     })
 }
 
+/// Whether `c` separates the characters a name spells: a space, a comma, or
+/// a dash or an underscore, which code fields show in their empty boxes
+/// (design D43).
+fn separator(c: char) -> bool {
+    c.is_whitespace() || matches!(c, ',' | '-' | '_' | '\u{2010}'..='\u{2015}' | '\u{2212}')
+}
+
+/// `text` without its separators.
+fn spelled(text: &str) -> String {
+    text.chars().filter(|&c| !separator(c)).collect()
+}
+
+/// The words of `name`, the runs of characters between separators, as byte
+/// ranges.
+fn words(name: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for (at, c) in name.char_indices() {
+        match (separator(c), start) {
+            (true, Some(from)) => {
+                out.push((from, at));
+                start = None;
+            }
+            (false, None) => start = Some(at),
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        out.push((from, name.len()));
+    }
+    out
+}
+
+/// The part of `name` that an entry changed from `before`, the name the
+/// field had before it (design D43): what lies between the words the two
+/// names share at their start and those they share at their end, from the
+/// first word that differs to the last. Empty when the entry only took
+/// words away.
+fn changed_part<'a>(name: &'a str, before: &str) -> &'a str {
+    let (after, was) = (words(name), words(before));
+    let same = |a: &(usize, usize), b: &(usize, usize)| name[a.0..a.1] == before[b.0..b.1];
+    let lead = after
+        .iter()
+        .zip(&was)
+        .take_while(|(a, b)| same(a, b))
+        .count();
+    let room = after.len().min(was.len()) - lead;
+    let tail = after
+        .iter()
+        .rev()
+        .zip(was.iter().rev())
+        .take(room)
+        .take_while(|(a, b)| same(a, b))
+        .count();
+    match after[lead..after.len() - tail] {
+        [(from, to)] => &name[from..to],
+        [(from, _), .., (_, to)] => &name[from..to],
+        [] => "",
+    }
+}
+
 /// How a field whose name is `name`, `before` before the entry, shows the
-/// `text` `fill` entered (design D39): what follows the name it had when
-/// it keeps that name in front, as a label, or else the whole name,
-/// compared as a value is ([`compare`]), and, for a text without spaces,
-/// also without the spaces a name may spell its characters with.
+/// `text` `fill` entered (design D43): as the text when the part of the name
+/// the entry changed spells it, both without their separators, as a code
+/// field names its boxes, a dash for each empty one, before its label.
+/// Never the whole name, and never by length: a part of bullets, one for
+/// each character, tells nothing but how many there are.
 fn compare_name(name: &str, before: &str, text: &str) -> Option<Shown> {
-    let shown = name
-        .strip_prefix(before)
-        .map_or(name, |rest| rest.trim_start_matches([',', ':', ' ']));
-    compare(Some(shown), "", text).or_else(|| {
-        let squeezed: String = shown.chars().filter(|c| !c.is_whitespace()).collect();
-        (!text.contains(char::is_whitespace) && squeezed == text).then_some(Shown::Text)
-    })
+    (spelled(changed_part(name, before)) == spelled(text)).then_some(Shown::Text)
+}
+
+/// What a field whose name is `name`, `before` before the entry, holds, as a
+/// mismatch names it: the part of the name the entry changed, or only its
+/// bullets when it spells nothing else, so the message names them by their
+/// number, as it names a masked value.
+fn held_in_name(name: &str, before: &str) -> String {
+    let part = changed_part(name, before);
+    let letters = spelled(part);
+    if !letters.is_empty() && letters.chars().all(|c| MASKS.contains(&c)) {
+        letters
+    } else {
+        part.to_owned()
+    }
 }
 
 /// What the elements of a full listing below the element `id` show, in
@@ -801,8 +871,11 @@ fn read_back(
                 return Ok(ReadBack::Unreadable { after });
             }
             (None, Reading::Own(value)) if now >= deadline => return Ok(ReadBack::Other(value)),
-            (None, Reading::Below(below) | Reading::Name(below)) if now >= deadline => {
+            (None, Reading::Below(below)) if now >= deadline => {
                 return Ok(ReadBack::Other(Some(below)));
+            }
+            (None, Reading::Name(name)) if now >= deadline => {
+                return Ok(ReadBack::Other(Some(held_in_name(&name, before))));
             }
             _ => {}
         }
