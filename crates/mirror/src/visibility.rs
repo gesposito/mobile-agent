@@ -432,6 +432,10 @@ pub(crate) fn listed<'a>(replica: &'a Replica, view: &View) -> Reaches<'a> {
         let facts = &view.windows[w];
         let area = Rect::from_pixels(window.bounds, replica.scale);
         let keyboards = keyboards_above(replica, w);
+        // What the scroll containers around the children of the parent met
+        // last show, `None` under no container: a list's rows and a grid's
+        // cells share a parent.
+        let mut last: Option<(Option<usize>, Option<Rect>)> = None;
         for (i, node) in window.nodes.iter().enumerate() {
             let f = &facts[i];
             if !f.visible || !f.bears_ref || f.absorbed || f.hidden != Hidden::No {
@@ -442,11 +446,19 @@ pub(crate) fn listed<'a>(replica: &'a Replica, view: &View) -> Reaches<'a> {
                 shares.push(None);
                 continue;
             }
-            let mut containers = scrolling(window, facts, node.parent).peekable();
+            let clip = match last {
+                Some((parent, clip)) if parent == node.parent => clip,
+                _ => {
+                    let mut containers = scrolling(window, facts, node.parent).peekable();
+                    let clip = containers.peek().is_some().then(|| {
+                        containers.fold(area, |shown, c| shown.intersect(&sight.shows(w, c)))
+                    });
+                    last = Some((node.parent, clip));
+                    clip
+                }
+            };
             let whole = view.over_part(w, i).next().is_none()
-                && if containers.peek().is_some() {
-                    let shown =
-                        containers.fold(area, |shown, c| shown.intersect(&sight.shows(w, c)));
+                && if let Some(shown) = clip {
                     holds_rect(&shown, &f.rect)
                 } else {
                     holds_rect(&area, &f.rect)
