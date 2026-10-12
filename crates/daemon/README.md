@@ -152,7 +152,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
-| `fill` | `target`, `text`, `timeout` | `filled`, `ref`, `method` (how the text the field holds went in: `keys` or `direct`, which is a paste on iOS and a set on Android), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; `false` when it showed nothing to read back; null when it was not read back), `readFrom` (where the read-back took the text from: `value`, or `descendants` for a field without a value of its own; null unless verified), `reason` (`no_value_to_read` when `verified` is false, else null), `readBackMs` (from the end of the entry to the read-back taking the field's text, or to its giving up on a field with nothing to read; null when not read back), `retried` (whether the text went in again in one piece) |
+| `fill` | `target`, `text`, `timeout` | `filled`, `ref` (the field's, also when an identifier named the node around it), `method` (how the text the field holds went in: `keys` or `direct`, which is a paste on iOS and a set on Android), `verified` (`text` when the field showed the text, `length` when it showed as many mask characters, a secure field's; `false` when it showed nothing to read back; null when it was not read back), `readFrom` (where the read-back took the text from: `value`; `descendants` for a field without a value of its own; `name` for one with nothing below it whose accessible name the entry changed; null unless verified), `reason` (`no_value_to_read` when `verified` is false, else null), `readBackMs` (from the end of the entry to the read-back taking the field's text, or to its giving up on a field with nothing to read; null when not read back), `retried` (whether the text went in again in one piece) |
 | `type` | `text`; `target`, `timeout` | `typed`, `ref`, `method` |
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
@@ -194,7 +194,12 @@ the element it scrolls, or of the screen (`Mirror::uncovered`): its bounds
 less the system and input-method windows above its window, or for the
 screen above the window in front, each cutting them as a bar cuts an
 element's visible bounds, where it spans them from one side to the other
-and reaches one of their edges. A stroke that comes down on the keyboard
+and reaches one of their edges, and while the keyboard cuts them, through
+what shows of the scroll container that shows the most of what is left
+(`Mirror::scroll_container_in`, design D41), so below a header pinned over
+the list and above the keyboard: in the acceptance run of 2026-10-12
+`scroll up 300` with the keyboard up came down at 119.5 points on a fixed
+header and moved nothing. A stroke that comes down on the keyboard
 goes to the keyboard, which takes it for typing (task 10.32: on a Nexus 5X
 with Gboard up, `scroll --until` stroked across the keyboard 50 times and
 glide typing entered "by" into the focused field 49 times; with Gboard
@@ -205,8 +210,10 @@ before every stroke, since a stroke can bring the keyboard up or send it
 away. A keyboard window that spans the area neither across nor down, as
 Gboard's stylus toolbar or its floating keyboard, cuts nothing, as it cuts
 no visible bounds. When the keyboard leaves too little of the area for a
-stroke longer than a tap, where the area alone takes one, `scroll` fails
-with `covered_by_keyboard` before it touches the screen, naming what the
+stroke longer than a tap, where the area alone takes one, or less than 120
+points along the scroll's axis (`STROKE_ROOM`), where the area alone has
+that much, which holds no stroke that moves the list's content, `scroll`
+fails with `covered_by_keyboard` before it touches the screen, naming what the
 keyboard covers and how to close it: `press Back` on Android, and on iOS
 the field's return key, as in most apps.
 
@@ -299,9 +306,19 @@ and untraited nodes with nothing listed below them, joined in the order of
 the full listing, as a React Native code input built of six boxes keeps
 its digits in the boxes' texts (in the smoke test of 2026-10-09 `fill`
 typed such a code and failed with `text_mismatch`, reading the field
-alone); the reply's `readFrom` says `descendants`. A field that shows
-neither, as iOS reads a React Native field inside a view marked accessible
-(a labelled node with nothing below it), cannot be read back: once the
+alone); the reply's `readFrom` says `descendants`. A field with nothing
+below it whose accessible name the entry changed is read back through the
+name (design D39), as a React Native code input on iOS spells the digits
+it holds in its name (in the acceptance run of 2026-10-12 all 7 fills of a
+code replied `verified: false` while the name spelled the digits, and a
+wrong code went unreported): what follows the name the field had before
+the entry when the name keeps it in front, as a label, else the whole
+name, compared as a value is and, for a text without spaces, also without
+the spaces a name may spell its characters with; the reply's `readFrom`
+says `name`. A name that did not change is a label, never compared. A
+field that shows none of these, as iOS reads a React Native field inside a
+view marked accessible (a labelled node with nothing below it), cannot be
+read back: once the
 screen has held still from a settle's quiet window after the entry, the
 fill succeeds with `verified: false`, `reason: no_value_to_read` and a
 warning, without entering the text again, which could enter it twice.
@@ -320,6 +337,21 @@ field with the focus, or a keyboard already up, pays nothing, and the tap
 obeys the click's rule for an element out of view. The driver's own tap,
 which follows, finds the field focused. Android sets text without typing
 and does not wait.
+
+An identifier that names a node that takes no text but holds exactly one
+field (`Mirror::field_within`, design D39) sends `fill` and `type` into
+that field, with a warning naming it and its ref: in the acceptance run of
+2026-10-12 `fill` and `type` by the identifier of a React Native code
+input's view failed `invalid_argument` on the step's second visit (4 of
+4), while a click on the identifier and a `type` worked. A field with an
+area takes a tap of its own, as any field does; one without, which a tap
+cannot reach, takes the tap on the node around it unless it has the focus,
+and the text as the field in focus. An identifier on a node that holds no
+field, or several, still fails `invalid_argument`. A field whose label
+changes once it holds text keeps its ref across the change, and its view
+its identity when it gains a counter at the focus (`crates/mirror/README.md`,
+Snapshots), so a `fill` by that ref reads the field back, where in the
+acceptance run it failed `stale_ref` before anything was typed.
 
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
@@ -379,29 +411,43 @@ the tree about 458 ms after its dispatch, just past a warm watch's 200 ms.
 capture and to the delta's read, and are omitted when the signal never
 came; `watchedMs` says how long the watch lasted. A watch that fails after
 the tap went in becomes a warning. So does a tap on an element that was not
-mostly in view as `scroll --until` has it (task 10.15): the tap goes to the
-centre of the element's bounds, which may not lie on what shows of it (on
-iOS, whose frames are whole, the centre of a row the tab bar covers lies
-on the tab bar), and the warning says to bring the element in first. An
-element none of which is in view is not tapped at those bounds (design
-D32): in the React Native smoke test the keyboard moved a submit button up
+mostly in view as `scroll --until` has it (task 10.15), naming the point
+the tap went to and saying to bring the element in first. The tap goes to
+the centre of the part of the element a tap reaches (`Visibility::reachable`,
+design D37): its bounds within what shows of them, less every view drawn
+over part of it, the largest rectangle left that is at least 8 points on
+each side, or as long as the element where it is shorter. The centre of
+its bounds may lie on what covers it: on iOS, whose frames are whole, the
+centre of a row the tab bar covers lies on the tab bar, and in the
+acceptance run of 2026-10-12 a tap at the centre of a card 70% under a
+sticky header pressed the header. A ref, an identifier and a text selector
+take this one path: the mirror aims a ref's tap itself, and a selector's
+element without a ref is aimed at the same point here, as is the tap with
+which `fill` focuses its field. An element nothing of which a tap reaches
+in view is not tapped at those bounds (design D32): in the React Native smoke test the keyboard moved a submit button up
 without an event, the replica kept the button's old bounds, under the
 keyboard, before a frame-driven re-read fell due, and the tap went to the
 number pad there. The click reads the windows again once (the mirror
 reads a window on demand only after text, so every window, as each read of
 a Simulator's reader does anyway) and taps the element where that read
-has it, or, when none of it is in view still, fails with
+has it, or, when nothing of it a tap reaches is in view still, fails with
 `element_offscreen` before any tap, naming the element as given with its
 role and name, what keeps it out of view (the keyboard, its list, its
 window) and how to bring it in (close the keyboard, `scroll --until`);
 `data.ref` and `data.visible`, 0. `click` makes no stroke of its own: a
 row the keyboard covers inside a list is refused the same way, and `scroll
 --until` brings it in. A covered element is no matter of bounds out of
-date: an element under a modal, or under a view drawn over it as the
+date: an element under a modal, under a view drawn over all of it as the
 mirror tells from the tree's order on iOS (design D31), such as a button
-wholly under a fixed footer and so also 0% in view, fails with
-`element_covered` as the mirror names its cover (`Mirror::covered_by`),
-before any read again and any tap.
+wholly under a fixed footer and so also 0% in view, or with less than 8
+points a side left from under the views, bars and disabled controls drawn
+over part of it (design D38), fails with `element_covered` as the mirror
+names what a tap at its centre would land on (`Mirror::covered_by`),
+before any read again and any tap. The keyboard covers only once that read
+still has it over the element, since its coming up moves a layout without
+an event. `scroll --until` judges arrival by the same part: an element
+mostly under a view drawn over it is not mostly in view, where in the
+acceptance run it called a control under a disabled button visible 1.0.
 
 A settle wait (`wait --settle`) ends one quiet window after the latest of
 the last tree change (event, noted window change or delta), the last frame
@@ -844,9 +890,23 @@ settle windows take real time, and a device model:
   `--env FIXTURE_INITIAL_TAB=<tab>` on iOS, `--env initial_tab=<tab>` on
   Android;
 - a settings app with a Wi-Fi switch;
-- the placeholder app `dev.mobileagent.placeholder`, one screen with the
-  shapes a React Native app showed in the smoke test of 2026-10-09, under
-  placeholder names: a heading; `placeholder-code`, a code field built of
+- the placeholder app `dev.mobileagent.placeholder`, whose screen
+  `--env PLACEHOLDER_SCREEN=<name>` picks at launch, under placeholder
+  names: `consent`, a heading half under the secondary one of two footer
+  buttons listed after the content and a 12-point text under the primary
+  one; `creation`, a list under a header listed before it, which a stroke
+  scrolls, and a disabled button drawn after it over most of a control;
+  `feed`, a card partly above its list's top, where the header listed
+  before the list is drawn; `list`, a header listed before a list down to
+  122 points and a field in the list that brings the keyboard up, and
+  `list-low`, the header down to 430 points, which leaves 109 points of
+  the list above the keyboard; `code`, a code field whose name spells the
+  digits it holds, and `code-again`, the field without an area inside an
+  identified node, as on the step's second visit; `sheet`, a field without
+  an identifier whose view gains a counter at the focus and whose name
+  changes with its text, in the structure of the acceptance run of
+  2026-10-12 (design D37 to D41); and by default the form with the shapes
+  a React Native app showed in the smoke test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
   `placeholder-secret`, a field the tree shows as a labelled node without
   traits, no value and nothing below it, as iOS reads a React Native field
@@ -978,7 +1038,7 @@ source and reports the agent's paths, as a real emulator does.
 | `element_not_found` | no element matched a selector within the timeout, or `scroll` with `until` stopped without the element mostly in view; `data.strokes`, `data.until`, and `data.visible` for an element on screen |
 | `input_rejected` | the target refused the input, such as text for a non-field |
 | `stroke_too_short` | a scroll's strokes would be no longer than the platform's tap threshold (8 points on Android, 10 on iOS); `data.stroke`, `data.tapSlop` |
-| `covered_by_keyboard` | the keyboard covers what a scroll strokes, but for too little for a stroke longer than the tap threshold, and a stroke that came down on it would type; the message names what it covers and how to close the keyboard; `data.strokes` |
+| `covered_by_keyboard` | the keyboard covers what a scroll strokes, but for too little for a stroke longer than the tap threshold or less than 120 points along the scroll's axis, and a stroke that came down on it would type; the message names what it covers and how to close the keyboard; `data.strokes` |
 | `text_mismatch` | `fill` left other text in the field than it entered, typed or pasted and then entered again in one piece, as its value or its descendants show it; the message names what the field holds (quoted, as a number of masked characters, or nothing) and the text entered (quoted, or by its length when the field shows nothing or mask characters); `data.ref`, `data.value` (null for nothing), `data.masked` |
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
@@ -991,8 +1051,8 @@ give, detaches its target too, after the reply (see Drivers).
 The mirror's codes pass through: `stale_ref`, `unknown_ref`,
 `element_covered`, `element_offscreen`, `wait_timeout`, `no_frame`,
 `disconnected`, and drivers' own codes. `click` also fails with
-`element_offscreen` itself, for an element none of which is in view after
-its window was read again (see Tap spans and settle signals). The Simulator driver's keep its
+`element_offscreen` itself, for an element nothing of which a tap reaches
+is in view after its window was read again (see Tap spans and settle signals). The Simulator driver's keep its
 names (`unsupported_xcode`, `target_unavailable`, `no_foreground`,
 `no_input_transport`, `framework_error` and the rest in
 `crates/simulator/src/error.rs`). The physical iPhone driver's keep theirs
@@ -1065,7 +1125,8 @@ Worked around here without changing `crates/mirror`:
   stateful device model. Its `inputs()` copies the whole history, so the
   adapter hit-tests taps itself.
 - The mirror reads one window on demand only after text it entered, so a
-  click on an element none of which is in view reads its window again with
+  click on an element nothing of which a tap reaches is in view reads its
+  window again with
   `note_window_change` and `pump`, which reads every window and counts as a
   tree change before the tap (the click's spans count only what follows
   the tap); a Simulator's reader reads every window at each read anyway.
@@ -1113,6 +1174,9 @@ Worked around here without changing `crates/mirror`:
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
 | Single coordinate contract (design D32) | Submit button moved by the keyboard | `handlers::act::tests::a_click_on_a_button_the_keyboard_moved_taps_it_where_it_is_now`, `handlers::act::tests::a_click_on_a_button_the_keyboard_still_covers_fails_naming_it_and_taps_nothing`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning`, `handlers::act::tests::a_row_under_the_keyboard_is_refused_by_click_and_brought_in_by_scroll_until`, `handlers::act::tests::a_click_on_a_button_a_footer_is_drawn_over_fails_covered_without_a_read_or_a_tap` |
 | Text entry verification (design D33) | Composite code field; Value that cannot be read back; Mismatch | `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified`, `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` |
+| Single coordinate contract (design D37, D38) | Card partly under a sticky header; Heading half under a footer button (the tap on the part a tap reaches with its warning, by ref, identifier and text selector; `scroll --until` judging arrival by that part) | `handlers::act::tests::a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning`, `handlers::act::tests::clicks_on_what_footer_buttons_cover_in_part_tap_what_shows_or_are_refused_naming_the_button`, `handlers::act::tests::a_click_on_a_control_mostly_under_a_disabled_button_taps_the_part_below_it`, `handlers::act::tests::scroll_until_does_not_call_a_control_mostly_under_a_disabled_button_visible`, `handlers::act::tests::a_click_on_a_button_partly_in_view_taps_the_part_in_view_with_a_warning`; the mirror's rows of these scenarios |
+| (design D41, strokes inside the reachable container) | (with the keyboard up a scroll strokes below a pinned header and above the keyboard; under 120 points it fails `covered_by_keyboard`) | `handlers::act::tests::a_scroll_with_the_keyboard_up_strokes_inside_the_list_below_its_header`, `handlers::act::tests::a_scroll_of_a_list_the_keyboard_leaves_less_than_120_points_of_fails_naming_it` |
+| Text entry verification (design D39) | Code field that names its digits; Identifier on the field's wrapper; Ref across a label change | `handlers::act::tests::a_fill_of_a_code_into_a_field_whose_name_spells_it_is_verified_through_the_name`, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_fields_wrapper_go_into_the_field`, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` |
 | Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
 | Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
