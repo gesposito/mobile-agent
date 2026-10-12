@@ -26,6 +26,7 @@ src/
   gesture.rs       gestures as timed touch steps in framebuffer ratios
   gate.rs          the activation gate that holds input until dtuhidd answers
   keymap.rs        characters and key names to USB HID usages
+  cadence.rs       the pause between typed keys, React Native's or the native one
   select.rs        choosing the input transport from the host's versions
   compat.rs        the Xcode gate and the doctor compatibility table
   tree.rs          ForegroundTree: owner, alert, covered content, degradations
@@ -71,6 +72,7 @@ tests/
   text.rs          task 6.7
   containment.rs   tasks 6.8 and 6.6
   metadata.rs      task 6.10
+  cadence.rs       task 3.5 of rn-app-fixes
 benches/
   frames.rs        the frame pipeline's microbenchmarks (design D14)
 ```
@@ -496,13 +498,15 @@ they create.
 
 `type_text` types through key events or pastes, and reports which it did.
 `Auto` types a string of at most 32 characters that a US keyboard can type,
-one key press every 15 ms with Shift where needed; anything longer, or with
-a character no key types, is pasted. A paste puts the text on the device's
-general pasteboard and sends Command-V. The text goes there in a `SET` to the
-guest's `dtpasteboardd`, the daemon behind `devicectl device pasteboard
-copy`, reached as dtuhidd is: `-[SimDevice lookup:error:]` for
-`com.apple.coredevice.feature.pasteboard`, then the `_4sim` libxpc functions,
-over a connection of its own per paste. The message is `{command: "SET",
+with Shift where needed; anything longer, or with a character no key types,
+is pasted. Keys go at a cadence, the pause from one key's release to the
+next key's press: `type_text_at` takes one, and `type_text` types at the
+native cadence, 15 ms (React Native's fields, below). A paste puts the text
+on the device's general pasteboard and sends Command-V. The text goes there
+in a `SET` to the guest's `dtpasteboardd`, the daemon behind `devicectl
+device pasteboard copy`, reached as dtuhidd is: `-[SimDevice lookup:error:]`
+for `com.apple.coredevice.feature.pasteboard`, then the `_4sim` libxpc
+functions, over a connection of its own per paste. The message is `{command: "SET",
 pasteboardName: "general", items: [{types, data}]}`, the text's bytes under
 `public.utf8-plain-text`, `public.plain-text` and `public.text` as `devicectl`
 writes them, and `dtpasteboardd` answers `SET_REPLY` with the pasteboard as
@@ -530,6 +534,47 @@ keeps the modification time of the directory that holds their bundles,
 install, upgrade and uninstall changes, whatever tool made it. An uninstall
 drops its application's grant, so a change grants every user application
 again.
+
+A React Native field takes its keys through the app's JavaScript thread,
+and a field whose value the app owns, on a screen that renders for longer
+than the pause between keys, loses some: the acceptance run of
+`rn-app-fixes` lost an address's "@" in 2 of 15 typed entries and a code's
+digit in 1 of 5 (task 2.2). `Cadence::for_read` gives the fields of a read
+React Native's cadence, 60 ms, when one of the read's classes starts with
+`RCT`, and the native one otherwise; the daemon types at the cadence of its
+latest read. The reader names an element the runtime leaves untyped by its
+platform class, and React Native draws its screens under its own views: the
+Expo fixture's username field lies under `RCTSurfaceHostingProxyRootView`,
+`RCTSurfaceView`, `RCTRootComponentView` and its own
+`RCTTextInputComponentView`, while the SwiftUI fixture's read names no
+`RCT` class. The read's string table holds each class once, so the check
+visits no node. Nothing in the mirror tells a React Native tree, since its
+rules for React Native's shapes (task 7.11) apply to every tree, and a check
+of the field's own ancestors would walk to the field for a precision that
+buys only time: a native field on a React Native screen, an alert's, is
+typed at 60 ms and loses nothing. The translator names no platform class,
+so its reads keep the native cadence.
+
+Task 3.5 of `rn-app-fixes` chose the cadence on the spike Simulator: 20
+entries of the benchmark's 36 characters at each of three cadences, typed
+into the focused, empty field, the cadences in turn within each trial, and
+read back from the tree until the field held the whole entry for 200 ms
+(`cadence::the_36_character_entry_at_three_cadences`, run by name), each
+series started on a quiet host:
+
+| Field | 15 ms | 30 ms | 60 ms |
+|---|---|---|---|
+| The Expo fixture's `login-username` | 19 of 20 whole | 20 of 20 | 20 of 20 |
+| The same field, its value the app's and its label changing once it holds text, on a screen that takes 30 ms to render | 13 of 20 | 10 of 20 | 20 of 20 |
+| Typing the 36 characters into the first, p50 / p95 | 637 / 651 ms | 1,180 / 1,218 ms | 2,236 / 2,264 ms |
+
+The second field, the shape of the acceptance's fields, which no fixture
+has, was a throwaway variant of the Expo fixture, not committed. Each of its
+losses was one character, more at 30 ms than at 15, as keys then come about
+once per render; the fixture's own loss at 15 ms kept only the first key.
+The slowest cadence that lost nothing, 60 ms, is React Native's. A screen
+that takes longer than that to render can still lose keys, which `fill`'s
+read-back finds and its paste repairs; `type` reads nothing back.
 
 The tests read a field back by putting a sentinel on the pasteboard and
 sending Command-A and Command-C: 500 characters pasted in 48 ms, 204 ms through
@@ -591,7 +636,10 @@ MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
 ```
 
 The tree tests use the SwiftUI fixture on the same Simulator and put the
-Expo fixture back on Login when they end; the metadata tests use both
+Expo fixture back on Login when they end; so do the cadence tests, which
+type into both fixtures' username fields and read them back from the tree,
+and whose measurement, `cadence::the_36_character_entry_at_three_cadences`,
+is ignored, to be run by name on a quiet host; the metadata tests use both
 fixtures, and Contacts, which every Simulator has, for a sheet: they open
 its New Contact sheet, close it without saving and terminate the app. The permission alert tests reset the fixture's location
 permission before and after, with `simctl privacy`. SpringBoard keeps a
@@ -631,6 +679,7 @@ about a minute.
 | Input actions | A swipe that comes to rest before the finger lifts (task 10.16) | `gesture::tests::a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts`; on the Simulator through the daemon, `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted`; the paste's way to the pasteboard and its grants (task 10.31): `macos::pasteboard::tests::a_paste_goes_to_dtpasteboardd_and_leaves_devicectl_alone`, `macos::pasteboard::tests::a_guest_that_does_not_take_the_set_gets_devicectl`, `macos::pasteboard::tests::when_devicectl_fails_too_the_error_names_both`, `macos::pasteboard::tests::the_set_carries_the_text_under_each_plain_text_type`, `macos::pasteboard::tests::a_set_reply_succeeds_and_any_other_answer_says_why_not`, `macos::pasteboard::tests::the_second_paste_lists_nothing`, `macos::pasteboard::tests::a_changed_application_directory_lists_and_grants_again` |
+| Text entry | React Native field typed whole (task 3.5 of `rn-app-fixes`) | `cadence::a_react_native_field_takes_the_36_character_entry_whole_twenty_times`, `cadence::a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence`, `cadence::tests::a_read_of_react_natives_views_types_at_the_react_native_cadence`, `cadence::tests::a_native_read_types_at_the_native_cadence`, and in the daemon `devices::simulator::tests::text_is_typed_at_the_cadence_the_latest_read_calls_for`; the measurement behind the cadence, `cadence::the_36_character_entry_at_three_cadences` (ignored) |
 | Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |
 | Failure containment | Framework call throws | `containment::a_tree_read_that_throws_takes_only_its_target_out_of_service`, `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call`, `macos::driver::tests::reader_failures_become_driver_errors`, and in `reader/`: `guest::objc::tests::an_exception_becomes_a_failure_naming_the_call` |
 | Xcode compatibility statement | Unsupported Xcode | `compat::tests::unsupported_xcode`, `macos::driver::tests::commands_refuse_an_xcode_outside_the_range`, `compat::tests::a_host_without_xcode_is_refused`, `compat::tests::xcode_26_and_27_are_supported`, `compat::tests::the_table_renders_every_row_and_call_site`, `macos::driver::tests::this_host_is_within_the_range_and_the_table_says_why` |

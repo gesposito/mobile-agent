@@ -21,8 +21,8 @@ pub struct Cadence {
 
 impl Cadence {
     /// Native fields, UIKit's and SwiftUI's. Spike S3 typed exactly with
-    /// 60 ms; this shorter gap kept every character and its order in the
-    /// fixtures' fields.
+    /// 60 ms; this shorter gap keeps every character and its order in the
+    /// SwiftUI fixture's fields.
     pub const NATIVE: Cadence = Cadence {
         gap: Duration::from_millis(15),
     };
