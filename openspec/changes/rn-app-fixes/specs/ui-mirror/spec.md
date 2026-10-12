@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Snapshot content
-A snapshot SHALL list elements with role, accessible name, test identifier when present, value, bounds, enabled, focused and selected state, and a ref. An interactive snapshot SHALL include only actionable elements and SHALL summarize actionable content that is scrolled out of view. On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something, and an action on a covered element SHALL fail with `element_covered` naming the cover; a tab control SHALL get a ref whether it is selected or not; a checkbox SHALL be listed with its role and checked state as a switch is; a text node and a scroll bar SHALL appear once in the full listing and a heading SHALL be nested once.
+A snapshot SHALL list elements with role, accessible name, test identifier when present, value, bounds, enabled, focused and selected state, and a ref. An interactive snapshot SHALL include only actionable elements and SHALL summarize actionable content that is scrolled out of view. On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not; a bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order; the keyboard window SHALL cover what lies under it, an element wholly under it left out of the interactive listing with the keyboard named, an element partly under it listed with its visible fraction; an action on a covered element SHALL fail with `element_covered` naming the cover; a tab control SHALL get a ref whether it is selected or not, the tabs told by their row when only the selected one carries the trait; a checkbox SHALL be listed with its role and checked state as a switch is; a text node and a scroll bar SHALL appear once in the full listing and a heading SHALL be nested once; a node SHALL keep its ref across a change of its name when its role, identifier, parent and place among its siblings are unchanged.
 
 #### Scenario: Interactive snapshot of a scrolling list
 - **WHEN** an interactive snapshot is requested on a list whose last three buttons are below the fold
@@ -21,8 +21,32 @@ A snapshot SHALL list elements with role, accessible name, test identifier when 
 - **WHEN** a tab bar holds three tabs and the middle one is selected
 - **THEN** all three are listed with refs and the selected one carries its selected state
 
+#### Scenario: Control under a disabled button
+- **WHEN** a control lies within the bounds of a disabled button drawn after it
+- **THEN** the control is cut from the interactive listing, and an action on it fails with `element_covered` naming the button
+
+#### Scenario: Control behind a header listed first
+- **WHEN** a navigation bar or a pinned header is listed before the content it is drawn over and a control lies within its bounds
+- **THEN** the control is cut from the interactive listing and an action on it fails with `element_covered` naming the bar
+
+#### Scenario: Elements under the keyboard
+- **WHEN** the keyboard window covers a submit button wholly and a field partly
+- **THEN** the button is left out of the interactive listing with the keyboard named in the hint, and the field is listed with its visible fraction
+
+#### Scenario: Ref across a label change
+- **WHEN** a field's name changes once it holds text and nothing else about it changes
+- **THEN** its ref is the same before and after, and a `fill` by that ref reads it back
+
 ### Requirement: Single coordinate contract
-All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions. An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change.
+All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions. An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change. An action on an element SHALL tap the centre of the largest part of it that a tap can reach, its bounds within the viewport minus every cover, and SHALL fail with `element_covered` naming what a tap at the element's centre would hit when no reachable part is at least 8 points on each side; actions by ref, by identifier and by text selector SHALL take the same path, and `scroll --until` SHALL judge arrival by the same reachable part.
+
+#### Scenario: Card partly under a sticky header
+- **WHEN** a card lies 70% under a sticky header and 30% of it shows below the header
+- **THEN** a click on the card taps the centre of the part that shows, with a warning naming the fraction in view, and never the header
+
+#### Scenario: Heading half under a footer button
+- **WHEN** a heading's lower half lies under a fixed footer's button and its upper half shows
+- **THEN** a click taps the upper half when it is at least 8 points tall, and otherwise fails with `element_covered` naming the button
 
 #### Scenario: Tapping reported bounds hits the element
 - **WHEN** a client taps the center of an element's reported bounds
