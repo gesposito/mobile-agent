@@ -842,7 +842,7 @@ fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
 /// stayed listed, with the two headings below it, counted among the six
 /// above the list. A plain view listed before a list, across its top and
 /// as wide, is a header the app pins: it covers what lies in its frame.
-/// The row and the headings behind it are left out and no longer counted;
+/// The row and the headings behind it are left out and not counted;
 /// the header's own controls stay.
 #[test]
 fn a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it() {
