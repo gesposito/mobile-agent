@@ -3101,6 +3101,53 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
+    /// Design D46, N5 of the third acceptance run (task 4.4; task 3.7): on
+    /// the creation tab `scroll down --until` the paste control failed with
+    /// `element_not_found`, the content having stopped moving after three
+    /// strokes, while a plain `scroll down 300` right after moved the content
+    /// 300 points. A plain scroll of 300 points lifts the finger up through
+    /// the list and moves its content 300 points; `scroll down --until` the
+    /// control strokes the same way through the same place, and the control
+    /// ends above the disabled button.
+    #[test]
+    fn scroll_until_on_the_creation_tab_strokes_the_way_a_plain_scroll_moves_the_list() {
+        let paste_top = |target: &mut Attached| {
+            target
+                .mirror
+                .snapshot(&SnapshotOptions::full())
+                .unwrap()
+                .by_identifier("placeholder-id-8")
+                .map(|paste| paste.bounds.top)
+        };
+        let (mut plain, sent) = on_board("creation");
+        scroll_with(&mut plain, json!({"direction": "down", "amount": 300})).unwrap();
+        let strokes = swipes(&sent);
+        assert_eq!(strokes.len(), 1, "{strokes:?}");
+        let (from, to) = strokes[0];
+        assert!(from.y > to.y, "the finger goes up: {strokes:?}");
+        assert_eq!(paste_top(&mut plain), Some(426.0), "the content moves 300");
+
+        let (mut target, sent) = on_board("creation");
+        let reply = scroll_with(
+            &mut target,
+            json!({"direction": "down", "until": "#placeholder-id-8"}),
+        );
+        let strokes = swipes(&sent);
+        let data = reply
+            .unwrap_or_else(|failure| panic!("{failure:?}; strokes {strokes:?}"))
+            .data;
+        assert_eq!(data["visible"], 1.0, "{data}");
+        assert!(!strokes.is_empty(), "{data}");
+        for (start, end) in &strokes {
+            assert!(
+                start.y > end.y && start.x == from.x,
+                "the plain scroll's way: {strokes:?}"
+            );
+        }
+        let bottom = data["element"]["bounds"][3].as_f64().unwrap_or_default();
+        assert!(bottom <= 708.0, "above the disabled button: {data}");
+    }
+
     /// Designs D31 and D32: a footer listed after a button that lies wholly
     /// under it is drawn over the button, which is also 0% in view under the
     /// footer, a bar. A click on the button by the ref an earlier snapshot
