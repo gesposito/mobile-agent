@@ -2,9 +2,11 @@
 //! agent-browser prints for them.
 //!
 //! Application windows come first, then system bars, then the keyboard,
-//! which is one `- keyboard` line. Within a window, a node is listed when it
-//! is visible and not absorbed or covered, and, in an interactive listing,
-//! when it has a ref, as agent-browser's `-i`; in a full listing, unnamed
+//! which is one `- keyboard` line, or in an interactive listing a line that
+//! counts what lies wholly under it. Within a window, a node is listed when
+//! it is visible and not absorbed or covered, and, in an interactive
+//! listing, when it has a ref, as agent-browser's `-i`, and does not lie
+//! wholly under the keyboard (rn-app-fixes, design D38); in a full listing, unnamed
 //! generic containers, containers whose label names the field inside them,
 //! unnamed text and images and window roots are skipped and their children
 //! listed in their place. Scroll hints sit next to their
@@ -26,6 +28,9 @@ pub(crate) enum Line {
     Keyboard { w: usize },
     /// Hint `index` of the snapshot's hints.
     Hint { index: usize, depth: usize },
+    /// How many elements with refs an interactive listing leaves out under
+    /// the keyboard.
+    UnderKeyboard { count: usize },
 }
 
 /// Window indices in listing order.
@@ -77,12 +82,17 @@ pub(crate) fn listing(
         hints,
         options,
         lines: Vec::new(),
+        under_keyboard: 0,
     };
     for w in window_order(replica) {
         let window = &replica.windows[w];
         if window.kind == WindowType::INPUT_METHOD {
             if !options.interactive && !window.nodes.is_empty() {
                 walker.lines.push(Line::Keyboard { w });
+            }
+            if options.interactive && walker.under_keyboard > 0 {
+                let count = std::mem::take(&mut walker.under_keyboard);
+                walker.lines.push(Line::UnderKeyboard { count });
             }
             continue;
         }
@@ -99,6 +109,9 @@ struct Walker<'a> {
     hints: &'a [(usize, usize, ScrollHint)],
     options: &'a SnapshotOptions,
     lines: Vec<Line>,
+    /// The elements with refs an interactive listing has left out under the
+    /// keyboard so far.
+    under_keyboard: usize,
 }
 
 impl Walker<'_> {
@@ -108,8 +121,13 @@ impl Walker<'_> {
             return;
         }
         let node = &self.replica.windows[w].nodes[i];
+        let under = self.options.interactive && facts.keyboard.is_some_and(|share| share <= 0.0);
+        if under && facts.visible && facts.bears_ref && !facts.absorbed {
+            self.under_keyboard += 1;
+        }
         let shown = facts.visible
             && !facts.absorbed
+            && !under
             && if self.options.interactive {
                 facts.bears_ref
             } else {
@@ -154,7 +172,9 @@ fn attribute(value: &str) -> String {
 }
 
 /// An element as agent-browser prints it:
-/// `- role "name" [checked=…, selected, disabled, focused, id=…, ref=eN]: value`.
+/// `- role "name" [checked=…, selected, disabled, focused, visible=…, id=…, ref=eN]: value`,
+/// `visible=` giving the share in view of an element the keyboard lies over
+/// part of.
 pub(crate) fn element_line(element: &Element) -> String {
     let mut line = "  ".repeat(element.depth);
     line.push_str("- ");
@@ -175,6 +195,9 @@ pub(crate) fn element_line(element: &Element) -> String {
     }
     if element.focused {
         attrs.push("focused".to_owned());
+    }
+    if let Some(share) = element.beside_keyboard {
+        attrs.push(format!("visible={}%", (share * 100.0).round()));
     }
     if let Some(identifier) = &element.identifier {
         attrs.push(format!("id={}", attribute(identifier)));
@@ -204,6 +227,14 @@ pub(crate) fn element_line(element: &Element) -> String {
 /// A hint line at `depth`.
 pub(crate) fn hint_line(hint: &ScrollHint, depth: usize) -> String {
     format!("{}{}", "  ".repeat(depth), hint.text())
+}
+
+/// The line that counts the `count` elements with refs an interactive
+/// listing left out under the keyboard, as a scroll hint counts what lies
+/// beyond a container.
+pub(crate) fn under_keyboard_line(count: usize) -> String {
+    let items = if count == 1 { "item" } else { "items" };
+    format!("({count} more actionable {items} under the keyboard, close it to reveal)")
 }
 
 /// What an empty listing prints, as agent-browser does.

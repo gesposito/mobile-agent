@@ -550,6 +550,9 @@ impl Mirror {
                 Line::Hint { index, depth } => {
                     text.push(render::hint_line(&found[index].2, depth));
                 }
+                Line::UnderKeyboard { count } => {
+                    text.push(render::under_keyboard_line(count));
+                }
             }
         }
         let replica = &self.replica;
@@ -679,6 +682,18 @@ impl Mirror {
     pub fn scroll_viewport(&self, at: Point, vertical: bool) -> Option<Rect> {
         let view = View::build(&self.replica);
         visibility::scroller_at(&self.replica, &view, at, vertical)
+    }
+
+    /// What shows of the scroll container that shows the most of `area`,
+    /// in device points, as the replica has it now, without reading the
+    /// target: among the nodes on screen and not covered that scroll along
+    /// the vertical axis, or the horizontal one, in the top-most window that
+    /// has one, the one whose visible bounds (see
+    /// [`Mirror::scroll_viewport`]) share the most of `area` (rn-app-fixes,
+    /// design D41). `None` when none shares any of it.
+    pub fn scroll_container_in(&self, area: Rect, vertical: bool) -> Option<Rect> {
+        let view = View::build(&self.replica);
+        visibility::scroller_in(&self.replica, &view, area, vertical)
     }
 
     /// What of `area`, in device points, a stroke may go through, as the
@@ -1370,6 +1385,7 @@ fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) ->
         focused: node.flags.contains(NodeFlags::FOCUSED),
         selected: node.flags.contains(NodeFlags::SELECTED),
         checked: facts.checked,
+        beside_keyboard: facts.keyboard.filter(|&share| share > 0.0),
         actionable: facts.actionable,
         window: window.id,
         depth: node.depth,
@@ -1413,6 +1429,7 @@ fn keyboard(window: &Win, scale: f64) -> Element {
         focused: false,
         selected: false,
         checked: None,
+        beside_keyboard: None,
         actionable: false,
         window: window.id,
         depth: 0,

@@ -120,6 +120,9 @@ pub(crate) struct Facts {
     /// A container whose label names the one field inside it.
     pub lent: bool,
     pub hidden: Hidden,
+    /// For a node a keyboard window above its window lies over, the share
+    /// of its bounds beside the keyboard, 0 for one wholly under it.
+    pub keyboard: Option<f64>,
 }
 
 /// The facts of every node of every window, parallel to the replica, and
@@ -153,6 +156,7 @@ impl View {
             cover_by_later_siblings(replica, &mut windows, &mut covers);
             cover_by_bars_and_headers(replica, &mut windows, &mut covers);
         }
+        beside_keyboards(replica, &mut windows);
         View {
             windows,
             modal,
@@ -244,6 +248,44 @@ impl View {
         CoverName {
             by: cover_label(&replica.windows[w].nodes[b], &self.windows[w][b], "bar"),
             drawn_over: true,
+        }
+    }
+}
+
+/// Tells each node on screen and not covered that a keyboard window above
+/// its window lies over the share of its bounds beside the keyboard
+/// (rn-app-fixes, design D38): an interactive listing leaves out what lies
+/// wholly under the keyboard, counting it, and says how much of what lies
+/// partly under it is in view. The keyboard's bounds are what it draws, as
+/// the drivers bound its window (tasks 10.21, 10.25).
+fn beside_keyboards(replica: &Replica, facts: &mut [Vec<Facts>]) {
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind == WindowType::INPUT_METHOD {
+            continue;
+        }
+        let keyboards: Vec<Rect> = replica.windows[..w]
+            .iter()
+            .filter(|above| above.kind == WindowType::INPUT_METHOD)
+            .map(|above| Rect::from_pixels(above.bounds, replica.scale))
+            .collect();
+        if keyboards.is_empty() {
+            continue;
+        }
+        for f in &mut facts[w] {
+            let area = f.rect.width() * f.rect.height();
+            if !f.visible || f.hidden != Hidden::No || area <= 0.0 {
+                continue;
+            }
+            let under: f64 = keyboards
+                .iter()
+                .map(|keyboard| {
+                    let shared = f.rect.intersect(keyboard);
+                    shared.width() * shared.height()
+                })
+                .sum();
+            if under > 0.0 {
+                f.keyboard = Some((1.0 - under / area).clamp(0.0, 1.0));
+            }
         }
     }
 }
@@ -376,6 +418,7 @@ fn node_facts(node: &RNode, area: &Rect, scale: f64) -> Facts {
         absorbed: false,
         lent: false,
         hidden: Hidden::No,
+        keyboard: None,
     }
 }
 
@@ -1351,6 +1394,7 @@ mod tests {
                 absorbed: false,
                 lent: false,
                 hidden: Hidden::No,
+                keyboard: None,
             })
             .collect()
     }

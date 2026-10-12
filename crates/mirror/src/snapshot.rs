@@ -122,6 +122,9 @@ pub struct Element {
     pub selected: bool,
     /// For checkable elements.
     pub checked: Option<bool>,
+    /// For an element the keyboard lies over part of, the share of its
+    /// bounds beside the keyboard, which the listing gives as `visible=`.
+    pub beside_keyboard: Option<f64>,
     /// Whether the element can be acted on.
     pub actionable: bool,
     /// The window holding the element.

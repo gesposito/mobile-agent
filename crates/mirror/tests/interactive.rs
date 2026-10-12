@@ -424,7 +424,8 @@ fn acting_on_an_element_an_alert_covers_fails_with_its_code() {
 /// under it get no refs, and the page's scroll hint goes with them. Its
 /// siblings outside it stay: the header, a sibling only because React
 /// Native flattens the views between them, keeps the search field and
-/// Cancel search, and the tab bar lies in another branch.
+/// Cancel search, and the tab bar lies in another branch, wholly under the
+/// keyboard, which counts it (rn-app-fixes, design D38).
 #[test]
 fn a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it() {
     let (_, mut mirror) = mirror_on("bluesky-typeahead");
@@ -455,8 +456,6 @@ fn a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it() {
         "searchTextInputClearBtn",
         "searchAutoCompleteResult-placeholder-1",
         "searchAutoCompleteResult-placeholder-4",
-        "bottomBarHomeBtn",
-        "bottomBarProfileBtn",
     ] {
         assert!(
             snapshot.by_identifier(kept).is_some(),
@@ -466,8 +465,15 @@ fn a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it() {
     }
     assert_eq!(
         snapshot.refs().len(),
-        14,
-        "4 in the header, 5 in the typeahead, 5 in the tab bar:\n{}",
+        9,
+        "4 in the header, 5 in the typeahead:\n{}",
+        snapshot.text
+    );
+    assert!(
+        snapshot
+            .text
+            .ends_with("\n(5 more actionable items under the keyboard, close it to reveal)"),
+        "the tab bar under the keyboard:\n{}",
         snapshot.text
     );
 }
@@ -535,7 +541,10 @@ fn acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code() {
 /// the order they are drawn in tells, which the agent passes on as the
 /// `on_top` flag. The page's controls under the typeahead get no refs, and
 /// the page's scroll hint goes with them; the header beside it and the tab
-/// bar drawn over the screen's bottom stay.
+/// bar drawn over the screen's bottom stay. Gboard's floating toolbar lies
+/// wholly over the fourth account's avatar, which it counts, and over part
+/// of the rows beside it, which say how much of them shows (rn-app-fixes,
+/// design D38).
 #[test]
 fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
     let (_, mut mirror) = mirror_on("bluesky-typeahead-android");
@@ -554,12 +563,7 @@ fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
         );
     }
     assert!(snapshot.hints.is_empty(), "{:?}", snapshot.hints);
-    for kept in [
-        "Open drawer menu",
-        "Cancel search",
-        "Search for “nobel”",
-        "Placeholder Account 4's avatar",
-    ] {
+    for kept in ["Open drawer menu", "Cancel search", "Search for “nobel”"] {
         assert!(
             snapshot.by_name(kept).is_some(),
             "{kept}:\n{}",
@@ -582,8 +586,22 @@ fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
     }
     assert_eq!(
         snapshot.refs().len(),
-        18,
-        "4 in the header, 9 in the typeahead, 5 in the tab bar:\n{}",
+        17,
+        "4 in the header, 8 in the typeahead, 5 in the tab bar:\n{}",
+        snapshot.text
+    );
+    let profile = snapshot
+        .by_identifier("searchAutoCompleteResult-placeholder-4")
+        .unwrap();
+    assert_eq!(
+        profile.beside_keyboard.map(|share| (share * 100.0).round()),
+        Some(86.0)
+    );
+    assert!(
+        snapshot
+            .text
+            .ends_with("\n(1 more actionable item under the keyboard, close it to reveal)"),
+        "the avatar under the toolbar:\n{}",
         snapshot.text
     );
 }
@@ -843,7 +861,7 @@ fn a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it()
             "- heading \"placeholder-heading-4\" [ref=e5]",
             "- generic \"placeholder-generic-1\" [ref=e6]",
             "- textbox \"placeholder-textbox-1\" [focused, id=placeholder-id-2, ref=e7]: placeholder-value-1",
-            "- button \"placeholder-button-5\" [id=placeholder-id-3, ref=e8]",
+            "- button \"placeholder-button-5\" [visible=70%, id=placeholder-id-3, ref=e8]",
         ])
     );
 }

@@ -65,6 +65,10 @@ pub struct Visibility {
 /// tap aimed at it may land beside it.
 pub const REACH_FLOOR: f64 = 8.0;
 
+/// How an action on an element names the keyboard when a tap at the
+/// element's centre would land on it (rn-app-fixes, design D38).
+pub const KEYBOARD: &str = "keyboard";
+
 /// What of an area a stroke may go through: the area less the system and
 /// input-method windows above the window it lies in (task 10.32), since a
 /// stroke that comes down on one of them goes to that window, and a
@@ -180,7 +184,7 @@ pub(crate) fn of(replica: &Replica, view: &View, w: usize, i: usize) -> Visibili
 /// its centre would land on, one of those views or a bar. `None` for the
 /// cover when something of it is left to tap, or nothing of it lies in its
 /// visible bounds before the covers, out of view rather than covered, or
-/// nothing named lies at its centre.
+/// nothing named lies at its centre. The keyboard is named [`KEYBOARD`].
 ///
 /// The visible bounds are the window clipped by the node's scroll
 /// containers less the bars drawn over them, each view over part of the
@@ -242,6 +246,14 @@ pub(crate) fn reach(
             .map(|&(cover, _)| view.name(replica, cover, at))
             .or_else(|| {
                 bar_at(replica, view, w, i, &containers, at).map(|b| view.name_bar(replica, w, b))
+            })
+            .or_else(|| {
+                windows_above(replica, w)
+                    .any(|(kind, window)| kind == WindowType::INPUT_METHOD && window.contains(at))
+                    .then(|| CoverName {
+                        by: KEYBOARD.to_owned(),
+                        drawn_over: true,
+                    })
             })
     });
     let seen = Visibility {
@@ -463,13 +475,65 @@ pub(crate) fn scroller_at(
                     .is_none_or(|scroll| scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN)
                 && f.rect.contains(at)
         })?;
-        let mut containers = vec![c];
-        containers.extend(containers_around(window, view, w, c));
-        let shown = inside(replica, view, w, c, &containers).1;
-        let pixel = pixel(replica);
-        Some(view.over_part(w, c).fold(shown, |shown, (_, cover)| {
-            across(shown, &facts[c].rect, &cover, pixel)
-        }))
+        Some(container_shows(replica, view, w, c))
+    })
+}
+
+/// What scroll container `c` of window `w` shows: its bounds clipped by
+/// its window and the scroll containers around it, less the bars drawn
+/// over them, as an element inside it sees them (see
+/// [`Visibility::viewport`]), each view over part of it and across it
+/// keeping the side it fits in.
+fn container_shows(replica: &Replica, view: &View, w: usize, c: usize) -> Rect {
+    let window = &replica.windows[w];
+    let mut containers = vec![c];
+    containers.extend(containers_around(window, view, w, c));
+    let shown = inside(replica, view, w, c, &containers).1;
+    let bounds = view.windows[w][c].rect;
+    let pixel = pixel(replica);
+    view.over_part(w, c).fold(shown, |shown, (_, cover)| {
+        across(shown, &bounds, &cover, pixel)
+    })
+}
+
+/// What shows of the scroll container that shows the most of `area`, in
+/// the top-most window that has one: among the nodes on screen and not
+/// covered that scroll along the vertical axis, or the horizontal one, or
+/// along an axis their platform does not name, the one whose visible
+/// bounds ([`container_shows`]) share the most of `area`. A stroke of the
+/// screen with the keyboard up goes through it, rather than through what
+/// the keyboard leaves of the screen, where a header may lie (rn-app-fixes,
+/// design D41). `None` when no such node shares any of `area`.
+pub(crate) fn scroller_in(
+    replica: &Replica,
+    view: &View,
+    area: Rect,
+    vertical: bool,
+) -> Option<Rect> {
+    let axis = if vertical {
+        ScrollAxis::VERTICAL
+    } else {
+        ScrollAxis::HORIZONTAL
+    };
+    replica.windows.iter().enumerate().find_map(|(w, window)| {
+        let facts = &view.windows[w];
+        let mut best: Option<(f64, Rect)> = None;
+        for (c, node) in window.nodes.iter().enumerate() {
+            let f = &facts[c];
+            let along = node
+                .scroll
+                .is_none_or(|scroll| scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN);
+            if !f.visible || f.hidden != Hidden::No || !view::scrolls(node, f) || !along {
+                continue;
+            }
+            let shown = container_shows(replica, view, w, c);
+            let shared = shown.intersect(&area);
+            let size = shared.width() * shared.height();
+            if !shared.is_empty() && best.is_none_or(|(most, _)| size > most) {
+                best = Some((size, shown));
+            }
+        }
+        best.map(|(_, shown)| shown)
     })
 }
 
