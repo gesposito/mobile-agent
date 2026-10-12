@@ -3148,6 +3148,61 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
+    /// Design D46 (task 4.4; task 3.7's N5): with nothing drawn over the
+    /// creation tab's list below the disabled button, the paste control fits
+    /// below the button with the least movement, but the list stands at its
+    /// top and cannot carry its content down. `scroll down --until` the
+    /// control strokes the way a plain scroll does and brings the control
+    /// above the button, rather than stroking toward a top the list cannot
+    /// pass until the content stops moving.
+    #[test]
+    fn scroll_until_strokes_toward_a_side_the_list_can_carry_the_control_to() {
+        let (mut target, sent) = on_board("creation-open");
+        let reply = scroll_with(
+            &mut target,
+            json!({"direction": "down", "until": "#placeholder-id-8"}),
+        );
+        let strokes = swipes(&sent);
+        let data = reply
+            .unwrap_or_else(|failure| panic!("{failure:?}; strokes {strokes:?}"))
+            .data;
+        assert_eq!(data["visible"], 1.0, "{data}");
+        for (start, end) in &strokes {
+            assert!(start.y > end.y, "the finger goes up: {strokes:?}");
+        }
+        let bottom = data["element"]["bounds"][3].as_f64().unwrap_or_default();
+        assert!(bottom <= 708.0, "above the disabled button: {data}");
+    }
+
+    /// Design D46 (task 4.4; task 3.7's N5): the third acceptance run's
+    /// `scroll --until` gave up, the content having stopped moving, "after 3
+    /// strokes of 300 points down", and nothing in the reply said where the
+    /// strokes ran, the other way as it was. A scroll that looks for an
+    /// element and stops names its last stroke's start and end, in its
+    /// message and its data, and says what moved after it: on the Login tab,
+    /// which holds no row, nothing.
+    #[test]
+    fn a_scroll_until_that_stops_names_its_last_stroke_and_what_moved() {
+        let (mut target, strokes) = noting_strokes(&[], false);
+        let failure = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": "#row-150", "timeout": 3000}),
+        )
+        .expect_err("no row on the Login tab");
+        let strokes = strokes.lock().unwrap().clone();
+        let (from, to) = *strokes.last().expect("strokes");
+        assert!(
+            failure.message.contains(&format!(
+                "the last from {from} to {to}, after which nothing moved"
+            )),
+            "{}",
+            failure.message
+        );
+        let data = failure.data.unwrap_or_default();
+        assert_eq!(data["from"], json!([from.x, from.y]), "{data}");
+        assert_eq!(data["to"], json!([to.x, to.y]), "{data}");
+    }
+
     /// Designs D31 and D32: a footer listed after a button that lies wholly
     /// under it is drawn over the button, which is also 0% in view under the
     /// footer, a bar. A click on the button by the ref an earlier snapshot

@@ -279,6 +279,9 @@ enum Board {
     /// over most of the paste control, and a footer drawn after that, over
     /// the rest.
     Creation,
+    /// The creation tab without the footer: nothing is drawn over the list
+    /// below the disabled button.
+    CreationOpen,
     /// The feed (section 2): a card partly above its list's top, where the
     /// header listed before the list is drawn.
     Feed,
@@ -315,6 +318,7 @@ impl Board {
         match name {
             "consent" => Board::Consent,
             "creation" => Board::Creation,
+            "creation-open" => Board::CreationOpen,
             "feed" => Board::Feed,
             "list" => Board::List,
             "list-low" => Board::ListLow,
@@ -401,7 +405,9 @@ impl Forms {
     /// finger went: the creation tab's list moves by them, as far as it
     /// scrolls, when the stroke comes down on it; whether it moved.
     fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
-        if self.board != Board::Creation || !tree::contains(CREATION_LIST, from.0, from.1) {
+        if !matches!(self.board, Board::Creation | Board::CreationOpen)
+            || !tree::contains(CREATION_LIST, from.0, from.1)
+        {
             return false;
         }
         let moved = from.1 - to.1;
@@ -1302,7 +1308,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
     match forms.board {
         Board::Form => form_content(kit, forms),
         Board::Consent => consent_content(kit, forms),
-        Board::Creation => creation_content(kit, forms),
+        Board::Creation | Board::CreationOpen => creation_content(kit, forms),
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
@@ -1608,8 +1614,10 @@ fn scrolled_by(el: El, offset: f64, height: f64) -> El {
 /// control and the paste control, in a row 38 points tall that their lower
 /// 10 points overflow, 38 of their 48 points under the primary button at
 /// the list's start, and more content below; the primary button, disabled,
-/// listed after the list; and a footer listed after it, from the button's
-/// bottom down, holding the tab bar and drawn over the list's lower part.
+/// listed after the list; and, but on the open board, a footer listed after
+/// it, from the button's bottom down, holding the tab bar and drawn over the
+/// list's lower part. The list says which ways it scrolls, as the
+/// Simulator's reader reads a scroll view's.
 fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let width = kit.width();
     let scrolled = |el: El| scrolled_by(el, forms.offset, kit.height());
@@ -1653,7 +1661,20 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
         .key("placeholder-button-22"),
     ]
     .map(scrolled);
-    vec![
+    let mut flags = ScrollFlags::EMPTY;
+    if forms.offset > 0.0 {
+        flags |= ScrollFlags::BACK;
+    }
+    if forms.offset < CREATION_MAX {
+        flags |= ScrollFlags::FORWARD;
+    }
+    let scroll = Scroll {
+        axis: ScrollAxis::VERTICAL,
+        flags,
+        range: None,
+        position: None,
+    };
+    let mut screen = vec![
         kit.group([0.0, 62.0, width, 122.0]).children([
             kit.button(
                 "placeholder-id-7",
@@ -1666,13 +1687,20 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
                 [76.0, 76.0, 306.0, 108.0],
             ),
         ]),
-        kit.scroll_view(CREATION_LIST).children(content),
+        kit.scroll_view(CREATION_LIST)
+            .scroll(scroll)
+            .children(content),
         kit.button(
             CREATION_DISABLED,
             "placeholder-button-21",
             [20.0, 708.0, 382.0, 764.0],
         )
         .set(protocol::snapshot::NodeFlags::ENABLED, false),
+    ];
+    if forms.board == Board::CreationOpen {
+        return screen;
+    }
+    screen.push(
         kit.group([0.0, 764.0, width, kit.height()]).children(
             [
                 ("placeholder-tab-1", "placeholder-generic-3", false),
@@ -1691,7 +1719,8 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
                 )
             }),
         ),
-    ]
+    );
+    screen
 }
 
 /// The feed (section 2 of the masked listings): the header, listed before
