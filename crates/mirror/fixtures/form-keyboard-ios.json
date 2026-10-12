@@ -1,0 +1,33 @@
+{
+  "description": "The sign-in form of a React Native app on iOS with the keyboard up, synthetic, in the structure the acceptance run of rn-app-fixes found (task 2.2; section 5 of the masked listings, design D37 and D38), at the instant of the click on its submit button 8% in view: a scroll view scrolled down its content, holding the step's heading, a labelled view, the address field with the focus, the submit button with its top 3.67 of its 48 points above the keyboard's top, and two links under the keyboard. The keyboard's window is bounded from its prediction bar at 539 points down, as the Simulator's reader bounds it. The submit's bounds from the listings' get box reply, the rest invented in their spacing. Placeholder names from the listings. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 9, "kind": "input_method", "layer": 1, "package": "dev.mobileagent.placeholder",
+      "bounds": [0, 539, 402, 874], "events": false,
+      "root": {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 816]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeScrollView", "bounds": [0, 62, 402, 874], "flags": ["scrollable"],
+             "scroll": {"axis": "vertical", "back": true, "forward": false}, "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-1", "bounds": [20, 300, 382, 336]},
+              {"class": "RCTViewComponentView", "desc": "placeholder-generic-1", "bounds": [20, 344, 382, 384]},
+              {"class": "XCUIElementTypeTextField", "id": "placeholder-id-1", "desc": "placeholder-textbox-1", "text": "placeholder-value-1", "bounds": [20, 400, 382, 452], "flags": ["editable", "focusable", "focused"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-id-2", "desc": "placeholder-button-1", "bounds": [20, 535.33, 382, 583.33], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "desc": "placeholder-link-1", "bounds": [20, 600, 196, 624], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeLink", "desc": "placeholder-link-2", "bounds": [206, 600, 382, 624], "flags": ["clickable"]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

@@ -1082,6 +1082,89 @@ fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_heade
     assert!(target.inputs().is_empty());
 }
 
+/// Rn-app-fixes D38, scenario "Elements under the keyboard" (task 3.2;
+/// section 5 of the masked listings): the acceptance run's interactive
+/// listings kept what lay under the keyboard, and its clicks went to the
+/// centres of submit buttons 1 to 35% in view. With the keyboard up an
+/// element wholly under it is left out of the interactive listing, the
+/// hint counting it under the keyboard, and one partly under it is listed
+/// with the share of it in view; the full listing keeps both.
+#[test]
+fn what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_how_much_shows() {
+    let screen = Screen::load("form-keyboard-ios");
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "(more items above, scroll up to reveal)",
+            "- heading \"placeholder-heading-1\" [ref=e1]",
+            "- generic \"placeholder-generic-1\" [ref=e2]",
+            "- textbox \"placeholder-textbox-1\" [focused, id=placeholder-id-1, ref=e3]: placeholder-value-1",
+            "- button \"placeholder-button-1\" [visible=8%, id=placeholder-id-2, ref=e4]",
+            "(2 more actionable items under the keyboard, close it to reveal)",
+        ])
+    );
+    let listing = mirror.snapshot(&full()).unwrap();
+    for kept in ["placeholder-link-1", "placeholder-link-2"] {
+        assert!(listing.by_name(kept).is_some(), "{kept}:\n{}", listing.text);
+    }
+    assert!(listing.text.ends_with("\n- keyboard"), "{}", listing.text);
+
+    let under =
+        screen.patched(json!([{"find": "placeholder-id-2", "bounds": [20, 560, 382, 608]}]));
+    let target = FakeTarget::new(under.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let text = mirror.snapshot(&interactive()).unwrap().text;
+    assert!(
+        !text.contains("placeholder-button-1")
+            && text.ends_with("(3 more actionable items under the keyboard, close it to reveal)"),
+        "{text}"
+    );
+}
+
+/// D37 and D38 (task 3.2; section 5 of the masked listings): a tap on a
+/// submit button partly under the keyboard goes to the part of it in view:
+/// 17 of its 48 points above the keyboard's top, 35%, take the tap at their
+/// centre, where the acceptance run's tap at the button's centre hit the
+/// keyboard; 3.67 points, 8%, are too few, and the tap is refused naming
+/// the keyboard, which a tap at the button's centre would land on; a
+/// button wholly under the keyboard is out of view.
+#[test]
+fn a_tap_on_a_button_partly_under_the_keyboard_lands_on_what_shows_or_is_refused_naming_it() {
+    let screen = Screen::load("form-keyboard-ios");
+    let submit_in = |screen: &Screen| {
+        let target = FakeTarget::new(screen.read());
+        let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+        let submit = mirror
+            .snapshot(&full())
+            .unwrap()
+            .by_identifier("placeholder-id-2")
+            .expect("the submit button")
+            .reference
+            .unwrap();
+        (target, mirror, submit)
+    };
+    let third =
+        screen.patched(json!([{"find": "placeholder-id-2", "bounds": [20, 522, 382, 570]}]));
+    let (_, mut mirror, submit) = submit_in(&third);
+    let at = tap_on(&mut mirror, submit).unwrap();
+    assert_eq!((at.x, at.y), (201.0, 530.5), "{at}");
+
+    let (target, mut mirror, submit) = submit_in(&screen);
+    let error = tap_on(&mut mirror, submit).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(error.to_string().contains("under the keyboard"), "{error}");
+    assert!(target.inputs().is_empty());
+
+    let under =
+        screen.patched(json!([{"find": "placeholder-id-2", "bounds": [20, 560, 382, 608]}]));
+    let (target, mut mirror, submit) = submit_in(&under);
+    let error = tap_on(&mut mirror, submit).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_OFFSCREEN, "{error}");
+    assert!(target.inputs().is_empty());
+}
+
 /// Rn-app-fixes D35: XCTest reports a React Native text as a text whose
 /// only child is its own text, a heading likewise without its identifier,
 /// and UIKit's scroll bars as elements whose only child repeats them. The
@@ -1239,7 +1322,16 @@ fn the_keyboard_window_is_listed_as_one_line() {
     );
     assert!(!listing.text.contains("\"q\""), "{}", listing.text);
     let snapshot = mirror.snapshot(&interactive()).unwrap();
-    assert_eq!(snapshot.refs().len(), 8, "keys get no refs");
+    // Keys get no refs, and the tab bar wholly under the keyboard is
+    // counted under it rather than listed (rn-app-fixes, design D38).
+    assert_eq!(snapshot.refs().len(), 3, "{}", snapshot.text);
+    assert!(
+        snapshot
+            .text
+            .ends_with("\n(5 more actionable items under the keyboard, close it to reveal)"),
+        "{}",
+        snapshot.text
+    );
 }
 
 #[test]
