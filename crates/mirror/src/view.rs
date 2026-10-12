@@ -26,6 +26,8 @@
 //!    does, as React Native exposes a view marked accessible without a role,
 //!    whose content it may hide (Ignite's sign-in fields and Bluesky's
 //!    options and language rows in the React Native smoke test), and a tab;
+//!    such nodes laid out in one row with a selected one are tabs
+//!    (rn-app-fixes, design D40);
 //! 7. the top-most modal (a modal window, or an alert or dialog node) cuts
 //!    what lies outside it, since the Simulator's reader still returns the
 //!    screen under an alert (spike S4); keyboard windows are collapsed;
@@ -313,6 +315,7 @@ fn window_facts(window: &Win, scale: f64) -> Vec<Facts> {
     fold_duplicates(window, &mut out);
     lend_container_labels(window, &mut out);
     untraited_controls(window, &mut out);
+    tabs_by_row(window, &mut out);
     if window.kind == WindowType::INPUT_METHOD {
         for facts in &mut out {
             facts.hidden = Hidden::Keyboard;
@@ -592,6 +595,52 @@ fn untraited_controls(window: &Win, facts: &mut [Facts]) {
         let selected = node.flags.contains(NodeFlags::SELECTED);
         if (selected || node.children.iter().all(|&c| static_text(c))) && !held {
             facts[i].bears_ref = true;
+        }
+    }
+}
+
+/// Lists as tabs the labelled nodes without traits laid out in one row
+/// with a selected one, the selected one with its state (rn-app-fixes,
+/// design D40): React Native exposes a tab so on iOS, the `selected` trait
+/// on the selected tab alone, and the acceptance run found an unselected
+/// tab holding its icon's text, a text whose only child is its own text,
+/// with nothing else to tell it a control by. A row is the siblings whose
+/// bounds overlap the selected one's over at least half the height of the
+/// shorter; a node an actionable element holds is its content, and a row
+/// without a selected node changes nothing.
+fn tabs_by_row(window: &Win, facts: &mut [Facts]) {
+    for parent in &window.nodes {
+        let children = &parent.children;
+        if children.len() < 2 {
+            continue;
+        }
+        let labelled = |c: usize, facts: &[Facts]| {
+            matches!(facts[c].role, Role::Generic | Role::Group)
+                && !facts[c].name.is_empty()
+                && !facts[c].absorbed
+        };
+        let Some(&selected) = children
+            .iter()
+            .find(|&&c| labelled(c, facts) && window.nodes[c].flags.contains(NodeFlags::SELECTED))
+        else {
+            continue;
+        };
+        let row = facts[selected].rect;
+        let held =
+            std::iter::successors(window.nodes[selected].parent, |&a| window.nodes[a].parent)
+                .any(|a| facts[a].actionable);
+        if held {
+            continue;
+        }
+        for &c in children {
+            let r = facts[c].rect;
+            let shared = r.bottom.min(row.bottom) - r.top.max(row.top);
+            if labelled(c, facts) && shared >= r.height().min(row.height()) / 2.0 {
+                let tab = &mut facts[c];
+                tab.role = Role::Tab;
+                tab.actionable = true;
+                tab.bears_ref = true;
+            }
         }
     }
 }
