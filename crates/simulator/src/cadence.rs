@@ -1,9 +1,16 @@
 //! The pace of typed keys (simulator-driver spec, "Text entry"): the pause
-//! between one key press and the next.
+//! between one key press and the next, slower for the fields of a React
+//! Native screen than for native ones (design D42 of `rn-app-fixes`).
 
 use std::time::Duration;
 
 use protocol::snapshot::Snapshot;
+
+/// The prefix of React Native's own classes on iOS: its root and surface
+/// views (`RCTSurfaceHostingProxyRootView`, `RCTRootComponentView`), its
+/// component views (`RCTViewComponentView`, `RCTTextInputComponentView`)
+/// and the views of its older architecture (`RCTRootView`, `RCTView`).
+const REACT_NATIVE_PREFIX: &str = "RCT";
 
 /// The pause between two keys `type_text_at` types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -20,14 +27,34 @@ impl Cadence {
         gap: Duration::from_millis(15),
     };
 
-    /// React Native fields.
+    /// React Native fields, which take keys through the app's JavaScript
+    /// thread: a field whose value the app owns, on a screen whose render
+    /// takes longer than the gap, loses keys. Task 3.5 of `rn-app-fixes`
+    /// chose it from 15, 30 and 60 ms as the slowest that lost none.
     pub const REACT_NATIVE: Cadence = Cadence {
         gap: Duration::from_millis(60),
     };
 
-    /// The cadence for the fields of `snapshot`, a read of this driver's.
-    pub fn for_read(_snapshot: &Snapshot) -> Cadence {
-        Cadence::NATIVE
+    /// The cadence for the fields of `snapshot`, a read of this driver's:
+    /// React Native's when one of its classes is React Native's, the native
+    /// one otherwise. The reader names an element the runtime leaves untyped
+    /// by its platform class, and React Native draws its screens under its
+    /// own views, so a read of a React Native screen names some. The string
+    /// table holds each class once, beside the bundle identifier, so no node
+    /// is visited. A native field on a React Native screen, such as an
+    /// alert's, is typed at React Native's cadence too, which costs time and
+    /// loses nothing; the translator names no platform class, so its reads
+    /// keep the native cadence.
+    pub fn for_read(snapshot: &Snapshot) -> Cadence {
+        let react_native = snapshot
+            .strings
+            .iter()
+            .any(|name| name.starts_with(REACT_NATIVE_PREFIX));
+        if react_native {
+            Cadence::REACT_NATIVE
+        } else {
+            Cadence::NATIVE
+        }
     }
 }
 
