@@ -3055,29 +3055,30 @@ mod tests {
         );
     }
 
-    /// Designs D37 and D38 (task 3.1; section 1b of the masked listings): on
-    /// the creation tab the acceptance run's clicks on the paste control,
-    /// 38 of its 48 points under the disabled primary button, tapped its
-    /// centre, on the disabled button, which did nothing, twice, with no
-    /// warning. The click by identifier taps its lower 10 points, below the
-    /// button, with the warning.
+    /// Designs D37, D38 and D45 (tasks 3.1 and 4.3; section 1b of the
+    /// masked listings, task 3.7's N6): on the creation tab the paste
+    /// control lies 38 of its 48 points under the disabled primary button,
+    /// and the second acceptance run's clicks at its centre landed on that
+    /// button, twice; its lower 10 points lie under the footer drawn over
+    /// the list's lower part, outside what the list shows, and the third
+    /// run's click tapped them and opened nothing. The click by identifier
+    /// is refused with `element_covered`, naming the disabled button a tap
+    /// at the control's centre would hit, and taps nothing.
     #[test]
-    fn a_click_on_a_control_mostly_under_a_disabled_button_taps_the_part_below_it() {
+    fn a_click_on_a_control_whose_strip_below_a_disabled_button_lies_under_a_footer_is_refused() {
         let (mut target, sent) = on_board("creation");
-        let success = click_on(&mut target, "#placeholder-id-8").unwrap();
-        assert_eq!(
-            text_of(&mut target, "#placeholder-status"),
-            "Tapped placeholder-id-8",
-            "taps {:?}",
+        let failure = click_on(&mut target, "#placeholder-id-8").expect_err(&format!(
+            "the footer covers what the disabled button leaves; taps {:?}",
             taps(&sent)
-        );
-        assert_eq!(success.data["x"], 293.5, "{}", success.data);
-        assert_eq!(success.data["y"], 769.0, "{}", success.data);
-        let warning = success.warning.unwrap_or_default();
+        ));
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
         assert!(
-            warning.contains("#placeholder-id-8 was not mostly in view (21% of it in view)"),
-            "{warning}"
+            failure.message.contains("button \"placeholder-button-21\""),
+            "{}",
+            failure.message
         );
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
     }
 
     /// Design D37 (task 3.1; section 1b of the masked listings): the

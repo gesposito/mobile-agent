@@ -274,9 +274,10 @@ enum Board {
     /// The consent screen (section 1a): a heading half under the secondary
     /// footer button, a 12-point text under the primary one.
     Consent,
-    /// The creation tab (section 1b): a list scrolling under the header
-    /// listed before it and its disabled primary button drawn after it,
-    /// over most of the paste control.
+    /// The creation tab (section 1b, task 3.7): a list scrolling under the
+    /// header listed before it, its disabled primary button drawn after it,
+    /// over most of the paste control, and a footer drawn after that, over
+    /// the rest.
     Creation,
     /// The feed (section 2): a card partly above its list's top, where the
     /// header listed before the list is drawn.
@@ -341,8 +342,9 @@ const CODE_INPUT: &str = "placeholder-code-input";
 /// The paste sheet's title field, which the app gives no identifier.
 const TITLE_FIELD: &str = "placeholder-title";
 
-/// The creation tab's list, in points.
-const CREATION_LIST: [f64; 4] = [0.0, 122.0, 402.0, 791.0];
+/// The creation tab's list, in points: down to the bottom of the screen,
+/// under the footer.
+const CREATION_LIST: [f64; 4] = [0.0, 122.0, 402.0, 874.0];
 
 /// How far the creation tab's list scrolls, in points.
 const CREATION_MAX: f64 = 400.0;
@@ -1584,21 +1586,33 @@ fn consent_content(kit: Kit, forms: &Forms) -> Vec<El> {
     ]
 }
 
-/// The creation tab (section 1b of the masked listings): the header,
-/// listed before the tab's list, holding the app's button and the status
-/// line; the list, scrolled `forms.offset` points, holding a heading, the
-/// button beside the paste control and the paste control, 38 of their 48
-/// points under the primary button at the list's start, and more content
-/// below; and the primary button, disabled, listed after the list.
+/// `el` and what it holds moved `offset` points up, as a list scrolled that
+/// far moves them, and hidden off the screen, `height` points tall.
+fn scrolled_by(el: El, offset: f64, height: f64) -> El {
+    let mut el = el;
+    el.rect[1] -= offset;
+    el.rect[3] -= offset;
+    el.children = el
+        .children
+        .into_iter()
+        .map(|child| scrolled_by(child, offset, height))
+        .collect();
+    let shown = el.rect[3] > 0.0 && el.rect[1] < height;
+    hide_unless(el, shown)
+}
+
+/// The creation tab (section 1b of the masked listings, task 3.7): the
+/// header, listed before the tab's list, holding the app's button and the
+/// status line; the list, scrolled `forms.offset` points, down to the
+/// bottom of the screen, holding a heading, the button beside the paste
+/// control and the paste control, in a row 38 points tall that their lower
+/// 10 points overflow, 38 of their 48 points under the primary button at
+/// the list's start, and more content below; the primary button, disabled,
+/// listed after the list; and a footer listed after it, from the button's
+/// bottom down, holding the tab bar and drawn over the list's lower part.
 fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let width = kit.width();
-    let scrolled = |el: El| {
-        let mut el = el;
-        el.rect[1] -= forms.offset;
-        el.rect[3] -= forms.offset;
-        let shown = el.rect[3] > 0.0 && el.rect[1] < kit.height();
-        hide_unless(el, shown)
-    };
+    let scrolled = |el: El| scrolled_by(el, forms.offset, kit.height());
     let content = [
         kit.heading(
             "placeholder-heading-18",
@@ -1612,17 +1626,19 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
             [20.0, 648.0, 382.0, 670.0],
         )
         .key("placeholder-heading-24"),
-        kit.button(
-            "placeholder-button-19",
-            "placeholder-button-19",
-            [20.0, 726.0, 197.0, 774.0],
-        )
-        .key("placeholder-button-19"),
-        kit.button(
-            "placeholder-id-8",
-            "placeholder-button-20",
-            [205.0, 726.0, 382.0, 774.0],
-        ),
+        kit.group([0.0, 726.0, width, 764.0]).children([
+            kit.button(
+                "placeholder-button-19",
+                "placeholder-button-19",
+                [20.0, 726.0, 197.0, 774.0],
+            )
+            .key("placeholder-button-19"),
+            kit.button(
+                "placeholder-id-8",
+                "placeholder-button-20",
+                [205.0, 726.0, 382.0, 774.0],
+            ),
+        ]),
         kit.heading(
             "placeholder-heading-25",
             "placeholder-heading-25",
@@ -1657,6 +1673,24 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
             [20.0, 708.0, 382.0, 764.0],
         )
         .set(protocol::snapshot::NodeFlags::ENABLED, false),
+        kit.group([0.0, 764.0, width, kit.height()]).children(
+            [
+                ("placeholder-tab-1", "placeholder-generic-3", false),
+                ("placeholder-tab-2", "placeholder-heading-18", true),
+                ("placeholder-tab-3", "placeholder-generic-4", false),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(k, (id, label, selected))| {
+                let left = width / 3.0 * k as f64;
+                kit.tab(
+                    id,
+                    label,
+                    selected,
+                    [left, 791.0, left + width / 3.0, kit.height()],
+                )
+            }),
+        ),
     ]
 }
 
