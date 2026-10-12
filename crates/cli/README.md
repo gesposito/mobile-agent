@@ -39,11 +39,11 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `close` | stops the app this session opened and releases the target |
 | `snapshot [-i] [-d N] [--delta [--full]]` | lists elements, one per line with role, name and ref |
 | `click <target>` or `click <x> <y>` (alias `tap`) `[--hold MS]` | taps a ref, a selector or a point in device points |
-| `fill <target> <text>` | replaces a field's text and reads it back, from the field's value or, for a field without one, from what lies inside it, as a code field's boxes hold its digits (`readFrom`): text typed that the field took otherwise is entered again in one piece, with a warning naming what the keys left; a field that still holds other text fails with `text_mismatch`, naming what it holds, and one that shows nothing to read back succeeds with `verified: false`, `reason: no_value_to_read` and a warning. `method` is `keys` for typed text and `direct` for text entered in one piece: on iOS a paste, which replaces the device's pasteboard and can show iOS's paste banner, on Android a set |
+| `fill <target> <text>` | replaces a field's text and reads it back, from the field's value or, for a field without one, from what lies inside it, as a code field's boxes hold its digits, or else from its name when the entry changed it, as a code field that spells its digits in its name (`readFrom`: `value`, `descendants`, `name`); an identifier on a view that takes no text but holds exactly one field fills that field, which a warning names: text typed that the field took otherwise is entered again in one piece, with a warning naming what the keys left; a field that still holds other text fails with `text_mismatch`, naming what it holds, and one that shows nothing to read back succeeds with `verified: false`, `reason: no_value_to_read` and a warning. `method` is `keys` for typed text and `direct` for text entered in one piece: on iOS a paste, which replaces the device's pasteboard and can show iOS's paste banner, on Android a set |
 | `type [<target>] <text>` | types key events into a field, or into the focused one |
 | `press <key>` (alias `key`) | presses a key: `Enter`, `Back`, `Home`, `Control+a`, a letter or digit |
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
-| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`) that keep off the keyboard and the system bars (`covered_by_keyboard` when the keyboard covers what it scrolls); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view |
+| `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`) that keep off the keyboard and the system bars and, with the keyboard up, inside what shows of the list (`covered_by_keyboard` when the keyboard leaves less than 120 points of what it scrolls); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
 | `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|detached\|enabled`), time, text or a settled screen |
 | `get text\|value\|box <target>` | reads an element |
@@ -87,25 +87,36 @@ short. The reply's `visible` is the share of the element's bounds in view,
 from 0 to 1, rounded to a hundredth; an `element_not_found` for an element
 on screen but not mostly in view carries it too, as `data.visible`.
 
-`click` makes no stroke of its own. An element partly in view, but not
-mostly, is still tapped at the centre of its bounds, with a warning. For
-an element none of which is in view the windows are read again once, since
-a layout can move without an event (in the React Native smoke test of
-2026-10-09 the keyboard moved a submit button up, and the tap went to the
-number pad, where the replica still had the button), and the tap goes
-where that read has the element, or the click fails with
+`click` makes no stroke of its own. The tap goes to the part of the
+element a tap reaches: its bounds within what shows of them, less every
+view drawn over part of it, the tap landing at the centre of the largest
+rectangle left that is at least 8 points on each side, or as long as the
+element where it is shorter (`crates/mirror/README.md`, Visibility). An
+element whose reachable part is not most of it is tapped there, with a
+warning naming the point: in the acceptance run of 2026-10-12 a tap at
+the centre of a card under a sticky header pressed the header. For an
+element nothing of which a tap reaches in view the windows are read again
+once, since a layout can move without an event (in the React Native smoke
+test of 2026-10-09 the keyboard moved a submit button up, and the tap went
+to the number pad, where the replica still had the button), and the tap
+goes where that read has the element, or the click fails with
 `element_offscreen` and `data.visible` 0, naming what keeps the element
 out of view and how to bring it in (close the keyboard, `scroll --until`).
-An element under a dialog, or under a view drawn over it, fails with
-`element_covered` without that read or a tap, naming the dialog, or the
-control of the view a tap there would land on: on iOS a view listed after
-a sibling it overlaps is drawn over it, since XCTest lists views in the
-order UIKit draws them, and on Android a view the agent flags so
-(`crates/mirror/README.md`, Snapshots). Such a view, as a fixed footer, a
-floating button or a sticky header, would take the tap itself, so the
-message advises scrolling the element out from under it rather than
-tapping it: in the smoke test a tap on a heading under a consent screen's
-footer accepted the consent.
+An element under a dialog, or with less than 8 points left from under a
+view drawn over it, fails with `element_covered` without that read or a
+tap, naming what a tap at its centre would land on: the dialog, or the
+control of the view; on iOS a view listed after a sibling it overlaps is
+drawn over it, since XCTest lists views in the order UIKit draws them,
+when it shows something or is a control, enabled or not, and a navigation
+bar, tab bar or toolbar or a header pinned over a list's top whatever the
+order; on Android a view the agent flags so (`crates/mirror/README.md`,
+Snapshots). The keyboard covers too, once that read still has it over the
+element. Such a view, as a fixed footer, a floating button or a sticky
+header, would take the tap itself, so the message advises scrolling the
+element out from under it rather than tapping it: in the smoke test a tap
+on a heading under a consent screen's footer accepted the consent. A ref,
+an identifier and a text selector take this one path, as does the tap
+with which `fill` focuses its field.
 
 A target is a ref as snapshots print it (`@e3`; `ref=e3` and `e3` work too)
 or a selector: `#id` or `id=...` for a test identifier, `text=...` or bare
@@ -497,8 +508,8 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
   tap and can press its own button.
 - `fill` reads the field back and says what it read, `verified` (`text`,
   `length` for a masked field, or `false` with `reason: no_value_to_read`
-  for a field that shows nothing to read) and `readFrom` (`value`, or
-  `descendants`), and how the text went in, `method` (`keys`, or `direct`:
+  for a field that shows nothing to read) and `readFrom` (`value`,
+  `descendants` or `name`), and how the text went in, `method` (`keys`, or `direct`:
   a paste on iOS, which replaces the device's pasteboard, a set on Android)
   and `retried`; agent-browser's `fill` clears the field and types, and its
   documentation checks the result with a snapshot or `diff snapshot`.
@@ -519,8 +530,8 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Sessions | Claimed target | `sessions::a_claimed_target_refuses_another_session_naming_the_holder_until_forced`, `sessions::refs_are_isolated_between_sessions`, `sessions::the_session_and_json_flags_have_environment_twins`, `selection::claims_are_per_target`; the daemon's `claims::*` |
 | Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
 | Configurable timeouts | Per-command timeout | `timeouts::a_2_s_wait_fails_at_2_s_not_after_the_session_default`, `timeouts::the_session_default_applies_to_waits_that_name_no_timeout`, `timeouts::session_defaults_belong_to_their_session`, `timeouts::the_environment_default_applies_when_the_session_sets_none`, `timeouts::timeouts_are_bounded_and_must_be_numbers`, `timeouts::a_long_wait_outlasts_a_short_idle_timeout`, `help::waiting_commands_document_their_default_timeouts`, `client::tests::waits_get_their_own_timeout_plus_a_margin_and_other_commands_30_s` |
-| Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back`, `help::the_agent_guide_says_where_a_physical_iphone_differs` (physical-ios task 5.3), `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
-| Text entry verification | Composite code field; Value that cannot be read back; Mismatch | the daemon's `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified` and `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` (rn-app-fixes, design D33); end to end, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` and `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`; `method` and its side effect on the pasteboard in the guide, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back` |
+| Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back`, `help::the_agent_guide_says_where_a_tap_goes_and_what_the_keyboard_hides` (rn-app-fixes, design D37 to D40), `help::the_agent_guide_says_where_a_physical_iphone_differs` (physical-ios task 5.3), `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
+| Text entry verification | Composite code field; Value that cannot be read back; Mismatch | the daemon's `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified` and `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` (rn-app-fixes, design D33); through a name the entry changed, a wrapper's identifier and a field whose label changes, `handlers::act::tests::a_fill_of_a_code_into_a_field_whose_name_spells_it_is_verified_through_the_name`, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_fields_wrapper_go_into_the_field` and `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (design D39); end to end, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` and `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`; `method` and its side effect on the pasteboard in the guide, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back` |
 
 The timing spans (task 8.9) serve the benchmark harness rather than a
 spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree_delta`,

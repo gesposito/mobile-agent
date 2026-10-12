@@ -16,10 +16,10 @@ Snapshots
   - button "Sign in" [id=login-submit, ref=e4]
   One element per line: role, name in quotes, attributes, the ref last.
   A field's value follows ": ". A line in parentheses, such as
-  "(12 more actionable items below, scroll down to reveal)", means content
-  is scrolled out of view: scroll, then snapshot again. An element under a
-  dialog, or under a view drawn over it such as a fixed footer, a floating
-  button or a sticky header, is left out.
+  "(12 more actionable items below, scroll down to reveal)", counts what
+  is scrolled out of view, or under the keyboard. What a dialog hides, or
+  a bar, the keyboard or a view drawn over it covers whole, is left out;
+  one partly under the keyboard says visible=35%. Every tab has a ref.
   snapshot -i        only elements with refs; start here
   snapshot           every element, texts and system bars too
   snapshot -d 2      at most two levels deep
@@ -52,21 +52,21 @@ Acting
                               no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
   open com.example.app        launch an app; close stops it and frees the target
-  Acting on an element you cannot see fails rather than tapping elsewhere.
-  element_covered names what lies over it: act on a dialog first, but
-  scroll the element out from under a view drawn over it instead of
-  tapping the view, which could press it (a consent footer's Accept button).
+  A tap goes to the part of an element you can see, and warns when that is
+  not most of it. element_covered means less than 8 points of it show from
+  under a dialog, a button, disabled or not, a bar or the keyboard, which
+  it names: act on a dialog first, but scroll the element out from under a
+  view drawn over it rather than tap the view (a consent footer's Accept).
   element_offscreen means none of it is in view, as a click checks after a
   fresh read: close the keyboard or scroll --until it; click never scrolls.
-  A click on an element not mostly in view taps its centre and warns.
   fill's reply says what it read back: verified: text, or length for a
-  masked field, from the field's value or, with readFrom: descendants,
-  from what lies inside it, as a code field's boxes; verified: false with
-  reason: no_value_to_read and a warning when the field shows nothing to
-  read, so the text went in unchecked: look at a screenshot. method: keys
-  means typed, direct entered in one piece: set on Android and iPhones,
-  pasted on a Simulator, which replaces the pasteboard and can show iOS's
-  paste banner.
+  masked field, from the field's value, with readFrom: descendants from a
+  code field's boxes, with readFrom: name from a name the text changed;
+  verified: false and reason: no_value_to_read when the field shows
+  nothing to read: look at a screenshot. An id on a field's wrapper fills
+  the field inside it. method: keys means typed, direct entered in one
+  piece: set on Android and iPhones, pasted on a Simulator, which replaces
+  the pasteboard and can show iOS's paste banner.
 
 Waiting
   wait --settle               no tree or frame change for 200 ms, at most
