@@ -704,12 +704,10 @@ fn words(name: &str) -> Vec<(usize, usize)> {
     out
 }
 
-/// The part of `name` that an entry changed from `before`, the name the
-/// field had before it (design D43): what lies between the words the two
-/// names share at their start and those they share at their end, from the
-/// first word that differs to the last. Empty when the entry only took
-/// words away.
-fn changed_part<'a>(name: &'a str, before: &str) -> &'a str {
+/// The words of `name` and how many of them it shares with `before`, the
+/// name the field had before an entry, at its start and at its end: the
+/// words between are the part the entry changed (design D43).
+fn shared(name: &str, before: &str) -> (Vec<(usize, usize)>, usize, usize) {
     let (after, was) = (words(name), words(before));
     let same = |a: &(usize, usize), b: &(usize, usize)| name[a.0..a.1] == before[b.0..b.1];
     let lead = after
@@ -725,6 +723,16 @@ fn changed_part<'a>(name: &'a str, before: &str) -> &'a str {
         .take(room)
         .take_while(|(a, b)| same(a, b))
         .count();
+    (after, lead, tail)
+}
+
+/// The part of `name` that an entry changed from `before`, the name the
+/// field had before it (design D43): what lies between the words the two
+/// names share at their start and those they share at their end, from the
+/// first word that differs to the last. Empty when the entry only took
+/// words away.
+fn changed_part<'a>(name: &'a str, before: &str) -> &'a str {
+    let (after, lead, tail) = shared(name, before);
     match after[lead..after.len() - tail] {
         [(from, to)] => &name[from..to],
         [(from, _), .., (_, to)] => &name[from..to],
@@ -735,11 +743,27 @@ fn changed_part<'a>(name: &'a str, before: &str) -> &'a str {
 /// How a field whose name is `name`, `before` before the entry, shows the
 /// `text` `fill` entered (design D43): as the text when the part of the name
 /// the entry changed spells it, both without their separators, as a code
-/// field names its boxes, a dash for each empty one, before its label.
-/// Never the whole name, and never by length: a part of bullets, one for
-/// each character, tells nothing but how many there are.
+/// field names its boxes, a dash for each empty one, before its label. That
+/// part takes in the words next to it that the names share when they spell
+/// the text with it, which the entry wrote again: a code entered over one it
+/// starts as. Never the whole name for its own sake, and never by length: a
+/// part of bullets, one for each character, tells nothing but how many
+/// there are.
 fn compare_name(name: &str, before: &str, text: &str) -> Option<Shown> {
-    (spelled(changed_part(name, before)) == spelled(text)).then_some(Shown::Text)
+    let (after, lead, tail) = shared(name, before);
+    let want = spelled(text);
+    let spells = |from: usize, to: usize| {
+        after[from..to]
+            .iter()
+            .map(|&(a, b)| &name[a..b])
+            .collect::<String>()
+            == want
+    };
+    let end = after.len() - tail;
+    (0..=lead)
+        .rev()
+        .any(|from| (end..=after.len()).any(|to| spells(from, to)))
+        .then_some(Shown::Text)
 }
 
 /// What a field whose name is `name`, `before` before the entry, holds, as a
