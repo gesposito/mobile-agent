@@ -38,7 +38,15 @@ A snapshot SHALL list elements with role, accessible name, test identifier when 
 - **THEN** its ref is the same before and after, and a `fill` by that ref reads it back
 
 ### Requirement: Single coordinate contract
-All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions. An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change. An action on an element SHALL tap the centre of the largest part of it that a tap can reach, its bounds within the viewport minus every cover, and SHALL fail with `element_covered` naming what a tap at the element's centre would hit when no reachable part is at least 8 points on each side; actions by ref, by identifier and by text selector SHALL take the same path, and `scroll --until` SHALL judge arrival by the same reachable part.
+All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions. An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change. An action on an element SHALL tap the centre of the largest part of it that a tap can reach, its bounds within the viewport minus every cover, and SHALL fail with `element_covered` naming what a tap at the element's centre would hit when no reachable part is at least 8 points on each side; actions by ref, by identifier and by text selector SHALL take the same path, and `scroll --until` SHALL judge arrival by the same reachable part. The reachable part SHALL be clipped by the visible bounds of every scroll container above the element before the covers are taken away; the interactive listing SHALL mark every partly reachable element with its visible fraction and leave out every element with no reachable part, counted in the hint, whatever covers it; and a `scroll` that fails because the content stopped moving SHALL name its stroke's start and end.
+
+#### Scenario: Strip clipped by the scroll view
+- **WHEN** a button's lower 10 points lie below a floating button but outside its scroll view's visible bounds
+- **THEN** the button has no reachable part, is left out of the interactive listing and a click on it fails with `element_covered` naming the floating button
+
+#### Scenario: Partly covered elements marked
+- **WHEN** a heading shows 50% below a footer and a card 30% below a sticky header
+- **THEN** the interactive listing marks each with its visible fraction, and a control behind a header is left out and counted in the hint
 
 #### Scenario: Card partly under a sticky header
 - **WHEN** a card lies 70% under a sticky header and 30% of it shows below the header
