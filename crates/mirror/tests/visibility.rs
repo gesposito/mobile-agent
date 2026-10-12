@@ -513,10 +513,11 @@ fn what_covers_an_element_is_named_as_an_action_on_its_ref_names_it() {
 
 /// Rn-app-fixes D31, scenario "Card under a sticky header": on iOS what a
 /// view drawn after it covers is covered, not out of view. Its bounds lie
-/// inside its visible bounds, in view as far as `visibility` measures,
-/// and `covered_by` names the view over it as a refused action does. What
-/// lies beside a cover, as the link above the consent screen's footer and
-/// the post that touches the feed header's edge, is not covered.
+/// inside its visible bounds, but a tap reaches none of it (design D37):
+/// `visibility` finds none of it in view and no part to tap, and
+/// `covered_by` names the view over it as a refused action does. What lies
+/// beside a cover, as the link above the consent screen's footer and the
+/// post that touches the feed header's edge, is not covered.
 #[test]
 fn what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view() {
     for (fixture, covered, cover, named) in support::DRAWN_OVER_ON_IOS {
@@ -529,7 +530,12 @@ fn what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view() {
             "{fixture}: {covered}"
         );
         let seen = mirror.visibility(id).expect("the replica holds it");
-        assert_eq!(seen.fraction, 1.0, "{fixture}: {seen:?}");
+        assert!(
+            seen.viewport.contains(seen.bounds.center()),
+            "{fixture}: {seen:?}"
+        );
+        assert_eq!(seen.fraction, 0.0, "{fixture}: {seen:?}");
+        assert_eq!(seen.reachable, None, "{fixture}: {seen:?}");
     }
 
     let (_, mut consent) = support::mirror_on("consent-ios");
@@ -538,6 +544,78 @@ fn what_a_view_drawn_after_it_covers_on_ios_is_covered_not_out_of_view() {
     let (_, mut feed) = support::mirror_on("feed-ios");
     let below = element(&mut feed, "placeholder-post-3");
     assert_eq!(feed.covered_by(below), None);
+}
+
+/// The element named `name` on screen.
+fn named(mirror: &mut Mirror, name: &str) -> ElementId {
+    mirror
+        .wait(&Selector::text(name), Condition::Appear, Duration::ZERO)
+        .unwrap_or_else(|e| panic!("{name} is on screen: {e}"))
+        .element
+        .expect("the element")
+        .id
+}
+
+/// Whether two rectangles agree to within a hundredth of a point, as bounds
+/// read in thirds of a point do.
+fn same(actual: Option<Rect>, expected: Rect) -> bool {
+    actual.is_some_and(|actual| {
+        close(actual.left, expected.left)
+            && close(actual.top, expected.top)
+            && close(actual.right, expected.right)
+            && close(actual.bottom, expected.bottom)
+    })
+}
+
+/// Rn-app-fixes D37 (task 3.1; sections 1a, 1b and 2 of the masked
+/// listings): what of an element a tap reaches is its bounds inside its
+/// visible bounds less every view drawn over it, and the tap goes to the
+/// centre of the largest rectangle of that, at least 8 points on each
+/// side. The consent screen's heading keeps its upper 11 points above the
+/// secondary footer button, half of it; the feed's card the 35 of its 116
+/// points below its list's top, where the header is drawn; the creation
+/// tab's paste control its lower 10 points below the disabled primary
+/// button. The 12-point text under the primary button keeps 3 points below
+/// it, too few, and what covers it is the button, which a tap at its centre
+/// would hit.
+#[test]
+fn visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it() {
+    let (_, mut consent) = support::mirror_on("consent-footer-ios");
+    let heading = named(&mut consent, "placeholder-heading-9");
+    let seen = consent.visibility(heading).expect("the heading");
+    assert!(
+        same(seen.reachable, Rect::new(33.0, 709.0, 90.33, 720.0)),
+        "{seen:?}"
+    );
+    assert!(close(seen.fraction, 0.5), "{seen:?}");
+    assert_eq!(consent.covered_by(heading), None);
+    let text = named(&mut consent, "placeholder-text-8");
+    let seen = consent.visibility(text).expect("the text");
+    assert_eq!(seen.reachable, None, "{seen:?}");
+    assert!(close(seen.fraction, 3.0 / 12.0), "{seen:?}");
+    assert_eq!(
+        consent.covered_by(text).as_deref(),
+        Some("button \"placeholder-button-2\"")
+    );
+
+    let (_, mut feed) = support::mirror_on("feed-sticky-ios");
+    let card = element(&mut feed, "placeholder-id-4");
+    let seen = feed.visibility(card).expect("the card");
+    assert!(
+        same(seen.reachable, Rect::new(37.0, 122.0, 365.0, 157.0)),
+        "{seen:?}"
+    );
+    assert!(close(seen.fraction, 35.0 / 116.0), "{seen:?}");
+
+    let (_, mut create) = support::mirror_on("create-disabled-ios");
+    let paste = element(&mut create, "placeholder-id-8");
+    let seen = create.visibility(paste).expect("the paste control");
+    assert!(
+        same(seen.reachable, Rect::new(205.0, 764.0, 382.0, 774.0)),
+        "{seen:?}"
+    );
+    assert!(close(seen.fraction, 10.0 / 48.0), "{seen:?}");
+    assert_eq!(create.covered_by(paste), None);
 }
 
 /// Task 10.16: a stroke through the middle of the Expo list moves the list,

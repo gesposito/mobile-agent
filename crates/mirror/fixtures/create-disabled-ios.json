@@ -1,0 +1,64 @@
+{
+  "description": "The creation tab of a React Native app on iOS, synthetic, in the structure the acceptance run of rn-app-fixes found (task 2.2; section 1b of the masked listings, design D37 and D38), at the instant of its first click: the app's header with its one button, the tab's scroll view of headings, choices and texts, its primary button listed after it, disabled, 56 points tall, drawn over the content scrolled under it, and the app's tab bar. A choice made, the paste control and the button beside it are enabled and lie 38 of their 48 points under the disabled button, their lower 10 points below it. The tab bar's first tab holds an icon glyph, a text whose only child is its own text, so it gets no ref while another tab is selected. Each scroll bar is an element whose only child repeats it. Bounds from the listings' get box replies where they give them, the rest invented in their spacing. Placeholder names from the listings. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 122], "children": [
+              {"class": "XCUIElementTypeButton", "id": "placeholder-id-7", "desc": "placeholder-button-9", "bounds": [20, 70, 64, 114], "flags": ["clickable"]}
+            ]},
+            {"class": "XCUIElementTypeScrollView", "bounds": [0, 122, 402, 791], "flags": ["scrollable"],
+             "scroll": {"axis": "vertical", "back": false, "forward": true}, "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-18", "bounds": [20, 130, 382, 162]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-13", "bounds": [20, 166, 382, 186]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-19", "bounds": [20, 198, 382, 220]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-14", "bounds": [20, 224, 382, 240]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-15", "bounds": [20, 244, 382, 260]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-16", "bounds": [20, 264, 382, 280]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-20", "bounds": [20, 292, 382, 314]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-10", "bounds": [20, 320, 134, 364], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-11", "bounds": [138, 320, 264, 364], "flags": ["clickable", "selected"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-12", "bounds": [268, 320, 382, 364], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-21", "bounds": [20, 376, 382, 398]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-13", "bounds": [20, 404, 197, 448], "flags": ["clickable", "selected"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-14", "bounds": [205, 404, 382, 448], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-22", "bounds": [20, 460, 382, 482]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-17", "bounds": [20, 486, 382, 502]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-15", "bounds": [20, 508, 134, 552], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-16", "bounds": [138, 508, 264, 552], "flags": ["clickable", "selected"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-17", "bounds": [268, 508, 382, 552], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-23", "bounds": [20, 564, 382, 586]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-18", "bounds": [20, 592, 382, 636], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-24", "bounds": [20, 648, 382, 670]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-18", "bounds": [20, 674, 382, 688]},
+              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-19", "bounds": [20, 690, 382, 704]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-19", "bounds": [20, 726, 197, 774], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-id-8", "desc": "placeholder-button-20", "bounds": [205, 726, 382, 774], "flags": ["clickable"]},
+              {"class": "_UIScrollViewScrollIndicator", "desc": "placeholder-text-11", "text": "placeholder-value-1", "bounds": [395, 126, 398, 787], "children": [
+                {"class": "_UIScrollViewScrollIndicator", "desc": "placeholder-text-11", "text": "placeholder-value-1", "bounds": [395, 126, 398, 787]}
+              ]},
+              {"class": "_UIScrollViewScrollIndicator", "desc": "placeholder-text-12", "text": "placeholder-value-1", "bounds": [4, 784, 391, 787], "children": [
+                {"class": "_UIScrollViewScrollIndicator", "desc": "placeholder-text-12", "text": "placeholder-value-1", "bounds": [4, 784, 391, 787]}
+              ]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "placeholder-id-9", "desc": "placeholder-button-21", "bounds": [20, 708, 382, 764], "flags": ["clickable"], "off": ["enabled"]},
+            {"class": "RCTViewComponentView", "bounds": [0, 791, 402, 874], "children": [
+              {"class": "RCTViewComponentView", "desc": "placeholder-generic-3", "bounds": [0, 791, 134, 874], "children": [
+                {"class": "XCUIElementTypeStaticText", "desc": "\ue900", "bounds": [52, 800, 82, 830], "children": [
+                  {"class": "XCUIElementTypeStaticText", "desc": "\ue900", "bounds": [52, 800, 82, 830]}
+                ]}
+              ]},
+              {"class": "RCTViewComponentView", "desc": "placeholder-heading-18", "bounds": [134, 791, 268, 874], "flags": ["selected"]},
+              {"class": "RCTViewComponentView", "desc": "placeholder-generic-4", "bounds": [268, 791, 402, 874]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

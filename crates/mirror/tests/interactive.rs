@@ -812,6 +812,267 @@ fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
     }
 }
 
+/// Rn-app-fixes D38, scenario "Control behind a header listed first" (task
+/// 3.1; section 3 of the masked listings): XCTest lists a React Native
+/// header before the list it is drawn over and reports whole frames, so
+/// the rows the list scrolled up past its top lie in the header's frame,
+/// out of the list's bounds: the acceptance run's 44-point row at 2 points
+/// stayed listed, with the two headings below it, counted among the six
+/// above the list. A plain view listed before a list, across its top and
+/// as wide, is a header the app pins: it covers what lies in its frame.
+/// The row and the headings behind it are left out and no longer counted;
+/// the header's own controls stay.
+#[test]
+fn a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it() {
+    let (_, mut mirror) = mirror_on("header-top-ios");
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- button \"placeholder-button-1\" [ref=e1]",
+            "- heading \"placeholder-heading-1\" [ref=e2]",
+            "(3 more actionable items above, scroll up to reveal)",
+            "- button \"placeholder-button-3\" [ref=e3]",
+            "- button \"placeholder-button-4\" [ref=e4]",
+            "- heading \"placeholder-heading-4\" [ref=e5]",
+            "- generic \"placeholder-generic-1\" [ref=e6]",
+            "- textbox \"placeholder-textbox-1\" [focused, id=placeholder-id-2, ref=e7]: placeholder-value-1",
+            "- button \"placeholder-button-5\" [id=placeholder-id-3, ref=e8]",
+        ])
+    );
+}
+
+/// D38: a navigation bar listed before the content it is drawn over covers
+/// what lies in its frame as a pinned header does, whether or not the
+/// content scrolls: the header of the list with the keyboard up as a
+/// navigation bar over content that does not scroll.
+#[test]
+fn a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it() {
+    let mut screen = Screen::load("header-top-ios");
+    let content = &mut screen.0["windows"][1]["root"]["children"][0]["children"][0]["children"];
+    content[0]["class"] = json!("XCUIElementTypeNavigationBar");
+    content[1]["class"] = json!("RCTViewComponentView");
+    content[1].as_object_mut().unwrap().remove("scroll");
+    content[1]["flags"] = json!([]);
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    for behind in [
+        "placeholder-button-2",
+        "placeholder-heading-2",
+        "placeholder-heading-3",
+    ] {
+        assert!(
+            snapshot.by_name(behind).is_none(),
+            "{behind}:\n{}",
+            snapshot.text
+        );
+    }
+    assert!(
+        snapshot.by_name("placeholder-button-3").is_some(),
+        "{}",
+        snapshot.text
+    );
+}
+
+/// D38: UIKit hit-tests a disabled control as an enabled one, and the touch
+/// goes nowhere, so a disabled view drawn after a control covers it
+/// whatever it shows: the creation tab's primary button (section 1b of the
+/// masked listings) as an unlabelled, disabled view holding an unlabelled
+/// image, which shows neither a ref nor a name, over the paste control
+/// moved up wholly within it. The paste control is left out, and a tap on
+/// it is refused naming the disabled control; the button beside it, only
+/// partly under the view, stays.
+#[test]
+fn a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows() {
+    let screen = Screen::load("create-disabled-ios");
+    let silent = screen.patched(json!([
+        {"find": "placeholder-id-8", "bounds": [205, 712, 382, 760]},
+        {"find": "placeholder-id-9", "class": "RCTViewComponentView", "desc": null, "off": ["clickable"],
+         "children": [{"class": "XCUIElementTypeImage", "bounds": [181, 716, 221, 756]}]}
+    ]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(silent.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let paste = mirror
+        .snapshot(&interactive())
+        .unwrap()
+        .by_identifier("placeholder-id-8")
+        .expect("listed before")
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        snapshot.by_identifier("placeholder-id-8").is_none(),
+        "{}",
+        snapshot.text
+    );
+    assert!(
+        snapshot.by_name("placeholder-button-19").is_some(),
+        "{}",
+        snapshot.text
+    );
+    let error = mirror
+        .act(&Action::Tap {
+            target: Target::Ref(paste),
+            hold: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(error.to_string().contains("disabled control"), "{error}");
+    assert!(target.inputs().is_empty());
+}
+
+/// A tap on `reference`: where it landed, or why it was refused.
+fn tap_on(mirror: &mut Mirror, reference: mirror::Ref) -> Result<mirror::Point, MirrorError> {
+    mirror
+        .act(&Action::Tap {
+            target: Target::Ref(reference),
+            hold: None,
+        })
+        .map(|outcome| outcome.at.expect("a tap lands at a point"))
+}
+
+/// Rn-app-fixes D37, scenario "Heading half under a footer button" (task
+/// 3.1; section 1a of the masked listings): the consent screen's ninth
+/// heading, 22 points tall, lies with its lower 11 points under the
+/// secondary footer button, which declines the consent. The acceptance
+/// run's tap at its centre landed on that button's top edge and declined
+/// the consent. A tap goes to the centre of what of the heading shows, its
+/// upper half; with 6 points of it left above the button, fewer than 8, it
+/// is refused naming the button, and nothing is tapped. The listing is the
+/// screen's as the acceptance run read it, the half-covered heading and the
+/// texts that straddle the buttons still in it.
+#[test]
+fn a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows() {
+    let screen = Screen::load("consent-footer-ios");
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert_eq!(listing.text.lines().count(), 31, "{}", listing.text);
+    for kept in ["placeholder-text-6", "placeholder-text-8", "\u{e900}"] {
+        assert!(listing.by_name(kept).is_some(), "{kept}:\n{}", listing.text);
+    }
+    let heading = listing
+        .by_name("placeholder-heading-9")
+        .unwrap()
+        .reference
+        .unwrap();
+    let at = tap_on(&mut mirror, heading).unwrap();
+    // The heading spans 33 to 90.33 across and 709 to 731 down, the button
+    // from 720 down.
+    assert!(
+        (at.x - (33.0 + 90.33) / 2.0).abs() < 0.01 && at.y == 714.5,
+        "{at}"
+    );
+
+    let mut lower = screen.clone();
+    lower.0["windows"][0]["root"]["children"][0]["children"][0]["children"][0]["children"][21]
+        ["bounds"] = json!([33, 714, 90.33, 736]);
+    let target = FakeTarget::new(lower.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let heading = mirror
+        .snapshot(&interactive())
+        .unwrap()
+        .by_name("placeholder-heading-9")
+        .unwrap()
+        .reference
+        .unwrap();
+    let error = tap_on(&mut mirror, heading).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(
+        error.to_string().contains("button \"placeholder-button-1\""),
+        "{error}"
+    );
+    assert!(target.inputs().is_empty());
+}
+
+/// D37, scenario "Card partly under a sticky header" (task 3.1; section 2
+/// of the masked listings): on the feed the card at 41 points, 116 tall,
+/// lies 81 points above its list's top, where the header listed before the
+/// list is drawn, and the acceptance run's tap at its centre landed on the
+/// header's heading. A tap goes to the centre of the 30% of the card in
+/// view. So it does when the list runs under the header, drawn after it
+/// over the list's top.
+#[test]
+fn a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view() {
+    let screen = Screen::load("feed-sticky-ios");
+    let mut drawn_over = screen.clone();
+    let content = &mut drawn_over.0["windows"][0]["root"]["children"][0]["children"][0]["children"];
+    let header = content[0].clone();
+    content[1]["bounds"] = json!([0, 0, 402, 791]);
+    let list = content[1].clone();
+    content[0] = list;
+    content[1] = header;
+    for screen in [screen, drawn_over] {
+        let target = FakeTarget::new(screen.read());
+        let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+        let card = mirror
+            .snapshot(&interactive())
+            .unwrap()
+            .by_identifier("placeholder-id-4")
+            .expect("the card is listed")
+            .reference
+            .unwrap();
+        let at = tap_on(&mut mirror, card).unwrap();
+        assert_eq!((at.x, at.y), (201.0, 139.5), "{at}");
+    }
+}
+
+/// D37 and D38 (task 3.1; section 1b of the masked listings): on the
+/// creation tab the paste control lies 38 of its 48 points under the
+/// disabled primary button drawn after the tab's list, and the acceptance
+/// run's taps at its centre landed on the disabled button, twice, doing
+/// nothing. The control stays listed, and a tap goes to the centre of its
+/// lower 10 points, below the button.
+#[test]
+fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
+    let (target, mut mirror) = mirror_on("create-disabled-ios");
+    let snapshot = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(snapshot.text.lines().count(), 23, "{}", snapshot.text);
+    let paste = snapshot
+        .by_identifier("placeholder-id-8")
+        .expect("listed, partly under the button")
+        .reference
+        .unwrap();
+    let at = tap_on(&mut mirror, paste).unwrap();
+    assert_eq!((at.x, at.y), (293.5, 769.0), "{at}");
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// D38, scenario "Control behind a header listed first": a ref taken while
+/// the row lay below the header is refused once the list has scrolled it
+/// up behind the header, naming the header as a tap there would land on
+/// it, a plain view, and nothing is tapped.
+#[test]
+fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header() {
+    let screen = Screen::load("header-top-ios");
+    let mut below = screen.clone();
+    below.0["windows"][1]["root"]["children"][0]["children"][0]["children"][1]["children"][4]
+        ["bounds"] = json!([38, 126, 364, 170]);
+    let target = FakeTarget::new(below.read());
+    target.at(ms(100), Step::Show(screen.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let row = mirror
+        .snapshot(&interactive())
+        .unwrap()
+        .by_identifier("placeholder-id-1")
+        .expect("listed below the header")
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let error = tap_on(&mut mirror, row).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(error.to_string().contains("overlay"), "{error}");
+    assert!(target.inputs().is_empty());
+}
+
 /// Rn-app-fixes D35: XCTest reports a React Native text as a text whose
 /// only child is its own text, a heading likewise without its identifier,
 /// and UIKit's scroll bars as elements whose only child repeats them. The
