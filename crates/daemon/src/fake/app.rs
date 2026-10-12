@@ -245,7 +245,11 @@ impl FormField {
             (Board::Form, "placeholder-secret") => Some(FormField::Secret),
             (Board::List | Board::ListLow, LIST_FIELD) => Some(FormField::Query),
             (
-                Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked,
+                Board::Code
+                | Board::CodeAgain
+                | Board::CodeNamed
+                | Board::CodeMasked
+                | Board::CodeBare,
                 CODE_FIELD | CODE_INPUT,
             ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
@@ -295,6 +299,10 @@ enum Board {
     CodeNamed,
     /// The same step with the field's boxes masked: a bullet for each digit.
     CodeMasked,
+    /// The same step on its second visit: the field's node holds no field,
+    /// only an empty view out of sight, the app's input not in the tree; a
+    /// tap on the node gives that input the focus and brings the keyboard up.
+    CodeBare,
     /// The paste sheet (section 7): the title field, without an identifier,
     /// in one of four unidentified views of one class, which gains a counter
     /// when the field takes the focus; its name changes once it holds text.
@@ -313,6 +321,7 @@ impl Board {
             "code-again" => Board::CodeAgain,
             "code-named" => Board::CodeNamed,
             "code-masked" => Board::CodeMasked,
+            "code-bare" => Board::CodeBare,
             "sheet" => Board::Sheet,
             _ => Board::Form,
         }
@@ -1295,7 +1304,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
-        Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked => {
+        Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked | Board::CodeBare => {
             code_content(kit, forms)
         }
         Board::Sheet => sheet_content(kit, forms),
@@ -1330,11 +1339,13 @@ fn boxes_name(pin: &str, masked: bool) -> String {
 /// the tree reports as off the screen, so the node gets no ref; and two
 /// more labelled nodes with identifiers hold no field and two of them. On
 /// the step as the third acceptance run met it, the field's name spells its
-/// boxes before its label ([`boxes_name`]).
+/// boxes before its label ([`boxes_name`]), and on its second visit the
+/// field's node holds an empty view out of sight and no field, so it gets
+/// no ref either.
 fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let digits: Vec<String> = forms.pin.chars().map(String::from).collect();
     let name = match forms.board {
-        Board::CodeNamed => boxes_name(&forms.pin, false),
+        Board::CodeNamed | Board::CodeBare => boxes_name(&forms.pin, false),
         Board::CodeMasked => boxes_name(&forms.pin, true),
         _ if digits.is_empty() => "placeholder-generic-2".to_owned(),
         _ => format!("placeholder-generic-2, {}", digits.join(" ")),
@@ -1377,6 +1388,12 @@ fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
                 [20.0, 464.0, 382.0, 488.0],
             )
             .children([hidden("placeholder-pair-1"), hidden("placeholder-pair-2")]),
+        );
+    }
+    if forms.board == Board::CodeBare {
+        field = field.child(
+            kit.group([20.0, 518.67, 20.0, 518.67])
+                .set(protocol::snapshot::NodeFlags::VISIBLE, false),
         );
     }
     content.extend([

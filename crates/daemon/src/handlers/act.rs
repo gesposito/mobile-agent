@@ -3324,6 +3324,95 @@ mod tests {
         }
     }
 
+    /// The texts among `sent`, with the node each was aimed at.
+    fn texts(sent: &Sent) -> Vec<(String, Option<mirror::backend::NodeHandle>)> {
+        sent.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, input)| match input {
+                Input::Text { text, node, .. } => Some((text.clone(), *node)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Design D44, N1 of the third acceptance run (task 4.2; task 3.7): on
+    /// the code step's second visit the code field is a node with its
+    /// identifier and nothing listed below it, the app's input not in the
+    /// tree, so no field lies inside it for D39's rule and it gets no ref,
+    /// and `fill` and `type` by the identifier failed with
+    /// `invalid_argument`, while a click on it raised the keyboard and a
+    /// `type` without a target landed the code. An identifier on such a node
+    /// taps it, and once the keyboard is up the text goes to the input in
+    /// focus, untargeted: the fill reads the code back through the node's
+    /// name, and the reply names the node and says the keyboard carried the
+    /// text.
+    #[test]
+    fn fill_and_type_by_the_identifier_of_a_node_that_raises_the_keyboard_go_to_the_input_it_focuses()
+     {
+        let (mut target, sent) = typed_board("code-bare", Typing::Keys);
+        let reply = fill_in(&mut target, "#placeholder-id-3", "123456");
+        let success = reply.unwrap_or_else(|failure| panic!("{failure:?}"));
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "name", "{data}");
+        let warning = success.warning.clone().unwrap_or_default();
+        assert!(
+            warning.contains("#placeholder-id-3") && warning.contains("keyboard"),
+            "the reply names the node and the keyboard: {warning}"
+        );
+        assert_eq!(taps(&sent).len(), 1, "{:?}", taps(&sent));
+        assert_eq!(
+            texts(&sent),
+            [("123456".to_owned(), None)],
+            "the code went in once, to the input in focus"
+        );
+        assert_eq!(
+            text_of(&mut target, "#placeholder-id-3"),
+            "1, 2, 3, 4, 5, 6, Verification code, required"
+        );
+
+        let (mut typing, sent) = typed_board("code-bare", Typing::Keys);
+        let type_in = json!({"action": "type", "target": "#placeholder-id-3", "text": "42"});
+        let typed = super::type_text(&mut typing, "default", &request(&type_in.to_string()))
+            .unwrap_or_else(|failure| panic!("{failure:?}"));
+        assert!(
+            typed.warning.unwrap_or_default().contains("keyboard"),
+            "{}",
+            typed.data
+        );
+        assert_eq!(texts(&sent), [("42".to_owned(), None)]);
+        assert!(
+            text_of(&mut typing, "#placeholder-id-3")
+                .as_str()
+                .is_some_and(|name| name.starts_with("4, 2, \u{2013}")),
+            "the input took the keys"
+        );
+    }
+
+    /// Design D44: an identifier on a node that takes no text, holds no
+    /// field and raises no keyboard when tapped still fails with
+    /// `invalid_argument`, once the keyboard has had its second to come, and
+    /// nothing is typed; and D39's rule comes first: an identifier on a node
+    /// holding one field still fills that field.
+    #[test]
+    fn an_identifier_on_a_node_whose_tap_raises_no_keyboard_still_takes_no_text() {
+        let (mut target, sent) = typed_board("code-again", Typing::Keys);
+        let started = Instant::now();
+        let failure = fill_in(&mut target, "#placeholder-id-4", "1").unwrap_err();
+        let waited = started.elapsed();
+        assert_eq!(failure.code, "invalid_argument", "{}", failure.message);
+        assert!(waited >= KEYBOARD_WAIT, "{waited:?}");
+        assert_eq!(taps(&sent).len(), 1, "{:?}", taps(&sent));
+        assert!(texts(&sent).is_empty(), "{:?}", texts(&sent));
+
+        let success = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        assert_eq!(success.data["readFrom"], "value", "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(warning.contains("textbox"), "{warning}");
+        assert!(!warning.contains("keyboard"), "{warning}");
+    }
+
     /// Design D39, N2 of the acceptance run (task 3.3; section 7 of the
     /// masked listings): on the paste sheet a fill by the ref of the title
     /// field, whose view gains a counter when the field takes the focus and
