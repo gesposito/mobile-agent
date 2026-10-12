@@ -2,8 +2,9 @@
 //! the Bluesky run of the React Native smoke test
 //! (`reports/10.4-rn-smoke.md`, second run). A ref's identity includes the
 //! accessible name of an element without an identifier, so a control that a
-//! screen transition renames gets a fresh ref, and its old ref is refused as
-//! stale rather than pressing the control that took its place (finding 6).
+//! screen transition renames and moves gets a fresh ref, and its old ref is
+//! refused as stale rather than pressing the control that took its place
+//! (finding 6); one renamed in place keeps its ref (rn-app-fixes, D39).
 //! A labelled node without traits whose children, if any, are static text is
 //! a control and gets a ref, unless a clickable ancestor holds it, whose name
 //! it then forms when the ancestor has none of its own (finding 4); the
@@ -153,8 +154,12 @@ fn android_form(title: &str, control: &str) -> Screen {
     }))
 }
 
+/// Rn-app-fixes D39: a control renamed in place, its role, parent and place
+/// among its siblings unchanged, keeps its ref under its new name, as a
+/// field whose label changes keeps it; Bluesky's transition, which also
+/// moves the control, still refuses the old ref.
 #[test]
-fn a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android() {
+fn a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android() {
     let target = FakeTarget::new(android_form("Sign in", "Forgot password?").read());
     let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
     assert_eq!(
@@ -169,18 +174,93 @@ fn a_control_named_by_its_text_gets_a_fresh_ref_when_the_text_changes_on_android
     target.after(ms(50), content_changed());
     target.advance(ms(100));
 
-    let error = mirror.act(&tap(Ref(1))).unwrap_err();
-    assert_eq!(error.code(), code::STALE_REF);
-    assert!(
-        error
-            .to_string()
-            .contains("the button \"Forgot password?\""),
-        "{error}"
-    );
-    assert_eq!(target.inputs().len(), 1);
+    assert_eq!(mirror.resolve(Ref(1)).unwrap().name, "Next");
+    mirror.act(&tap(Ref(1))).unwrap();
+    assert_eq!(target.inputs().len(), 2);
     assert_eq!(
         mirror.snapshot(&interactive()).unwrap().text,
-        "- button \"Next\" [ref=e2]"
+        "- button \"Next\" [ref=e1]"
+    );
+}
+
+/// The paste sheet's nodes below its root view (section 7 of the masked
+/// listings): the sheet's children.
+fn sheet_children(screen: &mut Screen) -> &mut Value {
+    &mut screen.0["windows"][0]["root"]["children"][0]["children"][0]["children"][0]["children"]
+}
+
+/// Rn-app-fixes D39, scenario "Ref across a label change" (task 3.3;
+/// section 7 of the masked listings): on the paste sheet the title field,
+/// without an identifier, took a new ref when it took the focus, its view
+/// one of four unidentified views of a class whose content gained a
+/// counter, and again once it held text and its name changed, so a fill by
+/// its ref failed stale before anything was typed. A node keeps its ref,
+/// and its element, across a change of its name or of what it holds while
+/// its role, identifier, parent and place among its siblings are
+/// unchanged: the field's ref is the same before the focus, after it, and
+/// once it holds text, and resolves to the field under its new name.
+#[test]
+fn a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place() {
+    let sheet = Screen::load("sheet-ios");
+    let mut focused = sheet.clone();
+    let view = &mut sheet_children(&mut focused)[3];
+    view["children"][0]["flags"] = json!(["editable", "focusable", "focused"]);
+    view["children"].as_array_mut().unwrap().push(json!(
+        {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-1", "bounds": [300, 262, 374, 268]}
+    ));
+    let mut typed = focused.clone();
+    let field = &mut sheet_children(&mut typed)[3]["children"][0];
+    field["desc"] = json!("placeholder-textbox-3");
+    field["text"] = json!("placeholder-value-intended");
+    let target = FakeTarget::new(sheet.read());
+    target.at(ms(100), Step::Show(focused.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(300), Step::Show(typed.read()));
+    target.at(ms(300), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let before = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        before.text,
+        lines(&[
+            "- heading \"placeholder-heading-1\" [ref=e1]",
+            "- button \"placeholder-button-1\" [ref=e2]",
+            "- generic \"placeholder-generic-1\" [ref=e3]",
+            "- textbox \"placeholder-textbox-1\" [ref=e4]",
+            "- generic \"placeholder-generic-2\" [ref=e5]",
+            "- textbox \"placeholder-textbox-2\" [id=placeholder-id-1, ref=e6]",
+            "- button \"placeholder-button-2\" [disabled, id=placeholder-id-2, ref=e7]",
+            "- button \"placeholder-button-1\" [ref=e8]",
+        ])
+    );
+    let field = before.by_name("placeholder-textbox-1").unwrap().reference;
+
+    mirror.run_until(target.instant(ms(250))).unwrap();
+    let after_focus = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        after_focus
+            .by_name("placeholder-textbox-1")
+            .unwrap()
+            .reference,
+        field,
+        "{}",
+        after_focus.text
+    );
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let after_typing = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        after_typing
+            .by_name("placeholder-textbox-3")
+            .unwrap()
+            .reference,
+        field,
+        "{}",
+        after_typing.text
+    );
+    assert!(after_typing.removed_refs.is_empty(), "{after_typing:?}");
+    let resolved = mirror.resolve(field.unwrap()).unwrap();
+    assert_eq!(
+        resolved.value.as_deref(),
+        Some("placeholder-value-intended")
     );
 }
 

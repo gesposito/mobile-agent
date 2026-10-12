@@ -1,0 +1,31 @@
+{
+  "description": "The paste sheet of a React Native app on iOS, synthetic, in the structure the acceptance run of rn-app-fixes found (task 2.2; section 7 of the masked listings, design D39), before its title field takes the focus: the sheet's heading, a close button, a label, the title field without an identifier in an unidentified view of its own, a second label, a field with an identifier in another such view, the disabled primary button and a second close button identical to the first. The two labels and the two fields' views are four unidentified views of one class among the sheet's children. Once the title field takes the focus its view also holds a counter, and once the field holds text its name changes. Bounds invented. Placeholder names from the listings. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "RCTViewComponentView", "bounds": [0, 120, 402, 874], "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-1", "bounds": [20, 140, 330, 172]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-1", "bounds": [338, 136, 382, 176], "flags": ["clickable"]},
+              {"class": "RCTViewComponentView", "desc": "placeholder-generic-1", "bounds": [20, 188, 382, 208]},
+              {"class": "RCTViewComponentView", "bounds": [20, 212, 382, 268], "children": [
+                {"class": "XCUIElementTypeTextField", "desc": "placeholder-textbox-1", "bounds": [28, 216, 374, 260], "flags": ["editable", "focusable"]}
+              ]},
+              {"class": "RCTViewComponentView", "desc": "placeholder-generic-2", "bounds": [20, 284, 382, 304]},
+              {"class": "RCTViewComponentView", "bounds": [20, 308, 382, 364], "children": [
+                {"class": "XCUIElementTypeTextField", "id": "placeholder-id-1", "desc": "placeholder-textbox-2", "bounds": [28, 312, 374, 356], "flags": ["editable", "focusable"]}
+              ]},
+              {"class": "XCUIElementTypeButton", "id": "placeholder-id-2", "desc": "placeholder-button-2", "bounds": [20, 380, 382, 428], "flags": ["clickable"], "off": ["enabled"]},
+              {"class": "XCUIElementTypeButton", "desc": "placeholder-button-1", "bounds": [338, 440, 382, 480], "flags": ["clickable"]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
