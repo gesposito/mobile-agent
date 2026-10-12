@@ -499,7 +499,8 @@ they create.
 `type_text` types through key events or pastes, and reports which it did.
 `Auto` types a string of at most 32 characters that a US keyboard can type,
 with Shift where needed; anything longer, or with a character no key types,
-is pasted. Keys go at a cadence, the pause from one key's release to the
+is pasted. `TextMethod::resolve` says which a text gets before it is
+entered. Keys go at a cadence, the pause from one key's release to the
 next key's press: `type_text_at` takes one, and `type_text` types at the
 native cadence, 15 ms (React Native's fields, below). A paste puts the text
 on the device's general pasteboard and sends Command-V. The text goes there
@@ -575,6 +576,50 @@ once per render; the fixture's own loss at 15 ms kept only the first key.
 The slowest cadence that lost nothing, 60 ms, is React Native's. A screen
 that takes longer than that to render can still lose keys, which `fill`'s
 read-back finds and its paste repairs; `type` reads nothing back.
+
+A field that already holds text is filled by selecting it with Command-A
+and typing over the selection, and there autocorrection rewrites what the
+keys typed: the acceptance run of `rn-app-fixes` typed "Smoke Org" over an
+organization's name and the field showed "smoke Org", four times out of
+four (task 3.7). Task 4.5 traced it on the spike Simulator with throwaway
+screens, not committed, of four fields, one per auto-capitalization setting,
+autocorrection on as a React Native `TextInput` leaves it, each entry
+following the daemon's readying of a field after another: a tap, reads
+until a field has the focus, Command-A, then the keys. Over the field's
+"Smoke Org", the field showed "Smoke" until the space, which autocorrection
+replaced with "smoke "; with autocorrection off, nothing was rewritten (12
+of 12). The shift the keyboard raises for a capitalizing field played no
+part: a key sent with Shift landed as a capital in every setting, and one
+sent without it in lower case, whatever the keyboard showed. In SwiftUI
+fields, 20 entries each, what landed:
+
+| Sent | None | Words | Sentences | All characters |
+|---|---|---|---|---|
+| Over "Smoke Org", every capital with Shift, as the driver types | "smoke Org" 20 | "smoke Org" 18, whole 2 | "smoke Org" 20 | "smoke Org" 16, whole 4 |
+| Over "Smoke Org", the first letter without Shift | "smoke Org" 20 | "smoke Org" 20 | "smoke Org" 20 | "smoke Org" 20 |
+| Into the emptied field, every capital with Shift | whole 20 | whole 20 | whole 20 | whole 20 |
+| Into the emptied field, the first letter without Shift | "smoke Org" 20 | "smoke Org" 20 | "smoke Org" 20 | "smoke Org" 20 |
+| Over "Smoke Org", the selection deleted and a read showing the field empty first | whole 20 | whole 19, "S" 1 | whole 20 | whole 20 |
+
+React Native's fields, typed at 60 ms, lost the capital to the rewrite in 62
+of 68 entries over "Smoke Org", and took all 80 whole with the selection
+deleted and the field read empty first. The keyboard's window shows the
+shift: its `shift` key carries `selected` and its letter keys are labelled
+in capitals while the shift is up, in lower case otherwise, up in the
+words, sentences and all-characters fields when they are empty. It does not
+show the rewrite: with that read between Command-A and the first key, the
+field without auto-capitalization was still rewritten ten times out of ten
+while its shift read down. Reading the first letter back after its key does
+not see it either, since the rewrite comes at the space. So the daemon,
+which selects the field's text before `fill`'s keys, deletes the selection
+too when the entry goes in as keys and starts with a capital, and the keys
+wait for a read that shows the field empty, at most 1 s
+(`empties_first` in `crates/daemon/src/devices/simulator.rs`): the delete
+and one to three reads, 0.28 s more a fill at p50 through the daemon at
+loads of 7.7 to 9.7. A lower-case first letter, which kept its case in 146
+of 148 entries over the selection (two React Native ones came back
+capitalized), a paste and `type`, which selects nothing, keep the readying
+they had.
 
 The tests read a field back by putting a sentinel on the pasteboard and
 sending Command-A and Command-C: 500 characters pasted in 48 ms, 204 ms through
@@ -679,6 +724,7 @@ about a minute.
 | Input actions | A swipe that comes to rest before the finger lifts (task 10.16) | `gesture::tests::a_swipe_that_rests_reaches_its_end_then_creeps_a_point_at_a_time_and_lifts`; on the Simulator through the daemon, `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted`; the paste's way to the pasteboard and its grants (task 10.31): `macos::pasteboard::tests::a_paste_goes_to_dtpasteboardd_and_leaves_devicectl_alone`, `macos::pasteboard::tests::a_guest_that_does_not_take_the_set_gets_devicectl`, `macos::pasteboard::tests::when_devicectl_fails_too_the_error_names_both`, `macos::pasteboard::tests::the_set_carries_the_text_under_each_plain_text_type`, `macos::pasteboard::tests::a_set_reply_succeeds_and_any_other_answer_says_why_not`, `macos::pasteboard::tests::the_second_paste_lists_nothing`, `macos::pasteboard::tests::a_changed_application_directory_lists_and_grants_again` |
+| Text entry | Capital first letter over what the field held (task 4.5 of `rn-app-fixes`) | in the daemon `devices::simulator::tests::a_capital_first_letter_lands_when_fill_types_over_what_the_field_held` (on a fake of the keyboard as measured), `devices::simulator::tests::only_keys_whose_first_letter_is_a_capital_empty_the_field_first`, `devices::simulator::tests::the_focused_field_shows_its_text_or_nothing`, and `model::tests::auto_types_a_short_typeable_string_and_pastes_any_other`; no fixture's field has autocorrection on, so the measurement and the ten fills behind the rule ran on throwaway screens (task 4.5) |
 | Text entry | React Native field typed whole (task 3.5 of `rn-app-fixes`) | `cadence::a_react_native_field_takes_the_36_character_entry_whole_twenty_times`, `cadence::a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence`, `cadence::tests::a_read_of_react_natives_views_types_at_the_react_native_cadence`, `cadence::tests::a_native_read_types_at_the_native_cadence`, and in the daemon `devices::simulator::tests::text_is_typed_at_the_cadence_the_latest_read_calls_for`; the measurement behind the cadence, `cadence::the_36_character_entry_at_three_cadences` (ignored) |
 | Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |
 | Failure containment | Framework call throws | `containment::a_tree_read_that_throws_takes_only_its_target_out_of_service`, `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call`, `macos::driver::tests::reader_failures_become_driver_errors`, and in `reader/`: `guest::objc::tests::an_exception_becomes_a_failure_naming_the_call` |

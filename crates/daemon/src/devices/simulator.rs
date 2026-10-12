@@ -565,9 +565,9 @@ fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
 /// SwiftUI entries and 62 of 68 React Native ones on the iOS 26.5
 /// Simulator, whatever the field's auto-capitalization, and in none of 12
 /// without autocorrection; with the selection deleted and a read showing
-/// the field empty first, in none of 160. A lower-case first letter loses
-/// nothing to the rewrite, a paste types no keys, and `type` selects
-/// nothing.
+/// the field empty first, in none of 160. A lower-case first letter kept
+/// its case in 146 of 148 entries over the selection, a paste types no
+/// keys, and `type` selects nothing.
 fn empties_first(text: &str, method: WireMethod) -> bool {
     method != WireMethod::KEYS
         && text.starts_with(|c: char| c.is_ascii_uppercase())

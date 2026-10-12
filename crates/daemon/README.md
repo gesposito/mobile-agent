@@ -671,7 +671,11 @@ traits:
   VolumeUp, VolumeDown, Siri). Text for a field taps it, waits up to 1.5 s
   for an editable node to take the focus and, unless keys were asked for
   (`type`), selects what the field holds with Command-A so the text
-  replaces it, and for an empty text deletes it with the delete key.
+  replaces it, and for an empty text deletes it with the delete key, as
+  it does for typed text whose first letter is a capital, which then waits
+  up to 1 s for a read that shows the field empty: typed over the
+  selection, its first word was rewritten by autocorrection at the first
+  space, the capital lost (task 4.5 of `rn-app-fixes`).
   Direct text is pasted, text left to the driver typed up to 32 characters
   and pasted beyond; a paste reports the method `direct`, typing `keys`. The
   input session starts during `open` (`InputSession`): the driver's
