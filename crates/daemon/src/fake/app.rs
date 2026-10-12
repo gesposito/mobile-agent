@@ -238,9 +238,56 @@ impl FormField {
     }
 }
 
+/// The launch option that names the placeholder app's screen, as an
+/// environment variable on iOS and an intent extra on Android.
+const BOARD_OPTION: &str = "PLACEHOLDER_SCREEN";
+
+/// Which screen the placeholder app shows, as [`BOARD_OPTION`] names it:
+/// the form of the smoke test of 2026-10-09, or one of the screens the
+/// acceptance run of 2026-10-12 met (rn-app-fixes, task 2.2), in the
+/// structure of the masked listings' sections, laid out in an iPhone's
+/// points on either platform.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Board {
+    /// The form (see [`form_content`]).
+    Form,
+    /// The consent screen (section 1a): a heading half under the secondary
+    /// footer button, a 12-point text under the primary one.
+    Consent,
+    /// The creation tab (section 1b): a list scrolling under the header
+    /// listed before it and its disabled primary button drawn after it,
+    /// over most of the paste control.
+    Creation,
+    /// The feed (section 2): a card partly above its list's top, where the
+    /// header listed before the list is drawn.
+    Feed,
+}
+
+impl Board {
+    fn parse(name: &str) -> Board {
+        match name {
+            "consent" => Board::Consent,
+            "creation" => Board::Creation,
+            "feed" => Board::Feed,
+            _ => Board::Form,
+        }
+    }
+}
+
+/// The creation tab's list, in points.
+const CREATION_LIST: [f64; 4] = [0.0, 122.0, 402.0, 791.0];
+
+/// How far the creation tab's list scrolls, in points.
+const CREATION_MAX: f64 = 400.0;
+
+/// The creation tab's disabled primary button, which takes a tap and does
+/// nothing.
+const CREATION_DISABLED: &str = "placeholder-id-9";
+
 /// The running placeholder app.
 #[derive(Clone, Debug, PartialEq)]
 struct Forms {
+    board: Board,
     code: String,
     secret: String,
     focus: Option<FormField>,
@@ -250,18 +297,41 @@ struct Forms {
     lifted: bool,
     /// Whether the footer shows, which the hint brings up.
     footer: bool,
+    /// How far the creation tab's list is scrolled, in points.
+    offset: f64,
 }
 
 impl Forms {
-    fn launch() -> Forms {
+    fn launch(board: Board) -> Forms {
         Forms {
+            board,
             code: String::new(),
             secret: String::new(),
             focus: None,
-            status: "Not submitted".to_owned(),
+            status: match board {
+                Board::Form => "Not submitted",
+                Board::Consent | Board::Creation | Board::Feed => "Not tapped",
+            }
+            .to_owned(),
             lifted: false,
             footer: false,
+            offset: 0.0,
         }
+    }
+
+    /// A stroke from `from` to `to`, gliding on `glide` points the way the
+    /// finger went: the creation tab's list moves by them, as far as it
+    /// scrolls, when the stroke comes down on it; whether it moved.
+    fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
+        if self.board != Board::Creation || !tree::contains(CREATION_LIST, from.0, from.1) {
+            return false;
+        }
+        let moved = from.1 - to.1;
+        let way = if moved == 0.0 { 0.0 } else { moved.signum() };
+        let offset = (self.offset + moved + glide * way).clamp(0.0, CREATION_MAX);
+        let changed = offset != self.offset;
+        self.offset = offset;
+        changed
     }
 
     fn field(&mut self, field: FormField) -> &mut String {
@@ -273,7 +343,16 @@ impl Forms {
 
     /// A tap that landed on `hit`, or on the keyboard when `on_keyboard`
     /// says so: a key of the number pad, entered into the field in focus.
+    /// On the screens of the acceptance run the status names what the tap
+    /// landed on, but for the creation tab's disabled button, which does
+    /// nothing.
     fn tap(&mut self, hit: Option<&str>, on_keyboard: bool) {
+        if self.board != Board::Form {
+            if hit != Some(CREATION_DISABLED) {
+                self.status = format!("Tapped {}", hit.unwrap_or("nothing"));
+            }
+            return;
+        }
         if on_keyboard {
             if let Some(field) = self.focus {
                 self.field(field).push(PAD_KEY);
@@ -522,7 +601,12 @@ impl Device {
         }
         if app == PLACEHOLDER {
             if launch.relaunch || self.placeholder.is_none() {
-                self.placeholder = Some(Forms::launch());
+                let board = launch
+                    .env
+                    .iter()
+                    .find(|(key, _)| key == BOARD_OPTION)
+                    .map_or(Board::Form, |(_, value)| Board::parse(value));
+                self.placeholder = Some(Forms::launch(board));
             }
             self.foreground = Foreground::Placeholder;
             return Ok(());
@@ -780,6 +864,13 @@ impl Device {
         let on_keyboard = self
             .keyboard()
             .is_some_and(|keyboard| tree::contains(keyboard, from.0, from.1));
+        if self.foreground == Foreground::Placeholder {
+            return !on_keyboard
+                && self
+                    .placeholder
+                    .as_mut()
+                    .is_some_and(|forms| forms.swipe(from, to, glide));
+        }
         let Some(fixture) = self.front_fixture() else {
             return false;
         };
@@ -1124,20 +1215,122 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windo
     windows.push(window);
 }
 
-/// The placeholder app's screen, from the top: a heading; the code field, a
-/// labelled node without traits holding a box per character, as a React
-/// Native code input built of boxes reads; the secret field, a labelled
-/// node without traits and nothing below it, as iOS reads a React Native
-/// field inside a view marked accessible; a status line; a hint button
-/// that the keyboard, once up, covers all but its top 14 points of; the
-/// submit button low on the screen, which the layout moves above the
-/// keyboard some time after the keyboard came up, as React Native moves a
-/// view out of the keyboard's way; a help button, which the keyboard
-/// covers; a terms button at the bottom; and, once the hint brings it up, a
-/// footer listed after the terms button and drawn over it, a toolbar
-/// holding an accept button, as a fixed footer is drawn over what scrolls
-/// under it.
+/// The placeholder app's screen, as its board says.
 fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    match forms.board {
+        Board::Form => form_content(kit, forms),
+        Board::Consent => consent_content(kit, forms),
+        Board::Creation => creation_content(kit, forms),
+        Board::Feed => feed_content(kit, forms),
+    }
+}
+
+/// The consent screen (section 1a of the masked listings): a scroll view
+/// holding the status line, the eighth and ninth headings, the text that
+/// straddles the gap between the footer buttons and the 12-point text, and
+/// the secondary and primary footer buttons listed after it, drawn over
+/// what is scrolled under them, the ninth heading's lower 11 points under
+/// the secondary one, the 12-point text's upper 9 under the primary one.
+/// Nothing but the status line carries an identifier the tree reports.
+fn consent_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let height = kit.height();
+    let scrolled = kit.scroll_view([0.0, 62.0, kit.width(), height]).children([
+        kit.label(Some("placeholder-status"), &forms.status, [33.0, 62.0, 369.0, 76.0]),
+        kit.heading("placeholder-heading-8", "placeholder-heading-8", [33.0, 596.0, 369.0, 618.0])
+            .key("placeholder-heading-8"),
+        kit.heading("placeholder-heading-9", "placeholder-heading-9", [33.0, 709.0, 90.33, 731.0])
+            .key("placeholder-heading-9"),
+        kit.label(None, "placeholder-text-6", [33.0, 755.0, 369.0, 771.0]),
+        kit.label(None, "placeholder-text-8", [33.0, 819.0, 369.0, 831.0]).key("placeholder-text-8"),
+    ]);
+    vec![
+        scrolled,
+        kit.button("placeholder-button-1", "placeholder-button-1", [20.0, 720.0, 382.0, 764.0])
+            .key("placeholder-button-1"),
+        kit.button("placeholder-button-2", "placeholder-button-2", [20.0, 772.0, 382.0, 828.0])
+            .key("placeholder-button-2"),
+    ]
+}
+
+/// The creation tab (section 1b of the masked listings): the header,
+/// listed before the tab's list, holding the app's button and the status
+/// line; the list, scrolled `forms.offset` points, holding a heading, the
+/// button beside the paste control and the paste control, 38 of their 48
+/// points under the primary button at the list's start, and more content
+/// below; and the primary button, disabled, listed after the list.
+fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let width = kit.width();
+    let scrolled = |el: El| {
+        let mut el = el;
+        el.rect[1] -= forms.offset;
+        el.rect[3] -= forms.offset;
+        let shown = el.rect[3] > 0.0 && el.rect[1] < kit.height();
+        hide_unless(el, shown)
+    };
+    let content = [
+        kit.heading("placeholder-heading-18", "placeholder-heading-18", [20.0, 130.0, 382.0, 162.0])
+            .key("placeholder-heading-18"),
+        kit.heading("placeholder-heading-24", "placeholder-heading-24", [20.0, 648.0, 382.0, 670.0])
+            .key("placeholder-heading-24"),
+        kit.button("placeholder-button-19", "placeholder-button-19", [20.0, 726.0, 197.0, 774.0])
+            .key("placeholder-button-19"),
+        kit.button("placeholder-id-8", "placeholder-button-20", [205.0, 726.0, 382.0, 774.0]),
+        kit.heading("placeholder-heading-25", "placeholder-heading-25", [20.0, 806.0, 382.0, 828.0])
+            .key("placeholder-heading-25"),
+        kit.button("placeholder-button-22", "placeholder-button-22", [20.0, 1100.0, 382.0, 1148.0])
+            .key("placeholder-button-22"),
+    ]
+    .map(scrolled);
+    vec![
+        kit.group([0.0, 62.0, width, 122.0]).children([
+            kit.button("placeholder-id-7", "placeholder-button-9", [20.0, 70.0, 64.0, 114.0]),
+            kit.label(Some("placeholder-status"), &forms.status, [76.0, 76.0, 306.0, 108.0]),
+        ]),
+        kit.scroll_view(CREATION_LIST).children(content),
+        kit.button(CREATION_DISABLED, "placeholder-button-21", [20.0, 708.0, 382.0, 764.0])
+            .set(protocol::snapshot::NodeFlags::ENABLED, false),
+    ]
+}
+
+/// The feed (section 2 of the masked listings): the header, listed before
+/// the feed's list, holding a button, the feed's heading and a button with
+/// a count; the list, its first card at 41 points, 116 tall, 81 of them
+/// above the list's top, where the header is; and the status line below
+/// the list. The header carries no identifier the tree reports.
+fn feed_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let width = kit.width();
+    vec![
+        kit.group([0.0, 62.0, width, 122.0])
+            .key("placeholder-feed-header")
+            .children([
+                kit.button("placeholder-id-1", "placeholder-button-1", [20.0, 70.0, 64.0, 114.0]),
+                kit.heading("placeholder-heading-1", "placeholder-heading-1", [76.0, 76.0, 306.67, 108.0])
+                    .key("placeholder-heading-1"),
+                kit.button("placeholder-id-2", "placeholder-button-2", [338.0, 70.0, 382.0, 114.0])
+                    .text("placeholder-value-1"),
+            ]),
+        kit.scroll_view([0.0, 122.0, width, 760.0]).children([
+            kit.button("placeholder-id-4", "placeholder-button-4", [37.0, 41.0, 365.0, 157.0]),
+            kit.label(None, "placeholder-text-2", [37.0, 165.0, 365.0, 185.0]),
+            kit.button("placeholder-id-5", "placeholder-button-5", [37.0, 201.0, 365.0, 317.0]),
+        ]),
+        kit.label(Some("placeholder-status"), &forms.status, [16.0, 764.0, 386.0, 784.0]),
+    ]
+}
+
+/// The form, from the top: a heading; the code field, a labelled node
+/// without traits holding a box per character, as a React Native code
+/// input built of boxes reads; the secret field, a labelled node without
+/// traits and nothing below it, as iOS reads a React Native field inside a
+/// view marked accessible; a status line; a hint button that the keyboard,
+/// once up, covers all but its top 14 points of; the submit button low on
+/// the screen, which the layout moves above the keyboard some time after
+/// the keyboard came up, as React Native moves a view out of the keyboard's
+/// way; a help button, which the keyboard covers; a terms button at the
+/// bottom; and, once the hint brings it up, a footer listed after the terms
+/// button and drawn over it, a toolbar holding an accept button, as a fixed
+/// footer is drawn over what scrolls under it.
+fn form_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let (width, height) = (kit.width(), kit.height());
     let keyboard = kit.keyboard_top();
     let row = |top: f64| [16.0, top, width - 16.0, top + 48.0];

@@ -2484,11 +2484,13 @@ mod tests {
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not submitted");
     }
 
-    /// Design D32: a button partly in view keeps the click's warning and its
-    /// tap: the keyboard covers all but the hint button's top 14 of 48
-    /// points, and the tap goes to its centre.
+    /// Designs D32 and D37: a button partly in view keeps the click's
+    /// warning, and the tap goes to the part of it in view: the keyboard
+    /// covers all but the hint button's top 14 of 48 points, and the tap
+    /// goes to their centre, where the acceptance run's taps at the centres
+    /// of submit buttons 1 to 35% in view hit the keyboard.
     #[test]
-    fn a_click_on_a_button_partly_in_view_taps_its_centre_with_a_warning() {
+    fn a_click_on_a_button_partly_in_view_taps_the_part_in_view_with_a_warning() {
         let driver = FakeDriver::parse("ios").unwrap();
         let (mut target, sent) = recorded(&driver, PLACEHOLDER, &[]);
         click_on(&mut target, "#placeholder-code").unwrap();
@@ -2499,8 +2501,135 @@ mod tests {
             warning.contains("#placeholder-hint was not mostly in view (29% of it in view)"),
             "{warning}"
         );
-        assert_eq!(success.data["y"], 549.0, "{}", success.data);
-        assert_eq!(taps(&sent).last(), Some(&Point::new(201.0, 549.0)));
+        assert_eq!(success.data["y"], 532.0, "{}", success.data);
+        assert_eq!(taps(&sent).last(), Some(&Point::new(201.0, 532.0)));
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Hint shown");
+    }
+
+    /// The placeholder app on a fake Simulator, showing `board`, one of the
+    /// screens of the acceptance run, and the inputs it is sent.
+    fn on_board(board: &str) -> (Attached, Sent) {
+        let driver = FakeDriver::parse("ios").unwrap();
+        recorded(
+            &driver,
+            PLACEHOLDER,
+            &[&format!("PLACEHOLDER_SCREEN={board}")],
+        )
+    }
+
+    /// Design D37, scenario "Card partly under a sticky header" (task 3.1;
+    /// section 2 of the masked listings): on the feed the acceptance run's
+    /// click on a card 30% in view tapped its centre, (201, 99), on the
+    /// heading of the header listed before the list, with the warning that
+    /// the card was not mostly in view. The click taps the centre of the
+    /// part of the card in view, below the header, and keeps the warning.
+    #[test]
+    fn a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning() {
+        let (mut target, sent) = on_board("feed");
+        let card = ref_named(&mut target, "placeholder-button-4");
+        let success = click_on(&mut target, &card).unwrap();
+        assert_eq!(
+            text_of(&mut target, "#placeholder-status"),
+            "Tapped placeholder-id-4",
+            "taps {:?}",
+            taps(&sent)
+        );
+        assert_eq!(success.data["x"], 201.0, "{}", success.data);
+        assert_eq!(success.data["y"], 139.5, "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains(&format!("{card} was not mostly in view (30% of it in view)")),
+            "{warning}"
+        );
+    }
+
+    /// Design D37, scenario "Heading half under a footer button" (task 3.1;
+    /// section 1a of the masked listings): on the consent screen the
+    /// acceptance run's click on the heading half under the secondary
+    /// footer button tapped its centre, the button's top edge, and declined
+    /// the consent; its click by exact text on the 12-point text under the
+    /// primary button tapped that button and consented. The click on the
+    /// heading taps its upper half, with the warning; the click by text,
+    /// taking the same path, finds 3 points of the text below the primary
+    /// button, too few, and fails with `element_covered` naming the button,
+    /// tapping nothing.
+    #[test]
+    fn clicks_on_what_footer_buttons_cover_in_part_tap_what_shows_or_are_refused_naming_the_button()
+    {
+        let (mut target, sent) = on_board("consent");
+        let heading = ref_named(&mut target, "placeholder-heading-9");
+        let success = click_on(&mut target, &heading).unwrap();
+        assert_eq!(
+            text_of(&mut target, "#placeholder-status"),
+            "Tapped placeholder-heading-9",
+            "taps {:?}",
+            taps(&sent)
+        );
+        assert_eq!(success.data["y"], 714.5, "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(warning.contains("(50% of it in view)"), "{warning}");
+
+        let tapped = taps(&sent).len();
+        let failure = click_on(&mut target, "text==placeholder-text-8").expect_err(&format!(
+            "the primary button covers the text; taps {:?}",
+            taps(&sent)
+        ));
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
+        assert!(
+            failure.message.contains("button \"placeholder-button-2\""),
+            "{}",
+            failure.message
+        );
+        assert_eq!(taps(&sent).len(), tapped, "nothing tapped");
+        assert_eq!(
+            text_of(&mut target, "#placeholder-status"),
+            "Tapped placeholder-heading-9"
+        );
+    }
+
+    /// Designs D37 and D38 (task 3.1; section 1b of the masked listings): on
+    /// the creation tab the acceptance run's clicks on the paste control,
+    /// 38 of its 48 points under the disabled primary button, tapped its
+    /// centre, on the disabled button, which did nothing, twice, with no
+    /// warning. The click by identifier taps its lower 10 points, below the
+    /// button, with the warning.
+    #[test]
+    fn a_click_on_a_control_mostly_under_a_disabled_button_taps_the_part_below_it() {
+        let (mut target, sent) = on_board("creation");
+        let success = click_on(&mut target, "#placeholder-id-8").unwrap();
+        assert_eq!(
+            text_of(&mut target, "#placeholder-status"),
+            "Tapped placeholder-id-8",
+            "taps {:?}",
+            taps(&sent)
+        );
+        assert_eq!(success.data["x"], 293.5, "{}", success.data);
+        assert_eq!(success.data["y"], 769.0, "{}", success.data);
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("#placeholder-id-8 was not mostly in view (21% of it in view)"),
+            "{warning}"
+        );
+    }
+
+    /// Design D37 (task 3.1; section 1b of the masked listings): the
+    /// acceptance run's `scroll --until` on the paste control answered at
+    /// once, `visible` 1.0, no stroke, while the disabled button covered
+    /// most of it. It judges arrival by the part a tap reaches: one stroke
+    /// brings the control above the button, and the reply says so.
+    #[test]
+    fn scroll_until_does_not_call_a_control_mostly_under_a_disabled_button_visible() {
+        let (mut target, _) = on_board("creation");
+        let data = scroll_with(
+            &mut target,
+            json!({"direction": "down", "until": "#placeholder-id-8"}),
+        )
+        .unwrap()
+        .data;
+        assert_eq!(data["strokes"], 1, "{data}");
+        assert_eq!(data["visible"], 1.0, "{data}");
+        let bottom = data["element"]["bounds"][3].as_f64().unwrap_or_default();
+        assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
     /// Designs D31 and D32: a footer listed after a button that lies wholly

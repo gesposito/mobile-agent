@@ -13,7 +13,11 @@ use crate::driver::Platform;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct El {
     pub class: &'static str,
+    /// The identifier taps and text find the element by.
     pub id: Option<String>,
+    /// Whether the tree reports `id` as the element's test identifier; the
+    /// fake still finds an element whose app gives it none by it.
+    pub reported: bool,
     pub text: Option<String>,
     pub desc: Option<String>,
     pub rect: [f64; 4],
@@ -29,6 +33,7 @@ impl El {
         El {
             class,
             id: None,
+            reported: true,
             text: None,
             desc: None,
             rect,
@@ -45,6 +50,15 @@ impl El {
 
     pub fn id(mut self, id: impl Into<String>) -> El {
         self.id = Some(id.into());
+        self.reported = true;
+        self
+    }
+
+    /// The element found by `key`, which the tree does not report: an
+    /// element the app gives no test identifier.
+    pub fn key(mut self, key: impl Into<String>) -> El {
+        self.id = Some(key.into());
+        self.reported = false;
         self
     }
 
@@ -252,7 +266,7 @@ fn node(el: &El, scale: f64, strings: &mut Vec<String>, next: &mut u32) -> Node 
         id,
         class,
         res_pkg: None,
-        res_id: el.id.clone(),
+        res_id: el.id.clone().filter(|_| el.reported),
         text: el.text.clone(),
         desc: el.desc.clone(),
         bounds: pixels(el.rect, scale),
@@ -467,6 +481,16 @@ impl Kit {
             Platform::Ios => El::new("XCUIElementTypeCollectionView", rect),
         }
         .id(id)
+    }
+
+    /// A vertically scrolling view without an identifier, as React Native's
+    /// `ScrollView` reads.
+    pub fn scroll_view(self, rect: [f64; 4]) -> El {
+        match self.platform {
+            Platform::Android => El::new("android.widget.ScrollView", rect),
+            Platform::Ios => El::new("XCUIElementTypeScrollView", rect),
+        }
+        .with(NodeFlags::SCROLLABLE)
     }
 
     pub fn grid(self, id: &str, rect: [f64; 4]) -> El {
