@@ -520,7 +520,12 @@ impl Mirror {
         let mut listed = Vec::new();
         for line in lines {
             match line {
-                Line::Element { w, i, depth } => {
+                Line::Element {
+                    w,
+                    i,
+                    depth,
+                    beside,
+                } => {
                     let window = &self.replica.windows[w];
                     let node = &window.nodes[i];
                     let facts = &view.windows[w][i];
@@ -538,6 +543,7 @@ impl Mirror {
                     }
                     let mut listed_element = element(window, node, facts, reference);
                     listed_element.depth = depth;
+                    listed_element.beside_keyboard = beside.filter(|&share| share > 0.0);
                     text.push(render::element_line(&listed_element));
                     elements.push(listed_element);
                 }
@@ -1432,7 +1438,7 @@ fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) ->
         focused: node.flags.contains(NodeFlags::FOCUSED),
         selected: node.flags.contains(NodeFlags::SELECTED),
         checked: facts.checked,
-        beside_keyboard: facts.keyboard.filter(|&share| share > 0.0),
+        beside_keyboard: None,
         actionable: facts.actionable,
         window: window.id,
         depth: node.depth as usize,

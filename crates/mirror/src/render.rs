@@ -15,6 +15,7 @@
 
 use protocol::snapshot::{WindowFlags, WindowType};
 
+use crate::geometry::Rect;
 use crate::json;
 use crate::replica::{RNode, Replica};
 use crate::snapshot::{Direction, Element, Role, ScrollHint, SnapshotOptions};
@@ -22,8 +23,14 @@ use crate::view::{Facts, Hidden, View};
 
 /// One line of a listing.
 pub(crate) enum Line {
-    /// Node `i` of window `w`.
-    Element { w: usize, i: usize, depth: usize },
+    /// Node `i` of window `w`, and the share of it beside the keyboard when
+    /// the keyboard lies over part of it.
+    Element {
+        w: usize,
+        i: usize,
+        depth: usize,
+        beside: Option<f64>,
+    },
     /// A keyboard window.
     Keyboard { w: usize },
     /// Hint `index` of the snapshot's hints.
@@ -97,7 +104,12 @@ pub(crate) fn listing(
             continue;
         }
         if !window.nodes.is_empty() {
-            walker.walk(w, 0, 0);
+            let keyboards: Vec<Rect> = replica.windows[..w]
+                .iter()
+                .filter(|above| above.kind == WindowType::INPUT_METHOD)
+                .map(|above| Rect::from_pixels(above.bounds, replica.scale))
+                .collect();
+            walker.walk(w, 0, 0, &keyboards);
         }
     }
     walker.lines
@@ -115,13 +127,16 @@ struct Walker<'a> {
 }
 
 impl Walker<'_> {
-    fn walk(&mut self, w: usize, i: usize, depth: usize) {
+    /// Lists node `i` of window `w` at `depth` and what it holds, the
+    /// keyboard windows above the window lying at `keyboards`.
+    fn walk(&mut self, w: usize, i: usize, depth: usize, keyboards: &[Rect]) {
         let facts = &self.view.windows[w][i];
         if facts.hidden != Hidden::No {
             return;
         }
         let node = &self.replica.windows[w].nodes[i];
-        let under = self.options.interactive && facts.keyboard.is_some_and(|share| share <= 0.0);
+        let beside = beside(&facts.rect, keyboards);
+        let under = self.options.interactive && beside.is_some_and(|share| share <= 0.0);
         if under && facts.visible && facts.bears_ref && !facts.absorbed {
             self.under_keyboard += 1;
         }
@@ -137,12 +152,17 @@ impl Walker<'_> {
             if self.options.max_depth.is_some_and(|max| depth > max) {
                 return;
             }
-            self.lines.push(Line::Element { w, i, depth });
+            self.lines.push(Line::Element {
+                w,
+                i,
+                depth,
+                beside,
+            });
         }
         let inner = if shown { depth + 1 } else { depth };
         self.hints_of(w, i, true, inner);
         for &child in &node.children {
-            self.walk(w, child, inner);
+            self.walk(w, child, inner, keyboards);
         }
         self.hints_of(w, i, false, inner);
     }
@@ -156,6 +176,24 @@ impl Walker<'_> {
             }
         }
     }
+}
+
+/// The share of `rect` beside the keyboards at `keyboards`, 0 for one wholly
+/// under them; `None` when none of them lies over it. The keyboards' bounds
+/// are what the drivers say a keyboard draws (tasks 10.21, 10.25).
+fn beside(rect: &Rect, keyboards: &[Rect]) -> Option<f64> {
+    let area = rect.width() * rect.height();
+    if keyboards.is_empty() || area <= 0.0 {
+        return None;
+    }
+    let under: f64 = keyboards
+        .iter()
+        .map(|keyboard| {
+            let shared = rect.intersect(keyboard);
+            shared.width() * shared.height()
+        })
+        .sum();
+    (under > 0.0).then(|| (1.0 - under / area).clamp(0.0, 1.0))
 }
 
 /// An identifier as an attribute value: bare when it cannot be misread.

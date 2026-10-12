@@ -223,12 +223,17 @@ pub(crate) fn reach(
     });
     let in_view = bounds.intersect(&shown);
     let holes: Vec<Rect> = over.iter().map(|&(_, cover)| cover).collect();
-    let (pieces, area) = if whole.is_some() || in_view.is_empty() {
-        (Vec::new(), 0.0)
+    let (reachable, area) = if whole.is_some() || in_view.is_empty() {
+        (None, 0.0)
+    } else if holes.is_empty() {
+        (
+            largest(&bounds, &[in_view]),
+            in_view.width() * in_view.height(),
+        )
     } else {
-        (maximal(in_view, &holes), disjoint_area(in_view, &holes))
+        let pieces = maximal(in_view, &holes);
+        (largest(&bounds, &pieces), disjoint_area(in_view, &holes))
     };
-    let reachable = largest(&bounds, &pieces);
     let full = bounds.width() * bounds.height();
     let fraction = if full > 0.0 {
         (area / full).clamp(0.0, 1.0)
