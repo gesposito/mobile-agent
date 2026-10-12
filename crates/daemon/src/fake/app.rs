@@ -1235,20 +1235,41 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
 fn consent_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let height = kit.height();
     let scrolled = kit.scroll_view([0.0, 62.0, kit.width(), height]).children([
-        kit.label(Some("placeholder-status"), &forms.status, [33.0, 62.0, 369.0, 76.0]),
-        kit.heading("placeholder-heading-8", "placeholder-heading-8", [33.0, 596.0, 369.0, 618.0])
-            .key("placeholder-heading-8"),
-        kit.heading("placeholder-heading-9", "placeholder-heading-9", [33.0, 709.0, 90.33, 731.0])
-            .key("placeholder-heading-9"),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [33.0, 62.0, 369.0, 76.0],
+        ),
+        kit.heading(
+            "placeholder-heading-8",
+            "placeholder-heading-8",
+            [33.0, 596.0, 369.0, 618.0],
+        )
+        .key("placeholder-heading-8"),
+        kit.heading(
+            "placeholder-heading-9",
+            "placeholder-heading-9",
+            [33.0, 709.0, 90.33, 731.0],
+        )
+        .key("placeholder-heading-9"),
         kit.label(None, "placeholder-text-6", [33.0, 755.0, 369.0, 771.0]),
-        kit.label(None, "placeholder-text-8", [33.0, 819.0, 369.0, 831.0]).key("placeholder-text-8"),
+        kit.label(None, "placeholder-text-8", [33.0, 819.0, 369.0, 831.0])
+            .key("placeholder-text-8"),
     ]);
     vec![
         scrolled,
-        kit.button("placeholder-button-1", "placeholder-button-1", [20.0, 720.0, 382.0, 764.0])
-            .key("placeholder-button-1"),
-        kit.button("placeholder-button-2", "placeholder-button-2", [20.0, 772.0, 382.0, 828.0])
-            .key("placeholder-button-2"),
+        kit.button(
+            "placeholder-button-1",
+            "placeholder-button-1",
+            [20.0, 720.0, 382.0, 764.0],
+        )
+        .key("placeholder-button-1"),
+        kit.button(
+            "placeholder-button-2",
+            "placeholder-button-2",
+            [20.0, 772.0, 382.0, 828.0],
+        )
+        .key("placeholder-button-2"),
     ]
 }
 
@@ -1268,27 +1289,63 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
         hide_unless(el, shown)
     };
     let content = [
-        kit.heading("placeholder-heading-18", "placeholder-heading-18", [20.0, 130.0, 382.0, 162.0])
-            .key("placeholder-heading-18"),
-        kit.heading("placeholder-heading-24", "placeholder-heading-24", [20.0, 648.0, 382.0, 670.0])
-            .key("placeholder-heading-24"),
-        kit.button("placeholder-button-19", "placeholder-button-19", [20.0, 726.0, 197.0, 774.0])
-            .key("placeholder-button-19"),
-        kit.button("placeholder-id-8", "placeholder-button-20", [205.0, 726.0, 382.0, 774.0]),
-        kit.heading("placeholder-heading-25", "placeholder-heading-25", [20.0, 806.0, 382.0, 828.0])
-            .key("placeholder-heading-25"),
-        kit.button("placeholder-button-22", "placeholder-button-22", [20.0, 1100.0, 382.0, 1148.0])
-            .key("placeholder-button-22"),
+        kit.heading(
+            "placeholder-heading-18",
+            "placeholder-heading-18",
+            [20.0, 130.0, 382.0, 162.0],
+        )
+        .key("placeholder-heading-18"),
+        kit.heading(
+            "placeholder-heading-24",
+            "placeholder-heading-24",
+            [20.0, 648.0, 382.0, 670.0],
+        )
+        .key("placeholder-heading-24"),
+        kit.button(
+            "placeholder-button-19",
+            "placeholder-button-19",
+            [20.0, 726.0, 197.0, 774.0],
+        )
+        .key("placeholder-button-19"),
+        kit.button(
+            "placeholder-id-8",
+            "placeholder-button-20",
+            [205.0, 726.0, 382.0, 774.0],
+        ),
+        kit.heading(
+            "placeholder-heading-25",
+            "placeholder-heading-25",
+            [20.0, 806.0, 382.0, 828.0],
+        )
+        .key("placeholder-heading-25"),
+        kit.button(
+            "placeholder-button-22",
+            "placeholder-button-22",
+            [20.0, 1100.0, 382.0, 1148.0],
+        )
+        .key("placeholder-button-22"),
     ]
     .map(scrolled);
     vec![
         kit.group([0.0, 62.0, width, 122.0]).children([
-            kit.button("placeholder-id-7", "placeholder-button-9", [20.0, 70.0, 64.0, 114.0]),
-            kit.label(Some("placeholder-status"), &forms.status, [76.0, 76.0, 306.0, 108.0]),
+            kit.button(
+                "placeholder-id-7",
+                "placeholder-button-9",
+                [20.0, 70.0, 64.0, 114.0],
+            ),
+            kit.label(
+                Some("placeholder-status"),
+                &forms.status,
+                [76.0, 76.0, 306.0, 108.0],
+            ),
         ]),
         kit.scroll_view(CREATION_LIST).children(content),
-        kit.button(CREATION_DISABLED, "placeholder-button-21", [20.0, 708.0, 382.0, 764.0])
-            .set(protocol::snapshot::NodeFlags::ENABLED, false),
+        kit.button(
+            CREATION_DISABLED,
+            "placeholder-button-21",
+            [20.0, 708.0, 382.0, 764.0],
+        )
+        .set(protocol::snapshot::NodeFlags::ENABLED, false),
     ]
 }
 
@@ -1303,18 +1360,42 @@ fn feed_content(kit: Kit, forms: &Forms) -> Vec<El> {
         kit.group([0.0, 62.0, width, 122.0])
             .key("placeholder-feed-header")
             .children([
-                kit.button("placeholder-id-1", "placeholder-button-1", [20.0, 70.0, 64.0, 114.0]),
-                kit.heading("placeholder-heading-1", "placeholder-heading-1", [76.0, 76.0, 306.67, 108.0])
-                    .key("placeholder-heading-1"),
-                kit.button("placeholder-id-2", "placeholder-button-2", [338.0, 70.0, 382.0, 114.0])
-                    .text("placeholder-value-1"),
+                kit.button(
+                    "placeholder-id-1",
+                    "placeholder-button-1",
+                    [20.0, 70.0, 64.0, 114.0],
+                ),
+                kit.heading(
+                    "placeholder-heading-1",
+                    "placeholder-heading-1",
+                    [76.0, 76.0, 306.67, 108.0],
+                )
+                .key("placeholder-heading-1"),
+                kit.button(
+                    "placeholder-id-2",
+                    "placeholder-button-2",
+                    [338.0, 70.0, 382.0, 114.0],
+                )
+                .text("placeholder-value-1"),
             ]),
         kit.scroll_view([0.0, 122.0, width, 760.0]).children([
-            kit.button("placeholder-id-4", "placeholder-button-4", [37.0, 41.0, 365.0, 157.0]),
+            kit.button(
+                "placeholder-id-4",
+                "placeholder-button-4",
+                [37.0, 41.0, 365.0, 157.0],
+            ),
             kit.label(None, "placeholder-text-2", [37.0, 165.0, 365.0, 185.0]),
-            kit.button("placeholder-id-5", "placeholder-button-5", [37.0, 201.0, 365.0, 317.0]),
+            kit.button(
+                "placeholder-id-5",
+                "placeholder-button-5",
+                [37.0, 201.0, 365.0, 317.0],
+            ),
         ]),
-        kit.label(Some("placeholder-status"), &forms.status, [16.0, 764.0, 386.0, 784.0]),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [16.0, 764.0, 386.0, 784.0],
+        ),
     ]
 }
 

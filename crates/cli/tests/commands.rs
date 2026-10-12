@@ -626,14 +626,19 @@ fn scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim() {
     }
 }
 
-/// Task 10.15: a click on an element mostly out of view goes to the centre
-/// of its bounds, which may not be on what shows of it: on the iOS fake,
-/// row 20 two points into the list has its centre under the tab bar. The
-/// click warns, and says how to bring the element in; a click on an element
-/// in view does not.
+/// Task 10.15 and design D37 of rn-app-fixes: a click on an element mostly
+/// out of view taps the part of it in view, not the centre of its bounds,
+/// which may lie on something else: on the iOS fake, row 20 twenty points
+/// into the list has its centre under the tab bar, and the tap goes to the
+/// centre of those twenty points; Android reports the row clipped to the
+/// two points that show. The click warns, and says how to bring the element
+/// in; a click on an element in view does not.
 #[test]
 fn a_click_on_an_element_mostly_out_of_view_warns() {
-    for (fake, amount) in [("android", "98"), ("ios", "185")] {
+    for (fake, amount, shown) in [
+        ("android", "98", 838.0..840.0),
+        ("ios", "203", 771.0..791.0),
+    ] {
         let env = TestEnv::start(fake);
         env.cli(&["open", APP]).ok();
         let in_view = env.cli(&["--json", "click", "#tab-list"]).ok().json();
@@ -645,6 +650,11 @@ fn a_click_on_an_element_mostly_out_of_view_warns() {
             warning.contains("#row-20 was not mostly in view")
                 && warning.contains("scroll --until #row-20"),
             "{fake}: {reply}"
+        );
+        let y = reply["data"]["y"].as_f64().unwrap_or_default();
+        assert!(
+            shown.contains(&y),
+            "{fake}: on what shows of the row: {reply}"
         );
     }
 }

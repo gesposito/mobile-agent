@@ -266,23 +266,27 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
 }
 
 /// How much of `element`, which `given` names, is in view before `action`,
-/// the command, taps it. A covered element is not a matter of bounds out of
-/// date, whatever share of it is in view: a modal, or a view drawn over it
-/// (design D31), takes the tap, so the mirror refuses a tap on its ref with
-/// `element_covered`, naming what the tap would land on, and nothing is
-/// read again or tapped; a point aimed at one fails the same way here.
-/// None of an uncovered element in view can be bounds the replica holds
-/// from before a layout change that no event reported and no read has seen
-/// yet: in the React Native smoke test the keyboard moved a submit button
-/// up, the replica kept its old bounds under the keyboard, and the click
-/// tapped the number pad there (design D32). So the element's window is
-/// read again once, and a tap aimed at a point goes to the centre of the
-/// element's bounds as that read has them. The mirror reads a window on
-/// demand only after text it entered (task 10.29), so the read covers every
-/// window, as every read of a Simulator's reader does. Fails with
-/// `element_offscreen`, naming the element, when none of it is in view
-/// after the read, and with `element_not_found` when a selector's element
-/// has left the screen.
+/// the command, taps it, and where the tap goes: the centre of the largest
+/// part of it a tap reaches, inside its visible bounds and under no view
+/// drawn over it, at least 8 points on each side (design D37), which the
+/// mirror aims a tap on a ref at, and a tap aimed at a point here, as for
+/// an element a selector found without a ref. A covered element is not a
+/// matter of bounds out of date: a modal, or a view drawn over all of it,
+/// or over so much of it that no such part is left (design D31, D38),
+/// takes the tap, so the mirror refuses a tap on its ref with
+/// `element_covered`, naming what a tap at its centre would land on, and
+/// nothing is read again or tapped; a point aimed at one fails the same
+/// way here. Nothing a tap reaches of an uncovered element can be bounds
+/// the replica holds from before a layout change that no event reported and
+/// no read has seen yet: in the React Native smoke test the keyboard moved
+/// a submit button up, the replica kept its old bounds under the keyboard,
+/// and the click tapped the number pad there (design D32). So the
+/// element's window is read again once, and the tap goes where that read
+/// has the element. The mirror reads a window on demand only after text it
+/// entered (task 10.29), so the read covers every window, as every read of
+/// a Simulator's reader does. Fails with `element_offscreen`, naming the
+/// element, when nothing of it a tap reaches is in view after the read, and
+/// with `element_not_found` when a selector's element has left the screen.
 fn sight(
     target: &mut Attached,
     action: &str,
@@ -290,25 +294,23 @@ fn sight(
     given: &str,
     aimed: &mut Target,
 ) -> Result<Option<Visibility>, Failure> {
-    if let Some(by) = target.mirror.covered_by(element.id) {
-        return match aimed {
-            Target::Ref(_) => Ok(None),
-            Target::Point(_) => Err(Failure::new(
-                mirror::code::ELEMENT_COVERED,
-                format!(
-                    "{given} is covered by the {by}, which a tap there would land on; bring it out from under it, or act on the {by} first, then take a new snapshot"
-                ),
-            )),
-        };
+    if let Some(refused) = covered(target, element, given, aimed) {
+        return refused;
     }
     let Some(seen) = target.mirror.visibility(element.id) else {
         return Ok(None);
     };
-    if seen.fraction > 0.0 {
+    if let Some(part) = seen.reachable {
+        if let Target::Point(point) = aimed {
+            *point = part.center();
+        }
         return Ok(Some(seen));
     }
     target.mirror.note_window_change();
     target.mirror.pump()?;
+    if let Some(refused) = covered(target, element, given, aimed) {
+        return refused;
+    }
     let Some(seen) = target.mirror.visibility(element.id) else {
         return match aimed {
             // The mirror fails the tap with stale_ref.
@@ -321,19 +323,43 @@ fn sight(
             )),
         };
     };
-    if seen.fraction <= 0.0 {
+    let Some(part) = seen.reachable else {
         return Err(offscreen(target, action, element, given, &seen));
-    }
+    };
     if let Target::Point(point) = aimed {
-        *point = seen.bounds.center();
+        *point = part.center();
     }
     Ok(Some(seen))
 }
 
+/// The refusal of a tap on `element`, which `given` names, aimed as
+/// `aimed`, when something covers it ([`mirror::Mirror::covered_by`]): for a
+/// ref the mirror's own, which `sight` leaves to it; for a point,
+/// `element_covered` naming what a tap at the element's centre would land
+/// on, with advice to bring the element out from under it rather than to
+/// press it, which on a consent screen accepts the consent.
+fn covered(
+    target: &Attached,
+    element: &Element,
+    given: &str,
+    aimed: &Target,
+) -> Option<Result<Option<Visibility>, Failure>> {
+    let by = target.mirror.covered_by(element.id)?;
+    Some(match aimed {
+        Target::Ref(_) => Ok(None),
+        Target::Point(_) => Err(Failure::new(
+            mirror::code::ELEMENT_COVERED,
+            format!(
+                "{given} lies under the {by}, which a tap there would land on; scroll it out from under the {by}, or close what covers it, then take a new snapshot"
+            ),
+        )),
+    })
+}
+
 /// The failure of `action`, the command, on `element`, which `given` names,
-/// none of which is in view as `seen` has it after its window was read
-/// again: the message names the element, what keeps it out of view and how
-/// to bring it in.
+/// nothing of which a tap reaches in view as `seen` has it after its window
+/// was read again, none of it or too little for a tap: the message names
+/// the element, what keeps it out of view and how to bring it in.
 fn offscreen(
     target: &Attached,
     action: &str,
@@ -350,25 +376,42 @@ fn offscreen(
         .mirror
         .uncovered(seen.bounds, Some(element.id))
         .keyboard;
-    let centre = seen.bounds.center();
+    // A sliver in view tells the list it lies in where the rest does not.
+    let shown = seen.bounds.intersect(&seen.viewport);
+    let centre = if shown.is_empty() {
+        seen.bounds.center()
+    } else {
+        shown.center()
+    };
     let scrolls = target.mirror.scroll_viewport(centre, true).is_some()
         || target.mirror.scroll_viewport(centre, false).is_some();
     let close = match target.info.platform {
         Platform::Android => "press Back to close the keyboard",
         Platform::Ios => "close the keyboard, as the field's return key does in most apps",
     };
+    let sliver = seen.fraction > 0.0;
+    let covers = if sliver {
+        "the keyboard covers all but a sliver of it"
+    } else {
+        "the keyboard covers all of it"
+    };
+    let lies = if sliver {
+        "too little of it for a tap lies"
+    } else {
+        "none of it lies"
+    };
     let (why, advice) = match (keyboard, scrolls) {
         (true, true) => (
-            "the keyboard covers all of it",
+            covers.to_owned(),
             format!("{close}, or scroll --until {given} brings it above the keyboard"),
         ),
-        (true, false) => ("the keyboard covers all of it", close.to_owned()),
+        (true, false) => (covers.to_owned(), close.to_owned()),
         (false, true) => (
-            "none of it lies in what shows of its list",
+            format!("{lies} in what shows of its list"),
             format!("scroll --until {given} brings it into view"),
         ),
         (false, false) => (
-            "none of it lies in what shows of its window",
+            format!("{lies} in what shows of its window"),
             "take a snapshot to see what lies over it".to_owned(),
         ),
     };
@@ -447,7 +490,7 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
         let vertical = !cut_along(&seen, false);
         if !mostly_in_view(&seen, vertical) {
             warnings.push(format!(
-                "{clicked} was not mostly in view ({}), so the tap at {point} may have missed it; scroll --until {clicked} brings it into view first",
+                "{clicked} was not mostly in view ({}), so the tap went to the part of it in view, at {point}; scroll --until {clicked} brings it into view first",
                 in_view(&seen)
             ));
         }
@@ -2538,7 +2581,9 @@ mod tests {
         assert_eq!(success.data["y"], 139.5, "{}", success.data);
         let warning = success.warning.unwrap_or_default();
         assert!(
-            warning.contains(&format!("{card} was not mostly in view (30% of it in view)")),
+            warning.contains(&format!(
+                "{card} was not mostly in view (30% of it in view)"
+            )),
             "{warning}"
         );
     }
