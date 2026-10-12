@@ -111,7 +111,9 @@ fn listed(fixture: &str, interactive: bool) -> (usize, usize) {
         ("grid", false) => (507, 505),
         ("list", true) => (21, 21),
         ("list", false) => (24, 21),
-        ("bluesky-typeahead-android", true) => (18, 18),
+        // Gboard's floating toolbar lies wholly over an avatar, which the
+        // interactive listing counts under the keyboard (rn-app-fixes, D38).
+        ("bluesky-typeahead-android", true) => (17, 17),
         ("bluesky-typeahead-android", false) => (21, 18),
         ("grid-rn", true) => (505, 505),
         ("grid-rn", false) => (1_017, 505),
