@@ -43,10 +43,10 @@ use protocol::message::{Rotation, TextMethod as WireMethod};
 use protocol::snapshot::{Node, NodeFlags, Snapshot, WindowType};
 use serde_json::{Map, Value, json};
 use simulator::{
-    Button, Compatibility, DeviceInfo, DeviceState, Dispatch, ForegroundTree, FrameOptions,
-    FrameStream, Frames as _, ImageFormat, Input as _, Key, LaunchOptions, Lifecycle as _,
-    Modifiers, ReaderStatus, ScreenshotOptions, SimulatorDriver, Status, Swipe, TargetStatus,
-    TextMethod, TransportKind, Tree as _, TreeOptions,
+    Button, Cadence, Compatibility, DeviceInfo, DeviceState, Dispatch, ForegroundTree,
+    FrameOptions, FrameStream, Frames as _, ImageFormat, Input as _, Key, LaunchOptions,
+    Lifecycle as _, Modifiers, ReaderStatus, ScreenshotOptions, SimulatorDriver, Status, Swipe,
+    TargetStatus, TextMethod, TransportKind, Tree as _, TreeOptions,
 };
 
 use crate::driver::{
@@ -194,6 +194,11 @@ impl Shared {
         let last = lock(&self.last);
         let (snapshot, scale) = last.as_ref()?;
         node_center(snapshot, *scale, handle)
+    }
+
+    /// The cadence for keys typed into a field of the latest read.
+    fn cadence(&self) -> Cadence {
+        Cadence::NATIVE
     }
 }
 
@@ -467,7 +472,7 @@ impl HostInput {
             TextMethod::Keyboard
         } else {
             driver
-                .type_text(udid, text, text_method(method))
+                .type_text_at(udid, text, text_method(method), self.shared.cadence())
                 .map_err(|e| error(&e))?
                 .method
         };
@@ -1300,6 +1305,43 @@ mod tests {
         assert_eq!(center(4242, 3), Some(Point::new(161.0 / 3.0, 585.5 / 3.0)));
         assert_eq!(center(7, 3), None, "the node is in another window");
         assert_eq!(center(4242, 9), None);
+    }
+
+    /// Task 3.5 of `rn-app-fixes`: keys typed after a read whose classes
+    /// name React Native's views go at React Native's cadence; after a read
+    /// without them, or before any read, at the native cadence.
+    #[test]
+    fn text_is_typed_at_the_cadence_the_latest_read_calls_for() {
+        let shared = Shared::default();
+        assert_eq!(shared.cadence(), Cadence::NATIVE, "before any read");
+        let tree = |strings: &[&str]| {
+            let snapshot = Snapshot {
+                strings: strings.iter().map(|&class| class.to_owned()).collect(),
+                ..read()
+            };
+            ForegroundTree::new(
+                snapshot,
+                3.0,
+                TreeBackend::Reader,
+                None,
+                Duration::from_millis(14),
+            )
+            .expect("a foreground")
+        };
+        shared.remember(&tree(&["XCUIElementTypeButton"]));
+        assert_eq!(shared.cadence(), Cadence::NATIVE, "after a native read");
+        shared.remember(&tree(&["XCUIElementTypeButton", "RCTViewComponentView"]));
+        assert_eq!(
+            shared.cadence(),
+            Cadence::REACT_NATIVE,
+            "after a read of React Native's views"
+        );
+        shared.remember(&tree(&["XCUIElementTypeButton"]));
+        assert_eq!(
+            shared.cadence(),
+            Cadence::NATIVE,
+            "after a native read again"
+        );
     }
 
     /// Task 10.23: text replaces what a field holds, so an empty text, for
