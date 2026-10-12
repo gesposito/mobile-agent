@@ -72,6 +72,10 @@ const READ_RETRY: Duration = Duration::from_millis(100);
 /// How long text waits for the field it tapped to take the focus.
 const FOCUS_WAIT: Duration = Duration::from_millis(1500);
 
+/// How long text whose field was emptied first waits for a read that shows
+/// the field empty.
+const EMPTY_WAIT: Duration = Duration::from_secs(1);
+
 /// How long the finger of a swipe released resting rests at the end of its
 /// path before it creeps on and lifts (task 10.16; the creep is the
 /// Simulator driver's, see `simulator::gesture::swipe`). On the iOS 26.5
@@ -470,6 +474,9 @@ impl HostInput {
             for key in readying_keys(text, method) {
                 driver.key(udid, key).map_err(|e| error(&e))?;
             }
+            if empties_first(text, method) {
+                self.wait_for_empty();
+            }
         }
         // An empty text leaves nothing to type or paste once the field is
         // readied.
@@ -501,6 +508,24 @@ impl HostInput {
             thread::sleep(READ_RETRY);
         }
     }
+
+    /// Reads the screen until the focused field shows nothing, at most
+    /// [`EMPTY_WAIT`]: the delete that emptied it has to reach the app
+    /// first.
+    fn wait_for_empty(&self) {
+        let deadline = Instant::now() + EMPTY_WAIT;
+        while Instant::now() < deadline {
+            match self.driver.snapshot(&self.udid, &TreeOptions::default()) {
+                Ok(tree) => {
+                    self.shared.remember(&tree);
+                    if focused_text(&tree.snapshot).is_none() {
+                        return;
+                    }
+                }
+                Err(_) => thread::sleep(READ_RETRY),
+            }
+        }
+    }
 }
 
 /// The keys that ready a field text tapped for `text`, entered as `method`
@@ -518,11 +543,23 @@ fn readying_keys(text: &str, method: WireMethod) -> Vec<Key> {
             ..Modifiers::default()
         },
     };
-    if text.is_empty() {
+    if text.is_empty() || empties_first(text, method) {
         vec![select_all, Key::usage(USAGE_DELETE)]
     } else {
         vec![select_all]
     }
+}
+
+/// Whether text that replaces what a field holds goes in only once a read
+/// shows the field empty.
+fn empties_first(_text: &str, _method: WireMethod) -> bool {
+    false
+}
+
+/// What the focused editable node of an application window of `snapshot`
+/// shows; `None` when no node has the focus or it shows nothing.
+fn focused_text(_snapshot: &Snapshot) -> Option<&str> {
+    None
 }
 
 /// Whether an application window of `snapshot` has a focused editable node.
@@ -1372,6 +1409,173 @@ mod tests {
         }
         assert_eq!(readying_keys("agent", WireMethod::KEYS), []);
         assert_eq!(readying_keys("", WireMethod::KEYS), []);
+    }
+
+    /// A fake of the Simulator's keyboard in a field with autocorrection
+    /// on, as task 4.5 of `rn-app-fixes` measured it on iOS 26.5: keys
+    /// typed over what Command-A selected in a field just tapped are
+    /// rewritten at the first space by autocorrection, the first letter
+    /// without its capital, whatever the field's auto-capitalization
+    /// ("smoke Org" for "Smoke Org"), while keys typed once a read has
+    /// shown the field empty land as sent.
+    #[derive(Default)]
+    struct FakeKeyboard {
+        /// What the field shows.
+        text: String,
+        /// Whether Command-A selected what it shows.
+        selected: bool,
+        /// Whether the keyboard's own copy of the word being typed is out
+        /// of step with the field: from Command-A until a read shows the
+        /// field empty.
+        stale: bool,
+    }
+
+    impl FakeKeyboard {
+        /// A field just tapped that holds `text`.
+        fn holding(text: &str) -> FakeKeyboard {
+            FakeKeyboard {
+                text: text.to_owned(),
+                ..FakeKeyboard::default()
+            }
+        }
+
+        fn press(&mut self, key: Key) {
+            if key.usage == USAGE_A && key.modifiers.command {
+                self.selected = true;
+                self.stale = true;
+                return;
+            }
+            let replaced = std::mem::take(&mut self.selected);
+            if replaced {
+                self.text.clear();
+            }
+            match key.usage {
+                USAGE_DELETE if !replaced => {
+                    self.text.pop();
+                }
+                USAGE_DELETE => {}
+                0x2C => {
+                    if std::mem::take(&mut self.stale) {
+                        self.text = self.text.to_lowercase();
+                    }
+                    self.text.push(' ');
+                }
+                usage @ 0x04..=0x1D => {
+                    let letter = char::from(b'a' + (usage - 0x04) as u8);
+                    self.text.push(if key.modifiers.shift {
+                        letter.to_ascii_uppercase()
+                    } else {
+                        letter
+                    });
+                }
+                usage => panic!("the fake types letters and spaces, not usage {usage:#x}"),
+            }
+        }
+
+        /// A read of the field, as the reader gives it: what the field
+        /// shows, none when it is empty, which puts the keyboard back in
+        /// step.
+        fn read(&mut self) -> Snapshot {
+            if self.text.is_empty() {
+                self.stale = false;
+            }
+            let mut field = node(3, Bounds::new(48, 534, 274, 637), Vec::new());
+            field.flags |= NodeFlags::EDITABLE | NodeFlags::FOCUSED;
+            field.text = (!self.text.is_empty()).then(|| self.text.clone());
+            let mut snapshot = read();
+            snapshot.windows[1].root.as_mut().expect("a root").children = vec![field];
+            snapshot
+        }
+    }
+
+    /// Enters `text` into the fake's field as `HostInput::text` enters
+    /// `fill`'s text into a field it tapped: the readying keys, the reads
+    /// until the field shows nothing when the text calls for them, at most
+    /// ten, then the text's keys.
+    fn fill_fake(keyboard: &mut FakeKeyboard, text: &str) {
+        for key in readying_keys(text, WireMethod::AUTO) {
+            keyboard.press(key);
+        }
+        if empties_first(text, WireMethod::AUTO) {
+            for _ in 0..10 {
+                if focused_text(&keyboard.read()).is_none() {
+                    break;
+                }
+            }
+        }
+        for character in text.chars() {
+            keyboard.press(Key::character(character).expect("a key types it"));
+        }
+    }
+
+    /// Task 4.5 of `rn-app-fixes`: a `fill` of "Smoke Org" over what the
+    /// field held typed "smoke Org" in the acceptance run, four times out
+    /// of four, autocorrection rewriting the first word at the space; the
+    /// field's selection deleted and a read showing it empty first, the
+    /// keys land as sent. A lower-case first letter loses nothing to the
+    /// rewrite.
+    #[test]
+    fn a_capital_first_letter_lands_when_fill_types_over_what_the_field_held() {
+        for held in ["Smoke Org", "smoke Org", "Hello World", "x"] {
+            let mut keyboard = FakeKeyboard::holding(held);
+            fill_fake(&mut keyboard, "Smoke Org");
+            assert_eq!(keyboard.text, "Smoke Org", "over {held:?}");
+            let mut keyboard = FakeKeyboard::holding(held);
+            fill_fake(&mut keyboard, "smoke org");
+            assert_eq!(keyboard.text, "smoke org", "over {held:?}");
+        }
+    }
+
+    /// The rule is gated on keys whose first letter is a capital: a
+    /// lower-case or non-letter first character, a paste (direct text, or
+    /// a text too long or with a character no key types) and `type`, which
+    /// selects nothing, keep the readying they had.
+    #[test]
+    fn only_keys_whose_first_letter_is_a_capital_empty_the_field_first() {
+        let select_all = Key {
+            usage: USAGE_A,
+            modifiers: Modifiers {
+                command: true,
+                ..Modifiers::default()
+            },
+        };
+        let delete = Key::usage(USAGE_DELETE);
+        assert!(empties_first("Smoke Org", WireMethod::AUTO));
+        assert_eq!(
+            readying_keys("Smoke Org", WireMethod::AUTO),
+            [select_all, delete]
+        );
+        let long = format!("Smoke Org {}", "a".repeat(40));
+        for (text, method) in [
+            ("smoke Org", WireMethod::AUTO),
+            ("1 Smoke Org", WireMethod::AUTO),
+            ("Smoke Org", WireMethod::DIRECT),
+            (long.as_str(), WireMethod::AUTO),
+            ("Smoké Org", WireMethod::AUTO),
+        ] {
+            assert!(!empties_first(text, method), "{text:?} {method:?}");
+            assert_eq!(readying_keys(text, method), [select_all], "{text:?}");
+        }
+        assert!(!empties_first("Smoke Org", WireMethod::KEYS));
+        assert_eq!(readying_keys("Smoke Org", WireMethod::KEYS), []);
+    }
+
+    /// The wait for an empty field reads the focused field of the
+    /// application's window, never the keyboard's keys.
+    #[test]
+    fn the_focused_field_shows_its_text_or_nothing() {
+        let mut keyboard = FakeKeyboard::holding("Smoke Org");
+        assert_eq!(focused_text(&keyboard.read()), Some("Smoke Org"));
+        keyboard.text.clear();
+        assert_eq!(focused_text(&keyboard.read()), None);
+        let mut snapshot = FakeKeyboard::holding("Smoke Org").read();
+        let field = &mut snapshot.windows[1].root.as_mut().expect("a root").children[0];
+        field.flags = NodeFlags::ENABLED | NodeFlags::VISIBLE | NodeFlags::EDITABLE;
+        let mut key = node(1, Bounds::new(0, 1700, 120, 1860), Vec::new());
+        key.flags |= NodeFlags::EDITABLE | NodeFlags::FOCUSED;
+        key.text = Some("q".into());
+        snapshot.windows[0].root = Some(key);
+        assert_eq!(focused_text(&snapshot), None, "no field has the focus");
     }
 
     /// Task 10.23: direct text goes in in one piece, so a field that took
