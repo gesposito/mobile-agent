@@ -1,11 +1,14 @@
 //! Refs: the `eN` handles snapshots print, as agent-browser numbers them.
 //!
 //! A ref names one control: an element, and for an element without an
-//! identifier, also its accessible name. It names that control for as long
-//! as the element survives from read to read and, without an identifier,
-//! keeps the name: an element renamed, as a screen transition renames a
-//! button that stays where it was, is another control, whose snapshot gives
-//! it a fresh ref. Numbers only grow and are never reused, so a ref whose
+//! identifier, also its accessible name, unless the element keeps its role
+//! and its place, its parent and its position among the parent's children.
+//! It names that control for as long as the element survives from read to
+//! read and, without an identifier, keeps the name or the place: an element
+//! renamed and moved, as a screen transition renames a button and lays the
+//! form out again, is another control, whose snapshot gives it a fresh ref,
+//! while a field whose label changes in place keeps its ref (rn-app-fixes,
+//! design D39). Numbers only grow and are never reused, so a ref whose
 //! control is gone can only be refused as stale, never resolve to another
 //! control.
 
@@ -49,12 +52,22 @@ impl fmt::Display for Ref {
     }
 }
 
+/// Where an element sits: its parent's element and its position among the
+/// parent's children.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Place {
+    pub parent: Option<ElementId>,
+    pub position: u32,
+}
+
 /// What a ref was issued for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Issued {
     pub element: ElementId,
     pub role: Role,
     pub name: String,
+    /// Where the element sat when the ref last named it.
+    pub place: Place,
     /// The replica generation the ref was issued in.
     pub generation: u64,
     /// The element, having no identifier, was renamed and given a fresh
@@ -69,6 +82,19 @@ pub(crate) enum Lookup<'a> {
     /// Issued, then forgotten because its element is long gone.
     Forgotten,
     Issued(&'a Issued),
+}
+
+/// Whether the ref `issued` describes still names its element as `role`,
+/// `name` and `place` give it: by any name when the element is identified,
+/// else under the same name, or in the same role and place.
+pub(crate) fn names(
+    issued: &Issued,
+    role: Role,
+    name: &str,
+    place: Place,
+    identified: bool,
+) -> bool {
+    identified || issued.name == name || (issued.role == role && issued.place == place)
 }
 
 /// Every ref one mirror issued.
@@ -89,20 +115,20 @@ impl RefTable {
 
     /// The element's ref, issuing the next number when it has none, or when
     /// it has no identifier (`identified` false) and its ref was issued under
-    /// another name, which retires that ref.
+    /// another name in another role or place, which retires that ref.
     pub fn assign(
         &mut self,
         element: ElementId,
-        role: Role,
-        name: &str,
+        (role, name, place): (Role, &str, Place),
         identified: bool,
         generation: u64,
     ) -> Ref {
         if let Some(&reference) = self.by_element.get(&element)
             && let Some(issued) = self.issued.get_mut(&reference)
         {
-            if identified || issued.name == name {
+            if names(issued, role, name, place, identified) {
                 issued.role = role;
+                issued.place = place;
                 if issued.name != name {
                     issued.name = name.to_owned();
                 }
@@ -119,6 +145,7 @@ impl RefTable {
                 element,
                 role,
                 name: name.to_owned(),
+                place,
                 generation,
                 retired: false,
             },
@@ -126,12 +153,17 @@ impl RefTable {
         reference
     }
 
-    /// The element's ref, if it has one that names it by `name` or, for an
-    /// identified element, by any name.
-    pub fn of(&self, element: ElementId, name: &str, identified: bool) -> Option<Ref> {
+    /// The element's ref, if it has one that names it as `role`, `name` and
+    /// `place` give it (see [`names`]).
+    pub fn of(
+        &self,
+        element: ElementId,
+        (role, name, place): (Role, &str, Place),
+        identified: bool,
+    ) -> Option<Ref> {
         let reference = *self.by_element.get(&element)?;
         let issued = self.issued.get(&reference)?;
-        (identified || issued.name == name).then_some(reference)
+        names(issued, role, name, place, identified).then_some(reference)
     }
 
     pub fn lookup(&self, reference: Ref) -> Lookup<'_> {

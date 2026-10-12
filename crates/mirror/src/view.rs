@@ -556,7 +556,7 @@ fn fold_duplicates(window: &Win, facts: &mut [Facts]) {
 }
 
 /// Whether a node takes text.
-fn field(node: &RNode, role: Role) -> bool {
+pub(crate) fn field(node: &RNode, role: Role) -> bool {
     node.editable() || matches!(role, Role::Textbox | Role::Searchbox)
 }
 

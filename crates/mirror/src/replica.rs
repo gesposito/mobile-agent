@@ -6,8 +6,9 @@
 //! window's deltas. Nodes are matched under matched parents, among siblings
 //! of the same class and identifier: a lone sibling on both sides matches
 //! outright, the others by the content of their subtree, then by sharing an
-//! identified descendant. Siblings that none of these tell apart get fresh
-//! identities, so an identity never moves to another element.
+//! identified descendant, then by their place among their parent's children.
+//! Siblings that none of these tell apart get fresh identities, so an
+//! identity never moves to another element.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -57,7 +58,10 @@ pub(crate) struct RNode {
     pub node_id: u32,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
-    pub depth: usize,
+    pub depth: u32,
+    /// Its place among its parent's children, counting from 0; the root's
+    /// is 0.
+    pub position: u32,
     pub class: Arc<str>,
     pub identifier: Option<String>,
     pub text: Option<String>,
@@ -833,17 +837,19 @@ impl Replica {
 
     fn convert_nodes(&mut self, root: &Node, strings: &[String]) -> Vec<RNode> {
         let mut nodes: Vec<RNode> = Vec::new();
-        let mut stack: Vec<(&Node, Option<usize>, usize)> = vec![(root, None, 0)];
+        let mut stack: Vec<(&Node, Option<usize>, u32)> = vec![(root, None, 0)];
         while let Some((node, parent, depth)) = stack.pop() {
             let index = nodes.len();
             let class = strings.get(node.class as usize).map_or("", String::as_str);
             let class = self.intern(class);
+            let position = parent.map_or(0, |p| nodes[p].children.len());
             nodes.push(RNode {
                 element: UNASSIGNED,
                 node_id: node.id,
                 parent,
                 children: Vec::with_capacity(node.children.len()),
                 depth,
+                position: u32::try_from(position).unwrap_or(u32::MAX),
                 class,
                 identifier: node.res_id.clone(),
                 text: node.text.clone(),
@@ -903,7 +909,7 @@ impl Replica {
             }
             let _ = writeln!(out, " bounds={}", Rect::from_pixels(w.bounds, self.scale));
             for n in &w.nodes {
-                let _ = write!(out, "{}{}", "  ".repeat(n.depth + 1), n.class);
+                let _ = write!(out, "{}{}", "  ".repeat(n.depth as usize + 1), n.class);
                 if let Some(id) = &n.identifier {
                     let _ = write!(out, " id={id}");
                 }
@@ -1039,13 +1045,27 @@ fn match_children(old: &[RNode], o: usize, new: &[RNode], n: usize) -> Vec<(usiz
             .map(|&c| subtree_identifiers(old, c))
             .collect();
         let mut taken = vec![false; left_old.len()];
+        let mut placed = Vec::new();
         for &c in &left_new {
             let ids = subtree_identifiers(new, c);
-            if ids.is_empty() {
-                continue;
+            let shared = (!ids.is_empty())
+                .then(|| (0..left_old.len()).find(|&i| !taken[i] && !old_ids[i].is_disjoint(&ids)))
+                .flatten();
+            match shared {
+                Some(i) => {
+                    taken[i] = true;
+                    pairs.push((left_old[i], c));
+                }
+                None => placed.push(c),
             }
-            if let Some(i) =
-                (0..left_old.len()).find(|&i| !taken[i] && !old_ids[i].is_disjoint(&ids))
+        }
+        // What neither tells apart pairs by its place among the parent's
+        // children: a node renamed in place, or one whose subtree changed,
+        // as a field's view that gains a counter, keeps its identity
+        // (rn-app-fixes, design D39).
+        for c in placed {
+            if let Some(i) = (0..left_old.len())
+                .find(|&i| !taken[i] && old[left_old[i]].position == new[c].position)
             {
                 taken[i] = true;
                 pairs.push((left_old[i], c));

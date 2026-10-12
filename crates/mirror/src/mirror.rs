@@ -14,7 +14,7 @@ use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
 use crate::frame::{self, FrameImage, FrameRequest, TreeSkew};
 use crate::geometry::{Point, Rect};
-use crate::refs::{Lookup, Ref, RefTable};
+use crate::refs::{self, Lookup, Place, Ref, RefTable};
 use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
 use crate::settle::{Settle, SettleOptions, Signal};
@@ -528,8 +528,7 @@ impl Mirror {
                     let reference = facts.bears_ref.then(|| {
                         self.refs.assign(
                             node.element,
-                            facts.role,
-                            &facts.name,
+                            (facts.role, &facts.name, place(window, node)),
                             node.identifier.is_some(),
                             generation,
                         )
@@ -644,6 +643,39 @@ impl Mirror {
         Ok(element(window, &window.nodes[i], &facts, Some(reference)))
     }
 
+    /// The one field `holder` holds, as the replica has it now, with a ref
+    /// for it: a node below the element that takes text, when the element
+    /// holds exactly one. An identifier `fill` or `type` is given can name a
+    /// node that takes no text around the field that does, as a React Native
+    /// code input's view around a field without an area (rn-app-fixes,
+    /// design D39). `None` when the element holds none or several, or the
+    /// replica no longer holds it.
+    pub fn field_within(&mut self, holder: ElementId) -> Option<Element> {
+        let (w, i) = self.replica.locate(holder)?;
+        let view = View::build(&self.replica);
+        let window = &self.replica.windows[w];
+        let facts = &view.windows[w];
+        let mut fields = Vec::new();
+        let mut stack: Vec<usize> = window.nodes[i].children.clone();
+        while let Some(d) = stack.pop() {
+            if view::field(&window.nodes[d], facts[d].role) && !facts[d].absorbed {
+                fields.push(d);
+            }
+            stack.extend(window.nodes[d].children.iter().copied());
+        }
+        let [d] = fields[..] else {
+            return None;
+        };
+        let (node, facts) = (&window.nodes[d], &facts[d]);
+        let reference = self.refs.assign(
+            node.element,
+            (facts.role, &facts.name, place(window, node)),
+            node.identifier.is_some(),
+            self.replica.generation,
+        );
+        Some(element(window, node, facts, Some(reference)))
+    }
+
     /// How much of `element` is in view as the replica has it now, without
     /// reading the target: the share of its bounds a tap reaches, inside
     /// the visible bounds of what holds it and under no view drawn over it,
@@ -745,9 +777,13 @@ impl Mirror {
                 let Some((w, i)) = self.replica.locate(issued.element) else {
                     return Err(gone);
                 };
-                let renamed = self.replica.windows[w].nodes[i].identifier.is_none()
-                    && view::facts_of(&self.replica, w, i).name != issued.name;
-                if issued.retired || renamed {
+                let window = &self.replica.windows[w];
+                let node = &window.nodes[i];
+                let facts = view::facts_of(&self.replica, w, i);
+                let named = (facts.role, facts.name.as_str(), place(window, node));
+                let still =
+                    refs::names(issued, named.0, named.1, named.2, node.identifier.is_some());
+                if issued.retired || !still {
                     return Err(gone);
                 }
                 Ok((w, i))
@@ -1229,9 +1265,11 @@ impl Mirror {
                 if enabled && !node.flags.contains(NodeFlags::ENABLED) {
                     continue;
                 }
-                let reference = self
-                    .refs
-                    .of(node.element, &facts.name, node.identifier.is_some());
+                let reference = self.refs.of(
+                    node.element,
+                    (facts.role, &facts.name, place(window, node)),
+                    node.identifier.is_some(),
+                );
                 if selector.matches(
                     &facts.name,
                     facts.value.as_deref(),
@@ -1371,6 +1409,15 @@ impl Mirror {
     }
 }
 
+/// Where `node` of `window` sits, for the refs: its parent's element and its
+/// position among the parent's children.
+fn place(window: &Win, node: &RNode) -> Place {
+    Place {
+        parent: node.parent.map(|p| window.nodes[p].element),
+        position: node.position,
+    }
+}
+
 /// An element as snapshots list it.
 fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) -> Element {
     Element {
@@ -1388,7 +1435,7 @@ fn element(window: &Win, node: &RNode, facts: &Facts, reference: Option<Ref>) ->
         beside_keyboard: facts.keyboard.filter(|&share| share > 0.0),
         actionable: facts.actionable,
         window: window.id,
-        depth: node.depth,
+        depth: node.depth as usize,
         class: node.class.to_string(),
     }
 }
