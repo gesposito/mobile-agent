@@ -226,13 +226,17 @@ enum FormField {
     /// nothing below it and no value, as iOS reads a React Native field
     /// inside a view marked accessible: it takes text and never shows it.
     Secret,
+    /// The list's field, a text field that brings the keyboard up.
+    Query,
 }
 
 impl FormField {
-    fn parse(id: &str) -> Option<FormField> {
-        match id {
-            "placeholder-code" => Some(FormField::Code),
-            "placeholder-secret" => Some(FormField::Secret),
+    /// The field `id` names on `board`.
+    fn on(board: Board, id: &str) -> Option<FormField> {
+        match (board, id) {
+            (Board::Form, "placeholder-code") => Some(FormField::Code),
+            (Board::Form, "placeholder-secret") => Some(FormField::Secret),
+            (Board::List | Board::ListLow, LIST_FIELD) => Some(FormField::Query),
             _ => None,
         }
     }
@@ -261,6 +265,12 @@ enum Board {
     /// The feed (section 2): a card partly above its list's top, where the
     /// header listed before the list is drawn.
     Feed,
+    /// The list (section 3): a header listed before the list, down to 122
+    /// points, and the list's field, which brings the keyboard up.
+    List,
+    /// The list under a header down to 430 points, which leaves 109 points
+    /// of the list above the keyboard.
+    ListLow,
 }
 
 impl Board {
@@ -269,10 +279,15 @@ impl Board {
             "consent" => Board::Consent,
             "creation" => Board::Creation,
             "feed" => Board::Feed,
+            "list" => Board::List,
+            "list-low" => Board::ListLow,
             _ => Board::Form,
         }
     }
 }
+
+/// The list's field.
+const LIST_FIELD: &str = "placeholder-id-2";
 
 /// The creation tab's list, in points.
 const CREATION_LIST: [f64; 4] = [0.0, 122.0, 402.0, 791.0];
@@ -290,6 +305,8 @@ struct Forms {
     board: Board,
     code: String,
     secret: String,
+    /// What the list's field holds.
+    query: String,
     focus: Option<FormField>,
     status: String,
     /// Whether the layout has moved the submit button above the keyboard,
@@ -307,10 +324,11 @@ impl Forms {
             board,
             code: String::new(),
             secret: String::new(),
+            query: String::new(),
             focus: None,
             status: match board {
                 Board::Form => "Not submitted",
-                Board::Consent | Board::Creation | Board::Feed => "Not tapped",
+                _ => "Not tapped",
             }
             .to_owned(),
             lifted: false,
@@ -338,29 +356,31 @@ impl Forms {
         match field {
             FormField::Code => &mut self.code,
             FormField::Secret => &mut self.secret,
+            FormField::Query => &mut self.query,
         }
     }
 
     /// A tap that landed on `hit`, or on the keyboard when `on_keyboard`
     /// says so: a key of the number pad, entered into the field in focus.
-    /// On the screens of the acceptance run the status names what the tap
-    /// landed on, but for the creation tab's disabled button, which does
-    /// nothing.
+    /// A field takes the focus. On the screens of the acceptance run the
+    /// status names what else the tap landed on, but for the creation tab's
+    /// disabled button, which does nothing.
     fn tap(&mut self, hit: Option<&str>, on_keyboard: bool) {
-        if self.board != Board::Form {
-            if hit != Some(CREATION_DISABLED) {
-                self.status = format!("Tapped {}", hit.unwrap_or("nothing"));
-            }
-            return;
-        }
         if on_keyboard {
             if let Some(field) = self.focus {
                 self.field(field).push(PAD_KEY);
             }
             return;
         }
-        if let Some(field) = hit.and_then(FormField::parse) {
+        if let Some(field) = hit.and_then(|id| FormField::on(self.board, id)) {
             self.focus = Some(field);
+            return;
+        }
+        if self.board != Board::Form {
+            if hit != Some(CREATION_DISABLED) {
+                self.status = format!("Tapped {}", hit.unwrap_or("nothing"));
+                self.focus = None;
+            }
             return;
         }
         match hit {
@@ -773,7 +793,7 @@ impl Device {
         if self.foreground == Foreground::Placeholder {
             let forms = self.placeholder.as_mut()?;
             let field = match target {
-                Some(id) => FormField::parse(id)?,
+                Some(id) => FormField::on(forms.board, id)?,
                 None => forms.focus?,
             };
             forms.focus = Some(field);
@@ -1222,7 +1242,61 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Consent => consent_content(kit, forms),
         Board::Creation => creation_content(kit, forms),
         Board::Feed => feed_content(kit, forms),
+        Board::List => list_content(kit, forms, 122.0),
+        Board::ListLow => list_content(kit, forms, 430.0),
     }
+}
+
+/// The list with the keyboard up (section 3 of the masked listings): a
+/// header listed before the list, down to `header` points, holding a
+/// button, the screen's heading and the status line; and the list, from
+/// there down to the bottom of the screen, holding the row scrolled up
+/// behind the header, the field, which brings the keyboard up, and a
+/// button the keyboard's top crosses.
+fn list_content(kit: Kit, forms: &Forms, header: f64) -> Vec<El> {
+    let width = kit.width();
+    vec![
+        kit.group([0.0, 0.0, width, header]).children([
+            kit.button(
+                "placeholder-button-1",
+                "placeholder-button-1",
+                [20.0, 70.0, 64.0, 114.0],
+            )
+            .key("placeholder-button-1"),
+            kit.heading(
+                "placeholder-heading-1",
+                "placeholder-heading-1",
+                [76.0, 76.0, 306.67, 98.0],
+            )
+            .key("placeholder-heading-1"),
+            kit.label(
+                Some("placeholder-status"),
+                &forms.status,
+                [76.0, 100.0, 306.0, 114.0],
+            ),
+        ]),
+        kit.scroll_view([0.0, header, width, kit.height()])
+            .children([
+                kit.button(
+                    "placeholder-id-1",
+                    "placeholder-button-2",
+                    [38.0, 2.0, 364.0, 46.0],
+                ),
+                kit.field(
+                    LIST_FIELD,
+                    "placeholder-textbox-1",
+                    &forms.query,
+                    false,
+                    forms.focus == Some(FormField::Query),
+                    [38.0, 452.0, 364.0, 496.0],
+                ),
+                kit.button(
+                    "placeholder-id-3",
+                    "placeholder-button-5",
+                    [38.0, 508.0, 364.0, 552.0],
+                ),
+            ]),
+    ]
 }
 
 /// The consent screen (section 1a of the masked listings): a scroll view

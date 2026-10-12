@@ -2762,6 +2762,62 @@ mod tests {
         }
     }
 
+    /// Where the strokes among `sent` went, from where each finger came down
+    /// to where it lifted.
+    fn swipes(sent: &Sent) -> Vec<(Point, Point)> {
+        sent.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, input)| match input {
+                Input::Swipe { from, to, .. } => Some((*from, *to)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Design D41 (task 3.2; section 3 of the masked listings): with the
+    /// keyboard up the acceptance run's `scroll up 300` stroked from (201,
+    /// 119.5), the middle of what the keyboard left of the screen less 150
+    /// points, on the header listed before the list, and moved nothing. A
+    /// scroll of the screen with the keyboard up strokes inside what shows
+    /// of the scroll container there: below the header's 122 points and
+    /// above the keyboard's top at 539.
+    #[test]
+    fn a_scroll_with_the_keyboard_up_strokes_inside_the_list_below_its_header() {
+        let (mut target, sent) = on_board("list");
+        click_on(&mut target, "#placeholder-id-2").unwrap();
+        let reply = scroll_with(&mut target, json!({"direction": "up", "amount": 300})).unwrap();
+        let strokes = swipes(&sent);
+        assert_eq!(strokes.len(), 1, "{}", reply.data);
+        for (from, to) in &strokes {
+            assert!(
+                [from.y, to.y].iter().all(|&y| y > 122.0 && y < 539.0),
+                "below the header, above the keyboard: {strokes:?}"
+            );
+        }
+    }
+
+    /// D41: under a header down to 430 points the keyboard leaves 109
+    /// points of the list, fewer than the 120 a stroke needs, so the scroll
+    /// fails with `covered_by_keyboard`, advising to close the keyboard,
+    /// rather than stroking the header, and strokes nothing.
+    #[test]
+    fn a_scroll_of_a_list_the_keyboard_leaves_less_than_120_points_of_fails_naming_it() {
+        let (mut target, sent) = on_board("list-low");
+        click_on(&mut target, "#placeholder-id-2").unwrap();
+        let failure =
+            scroll_with(&mut target, json!({"direction": "up", "amount": 300})).expect_err(
+                &format!("109 points to stroke; strokes {:?}", swipes(&sent)),
+            );
+        assert_eq!(failure.code, "covered_by_keyboard", "{}", failure.message);
+        assert!(
+            failure.message.contains("close the keyboard"),
+            "{}",
+            failure.message
+        );
+        assert!(swipes(&sent).is_empty(), "{:?}", swipes(&sent));
+    }
+
     /// Design D33: a React Native code input built of boxes holds its code
     /// in the boxes' texts and has no value of its own, so in the smoke test
     /// `fill` typed the code and then failed with `text_mismatch`. A field
