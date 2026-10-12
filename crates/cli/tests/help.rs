@@ -79,6 +79,31 @@ fn the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back() {
     }
 }
 
+/// Rn-app-fixes (design D37 to D40): the guide says where a tap goes on an
+/// element partly covered and what refuses it, what the keyboard hides
+/// from a snapshot, that every tab has a ref, what `fill` reads back from a
+/// name, and that an identifier on a field's wrapper fills the field.
+#[test]
+fn the_agent_guide_says_where_a_tap_goes_and_what_the_keyboard_hides() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "the part of an element you can see",
+        "8 points",
+        "disabled",
+        "under the keyboard",
+        "visible=",
+        "Every tab has a ref",
+        "readFrom: name",
+        "wrapper",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 /// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
 /// the readiness states a command on one can fail with and where the step
 /// is named, the slower tier that makes settle and waits take longer, and
