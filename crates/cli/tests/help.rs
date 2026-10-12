@@ -104,6 +104,29 @@ fn the_agent_guide_says_where_a_tap_goes_and_what_the_keyboard_hides() {
     }
 }
 
+/// Rn-app-fixes (design D43 to D45): the guide says that `readFrom: name`
+/// compares the part of a name the text changed, that an identifier on a
+/// view holding no field types where the keyboard a tap on it brings up
+/// goes, and that an interactive snapshot leaves out what a tap reaches
+/// none of, whatever covers it, and marks what it reaches part of.
+#[test]
+fn the_agent_guide_says_what_fill_reads_from_a_name_and_what_a_snapshot_leaves_out() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "part of its name the text changed",
+        "keyboard it brings up",
+        "reaches none of",
+        "reaches part of",
+        "a header or a footer",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 /// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
 /// the readiness states a command on one can fail with and where the step
 /// is named, the slower tier that makes settle and waits take longer, and
