@@ -593,10 +593,7 @@ fn a_view_drawn_over_its_siblings_on_android_hides_what_it_covers() {
     let profile = snapshot
         .by_identifier("searchAutoCompleteResult-placeholder-4")
         .unwrap();
-    assert_eq!(
-        profile.beside_keyboard.map(|share| (share * 100.0).round()),
-        Some(86.0)
-    );
+    assert_eq!(profile.beside_keyboard, Some(86));
     assert!(
         snapshot
             .text

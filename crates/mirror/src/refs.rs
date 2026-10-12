@@ -52,22 +52,15 @@ impl fmt::Display for Ref {
     }
 }
 
-/// Where an element sits: its parent's element and its position among the
-/// parent's children.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Place {
-    pub parent: Option<ElementId>,
-    pub position: u32,
-}
-
 /// What a ref was issued for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Issued {
     pub element: ElementId,
     pub role: Role,
     pub name: String,
-    /// Where the element sat when the ref last named it.
-    pub place: Place,
+    /// The element's position among its parent's children when the ref last
+    /// named it; its parent stays the same element while it survives.
+    pub place: u32,
     /// The replica generation the ref was issued in.
     pub generation: u64,
     /// The element, having no identifier, was renamed and given a fresh
@@ -87,13 +80,7 @@ pub(crate) enum Lookup<'a> {
 /// Whether the ref `issued` describes still names its element as `role`,
 /// `name` and `place` give it: by any name when the element is identified,
 /// else under the same name, or in the same role and place.
-pub(crate) fn names(
-    issued: &Issued,
-    role: Role,
-    name: &str,
-    place: Place,
-    identified: bool,
-) -> bool {
+pub(crate) fn names(issued: &Issued, role: Role, name: &str, place: u32, identified: bool) -> bool {
     identified || issued.name == name || (issued.role == role && issued.place == place)
 }
 
@@ -119,7 +106,7 @@ impl RefTable {
     pub fn assign(
         &mut self,
         element: ElementId,
-        (role, name, place): (Role, &str, Place),
+        (role, name, place): (Role, &str, u32),
         identified: bool,
         generation: u64,
     ) -> Ref {
@@ -158,7 +145,7 @@ impl RefTable {
     pub fn of(
         &self,
         element: ElementId,
-        (role, name, place): (Role, &str, Place),
+        (role, name, place): (Role, &str, u32),
         identified: bool,
     ) -> Option<Ref> {
         let reference = *self.by_element.get(&element)?;

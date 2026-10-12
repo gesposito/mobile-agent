@@ -23,13 +23,14 @@ use crate::view::{Facts, Hidden, View};
 
 /// One line of a listing.
 pub(crate) enum Line {
-    /// Node `i` of window `w`, and the share of it beside the keyboard when
-    /// the keyboard lies over part of it.
+    /// Node `i` of window `w`, and the share of it beside the keyboard, in
+    /// whole percent and at least 1, when the keyboard lies over part of
+    /// it.
     Element {
         w: usize,
         i: usize,
         depth: usize,
-        beside: Option<f64>,
+        beside: Option<u8>,
     },
     /// A keyboard window.
     Keyboard { w: usize },
@@ -152,6 +153,9 @@ impl Walker<'_> {
             if self.options.max_depth.is_some_and(|max| depth > max) {
                 return;
             }
+            let beside = beside
+                .filter(|&share| share > 0.0)
+                .map(|share| ((share * 100.0).round() as u8).max(1));
             self.lines.push(Line::Element {
                 w,
                 i,
@@ -235,7 +239,7 @@ pub(crate) fn element_line(element: &Element) -> String {
         attrs.push("focused".to_owned());
     }
     if let Some(share) = element.beside_keyboard {
-        attrs.push(format!("visible={}%", (share * 100.0).round()));
+        attrs.push(format!("visible={share}%"));
     }
     if let Some(identifier) = &element.identifier {
         attrs.push(format!("id={}", attribute(identifier)));

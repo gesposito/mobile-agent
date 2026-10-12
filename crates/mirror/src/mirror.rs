@@ -14,7 +14,7 @@ use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
 use crate::frame::{self, FrameImage, FrameRequest, TreeSkew};
 use crate::geometry::{Point, Rect};
-use crate::refs::{self, Lookup, Place, Ref, RefTable};
+use crate::refs::{self, Lookup, Ref, RefTable};
 use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
 use crate::settle::{Settle, SettleOptions, Signal};
@@ -533,7 +533,7 @@ impl Mirror {
                     let reference = facts.bears_ref.then(|| {
                         self.refs.assign(
                             node.element,
-                            (facts.role, &facts.name, place(window, node)),
+                            (facts.role, &facts.name, place(node)),
                             node.identifier.is_some(),
                             generation,
                         )
@@ -543,7 +543,7 @@ impl Mirror {
                     }
                     let mut listed_element = element(window, node, facts, reference);
                     listed_element.depth = depth;
-                    listed_element.beside_keyboard = beside.filter(|&share| share > 0.0);
+                    listed_element.beside_keyboard = beside;
                     text.push(render::element_line(&listed_element));
                     elements.push(listed_element);
                 }
@@ -675,7 +675,7 @@ impl Mirror {
         let (node, facts) = (&window.nodes[d], &facts[d]);
         let reference = self.refs.assign(
             node.element,
-            (facts.role, &facts.name, place(window, node)),
+            (facts.role, &facts.name, place(node)),
             node.identifier.is_some(),
             self.replica.generation,
         );
@@ -786,7 +786,7 @@ impl Mirror {
                 let window = &self.replica.windows[w];
                 let node = &window.nodes[i];
                 let facts = view::facts_of(&self.replica, w, i);
-                let named = (facts.role, facts.name.as_str(), place(window, node));
+                let named = (facts.role, facts.name.as_str(), place(node));
                 let still =
                     refs::names(issued, named.0, named.1, named.2, node.identifier.is_some());
                 if issued.retired || !still {
@@ -1273,7 +1273,7 @@ impl Mirror {
                 }
                 let reference = self.refs.of(
                     node.element,
-                    (facts.role, &facts.name, place(window, node)),
+                    (facts.role, &facts.name, place(node)),
                     node.identifier.is_some(),
                 );
                 if selector.matches(
@@ -1415,13 +1415,11 @@ impl Mirror {
     }
 }
 
-/// Where `node` of `window` sits, for the refs: its parent's element and its
-/// position among the parent's children.
-fn place(window: &Win, node: &RNode) -> Place {
-    Place {
-        parent: node.parent.map(|p| window.nodes[p].element),
-        position: node.position,
-    }
+/// Where `node` sits, for the refs: its position among its parent's
+/// children. Its parent is the same element as long as it survives, since
+/// the replica pairs only the children of nodes it paired.
+fn place(node: &RNode) -> u32 {
+    node.position
 }
 
 /// An element as snapshots list it.
