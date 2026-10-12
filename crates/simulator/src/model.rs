@@ -543,6 +543,28 @@ pub enum TextMethod {
     Paste,
 }
 
+/// The longest string `TextMethod::Auto` types key by key; longer ones are
+/// pasted, since typing takes a few tens of milliseconds a character.
+const KEYBOARD_LIMIT: usize = 32;
+
+impl TextMethod {
+    /// How `type_text` enters `text` when asked to as `self`: `Auto` types
+    /// a string of at most 32 characters that a US keyboard can type and
+    /// pastes any other; `Keyboard` and `Paste` stay as they are.
+    pub fn resolve(self, text: &str) -> TextMethod {
+        match self {
+            TextMethod::Auto
+                if text.chars().count() <= KEYBOARD_LIMIT
+                    && text.chars().all(|c| Key::character(c).is_some()) =>
+            {
+                TextMethod::Keyboard
+            }
+            TextMethod::Auto => TextMethod::Paste,
+            chosen => chosen,
+        }
+    }
+}
+
 /// What `type_text` did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextEntry {
@@ -550,4 +572,25 @@ pub struct TextEntry {
     pub method: TextMethod,
     pub characters: usize,
     pub elapsed: Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Auto` types a short string a US keyboard can type and pastes a
+    /// long one or one with a character no key types; the other methods
+    /// stay as asked.
+    #[test]
+    fn auto_types_a_short_typeable_string_and_pastes_any_other() {
+        assert_eq!(TextMethod::Auto.resolve("Smoke Org"), TextMethod::Keyboard);
+        assert_eq!(TextMethod::Auto.resolve(""), TextMethod::Keyboard);
+        let longest = "a".repeat(KEYBOARD_LIMIT);
+        assert_eq!(TextMethod::Auto.resolve(&longest), TextMethod::Keyboard);
+        let longer = "a".repeat(KEYBOARD_LIMIT + 1);
+        assert_eq!(TextMethod::Auto.resolve(&longer), TextMethod::Paste);
+        assert_eq!(TextMethod::Auto.resolve("café"), TextMethod::Paste);
+        assert_eq!(TextMethod::Keyboard.resolve(&longer), TextMethod::Keyboard);
+        assert_eq!(TextMethod::Paste.resolve("Smoke Org"), TextMethod::Paste);
+    }
 }

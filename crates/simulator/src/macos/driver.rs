@@ -40,9 +40,6 @@ use crate::tree::{ForegroundTree, TreeBackend, TreeChoice, TreeOptions};
 const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
 /// A shutdown took about 3.4 s in S2.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(120);
-/// The longest string `TextMethod::Auto` types key by key; longer ones are
-/// pasted, since typing takes a few tens of milliseconds a character.
-const KEYBOARD_LIMIT: usize = 32;
 /// The TCC service behind "Paste from Other Apps". Without it the first
 /// paste of text that `devicectl` put on the pasteboard asks the user to
 /// allow pasting from dtpasteboardd, and the text never arrives.
@@ -894,13 +891,7 @@ impl Input for SimulatorDriver {
             let start = Instant::now();
             let characters = text.chars().count();
             let keys: Option<Vec<Key>> = text.chars().map(Key::character).collect();
-            let method = match method {
-                TextMethod::Auto if keys.is_some() && characters <= KEYBOARD_LIMIT => {
-                    TextMethod::Keyboard
-                }
-                TextMethod::Auto => TextMethod::Paste,
-                chosen => chosen,
-            };
+            let method = method.resolve(text);
             if method == TextMethod::Keyboard {
                 let keys = keys.ok_or_else(|| {
                     let missing = text
