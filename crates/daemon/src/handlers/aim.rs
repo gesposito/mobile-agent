@@ -206,40 +206,69 @@ fn aimed_at(element: Element) -> (Target, Option<Ref>, Option<Element>) {
     }
 }
 
-/// A ref for the element an argument names, for text entry: a selector's
-/// element gets one from an interactive listing if no snapshot listed it.
-/// An identifier that names a node taking no text and holding exactly one
-/// field gives the field's ref, with the node it named (rn-app-fixes,
-/// design D39): on the acceptance run's code step the identifier named a
-/// React Native code input's view, around a field without an area.
+/// Where text for an argument goes.
+pub(crate) enum TextTarget {
+    /// The element a ref names.
+    Field(Ref),
+    /// The one field inside the node an identifier named, with that node
+    /// (rn-app-fixes, design D39).
+    Within(Ref, Element),
+    /// The node an identifier named, which takes no text, holds no field and
+    /// has no ref, with the selector that found it: the text goes to the
+    /// input a tap on it gives the focus, if the keyboard comes up (design
+    /// D44).
+    Raising(Element, Selector),
+}
+
+/// Where text for the element an argument names goes, for text entry: its
+/// ref, which a selector's element gets from an interactive listing if no
+/// snapshot listed it. An identifier that names a node taking no text and
+/// holding exactly one field gives the field's ref, with the node it named
+/// (rn-app-fixes, design D39): on the acceptance run's code step the
+/// identifier named a React Native code input's view, around a field
+/// without an area. One that names such a node holding no field and without
+/// a ref gives the node, for the input a tap on it focuses (design D44): on
+/// the third acceptance run's second visit the code input's view held
+/// nothing, the app's input not in the tree.
 pub(crate) fn text_ref(
     target: &mut Attached,
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<(Ref, Option<Element>), Failure> {
+) -> Result<TextTarget, Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
             check_seen(target, session, *reference)?;
-            Ok((*reference, None))
+            Ok(TextTarget::Field(*reference))
         }
         Aim::Select(selector) => {
             let element = find(target, selector, timeout)?;
             let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
-            if selector.identifier.is_some()
-                && !takes_text
-                && let Some(field) = target.mirror.field_within(element.id)
+            if selector.identifier.is_none() || takes_text {
+                return Ok(TextTarget::Field(listed_ref(
+                    target,
+                    &element,
+                    &selector.to_string(),
+                )?));
+            }
+            if let Some(field) = target.mirror.field_within(element.id)
                 && let Some(reference) = field.reference
             {
-                return Ok((reference, Some(element)));
+                return Ok(TextTarget::Within(reference, element));
             }
-            Ok((listed_ref(target, &element, &selector.to_string())?, None))
+            match listed_ref(target, &element, &selector.to_string()) {
+                Ok(reference) => Ok(TextTarget::Field(reference)),
+                Err(_) if target.mirror.fields_within(element.id) == Some(0) => {
+                    Ok(TextTarget::Raising(element, selector.clone()))
+                }
+                Err(failure) => Err(failure),
+            }
         }
         Aim::Exact(text) => {
             let element = find_exact(target, text, timeout)?;
             let reference = listed_ref(target, &element, &format!("exact text {text:?}"))?;
-            Ok((reference, None))
+            Ok(TextTarget::Field(reference))
         }
     }
 }
