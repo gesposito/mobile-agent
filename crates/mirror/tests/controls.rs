@@ -388,12 +388,14 @@ fn a_labelled_control_under_an_alert_is_covered() {
     assert!(target.inputs().is_empty());
 }
 
-/// Rn-app-fixes D35, scenario "Selected tab keeps its ref": React Native
-/// exposes a tab as a labelled node without traits but `selected`, and the
-/// selected one of the tab bar the smoke test found holds more than static
-/// text, its label shown under its icon. All three tabs get refs, the
-/// selected one with its state, as UIKit's tab bar buttons do, selected or
-/// not.
+/// Rn-app-fixes D35, scenario "Selected tab keeps its ref", and D40 (task
+/// 3.4; section 6 of the masked listings): React Native exposes a tab as a
+/// labelled node without traits, the selected one with the `selected`
+/// trait, and the acceptance run found an unselected tab holding its icon
+/// glyph, a text whose only child is its own text, without a ref (0 of 2).
+/// Labelled nodes without traits laid out in one row with a selected one
+/// are tabs: all three get refs as tabs, the selected one with its state,
+/// as UIKit's tab bar buttons do, selected or not.
 #[test]
 fn a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so() {
     let (_, mut mirror) = mirror_on("tabbar-ios");
@@ -403,9 +405,9 @@ fn a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so() {
         lines(&[
             "- heading \"Placeholder home\" [ref=e1]",
             "- button \"Placeholder action\" [ref=e2]",
-            "- generic \"Placeholder tab 1\" [id=placeholder-tab-1, ref=e3]",
-            "- generic \"Placeholder tab 2\" [selected, id=placeholder-tab-2, ref=e4]",
-            "- generic \"Placeholder tab 3\" [id=placeholder-tab-3, ref=e5]",
+            "- tab \"Placeholder tab 1\" [id=placeholder-tab-1, ref=e3]",
+            "- tab \"Placeholder tab 2\" [selected, id=placeholder-tab-2, ref=e4]",
+            "- tab \"Placeholder tab 3\" [id=placeholder-tab-3, ref=e5]",
         ])
     );
     assert!(
@@ -422,6 +424,28 @@ fn a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so() {
         assert!(element.reference.is_some(), "{tab}");
         assert_eq!(element.selected, tab == "tab-login", "{tab}");
     }
+}
+
+/// D40: a row of labelled nodes without traits none of which is selected is
+/// no tab bar, and the rule changes nothing: without the middle tab's
+/// `selected` trait the tabs holding their icon's text get no ref, as
+/// before, and none lists as a tab.
+#[test]
+fn a_row_without_a_selected_node_lists_no_tabs() {
+    let screen = Screen::load("tabbar-ios").patched(json!([
+        {"find": "placeholder-tab-2", "off": ["selected"]}
+    ]));
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    assert_eq!(
+        mirror.snapshot(&interactive()).unwrap().text,
+        lines(&[
+            "- heading \"Placeholder home\" [ref=e1]",
+            "- button \"Placeholder action\" [ref=e2]",
+        ])
+    );
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert!(!listing.text.contains("- tab "), "{}", listing.text);
 }
 
 /// D35: React Native says a view is a checkbox, and whether it is checked,

@@ -1059,7 +1059,9 @@ fn a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view() {
 fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
     let (target, mut mirror) = mirror_on("create-disabled-ios");
     let snapshot = mirror.snapshot(&interactive()).unwrap();
-    assert_eq!(snapshot.text.lines().count(), 23, "{}", snapshot.text);
+    // The section's 23 lines, and the tab bar's first tab, a tab beside the
+    // selected one (design D40).
+    assert_eq!(snapshot.text.lines().count(), 24, "{}", snapshot.text);
     let paste = snapshot
         .by_identifier("placeholder-id-8")
         .expect("listed, partly under the button")
