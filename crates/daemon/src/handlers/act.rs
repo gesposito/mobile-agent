@@ -1049,9 +1049,10 @@ fn keyboard_within(target: &mut Attached, tapped: Instant) -> Result<bool, Failu
 /// [`KEYBOARD_WAIT`] from the tap (design D44): on the third acceptance
 /// run's second visit to the code step, the code input's view held nothing,
 /// the app's input not in the tree, and a tap on the view gave that input
-/// the focus. Fails with `invalid_argument`, as before, when no keyboard
-/// comes up, and when a field the tree shows has the focus after the tap,
-/// as the keyboard then serves that field.
+/// the focus. Fails with `invalid_argument`, as an entry into a node that
+/// takes no text does, when no keyboard comes up, and when a field the tree
+/// shows has the focus after the tap, as the keyboard then serves that
+/// field.
 fn raise_keyboard(
     target: &mut Attached,
     (node, selector): (&Element, &Selector),

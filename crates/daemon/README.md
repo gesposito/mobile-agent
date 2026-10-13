@@ -376,12 +376,13 @@ through the node found again by its identifier, its value, descendants or
 name; the reply's `ref` is null and a warning names the node and says the
 keyboard it brought up carried the text. No keyboard after the second, or
 a field the tree shows with the focus after the tap, which the keyboard
-would serve instead, fails `invalid_argument` as before; a node holding
-several fields fails at once. A field whose label
-changes once it holds text keeps its ref across the change, and its view
-its identity when it gains a counter at the focus (`crates/mirror/README.md`,
-Snapshots), so a `fill` by that ref reads the field back, where in the
-acceptance run it failed `stale_ref` before anything was typed.
+would serve instead, fails `invalid_argument`, as an entry into a node
+that takes no text does; a node holding several fields fails at once. A
+field whose label changes once it holds text keeps its ref across the
+change, and its view its identity when it gains a counter at the focus
+(`crates/mirror/README.md`, Snapshots), so a `fill` by that ref reads the
+field back, where in the acceptance run it failed `stale_ref` before
+anything was typed.
 
 `open` waits for the launched app's first tree before it settles: until the
 replica shows the app in front with more than its root and more than a
