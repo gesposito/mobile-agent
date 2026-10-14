@@ -148,6 +148,26 @@ fn the_agent_guide_says_what_hints_count_what_snapshot_keeps_and_what_get_reads_
     }
 }
 
+/// Rn-app-fixes (design D52 and D53): the guide says that a hardware
+/// keyboard shows no keys and covers nothing, and that a selector on an
+/// element that is covered or out of view is refused at once, as its ref
+/// is, where it waited out its timeout.
+#[test]
+fn the_agent_guide_says_a_hardware_keyboard_covers_nothing_and_a_selector_is_refused_as_its_ref() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "hardware keyboard shows no keys",
+        "in view or not",
+        "refused at once, as its ref would be",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 /// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
 /// the readiness states a command on one can fail with and where the step
 /// is named, the slower tier that makes settle and waits take longer, and
