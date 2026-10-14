@@ -1296,7 +1296,7 @@ fn partly_covered_elements_say_how_much_shows_and_those_a_tap_cannot_reach_are_c
             "- button \"placeholder-button-1\" [id=placeholder-id-1, ref=e1]",
             "- heading \"placeholder-heading-1\" [ref=e2]",
             "- button \"placeholder-button-2\" [id=placeholder-id-2, ref=e3]: placeholder-value-1",
-            "(13 more actionable items above, scroll up to reveal)",
+            "(13 more actionable items above, 1 of them behind the header, scroll up to reveal)",
             "- button \"placeholder-button-4\" [visible=30%, id=placeholder-id-4, ref=e4]",
             "- button \"placeholder-button-5\" [id=placeholder-id-5, ref=e5]",
             "- button \"placeholder-button-6\" [id=placeholder-id-6, ref=e6]",
@@ -1323,9 +1323,9 @@ fn partly_covered_elements_say_how_much_shows_and_those_a_tap_cannot_reach_are_c
         );
     }
     assert!(
-        listing
-            .text
-            .starts_with("(6 more actionable items above, scroll up to reveal)\n"),
+        listing.text.starts_with(
+            "(6 more actionable items above, 3 of them behind the header, scroll up to reveal)\n"
+        ),
         "{}",
         listing.text
     );
@@ -1409,8 +1409,9 @@ fn the_hints_count_what_a_cover_leaves_nothing_of_and_name_the_cover() {
     let mut organizations = Mirror::new(target.backend(), MirrorConfig::default());
     let text = organizations.snapshot(&interactive()).unwrap().text;
     assert!(
-        text.starts_with("(6 more actionable items above, scroll up to reveal)\n")
-            && text.ends_with(
+        text.starts_with(
+            "(6 more actionable items above, 3 of them behind the header, scroll up to reveal)\n"
+        ) && text.ends_with(
                 "- button \"placeholder-button-1\" [ref=e7]\n- heading \"placeholder-heading-1\" [ref=e8]\n(2 more actionable items behind the header)"
             ),
         "{text}"

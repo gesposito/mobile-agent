@@ -296,9 +296,9 @@ pub(crate) fn under_keyboard_line(count: usize) -> String {
 }
 
 /// The line that counts the `count` elements with refs outside any scroll
-/// container that an interactive listing left out under a view drawn over
-/// them, which `by` names, as a scroll hint names what covers what it
-/// counts (rn-app-fixes, design D50).
+/// container that a listing left out under a view drawn over them, which
+/// `by` names, as a scroll hint names what covers what it counts
+/// (rn-app-fixes, designs D50 and D54).
 pub(crate) fn covered_line(count: u32, by: &str, depth: usize) -> String {
     let items = if count == 1 { "item" } else { "items" };
     format!(

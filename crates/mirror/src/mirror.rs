@@ -512,13 +512,16 @@ impl Mirror {
     /// reaches only part of with that share; an interactive snapshot leaves
     /// out one a tap reaches none of, counting it in its scroll container's
     /// hint with the view drawn over it named, while a full one keeps it at
-    /// 0% (rn-app-fixes, designs D45 and D50).
+    /// 0%; both count in their hints one a view drawn over it covers whole,
+    /// which both leave out, so that the interactive listing's hints count
+    /// what the full listing shows at 0% beside what the full listing's own
+    /// hints count (rn-app-fixes, designs D45, D50 and D54).
     pub fn snapshot(&mut self, options: &SnapshotOptions) -> Result<Snapshot, MirrorError> {
         self.pump()?;
         let now = self.now();
         let view = View::build(&self.replica);
         let reach = visibility::listed(&self.replica, &view);
-        let found = view::hints(&self.replica, &view, options.interactive.then_some(&reach));
+        let found = view::hints(&self.replica, &view, &reach, options.interactive);
         let lines = render::listing(&self.replica, &view, &found, options, &reach);
         let mut elements = Vec::new();
         let mut text = Vec::with_capacity(lines.len());

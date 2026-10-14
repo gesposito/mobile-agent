@@ -1054,14 +1054,9 @@ const BAR_CLASSES: [&str; 3] = [
 /// is drawn over what the list scrolls up past its top, which XCTest's
 /// whole frames put in the header's frame.
 fn pinned_over(window: &Win, facts: &[Facts], h: usize, c: usize, slack: f64) -> bool {
-    let (header, list) = (&facts[h].rect, &facts[c].rect);
     scrolls(&window.nodes[c], &facts[c])
         && !scrolls(&window.nodes[h], &facts[h])
-        && header.left <= list.left + slack
-        && header.right >= list.right - slack
-        && header.top <= list.top + slack
-        && header.bottom >= list.top - slack
-        && header.bottom < list.bottom - slack
+        && across_top(&facts[h].rect, &facts[c].rect, slack)
 }
 
 /// Hides, in a tree whose order is its drawing order ([`drawn_in_order`]),
@@ -1341,16 +1336,23 @@ pub(crate) fn scrolls(node: &RNode, facts: &Facts) -> bool {
 /// Scroll hints per container: `(window index, node index, hint)`, in
 /// pre-order of containers and, per container, above, left, below, right.
 /// An element is counted when it is off the screen or outside its
-/// container's bounds, and, given `reach`, the share of each element an
-/// interactive listing shows that a tap reaches
-/// ([`crate::visibility::listed`]), also when a tap reaches none of it
-/// inside them, as under a view drawn over it, on the side of the
-/// container's middle it lies on along the axis the container scrolls
-/// (rn-app-fixes, design D45). Given `reach`, an element a view drawn over
-/// it covers whole, which the listings leave out, counts the same way, and
-/// the hint names the view drawn over what it counts that a tap reaches
-/// none of ([`hint_cover`]) beside what is scrolled away (design D50).
-pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>) -> Hints {
+/// container's bounds, and when the listing leaves it out for a cover: one
+/// a view drawn over it covers whole, which both listings leave out, and,
+/// in an `interactive` listing, one a tap reaches none of, as `reach` has
+/// the share of each element a tap reaches ([`crate::visibility::listed`]),
+/// which the full listing keeps at visible=0%; such an element inside the
+/// container's bounds counts on the side of the container's middle it lies
+/// on along the axis the container scrolls (rn-app-fixes, design D45). The
+/// hint names, beside what is scrolled away, the cover of each element it
+/// counts as left out ([`hint_cover`], design D50), so that the interactive
+/// listing's hints count what the full listing shows at visible=0% beside
+/// what the full listing's own hints count as left out (design D54).
+pub(crate) fn hints(
+    replica: &Replica,
+    view: &View,
+    reach: &Reaches<'_>,
+    interactive: bool,
+) -> Hints {
     let mut out = Hints::default();
     let slack = pixel(replica);
     for (w, window) in replica.windows.iter().enumerate() {
@@ -1363,13 +1365,13 @@ pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>)
         let mut covered: Vec<(usize, usize, String)> = Vec::new();
         for (x, node) in window.nodes.iter().enumerate() {
             let f = &facts[x];
-            let whole = match (f.hidden, reach) {
-                (Hidden::No, _) => None,
-                (Hidden::Covered, Some(_)) => match view.whole_cover(w, x) {
+            let whole = match f.hidden {
+                Hidden::No => None,
+                Hidden::Covered => match view.whole_cover(w, x) {
                     Some(Cover::DrawnOver { s, .. }) => Some(s),
                     _ => continue,
                 },
-                _ => continue,
+                Hidden::Keyboard => continue,
             };
             if !f.bears_ref || f.absorbed {
                 continue;
@@ -1388,13 +1390,14 @@ pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>)
                 }
                 up = window.nodes[a].parent;
             }
-            let reached = whole.is_none() && reach.is_none_or(|reach| reach.of(w, x) != Some(0.0));
+            // What the listing leaves out for a cover.
+            let left_out = whole.is_some() || (interactive && reach.of(w, x) == Some(0.0));
+            let reached = !left_out;
             let Some(s) = owner else {
-                if reach.is_some()
-                    && !reached
+                if left_out
                     && f.visible
                     && let Some((Some(c), by)) =
-                        hint_cover(replica, view, (w, x), whole, &area, slack)
+                        hint_cover(replica, view, (w, x), whole, (None, &area), slack)
                 {
                     match out
                         .covered
@@ -1442,10 +1445,15 @@ pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>)
                 Direction::Below
             };
             counts[s][slot(direction)] += 1;
-            if reach.is_some()
-                && !reached
-                && let Some((_, by)) =
-                    hint_cover(replica, view, (w, x), whole, &facts[s].rect, slack)
+            if left_out
+                && let Some((_, by)) = hint_cover(
+                    replica,
+                    view,
+                    (w, x),
+                    whole,
+                    (Some((s, direction)), &facts[s].rect),
+                    slack,
+                )
             {
                 covered.push((s, slot(direction), by));
             }
@@ -1499,21 +1507,25 @@ pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>)
     out
 }
 
-/// What leaves a tap none of node `i` of window `w`, an element inside a
-/// scroll container at `list` or, outside any, a window at `list`, and how a
-/// hint names it: the view drawn over all of it, `whole`, else the view
-/// drawn over part of it that holds its centre, a tab bar or toolbar that
-/// does, or the keyboard, which is no node; `None` for an element nothing
-/// covers there, which the scroll keeps out of view. A plain view across the
-/// top of `list` is the header the element lies behind, one across its
-/// bottom the footer it lies under; any other is named as a refusal names a
-/// cover (design D50).
+/// What leaves a tap none of node `i` of window `w`, an element inside the
+/// scroll container `list` names, with the side of it the element counts
+/// on, or, outside any, a window at `list`'s bounds, and how a hint names
+/// it: the view drawn over all of it, `whole`, else the view drawn over part
+/// of it that holds its centre, a tab bar or toolbar that does, or the
+/// keyboard, which is no node; for an element nothing covers at its centre,
+/// out of what its container shows above or below, the container's header or
+/// footer on that side ([`edge_view`]); `None` when there is none, the
+/// scroll keeping it out of view. A view listed before the container across
+/// its top is the header the element lies behind, whatever it holds (design
+/// D54), and so is a plain view across its top; a plain view across its
+/// bottom is the footer the element lies under; any other is named as a
+/// refusal names a cover (design D50).
 fn hint_cover(
     replica: &Replica,
     view: &View,
     (w, i): (usize, usize),
     whole: Option<usize>,
-    list: &Rect,
+    (container, list): (Option<(usize, Direction)>, &Rect),
     slack: f64,
 ) -> Option<(Option<usize>, String)> {
     let (window, facts) = (&replica.windows[w], &view.windows[w]);
@@ -1537,18 +1549,22 @@ fn hint_cover(
                 })
             })
     });
-    let Some(c) = cover else {
-        return crate::visibility::keyboards_above(replica, w)
+    if cover.is_none()
+        && crate::visibility::keyboards_above(replica, w)
             .iter()
             .any(|keyboard| keyboard.contains(centre))
-            .then(|| (None, format!("under the {}", crate::visibility::KEYBOARD)));
-    };
+    {
+        return Some((None, format!("under the {}", crate::visibility::KEYBOARD)));
+    }
+    let c = cover
+        .or_else(|| container.and_then(|(s, side)| edge_view(window, facts, s, side, slack)))?;
     let (node, f) = (&window.nodes[c], &facts[c]);
     let plain = matches!(f.role, Role::Generic | Role::Group)
         && f.name.is_empty()
         && node.flags.contains(NodeFlags::ENABLED);
     let across = f.rect.left <= list.left + slack && f.rect.right >= list.right - slack;
-    let by = if plain && across && f.rect.top <= list.top + slack {
+    let header = container.is_some_and(|(s, _)| heads(window, facts, c, s, slack));
+    let by = if header || (plain && across && f.rect.top <= list.top + slack) {
         "behind the header".to_owned()
     } else if plain && across && f.rect.bottom >= list.bottom - slack {
         "under the footer".to_owned()
@@ -1558,11 +1574,73 @@ fn hint_cover(
     Some((Some(c), by))
 }
 
+/// Whether node `h` of `window`, listed before node `s` and not holding it,
+/// lies across `s`'s top: it spans `s`'s width from an edge at or above
+/// `s`'s top to one at or below it, short of its bottom, `facts` being the
+/// window's. A React Native header listed before its list is so.
+fn heads(window: &Win, facts: &[Facts], h: usize, s: usize, slack: f64) -> bool {
+    h < s && !holds(window, h, s) && across_top(&facts[h].rect, &facts[s].rect, slack)
+}
+
+/// Whether node `outer` of `window` is node `inner` or one of its
+/// ancestors.
+fn holds(window: &Win, outer: usize, inner: usize) -> bool {
+    std::iter::successors(Some(inner), |&a| window.nodes[a].parent).any(|a| a == outer)
+}
+
+/// Whether `header` spans `list`'s width from an edge at or above `list`'s
+/// top to one at or below it, short of `list`'s bottom.
+fn across_top(header: &Rect, list: &Rect, slack: f64) -> bool {
+    header.left <= list.left + slack
+        && header.right >= list.right - slack
+        && header.top <= list.top + slack
+        && header.bottom >= list.top - slack
+        && header.bottom < list.bottom - slack
+}
+
+/// The view on `side` of scroll container `s` of `window` that keeps what
+/// the container shows from what lies beyond it there, `facts` being the
+/// window's: above, its header, a node on screen across its top
+/// ([`across_top`]); below, its footer, a node on screen that spans its
+/// width from inside it to its bottom or below; of those neither holding
+/// the container nor held by it, the one listed last. On the fifth
+/// acceptance run rows a list scrolled above its frame lay on the screen
+/// above the header, where the status bar is drawn, and nothing over their
+/// centres named a cover (rn-app-fixes, design D54).
+fn edge_view(
+    window: &Win,
+    facts: &[Facts],
+    s: usize,
+    side: Direction,
+    slack: f64,
+) -> Option<usize> {
+    let list = &facts[s].rect;
+    let edge = |rect: &Rect| match side {
+        Direction::Above => across_top(rect, list, slack),
+        Direction::Below => {
+            rect.left <= list.left + slack
+                && rect.right >= list.right - slack
+                && rect.top > list.top + slack
+                && rect.top <= list.bottom + slack
+                && rect.bottom >= list.bottom - slack
+        }
+        Direction::Left | Direction::Right => false,
+    };
+    (0..window.nodes.len()).rev().find(|&n| {
+        let f = &facts[n];
+        f.visible
+            && f.hidden == Hidden::No
+            && !holds(window, n, s)
+            && !holds(window, s, n)
+            && edge(&f.rect)
+    })
+}
+
 /// The hints of a listing: the scroll hints, and how many of the elements
-/// with refs outside any scroll container a view drawn over them leaves a
-/// tap nothing of, by window, that view's node and how the line names it,
-/// which an interactive listing prints after the view (rn-app-fixes, design
-/// D50).
+/// with refs outside any scroll container the listing leaves out for a view
+/// drawn over them, by window, that view's node and how the line names it,
+/// which the listing prints after the view (rn-app-fixes, designs D50 and
+/// D54).
 #[derive(Default)]
 pub(crate) struct Hints {
     pub scroll: Vec<(usize, usize, ScrollHint)>,

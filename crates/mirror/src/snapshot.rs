@@ -311,10 +311,11 @@ pub struct ScrollHint {
     /// the container can scroll further.
     pub count: Option<u32>,
     pub source: HintSource,
-    /// How many of `count` a view drawn over them leaves nothing of that a
-    /// tap reaches, by how the hint names the view, such as `behind the
-    /// header` or `under the button "Generate"`, in the order the listing
-    /// meets them (rn-app-fixes, design D50).
+    /// How many of `count` the listing leaves out for a view drawn over
+    /// them, by how the hint names the view, such as `behind the header` or
+    /// `under the button "Generate"`, in the order the listing meets them:
+    /// those a view covers whole and, in an interactive listing, those a
+    /// tap reaches none of (rn-app-fixes, designs D50 and D54).
     pub covered: Vec<(String, u32)>,
 }
 
