@@ -1116,12 +1116,33 @@ fn served_without_keys(target: &mut Attached, field: Option<Ref>) -> bool {
         })
 }
 
+/// Whether the tap made at `tapped` has given the focus as far as the
+/// replica tells: `field`, the field the tap was for, shows it; a field
+/// that takes no text itself, as a code field named by its boxes, or an
+/// input the tree does not show, `field` being `None`, cannot, and a read
+/// begun after the tap stands for it.
+fn focus_taken(target: &mut Attached, tapped: Instant, field: Option<Ref>) -> bool {
+    let read_since = target
+        .mirror
+        .timestamps()
+        .last_read
+        .is_some_and(|read| read.started >= tapped);
+    match field.map(|field| target.mirror.resolve(field)) {
+        Some(Ok(element)) if matches!(element.role, Role::Textbox | Role::Searchbox) => {
+            element.focused
+        }
+        Some(Ok(_)) | None => read_since,
+        Some(Err(_)) => false,
+    }
+}
+
 /// Gets the field `reference` names, which `given` names, ready for text on
 /// iOS (design D34): a field without the focus, while no keyboard is up, is
 /// tapped, and the text waits until the replica shows the keyboard's window,
 /// or a keyboard window that draws nothing while the field has the focus, a
-/// hardware keyboard serving it (design D52), at most [`KEYBOARD_WAIT`] from
-/// the tap. In the React Native smoke test the first keys typed into a
+/// hardware keyboard serving it (design D52), or, once a keyboard window
+/// drawing no keys has been seen, the focus alone (design D57), at most
+/// [`KEYBOARD_WAIT`] from the tap ([`keyboard_within`]). In the React Native smoke test the first keys typed into a
 /// just-focused field were lost in 3 of 8 runs while the Simulator's
 /// keyboard slid in; a paste is Command-V, a key too, so text waits
 /// whichever way it goes in. A field with the focus, or a keyboard up
@@ -1182,7 +1203,11 @@ fn tap_for_text(
 /// [`KEYBOARD_WAIT`] from `tapped`, or a keyboard window that draws nothing
 /// while `field`, the field the tap gave the focus, shows it, or, for an
 /// input the tree does not show, at once ([`served_without_keys`]); whether
-/// one came.
+/// one came. Once a wait has seen a keyboard window that draws no keys, and
+/// until one sees a keyboard with keys, the wait ends at the focus
+/// ([`focus_taken`], design D57): under a hardware keyboard a number pad
+/// brings up no keyboard window at all, and the sixth acceptance run's code
+/// fill waited out the second there.
 fn keyboard_within(
     target: &mut Attached,
     tapped: Instant,
@@ -1191,7 +1216,16 @@ fn keyboard_within(
     let deadline = tapped + KEYBOARD_WAIT;
     loop {
         target.mirror.pump()?;
-        if keyboard_up(target)? || served_without_keys(target, field) {
+        if keyboard_up(target)? {
+            target.keys_hidden_seen = false;
+            return Ok(true);
+        }
+        if target.mirror.keys_hidden() {
+            target.keys_hidden_seen = true;
+        }
+        if served_without_keys(target, field)
+            || (target.keys_hidden_seen && focus_taken(target, tapped, field))
+        {
             return Ok(true);
         }
         let now = Instant::now();
@@ -4567,6 +4601,22 @@ mod tests {
             waited < Duration::from_millis(300),
             "the keys go once the tap is read: {waited:?}"
         );
+    }
+
+    /// Design D57 (task 7.3): the keyboard waits end at the focus only until
+    /// a keyboard with keys is seen again, as when the Simulator's software
+    /// keyboard comes back: a fill that brings up a keyboard with its keys
+    /// puts the waits back as a fresh session has them.
+    #[test]
+    fn a_keyboard_with_keys_seen_again_puts_the_keyboard_waits_back() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Keys)
+            .with_slide(Slide::AtOnce);
+        let (mut target, _) = recorded(&driver, FIXTURE, &[]);
+        target.keys_hidden_seen = true;
+        fill_in(&mut target, "#login-username", "agent").unwrap();
+        assert!(!target.keys_hidden_seen);
     }
 
     /// Design D34: in the React Native smoke test the first keys typed into

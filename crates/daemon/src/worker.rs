@@ -74,6 +74,12 @@ pub(crate) struct Attached {
     /// The session whose delta snapshots the mirror's delta state follows;
     /// another session's first delta snapshot starts again in full.
     pub delta_session: Option<String>,
+    /// Whether a keyboard wait has seen a keyboard window that draws no
+    /// keys since it last saw a keyboard with keys, as while a hardware
+    /// keyboard serves the target's inputs: the keyboard waits then end at
+    /// the field's focus, as a number pad brings up no window at all
+    /// (rn-app-fixes, design D57).
+    pub keys_hidden_seen: bool,
     status: Arc<Mutex<Status>>,
 }
 
@@ -97,6 +103,7 @@ impl Attached {
             frames,
             sessions: HashMap::new(),
             delta_session: None,
+            keys_hidden_seen: false,
             status: Arc::clone(status),
         }
     }
