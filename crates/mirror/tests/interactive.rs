@@ -669,7 +669,9 @@ fn acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code() {
 /// With the typeahead gone the tab bar, drawn over the screen's bottom,
 /// hides what lies wholly under it and nothing more: the topic row it
 /// overlaps stays, and so do the rows scrolled out of the page, which
-/// Android gives bounds clipped to nothing, in the page's hint.
+/// Android gives bounds clipped to nothing, in the page's hint, which also
+/// counts the action under the bar, a plain view across the page's bottom,
+/// as under the footer (rn-app-fixes, design D50).
 #[test]
 fn a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint() {
     let screen = without_typeahead(&Screen::load("bluesky-typeahead-android"));
@@ -695,7 +697,14 @@ fn a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_i
         .iter()
         .map(|h| (h.direction, h.count))
         .collect();
-    assert_eq!(hints, [(Direction::Below, Some(2))], "{}", snapshot.text);
+    assert_eq!(hints, [(Direction::Below, Some(3))], "{}", snapshot.text);
+    assert!(
+        snapshot.text.contains(
+            "(3 more actionable items below, 1 of them under the footer, scroll down to reveal)"
+        ),
+        "{}",
+        snapshot.text
+    );
 }
 
 /// A view drawn over its siblings that shows nothing, neither a ref nor a
@@ -732,7 +741,7 @@ fn a_footer_drawn_after_a_heading_on_ios_hides_it() {
             "(more items above, scroll up to reveal)",
             "- heading \"Placeholder section 2\" [ref=e3]",
             "- link \"Placeholder policy\" [id=placeholder-policy, ref=e4]",
-            "(more items below, scroll down to reveal)",
+            "(1 more actionable item below, 1 of them under the footer, scroll down to reveal)",
             "- button \"Accept and continue\" [id=placeholder-accept, ref=e5]",
             "- button \"Placeholder decline\" [ref=e6]",
         ])
@@ -740,8 +749,9 @@ fn a_footer_drawn_after_a_heading_on_ios_hides_it() {
 }
 
 /// D31: on the create screen a floating button drawn after the list lies
-/// over its last row, which is left out; the row it only overlaps stays,
-/// marked with the share of it a tap reaches (design D45).
+/// over its last row, which is left out and counted in the list's hint as
+/// under the button (design D50); the row it only overlaps stays, marked
+/// with the share of it a tap reaches (design D45).
 #[test]
 fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
     let (_, mut mirror) = mirror_on("create-ios");
@@ -757,6 +767,10 @@ fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
             n + 2
         )
     }));
+    expected.push(
+        "(1 more actionable item below, 1 of them under the button \"Placeholder generate\", scroll down to reveal)"
+            .to_owned(),
+    );
     expected
         .push("- button \"Placeholder generate\" [id=placeholder-generate, ref=e12]".to_owned());
     assert_eq!(
@@ -767,12 +781,15 @@ fn a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row() {
 
 /// D31, scenario "Card under a sticky header": on the feed the header,
 /// drawn after the list, lies over the post scrolled under it, which is
-/// left out and not counted in the list's hints; the post that only
-/// touches the header's edge stays.
+/// left out and counted in the list's hint as behind the header (design
+/// D50); the post that only touches the header's edge stays.
 #[test]
 fn a_sticky_header_drawn_after_a_list_on_ios_hides_the_post_under_it() {
     let (_, mut mirror) = mirror_on("feed-ios");
-    let mut expected = vec!["(1 more actionable item above, scroll up to reveal)".to_owned()];
+    let mut expected = vec![
+        "(2 more actionable items above, 1 of them behind the header, scroll up to reveal)"
+            .to_owned(),
+    ];
     expected.extend((3..=8).map(|n| {
         format!(
             "- button \"Placeholder post {n}\" [id=placeholder-post-{n}, ref=e{}]",
@@ -844,8 +861,9 @@ fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
 /// stayed listed, with the two headings below it, counted among the six
 /// above the list. A plain view listed before a list, across its top and
 /// as wide, is a header the app pins: it covers what lies in its frame.
-/// The row and the headings behind it are left out and not counted;
-/// the header's own controls stay.
+/// The row and the headings behind it are left out and counted in the
+/// list's hint as behind the header (design D50); the header's own
+/// controls stay.
 #[test]
 fn a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it() {
     let (_, mut mirror) = mirror_on("header-top-ios");
@@ -854,7 +872,7 @@ fn a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it()
         lines(&[
             "- button \"placeholder-button-1\" [ref=e1]",
             "- heading \"placeholder-heading-1\" [ref=e2]",
-            "(3 more actionable items above, scroll up to reveal)",
+            "(6 more actionable items above, 3 of them behind the header, scroll up to reveal)",
             "- button \"placeholder-button-3\" [ref=e3]",
             "- button \"placeholder-button-4\" [ref=e4]",
             "- heading \"placeholder-heading-4\" [ref=e5]",
@@ -1135,7 +1153,7 @@ fn a_control_whose_strip_below_a_floating_button_lies_under_a_footer_is_left_out
     assert!(
         listing
             .text
-            .contains("- heading \"placeholder-heading-24\" [ref=e17]\n(2 more actionable items below, scroll down to reveal)\n- button \"placeholder-button-21\""),
+            .contains("- heading \"placeholder-heading-24\" [ref=e17]\n(2 more actionable items below, 2 of them under the button \"placeholder-button-21\", scroll down to reveal)\n- button \"placeholder-button-21\""),
         "{}",
         listing.text
     );
@@ -1212,7 +1230,7 @@ fn a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refus
     }
     assert!(
         listing.text.contains(
-            "- heading \"placeholder-heading-7\" [ref=e23]\n(2 more actionable items below, scroll down to reveal)\n- button \"placeholder-generate\" [disabled, id=placeholder-generate, ref=e24]\n- tab \"placeholder-tab-1\" [id=placeholder-tab-1, ref=e25]\n- tab \"placeholder-tab-2\" [selected, id=placeholder-tab-2, ref=e26]\n- tab \"placeholder-tab-3\" [id=placeholder-tab-3, ref=e27]"
+            "- heading \"placeholder-heading-7\" [ref=e23]\n(2 more actionable items below, 2 of them under the button \"placeholder-generate\", scroll down to reveal)\n- button \"placeholder-generate\" [disabled, id=placeholder-generate, ref=e24]\n- tab \"placeholder-tab-1\" [id=placeholder-tab-1, ref=e25]\n- tab \"placeholder-tab-2\" [selected, id=placeholder-tab-2, ref=e26]\n- tab \"placeholder-tab-3\" [id=placeholder-tab-3, ref=e27]"
         ),
         "{}",
         listing.text

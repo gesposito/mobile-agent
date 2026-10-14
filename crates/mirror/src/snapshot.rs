@@ -311,11 +311,19 @@ pub struct ScrollHint {
     /// the container can scroll further.
     pub count: Option<u32>,
     pub source: HintSource,
+    /// How many of `count` a view drawn over them leaves nothing of that a
+    /// tap reaches, by how the hint names the view, such as `behind the
+    /// header` or `under the button "Generate"`, in the order the listing
+    /// meets them (rn-app-fixes, design D50).
+    pub covered: Vec<(String, u32)>,
 }
 
 impl ScrollHint {
     /// The hint as snapshots print it, such as
-    /// `(3 more actionable items below, scroll down to reveal)`.
+    /// `(3 more actionable items below, scroll down to reveal)`, or, when
+    /// views drawn over some of them leave a tap nothing of them,
+    /// `(6 more actionable items above, 3 of them behind the header, scroll
+    /// up to reveal)`.
     pub fn text(&self) -> String {
         let (place, scroll) = match self.direction {
             Direction::Above => ("above", "up"),
@@ -332,7 +340,19 @@ impl ScrollHint {
                 format!("{n} more item{}", if n == 1 { "" } else { "s" })
             }
         };
-        format!("({items} {place}, scroll {scroll} to reveal)")
+        let covered = self
+            .covered
+            .iter()
+            .enumerate()
+            .map(|(k, (by, n))| {
+                if k == 0 {
+                    format!(", {n} of them {by}")
+                } else {
+                    format!(" and {n} {by}")
+                }
+            })
+            .collect::<String>();
+        format!("({items} {place}{covered}, scroll {scroll} to reveal)")
     }
 }
 

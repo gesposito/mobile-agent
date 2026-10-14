@@ -508,19 +508,18 @@ impl Mirror {
 
     /// A snapshot of the replica, acquiring it first when none exists.
     /// Listed elements that are actionable, content with a name, or labelled
-    /// controls without traits get refs. An interactive snapshot leaves out
-    /// an element a tap reaches none of, counting it in its scroll
-    /// container's hint, and marks one a tap reaches only part of with that
-    /// share (rn-app-fixes, design D45).
+    /// controls without traits get refs. Both listings mark an element a tap
+    /// reaches only part of with that share; an interactive snapshot leaves
+    /// out one a tap reaches none of, counting it in its scroll container's
+    /// hint with the view drawn over it named, while a full one keeps it at
+    /// 0% (rn-app-fixes, designs D45 and D50).
     pub fn snapshot(&mut self, options: &SnapshotOptions) -> Result<Snapshot, MirrorError> {
         self.pump()?;
         let now = self.now();
         let view = View::build(&self.replica);
-        let reach = options
-            .interactive
-            .then(|| visibility::listed(&self.replica, &view));
-        let found = view::hints(&self.replica, &view, reach.as_ref());
-        let lines = render::listing(&self.replica, &view, &found, options, reach.as_ref());
+        let reach = visibility::listed(&self.replica, &view);
+        let found = view::hints(&self.replica, &view, options.interactive.then_some(&reach));
+        let lines = render::listing(&self.replica, &view, &found, options, &reach);
         let mut elements = Vec::new();
         let mut text = Vec::with_capacity(lines.len());
         let mut listed = Vec::new();
@@ -559,7 +558,11 @@ impl Mirror {
                     elements.push(keyboard);
                 }
                 Line::Hint { index, depth } => {
-                    text.push(render::hint_line(&found[index].2, depth));
+                    text.push(render::hint_line(&found.scroll[index].2, depth));
+                }
+                Line::Covered { index, depth } => {
+                    let (_, _, by, count) = &found.covered[index];
+                    text.push(render::covered_line(*count, by, depth));
                 }
                 Line::UnderKeyboard { count } => {
                     text.push(render::under_keyboard_line(count));
@@ -595,7 +598,7 @@ impl Mirror {
             },
             windows: self.summaries(now),
             elements,
-            hints: found.into_iter().map(|(_, _, hint)| hint).collect(),
+            hints: found.scroll.into_iter().map(|(_, _, hint)| hint).collect(),
             removed_refs,
             text: if text.is_empty() {
                 render::empty(options).to_owned()

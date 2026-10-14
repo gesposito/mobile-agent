@@ -7,7 +7,9 @@
 //! it is visible and not absorbed or covered, and, in an interactive
 //! listing, when it has a ref, as agent-browser's `-i`, does not lie wholly
 //! under the keyboard (rn-app-fixes, design D38) and has a part a tap
-//! reaches (design D45); in a full listing, unnamed generic containers,
+//! reaches (design D45), the full listing keeping one a tap reaches none of
+//! and both marking the share a tap reaches (design D50); in a full
+//! listing, unnamed generic containers,
 //! containers whose label names the field inside them, unnamed text and
 //! images and window roots are skipped and their children listed in their
 //! place. Scroll hints sit next to their container's children: content
@@ -19,15 +21,15 @@ use crate::geometry::Rect;
 use crate::json;
 use crate::replica::{RNode, Replica};
 use crate::snapshot::{Direction, Element, Role, ScrollHint, SnapshotOptions};
-use crate::view::{Facts, Hidden, View};
+use crate::view::{Facts, Hidden, Hints, View};
 use crate::visibility::{Reaches, beside, keyboards_above};
 
 /// One line of a listing.
 pub(crate) enum Line {
-    /// Node `i` of window `w`, and the share of it in view, in whole percent
-    /// and at least 1, when only part of it is: beside the keyboard, when
-    /// the keyboard lies over part of it, and in an interactive listing the
-    /// share a tap reaches, when that is less.
+    /// Node `i` of window `w`, and the share of it in view, in whole percent,
+    /// when only part of it is: beside the keyboard, when the keyboard lies
+    /// over part of it, and the share a tap reaches, when that is less, 0
+    /// only for one a tap reaches none of, which only a full listing lists.
     Element {
         w: usize,
         i: usize,
@@ -41,6 +43,9 @@ pub(crate) enum Line {
     /// How many elements with refs an interactive listing leaves out under
     /// the keyboard.
     UnderKeyboard { count: usize },
+    /// Entry `index` of the hints' counts of elements outside any scroll
+    /// container that a view drawn over them leaves out.
+    Covered { index: usize, depth: usize },
 }
 
 /// Window indices in listing order.
@@ -79,15 +84,14 @@ fn listed_in_full(facts: &Facts, node: &RNode) -> bool {
     }
 }
 
-/// The lines of a listing; `reach` is the share of each element an
-/// interactive listing shows that a tap reaches
-/// ([`crate::visibility::listed`]).
+/// The lines of a listing; `reach` is the share of each element with a ref
+/// that a tap reaches ([`crate::visibility::listed`]).
 pub(crate) fn listing(
     replica: &Replica,
     view: &View,
-    hints: &[(usize, usize, ScrollHint)],
+    hints: &Hints,
     options: &SnapshotOptions,
-    reach: Option<&Reaches<'_>>,
+    reach: &Reaches<'_>,
 ) -> Vec<Line> {
     let mut walker = Walker {
         replica,
@@ -121,9 +125,9 @@ pub(crate) fn listing(
 struct Walker<'a> {
     replica: &'a Replica,
     view: &'a View,
-    hints: &'a [(usize, usize, ScrollHint)],
+    hints: &'a Hints,
     options: &'a SnapshotOptions,
-    reach: Option<&'a Reaches<'a>>,
+    reach: &'a Reaches<'a>,
     lines: Vec<Line>,
     /// The elements with refs an interactive listing has left out under the
     /// keyboard so far.
@@ -144,11 +148,11 @@ impl Walker<'_> {
         if under && facts.visible && facts.bears_ref && !facts.absorbed {
             self.under_keyboard += 1;
         }
-        let reached = self.reach.and_then(|reach| reach.of(w, i));
+        let reached = self.reach.of(w, i);
         let shown = facts.visible
             && !facts.absorbed
             && !under
-            && reached != Some(0.0)
+            && !(self.options.interactive && reached == Some(0.0))
             && if self.options.interactive {
                 facts.bears_ref
             } else {
@@ -171,11 +175,16 @@ impl Walker<'_> {
             self.walk(w, child, inner, keyboards);
         }
         self.hints_of(w, i, false, inner);
+        for (index, (cw, ci, _, _)) in self.hints.covered.iter().enumerate() {
+            if (*cw, *ci) == (w, i) {
+                self.lines.push(Line::Covered { index, depth });
+            }
+        }
     }
 
     /// Lists the hints of container `i`: those before its children or after.
     fn hints_of(&mut self, w: usize, i: usize, before: bool, depth: usize) {
-        for (index, (hw, hi, hint)) in self.hints.iter().enumerate() {
+        for (index, (hw, hi, hint)) in self.hints.scroll.iter().enumerate() {
             let leading = matches!(hint.direction, Direction::Above | Direction::Left);
             if *hw == w && *hi == i && leading == before {
                 self.lines.push(Line::Hint { index, depth });
@@ -185,13 +194,19 @@ impl Walker<'_> {
 }
 
 /// The share of an element in view a listing gives as `visible=`, in whole
-/// percent and at least 1: the share `beside` the keyboard, when the
-/// keyboard lies over part of it, or the share a tap reaches, `reached`,
-/// when that is less (rn-app-fixes, design D45); without the keyboard over
-/// it, the share a tap reaches when it is less than all to the whole
-/// percent. `None` otherwise.
+/// percent, at least 1 unless a tap reaches none of it: the share `beside`
+/// the keyboard, when the keyboard lies over part of it, or the share a tap
+/// reaches, `reached`, when that is less (rn-app-fixes, design D45); without
+/// the keyboard over it, the share a tap reaches when it is less than all to
+/// the whole percent. `None` otherwise.
 fn share_in_view(beside: Option<f64>, reached: Option<f64>) -> Option<u8> {
-    let percent = |share: f64| ((share * 100.0).round() as u8).max(1);
+    let percent = |share: f64| {
+        if share > 0.0 {
+            ((share * 100.0).round() as u8).max(1)
+        } else {
+            0
+        }
+    };
     match (beside.filter(|&share| share > 0.0), reached) {
         (Some(share), reached) => Some(percent(reached.map_or(share, |r| share.min(r)))),
         (None, Some(reached)) if (reached * 100.0).round() < 100.0 => Some(percent(reached)),
@@ -275,6 +290,18 @@ pub(crate) fn hint_line(hint: &ScrollHint, depth: usize) -> String {
 pub(crate) fn under_keyboard_line(count: usize) -> String {
     let items = if count == 1 { "item" } else { "items" };
     format!("({count} more actionable {items} under the keyboard, close it to reveal)")
+}
+
+/// The line that counts the `count` elements with refs outside any scroll
+/// container that an interactive listing left out under a view drawn over
+/// them, which `by` names, as a scroll hint names what covers what it
+/// counts (rn-app-fixes, design D50).
+pub(crate) fn covered_line(count: u32, by: &str, depth: usize) -> String {
+    let items = if count == 1 { "item" } else { "items" };
+    format!(
+        "{}({count} more actionable {items} {by})",
+        "  ".repeat(depth)
+    )
 }
 
 /// What an empty listing prints, as agent-browser does.
