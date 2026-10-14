@@ -1157,6 +1157,84 @@ fn a_control_whose_strip_below_a_floating_button_lies_under_a_footer_is_left_out
     assert!(target.inputs().is_empty());
 }
 
+/// Rn-app-fixes D48, scenario "React Native scroll view" (task 5.1; task
+/// 4.7, N6): the creation tab as a throwaway screen read on the Simulator
+/// gives it, the fourth acceptance run's boxes to the point. The scroll
+/// view is told by its element type, an `XCUIElementTypeScrollView` inside
+/// React Native's `RCTScrollViewComponentView`, which the full listing does
+/// not print, an unnamed container: its semantics give the hint after its
+/// scroll bars, as the run's listings had it, the horizontal one lying under
+/// the footer drawn over the scroll view's lower part. The listing is flat
+/// for that reason, not for want of the scroll view.
+#[test]
+fn a_react_native_scroll_view_is_told_by_its_element_type() {
+    let (_, mut mirror) = mirror_on("create-rn-ios");
+    let listing = mirror.snapshot(&full()).unwrap();
+    assert!(
+        listing
+            .text
+            .contains("- text \"Vertical scroll bar, 2 pages\": 0%\n")
+            && listing.text.contains(
+                ": 0%\n(more items below, scroll down to reveal)\n- button \"placeholder-generate\""
+            ),
+        "{}",
+        listing.text
+    );
+    assert!(listing.text.lines().all(|line| !line.starts_with(' ')));
+    let [hint] = &listing.hints[..] else {
+        panic!("one hint: {:?}", listing.hints);
+    };
+    assert_eq!(hint.direction, Direction::Below);
+    assert_eq!(hint.source, HintSource::ScrollSemantics);
+}
+
+/// Rn-app-fixes D48, scenario "React Native scroll view" (task 5.1; task
+/// 4.7, N6): on the creation tab the scroll view runs on to the bottom of
+/// the screen under the footer, whose view React Native lists holding
+/// nothing, the tabs it holds listed after it. The paste control and the
+/// button beside it lie 38 of their 48 points under the disabled button,
+/// their lower 10 points under the footer, which the run's tap there landed
+/// on, opening nothing. The interactive listing leaves both out, the list's
+/// hint counting them below; a tap on the paste control by the ref the full
+/// listing gives it is refused naming the disabled button, a tap at its
+/// centre landing there; and the tabs, listed after the footer's view and
+/// drawn over it, stay.
+#[test]
+fn a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refused() {
+    let (target, mut mirror) = mirror_on("create-rn-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for left in ["placeholder-paste", "placeholder-neighbour"] {
+        assert!(
+            listing.by_identifier(left).is_none(),
+            "{left}:\n{}",
+            listing.text
+        );
+    }
+    assert!(
+        listing.text.contains(
+            "- heading \"placeholder-heading-7\" [ref=e23]\n(2 more actionable items below, scroll down to reveal)\n- button \"placeholder-generate\" [disabled, id=placeholder-generate, ref=e24]\n- tab \"placeholder-tab-1\" [id=placeholder-tab-1, ref=e25]\n- tab \"placeholder-tab-2\" [selected, id=placeholder-tab-2, ref=e26]\n- tab \"placeholder-tab-3\" [id=placeholder-tab-3, ref=e27]"
+        ),
+        "{}",
+        listing.text
+    );
+    let paste = mirror
+        .snapshot(&full())
+        .unwrap()
+        .by_identifier("placeholder-paste")
+        .expect("in the full listing")
+        .reference
+        .unwrap();
+    let error = tap_on(&mut mirror, paste).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("button \"placeholder-generate\""),
+        "{error}"
+    );
+    assert!(target.inputs().is_empty());
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// acceptance run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins

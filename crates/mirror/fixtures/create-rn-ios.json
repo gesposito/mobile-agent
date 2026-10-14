@@ -1,0 +1,102 @@
+{
+  "description": "The creation tab of a React Native app on iOS (rn-app-fixes, design D48; task 4.7, N6), read through the Simulator in-guest reader on an iPhone 17 with iOS 26.5 from a throwaway screen built to the fourth acceptance run's read of the tab, whose boxes it gives to the point: the app's header, a scroll view that runs on under a footer to the bottom of the screen (its scroll bars 30-point frames along its edges, the bottom ones inset by the screen's corners), a disabled primary button floating over the scroll view's last row, 38 of the row's 48 points under it, and the footer, a view that draws a background from the button's bottom down. React Native's accessibility lists each view that draws something as a node that holds nothing, the content it lays out listed after it as its siblings, ordered top to bottom: the root view, the header's view, then the header's controls; the footer's view, then its three tabs. A choice made, the paste control and the one beside it are enabled, their lower 10 points under the footer, which a tap there lands on. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "UITransitionView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "UIDropShadowView", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "RCTSurfaceHostingProxyRootView", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "RCTSurfaceView", "bounds": [0, 0, 402, 874], "children": [
+                  {"class": "RCTRootComponentView", "bounds": [0, 0, 402, 874], "children": [
+                    {"class": "RNCSafeAreaProviderComponentView", "bounds": [0, 0, 402, 874], "children": [
+                      {"class": "RCTViewComponentView", "bounds": [0, 0, 402, 874]},
+                      {"class": "RCTViewComponentView", "bounds": [0, 62, 402, 122]},
+                      {"class": "XCUIElementTypeButton", "id": "placeholder-back", "desc": "placeholder-back", "bounds": [20, 70, 64, 114], "flags": ["clickable"]},
+                      {"class": "XCUIElementTypeHeading", "desc": "placeholder-title", "bounds": [76, 76, 382, 108], "children": [
+                        {"class": "XCUIElementTypeHeading", "desc": "placeholder-title", "bounds": [76, 76, 382, 108]}
+                      ]},
+                      {"class": "RCTScrollViewComponentView", "bounds": [0, 122, 402, 874], "children": [
+                        {"class": "XCUIElementTypeScrollView", "bounds": [0, 122, 402, 874], "flags": ["scrollable"], "scroll": {"axis": "vertical", "back": false, "forward": true, "range": ["percent", 0, 100], "position": [0, 87]}, "children": [
+                          {"class": "UIView", "bounds": [0, 122, 402, 988], "children": [
+                            {"class": "RCTViewComponentView", "bounds": [0, 122, 402, 988], "children": [
+                              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-1", "bounds": [20, 142, 382, 162], "children": [
+                                {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-1", "bounds": [20, 142, 382, 162]}
+                              ]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-1", "bounds": [20, 174, 382, 196], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-1", "bounds": [20, 174, 382, 196]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-11", "desc": "placeholder-choice-11", "bounds": [20, 204, 135.333, 248], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-12", "desc": "placeholder-choice-12", "bounds": [143.333, 204, 258.667, 248], "flags": ["clickable", "selected"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-13", "desc": "placeholder-choice-13", "bounds": [266.667, 204, 382, 248], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-2", "bounds": [20, 264, 382, 286], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-2", "bounds": [20, 264, 382, 286]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-21", "desc": "placeholder-choice-21", "bounds": [20, 294, 135.333, 338], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-22", "desc": "placeholder-choice-22", "bounds": [143.333, 294, 258.667, 338], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-23", "desc": "placeholder-choice-23", "bounds": [266.667, 294, 382, 338], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-3", "bounds": [20, 354, 382, 376], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-3", "bounds": [20, 354, 382, 376]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-31", "desc": "placeholder-choice-31", "bounds": [20, 384, 135.333, 428], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-32", "desc": "placeholder-choice-32", "bounds": [143.333, 384, 258.667, 428], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-33", "desc": "placeholder-choice-33", "bounds": [266.667, 384, 382, 428], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-4", "bounds": [20, 444, 382, 466], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-4", "bounds": [20, 444, 382, 466]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-41", "desc": "placeholder-choice-41", "bounds": [20, 474, 135.333, 518], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-42", "desc": "placeholder-choice-42", "bounds": [143.333, 474, 258.667, 518], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-43", "desc": "placeholder-choice-43", "bounds": [266.667, 474, 382, 518], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-5", "bounds": [20, 534, 382, 556], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-5", "bounds": [20, 534, 382, 556]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-51", "desc": "placeholder-choice-51", "bounds": [20, 564, 135.333, 608], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-52", "desc": "placeholder-choice-52", "bounds": [143.333, 564, 258.667, 608], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-choice-53", "desc": "placeholder-choice-53", "bounds": [266.667, 564, 382, 608], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-7", "bounds": [32, 668, 131, 680], "children": [
+                                {"class": "XCUIElementTypeHeading", "desc": "placeholder-heading-7", "bounds": [32, 668, 131, 680]}
+                              ]},
+                              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-6", "bounds": [20, 680, 382, 700], "children": [
+                                {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-6", "bounds": [20, 680, 382, 700]}
+                              ]},
+                              {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-7", "bounds": [20, 700, 382, 720], "children": [
+                                {"class": "XCUIElementTypeStaticText", "desc": "placeholder-text-7", "bounds": [20, 700, 382, 720]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-neighbour", "desc": "placeholder-neighbour", "bounds": [20, 726, 197, 774], "flags": ["clickable"]},
+                              {"class": "XCUIElementTypeButton", "id": "placeholder-paste", "desc": "placeholder-paste", "bounds": [205, 726, 382, 774], "flags": ["clickable"]}
+                            ]}
+                          ]},
+                          {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "text": "0%", "bounds": [369, 150, 399, 812], "children": [
+                            {"class": "UIView", "bounds": [396, 153, 399, 722.667]}
+                          ]},
+                          {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [62, 841, 340, 871], "children": [
+                            {"class": "UIView", "bounds": [65, 868, 337, 871]}
+                          ]},
+                          {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "text": "0%", "bounds": [369, 150, 399, 812], "children": [
+                            {"class": "UIView", "bounds": [396, 153, 399, 722.667]}
+                          ]},
+                          {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [62, 841, 340, 871], "children": [
+                            {"class": "UIView", "bounds": [65, 868, 337, 871]}
+                          ]}
+                        ]}
+                      ]},
+                      {"class": "XCUIElementTypeButton", "id": "placeholder-generate", "desc": "placeholder-generate", "bounds": [20, 708, 382, 764], "flags": ["clickable"], "off": ["enabled"]},
+                      {"class": "RCTViewComponentView", "bounds": [0, 764, 402, 874]},
+                      {"class": "RCTViewComponentView", "id": "placeholder-tab-1", "desc": "placeholder-tab-1", "bounds": [129, 778, 173, 822]},
+                      {"class": "RCTViewComponentView", "id": "placeholder-tab-2", "desc": "placeholder-tab-2", "bounds": [179, 778, 223, 822], "flags": ["selected"]},
+                      {"class": "RCTViewComponentView", "id": "placeholder-tab-3", "desc": "placeholder-tab-3", "bounds": [229, 778, 273, 822]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

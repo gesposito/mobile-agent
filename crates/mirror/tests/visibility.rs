@@ -647,6 +647,101 @@ fn what_a_tap_reaches_is_clipped_by_what_its_scroll_view_shows() {
     assert_eq!(open.covered_by(paste), None);
 }
 
+/// Rn-app-fixes D48, scenario "React Native scroll view" (task 5.1; task
+/// 4.7, N6): on the creation tab as a throwaway screen read on the
+/// Simulator gives it, the fourth acceptance run's boxes to the point, the
+/// scroll view runs on to the bottom of the screen under the footer, and
+/// React Native's accessibility lists the footer's view as a node holding
+/// nothing, its tabs after it as its siblings. The footer draws over the
+/// scroll view's lower part, where the paste control's lower 10 points lie
+/// below the disabled button, and a tap there lands on the footer, as the
+/// run's did, opening nothing. What the scroll view shows ends at the
+/// footer's top, so a stroke through it goes no lower, and the control keeps
+/// no part a tap reaches: what covers it is the disabled button, which a tap
+/// at its centre would hit.
+#[test]
+fn a_footer_react_native_lists_holding_nothing_cuts_what_its_scroll_view_shows() {
+    let (_, mut create) = support::mirror_on("create-rn-ios");
+    let paste = element(&mut create, "placeholder-paste");
+    assert_eq!(
+        create.scroll_viewport(Point::new(201.0, 400.0), true),
+        Some(Rect::new(0.0, 122.0, 402.0, 764.0))
+    );
+    let seen = create.visibility(paste).expect("the paste control");
+    assert_eq!(seen.reachable, None, "{seen:?}");
+    assert_eq!(seen.fraction, 0.0, "{seen:?}");
+    assert_eq!(
+        create.covered_by(paste).as_deref(),
+        Some("button \"placeholder-generate\"")
+    );
+}
+
+/// The creation tab of `create-rn-ios` without its footer's view: nothing
+/// is drawn over the paste control below the disabled button.
+fn creation_rn_open() -> Screen {
+    let mut screen = Screen::load("create-rn-ios");
+    let views = react_native_views(&mut screen);
+    let footer = views
+        .iter()
+        .position(|view| view["bounds"] == json!([0.0, 764.0, 402.0, 874.0]))
+        .expect("the footer's view");
+    views.remove(footer);
+    screen
+}
+
+/// The children of the view React Native lists the creation tab's views in.
+fn react_native_views(screen: &mut Screen) -> &mut Vec<Value> {
+    let mut node = &mut screen.0["windows"][0]["root"];
+    while node["class"] != "RNCSafeAreaProviderComponentView" {
+        node = &mut node["children"][0];
+    }
+    node["children"].as_array_mut().expect("its views")
+}
+
+/// Rn-app-fixes D48 (task 5.1): a view React Native lists holding nothing
+/// covers what a scroll view listed before it holds only where it lies over
+/// part of the scroll view, as a footer does. One that holds all of it, as
+/// a background listed after the list would, covers none of it, and one
+/// listed after a sibling that does not scroll, as the header's view after
+/// the header's controls, covers none of those.
+#[test]
+fn a_view_react_native_lists_holding_nothing_covers_only_part_of_a_scroll_view() {
+    let open = creation_rn_open();
+    let mut alone = mirror_showing(&open);
+    let paste = element(&mut alone, "placeholder-paste");
+    let strip = Rect::new(205.0, 764.0, 382.0, 774.0);
+    let seen = alone.visibility(paste).expect("the paste control");
+    assert!(same(seen.reachable, strip), "{seen:?}");
+
+    let mut behind = open.clone();
+    let views = react_native_views(&mut behind);
+    let root = views.remove(0);
+    assert_eq!(
+        root["bounds"],
+        json!([0.0, 0.0, 402.0, 874.0]),
+        "the root's view"
+    );
+    let list = views
+        .iter()
+        .position(|view| view["class"] == "RCTScrollViewComponentView")
+        .expect("the scroll view's wrapper");
+    views.insert(list + 1, root);
+    let header = views.remove(0);
+    assert_eq!(
+        header["bounds"],
+        json!([0.0, 62.0, 402.0, 122.0]),
+        "the header's view"
+    );
+    views.insert(2, header);
+    let mut behind = mirror_showing(&behind);
+    let paste = element(&mut behind, "placeholder-paste");
+    let seen = behind.visibility(paste).expect("the paste control");
+    assert!(same(seen.reachable, strip), "{seen:?}");
+    let back = element(&mut behind, "placeholder-back");
+    assert_eq!(behind.covered_by(back), None);
+    assert_eq!(behind.visibility(back).map(|seen| seen.fraction), Some(1.0));
+}
+
 /// Rn-app-fixes D46 (task 4.4; task 3.7's N5): with nothing drawn over the
 /// creation tab's list below the disabled button, the paste control 38 of
 /// whose 48 points the button covers fits below it with the least movement,
