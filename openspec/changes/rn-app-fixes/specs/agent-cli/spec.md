@@ -37,6 +37,10 @@
 - **WHEN** `fill` types into a field the same six-digit code it already holds, the field's name spelling the digits
 - **THEN** the field is emptied first, the reply reports the entry verified through the name, never `no_value_to_read`
 
+#### Scenario: Refill with the keyboard up
+- **WHEN** `fill` types into the six-box code field the same code it holds, with the keyboard up, in either keyboard state
+- **THEN** the reply reports the entry verified through the name and the code is right, never a `text_mismatch` against a placeholder
+
 ### Requirement: Queries reach elements out of view
 `get` and a `wait` for an element's presence or absence in the tree (`--state attached` and `detached`) SHALL resolve any element the replica holds, in view or not, within one read, and SHALL say in the reply whether the element is in view; only an element the tree does not hold SHALL fail with `element_not_found`, naming what is listed.
 
@@ -51,6 +55,3 @@ An action by text selector or identifier SHALL resolve any element the replica h
 - **WHEN** a click names by text an element one view covers whole
 - **THEN** it fails with `element_covered` naming the view within one read, never `element_not_found` after the selector timeout
 
-#### Scenario: Refill with the keyboard up
-- **WHEN** `fill` types into the six-box code field the same code it holds, with the keyboard up, in either keyboard state
-- **THEN** the reply reports the entry verified through the name and the code is right, never a `text_mismatch` against a placeholder
