@@ -1407,6 +1407,10 @@ pub(crate) fn hints(replica: &Replica, view: &View, reach: Option<&Reaches<'_>>)
                 }
                 continue;
             };
+            // A container off the screen or covered gets no hint.
+            if !facts[s].visible || facts[s].hidden != Hidden::No {
+                continue;
+            }
             let viewport = facts[s].rect.intersect(&area);
             if f.visible && f.rect.overlaps(&viewport) && reached {
                 continue;
@@ -1515,10 +1519,9 @@ fn hint_cover(
     let (window, facts) = (&replica.windows[w], &view.windows[w]);
     let centre = facts[i].rect.center();
     let cover = whole.or_else(|| {
-        let over: Vec<(Cover, Rect)> = view.over_part(w, i).collect();
-        over.into_iter()
-            .rev()
-            .find(|(_, rect)| rect.contains(centre))
+        view.over_part(w, i)
+            .filter(|(_, rect)| rect.contains(centre))
+            .last()
             .and_then(|(cover, _)| match cover {
                 Cover::DrawnOver { s, .. } => Some(s),
                 Cover::Node { i, .. } => Some(i),
