@@ -687,14 +687,30 @@ impl Device {
             if let Some(forms) = self.placeholder.as_mut() {
                 forms.lifted = false;
             }
+        } else if self.slide == Slide::HiddenPad {
+            self.keys = if self.pad_focused() {
+                Keys::Down
+            } else {
+                Keys::Hidden
+            };
         } else if !was || self.keys == Keys::Down {
             self.keys = match self.slide {
                 Slide::AtOnce => Keys::Up,
                 Slide::After(_) => Keys::Coming,
                 Slide::Never => Keys::Down,
-                Slide::Hidden => Keys::Hidden,
+                Slide::Hidden | Slide::HiddenPad => Keys::Hidden,
             };
         }
+    }
+
+    /// Whether the field in focus takes a number pad: one of the placeholder
+    /// app's code fields.
+    fn pad_focused(&self) -> bool {
+        self.foreground == Foreground::Placeholder
+            && self
+                .placeholder
+                .as_ref()
+                .is_some_and(|forms| matches!(forms.focus, Some(FormField::Code | FormField::Pin)))
     }
 
     /// Whether the keyboard is coming up, and how long after the focus it

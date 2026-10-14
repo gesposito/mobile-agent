@@ -3458,20 +3458,35 @@ mod tests {
 
     /// Design D53, N12 and N6 of the fifth acceptance run (task 6.2; task
     /// 5.6): on the creation tab as that run met it the footer's view holds
-    /// the paste control and the button beside it whole, which both
-    /// listings leave out, and a click by the control's identifier before
-    /// any scroll answered `element_not_found` after the full timeout,
-    /// 10,069 ms. It is refused with `element_covered` naming the view over
-    /// it within a read, and nothing is tapped.
+    /// the paste control and the button beside it whole, which the
+    /// interactive listing leaves out, and a click by the control's
+    /// identifier before any scroll answered `element_not_found` after the
+    /// full timeout, 10,069 ms. It is refused with `element_covered` within
+    /// a read, and nothing is tapped; the refusal names the footer, as the
+    /// hint counting the control does, where the sixth run's named "the
+    /// overlay" (design D57; task 6.5, N6).
     #[test]
     fn a_click_by_identifier_on_a_control_a_view_holds_whole_is_refused_at_once() {
         let (mut target, sent) = on_board("creation-held");
+        let listing = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(
+            listing.text.contains("2 of them under the footer"),
+            "{}",
+            listing.text
+        );
         let started = Instant::now();
         let failure = click_within(&mut target, "#placeholder-id-8", 3000)
             .expect_err("the footer's view holds the control");
         let took = started.elapsed();
         assert_eq!(failure.code, "element_covered", "{}", failure.message);
-        assert!(failure.message.contains("overlay"), "{}", failure.message);
+        assert!(
+            failure.message.contains("lies under the footer, "),
+            "{}",
+            failure.message
+        );
         assert!(took < REFUSED_WITHIN, "{took:?}");
         assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
@@ -4511,6 +4526,47 @@ mod tests {
             .find(|(_, input)| matches!(input, Input::Text { .. }))?
             .0;
         text.checked_duration_since(tap)
+    }
+
+    /// Design D57 (task 7.3; task 6.5, N11): with the hardware keyboard
+    /// connected the sixth acceptance run's code fill took a second longer
+    /// than with the software keyboard, 3.2 to 3.3 s against 2.3 to 2.6: a
+    /// number pad brings up no keyboard window under a hardware keyboard, so
+    /// the keyboard wait ran out. A session that has seen a keyboard window
+    /// drawing no keys ends its keyboard waits at the field's focus, until
+    /// it sees a keyboard with keys again: a fresh session's code fill waits
+    /// as before, and after a fill of a text field brought up a keyboard
+    /// window drawing nothing, the code fill types at once after its tap,
+    /// the code read back through the field's name.
+    #[test]
+    fn after_a_keyboard_drawing_no_keys_the_keyboard_waits_end_at_the_focus() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Keys)
+            .with_slide(Slide::HiddenPad);
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=code-named"]);
+        let board = |target: &mut Attached, board: &str| {
+            let env = [format!("PLACEHOLDER_SCREEN={board}")];
+            let open = json!({"action": "open", "app": PLACEHOLDER, "relaunch": true, "env": env});
+            super::super::open(target, "default", &request(&open.to_string())).unwrap();
+        };
+        let fresh = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        assert_eq!(fresh.data["readFrom"], "name", "{}", fresh.data);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then types");
+        assert!(waited >= KEYBOARD_WAIT, "a fresh session waits: {waited:?}");
+
+        board(&mut target, "list");
+        fill_in(&mut target, "#placeholder-id-2", "agent").unwrap();
+        board(&mut target, "code-named");
+        sent.lock().unwrap().clear();
+        let success = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert_eq!(success.data["readFrom"], "name", "{}", success.data);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then types");
+        assert!(
+            waited < Duration::from_millis(300),
+            "the keys go once the tap is read: {waited:?}"
+        );
     }
 
     /// Design D34: in the React Native smoke test the first keys typed into

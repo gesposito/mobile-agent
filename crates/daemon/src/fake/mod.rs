@@ -112,6 +112,12 @@ pub enum Slide {
     /// text at once, as on a Simulator whose hardware keyboard is connected
     /// (rn-app-fixes task 6.1); on Android no keyboard window shows.
     Hidden,
+    /// As [`Slide::Hidden`] for a field that takes a text keyboard, while
+    /// one that takes a number pad, the placeholder app's code fields,
+    /// brings up no keyboard window at all, as a number pad does on iOS
+    /// under a hardware keyboard: on the sixth acceptance run the code fill
+    /// waited out the keyboard wait there (rn-app-fixes task 6.5).
+    HiddenPad,
 }
 
 /// How fake targets' fields take text whose method the target may choose.
