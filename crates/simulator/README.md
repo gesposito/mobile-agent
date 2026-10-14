@@ -246,7 +246,21 @@ mirror's conventions (`reader/src/elements.rs`):
   search screen, where the `Keyboard` element starts at 583), and none
   while it draws nothing: with its frame the mirror would count every
   element under the window, above the keyboard too, as out of view (task
-  10.21);
+  10.21). A descendant with an area wholly off the screen draws nothing
+  there, nor does what it holds: with the Simulator's hardware keyboard
+  connected (CoreSimulator's per-device setting, which Simulator.app turns
+  on and `-[SimDevice setHardwareKeyboardEnabled:keyboardType:error:]`
+  sets) iOS draws no keys and keeps the window while a field has the
+  focus, its host view below the screen from 874 points down, while a
+  wrapper around the prediction bar's scroll view reaches 600 points above
+  the bar onto the screen, from 274 points down, which counted as what the
+  window draws until `rn-app-fixes` task 6.1: the mirror took everything
+  below 274 points for under a keyboard the screen did not show. The
+  window then covers nothing, or the strip at the bottom of the screen it
+  keeps for a keyboard toolbar, and the daemon's keyboard waits take it,
+  drawing nothing, for a hardware keyboard serving the field (design D52);
+  the state comes from the window's content, never from the setting, so a
+  phone with a hardware keyboard reads the same;
 - an application's alert on screen moves, with the view that presents it,
   to a window of its own between the two, its id the pid with bit 30 set,
   titled by the alert, marked `modal`, and `active` and `focused` in the
@@ -731,6 +745,7 @@ about a minute.
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
 | Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
 | Foreground tree read | The keyboard read whole, sheets that block the screen as modal windows (task 6.12) | `metadata::a_read_with_the_keyboard_up_is_whole_and_holds_the_keys` (both fixtures), `metadata::a_sheet_over_the_screen_is_a_modal_window` (Contacts' New Contact sheet), `tree::tests::a_modal_window_cuts_the_windows_below_it`, and in `reader/`: `elements::tests::a_read_with_the_keyboard_up_is_not_truncated`, `elements::tests::an_alert_moved_to_its_own_window_leaves_the_read_whole`, `elements::tests::a_sheet_that_takes_touches_moves_to_a_modal_window_above_the_screen`, `elements::tests::blueskys_bottom_sheet_is_a_modal_window_and_its_presenter_is_not`, `elements::tests::a_sheet_that_lets_touches_through_stays_in_the_application_window`, `elements::tests::a_dimming_view_that_does_not_span_the_screen_dims_nothing`, `elements::tests::an_alert_over_a_sheet_is_the_top_most_modal`, `elements::tests::system_ui_keeps_a_sheet_in_its_window` |
+| Foreground tree read | The keyboard's window drawing nothing under a hardware keyboard, or a keyboard toolbar's strip (task 6.1 of `rn-app-fixes`, design D52) | in `reader/`: `elements::tests::a_keyboard_window_whose_keys_lie_below_the_screen_covers_nothing`, `elements::tests::a_keyboard_window_under_a_hardware_keyboard_covers_the_strip_it_keeps_for_a_toolbar`, on the reads of `mobile-agent-spike` with the setting on (task 6.1); the listing over it in the mirror, `interactive::a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard` |
 | Foreground tree read | Scroll semantics of scroll views (task 6.10) | `metadata::a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top`, and in `reader/`: `elements::tests::a_list_at_its_top_scrolls_forward_only`, `elements::tests::a_list_scrolled_down_scrolls_both_ways`, `elements::tests::a_list_at_its_end_scrolls_back_only`, `elements::tests::content_that_fits_its_visible_frame_does_not_scroll`, `elements::tests::content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it`, `elements::tests::a_carousel_scrolls_horizontally`, `elements::tests::content_that_scrolls_both_ways_names_no_axis`, `elements::tests::elements_without_a_scroll_area_have_no_scroll_semantics` |
 | Foreground tree read | Covered content cut under alerts, the translator fallback (tasks 6.6 and 6.11) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::a_build_without_the_reader_reads_through_the_translator` (without the `reader` feature), `macos::reader::tests::a_spawn_can_record_on_the_slot_while_it_runs`, `macos::reader::tests::a_build_without_the_reader_feature_embeds_none` (without the feature), `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
 | Foreground tree read | The reader's protocol link (task 6.6) | in `reader/`: `guest::server::tests::a_snapshot_request_is_answered_after_the_handshake`, `guest::server::tests::a_request_during_a_read_is_answered_busy`, `guest::server::tests::the_connection_stays_alive_through_a_read_longer_than_the_peer_timeout`, `guest::server::tests::the_reader_stops_when_the_host_goes_away` |
