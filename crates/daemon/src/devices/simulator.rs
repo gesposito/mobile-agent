@@ -468,20 +468,23 @@ impl HostInput {
         method: WireMethod,
     ) -> Result<InputAck, BackendError> {
         let (driver, udid) = (&self.driver, self.udid.as_str());
-        if let Some(handle) = node {
-            let center = self.shared.center(handle).ok_or_else(|| {
-                BackendError::new(
-                    mirror::code::STALE_REF,
-                    "the field is not in the latest read of the screen; take a snapshot",
-                )
-            })?;
-            driver.tap(udid, point(center)).map_err(|e| error(&e))?;
-            self.wait_for_focus();
-            for key in readying_keys(text, method) {
-                driver.key(udid, key).map_err(|e| error(&e))?;
-            }
-            if empties_first(text, method) {
-                self.wait_for_empty();
+        for step in readying(node.is_some(), text, method) {
+            match step {
+                Readying::Focus => {
+                    let center = node.and_then(|handle| self.shared.center(handle));
+                    let center = center.ok_or_else(|| {
+                        BackendError::new(
+                            mirror::code::STALE_REF,
+                            "the field is not in the latest read of the screen; take a snapshot",
+                        )
+                    })?;
+                    driver.tap(udid, point(center)).map_err(|e| error(&e))?;
+                    self.wait_for_focus();
+                }
+                Readying::Key(key) => {
+                    driver.key(udid, key).map_err(|e| error(&e))?;
+                }
+                Readying::WaitEmpty => self.wait_for_empty(),
             }
         }
         // An empty text leaves nothing to type or paste once the field is
@@ -532,6 +535,34 @@ impl HostInput {
             }
         }
     }
+}
+
+/// One step [`HostInput::text`] takes to ready a field before it types or
+/// pastes a text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Readying {
+    /// Tap the field the input names and wait for a field to take the focus.
+    Focus,
+    /// Press a key.
+    Key(Key),
+    /// Read until the field in focus shows nothing.
+    WaitEmpty,
+}
+
+/// The steps that ready a field for `text`, entered as `method`, when the
+/// input names the field (`targeted`): the tap that gives it the focus,
+/// the keys that ready it ([`readying_keys`]) and the wait for an empty
+/// read when the text calls for one ([`empties_first`]).
+fn readying(targeted: bool, text: &str, method: WireMethod) -> Vec<Readying> {
+    if !targeted {
+        return Vec::new();
+    }
+    let mut steps = vec![Readying::Focus];
+    steps.extend(readying_keys(text, method).into_iter().map(Readying::Key));
+    if empties_first(text, method) {
+        steps.push(Readying::WaitEmpty);
+    }
+    steps
 }
 
 /// The keys that ready a field text tapped for `text`, entered as `method`
@@ -1435,6 +1466,32 @@ mod tests {
         }
         assert_eq!(readying_keys("agent", WireMethod::KEYS), []);
         assert_eq!(readying_keys("", WireMethod::KEYS), []);
+    }
+
+    /// Design D49 of `rn-app-fixes` (task 5.2): text `fill` enters into the
+    /// field in focus, as it does once it has emptied a field and for an
+    /// identifier on a node that holds no field or one without an area,
+    /// replaces what that field holds as text into a field it taps does:
+    /// Command-A selects it, the delete key empties it for an empty text,
+    /// and keys whose first letter is a capital wait for an empty read;
+    /// only the tap is left out. Keys `type` adds ready nothing.
+    #[test]
+    fn text_into_the_field_in_focus_is_readied_as_text_into_a_field_it_taps() {
+        for method in [WireMethod::AUTO, WireMethod::DIRECT, WireMethod::KEYS] {
+            for text in ["agent", "", "Smoke Org"] {
+                let tapped = readying(true, text, method);
+                assert_eq!(
+                    tapped.first(),
+                    Some(&Readying::Focus),
+                    "{text:?} {method:?}"
+                );
+                assert_eq!(
+                    readying(false, text, method),
+                    tapped[1..],
+                    "{text:?} {method:?}"
+                );
+            }
+        }
     }
 
     /// A fake of the Simulator's keyboard in a field with autocorrection

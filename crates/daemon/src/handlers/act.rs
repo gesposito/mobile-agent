@@ -3619,6 +3619,105 @@ mod tests {
         assert!(!failure.message.contains("123456"), "{}", failure.message);
     }
 
+    /// The times the texts among `sent` went out, in order.
+    fn text_times(sent: &Sent) -> Vec<Instant> {
+        sent.lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, input)| matches!(input, Input::Text { .. }))
+            .map(|(at, _)| *at)
+            .collect()
+    }
+
+    /// Design D49, N8 of the fourth acceptance run (task 5.2; task 4.7): a
+    /// refill of the code the code step's field already holds answered
+    /// `verified: false`, `no_value_to_read`, the field's name spelling the
+    /// same digits before the entry and after it. A fill typed as keys into
+    /// a field whose name spells the text already empties the field first,
+    /// waits for the replica to show it emptied, and compares the name the
+    /// entry leaves with the name of the emptied field: the code is
+    /// verified through the name, typed once, into the field the emptying
+    /// gave the focus.
+    #[test]
+    fn a_refill_of_the_code_a_field_holds_empties_it_first_and_is_verified_through_the_name() {
+        for (board, targeted) in [("code-named", true), ("code-bare", false)] {
+            let (mut target, sent) = typed_board(board, Typing::Keys);
+            fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
+            sent.lock().unwrap().clear();
+            let reply = fill_in(&mut target, "#placeholder-id-3", "123456");
+            let success = reply.unwrap_or_else(|failure| panic!("{board}: {failure:?}"));
+            let data = &success.data;
+            assert_eq!(
+                data["verified"], "text",
+                "{board}: {data}: {:?}",
+                success.warning
+            );
+            assert_eq!(data["readFrom"], "name", "{board}: {data}");
+            assert_eq!(data["retried"], false, "{board}: {data}");
+            let entered = texts(&sent);
+            assert_eq!(
+                entered.len(),
+                2,
+                "{board}: emptied, then typed: {entered:?}"
+            );
+            assert_eq!(entered[0].0, "", "{board}: {entered:?}");
+            assert_eq!(entered[0].1.is_some(), targeted, "{board}: {entered:?}");
+            assert_eq!(entered[1], ("123456".to_owned(), None), "{board}");
+        }
+    }
+
+    /// Design D49 (task 5.2): every fill typed as keys into a field that
+    /// holds text empties it first, as task 4.5 did for keys whose first
+    /// letter is a capital: the empty entry selects what the field holds and
+    /// deletes it, and the keys go out once a read shows the field empty, a
+    /// change that shows a latency after its cause, into the field the
+    /// emptying gave the focus. A field that holds nothing gets its text
+    /// once, and so does one a paste fills, as a text too long to type is.
+    #[test]
+    fn a_keyed_fill_into_a_field_holding_text_empties_it_and_types_once_it_reads_empty() {
+        let latency = Duration::from_millis(60);
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Keys)
+            .with_latency(latency);
+        let (mut target, sent) = recorded(&driver, FIXTURE, &[]);
+        let first = fill_in(&mut target, "#login-username", "agent").unwrap();
+        assert_eq!(first.data["verified"], "text", "{}", first.data);
+        let entered = texts(&sent);
+        assert_eq!(
+            entered.len(),
+            1,
+            "an empty field gets its text once: {entered:?}"
+        );
+        assert_eq!(entered[0].0, "agent");
+
+        sent.lock().unwrap().clear();
+        let second = fill_in(&mut target, "#login-username", "smith").unwrap();
+        assert_eq!(second.data["verified"], "text", "{}", second.data);
+        assert_eq!(second.data["readFrom"], "value", "{}", second.data);
+        assert_eq!(second.data["retried"], false, "{}", second.data);
+        let entered = texts(&sent);
+        assert_eq!(entered.len(), 2, "emptied, then typed: {entered:?}");
+        assert!(
+            entered[0].0.is_empty() && entered[0].1.is_some(),
+            "{entered:?}"
+        );
+        assert_eq!(entered[1], ("smith".to_owned(), None));
+        let times = text_times(&sent);
+        assert!(
+            times[1].duration_since(times[0]) >= latency,
+            "the keys wait for the field to read empty: {:?}",
+            times[1].duration_since(times[0])
+        );
+        assert_eq!(held(&mut target, "#login-username"), "smith");
+
+        sent.lock().unwrap().clear();
+        let long = "a".repeat(40);
+        let pasted = fill_in(&mut target, "#login-username", &long).unwrap();
+        assert_eq!(pasted.data["method"], "direct", "{}", pasted.data);
+        assert_eq!(texts(&sent).len(), 1, "a paste keeps its path");
+    }
+
     /// Design D39, N1 of the acceptance run (task 3.3; section 4 of the
     /// masked listings): on the code step's second visit the code field's
     /// identifier named a labelled node holding a field without an area,
