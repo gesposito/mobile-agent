@@ -1427,6 +1427,111 @@ mod tests {
         })
     }
 
+    /// The keyboard's window over the SwiftUI fixture's Login screen while
+    /// the Simulator's hardware keyboard is connected, as the reader read it
+    /// on iOS 26.5 for task 6.1 of rn-app-fixes, keys trimmed to one: iOS
+    /// draws no keys, the host view lying below the screen from 874 points
+    /// down, yet a wrapper around the prediction bar's scroll view reaches
+    /// 600 points above the bar, from 274 points down, onto the screen.
+    fn hardware_keyboard() -> Element {
+        let wrapper = at(
+            with(element(0, "UIView"), |e| {
+                e.children = vec![at(element(46, "UIScrollView"), [0.0, 874.0, 402.0, 44.0])];
+            }),
+            [0.0, 274.0, 402.0, 1244.0],
+        );
+        let page = at(
+            with(element(0, "TUISystemInputAssistantPageView"), |e| {
+                e.identifier = Some("CenterPageView".into());
+                e.children = vec![wrapper];
+            }),
+            [0.0, 874.0, 402.0, 44.0],
+        );
+        let predictions = at(
+            with(element(0, "TUISystemInputAssistantView"), |e| {
+                e.identifier = Some("SystemInputAssistantView".into());
+                e.children = vec![at(
+                    with(element(0, "UIView"), |e| e.children = vec![page]),
+                    [0.0, 874.0, 402.0, 78.0],
+                )];
+            }),
+            [0.0, 874.0, 402.0, 78.0],
+        );
+        let backdrop = at(
+            element(0, "UIKBInputBackdropView"),
+            [0.0, 874.0, 402.0, 311.0],
+        );
+        let key = at(
+            with(element(20, "UIAccessibilityElementKBKey"), |e| {
+                e.label = Some("q".into())
+            }),
+            [4.67, 959.0, 39.33, 54.0],
+        );
+        let keys = at(
+            with(element(19, "UIKeyboardAutomatic"), |e| {
+                e.children = vec![key]
+            }),
+            [0.0, 952.0, 402.0, 233.0],
+        );
+        let input = at(
+            with(element(0, "_UIKBCompatInputView"), |e| {
+                e.children = vec![keys]
+            }),
+            [0.0, 952.0, 402.0, 233.0],
+        );
+        let host = at(
+            with(element(0, "UIInputSetHostView"), |e| {
+                e.children = vec![predictions, backdrop, input]
+            }),
+            [0.0, 874.0, 402.0, 311.0],
+        );
+        with(element(2, KEYBOARD_WINDOW_CLASS), |e| {
+            e.children = vec![with(element(0, "UIInputSetContainerView"), |e| {
+                e.children = vec![host]
+            })]
+        })
+    }
+
+    /// The keyboard's window over a number pad field with a keyboard
+    /// toolbar while the hardware keyboard is connected, as the reader read
+    /// it for task 6.1 of rn-app-fixes on a throwaway screen, keys trimmed
+    /// to one: the host view keeps the strip at the bottom of the screen
+    /// where the app draws the toolbar, from 792 points down, and the keys
+    /// lie below the screen.
+    fn hardware_keyboard_with_accessory() -> Element {
+        let strip = at(
+            element(0, "_UIRemoteKeyboardPlaceholderView"),
+            [0.0, 792.0, 402.0, 82.0],
+        );
+        let backdrop = at(
+            element(0, "UIKBInputBackdropView"),
+            [0.0, 874.0, 402.0, 250.0],
+        );
+        let key = at(
+            with(element(20, "UIAccessibilityElementKBKey"), |e| {
+                e.label = Some("1".into())
+            }),
+            [6.0, 897.0, 126.0, 52.0],
+        );
+        let keys = at(
+            with(element(19, "UIKeyboardAutomatic"), |e| {
+                e.children = vec![key]
+            }),
+            [0.0, 891.0, 402.0, 233.0],
+        );
+        let host = at(
+            with(element(0, "UIInputSetHostView"), |e| {
+                e.children = vec![strip, backdrop, keys]
+            }),
+            [0.0, 792.0, 402.0, 332.0],
+        );
+        with(element(2, KEYBOARD_WINDOW_CLASS), |e| {
+            e.children = vec![with(element(0, "UIInputSetContainerView"), |e| {
+                e.children = vec![host]
+            })]
+        })
+    }
+
     /// Bluesky's search screen with its typeahead up, as the two reads of
     /// task 10.22's spike saw it on iOS 26.5, containers trimmed and names
     /// replaced: the screen's safe area view holds the screen's own empty
@@ -2104,6 +2209,48 @@ mod tests {
         root.children.push(sliding);
         let snapshot = snapshot(&read(counted(root)));
         assert_eq!(snapshot.windows[0].bounds, Bounds::new(0, 2400, 1206, 2622));
+    }
+
+    /// Task 6.1 of rn-app-fixes: with a hardware keyboard connected iOS
+    /// keeps the keyboard's window while a field has the focus, its keys
+    /// below the screen, and the wrapper around the prediction bar's scroll
+    /// view reached onto the screen from 274 points down, so the window
+    /// counted as a keyboard over everything below that: the fifth
+    /// acceptance run's sign-in screen read wholly under it, and a tap on a
+    /// tab of the SwiftUI fixture was refused under a keyboard the screen
+    /// did not show. A view wholly off the screen draws nothing there, nor
+    /// does what it holds.
+    #[test]
+    fn a_keyboard_window_whose_keys_lie_below_the_screen_covers_nothing() {
+        let mut root = login();
+        root.children.push(hardware_keyboard());
+        let snapshot = snapshot(&read(counted(root)));
+        let keyboard = &snapshot.windows[0];
+        assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
+        assert_eq!(
+            keyboard.bounds,
+            Bounds::default(),
+            "the window draws nothing on the screen"
+        );
+        assert!(
+            holds(keyboard, "label:q"),
+            "the keys stay in the window, below the screen"
+        );
+    }
+
+    /// Task 6.1 of rn-app-fixes: under a hardware keyboard the window keeps
+    /// the strip of a field's keyboard toolbar at the bottom of the screen,
+    /// which is all it covers.
+    #[test]
+    fn a_keyboard_window_under_a_hardware_keyboard_covers_the_strip_it_keeps_for_a_toolbar() {
+        let mut root = login();
+        root.children.push(hardware_keyboard_with_accessory());
+        let snapshot = snapshot(&read(counted(root)));
+        assert_eq!(
+            snapshot.windows[0].bounds,
+            Bounds::new(0, 2376, 1206, 2622),
+            "the strip from 792 points down"
+        );
     }
 
     #[test]
