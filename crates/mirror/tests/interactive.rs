@@ -1312,6 +1312,108 @@ fn partly_covered_elements_say_how_much_shows_and_those_a_tap_cannot_reach_are_c
     );
 }
 
+/// Rn-app-fixes D50, N9 of the fourth acceptance run (task 5.3; task 4.7):
+/// the full listing marked `visible=` for the keyboard's cover alone, while
+/// the interactive listing marked every element a tap reaches part of. The
+/// full listing marks the heading half under a footer button, the card 70%
+/// under the sticky header and the creation tab's paste control, which the
+/// floating button and the footer leave nothing of, as the interactive
+/// listing does, the share a tap reaches none of at 0%, and keeps every
+/// element.
+#[test]
+fn the_full_listing_marks_what_a_tap_reaches_part_or_none_of_and_keeps_it() {
+    let (_, mut consent) = mirror_on("consent-footer-ios");
+    let text = consent.snapshot(&full()).unwrap().text;
+    assert!(
+        text.contains("- heading \"placeholder-heading-9\" [visible=50%, ref="),
+        "{text}"
+    );
+
+    let (_, mut feed) = mirror_on("feed-sticky-ios");
+    let text = feed.snapshot(&full()).unwrap().text;
+    assert!(
+        text.contains("- button \"placeholder-button-4\" [visible=30%, id=placeholder-id-4, ref="),
+        "{text}"
+    );
+    assert!(
+        text.contains("- button \"placeholder-button-3\" [visible=0%, id=placeholder-id-3, ref="),
+        "{text}"
+    );
+
+    let (_, mut create) = mirror_on("create-rn-ios");
+    let listing = create.snapshot(&full()).unwrap();
+    for (name, id) in [
+        ("placeholder-neighbour", "placeholder-neighbour"),
+        ("placeholder-paste", "placeholder-paste"),
+    ] {
+        assert!(
+            listing
+                .text
+                .contains(&format!("- button \"{name}\" [visible=0%, id={id}, ref=")),
+            "{}",
+            listing.text
+        );
+    }
+    assert_eq!(listing.text.lines().count(), 34, "{}", listing.text);
+}
+
+/// The organizations list of `header_after_its_list` with two controls
+/// outside the list, listed before the header, their parts on the screen
+/// behind it, as the fourth acceptance run met them (task 4.7, N7).
+fn two_controls_behind_the_header() -> Screen {
+    let mut screen = header_after_its_list();
+    let content = screen.0["windows"][1]["root"]["children"][0]["children"][0]["children"]
+        .as_array_mut()
+        .expect("the screen's views");
+    content.insert(
+        1,
+        json!({"class": "RCTViewComponentView", "bounds": [0, -20, 402, 24], "children": [
+            {"class": "XCUIElementTypeButton", "desc": "placeholder-button-8", "bounds": [20, -20, 190, 24], "flags": ["clickable"]},
+            {"class": "XCUIElementTypeButton", "desc": "placeholder-button-9", "bounds": [212, -20, 382, 24], "flags": ["clickable"]}
+        ]}),
+    );
+    Screen::from_json(screen.0)
+}
+
+/// Rn-app-fixes D50, scenario "Hints agree with the listing" (task 5.3;
+/// task 4.7, N7): the interactive listing left out two controls behind a
+/// header beside six rows scrolled above, and its hint, "(6 more actionable
+/// items above...)", counted the rows alone. Its lines count what a view
+/// drawn over an element leaves a tap nothing of, naming the view: the two
+/// controls, outside any scroll container, after the header, and, in a
+/// container's hint, the creation tab's two controls under the floating
+/// button beside nothing scrolled away; the full listing shows them with
+/// the share a tap reaches, none.
+#[test]
+fn the_hints_count_what_a_cover_leaves_nothing_of_and_name_the_cover() {
+    let target = FakeTarget::new(two_controls_behind_the_header().read());
+    let mut organizations = Mirror::new(target.backend(), MirrorConfig::default());
+    let text = organizations.snapshot(&interactive()).unwrap().text;
+    assert!(
+        text.starts_with("(6 more actionable items above, scroll up to reveal)\n")
+            && text.ends_with(
+                "- button \"placeholder-button-1\" [ref=e7]\n- heading \"placeholder-heading-1\" [ref=e8]\n(2 more actionable items behind the header)"
+            ),
+        "{text}"
+    );
+    let text = organizations.snapshot(&full()).unwrap().text;
+    for behind in ["placeholder-button-8", "placeholder-button-9"] {
+        assert!(
+            text.contains(&format!("- button \"{behind}\" [visible=0%, ref=")),
+            "{behind}:\n{text}"
+        );
+    }
+
+    let (_, mut create) = mirror_on("create-rn-ios");
+    let text = create.snapshot(&interactive()).unwrap().text;
+    assert!(
+        text.contains(
+            "(2 more actionable items below, 2 of them under the button \"placeholder-generate\", scroll down to reveal)"
+        ),
+        "{text}"
+    );
+}
+
 /// Rn-app-fixes D38, scenario "Elements under the keyboard" (task 3.2;
 /// section 5 of the masked listings): the acceptance run's interactive
 /// listings kept what lay under the keyboard, and its clicks went to the
