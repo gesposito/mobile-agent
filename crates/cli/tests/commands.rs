@@ -297,6 +297,28 @@ fn get_reads_an_element_s_text_value_and_box() {
     assert_eq!(human, "x:      16\ny:      232\nwidth:  376\nheight: 48\n");
 }
 
+/// Rn-app-fixes D51 (task 5.4): `get` reads an element the tree holds out
+/// of view, such as a row the list has scrolled above, and says so: the
+/// reply's `inView` is false, and the human output adds a line saying it is
+/// out of view, which an element in view leaves out.
+#[test]
+fn get_reads_an_element_out_of_view_and_says_so() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["click", "#tab-list"]).ok();
+    env.cli(&["scroll", "down", "600", "--until", "#row-150"])
+        .ok();
+    let reply = env.cli(&["--json", "get", "box", "#row-3"]).ok().json();
+    assert_eq!(reply["data"]["inView"], false, "{reply}");
+    let human = env.cli(&["get", "box", "#row-3"]).ok().stdout;
+    assert!(
+        human.ends_with("\nout of view: scroll it into view before acting on it\n"),
+        "{human}"
+    );
+    let shown = env.cli(&["get", "box", "#row-150"]).ok().stdout;
+    assert_eq!(shown.lines().count(), 4, "{shown}");
+}
+
 #[test]
 fn diff_snapshot_lists_what_changed_since_the_session_s_last_snapshot() {
     let env = TestEnv::start("android");
