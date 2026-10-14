@@ -17,10 +17,10 @@ Snapshots
   A field's value follows ": ". A line in parentheses, as "(8 more actionable
   items above, 2 of them behind the header, scroll up to reveal)", counts what
   is scrolled away, covered or under the keyboard; a keyboard covers nothing
-  when a hardware keyboard shows no keys. -i leaves out what a tap
-  reaches none of, as under a dialog, a header or a footer; snapshot lists it
-  at visible=0% unless one view covers it whole. Both say visible=35% of what
-  a tap reaches part of. Every tab has a ref.
+  when a hardware keyboard shows no keys, iOS's edit menu only its strip. -i
+  leaves out what a tap reaches none of, as under a header or a footer;
+  snapshot lists it at visible=0% unless a dialog covers it. Both say
+  visible=35% of what a tap reaches part of. Every tab has a ref.
   snapshot -i        only elements with refs; start here
   snapshot           every element, texts and system bars too
   snapshot -d 2      at most two levels deep
@@ -53,25 +53,25 @@ Acting
   swipe up | swipe X1 Y1 X2 Y2   move the finger
   open com.example.app        launch an app; close stops it and frees the target
   A tap goes to the part of an element you can see, and warns when that is
-  not most of it. element_covered means less than 8 points of it show from
-  under a dialog, a button, disabled or not, a bar or the keyboard, which
-  it names: act on a dialog first, but scroll the element out from under a
-  view drawn over it rather than tap the view. element_offscreen means none
-  of it is in view after a fresh read: close the keyboard or scroll --until.
+  not most of it. element_covered: less than 8 points of it show from under
+  its cover, named as hints name it, a dialog, a button, disabled or not, a
+  bar or the keyboard; act on a dialog first, else scroll it out from under
+  the view. element_offscreen: none of it in view; close the keyboard or scroll.
   fill's reply says what it read back: verified: text, or length for a
-  masked field, from the field's value; readFrom: descendants from a code
-  field's boxes, readFrom: name from the part of its name the text changed;
+  masked field, from the field's value, a code field's value counting
+  only when the text changed it; readFrom: descendants from its boxes,
+  readFrom: name from the part of its name the text changed;
   verified: false and reason: no_value_to_read when the field shows
   nothing to read: look at a screenshot. An id on a field's wrapper fills
   the field inside it; on a view holding none, fill and type tap it and
   the keyboard it brings up takes the text. method: keys means typed, direct
   entered in one piece: set on Android and iPhones, pasted on a Simulator,
-  which replaces the pasteboard and can show iOS's paste banner.
+  which replaces the pasteboard and can show iOS's paste banner; fill
+  closes the edit menu a lost paste leaves up.
 
 Waiting
   wait --settle               no tree or frame change for 200 ms, at most
-                              3000 ms; a never-ending animation returns
-                              settled: false and names what kept changing
+                              3000 ms; settled: false names what kept changing
   wait --text Welcome         until an element shows the text
   wait '#spinner' --state hidden   until it is off screen; also visible,
                               enabled, and attached or detached in the tree
