@@ -1722,6 +1722,66 @@ mod tests {
         })
     }
 
+    /// The text effects window with iOS's edit menu up over the SwiftUI
+    /// fixture's username field and the keyboard up, as the reader read it on
+    /// iOS 26.5 for task 7.1 of rn-app-fixes, glass views trimmed: the
+    /// gesture view and the menu's container span the screen, the keyboard's
+    /// placeholder holds the keyboard's place from 539 points down, and the
+    /// menu's list, 121 to 165 points down, holds its four cells and the
+    /// arrows that page it.
+    fn edit_menu() -> Element {
+        let placeholder = at(
+            with(element(0, "UIKeyboardItemContainerView"), |e| {
+                e.children = vec![at(
+                    with(element(0, "_UIRemoteKeyboardPlaceholderView"), |e| {
+                        e.identifier = Some("inputView".into())
+                    }),
+                    [0.0, 539.0, 402.0, 335.0],
+                )]
+            }),
+            [0.0, 539.0, 402.0, 335.0],
+        );
+        let cell = |label: &str, frame: [f64; 4]| {
+            at(
+                with(element(75, "UICollectionViewCell"), |e| {
+                    e.label = Some(label.into())
+                }),
+                frame,
+            )
+        };
+        let cells = at(
+            with(element(32, "UICollectionView"), |e| {
+                e.children = vec![
+                    cell("Paste", [20.0, 121.0, 70.33, 44.0]),
+                    cell("Select", [90.33, 121.0, 75.33, 44.0]),
+                    cell("Select All", [165.67, 121.0, 96.33, 44.0]),
+                    cell("AutoFill", [262.0, 121.0, 83.0, 44.0]),
+                ]
+            }),
+            [16.0, 121.0, 333.0, 44.0],
+        );
+        let list = at(
+            with(element(0, "_UIEditMenuListView"), |e| {
+                e.children = vec![
+                    cells,
+                    button("UIButton", None, "Back", [-15.0, 125.0, 36.0, 36.0]),
+                    button("UIButton", None, "Forward", [345.0, 125.0, 36.0, 36.0]),
+                ]
+            }),
+            [16.0, 121.0, 325.0, 44.0],
+        );
+        with(element(2, "UITextEffectsWindow"), |e| {
+            e.children = vec![
+                with(element(0, "UITrackingWindowView"), |e| {
+                    e.children = vec![element(0, "UIEditingOverlayGestureView"), placeholder]
+                }),
+                with(element(0, "_UIEditMenuContainerView"), |e| {
+                    e.children = vec![list]
+                }),
+            ]
+        })
+    }
+
     /// Contacts' New Contact sheet over its list, as the reader read it on
     /// iOS 26.5, containers trimmed: the list in the presenting transition
     /// view, the sheet with its grabber and navigation bar in another, the
@@ -2275,6 +2335,78 @@ mod tests {
         let keyboard = &snapshot.windows[0];
         assert_eq!(keyboard.kind, WindowType::INPUT_METHOD);
         assert_eq!(keyboard.bounds, Bounds::default());
+    }
+
+    /// The application's windows, the children of its element, in the
+    /// application's window of `snapshot`.
+    fn app_windows(snapshot: &Snapshot) -> &[Node] {
+        let app = snapshot.windows.last().expect("the application's window");
+        &app.root
+            .as_ref()
+            .expect("the application's element")
+            .children
+    }
+
+    /// Task 7.1 of rn-app-fixes: iOS's edit menu lives in the text effects
+    /// window, which spans the screen and lets touches through outside what
+    /// it draws; with the window's frame as its bounds the mirror took it
+    /// for a view drawn over the whole application, and with the menu up the
+    /// sixth acceptance run's interactive listing held the menu's cells
+    /// alone, every element of the application out of view. The window
+    /// covers the menu's strip, what it draws, the keyboard's placeholder in
+    /// it drawing nothing.
+    #[test]
+    fn the_edit_menus_window_covers_the_strip_its_cells_draw_on() {
+        let mut root = login();
+        root.children.push(edit_menu());
+        let snapshot = snapshot(&read(counted(root)));
+        let [screen, menu] = app_windows(&snapshot) else {
+            panic!("the application's window and the text effects window");
+        };
+        assert_eq!(
+            screen.bounds,
+            Bounds::new(0, 0, 1206, 2622),
+            "the application's own window keeps its frame"
+        );
+        assert_eq!(class(&snapshot, menu), "XCUIElementTypeWindow");
+        assert_eq!(
+            menu.bounds,
+            Bounds::new(48, 363, 1023, 495),
+            "the menu's list, 16 to 341 points across and 121 to 165 down"
+        );
+        assert!(menu.flags.contains(NodeFlags::VISIBLE));
+        assert!(
+            snapshot
+                .windows
+                .iter()
+                .any(|window| holds(window, "label:Paste"))
+        );
+    }
+
+    /// Task 7.1 of rn-app-fixes: the text effects window that draws nothing
+    /// a user reads, its gesture view spanning the screen and the keyboard's
+    /// placeholder holding the keyboard's place, covers nothing; the
+    /// keyboard's window keeps what it draws.
+    #[test]
+    fn a_system_window_that_draws_nothing_covers_nothing() {
+        let mut quiet = edit_menu();
+        quiet.children.truncate(1);
+        for window in [text_effects(), quiet] {
+            let mut root = login();
+            root.children.push(window);
+            root.children.push(bluesky_keyboard());
+            let snapshot = snapshot(&read(counted(root)));
+            let [_, effects] = app_windows(&snapshot) else {
+                panic!("the application's window and the text effects window");
+            };
+            assert_eq!(effects.bounds, Bounds::default());
+            assert!(!effects.flags.contains(NodeFlags::VISIBLE));
+            assert_eq!(
+                snapshot.windows[0].bounds,
+                Bounds::new(0, 1617, 1206, 2622),
+                "the keyboard's window keeps its host view's frame"
+            );
+        }
     }
 
     /// Task 10.22: no attribute says a view is modal, but a read that
