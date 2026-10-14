@@ -36,10 +36,27 @@ pub(crate) enum Entry {
 /// order ([`Typing::Reorder`]) lands before its last character.
 const REORDER_FROM: usize = 3;
 
+/// The character a key of a US keyboard types without Shift for the
+/// character `c`: a letter in lower case, a digit for the symbol above it,
+/// and so on along the rows; any other as it is.
+fn unshifted(c: char) -> char {
+    const SHIFTED: &str = "~!@#$%^&*()_+{}|:\"<>?";
+    const PLAIN: &str = "`1234567890-=[]\\;',./";
+    if c.is_ascii_uppercase() {
+        return c.to_ascii_lowercase();
+    }
+    SHIFTED
+        .chars()
+        .position(|shifted| shifted == c)
+        .and_then(|index| PLAIN.chars().nth(index))
+        .unwrap_or(c)
+}
+
 /// Enters `text` into a field that holds `value`, as `entry` says, the
 /// field taking it as `typing` says.
 fn take(value: &mut String, text: &str, entry: Entry, typing: Typing) {
     match entry {
+        Entry::Whole if typing == Typing::Unshifted => {}
         Entry::Whole => {
             value.clear();
             value.push_str(text);
@@ -49,6 +66,11 @@ fn take(value: &mut String, text: &str, entry: Entry, typing: Typing) {
                 value.clear();
             }
             for (index, key) in text.chars().enumerate() {
+                let key = if typing == Typing::Unshifted {
+                    unshifted(key)
+                } else {
+                    key
+                };
                 let behind = typing == Typing::Reorder && index >= REORDER_FROM;
                 match value.char_indices().last() {
                     Some((last, _)) if behind => value.insert(last, key),
@@ -176,6 +198,8 @@ struct Fixture {
     alert: bool,
     prompt: bool,
     permission: &'static str,
+    /// Whether iOS's edit menu is up over the field in focus.
+    menu: bool,
 }
 
 impl Fixture {
@@ -192,6 +216,7 @@ impl Fixture {
             alert: false,
             prompt: false,
             permission: "unknown",
+            menu: false,
         }
     }
 
@@ -935,6 +960,7 @@ impl Device {
             }
             return Some(*self != before);
         }
+        let ios = self.kit.platform == Platform::Ios;
         let fixture = self.front_fixture()?;
         if fixture.tab != Tab::Login || fixture.modal() {
             return None;
@@ -943,12 +969,19 @@ impl Device {
             Some(id) => Field::parse(id)?,
             None => fixture.focus?,
         };
+        // Text for a field the input names goes after a tap on it, which on
+        // iOS opens the edit menu over the field when it has the focus.
+        let tapped_in_focus = target.is_some() && fixture.focus == Some(field);
         fixture.focus = Some(field);
         self.update_keyboard(was);
         if !self.loses_text()
             && let Some(fixture) = self.front_fixture()
         {
             take(fixture.field(field), text, entry, typing);
+            // The text a paste brings closes the menu; one that lands
+            // nothing leaves it up.
+            let lost = typing == Typing::Unshifted && entry == Entry::Whole;
+            fixture.menu = ios && tapped_in_focus && lost;
         }
         Some(*self != before)
     }
@@ -1089,6 +1122,8 @@ fn settings(kit: Kit, wifi: bool) -> Vec<El> {
 }
 
 fn tap_fixture(fixture: &mut Fixture, hit: Option<&str>) {
+    // A tap closes iOS's edit menu.
+    fixture.menu = false;
     if fixture.prompt {
         match hit {
             Some("permission-allow") => {
@@ -1362,6 +1397,15 @@ fn fixture_windows(
     let mut window = kit.app_window(app, title, content);
     if windows.iter().any(|w| w.modal) {
         window.flags = WindowFlags::EMPTY;
+    }
+    if let Some(field) = fixture.focus.filter(|_| fixture.menu) {
+        // Below the field in focus, as iOS puts it.
+        let below = match field {
+            Field::Username => kit.line(72.0, 48.0),
+            Field::Password => kit.line(136.0, 48.0),
+        }[3];
+        let menu = [16.0, below + 9.0, 341.0, below + 53.0];
+        window.root.children.push(kit.edit_menu(menu));
     }
     if let Some(keyboard) = keyboard {
         windows.insert(0, keyboard);
@@ -2336,6 +2380,29 @@ mod tests {
             enter(&mut device, "abc", Entry::Whole, Typing::Max(4)),
             "abc"
         );
+        assert_eq!(enter(&mut device, "A@b", fill, Typing::Unshifted), "a2b");
+        assert!(!device.fixtures[FIXTURE].menu);
+        assert_eq!(
+            enter(&mut device, "A@b", Entry::Whole, Typing::Unshifted),
+            "a2b",
+            "a paste lands nothing"
+        );
+        assert!(
+            device.fixtures[FIXTURE].menu,
+            "the tap on the field in focus left the edit menu up"
+        );
+        assert!(
+            device
+                .windows()
+                .iter()
+                .flat_map(|window| &window.root.children)
+                .any(|child| child
+                    .children
+                    .iter()
+                    .any(|c| c.class == "_UIEditMenuContainerView"))
+        );
+        device.tap(Some("login-username"), (24.0, 158.0));
+        assert!(!device.fixtures[FIXTURE].menu, "a tap closes it");
     }
 
     /// Task 10.16: a swipe moves the list by the finger's travel and then

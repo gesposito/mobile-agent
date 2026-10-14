@@ -550,6 +550,29 @@ impl Kit {
         }
     }
 
+    /// The text effects window iOS keeps beside an application's own with
+    /// its edit menu up at `rect`, as the Simulator's reader gives it
+    /// (rn-app-fixes task 7.1): the window's node bounded by what it draws,
+    /// the menu's list, holding the menu's container across the screen and
+    /// the list with its cells.
+    pub fn edit_menu(self, rect: [f64; 4]) -> El {
+        let screen = [0.0, 0.0, self.width(), self.height()];
+        let labels = ["Paste", "Select", "Select All", "AutoFill"];
+        let width = (rect[2] - rect[0]) / labels.len() as f64;
+        let cells = labels.iter().enumerate().map(|(i, label)| {
+            let left = rect[0] + width * i as f64;
+            El::new(
+                "XCUIElementTypeCell",
+                [left, rect[1], left + width, rect[3]],
+            )
+            .desc(*label)
+        });
+        El::new("XCUIElementTypeWindow", rect).child(
+            El::new("_UIEditMenuContainerView", screen)
+                .child(El::new("_UIEditMenuListView", rect).children(cells)),
+        )
+    }
+
     /// A labelled node without traits: React Native's view marked
     /// accessible without a role, which a field it holds can stand behind.
     pub fn generic(self, id: &str, label: &str, rect: [f64; 4]) -> El {

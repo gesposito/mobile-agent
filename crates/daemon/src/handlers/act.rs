@@ -2441,6 +2441,34 @@ mod tests {
         assert_eq!(held(&mut target, "#login-username"), "nobel");
     }
 
+    /// Task 7.1 (task 6.5, N13): with the Simulator's hardware keyboard
+    /// disconnected, the sixth acceptance run's configuration lost Shift and
+    /// Command, so the address field typed "@" as "2", the paste that
+    /// followed landed nothing, and the tap on the field in focus that
+    /// readied the paste left iOS's edit menu up over the screen. A fill
+    /// whose paste leaves the menu up dismisses it: after the fill, which
+    /// fails naming what the field holds, the menu is gone, the screen is
+    /// listed, and the field keeps its text and the focus.
+    #[test]
+    fn a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up() {
+        let mut target = login(Typing::Unshifted);
+        let failure =
+            fill_in(&mut target, "#login-username", "a@b").expect_err("the paste lands nothing");
+        assert_eq!(failure.code, TEXT_MISMATCH, "{}", failure.message);
+        assert!(failure.message.contains("\"a2b\""), "{}", failure.message);
+        let listing = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(!listing.text.contains("Paste"), "{}", listing.text);
+        let field = listing
+            .by_identifier("login-username")
+            .unwrap_or_else(|| panic!("the field is listed:\n{}", listing.text));
+        assert!(field.focused, "{}", listing.text);
+        assert!(listing.by_identifier("login-submit").is_some());
+        assert_eq!(held(&mut target, "#login-username"), "a2b");
+    }
+
     /// Task 10.23: an empty fill clears the field, which reads back empty;
     /// on Android an empty field reads as its hint, so an empty fill there
     /// is not read back.

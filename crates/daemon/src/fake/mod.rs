@@ -130,24 +130,40 @@ pub enum Typing {
     /// Whole, and the fields keep their first `n` characters, however text
     /// reaches them, as a field with a maximum length does.
     Max(usize),
+    /// As [`Typing::Keys`] without Shift and Command: a shifted character
+    /// types as its key does unshifted, "A@b" as "a2b", and a paste lands
+    /// nothing, as on the sixth acceptance run's Simulator with its
+    /// hardware keyboard disconnected (rn-app-fixes task 6.5). On iOS such
+    /// a paste into the field in focus, after the tap that readies it,
+    /// leaves the edit menu that tap opened up over the screen.
+    Unshifted,
 }
 
 impl Typing {
-    /// Parses `whole`, `keys`, `reorder` or `max:<n>`.
+    /// Parses `whole`, `keys`, `reorder`, `unshifted` or `max:<n>`.
     pub fn parse(text: &str) -> Result<Typing, String> {
         let text = text.trim();
         match text {
             "whole" => Ok(Typing::Whole),
             "keys" => Ok(Typing::Keys),
             "reorder" => Ok(Typing::Reorder),
+            "unshifted" => Ok(Typing::Unshifted),
             _ => text
                 .strip_prefix("max:")
                 .and_then(|n| n.parse().ok())
                 .map(Typing::Max)
                 .ok_or_else(|| {
-                    format!("fake typing {text:?}: use whole, keys, reorder or max:<characters>")
+                    format!(
+                        "fake typing {text:?}: use whole, keys, reorder, unshifted or max:<characters>"
+                    )
                 }),
         }
+    }
+
+    /// Whether text whose method the target may choose is typed key by key
+    /// when it is short enough, as a Simulator types it.
+    pub fn types_keys(self) -> bool {
+        matches!(self, Typing::Keys | Typing::Reorder | Typing::Unshifted)
     }
 }
 
@@ -571,10 +587,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn typing_modes_are_named_whole_keys_reorder_or_max_with_a_length() {
+    fn typing_modes_are_named_whole_keys_reorder_unshifted_or_max_with_a_length() {
         assert_eq!(Typing::parse("whole"), Ok(Typing::Whole));
         assert_eq!(Typing::parse(" keys "), Ok(Typing::Keys));
         assert_eq!(Typing::parse("reorder"), Ok(Typing::Reorder));
+        assert_eq!(Typing::parse("unshifted"), Ok(Typing::Unshifted));
         assert_eq!(Typing::parse("max:8"), Ok(Typing::Max(8)));
         for bad in ["", "slow", "max:", "max:-1", "max:eight"] {
             assert!(Typing::parse(bad).is_err(), "{bad:?}");

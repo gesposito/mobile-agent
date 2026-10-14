@@ -105,8 +105,7 @@ impl Frames {
 /// typed key by key in its place when `typing` types keys and it is short
 /// enough, else it goes in whole, as direct text does.
 fn entry(method: TextMethod, text: &str, typing: Typing) -> Entry {
-    let typed =
-        matches!(typing, Typing::Keys | Typing::Reorder) && text.chars().count() <= KEYBOARD_LIMIT;
+    let typed = typing.types_keys() && text.chars().count() <= KEYBOARD_LIMIT;
     if method == TextMethod::KEYS {
         Entry::Keys { replace: false }
     } else if method == TextMethod::AUTO && typed {
