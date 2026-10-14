@@ -1104,10 +1104,95 @@ fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
     assert_eq!(target.inputs().len(), 1);
 }
 
+/// Rn-app-fixes D57 (task 7.3; task 6.5, N6): a refusal names a cover as
+/// the hint counting the element names it, by one function: the sixth
+/// acceptance run's click on the paste control under the creation tab's
+/// footer was refused naming "the overlay" where the hint said "under the
+/// footer". On each fixture of D31 the interactive listing's hint and an
+/// action on the covered element's ref name the footer, the header or the
+/// control over it alike.
+#[test]
+fn a_refusal_names_a_cover_as_the_hint_counting_the_element_does() {
+    for (fixture, covered, cover, named) in DRAWN_OVER_ON_IOS {
+        let screen = Screen::load(fixture);
+        let target = FakeTarget::new(screen.patched(json!([{"remove": cover}])).read());
+        target.at(ms(100), Step::Show(screen.read()));
+        target.at(ms(100), Step::Frame(1));
+        target.at(ms(120), Step::Frame(2));
+        let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+        let reference = mirror
+            .snapshot(&interactive())
+            .unwrap()
+            .by_identifier(covered)
+            .unwrap()
+            .reference
+            .unwrap();
+        mirror.run_until(target.instant(ms(600))).unwrap();
+        let listing = mirror.snapshot(&interactive()).unwrap();
+        let clause = if named == "header" {
+            "1 of them behind the header".to_owned()
+        } else {
+            format!("1 of them under the {named}")
+        };
+        assert!(
+            listing.text.contains(&clause),
+            "{fixture}: {}",
+            listing.text
+        );
+        let error = tap_on(&mut mirror, reference).unwrap_err();
+        assert!(
+            error.to_string().contains(&format!("under the {named}, ")),
+            "{fixture}: {error}"
+        );
+    }
+}
+
+/// Rn-app-fixes D57 (task 7.3; task 6.5, N7): a view that covers a control
+/// whole leaves it in the full listing at visible=0%, as one a tap reaches
+/// none of is, rather than leaving it out: the sixth acceptance run's full
+/// listing of the creation tab left out the two controls the footer holds
+/// while the interactive hint counted them. The full listing's hints count
+/// only what it leaves out, so none of what it shows at visible=0%: the
+/// heading under the consent screen's footer is listed and counted in no
+/// hint of the full listing, and of the six rows above the list behind the
+/// header the full listing counts the three above the screen.
+#[test]
+fn a_control_a_view_covers_whole_stays_in_the_full_listing_at_visible_0() {
+    let (_, mut consent) = mirror_on("consent-ios");
+    let whole = consent.snapshot(&full()).unwrap();
+    let heading = whole
+        .by_identifier("placeholder-section-3")
+        .unwrap_or_else(|| panic!("the heading under the footer is listed:\n{}", whole.text));
+    assert_eq!(heading.visible, Some(0), "{}", whole.text);
+    assert!(
+        whole
+            .text
+            .contains("\n  (more items below, scroll down to reveal)\n"),
+        "{}",
+        whole.text
+    );
+
+    let (_, mut list) = mirror_on("header-top-ios");
+    let whole = list.snapshot(&full()).unwrap();
+    assert!(
+        whole
+            .text
+            .contains("(3 more actionable items above, scroll up to reveal)"),
+        "{}",
+        whole.text
+    );
+    let behind = whole
+        .elements
+        .iter()
+        .filter(|e| e.reference.is_some() && e.visible == Some(0))
+        .count();
+    assert_eq!(behind, 3, "{}", whole.text);
+}
+
 /// D38, scenario "Control behind a header listed first": a ref taken while
 /// the row lay below the header is refused once the list has scrolled it
-/// up behind the header, naming the header as a tap there would land on
-/// it, a plain view, and nothing is tapped.
+/// up behind the header, naming the header as the hint does (design D57),
+/// and nothing is tapped.
 #[test]
 fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header() {
     let screen = Screen::load("header-top-ios");
@@ -1130,7 +1215,7 @@ fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_heade
     mirror.run_until(target.instant(ms(600))).unwrap();
     let error = tap_on(&mut mirror, row).unwrap_err();
     assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
-    assert!(error.to_string().contains("overlay"), "{error}");
+    assert!(error.to_string().contains("under the header"), "{error}");
     assert!(target.inputs().is_empty());
 }
 
@@ -1617,15 +1702,20 @@ fn the_card_above_the_feed_is_counted_behind_the_header() {
     );
 }
 
-/// Rn-app-fixes D54 (task 6.3; task 5.6, N7): on every fixture the
-/// interactive listing's hints count, as left out for a cover, the elements
-/// with refs the full listing shows at visible=0% and those the full
-/// listing's own hints count as left out, as a view covers them whole, so
-/// that the hints and the two listings agree by construction; the fifth
+/// Rn-app-fixes D54 and D57 (tasks 6.3 and 7.3; tasks 5.6 and 6.5, N7): on
+/// every fixture the interactive listing's hints count, as left out for a
+/// cover, the elements with refs the full listing shows at visible=0%, a
+/// view that covers an element whole leaving it in the full listing there,
+/// so that the hints and the two listings agree by construction; the fifth
 /// acceptance run's verifier found the feed's hint at 11 against 1 element
-/// at visible=0%, and a list's at 6 against 3. The elements with refs the
-/// full listing has and the interactive one lacks are those at visible=0%
-/// and those wholly under the keyboard, which the keyboard's line counts.
+/// at visible=0%, and a list's at 6 against 3, and the sixth run's full
+/// listing repeated the interactive listing's count while it showed those
+/// elements at visible=0%. The full listing's hints count only what it
+/// leaves out: none for a cover, and of what both hints count, the
+/// interactive listing's count exceeds the full one's by what the full
+/// listing shows at visible=0%. The elements with refs the full listing
+/// has and the interactive one lacks are those at visible=0% and those
+/// wholly under the keyboard, which the keyboard's line counts.
 #[test]
 fn on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out() {
     for name in support::screen_names() {
@@ -1648,12 +1738,51 @@ fn on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out() {
         );
         assert_eq!(
             counted_left_out(&listing),
-            u32::try_from(at_zero).unwrap() + counted_left_out(&whole),
-            "{name}: the hints count what each listing leaves out:\n{}\n\n{}",
+            u32::try_from(at_zero).unwrap(),
+            "{name}: the interactive listing's hints count what it leaves out for a cover, which the full listing shows at visible=0%:\n{}\n\n{}",
+            listing.text,
+            whole.text
+        );
+        assert_eq!(
+            counted_left_out(&whole),
+            0,
+            "{name}: the full listing shows what a cover leaves nothing of:\n{}",
+            whole.text
+        );
+        assert_eq!(
+            counted(&listing) - counted(&whole),
+            u32::try_from(at_zero).unwrap(),
+            "{name}: the full listing's hints count only what it leaves out:\n{}\n\n{}",
             listing.text,
             whole.text
         );
     }
+}
+
+/// How many elements `listing`'s hints count: the counts of its scroll
+/// hints and of the lines that count elements outside any scroll container
+/// left out for a cover.
+fn counted(listing: &Snapshot) -> u32 {
+    let hints: u32 = listing.hints.iter().filter_map(|hint| hint.count).sum();
+    let lines: u32 = listing
+        .text
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| {
+            line.starts_with('(')
+                && line.contains(" more actionable item")
+                && !line.contains("scroll")
+                && !line.contains("close it to reveal")
+        })
+        .map(|line| {
+            line[1..]
+                .split(' ')
+                .next()
+                .and_then(|n| n.parse::<u32>().ok())
+                .unwrap_or(0)
+        })
+        .sum();
+    hints + lines
 }
 
 /// Rn-app-fixes D52, scenario "Hardware keyboard connected" (task 6.1): with

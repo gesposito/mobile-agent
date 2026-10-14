@@ -45,14 +45,15 @@ fn read_json(name: &str) -> Value {
 
 /// The iOS fixtures of rn-app-fixes D31, each with an element a view drawn
 /// after it covers, by identifier, the view whose removal uncovers it, and
-/// how a refused action names the cover: by the role and name of what lies
-/// over the element, or as an overlay.
+/// how a refused action and the hint counting the element name the cover
+/// (design D57): the footer, the header, or by the role and name of what
+/// lies over the element.
 pub const DRAWN_OVER_ON_IOS: [(&str, &str, &str, &str); 3] = [
     (
         "consent-ios",
         "placeholder-section-3",
         "placeholder-consent-footer",
-        "button \"Accept and continue\"",
+        "footer",
     ),
     (
         "create-ios",
@@ -64,7 +65,7 @@ pub const DRAWN_OVER_ON_IOS: [(&str, &str, &str, &str); 3] = [
         "feed-ios",
         "placeholder-post-2",
         "placeholder-feed-header",
-        "overlay",
+        "header",
     ),
 ];
 
