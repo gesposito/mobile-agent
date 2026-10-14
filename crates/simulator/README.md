@@ -261,6 +261,22 @@ mirror's conventions (`reader/src/elements.rs`):
   drawing nothing, for a hardware keyboard serving the field (design D52);
   the state comes from the window's content, never from the setting, so a
   phone with a hardware keyboard reads the same;
+- the text effects window UIKit keeps beside the application's own
+  (`UITextEffectsWindow`, of which the keyboard's window is one kind),
+  which holds iOS's edit menu, spans the screen and lets touches through
+  outside what it draws too, so it stays in the application's tree after
+  the application's window with its node's bounds what it draws, found as
+  the keyboard window's are, of its outermost descendants that do not span
+  it those that show something a user reads, a label or a value (task 7.1
+  of `rn-app-fixes`, design D55): with the edit menu up its gesture view
+  and the menu's container span the screen and the keyboard's placeholder
+  in it holds the keyboard's place, from 539 points down, drawing nothing,
+  so the window draws the menu's list, 121 to 165 points down over the
+  SwiftUI fixture's login, and none while the menu is down. With the
+  window's frame as its bounds the mirror took it for a view drawn over
+  the whole application, and the sixth acceptance run's listing with the
+  menu up held the menu's cells alone. The iOS runner, which converts its
+  tree the same way, serves this from 0.2.2;
 - an application's alert on screen moves, with the view that presents it,
   to a window of its own between the two, its id the pid with bit 30 set,
   titled by the alert, marked `modal`, and `active` and `focused` in the
@@ -653,7 +669,14 @@ against 0.665 s before, a first fill 0.655 s against 0.66. Text into the
 field in focus, which `fill` enters so after the emptying and for an
 identifier on a view holding no field, is readied as text into a field the
 input taps, Command-A first, but for the tap (`readying`). A paste and
-`type`, which selects nothing, keep the readying they had.
+`type`, which selects nothing, keep the readying they had. The tap that
+readies text into a field already in focus opens iOS's edit menu, and a
+paste that then lands nothing, as on the sixth acceptance run's Simulator
+with its hardware keyboard disconnected and Command lost, leaves the menu
+up; the daemon's `fill` closes it after its paste's read-back with a tap
+on the field near its left end, which on this Simulator closed the menu
+over an empty field, over text and over a selection, Escape and the arrow
+keys leaving it up (task 7.1 of `rn-app-fixes`, design D55).
 
 The tests read a field back by putting a sentinel on the pasteboard and
 sending Command-A and Command-C: 500 characters pasted in 48 ms, 204 ms through
@@ -745,6 +768,7 @@ about a minute.
 | Foreground tree read | Identifiers, labels, values, roles and frames (task 6.6) | `tree::swiftui_read_returns_identifiers_and_frames`, and in `reader/`: `elements::tests::classes_are_type_names_or_the_platform_class_of_untyped_elements`, `elements::tests::labels_values_and_placeholders_become_descriptions_and_text`, `elements::tests::flags_come_from_the_type_and_traits`, `elements::tests::bounds_are_pixels_rounded_from_points` |
 | Foreground tree read | Window owner, modal alert windows and windows without change events (task 6.10) | `metadata::a_permission_alert_window_is_owned_by_springboard`, `metadata::an_in_app_alert_window_is_modal_and_the_application_window_is_not`, `tree::tests::a_modal_window_above_the_application_is_not_taken_for_the_foreground`, and in `reader/`: `elements::tests::system_ui_owns_its_windows_by_process_name_and_keeps_its_alert`, `elements::tests::an_applications_windows_have_no_owner`, `elements::tests::an_in_app_alert_moves_to_a_modal_window_above_the_application`, `elements::tests::an_alert_in_a_window_of_its_own_moves_with_its_presentation`, `elements::tests::an_alert_that_is_not_on_screen_stays_where_it_is`, `elements::tests::the_keyboard_stays_above_an_alert_window`, `elements::tests::every_window_says_it_sends_no_change_events` |
 | Foreground tree read | The keyboard read whole, sheets that block the screen as modal windows (task 6.12) | `metadata::a_read_with_the_keyboard_up_is_whole_and_holds_the_keys` (both fixtures), `metadata::a_sheet_over_the_screen_is_a_modal_window` (Contacts' New Contact sheet), `tree::tests::a_modal_window_cuts_the_windows_below_it`, and in `reader/`: `elements::tests::a_read_with_the_keyboard_up_is_not_truncated`, `elements::tests::an_alert_moved_to_its_own_window_leaves_the_read_whole`, `elements::tests::a_sheet_that_takes_touches_moves_to_a_modal_window_above_the_screen`, `elements::tests::blueskys_bottom_sheet_is_a_modal_window_and_its_presenter_is_not`, `elements::tests::a_sheet_that_lets_touches_through_stays_in_the_application_window`, `elements::tests::a_dimming_view_that_does_not_span_the_screen_dims_nothing`, `elements::tests::an_alert_over_a_sheet_is_the_top_most_modal`, `elements::tests::system_ui_keeps_a_sheet_in_its_window` |
+| Foreground tree read | The text effects window bounded by what it draws, iOS's edit menu's list or nothing (task 7.1 of `rn-app-fixes`, design D55) | in `reader/`: `elements::tests::the_edit_menus_window_covers_the_strip_its_cells_draw_on`, `elements::tests::a_system_window_that_draws_nothing_covers_nothing`, on the reads of `mobile-agent-spike` with the menu up (task 7.1); the listing over it in the mirror, `interactive::the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed` |
 | Foreground tree read | The keyboard's window drawing nothing under a hardware keyboard, or a keyboard toolbar's strip (task 6.1 of `rn-app-fixes`, design D52) | in `reader/`: `elements::tests::a_keyboard_window_whose_keys_lie_below_the_screen_covers_nothing`, `elements::tests::a_keyboard_window_under_a_hardware_keyboard_covers_the_strip_it_keeps_for_a_toolbar`, on the reads of `mobile-agent-spike` with the setting on (task 6.1); the listing over it in the mirror, `interactive::a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard` |
 | Foreground tree read | Scroll semantics of scroll views (task 6.10) | `metadata::a_list_scroll_view_reports_its_axis_and_whether_it_is_at_its_top`, and in `reader/`: `elements::tests::a_list_at_its_top_scrolls_forward_only`, `elements::tests::a_list_scrolled_down_scrolls_both_ways`, `elements::tests::a_list_at_its_end_scrolls_back_only`, `elements::tests::content_that_fits_its_visible_frame_does_not_scroll`, `elements::tests::content_taller_than_the_visible_frame_scrolls_though_the_frame_holds_it`, `elements::tests::a_carousel_scrolls_horizontally`, `elements::tests::content_that_scrolls_both_ways_names_no_axis`, `elements::tests::elements_without_a_scroll_area_have_no_scroll_semantics` |
 | Foreground tree read | Covered content cut under alerts, the translator fallback (tasks 6.6 and 6.11) | `tree::in_app_alert_content_is_cut`, `tree::the_translator_stands_in_when_the_reader_cannot_run`, `tree::a_build_without_the_reader_reads_through_the_translator` (without the `reader` feature), `macos::reader::tests::a_spawn_can_record_on_the_slot_while_it_runs`, `macos::reader::tests::a_build_without_the_reader_feature_embeds_none` (without the feature), `tree::tests::what_the_alert_covers_is_cut_and_the_payload_keeps_it`, `tree::tests::an_alert_is_found_with_its_title_message_and_buttons_once_each` |
