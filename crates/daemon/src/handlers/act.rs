@@ -667,6 +667,14 @@ enum Reading {
     Nothing,
 }
 
+/// Whether `value`, the own value of a field that is not a text field,
+/// shows the text `fill` entered, `text`, the field's value having been
+/// `reference` in the reading the read-back compares with (design D56).
+fn value_shown(value: &str, reference: Option<&str>, text: &str) -> bool {
+    let _ = (reference, text);
+    !value.is_empty()
+}
+
 /// What `element` shows, for a read-back (design D33): its own value when
 /// it has one, or when it is a text field, whose empty value the platform
 /// reports as none; else its descendants' values or texts, joined in the
@@ -679,7 +687,7 @@ fn reading(target: &mut Attached, element: &Element, before: &str) -> Result<Rea
     let own = element
         .value
         .as_deref()
-        .is_some_and(|value| !value.is_empty());
+        .is_some_and(|value| value_shown(value, None, ""));
     if own || matches!(element.role, Role::Textbox | Role::Searchbox) {
         return Ok(Reading::Own(element.value.clone()));
     }
@@ -4117,6 +4125,78 @@ mod tests {
             assert_eq!(entered[0].1.is_some(), targeted, "{board}: {entered:?}");
             assert_eq!(entered[1], ("123456".to_owned(), None), "{board}");
         }
+    }
+
+    /// Design D56, N14 of the sixth acceptance run (task 7.2; task 6.5):
+    /// with the keyboard up and the hardware keyboard disconnected, a refill
+    /// of the code the code step's field held on its second visit read back
+    /// a value, "4", rather than the field's name and failed `text_mismatch`
+    /// after typing and pasting, where with the hardware keyboard connected
+    /// the same refill verified through the name: the field's node shows a
+    /// value, a single box's placeholder or the last digit an emptying left,
+    /// which the read-back took for what the field holds. A value that did
+    /// not change with the entry, or that is shorter than the entry or
+    /// spells nothing but placeholders, is not what the field holds: a first
+    /// fill and a refill of the code verify through the name in both
+    /// keyboard states, the refill emptying the field and typing the code
+    /// once each, and the field holds the code.
+    #[test]
+    fn a_code_field_showing_a_placeholder_value_is_read_back_through_its_name_in_both_keyboard_states()
+     {
+        for slide in [Slide::AtOnce, Slide::Hidden] {
+            let driver = FakeDriver::parse("ios")
+                .unwrap()
+                .with_typing(Typing::Keys)
+                .with_slide(slide);
+            let (mut target, sent) =
+                recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=code-valued"]);
+            let first = fill_in(&mut target, "#placeholder-id-3", "123456")
+                .unwrap_or_else(|failure| panic!("{slide:?}: the first fill: {failure:?}"));
+            assert_eq!(first.data["readFrom"], "name", "{slide:?}: {}", first.data);
+            sent.lock().unwrap().clear();
+            let refill = fill_in(&mut target, "#placeholder-id-3", "123456")
+                .unwrap_or_else(|failure| panic!("{slide:?}: the refill: {failure:?}"));
+            let data = &refill.data;
+            assert_eq!(data["verified"], "text", "{slide:?}: {data}");
+            assert_eq!(data["readFrom"], "name", "{slide:?}: {data}");
+            assert_eq!(data["retried"], false, "{slide:?}: {data}");
+            let entered = texts(&sent);
+            assert_eq!(
+                entered,
+                [(String::new(), None), ("123456".to_owned(), None)],
+                "{slide:?}: emptied, then typed"
+            );
+            assert_eq!(
+                text_of(&mut target, "#placeholder-id-3"),
+                "1, 2, 3, 4, 5, 6, Verification code, required",
+                "{slide:?}"
+            );
+        }
+    }
+
+    /// Design D56 (task 7.2): the own value of a field that is not a text
+    /// field shows the entry only when it changed with it and is no
+    /// placeholder: one as long as the entry at least, more than an empty
+    /// box's dash or a separator, and other than the value the reading the
+    /// read-back compares with held; a field's mask characters, one for
+    /// each of the entry's, count, as a masked value is compared by its
+    /// length.
+    #[test]
+    fn a_value_shows_the_entry_only_when_it_changed_with_it_and_is_no_placeholder() {
+        let code = "123456";
+        assert!(value_shown("123456", Some(""), code));
+        assert!(value_shown("123499", None, code), "a wrong code is read");
+        assert!(
+            value_shown("\u{2022}".repeat(6).as_str(), Some(""), code),
+            "a mask for each digit"
+        );
+        assert!(!value_shown("4", Some("4"), code), "the run's value");
+        assert!(!value_shown("\u{2013}", Some("\u{2013}"), code));
+        assert!(!value_shown("6", Some("\u{2013}"), code), "shorter");
+        assert!(!value_shown("\u{2013}", None, code), "a placeholder");
+        assert!(!value_shown("------", Some(""), code), "dashes alone");
+        assert!(!value_shown("123456", Some("123456"), code), "unchanged");
+        assert!(!value_shown("", None, code));
     }
 
     /// Design D49 (task 5.2): every fill typed as keys into a field that

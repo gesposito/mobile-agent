@@ -276,7 +276,8 @@ impl FormField {
                 | Board::CodeAgain
                 | Board::CodeNamed
                 | Board::CodeMasked
-                | Board::CodeBare,
+                | Board::CodeBare
+                | Board::CodeValued,
                 CODE_FIELD | CODE_INPUT,
             ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
@@ -344,6 +345,12 @@ enum Board {
     /// only an empty view out of sight, the app's input not in the tree; a
     /// tap on the node gives that input the focus and brings the keyboard up.
     CodeBare,
+    /// The second visit as the sixth acceptance run met it with the
+    /// keyboard up (task 6.5, N14): the node also shows a value, the last
+    /// digit its boxes hold or, with none, an empty box's dash, as a single
+    /// box's placeholder or the last digit an emptying left, which the
+    /// read-back took for what the field holds.
+    CodeValued,
     /// The paste sheet (section 7): the title field, without an identifier,
     /// in one of four unidentified views of one class, which gains a counter
     /// when the field takes the focus; its name changes once it holds text.
@@ -369,6 +376,7 @@ impl Board {
             "code-named" => Board::CodeNamed,
             "code-masked" => Board::CodeMasked,
             "code-bare" => Board::CodeBare,
+            "code-valued" => Board::CodeValued,
             "sheet" => Board::Sheet,
             "dialog" => Board::Dialog,
             _ => Board::Form,
@@ -1423,9 +1431,12 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
-        Board::Code | Board::CodeAgain | Board::CodeNamed | Board::CodeMasked | Board::CodeBare => {
-            code_content(kit, forms)
-        }
+        Board::Code
+        | Board::CodeAgain
+        | Board::CodeNamed
+        | Board::CodeMasked
+        | Board::CodeBare
+        | Board::CodeValued => code_content(kit, forms),
         Board::Sheet => sheet_content(kit, forms),
         Board::Dialog => dialog_content(kit, forms),
     }
@@ -1465,7 +1476,7 @@ fn boxes_name(pin: &str, masked: bool) -> String {
 fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let digits: Vec<String> = forms.pin.chars().map(String::from).collect();
     let name = match forms.board {
-        Board::CodeNamed | Board::CodeBare => boxes_name(&forms.pin, false),
+        Board::CodeNamed | Board::CodeBare | Board::CodeValued => boxes_name(&forms.pin, false),
         Board::CodeMasked => boxes_name(&forms.pin, true),
         _ if digits.is_empty() => "placeholder-generic-2".to_owned(),
         _ => format!("placeholder-generic-2, {}", digits.join(" ")),
@@ -1510,11 +1521,15 @@ fn code_content(kit: Kit, forms: &Forms) -> Vec<El> {
             .children([hidden("placeholder-pair-1"), hidden("placeholder-pair-2")]),
         );
     }
-    if forms.board == Board::CodeBare {
+    if matches!(forms.board, Board::CodeBare | Board::CodeValued) {
         field = field.child(
             kit.group([20.0, 518.67, 20.0, 518.67])
                 .set(protocol::snapshot::NodeFlags::VISIBLE, false),
         );
+    }
+    if forms.board == Board::CodeValued {
+        let last = forms.pin.chars().take(CODE_BOXES).last();
+        field = field.text(last.map_or("\u{2013}".to_owned(), String::from));
     }
     content.extend([
         field,
