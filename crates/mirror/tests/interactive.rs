@@ -1473,6 +1473,52 @@ fn what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_h
     );
 }
 
+/// Rn-app-fixes D52, scenario "Hardware keyboard connected" (task 6.1): with
+/// the Simulator's hardware keyboard connected iOS draws no keys but keeps
+/// the keyboard's window while a field has the focus, its keys below the
+/// screen, which the reader bounds by what it draws: nothing. The fifth
+/// acceptance run's sign-in screen read wholly under a keyboard the screen
+/// did not show, and taps on fully visible controls were refused. No
+/// element lies under such a window, a tap on a tab goes to the tab, and
+/// the window counts as no keyboard: the full listing has no keyboard line,
+/// and the replica says a keyboard window draws nothing over the screen, as
+/// the daemon's keyboard waits read it, where a keyboard with keys keeps
+/// the rules of task 3.2.
+#[test]
+fn a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard() {
+    let (_, mut mirror) = mirror_on("keyboard-hardware-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        !listing.text.contains("under the keyboard"),
+        "{}",
+        listing.text
+    );
+    for identifier in ["tab-login", "tab-list", "tab-big", "tab-anim", "tab-system"] {
+        let tab = listing
+            .by_identifier(identifier)
+            .unwrap_or_else(|| panic!("{identifier} is listed:\n{}", listing.text));
+        assert_eq!(mirror.covered_by(tab.id), None, "{identifier}");
+        let at = tap_on(&mut mirror, tab.reference.expect("a tab has a ref")).unwrap();
+        assert!(
+            tab.bounds.contains(at),
+            "{identifier} is tapped at {at}, inside {:?}",
+            tab.bounds
+        );
+    }
+    let whole = mirror.snapshot(&full()).unwrap();
+    assert!(
+        !whole.text.lines().any(|line| line == "- keyboard"),
+        "no keyboard is listed:\n{}",
+        whole.text
+    );
+    assert!(mirror.keys_hidden(), "a keyboard window draws nothing");
+
+    let (_, mut keys) = mirror_on("form-keyboard-ios");
+    let whole = keys.snapshot(&full()).unwrap();
+    assert!(whole.text.ends_with("\n- keyboard"), "{}", whole.text);
+    assert!(!keys.keys_hidden(), "the keyboard draws its keys");
+}
+
 /// D37 and D38 (task 3.2; section 5 of the masked listings): a tap on a
 /// submit button partly under the keyboard goes to the part of it in view:
 /// 17 of its 48 points above the keyboard's top, 35%, take the tap at their

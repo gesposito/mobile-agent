@@ -762,6 +762,16 @@ impl Mirror {
         visibility::uncovered(&self.replica, w, area)
     }
 
+    /// Whether the replica holds, above the window in front, a keyboard
+    /// window that draws nothing on the screen, as the drivers bound it by
+    /// what it draws: iOS keeps the keyboard's window while an input has the
+    /// focus and a hardware keyboard serves it, its keys below the screen
+    /// (rn-app-fixes, design D52). Such a window covers nothing and is no
+    /// keyboard to wait for: the input in focus takes keys at once.
+    pub fn keys_hidden(&self) -> bool {
+        false
+    }
+
     /// Where the element `reference` names is in the replica. The element
     /// must still be the control the ref was issued for: without an
     /// identifier, under the same accessible name.
