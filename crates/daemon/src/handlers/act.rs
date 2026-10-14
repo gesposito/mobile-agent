@@ -3265,6 +3265,130 @@ mod tests {
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
     }
 
+    /// `click` on what `aimed` names, waiting at most `timeout` ms for a
+    /// selector's element.
+    fn click_within(target: &mut Attached, aimed: &str, timeout: u64) -> Outcome {
+        let click = json!({"action": "click", "target": aimed, "timeout": timeout}).to_string();
+        super::click(target, "default", &request(&click))
+    }
+
+    /// `fill` of `text` into what `aimed` names, waiting at most `timeout`
+    /// ms for a selector's element.
+    fn fill_within(target: &mut Attached, aimed: &str, text: &str, timeout: u64) -> Outcome {
+        let fill = json!({"action": "fill", "target": aimed, "text": text, "timeout": timeout});
+        super::fill(target, "default", &request(&fill.to_string()))
+    }
+
+    /// The longest a refusal by selector may take: the time a ref takes, a
+    /// read or two, well short of the selector's timeout of 3 s.
+    const REFUSED_WITHIN: Duration = Duration::from_millis(500);
+
+    /// Design D53, N12 of the fifth acceptance run (task 6.2; task 5.6): a
+    /// click by text on a text the declined consent's secondary button
+    /// covers whole, as the run's 12-point text at 737 points under its
+    /// Decline, answered `element_not_found` after the full timeout, 10,079
+    /// ms, the selector waiting for the text on screen, where a ref answers
+    /// `element_covered` at once. The selector resolves the text the replica
+    /// holds, by containment or exact text, and the click takes the path a
+    /// ref takes: refused naming the button within a read, nothing tapped.
+    #[test]
+    fn a_click_by_text_on_a_text_a_button_covers_whole_is_refused_naming_it_at_once() {
+        let (mut target, sent) = on_board("consent");
+        for aimed in ["text=placeholder-text-7", "text==placeholder-text-7"] {
+            let started = Instant::now();
+            let failure = click_within(&mut target, aimed, 3000)
+                .expect_err(&format!("{aimed}: the button covers the text"));
+            let took = started.elapsed();
+            assert_eq!(
+                failure.code, "element_covered",
+                "{aimed}: {}",
+                failure.message
+            );
+            assert!(
+                failure.message.contains("button \"placeholder-button-1\""),
+                "{aimed}: {}",
+                failure.message
+            );
+            assert!(took < REFUSED_WITHIN, "{aimed}: {took:?}");
+        }
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
+    }
+
+    /// Design D53, N12 and N6 of the fifth acceptance run (task 6.2; task
+    /// 5.6): on the creation tab as that run met it the footer's view holds
+    /// the paste control and the button beside it whole, which both
+    /// listings leave out, and a click by the control's identifier before
+    /// any scroll answered `element_not_found` after the full timeout,
+    /// 10,069 ms. It is refused with `element_covered` naming the view over
+    /// it within a read, and nothing is tapped.
+    #[test]
+    fn a_click_by_identifier_on_a_control_a_view_holds_whole_is_refused_at_once() {
+        let (mut target, sent) = on_board("creation-held");
+        let started = Instant::now();
+        let failure = click_within(&mut target, "#placeholder-id-8", 3000)
+            .expect_err("the footer's view holds the control");
+        let took = started.elapsed();
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
+        assert!(failure.message.contains("overlay"), "{}", failure.message);
+        assert!(took < REFUSED_WITHIN, "{took:?}");
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
+    }
+
+    /// Design D53, N12 of the fifth acceptance run (task 6.2; task 5.6):
+    /// behind a dialog the app marks modal, a fill by the identifier of the
+    /// field under it answered `element_not_found` after the full timeout,
+    /// 10,090 ms, where a click on a ref behind it answered
+    /// `element_covered`, "covered by the modal view", in 93 ms. The fill is
+    /// refused the same way within a read, and nothing is tapped or typed.
+    #[test]
+    fn a_fill_by_identifier_on_a_field_behind_a_dialog_is_refused_naming_it_at_once() {
+        let (mut target, sent) = on_board("dialog");
+        let started = Instant::now();
+        let failure = fill_within(&mut target, "#placeholder-name", "placeholder-value", 3000)
+            .expect_err("the dialog covers the field");
+        let took = started.elapsed();
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
+        assert!(
+            failure.message.contains("modal view"),
+            "{}",
+            failure.message
+        );
+        assert!(took < REFUSED_WITHIN, "{took:?}");
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+        assert!(texts(&sent).is_empty(), "nothing typed: {:?}", texts(&sent));
+    }
+
+    /// Design D53: the selector waits only for an element the tree does not
+    /// hold yet: a click and a fill on an identifier nothing holds wait out
+    /// their timeout and fail with `element_not_found` naming the screen.
+    #[test]
+    fn a_selector_on_an_element_the_tree_does_not_hold_waits_its_timeout() {
+        let (mut target, sent) = on_board("dialog");
+        let timeout = 400;
+        let started = Instant::now();
+        let failure = click_within(&mut target, "#placeholder-nothing", timeout).unwrap_err();
+        assert_eq!(failure.code, "element_not_found", "{}", failure.message);
+        assert!(started.elapsed() >= Duration::from_millis(timeout));
+        assert!(
+            failure.message.contains("placeholder-button-2"),
+            "{}",
+            failure.message
+        );
+        let started = Instant::now();
+        let failure = fill_within(
+            &mut target,
+            "#placeholder-nothing",
+            "placeholder-value",
+            timeout,
+        )
+        .unwrap_err();
+        assert_eq!(failure.code, "element_not_found", "{}", failure.message);
+        assert!(started.elapsed() >= Duration::from_millis(timeout));
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+    }
+
     /// Design D48, scenario "React Native scroll view" (task 5.1): on the
     /// creation tab as React Native's accessibility lists it, `scroll
     /// --until` strokes through what the list shows, above the footer drawn

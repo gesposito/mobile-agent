@@ -235,6 +235,8 @@ enum FormField {
     /// The paste sheet's title field, which has no identifier and whose
     /// name changes once it holds text.
     Title,
+    /// The dialog board's name field, under the dialog.
+    Name,
 }
 
 impl FormField {
@@ -253,6 +255,7 @@ impl FormField {
                 CODE_FIELD | CODE_INPUT,
             ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
+            (Board::Dialog, NAME_FIELD) => Some(FormField::Name),
             _ => None,
         }
     }
@@ -286,6 +289,11 @@ enum Board {
     /// task 4.7, N6): the footer's view holds nothing, its tabs listed after
     /// it as its siblings.
     CreationRn,
+    /// The same tab as the fifth acceptance run met it (task 5.6, N6 and
+    /// N12): the footer's view drawn from the primary button's top, so that
+    /// it holds the paste control and the button beside it whole, as the
+    /// run's listings left both out.
+    CreationHeld,
     /// The feed (section 2): a card partly above its list's top, where the
     /// header listed before the list is drawn.
     Feed,
@@ -315,6 +323,9 @@ enum Board {
     /// in one of four unidentified views of one class, which gains a counter
     /// when the field takes the focus; its name changes once it holds text.
     Sheet,
+    /// A dialog the app marks modal over a field (task 5.6, N12): the name
+    /// field under the dialog, which asks to stay or leave.
+    Dialog,
 }
 
 impl Board {
@@ -324,6 +335,7 @@ impl Board {
             "creation" => Board::Creation,
             "creation-open" => Board::CreationOpen,
             "creation-rn" => Board::CreationRn,
+            "creation-held" => Board::CreationHeld,
             "feed" => Board::Feed,
             "list" => Board::List,
             "list-low" => Board::ListLow,
@@ -333,6 +345,7 @@ impl Board {
             "code-masked" => Board::CodeMasked,
             "code-bare" => Board::CodeBare,
             "sheet" => Board::Sheet,
+            "dialog" => Board::Dialog,
             _ => Board::Form,
         }
     }
@@ -350,6 +363,9 @@ const CODE_INPUT: &str = "placeholder-code-input";
 
 /// The paste sheet's title field, which the app gives no identifier.
 const TITLE_FIELD: &str = "placeholder-title";
+
+/// The dialog board's name field.
+const NAME_FIELD: &str = "placeholder-name";
 
 /// The creation tab's list, in points: down to the bottom of the screen,
 /// under the footer.
@@ -369,6 +385,11 @@ const CREATION_PRIMARY: [f64; 4] = [20.0, 708.0, 382.0, 764.0];
 /// button's bottom to the bottom of the screen.
 const CREATION_FOOTER: [f64; 4] = [0.0, 764.0, 402.0, 874.0];
 
+/// Where the footer's view lies on the creation tab as the fifth acceptance
+/// run met it, in points: from the primary button's top to the bottom of
+/// the screen.
+const CREATION_HELD_FOOTER: [f64; 4] = [0.0, 708.0, 402.0, 874.0];
+
 /// The running placeholder app.
 #[derive(Clone, Debug, PartialEq)]
 struct Forms {
@@ -381,6 +402,8 @@ struct Forms {
     pin: String,
     /// What the paste sheet's title field holds.
     title: String,
+    /// What the dialog board's name field holds.
+    name: String,
     focus: Option<FormField>,
     status: String,
     /// Whether the layout has moved the submit button above the keyboard,
@@ -401,6 +424,7 @@ impl Forms {
             query: String::new(),
             pin: String::new(),
             title: String::new(),
+            name: String::new(),
             focus: None,
             status: match board {
                 Board::Form => "Not submitted",
@@ -419,12 +443,12 @@ impl Forms {
     /// Native's shape not on a view drawn over it, the primary button or the
     /// footer, which takes the touch; whether it moved.
     fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
-        let drawn_over = self.board == Board::CreationRn
+        let drawn_over = matches!(self.board, Board::CreationRn | Board::CreationHeld)
             && (tree::contains(CREATION_PRIMARY, from.0, from.1)
-                || tree::contains(CREATION_FOOTER, from.0, from.1));
+                || tree::contains(creation_footer(self.board), from.0, from.1));
         if !matches!(
             self.board,
-            Board::Creation | Board::CreationOpen | Board::CreationRn
+            Board::Creation | Board::CreationOpen | Board::CreationRn | Board::CreationHeld
         ) || !tree::contains(CREATION_LIST, from.0, from.1)
             || drawn_over
         {
@@ -445,6 +469,7 @@ impl Forms {
             FormField::Query => &mut self.query,
             FormField::Pin => &mut self.pin,
             FormField::Title => &mut self.title,
+            FormField::Name => &mut self.name,
         }
     }
 
@@ -1350,7 +1375,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Form => form_content(kit, forms),
         Board::Consent => consent_content(kit, forms),
         Board::Creation | Board::CreationOpen => creation_content(kit, forms),
-        Board::CreationRn => creation_rn_content(kit, forms),
+        Board::CreationRn | Board::CreationHeld => creation_rn_content(kit, forms),
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
@@ -1358,6 +1383,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
             code_content(kit, forms)
         }
         Board::Sheet => sheet_content(kit, forms),
+        Board::Dialog => dialog_content(kit, forms),
     }
 }
 
@@ -1587,12 +1613,14 @@ fn list_content(kit: Kit, forms: &Forms, header: f64) -> Vec<El> {
 }
 
 /// The consent screen (section 1a of the masked listings): a scroll view
-/// holding the status line, the eighth and ninth headings, the text that
-/// straddles the gap between the footer buttons and the 12-point text, and
-/// the secondary and primary footer buttons listed after it, drawn over
-/// what is scrolled under them, the ninth heading's lower 11 points under
-/// the secondary one, the 12-point text's upper 9 under the primary one.
-/// Nothing but the status line carries an identifier the tree reports.
+/// holding the status line, the eighth and ninth headings, a 12-point text
+/// wholly under the secondary footer button, as the fifth acceptance run's
+/// text at 737 points (task 5.6, N12), the text that straddles the gap
+/// between the footer buttons and the 12-point text, and the secondary and
+/// primary footer buttons listed after it, drawn over what is scrolled
+/// under them, the ninth heading's lower 11 points under the secondary one,
+/// the 12-point text's upper 9 under the primary one. Nothing but the
+/// status line carries an identifier the tree reports.
 fn consent_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let height = kit.height();
     let scrolled = kit.scroll_view([0.0, 62.0, kit.width(), height]).children([
@@ -1613,6 +1641,7 @@ fn consent_content(kit: Kit, forms: &Forms) -> Vec<El> {
             [33.0, 709.0, 90.33, 731.0],
         )
         .key("placeholder-heading-9"),
+        kit.label(None, "placeholder-text-7", [33.0, 737.0, 369.0, 749.0]),
         kit.label(None, "placeholder-text-6", [33.0, 755.0, 369.0, 771.0]),
         kit.label(None, "placeholder-text-8", [33.0, 819.0, 369.0, 831.0])
             .key("placeholder-text-8"),
@@ -1765,6 +1794,16 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
     screen
 }
 
+/// Where the footer's view lies on the creation tab in React Native's shape
+/// that `board` shows.
+fn creation_footer(board: Board) -> [f64; 4] {
+    if board == Board::CreationHeld {
+        CREATION_HELD_FOOTER
+    } else {
+        CREATION_FOOTER
+    }
+}
+
 /// The creation tab as React Native's accessibility lists it on the
 /// Simulator (task 5.1; task 4.7, N6; the mirror's `create-rn-ios`): a view
 /// that draws something is a node holding nothing, what it lays out listed
@@ -1774,8 +1813,9 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
 /// beside the paste control and the paste control, 38 of their 48 points
 /// under the primary button, and a last button that the list's end brings
 /// above the primary button; the primary button, disabled; the footer's
-/// view, from the button's bottom down, drawn over the list's lower part;
-/// and then the footer's tabs.
+/// view, from the button's bottom down, drawn over the list's lower part,
+/// or from its top down on the board of the fifth acceptance run; and then
+/// the footer's tabs.
 fn creation_rn_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let width = kit.width();
     let scrolled = |el: El| scrolled_by(el, forms.offset, kit.height());
@@ -1843,7 +1883,7 @@ fn creation_rn_content(kit: Kit, forms: &Forms) -> Vec<El> {
         ),
         kit.button(CREATION_DISABLED, "placeholder-button-21", CREATION_PRIMARY)
             .set(protocol::snapshot::NodeFlags::ENABLED, false),
-        kit.group(CREATION_FOOTER),
+        kit.group(creation_footer(forms.board)),
     ];
     screen.extend(
         [
@@ -1864,6 +1904,59 @@ fn creation_rn_content(kit: Kit, forms: &Forms) -> Vec<El> {
         }),
     );
     screen
+}
+
+/// The dialog board (task 5.6, N12): a heading, the name field and a
+/// button, the status line, and a dialog the app marks modal over the
+/// screen, listed after them, holding its question and two buttons, as
+/// React Native lays out a modal view.
+fn dialog_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let width = kit.width();
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        )
+        .key("placeholder-heading-1"),
+        kit.field(
+            NAME_FIELD,
+            "placeholder-textbox-1",
+            &forms.name,
+            false,
+            forms.focus == Some(FormField::Name),
+            [20.0, 300.0, 382.0, 348.0],
+        ),
+        kit.button(
+            "placeholder-id-1",
+            "placeholder-button-1",
+            [20.0, 364.0, 382.0, 412.0],
+        ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+        kit.group([0.0, 0.0, width, kit.height()])
+            .with(protocol::snapshot::NodeFlags::MODAL)
+            .child(kit.group([40.0, 330.0, width - 40.0, 520.0]).children([
+                kit.label(
+                    None,
+                    "placeholder-text-1",
+                    [56.0, 346.0, width - 56.0, 386.0],
+                ),
+                kit.button(
+                    "placeholder-id-2",
+                    "placeholder-button-2",
+                    [56.0, 410.0, width - 56.0, 454.0],
+                ),
+                kit.button(
+                    "placeholder-id-3",
+                    "placeholder-button-3",
+                    [56.0, 462.0, width - 56.0, 506.0],
+                ),
+            ])),
+    ]
 }
 
 /// The feed (section 2 of the masked listings): the header, listed before
