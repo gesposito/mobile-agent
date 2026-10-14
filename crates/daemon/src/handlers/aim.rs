@@ -142,7 +142,19 @@ pub(crate) fn check_seen(
 /// The first element on screen that `selector` matches, waiting up to
 /// `timeout`; a timeout becomes `element_not_found` with the screen seen.
 fn find(target: &mut Attached, selector: &Selector, timeout: Duration) -> Result<Element, Failure> {
-    match target.mirror.wait(selector, Condition::Appear, timeout) {
+    find_in(target, selector, Condition::Appear, timeout)
+}
+
+/// The first element that `selector` matches as `condition` looks for it,
+/// waiting up to `timeout`; a timeout becomes `element_not_found` with the
+/// screen seen.
+fn find_in(
+    target: &mut Attached,
+    selector: &Selector,
+    condition: Condition,
+    timeout: Duration,
+) -> Result<Element, Failure> {
+    match target.mirror.wait(selector, condition, timeout) {
         Ok(outcome) => outcome
             .element
             .ok_or_else(|| Failure::internal("a wait for an element returned none")),
@@ -157,6 +169,51 @@ fn find(target: &mut Attached, selector: &Selector, timeout: Duration) -> Result
         )),
         Err(error) => Err(error.into()),
     }
+}
+
+/// The element an argument names as the replica holds it, in view or not,
+/// as a query reads it (rn-app-fixes, design D51): a ref's element, or the
+/// first the replica holds that a selector matches, waiting up to `timeout`
+/// for one; a timeout becomes `element_not_found` with the screen seen. On
+/// the fourth acceptance run's feed scrolled to its end, `get box` on rows
+/// scrolled above, which the tree held, waited out its 10 s for a match on
+/// screen.
+pub(crate) fn held(
+    target: &mut Attached,
+    session: &str,
+    aim: &Aim,
+    timeout: Duration,
+) -> Result<Element, Failure> {
+    target.catch_up()?;
+    match aim {
+        Aim::Ref(reference) => {
+            check_seen(target, session, *reference)?;
+            Ok(target.mirror.resolve(*reference)?)
+        }
+        Aim::Select(selector) => find_in(target, selector, Condition::Attached, timeout),
+        Aim::Exact(text) => {
+            let selector = exact(text);
+            find_in(target, &selector, Condition::Attached, timeout)
+        }
+    }
+}
+
+/// A selector for an element whose whole name or value is `text`.
+pub(crate) fn exact(text: &str) -> Selector {
+    Selector {
+        text: Some(text.to_owned()),
+        exact: true,
+        ..Selector::default()
+    }
+}
+
+/// Whether `element` is in view: a tap reaches part of it, inside what its
+/// scroll containers show and from under what covers it.
+pub(crate) fn in_view(target: &Attached, element: &Element) -> bool {
+    target
+        .mirror
+        .visibility(element.id)
+        .is_some_and(|seen| seen.fraction > 0.0)
 }
 
 /// The element an argument names, as the replica shows it now.
@@ -327,8 +384,8 @@ pub(crate) fn wait_exact(
     loop {
         let found = exact_on_screen(target, text, condition == Condition::Enabled)?;
         let holds = match condition {
-            Condition::Disappear => found.is_none(),
-            Condition::Appear | Condition::Enabled => found.is_some(),
+            Condition::Disappear | Condition::Detached => found.is_none(),
+            Condition::Appear | Condition::Enabled | Condition::Attached => found.is_some(),
         };
         if holds {
             return Ok(WaitOutcome {

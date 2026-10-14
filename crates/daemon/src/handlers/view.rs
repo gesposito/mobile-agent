@@ -159,14 +159,20 @@ pub(super) fn get(target: &mut Attached, session: &str, request: &Request) -> Ou
     let aim = Aim::parse(given)?;
     let data = match what {
         "text" | "value" | "box" => {
-            let element = aim::element(target, session, &aim, timeout(request)?)?;
+            // Any element the replica holds, in view or not (design D51).
+            let element = aim::held(target, session, &aim, timeout(request)?)?;
+            let in_view = aim::in_view(target, &element);
             let b = element.bounds;
             match what {
                 "text" => json!({
                     "text": element.value.clone().filter(|v| !v.is_empty()).unwrap_or(element.name),
+                    "inView": in_view,
                 }),
-                "value" => json!({"value": element.value}),
-                _ => json!({"x": b.left, "y": b.top, "width": b.width(), "height": b.height()}),
+                "value" => json!({"value": element.value, "inView": in_view}),
+                _ => json!({
+                    "x": b.left, "y": b.top, "width": b.width(), "height": b.height(),
+                    "inView": in_view,
+                }),
             }
         }
         other => {
@@ -216,20 +222,29 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
             (aimed, "selector", given.to_owned())
         }
     };
+    // Attached and detached ask whether the replica holds the element, in
+    // view or not (design D51); visible, hidden and enabled whether it is on
+    // screen.
     let condition = match request.str("state") {
-        None | Some("visible" | "attached") => Condition::Appear,
-        Some("hidden" | "detached") => Condition::Disappear,
+        None | Some("visible") => Condition::Appear,
+        Some("attached") => Condition::Attached,
+        Some("hidden") => Condition::Disappear,
+        Some("detached") => Condition::Detached,
         Some("enabled") => Condition::Enabled,
         Some(other) => {
             return Err(Failure::new(
                 code::INVALID_ARGUMENT,
-                format!("--state takes visible, hidden, detached or enabled, not {other:?}"),
+                format!(
+                    "--state takes visible, attached, hidden, detached or enabled, not {other:?}"
+                ),
             ));
         }
     };
     let timeout = timeout(request)?;
     target.catch_up()?;
+    let held = matches!(condition, Condition::Attached | Condition::Detached);
     let outcome = match &aimed {
+        Aim::Exact(text) if held => target.mirror.wait(&aim::exact(text), condition, timeout)?,
         Aim::Exact(text) => aim::wait_exact(target, text, condition, timeout)?,
         Aim::Select(selector) => target.mirror.wait(selector, condition, timeout)?,
         Aim::Ref(reference) => {
@@ -246,6 +261,9 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
         "elapsedMs": millis(outcome.elapsed),
         "element": outcome.element.as_ref().map(element_json),
     });
+    if let Some(element) = &outcome.element {
+        data["inView"] = aim::in_view(target, element).into();
+    }
     data[kind] = given.into();
     Ok(Success::new(data))
 }

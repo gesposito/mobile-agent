@@ -13,8 +13,11 @@ use crate::verdict::Verdict;
 /// The elements a wait looks for: every field present must match.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Selector {
-    /// Text the element's name or value contains.
+    /// Text the element's name or value contains, or is when `exact`.
     pub text: Option<String>,
+    /// Whether `text` is the element's whole name or value, as the CLI's
+    /// `text==` asks.
+    pub exact: bool,
     /// The element's exact test identifier.
     pub identifier: Option<String>,
     pub role: Option<Role>,
@@ -61,7 +64,8 @@ impl fmt::Display for Selector {
             parts.push(format!("id {identifier}"));
         }
         if let Some(text) = &self.text {
-            parts.push(format!("text {text:?}"));
+            let kind = if self.exact { "exact text" } else { "text" };
+            parts.push(format!("{kind} {text:?}"));
         }
         if let Some(reference) = self.reference {
             parts.push(format!("@{reference}"));
@@ -86,13 +90,16 @@ impl Selector {
         role: Role,
         element_ref: Option<Ref>,
     ) -> bool {
-        self.text
+        self.text.as_deref().is_none_or(|text| {
+            if self.exact {
+                name == text || value == Some(text)
+            } else {
+                name.contains(text) || value.is_some_and(|v| v.contains(text))
+            }
+        }) && self
+            .identifier
             .as_deref()
-            .is_none_or(|text| name.contains(text) || value.is_some_and(|v| v.contains(text)))
-            && self
-                .identifier
-                .as_deref()
-                .is_none_or(|id| identifier == Some(id))
+            .is_none_or(|id| identifier == Some(id))
             && self.role.is_none_or(|r| r == role)
             && self.reference.is_none_or(|r| element_ref == Some(r))
     }
@@ -107,6 +114,11 @@ pub enum Condition {
     Disappear,
     /// A matching element is on screen and enabled.
     Enabled,
+    /// The replica holds a matching element, on screen or not, covered or
+    /// not (rn-app-fixes, design D51).
+    Attached,
+    /// The replica holds no matching element.
+    Detached,
 }
 
 impl Condition {
@@ -115,6 +127,8 @@ impl Condition {
             Condition::Appear => "appear",
             Condition::Disappear => "disappear",
             Condition::Enabled => "become enabled",
+            Condition::Attached => "be held in the tree",
+            Condition::Detached => "leave the tree",
         }
     }
 }
@@ -124,7 +138,7 @@ impl Condition {
 pub struct WaitOutcome {
     /// From the start of the wait until the condition held.
     pub elapsed: Duration,
-    /// The element that matched, for `Appear` and `Enabled`.
+    /// The element that matched, for `Appear`, `Enabled` and `Attached`.
     pub element: Option<Element>,
 }
 

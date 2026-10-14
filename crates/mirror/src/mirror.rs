@@ -1208,7 +1208,9 @@ impl Mirror {
     /// Waits until an element matching `selector` meets `condition`,
     /// re-evaluating whenever the target reports something or a re-read
     /// falls due, and fails at `timeout` with a summary of the screen.
-    /// Only elements on screen and not covered match. A condition that
+    /// Only elements on screen and not covered match, but for `Attached`
+    /// and `Detached`, which ask whether the replica holds a match, in view
+    /// or not (rn-app-fixes, design D51), as a query does. A condition that
     /// holds in the replica answers at once, without a read that is due,
     /// while the replica is current by the mirror's own rules: read since
     /// the last window change, event naming a window and injected input.
@@ -1237,10 +1239,10 @@ impl Mirror {
                 self.pump()?;
             }
             let now = self.now();
-            let found = self.first_match(selector, condition == Condition::Enabled);
+            let found = self.first_match(selector, condition);
             let holds = match condition {
-                Condition::Disappear => found.is_none(),
-                Condition::Appear | Condition::Enabled => found.is_some(),
+                Condition::Disappear | Condition::Detached => found.is_none(),
+                Condition::Appear | Condition::Enabled | Condition::Attached => found.is_some(),
             };
             if holds {
                 return Ok(WaitOutcome {
@@ -1272,17 +1274,25 @@ impl Mirror {
         }
     }
 
-    /// The first element on screen, not covered, that matches `selector`,
-    /// and is enabled when `enabled` says so.
-    fn first_match(&self, selector: &Selector, enabled: bool) -> Option<Element> {
+    /// The first element that matches `selector` as `condition` looks for
+    /// it: on screen, not covered, and enabled for `Enabled`; any element
+    /// the replica holds for `Attached` and `Detached`, a keyboard's keys
+    /// aside.
+    fn first_match(&self, selector: &Selector, condition: Condition) -> Option<Element> {
         let view = View::build(&self.replica);
+        let held = matches!(condition, Condition::Attached | Condition::Detached);
         for (w, window) in self.replica.windows.iter().enumerate() {
             for (i, node) in window.nodes.iter().enumerate() {
                 let facts = &view.windows[w][i];
-                if !facts.visible || facts.hidden != Hidden::No {
+                let listed = if held {
+                    facts.hidden != Hidden::Keyboard
+                } else {
+                    facts.visible && facts.hidden == Hidden::No
+                };
+                if !listed {
                     continue;
                 }
-                if enabled && !node.flags.contains(NodeFlags::ENABLED) {
+                if condition == Condition::Enabled && !node.flags.contains(NodeFlags::ENABLED) {
                     continue;
                 }
                 let reference = self.refs.of(
