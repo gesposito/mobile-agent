@@ -1,9 +1,8 @@
 mobile-agent: a guide for agents
 
 mobile-agent drives Android devices and emulators, iOS Simulators and iPhones.
-A daemon keeps a live mirror of each screen, so snapshots answer from memory
-and refs stay stable while their elements stay on screen. The grammar, refs
-and JSON output follow agent-browser.
+A daemon keeps a live mirror of each screen, so snapshots answer from memory.
+The grammar, refs and JSON output follow agent-browser.
 
 The loop
   1. mobile-agent snapshot -i       list actionable elements with their refs
@@ -17,7 +16,8 @@ Snapshots
   One element per line: role, name in quotes, attributes, the ref last.
   A field's value follows ": ". A line in parentheses, as "(8 more actionable
   items above, 2 of them behind the header, scroll up to reveal)", counts what
-  is scrolled away, covered or under the keyboard. -i leaves out what a tap
+  is scrolled away, covered or under the keyboard; a keyboard covers nothing
+  when a hardware keyboard shows no keys. -i leaves out what a tap
   reaches none of, as under a dialog, a header or a footer; snapshot lists it
   at visible=0% unless one view covers it whole. Both say visible=35% of what
   a tap reaches part of. Every tab has a ref.
@@ -34,12 +34,12 @@ Refs
 Selectors
   Where a ref goes, a selector works too: #login-submit (test id),
   text=Sign in (name or value contains it), text==Row 1 (the whole name
-  or value), role=switch, or bare text.
-  Selectors wait up to the timeout for a match; refs never wait.
+  or value), role=switch, or bare text. A selector waits up to the timeout
+  for a match, in view or not; a match that is covered or out of view is
+  refused at once, as its ref would be. Refs never wait.
 
 Acting
-  click @e4 | click 200 480   tap a ref, a selector, or a point in points
-  tap @e4                     the same as click
+  click @e4 | tap 200 480     tap a ref, a selector, or a point in points
   click @e4 --hold 800        long press
   fill @e2 agent              replace a field's text, then read it back; keys
                               the field took wrong are pasted over (set
