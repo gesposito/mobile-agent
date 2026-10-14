@@ -296,7 +296,10 @@ also counts).
   under a header, and listed a card scrolled above the list's top and rows
   behind a header. Most elements lie within what their containers show,
   with no view over part of them, and only the rest are measured. The full
-  listing keeps the keyboard's marks alone. The top-most modal, a modal window or an alert or
+  listing marks what a tap reaches part of likewise and keeps what it
+  reaches none of, at `visible=0%` (design D50): the fourth acceptance
+  run's full listings marked the keyboard's share alone. The top-most
+  modal, a modal window or an alert or
   dialog node, cuts everything it covers. A view marked modal (the `modal` node
   flag) cuts what its siblings hold within its bounds (task 10.22):
   assistive technology, and XCTest's tree, leave out every sibling, but a
@@ -349,7 +352,18 @@ also counts).
   the list it is drawn over, and the rows the list scrolled up past its top
   lie in the header's frame, where the acceptance run found a 44-point row
   at 2 points still listed. A tab bar listed after a list covers the rows
-  wholly under it, as on Android. An alert's static text is spared too
+  wholly under it, as on Android. React Native's accessibility lists a view
+  that draws something, as a footer's background, as a node that holds
+  nothing, what the view lays out listed after it as its siblings, top to
+  bottom, and lists no node for a view that draws nothing (rn-app-fixes,
+  design D48): a node that holds nothing and names nothing, without a ref
+  or an identifier, listed after a sibling that holds or is a scroll
+  container it lies over part of, covers what it lies over, as a later
+  sibling that shows something does, and one that holds all of the
+  container, as a background listed after a list would, covers none of it.
+  On the fourth acceptance run's creation tab the scroll view runs on to
+  the bottom of the screen under the footer, whose view held nothing, and
+  a tap on a control's strip under it opened nothing (`create-rn-ios`). An alert's static text is spared too
   (design D26 of physical-ios): UIKit's alert controller
   draws nothing over its title and message, while XCTest lists the scroll
   indicators of the scroll view that holds them after them, their
@@ -386,7 +400,17 @@ also counts).
   container's children, below or right after them. An interactive listing
   also counts there an element inside the container's bounds that a tap
   reaches none of, on the side of the container's middle it lies on along
-  the axis the container scrolls (rn-app-fixes, design D45).
+  the axis the container scrolls (rn-app-fixes, design D45), and one a view
+  drawn over it covers whole, which both listings leave out, and names
+  beside what is scrolled away the view over each that a tap reaches none
+  of: `behind the header` for a plain view across the container's top,
+  `under the footer` for one across its bottom, `under the keyboard`, else
+  the view as a refusal names it, as in `(6 more actionable items above, 3
+  of them behind the header, scroll up to reveal)` (design D50); such an
+  element outside any scroll container is counted on a line after the view
+  over it, `(2 more actionable items behind the header)`. A modal or a view
+  marked modal cuts what it covers with no count, no scroll bringing it
+  out, and the keyboard keeps its own line.
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
 - Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow. A
   ref names one control: its element, and for an element without an
@@ -571,8 +595,11 @@ the reasons in this order, each with advice:
   the daemon strokes a scroll through what `uncovered` leaves.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
-  or value, the identifier, the role and a ref, among elements on screen and
-  not covered. A timeout fails with `wait_timeout` and a summary of an
+  or value, or the whole name or value when `exact`, the identifier, the
+  role and a ref, among elements on screen and not covered, or, for
+  `Attached` and `Detached`, among every element the replica holds, in view
+  or not, a keyboard's keys aside, as a query looks for one (rn-app-fixes,
+  design D51). A timeout fails with `wait_timeout` and a summary of an
   interactive snapshot. Its first look takes in what arrived and leaves a
   read that is due for later while the replica is current by the mirror's
   own rules: no read of every window due (before the first read, after a
@@ -647,6 +674,7 @@ apps, in device points with the scale beside them:
 | `members-ios` | a React Native members screen on iOS: checkboxes React Native announces only in their value (`checkbox, checked`), a heading and a text each repeated by their only child, and the list's two scroll bars likewise (placeholder names) |
 | `consent-footer-ios` | a React Native consent screen on iOS in the structure of the acceptance run of 2026-10-12 (rn-app-fixes, design D37): two footer buttons listed after the scroll view, a 22-point heading with its lower half under the secondary one, a 12-point text with its upper 9 points under the primary one (placeholder names) |
 | `create-disabled-ios` | a React Native creation tab on iOS (D37, D38, D45, D46): its disabled 56-point primary button listed after the scroll view, over 38 of the 48 points of the paste control and the button beside it, and a footer listed after it, from the button's bottom down, over the list's lower part, holding a tab bar whose first tab holds its icon's glyph; the two controls sit in a row whose frame ends at the footer's top, their lower 10 points under the footer (placeholder names) |
+| `create-rn-ios` | a React Native creation tab on iOS (D48, D50), the raw read of a throwaway screen built to the fourth acceptance run's boxes of the tab, which it gives to the point: a scroll view, an `XCUIElementTypeScrollView` inside `RCTScrollViewComponentView`, running on under the footer to the bottom of the screen, a disabled primary button over 38 of the 48 points of the paste control and the button beside it, and the footer's view, which holds nothing, its tabs listed after it, over their lower 10 points (placeholder names) |
 | `feed-sticky-ios` | a React Native feed on iOS (D37, D45): the sticky header listed before the list, a card 70% above the list's top in the header's frame, a card above it whose lower 27.67 points lie on screen above the header, twelve cards above the screen (placeholder names) |
 | `header-top-ios` | a React Native list on iOS with the keyboard up (D38, D41): a plain header listed before the list, its frame down to the list's top, a 44-point row at 2 points in it, a field with the focus and a button partly under the keyboard (placeholder names) |
 | `form-keyboard-ios` | a React Native sign-in form on iOS with the keyboard up (D37, D38): the submit button 3.67 of its 48 points above the keyboard's top, two links under the keyboard (placeholder names) |
@@ -800,6 +828,8 @@ cargo test -p mirror
 | Wait predicates from the event stream | Element appears | `waits::a_wait_for_text_resolves_within_one_processing_cycle_of_its_appearance`, `waits::a_disappear_wait_resolves_when_the_element_leaves`, `waits::an_enabled_wait_resolves_when_the_element_becomes_enabled`, `waits::a_wait_on_a_window_without_change_events_resolves_from_its_re_reads`, `waits::a_wait_that_already_holds_returns_at_once`, `waits::selectors_match_text_identifier_role_and_ref_on_screen_only` |
 | | Wait times out | `waits::a_wait_that_never_matches_fails_at_the_timeout_with_the_last_snapshot_summary` |
 | | Condition already holds | `waits::a_wait_that_holds_in_the_replica_answers_before_a_poll_that_is_due`, `waits::a_wait_does_not_answer_from_a_replica_behind_a_tap_or_an_event` |
+| | React Native scroll view | `interactive::a_react_native_scroll_view_is_told_by_its_element_type`, `interactive::a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refused`, `visibility::a_footer_react_native_lists_holding_nothing_cuts_what_its_scroll_view_shows`, `visibility::a_view_react_native_lists_holding_nothing_covers_only_part_of_a_scroll_view` (rn-app-fixes 5.1, design D48); in the daemon, `handlers::act::tests::a_click_on_a_control_whose_strip_lies_under_a_footer_react_native_lists_empty_is_refused` and `handlers::act::tests::scroll_until_strokes_inside_what_a_scroll_view_shows_above_a_footer` |
+| | Hints agree with the listing | `interactive::the_hints_count_what_a_cover_leaves_nothing_of_and_name_the_cover`, `interactive::the_full_listing_marks_what_a_tap_reaches_part_or_none_of_and_keeps_it` (rn-app-fixes 5.3, design D50) |
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
