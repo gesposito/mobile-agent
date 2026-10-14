@@ -907,6 +907,15 @@ fn drawn_in_order(replica: &Replica) -> bool {
 /// button its frame left a tap 61% of it, which the interactive listing
 /// marks (rn-app-fixes, design D45).
 ///
+/// A view that holds nothing and names nothing covers what it lies over of
+/// a scroll container its earlier sibling holds or is, when it lies over
+/// part of it ([`over_part_of_a_list`]): React Native's accessibility lists
+/// a view that draws something, such as a footer's background, as a node
+/// holding nothing, the content it lays out listed after it as its
+/// siblings, and leaves out a view that draws nothing, so the footer over a
+/// list's lower part shows nothing in the tree while a tap on it lands on it
+/// (rn-app-fixes, design D48).
+///
 /// The covers are taken top-most first, parents before their children and
 /// later siblings before earlier ones, so a node two views cover is
 /// recorded under the one drawn last. Overlapping siblings are found by
@@ -925,6 +934,7 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
         sweep.active.reserve(widest.unwrap_or(0));
         let mut shows: Option<Vec<bool>> = None;
         let mut alerted: Option<Vec<bool>> = None;
+        let mut lists: Option<Vec<usize>> = None;
         for parent in 0..window.nodes.len() {
             let children = &window.nodes[parent].children;
             if children.len() < 2 {
@@ -939,8 +949,12 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
             let alerted = alerted.get_or_insert_with(|| in_alerts(window, &facts[w]));
             for &(earlier, later) in pairs.iter() {
                 let (e, s) = (children[earlier], children[later]);
+                let draws = shows[s] || {
+                    let lists = lists.get_or_insert_with(|| scrolling_nodes(window, &facts[w]));
+                    over_part_of_a_list(window, &facts[w], lists, (e, s), slack)
+                };
                 let f = &facts[w][s];
-                if !shows[s]
+                if !draws
                     || !f.visible
                     || f.hidden != Hidden::No
                     || pinned_over(window, &facts[w], e, s, slack)
@@ -969,6 +983,45 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
             }
         }
     }
+}
+
+/// The nodes of `window` that scroll ([`scrolls`]), in pre-order.
+fn scrolling_nodes(window: &Win, facts: &[Facts]) -> Vec<usize> {
+    (0..window.nodes.len())
+        .filter(|&c| scrolls(&window.nodes[c], &facts[c]))
+        .collect()
+}
+
+/// Whether node `s` of `window`, listed after its sibling `e`, is a view
+/// that holds nothing and names nothing, without a ref or an identifier,
+/// lying over part of a scroll container among `lists` that `e` holds or
+/// is: over it, without holding all of it, as a background listed after a
+/// list would (rn-app-fixes, design D48). On the creation tab of the fourth
+/// acceptance run the footer's view, which React Native's accessibility
+/// lists holding nothing, its tabs after it, lies over the lower part of a
+/// scroll view that runs on to the bottom of the screen.
+fn over_part_of_a_list(
+    window: &Win,
+    facts: &[Facts],
+    lists: &[usize],
+    (e, s): (usize, usize),
+    slack: f64,
+) -> bool {
+    let (node, f) = (&window.nodes[s], &facts[s]);
+    if !node.children.is_empty()
+        || !f.name.is_empty()
+        || f.bears_ref
+        || node.identifier.is_some()
+        || f.rect.is_empty()
+    {
+        return false;
+    }
+    lists.iter().any(|&c| {
+        let list = &facts[c].rect;
+        list.overlaps(&f.rect)
+            && !within(list, &f.rect, slack)
+            && std::iter::successors(Some(c), |&a| window.nodes[a].parent).any(|a| a == e)
+    })
 }
 
 /// The class of a scroll view's indicator in XCTest's tree, its frame a
