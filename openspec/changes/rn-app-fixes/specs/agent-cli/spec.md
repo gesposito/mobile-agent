@@ -38,7 +38,7 @@
 - **THEN** the field is emptied first, the reply reports the entry verified through the name, never `no_value_to_read`
 
 ### Requirement: Queries reach elements out of view
-`get`, `is` and a `wait` for an element's presence SHALL resolve any element the replica holds, in view or not, within one read, and SHALL say in the reply whether the element is in view; only an element the tree does not hold SHALL fail with `element_not_found`, naming what is listed.
+`get` and a `wait` for an element's presence or absence in the tree (`--state attached` and `detached`) SHALL resolve any element the replica holds, in view or not, within one read, and SHALL say in the reply whether the element is in view; only an element the tree does not hold SHALL fail with `element_not_found`, naming what is listed.
 
 #### Scenario: Box of a row scrolled above
 - **WHEN** `get box` names a row the list has scrolled above the screen and the tree still holds
