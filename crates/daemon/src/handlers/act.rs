@@ -947,7 +947,83 @@ fn read_back(
     }
 }
 
+/// Whether `fill` types `text` as keys on a target of `class`: a Simulator
+/// types a text of at most 32 characters that a US keyboard types and
+/// pastes any other (`simulator::TextMethod::resolve`); a physical iPhone's
+/// runner sets the text of a field that holds some, and Android sets it.
+fn typed_as_keys(class: TargetClass, text: &str) -> bool {
+    class == TargetClass::Simulator
+        && !text.is_empty()
+        && simulator::TextMethod::Auto.resolve(text) == simulator::TextMethod::Keyboard
+}
+
+/// Where `field` holds text that keys `fill` types replace, when it holds
+/// any and the text goes in as keys ([`typed_as_keys`]), so that `fill`
+/// empties it first (design D49): its own value, what lies below it, or,
+/// for a field known only by its name, a name that spells the text
+/// already, where keys over the field would leave the name as it was and
+/// nothing to read back. `None` for a field that holds nothing, for a
+/// paste, and for a field gone.
+fn held_text(target: &mut Attached, field: &Field, text: &str) -> Result<Option<Source>, Failure> {
+    if !typed_as_keys(target.info.class, text) {
+        return Ok(None);
+    }
+    let Some(element) = field.element(target)? else {
+        return Ok(None);
+    };
+    Ok(match reading(target, &element, &element.name)? {
+        Reading::Own(value) => value
+            .is_some_and(|value| !value.is_empty())
+            .then_some(Source::Value),
+        Reading::Below(_) => Some(Source::Descendants),
+        Reading::Name(_) | Reading::Nothing => {
+            let want = spelled(text);
+            (!want.is_empty() && spelled(&element.name).contains(&want)).then_some(Source::Name)
+        }
+    })
+}
+
+/// How long `fill` waits, once it has emptied a field, for the replica to
+/// show it empty before its keys go out (design D49), as long as the
+/// Simulator's own wait for an empty read (task 4.5): a field that never
+/// reads empty, as one that formats what it holds, gets the keys at the
+/// bound.
+const EMPTY_WAIT: Duration = Duration::from_secs(1);
+
+/// Waits until the replica shows `field`, emptied at `at`, empty where it
+/// held its text, as `source` says: its value empty, nothing below it, or
+/// its name no longer `before`; at most [`EMPTY_WAIT`]. Returns the field's
+/// name then, the one the read-back compares a changed name with (design
+/// D49).
+fn emptied(
+    target: &mut Attached,
+    field: &Field,
+    (at, source): (Instant, Source),
+    before: &str,
+) -> Result<String, Failure> {
+    let deadline = at + EMPTY_WAIT;
+    loop {
+        let Some(element) = field.element(target)? else {
+            return Ok(before.to_owned());
+        };
+        let empty = match reading(target, &element, before)? {
+            Reading::Own(value) => value.is_none_or(|value| value.is_empty()),
+            Reading::Below(_) => false,
+            Reading::Name(_) => true,
+            Reading::Nothing => source != Source::Name,
+        };
+        let now = Instant::now();
+        if empty || now >= deadline {
+            return Ok(element.name);
+        }
+        target
+            .mirror
+            .run_until((now + READ_BACK_SLICE).min(deadline))?;
+    }
+}
+
 /// How long `fill` waits on iOS, from the tap that focused a field, for the
+/// keyboard's window to show in the replica before it enters the text all/// How long `fill` waits on iOS, from the tap that focused a field, for the
 /// keyboard's window to show in the replica before it enters the text all
 /// the same: a field with an input view of its own, or a Simulator with a
 /// hardware keyboard connected, shows no keyboard (design D34).
@@ -1329,7 +1405,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     };
     let reference = field.reference();
     // What a read-back takes a changed name as (design D39).
-    let before = field
+    let mut before = field
         .element(target)?
         .map(|element| element.name)
         .unwrap_or_default();
@@ -1337,7 +1413,16 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
         (Some(held), Some(warning)) => Some(format!("{held}; {warning}")),
         (held, warning) => held.or(warning),
     };
-    let first = enter(target, into, &text, TextMethod::AUTO)?;
+    // Keys go into an emptied field, the one the emptying gave the focus,
+    // and the read-back compares with the field as the emptying left it
+    // (design D49).
+    let mut keys_into = into;
+    if let Some(source) = held_text(target, &field, &text)? {
+        enter(target, into, "", TextMethod::AUTO)?;
+        before = emptied(target, &field, (Instant::now(), source), &before)?;
+        keys_into = None;
+    }
+    let first = enter(target, keys_into, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
         return Ok(filled(given, reference, first, Check::Skipped, false).warn(note(None)));

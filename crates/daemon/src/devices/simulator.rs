@@ -549,15 +549,18 @@ enum Readying {
     WaitEmpty,
 }
 
-/// The steps that ready a field for `text`, entered as `method`, when the
-/// input names the field (`targeted`): the tap that gives it the focus,
-/// the keys that ready it ([`readying_keys`]) and the wait for an empty
-/// read when the text calls for one ([`empties_first`]).
+/// The steps that ready a field for `text`, entered as `method`: the tap
+/// that gives the field the focus when the input names it (`targeted`), the
+/// keys that ready it ([`readying_keys`]) and the wait for an empty read
+/// when the text calls for one ([`empties_first`]). Text into the field in
+/// focus is readied as text into a field the input names, but for the tap:
+/// `fill` enters its text so once it has emptied a field, and for an
+/// identifier on a node that holds no field (rn-app-fixes, design D49).
 fn readying(targeted: bool, text: &str, method: WireMethod) -> Vec<Readying> {
-    if !targeted {
-        return Vec::new();
+    let mut steps = Vec::new();
+    if targeted {
+        steps.push(Readying::Focus);
     }
-    let mut steps = vec![Readying::Focus];
     steps.extend(readying_keys(text, method).into_iter().map(Readying::Key));
     if empties_first(text, method) {
         steps.push(Readying::WaitEmpty);
