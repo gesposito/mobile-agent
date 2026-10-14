@@ -769,7 +769,7 @@ impl Mirror {
     /// (rn-app-fixes, design D52). Such a window covers nothing and is no
     /// keyboard to wait for: the input in focus takes keys at once.
     pub fn keys_hidden(&self) -> bool {
-        false
+        visibility::keys_hidden(&self.replica)
     }
 
     /// Where the element `reference` names is in the replica. The element

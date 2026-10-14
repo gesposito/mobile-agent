@@ -115,6 +115,14 @@ pub(crate) fn uncovered(replica: &Replica, w: Option<usize>, area: Rect) -> Unco
     )
 }
 
+/// Whether a keyboard window above the window in front draws nothing on the
+/// screen, its bounds being what the drivers say it draws (rn-app-fixes,
+/// design D52).
+pub(crate) fn keys_hidden(replica: &Replica) -> bool {
+    windows_above(replica, in_front(replica))
+        .any(|(kind, bounds)| kind == WindowType::INPUT_METHOD && bounds.is_empty())
+}
+
 /// The window in front: the active window, unless it is a keyboard's,
 /// which Android flags active while a finger touches it; else the top-most
 /// application window; else the bottom-most window.

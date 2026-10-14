@@ -3,17 +3,19 @@
 //!
 //! Application windows come first, then system bars, then the keyboard,
 //! which is one `- keyboard` line, or in an interactive listing a line that
-//! counts what lies wholly under it. Within a window, a node is listed when
-//! it is visible and not absorbed or covered, and, in an interactive
-//! listing, when it has a ref, as agent-browser's `-i`, does not lie wholly
-//! under the keyboard (rn-app-fixes, design D38) and has a part a tap
-//! reaches (design D45), the full listing keeping one a tap reaches none of
-//! and both marking the share a tap reaches (design D50); in a full
-//! listing, unnamed generic containers,
-//! containers whose label names the field inside them, unnamed text and
-//! images and window roots are skipped and their children listed in their
-//! place. Scroll hints sit next to their container's children: content
-//! above or to the left before them, below or to the right after them.
+//! counts what lies wholly under it; a keyboard window that draws nothing,
+//! as while a hardware keyboard serves the field in focus, is no keyboard
+//! and gets no line (rn-app-fixes, design D52). Within a window, a node is
+//! listed when it is visible and not absorbed or covered, and, in an
+//! interactive listing, when it has a ref, as agent-browser's `-i`, does not
+//! lie wholly under the keyboard (rn-app-fixes, design D38) and has a part a
+//! tap reaches (design D45), the full listing keeping one a tap reaches
+//! none of and both marking the share a tap reaches (design D50); in a full
+//! listing, unnamed generic containers, containers whose label names the
+//! field inside them, unnamed text and images and window roots are skipped
+//! and their children listed in their place. Scroll hints sit next to their
+//! container's children: content above or to the left before them, below
+//! or to the right after them.
 
 use protocol::snapshot::{WindowFlags, WindowType};
 
@@ -105,7 +107,8 @@ pub(crate) fn listing(
     for w in window_order(replica) {
         let window = &replica.windows[w];
         if window.kind == WindowType::INPUT_METHOD {
-            if !options.interactive && !window.nodes.is_empty() {
+            let draws = !Rect::from_pixels(window.bounds, replica.scale).is_empty();
+            if !options.interactive && draws && !window.nodes.is_empty() {
                 walker.lines.push(Line::Keyboard { w });
             }
             if options.interactive && walker.under_keyboard > 0 {
