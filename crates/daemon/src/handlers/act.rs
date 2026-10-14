@@ -1023,10 +1023,9 @@ fn emptied(
 }
 
 /// How long `fill` waits on iOS, from the tap that focused a field, for the
-/// keyboard's window to show in the replica before it enters the text all/// How long `fill` waits on iOS, from the tap that focused a field, for the
 /// keyboard's window to show in the replica before it enters the text all
-/// the same: a field with an input view of its own, or a Simulator with a
-/// hardware keyboard connected, shows no keyboard (design D34).
+/// the same: a field with an input view of its own shows no keyboard
+/// (design D34).
 const KEYBOARD_WAIT: Duration = Duration::from_secs(1);
 
 /// How often that wait looks at the replica; the mirror applies what the
@@ -1041,13 +1040,35 @@ fn keyboard_up(target: &mut Attached) -> Result<bool, Failure> {
     Ok(target.mirror.uncovered(screen, None).keyboard)
 }
 
+/// Whether a hardware keyboard serves the input a tap gave the focus, so
+/// that it takes keys at once and no keyboard will show (design D52): the
+/// replica shows a keyboard window that draws nothing
+/// (`Mirror::keys_hidden`), as iOS keeps the keyboard's window, its keys
+/// below the screen, while one serves the input in focus, and `field`, the
+/// field the tap was for, shows the focus; for an input the tree does not
+/// show, `field` being `None`, the window alone tells. On the fifth
+/// acceptance run, with the Simulator's hardware keyboard connected, `fill`
+/// waited out its second for keys that never showed, and the node of the
+/// code step that holds no field was refused for want of a keyboard.
+fn served_without_keys(target: &mut Attached, field: Option<Ref>) -> bool {
+    target.mirror.keys_hidden()
+        && field.is_none_or(|field| {
+            target
+                .mirror
+                .resolve(field)
+                .is_ok_and(|element| element.focused)
+        })
+}
+
 /// Gets the field `reference` names, which `given` names, ready for text on
 /// iOS (design D34): a field without the focus, while no keyboard is up, is
 /// tapped, and the text waits until the replica shows the keyboard's window,
-/// at most [`KEYBOARD_WAIT`] from the tap. In the React Native smoke test the
-/// first keys typed into a just-focused field were lost in 3 of 8 runs while
-/// the Simulator's keyboard slid in; a paste is Command-V, a key too, so text
-/// waits whichever way it goes in. A field with the focus, or a keyboard up
+/// or a keyboard window that draws nothing while the field has the focus, a
+/// hardware keyboard serving it (design D52), at most [`KEYBOARD_WAIT`] from
+/// the tap. In the React Native smoke test the first keys typed into a
+/// just-focused field were lost in 3 of 8 runs while the Simulator's
+/// keyboard slid in; a paste is Command-V, a key too, so text waits
+/// whichever way it goes in. A field with the focus, or a keyboard up
 /// already, pays nothing. The tap goes where the field is in view, as a
 /// click's does ([`sight`]).
 fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<(), Failure> {
@@ -1056,24 +1077,25 @@ fn ready_keyboard(target: &mut Attached, reference: Ref, given: &str) -> Result<
         return Ok(());
     }
     let aimed = Target::Ref(reference);
-    tap_to_focus(target, &element, given, aimed, "fill")?;
+    tap_to_focus(target, (&element, Some(reference)), given, aimed, "fill")?;
     Ok(())
 }
 
-/// Taps `element`, which `given` names, as `aimed`, to give the focus to the
-/// field it is or holds, as `action`, the command, does; on iOS waits, as
-/// [`ready_keyboard`] does, until the replica shows the keyboard's window, at
-/// most [`KEYBOARD_WAIT`] from the tap.
+/// Taps `element`, which `given` names, as `aimed`, to give the focus to
+/// `field`, the field it is or holds, as `action`, the command, does; on iOS
+/// waits, as [`ready_keyboard`] does, until the replica shows the keyboard's
+/// window, or one that draws nothing while the field has the focus, at most
+/// [`KEYBOARD_WAIT`] from the tap.
 fn tap_to_focus(
     target: &mut Attached,
-    element: &Element,
+    (element, field): (&Element, Option<Ref>),
     given: &str,
     aimed: Target,
     action: &str,
 ) -> Result<(), Failure> {
     let tapped = tap_for_text(target, element, given, aimed, action)?;
     if target.info.platform == Platform::Ios {
-        keyboard_within(target, tapped)?;
+        keyboard_within(target, tapped, field)?;
     }
     Ok(())
 }
@@ -1101,12 +1123,19 @@ fn tap_for_text(
 }
 
 /// Waits until the replica shows the keyboard's window, at most
-/// [`KEYBOARD_WAIT`] from `tapped`; whether it came.
-fn keyboard_within(target: &mut Attached, tapped: Instant) -> Result<bool, Failure> {
+/// [`KEYBOARD_WAIT`] from `tapped`, or a keyboard window that draws nothing
+/// while `field`, the field the tap gave the focus, shows it, or, for an
+/// input the tree does not show, at once ([`served_without_keys`]); whether
+/// one came.
+fn keyboard_within(
+    target: &mut Attached,
+    tapped: Instant,
+    field: Option<Ref>,
+) -> Result<bool, Failure> {
     let deadline = tapped + KEYBOARD_WAIT;
     loop {
         target.mirror.pump()?;
-        if keyboard_up(target)? {
+        if keyboard_up(target)? || served_without_keys(target, field) {
             return Ok(true);
         }
         let now = Instant::now();
@@ -1122,13 +1151,14 @@ fn keyboard_within(target: &mut Attached, tapped: Instant) -> Result<bool, Failu
 /// Taps `node`, which `given` names and `selector` found, a node that takes
 /// no text, holds no field and has no ref, for text that `action`, the
 /// command, enters, and waits until the keyboard is up, at most
-/// [`KEYBOARD_WAIT`] from the tap (design D44): on the third acceptance
-/// run's second visit to the code step, the code input's view held nothing,
-/// the app's input not in the tree, and a tap on the view gave that input
-/// the focus. Fails with `invalid_argument`, as an entry into a node that
-/// takes no text does, when no keyboard comes up, and when a field the tree
-/// shows has the focus after the tap, as the keyboard then serves that
-/// field.
+/// [`KEYBOARD_WAIT`] from the tap (design D44), or a keyboard window that
+/// draws nothing comes up, a hardware keyboard serving the input the tap
+/// focused (design D52): on the third acceptance run's second visit to the
+/// code step, the code input's view held nothing, the app's input not in
+/// the tree, and a tap on the view gave that input the focus. Fails with
+/// `invalid_argument`, as an entry into a node that takes no text does,
+/// when no keyboard comes up, and when a field the tree shows has the focus
+/// after the tap, as the keyboard then serves that field.
 fn raise_keyboard(
     target: &mut Attached,
     (node, selector): (&Element, &Selector),
@@ -1146,7 +1176,7 @@ fn raise_keyboard(
             ),
         )
     };
-    if !keyboard_within(target, tapped)? {
+    if !keyboard_within(target, tapped, None)? {
         return Err(refused(format!(
             "and no keyboard came up within {} ms of a tap on it",
             KEYBOARD_WAIT.as_millis()
@@ -1307,7 +1337,7 @@ fn ready_held(
     }
     if !field.focused {
         let aimed = Target::Point(holder.bounds.center());
-        tap_to_focus(target, holder, given, aimed, action)?;
+        tap_to_focus(target, (holder, field.reference), given, aimed, action)?;
     }
     Ok(None)
 }
