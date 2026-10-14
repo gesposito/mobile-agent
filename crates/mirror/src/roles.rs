@@ -18,6 +18,10 @@ pub(crate) const XCUI_PREFIX: &str = "XCUIElementType";
 /// XCTest's class of a static text, such as an alert's title and message.
 pub(crate) const XCUI_STATIC_TEXT: &str = "XCUIElementTypeStaticText";
 
+/// XCTest's class of a window, as the Simulator's reader names each window
+/// of an application inside the application's tree.
+pub(crate) const XCUI_WINDOW: &str = "XCUIElementTypeWindow";
+
 /// The role a class names on its own, if any.
 pub(crate) fn class_role(class: &str) -> Option<Role> {
     if let Some(short) = class.strip_prefix(XCUI_PREFIX) {

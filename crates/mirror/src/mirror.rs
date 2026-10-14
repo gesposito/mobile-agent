@@ -28,6 +28,10 @@ use crate::view::{self, Facts, Hidden, View};
 use crate::visibility::{self, Uncovered, Visibility};
 use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
+/// The UIKit class of the list iOS's edit menu draws its cells in, as the
+/// Simulator's reader names it.
+const EDIT_MENU_LIST: &str = "_UIEditMenuListView";
+
 /// How often a window that sends no change events is re-read when nothing
 /// else re-reads it.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -773,6 +777,24 @@ impl Mirror {
     /// keyboard to wait for: the input in focus takes keys at once.
     pub fn keys_hidden(&self) -> bool {
         visibility::keys_hidden(&self.replica)
+    }
+
+    /// Where iOS's edit menu is on the screen as the replica has it now,
+    /// without reading the target: the bounds of the list it draws its cells
+    /// in ([`EDIT_MENU_LIST`]), in device points, while one is up on screen;
+    /// `None` otherwise. A tap on the field in focus opens the menu, and a
+    /// paste that lands nothing leaves it up (rn-app-fixes, design D55).
+    pub fn edit_menu(&self) -> Option<Rect> {
+        let scale = self.replica.scale;
+        self.replica
+            .windows
+            .iter()
+            .flat_map(|window| &window.nodes)
+            .filter(|node| {
+                &*node.class == EDIT_MENU_LIST && node.flags.contains(NodeFlags::VISIBLE)
+            })
+            .map(|node| Rect::from_pixels(node.bounds, scale))
+            .find(|rect| !rect.is_empty())
     }
 
     /// Where the element `reference` names is in the replica. The element

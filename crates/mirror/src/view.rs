@@ -1518,8 +1518,9 @@ pub(crate) fn hints(
 /// scroll keeping it out of view. A view listed before the container across
 /// its top is the header the element lies behind, whatever it holds (design
 /// D54), and so is a plain view across its top; a plain view across its
-/// bottom is the footer the element lies under; any other is named as a
-/// refusal names a cover (design D50).
+/// bottom is the footer the element lies under; a window, as the text
+/// effects window holding iOS's edit menu is, is neither (design D55); any
+/// other is named as a refusal names a cover (design D50).
 fn hint_cover(
     replica: &Replica,
     view: &View,
@@ -1559,11 +1560,16 @@ fn hint_cover(
     let c = cover
         .or_else(|| container.and_then(|(s, side)| edge_view(window, facts, s, side, slack)))?;
     let (node, f) = (&window.nodes[c], &facts[c]);
-    let plain = matches!(f.role, Role::Generic | Role::Group)
+    // A window over the application's own, as the text effects window
+    // that holds iOS's edit menu is, is no header and no footer, whatever
+    // its bounds (design D55).
+    let edge = &*node.class != roles::XCUI_WINDOW;
+    let plain = edge
+        && matches!(f.role, Role::Generic | Role::Group)
         && f.name.is_empty()
         && node.flags.contains(NodeFlags::ENABLED);
     let across = f.rect.left <= list.left + slack && f.rect.right >= list.right - slack;
-    let header = container.is_some_and(|(s, _)| heads(window, facts, c, s, slack));
+    let header = edge && container.is_some_and(|(s, _)| heads(window, facts, c, s, slack));
     let by = if header || (plain && across && f.rect.top <= list.top + slack) {
         "behind the header".to_owned()
     } else if plain && across && f.rect.bottom >= list.bottom - slack {
@@ -1603,7 +1609,8 @@ fn across_top(header: &Rect, list: &Rect, slack: f64) -> bool {
 /// window's: above, its header, a node on screen across its top
 /// ([`across_top`]); below, its footer, a node on screen that spans its
 /// width from inside it to its bottom or below; of those neither holding
-/// the container nor held by it, the one listed last. On the fifth
+/// the container nor held by it nor a window (design D55), the one listed
+/// last. On the fifth
 /// acceptance run rows a list scrolled above its frame lay on the screen
 /// above the header, where the status bar is drawn, and nothing over their
 /// centres named a cover (rn-app-fixes, design D54).
@@ -1630,6 +1637,7 @@ fn edge_view(
         let f = &facts[n];
         f.visible
             && f.hidden == Hidden::No
+            && &*window.nodes[n].class != roles::XCUI_WINDOW
             && !holds(window, n, s)
             && !holds(window, s, n)
             && edge(&f.rect)
