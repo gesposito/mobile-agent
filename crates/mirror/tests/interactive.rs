@@ -1702,6 +1702,117 @@ fn a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard
     assert!(!keys.keys_hidden(), "the keyboard draws its keys");
 }
 
+/// The edit menu's fixture with the text effects window's bounds `bounds`,
+/// as a read gives them.
+fn edit_menu_with_window_at(bounds: serde_json::Value) -> Screen {
+    let mut screen = Screen::load("edit-menu-ios");
+    let effects = &mut screen.0["windows"][1]["root"]["children"][1];
+    assert_eq!(effects["class"], "XCUIElementTypeWindow");
+    effects["bounds"] = bounds;
+    screen
+}
+
+/// Rn-app-fixes D55, scenario "Edit menu up" (task 7.1; task 6.5, N13): with
+/// iOS's edit menu up, the text effects window it lives in, the
+/// application's second window, spans the screen; the reader bounds it by
+/// what it draws, the menu's list, so the menu's cells lie over the strip
+/// they draw on and nothing more. The screen's fields and its submit stay
+/// listed, the password field partly under the menu marked with the share a
+/// tap reaches, and the submit, which the menu does not cover, is reached
+/// whole and tapped at its centre, where the sixth acceptance run's listing
+/// held the menu's cells alone and every element of the screen read out of
+/// view.
+#[test]
+fn the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed() {
+    let (target, mut mirror) = mirror_on("edit-menu-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for line in [
+        "- textbox \"Username\" [focused, id=login-username, ref=e1]: agent",
+        "- textbox \"Password\" [visible=12%, id=login-password, ref=e2]",
+        "- button \"Sign in\" [id=login-submit, ref=e3]",
+        "- cell \"Select\" [ref=e5]",
+    ] {
+        assert!(
+            listing.text.lines().any(|listed| listed == line),
+            "{line} is listed:\n{}",
+            listing.text
+        );
+    }
+    assert!(!listing.text.contains("header"), "{}", listing.text);
+    let submit = listing.by_identifier("login-submit").unwrap();
+    assert_eq!(mirror.covered_by(submit.id), None);
+    assert_eq!(mirror.visibility(submit.id).unwrap().fraction, 1.0);
+    let at = tap_on(&mut mirror, submit.reference.unwrap()).unwrap();
+    assert_eq!(
+        (at.x, at.y),
+        (submit.bounds.center().x, submit.bounds.center().y)
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Rn-app-fixes D55 (task 7.1; task 6.5, N13): a window of the application
+/// listed after its own, as the text effects window is, is no header and no
+/// footer, whatever its bounds: one of the sixth acceptance run's listings
+/// with the edit menu up counted the screen's elements "(4 more actionable
+/// items behind the header)", the window spanning the screen as the reader
+/// gave it before task 7.1. Such a window covers what a tap at an element's
+/// centre would land on, and the hint names it so.
+#[test]
+fn a_hint_never_calls_a_window_over_the_screen_a_header() {
+    let spanning = edit_menu_with_window_at(json!([0, 0, 402, 874]));
+    let target = FakeTarget::new(spanning.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        !listing.text.contains("header") && !listing.text.contains("footer"),
+        "{}",
+        listing.text
+    );
+    assert!(
+        listing
+            .text
+            .contains("(3 more actionable items under the overlay)"),
+        "{}",
+        listing.text
+    );
+}
+
+/// Rn-app-fixes D55 (task 7.1): a control wholly under the edit menu's
+/// strip is left out of the interactive listing and counted under what
+/// covers it, never behind a header, and an action on it is refused
+/// naming what a tap at its centre would land on, the menu's cell there.
+#[test]
+fn a_control_wholly_under_the_edit_menu_is_left_out_and_refused_naming_the_menu() {
+    let screen = Screen::load("edit-menu-ios");
+    let under = screen.patched(json!([{"find": "login-password", "bounds": [100, 128, 160, 162]}]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(100), Step::Show(under.read()));
+    target.at(ms(100), Step::Frame(1));
+    target.at(ms(120), Step::Frame(2));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let password = mirror
+        .snapshot(&interactive())
+        .unwrap()
+        .by_identifier("login-password")
+        .expect("the password field is listed partly under the menu")
+        .reference
+        .unwrap();
+
+    mirror.run_until(target.instant(ms(600))).unwrap();
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        listing.by_identifier("login-password").is_none(),
+        "{}",
+        listing.text
+    );
+    assert!(!listing.text.contains("header"), "{}", listing.text);
+    assert_eq!(counted_left_out(&listing), 1, "{}", listing.text);
+    let error = tap_on(&mut mirror, password).unwrap_err();
+    assert_eq!(error.code(), code::ELEMENT_COVERED, "{error}");
+    assert!(error.to_string().contains("\"Select\""), "{error}");
+    assert!(target.inputs().is_empty());
+}
+
 /// D37 and D38 (task 3.2; section 5 of the masked listings): a tap on a
 /// submit button partly under the keyboard goes to the part of it in view:
 /// 17 of its 48 points above the keyboard's top, 35%, take the tap at their

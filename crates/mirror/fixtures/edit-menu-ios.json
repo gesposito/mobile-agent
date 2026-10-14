@@ -1,0 +1,222 @@
+{
+  "description": "The Login tab of the SwiftUI fixture with iOS's edit menu up over its username field, which holds \"agent\" and has the focus, the keyboard up, read by the in-guest reader on an iPhone 17 with iOS 26.5 (rn-app-fixes, design D55; task 7.1): a tap on the focused field and Command-A without the paste that should follow left the menu, Paste, Select, Select All and AutoFill, 121 to 165 points down, over the password field, as a retry's paste that lands nothing leaves it. The menu lives in the text effects window, the application's second window, which spans the screen, holding the gesture view, the keyboard's placeholder and the menu's container, each spanning it but the placeholder, from 539 points down; the reader takes the window's bounds as what it draws, the menu's list, the placeholder drawing nothing a user reads. Keys trimmed to three and the return key. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 2147483649, "kind": "input_method", "layer": 1, "package": "dev.mobileagent.fixture.swiftui",
+      "bounds": [0, 539, 402, 874], "events": false,
+      "root": {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "UIInputSetContainerView", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "UIInputSetHostView", "bounds": [0, 539, 402, 874], "children": [
+            {"class": "TUISystemInputAssistantView", "id": "SystemInputAssistantView", "bounds": [0, 539, 402, 583], "children": [
+              {"class": "UIView", "bounds": [0, 539, 402, 583], "children": [
+                {"class": "TUISystemInputAssistantPageView", "id": "CenterPageView", "bounds": [0, 539, 402, 583], "children": [
+                  {"class": "UIView", "bounds": [0, -61, 402, 1183], "children": [
+                    {"class": "XCUIElementTypeScrollView", "bounds": [0, 539, 402, 583], "flags": ["scrollable"], "scroll": {"axis": "horizontal", "back": false, "forward": true, "position": [0, 50], "range": ["percent", 0, 100]}}
+                  ]},
+                  {"class": "UIView", "bounds": [0, 539, 402, 583], "children": [
+                    {"class": "TUIPredictionView", "desc": "Typing Predictions", "bounds": [0, 539, 402, 583], "children": [
+                      {"class": "TUIPredictionViewStackView", "bounds": [0, 539, 402, 583], "children": [
+                        {"class": "TUIPredictionViewStackContentView", "bounds": [0, 539, 402, 583], "children": [
+                          {"class": "TUIPredictionViewCell", "desc": "agency", "bounds": [0, 539, 134, 583]},
+                          {"class": "TUIPredictionViewCell", "desc": "anent", "bounds": [134, 539, 268, 583]},
+                          {"class": "TUIPredictionViewCell", "desc": "ament", "bounds": [268, 539, 402, 583]}
+                        ]}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]},
+            {"class": "UIView", "bounds": [0, 539, 402, 874], "children": [
+              {"class": "UIKBInputBackdropView", "bounds": [0, 539, 402, 874], "children": [
+                {"class": "UIKBBackdropView", "bounds": [0, 539, 402, 874]}
+              ]}
+            ]},
+            {"class": "_UIKBCompatInputView", "bounds": [0, 583, 402, 816], "children": [
+              {"class": "XCUIElementTypeKeyboard", "bounds": [0, 583, 402, 816], "children": [
+                {"class": "UIKeyboardImpl", "bounds": [0, 583, 402, 816], "children": [
+                  {"class": "UIKeyboardLayoutStar", "id": "UIKeyboardLayoutStar Preview", "bounds": [0, 583, 402, 816], "children": [
+                    {"class": "XCUIElementTypeKey", "desc": "q", "bounds": [4.67, 590, 44, 644]},
+                    {"class": "XCUIElementTypeKey", "desc": "w", "bounds": [44, 590, 83.67, 644]},
+                    {"class": "XCUIElementTypeKey", "desc": "e", "bounds": [83.67, 590, 123, 644]},
+                    {"class": "XCUIElementTypeKey", "id": "Return", "desc": "return", "bounds": [300.67, 752, 399.67, 806], "flags": ["clickable"]}
+                  ]}
+                ]}
+              ]}
+            ]},
+            {"class": "UIKeyboardDockView", "bounds": [0, 583, 402, 874], "children": [
+              {"class": "XCUIElementTypeButton", "desc": "Next keyboard", "bounds": [8.33, 805.67, 76.67, 874.33], "flags": ["clickable"], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [8.33, 805.67, 8.33, 805.67], "off": ["visible"]}
+              ]},
+              {"class": "XCUIElementTypeButton", "id": "dictation", "desc": "Dictate", "bounds": [325.33, 805.33, 393.67, 874], "flags": ["clickable"], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [325.33, 805.33, 325.33, 805.33], "off": ["visible"]}
+              ]},
+              {"class": "XCUIElementTypeButton", "id": "dictation", "desc": "Dictate", "bounds": [325.33, 805.33, 393.67, 874], "flags": ["clickable"], "children": [
+                {"class": "XCUIElementTypeStaticText", "bounds": [325.33, 805.33, 325.33, 805.33], "off": ["visible"]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    },
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.fixture.swiftui", "title": "FixtureSwiftUI",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "FixtureSwiftUI", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "_UITouchFallbackView", "bounds": [0, 0, 402, 874]},
+          {"class": "UITransitionView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "UIDropShadowView", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "_TtGC7SwiftUI14_UIHostingViewGVS_15ModifiedContentVS_7AnyViewVS_12RootModifier__", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "SwiftUI.AccessibilityNode", "bounds": [0, 0, 402, 874], "children": [
+                  {"class": "UILayoutContainerView", "bounds": [0, 0, 402, 874], "children": [
+                    {"class": "UITransitionView", "bounds": [0, 0, 402, 874], "children": [
+                      {"class": "UIViewControllerWrapperView", "bounds": [0, 0, 402, 874], "children": [
+                        {"class": "_UIContainerWindowPortalView", "bounds": [0, 0, 16.67, 16.67]},
+                        {"class": "_UIContainerWindowPortalView", "bounds": [0, 0, 16.67, 16.67]},
+                        {"class": "_TtGC7SwiftUI14_UIHostingViewGVS_15ModifiedContentGVS_19_ConditionalContentGS2_GS2_V14FixtureSwiftUI11LoginScreenVS3_10ListScreen_GS2_VS3_9BigScreenVS3_10AnimScreen__VS3_12SystemScreen_GVS_30_EnvironmentKeyWritingModifierOS_15DynamicTypeSize___", "bounds": [0, 0, 402, 874], "children": [
+                          {"class": "SwiftUI.AccessibilityNode", "bounds": [0, 0, 402, 874], "children": [
+                            {"class": "XCUIElementTypeTextField", "id": "login-username", "desc": "Username", "text": "agent", "bounds": [16, 78, 386, 112], "flags": ["focusable", "focused", "editable"]},
+                            {"class": "XCUIElementTypeSecureTextField", "id": "login-password", "desc": "Password", "bounds": [16, 128, 386, 162], "flags": ["focusable", "editable", "password"]},
+                            {"class": "XCUIElementTypeButton", "id": "login-submit", "desc": "Sign in", "bounds": [16, 178, 91.33, 212.33], "flags": ["clickable"]},
+                            {"class": "XCUIElementTypeStaticText", "id": "login-status", "desc": "Signed out", "bounds": [16, 228.33, 98.33, 248.67]}
+                          ]}
+                        ]}
+                      ]}
+                    ]},
+                    {"class": "UIKit._UITabBarContainerWrapperView", "bounds": [0, 791, 402, 874], "children": [
+                      {"class": "UIKit._UITabBarContainerView", "bounds": [0, 0, 402, 874], "children": [
+                        {"class": "XCUIElementTypeTabBar", "desc": "Tab Bar", "bounds": [0, 791, 402, 874], "children": [
+                          {"class": "UIKit._UITabBarPlatterView", "bounds": [21, 791, 381, 853], "children": [
+                            {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2711DestOutView", "bounds": [21, 791, 98, 845]},
+                            {"class": "_TtCC5UIKit20_UITabBarPlatterViewP33_022AA364308030F4627162921FD6D31A11ContentView", "bounds": [21, 791, 381, 853], "children": [
+                              {"class": "XCUIElementTypeButton", "id": "tab-login", "desc": "Login", "bounds": [25, 795, 102, 849], "flags": ["clickable", "selected"], "children": [
+                                {"class": "XCUIElementTypeImage", "id": "person.crop.circle", "desc": "account", "bounds": [50, 801.33, 77.33, 828.67]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "tab-list", "desc": "List", "bounds": [93.67, 795, 170.67, 849], "flags": ["clickable"], "children": [
+                                {"class": "XCUIElementTypeImage", "id": "list.bullet", "desc": "List", "bounds": [117.67, 804.33, 147, 825.33]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "tab-big", "desc": "Big", "bounds": [162.67, 795, 239.67, 849], "flags": ["clickable"], "children": [
+                                {"class": "XCUIElementTypeImage", "id": "square.grid.3x3", "desc": "square.grid.3x3", "bounds": [186.67, 801.67, 215.67, 828]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "tab-anim", "desc": "Anim", "bounds": [231.33, 795, 308.33, 849], "flags": ["clickable"], "children": [
+                                {"class": "XCUIElementTypeImage", "id": "arrow.triangle.2.circlepath", "desc": "syncing", "bounds": [256, 801.33, 284.33, 828.67]}
+                              ]},
+                              {"class": "XCUIElementTypeButton", "id": "tab-system", "desc": "System", "bounds": [300, 795, 377, 849], "flags": ["clickable"], "children": [
+                                {"class": "XCUIElementTypeImage", "id": "exclamationmark.bubble", "desc": "Alert", "bounds": [323, 801.67, 354.33, 829.33]}
+                              ]}
+                            ]},
+                            {"class": "_UILiquidLensView", "bounds": [25, 795, 102, 849], "children": [
+                              {"class": "UIView", "bounds": [25, 795, 102, 849], "children": [
+                                {"class": "_UITabSelectionView", "bounds": [25, 795, 102, 849]},
+                                {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2714ClearGlassView", "bounds": [25, 795, 102, 849], "children": [
+                                  {"class": "UIView", "bounds": [25, 795, 102, 849], "children": [
+                                    {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB277SDFView", "bounds": [25, 795, 102, 849], "children": [
+                                      {"class": "_TtCE5UIKitCSo17_UILiquidLensViewP33_4C400BD973F5E4E0B779D1A21A7AEB2714SDFElementView", "bounds": [25, 795, 102, 849]}
+                                    ]},
+                                    {"class": "_UIPortalView", "bounds": [25, 795, 102, 849]}
+                                  ]},
+                                  {"class": "UIView", "bounds": [25, 795, 102, 849]}
+                                ]}
+                              ]}
+                            ]}
+                          ]}
+                        ]}
+                      ]},
+                      {"class": "UIKit._GlassGroupView", "bounds": [0, 791, 402, 874], "children": [
+                        {"class": "_TtC5UIKitP33_0A8B4DB961B57EBA158E8356A5AC0B1F19GlassGroupLayerView", "bounds": [0, 791, 402, 874], "children": [
+                          {"class": "UIKit._UIMaterialDefinitionView", "bounds": [0, 791, 402, 874], "children": [
+                            {"class": "_TtC5UIKitP33_ACD4A08F4BE9D00246F2A9C24A80CA8817UISDFBackdropView", "bounds": [0, 791, 402, 874], "children": [
+                              {"class": "UIKit.UISDFView", "bounds": [0, 791, 402, 874], "children": [
+                                {"class": "UIView", "bounds": [0, 791, 402, 874]}
+                              ]}
+                            ]},
+                            {"class": "UIKit.UISDFView", "bounds": [0, 791, 402, 874], "children": [
+                              {"class": "_UIPortalView", "bounds": [0, 791, 402, 874]}
+                            ]}
+                          ]}
+                        ]}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]},
+          {"class": "_UIEditMenuContainerView", "bounds": [0, 0, 402, 874]}
+        ]},
+        {"class": "XCUIElementTypeWindow", "bounds": [16, 121, 341, 165], "children": [
+          {"class": "UITrackingWindowView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "UIEditingOverlayGestureView", "bounds": [0, 0, 402, 874]},
+            {"class": "UIKeyboardItemContainerView", "bounds": [0, 539, 402, 874], "children": [
+              {"class": "_UIRemoteKeyboardPlaceholderView", "id": "inputView", "bounds": [0, 539, 402, 874]}
+            ]}
+          ]},
+          {"class": "_UIEditMenuContainerView", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "_UIEditMenuListView", "bounds": [16, 121, 341, 165], "children": [
+              {"class": "UIView", "bounds": [16, 121, 349, 165], "children": [
+                {"class": "UIVisualEffectView", "bounds": [16, 121, 341, 165], "children": [
+                  {"class": "UIView", "bounds": [20, 121, 345, 165], "children": [
+                    {"class": "XCUIElementTypeCollectionView", "bounds": [16, 121, 349, 165], "flags": ["scrollable"], "children": [
+                      {"class": "XCUIElementTypeCell", "desc": "Paste", "bounds": [20, 121, 90.33, 165], "children": [
+                        {"class": "UIStackView", "bounds": [36, 134, 74.33, 152], "children": [
+                          {"class": "XCUIElementTypeImage", "id": "doc.on.clipboard", "desc": "paste", "bounds": [36, 132.67, 36, 153.33], "off": ["visible"]},
+                          {"class": "XCUIElementTypeStaticText", "desc": "Paste", "bounds": [36, 134, 74.33, 152]}
+                        ]}
+                      ]},
+                      {"class": "_UIEditMenuListSeparatorView", "bounds": [90.33, 121, 91.33, 165], "children": [
+                        {"class": "UIVisualEffectView", "bounds": [90.33, 134, 91.33, 152]}
+                      ]},
+                      {"class": "XCUIElementTypeCell", "desc": "Select", "bounds": [90.33, 121, 165.67, 165], "children": [
+                        {"class": "UIStackView", "bounds": [106.33, 134, 149.67, 152], "children": [
+                          {"class": "XCUIElementTypeStaticText", "desc": "Select", "bounds": [106.33, 134, 149.67, 152]}
+                        ]}
+                      ]},
+                      {"class": "_UIEditMenuListSeparatorView", "bounds": [165.67, 121, 166.67, 165], "children": [
+                        {"class": "UIVisualEffectView", "bounds": [165.67, 134, 166.67, 152]}
+                      ]},
+                      {"class": "XCUIElementTypeCell", "desc": "Select All", "bounds": [165.67, 121, 262, 165], "children": [
+                        {"class": "UIStackView", "bounds": [181.67, 134, 246, 152], "children": [
+                          {"class": "XCUIElementTypeStaticText", "desc": "Select All", "bounds": [181.67, 134, 246, 152]}
+                        ]}
+                      ]},
+                      {"class": "_UIEditMenuListSeparatorView", "bounds": [262, 121, 263, 165], "children": [
+                        {"class": "UIVisualEffectView", "bounds": [262, 134, 263, 152]}
+                      ]},
+                      {"class": "XCUIElementTypeCell", "desc": "AutoFill", "bounds": [262, 121, 345, 165], "children": [
+                        {"class": "UIStackView", "bounds": [278, 134, 329, 152], "children": [
+                          {"class": "XCUIElementTypeStaticText", "desc": "AutoFill", "bounds": [278, 134, 329, 152]}
+                        ]}
+                      ]}
+                    ]}
+                  ]},
+                  {"class": "XCUIElementTypeButton", "desc": "Back", "bounds": [-15, 125, 21, 161], "flags": ["clickable"]},
+                  {"class": "XCUIElementTypeButton", "desc": "Forward", "bounds": [345, 125, 381, 161], "flags": ["clickable"]},
+                  {"class": "UIView", "bounds": [16, 121, 16, 121], "off": ["visible"], "children": [
+                    {"class": "UIVisualEffectView", "bounds": [16, 121, 16, 121], "off": ["visible"]}
+                  ]}
+                ]},
+                {"class": "UIKit._GlassGroupView", "bounds": [16, 121, 349, 165], "children": [
+                  {"class": "_TtC5UIKitP33_0A8B4DB961B57EBA158E8356A5AC0B1F19GlassGroupLayerView", "bounds": [16, 121, 349, 165], "children": [
+                    {"class": "UIKit._UIMaterialDefinitionView", "bounds": [16, 121, 349, 165], "children": [
+                      {"class": "_TtC5UIKitP33_ACD4A08F4BE9D00246F2A9C24A80CA8817UISDFBackdropView", "bounds": [16, 121, 349, 165], "children": [
+                        {"class": "UIKit.UISDFView", "bounds": [16, 121, 349, 165], "children": [
+                          {"class": "UIView", "bounds": [16, 121, 349, 165]}
+                        ]}
+                      ]},
+                      {"class": "UIKit.UISDFView", "bounds": [16, 121, 349, 165], "children": [
+                        {"class": "_UIPortalView", "bounds": [16, 121, 349, 165]}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
