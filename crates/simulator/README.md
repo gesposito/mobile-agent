@@ -298,7 +298,8 @@ mirror's conventions (`reader/src/elements.rs`):
   view the app marks `accessibilityViewIsModal`, found as above, whose
   siblings the mirror cuts within its bounds;
 - a scroll view on screen (a `ScrollView`, `Table` or `CollectionView`, at
-  most 32 a read) carries `scroll`, from a snapshot of its own element with
+  most 32 a read), told by the runtime's automation type, never by a class
+  name, carries `scroll`, from a snapshot of its own element with
   three more attributes: where its frame's edges fall in its content along
   each axis, as fractions of the content
   (`XC_kAXXCAttributeVisibleVerticalScrollArea` and its horizontal twin),
@@ -316,7 +317,17 @@ mirror's conventions (`reader/src/elements.rs`):
   no range counts items. Asking every node for the three attributes cost
   the Big screen's 546 nodes 40 ms a read; asking each scroll view costs
   3.6 ms on the SwiftUI list and 0.6 ms on the Expo one. The translator
-  reports no scroll semantics.
+  reports no scroll semantics. React Native's `ScrollView`, a `FlatList`'s
+  too, is an `XCUIElementTypeScrollView` inside its
+  `RCTScrollViewComponentView`, and the SwiftUI fixture's List an
+  `XCUIElementTypeCollectionView`; a view React Native lays out reads as an
+  `RCTViewComponentView` holding nothing when it draws something, as a
+  background, what it lays out following it as its siblings, top to
+  bottom, and as no node at all when it draws nothing (a transparent view,
+  one with `pointerEvents="box-none"` or with `onLayout` alone), as the
+  throwaway creation tab of `rn-app-fixes` task 5.1 read on the spike
+  Simulator, which the mirror takes for a view drawn over what it lies on
+  (`crates/mirror/README.md`);
 
 An alert is the last visible alert container in the first window that holds
 one: the alert's own window for an application's alert, SpringBoard's for a
@@ -616,10 +627,19 @@ too when the entry goes in as keys and starts with a capital, and the keys
 wait for a read that shows the field empty, at most 1 s
 (`empties_first` in `crates/daemon/src/devices/simulator.rs`): the delete
 and one to three reads, 0.28 s more a fill at p50 through the daemon at
-loads of 7.7 to 9.7. A lower-case first letter, which kept its case in 146
-of 148 entries over the selection (two React Native ones came back
-capitalized), a paste and `type`, which selects nothing, keep the readying
-they had.
+loads of 7.7 to 9.7. `fill` itself empties a field that holds text before
+keys of any first letter, an empty entry the Simulator selects and deletes
+the field's text for, then waits for the replica to show the field empty
+before the keys go into the field the emptying gave the focus, so that the
+read-back compares with the emptied field (task 5.2 of `rn-app-fixes`): a
+refill of the code a code field held, its name spelling the same digits
+before and after, could not be read back. Through the daemon on the spike
+Simulator a refill of the Expo fixture's username field took 0.93 s at p50
+against 0.665 s before, a first fill 0.655 s against 0.66. Text into the
+field in focus, which `fill` enters so after the emptying and for an
+identifier on a view holding no field, is readied as text into a field the
+input taps, Command-A first, but for the tap (`readying`). A paste and
+`type`, which selects nothing, keep the readying they had.
 
 The tests read a field back by putting a sentinel on the pasteboard and
 sending Command-A and Command-C: 500 characters pasted in 48 ms, 204 ms through
@@ -725,6 +745,7 @@ about a minute.
 | Frames and screenshots | Frame stream during animation | `frames::frame_stream_during_animation`, `frames::frames_stop_when_the_display_is_static`, `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`, `frames::a_screenshot_is_timestamped_at_the_display_size` |
 | Text entry | Long string | `text::long_string`, `text::a_short_string_is_typed_through_keyboard_events`, `text::text_no_key_types_is_pasted`; the paste's way to the pasteboard and its grants (task 10.31): `macos::pasteboard::tests::a_paste_goes_to_dtpasteboardd_and_leaves_devicectl_alone`, `macos::pasteboard::tests::a_guest_that_does_not_take_the_set_gets_devicectl`, `macos::pasteboard::tests::when_devicectl_fails_too_the_error_names_both`, `macos::pasteboard::tests::the_set_carries_the_text_under_each_plain_text_type`, `macos::pasteboard::tests::a_set_reply_succeeds_and_any_other_answer_says_why_not`, `macos::pasteboard::tests::the_second_paste_lists_nothing`, `macos::pasteboard::tests::a_changed_application_directory_lists_and_grants_again` |
 | Text entry | Capital first letter over what the field held (task 4.5 of `rn-app-fixes`) | in the daemon `devices::simulator::tests::a_capital_first_letter_lands_when_fill_types_over_what_the_field_held` (on a fake of the keyboard as measured), `devices::simulator::tests::only_keys_whose_first_letter_is_a_capital_empty_the_field_first`, `devices::simulator::tests::the_focused_field_shows_its_text_or_nothing`, and `model::tests::auto_types_a_short_typeable_string_and_pastes_any_other`; no fixture's field has autocorrection on, so the measurement and the ten fills behind the rule ran on throwaway screens (task 4.5) |
+| Text entry | A field emptied before keys, and text into the field in focus readied as into one the input taps (task 5.2 of `rn-app-fixes`) | in the daemon `handlers::act::tests::a_keyed_fill_into_a_field_holding_text_empties_it_and_types_once_it_reads_empty`, `handlers::act::tests::a_refill_of_the_code_a_field_holds_empties_it_first_and_is_verified_through_the_name` and `devices::simulator::tests::text_into_the_field_in_focus_is_readied_as_text_into_a_field_it_taps`; on throwaway screens through the daemon, the record of task 5.2 |
 | Text entry | React Native field typed whole (task 3.5 of `rn-app-fixes`) | `cadence::a_react_native_field_takes_the_36_character_entry_whole_twenty_times`, `cadence::a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence`, `cadence::tests::a_read_of_react_natives_views_types_at_the_react_native_cadence`, `cadence::tests::a_native_read_types_at_the_native_cadence`, and in the daemon `devices::simulator::tests::text_is_typed_at_the_cadence_the_latest_read_calls_for`; the measurement behind the cadence, `cadence::the_36_character_entry_at_three_cadences` (ignored) |
 | Parallel Simulators | Two sessions | `transport::two_sessions`, `tree::each_simulator_has_its_own_reader` |
 | Failure containment | Framework call throws | `containment::a_tree_read_that_throws_takes_only_its_target_out_of_service`, `containment::framework_call_throws`, `objc::tests::an_objective_c_exception_becomes_an_error_naming_the_call`, `objc::tests::a_rust_panic_in_a_call_becomes_an_error_naming_the_call`, `macos::driver::tests::reader_failures_become_driver_errors`, and in `reader/`: `guest::objc::tests::an_exception_becomes_a_failure_naming_the_call` |
