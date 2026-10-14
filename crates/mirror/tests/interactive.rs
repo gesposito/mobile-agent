@@ -11,7 +11,8 @@ mod support;
 use mirror::backend::Owner;
 use mirror::testing::{FakeTarget, Step};
 use mirror::{
-    Action, Direction, HintSource, Mirror, MirrorConfig, MirrorError, SnapshotOptions, Target, code,
+    Action, Direction, HintSource, Mirror, MirrorConfig, MirrorError, Snapshot, SnapshotOptions,
+    Target, code,
 };
 use protocol::event::{EventPayload, TreeChange, TreeChangeKind, WindowChangeKind};
 use serde_json::json;
@@ -1471,6 +1472,187 @@ fn what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_h
             && text.ends_with("(3 more actionable items under the keyboard, close it to reveal)"),
         "{text}"
     );
+}
+
+/// The elements with refs of `listing`'s, by ref.
+fn refs_of(listing: &Snapshot) -> Vec<mirror::Ref> {
+    listing
+        .elements
+        .iter()
+        .filter_map(|e| e.reference)
+        .collect()
+}
+
+/// How many elements with refs `listing`'s hints count as left out for a
+/// cover: the clauses of its scroll hints, and the lines that count such
+/// elements outside any scroll container after the view over them.
+fn counted_left_out(listing: &Snapshot) -> u32 {
+    let clauses: u32 = listing
+        .hints
+        .iter()
+        .flat_map(|hint| hint.covered.iter().map(|(_, n)| n))
+        .sum();
+    let lines: u32 = listing
+        .text
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| {
+            line.starts_with('(')
+                && line.contains(" more actionable item")
+                && !line.contains("scroll")
+                && !line.contains("close it to reveal")
+        })
+        .map(|line| {
+            line[1..]
+                .split(' ')
+                .next()
+                .and_then(|n| n.parse::<u32>().ok())
+                .unwrap_or_else(|| panic!("a count opens {line}"))
+        })
+        .sum();
+    clauses + lines
+}
+
+/// How many elements with refs `listing`'s keyboard line counts as under
+/// the keyboard.
+fn under_keyboard(listing: &Snapshot) -> usize {
+    listing
+        .text
+        .lines()
+        .find(|line| line.contains("under the keyboard, close it to reveal"))
+        .and_then(|line| line[1..].split(' ').next()?.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Rn-app-fixes D54, scenario "Counts agree by construction" (task 6.3;
+/// task 5.6, N7): on the organizations list the fifth acceptance run met
+/// after a fill scrolled it, three rows lie on the screen above the header
+/// the app names, outside the list's frame, and the full listing showed
+/// them at visible=0% while both hints read "(6 more actionable items above,
+/// scroll up to reveal)", saying nothing of the header. A view listed
+/// before the list across its top is the header, named or not: the
+/// interactive listing's hint says three of them are behind it, and the two
+/// listings differ by those three rows alone, the full listing's hint
+/// counting what it leaves out, none of them. A row behind the header's
+/// frame, which the header covers whole and both listings leave out, is
+/// behind the header as well, in both hints.
+#[test]
+fn hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_what_the_listing_drops()
+ {
+    let (_, mut mirror) = mirror_on("header-named-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    assert_eq!(
+        listing.text,
+        lines(&[
+            "- button \"placeholder-button-1\" [id=placeholder-id-1, ref=e1]",
+            "- heading \"placeholder-heading-1\" [ref=e2]",
+            "(6 more actionable items above, 3 of them behind the header, scroll up to reveal)",
+            "- button \"placeholder-button-3\" [id=placeholder-id-5, ref=e3]",
+            "- button \"placeholder-button-4\" [id=placeholder-id-6, ref=e4]",
+            "- button \"placeholder-button-5\" [id=placeholder-id-7, ref=e5]",
+        ])
+    );
+    let whole = mirror.snapshot(&full()).unwrap();
+    let kept = refs_of(&listing);
+    let dropped: Vec<&str> = whole
+        .elements
+        .iter()
+        .filter(|e| e.reference.is_some_and(|r| !kept.contains(&r)))
+        .map(|e| {
+            assert_eq!(e.visible, Some(0), "{e:?}");
+            e.identifier.as_deref().unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(
+        dropped,
+        ["placeholder-id-2", "placeholder-id-3", "placeholder-id-4"]
+    );
+    assert!(
+        whole
+            .text
+            .contains("\n(6 more actionable items above, scroll up to reveal)\n"),
+        "{}",
+        whole.text
+    );
+
+    let behind = Screen::load("header-named-ios").patched(json!([
+        {"find": "placeholder-id-4", "bounds": [20, 70, 300, 92]}
+    ]));
+    let target = FakeTarget::new(behind.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    assert!(
+        listing.text.contains(
+            "(6 more actionable items above, 3 of them behind the header, scroll up to reveal)"
+        ),
+        "{}",
+        listing.text
+    );
+    let whole = mirror.snapshot(&full()).unwrap();
+    assert!(
+        whole.text.contains(
+            "(6 more actionable items above, 1 of them behind the header, scroll up to reveal)"
+        ),
+        "{}",
+        whole.text
+    );
+}
+
+/// Rn-app-fixes D54 (task 6.3; task 5.6, N7): on the feed the card above
+/// the list, whose lower 27.67 points lie on the screen above the header
+/// listed before the list, is one of the thirteen rows above, which the
+/// full listing shows at visible=0%; the hint says it is behind the header,
+/// though no view lies over its centre, which is above the screen.
+#[test]
+fn the_card_above_the_feed_is_counted_behind_the_header() {
+    let (_, mut feed) = mirror_on("feed-sticky-ios");
+    let listing = feed.snapshot(&interactive()).unwrap();
+    assert!(
+        listing.text.starts_with(
+            "- button \"placeholder-button-1\" [id=placeholder-id-1, ref=e1]\n- heading \"placeholder-heading-1\" [ref=e2]\n- button \"placeholder-button-2\" [id=placeholder-id-2, ref=e3]: placeholder-value-1\n(13 more actionable items above, 1 of them behind the header, scroll up to reveal)\n"
+        ),
+        "{}",
+        listing.text
+    );
+}
+
+/// Rn-app-fixes D54 (task 6.3; task 5.6, N7): on every fixture the
+/// interactive listing's hints count, as left out for a cover, the elements
+/// with refs the full listing shows at visible=0% and those the full
+/// listing's own hints count as left out, as a view covers them whole, so
+/// that the hints and the two listings agree by construction; the fifth
+/// acceptance run's verifier found the feed's hint at 11 against 1 element
+/// at visible=0%, and a list's at 6 against 3. The elements with refs the
+/// full listing has and the interactive one lacks are those at visible=0%
+/// and those wholly under the keyboard, which the keyboard's line counts.
+#[test]
+fn on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out() {
+    for name in support::screen_names() {
+        let (_, mut mirror) = mirror_on(&name);
+        let listing = mirror.snapshot(&interactive()).unwrap();
+        let whole = mirror.snapshot(&full()).unwrap();
+        let kept = refs_of(&listing);
+        let dropped: Vec<&mirror::Element> = whole
+            .elements
+            .iter()
+            .filter(|e| e.reference.is_some_and(|r| !kept.contains(&r)))
+            .collect();
+        let at_zero = dropped.iter().filter(|e| e.visible == Some(0)).count();
+        assert_eq!(
+            dropped.len(),
+            at_zero + under_keyboard(&listing),
+            "{name}: what the interactive listing drops is at visible=0% or under the keyboard:\n{}\n\n{}",
+            listing.text,
+            whole.text
+        );
+        assert_eq!(
+            counted_left_out(&listing),
+            u32::try_from(at_zero).unwrap() + counted_left_out(&whole),
+            "{name}: the hints count what each listing leaves out:\n{}\n\n{}",
+            listing.text,
+            whole.text
+        );
+    }
 }
 
 /// Rn-app-fixes D52, scenario "Hardware keyboard connected" (task 6.1): with

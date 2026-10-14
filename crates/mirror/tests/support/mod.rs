@@ -68,6 +68,21 @@ pub const DRAWN_OVER_ON_IOS: [(&str, &str, &str, &str); 3] = [
     ),
 ];
 
+/// The names of the fixtures that are screens, rather than timelines, in
+/// name order.
+pub fn screen_names() -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(fixtures_dir())
+        .expect("the fixtures directory")
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name().to_string_lossy().into_owned();
+            let name = name.strip_suffix(".json")?.to_owned();
+            read_json(&name).get("windows").is_some().then_some(name)
+        })
+        .collect();
+    names.sort();
+    names
+}
+
 /// The `TreeRead` of fixture `name`.
 pub fn fixture(name: &str) -> TreeRead {
     Screen::load(name).read()
