@@ -132,8 +132,8 @@ runs it after `agent-build`.
 
 ## Versions
 
-`VERSION` holds one semantic version, `0.2.1`. `build.rs` reads it into the
-crate, so the hello names `mobile-agent-ios-runner 0.2.1`, and `build.sh`
+`VERSION` holds one semantic version, `0.2.2`. `build.rs` reads it into the
+crate, so the hello names `mobile-agent-ios-runner 0.2.2`, and `build.sh`
 writes it into both Info.plists' `CFBundleShortVersionString`: the three
 cannot disagree. The driver asks for a version (`ios::RunnerSpec`), and a
 runner whose hello names another is replaced by the bundle the spec names;
@@ -142,7 +142,9 @@ runner whose hello names another is replaced by the bundle the spec names;
 attach with this one replaced it on the phone (task 4.2); `0.2.1` serves the
 keyboard's window bounded by what it draws while a hardware keyboard serves
 the field in focus, nothing or the strip of a keyboard toolbar (rn-app-fixes,
-design D52). Change `VERSION` whenever the runner changes what it serves.
+design D52), and `0.2.2` the text effects window, which holds iOS's edit
+menu, bounded by what it draws, the menu's list or nothing (design D55).
+Change `VERSION` whenever the runner changes what it serves.
 
 ## How it runs
 
