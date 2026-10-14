@@ -282,6 +282,10 @@ enum Board {
     /// The creation tab without the footer: nothing is drawn over the list
     /// below the disabled button.
     CreationOpen,
+    /// The creation tab as React Native's accessibility lists it (task 5.1;
+    /// task 4.7, N6): the footer's view holds nothing, its tabs listed after
+    /// it as its siblings.
+    CreationRn,
     /// The feed (section 2): a card partly above its list's top, where the
     /// header listed before the list is drawn.
     Feed,
@@ -319,6 +323,7 @@ impl Board {
             "consent" => Board::Consent,
             "creation" => Board::Creation,
             "creation-open" => Board::CreationOpen,
+            "creation-rn" => Board::CreationRn,
             "feed" => Board::Feed,
             "list" => Board::List,
             "list-low" => Board::ListLow,
@@ -356,6 +361,13 @@ const CREATION_MAX: f64 = 400.0;
 /// The creation tab's disabled primary button, which takes a tap and does
 /// nothing.
 const CREATION_DISABLED: &str = "placeholder-id-9";
+
+/// Where the creation tab's primary button lies, in points.
+const CREATION_PRIMARY: [f64; 4] = [20.0, 708.0, 382.0, 764.0];
+
+/// Where the creation tab's footer lies, in points: from the primary
+/// button's bottom to the bottom of the screen.
+const CREATION_FOOTER: [f64; 4] = [0.0, 764.0, 402.0, 874.0];
 
 /// The running placeholder app.
 #[derive(Clone, Debug, PartialEq)]
@@ -403,10 +415,18 @@ impl Forms {
 
     /// A stroke from `from` to `to`, gliding on `glide` points the way the
     /// finger went: the creation tab's list moves by them, as far as it
-    /// scrolls, when the stroke comes down on it; whether it moved.
+    /// scrolls, when the stroke comes down on it, and on the board in React
+    /// Native's shape not on a view drawn over it, the primary button or the
+    /// footer, which takes the touch; whether it moved.
     fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
-        if !matches!(self.board, Board::Creation | Board::CreationOpen)
-            || !tree::contains(CREATION_LIST, from.0, from.1)
+        let drawn_over = self.board == Board::CreationRn
+            && (tree::contains(CREATION_PRIMARY, from.0, from.1)
+                || tree::contains(CREATION_FOOTER, from.0, from.1));
+        if !matches!(
+            self.board,
+            Board::Creation | Board::CreationOpen | Board::CreationRn
+        ) || !tree::contains(CREATION_LIST, from.0, from.1)
+            || drawn_over
         {
             return false;
         }
@@ -1309,6 +1329,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Form => form_content(kit, forms),
         Board::Consent => consent_content(kit, forms),
         Board::Creation | Board::CreationOpen => creation_content(kit, forms),
+        Board::CreationRn => creation_rn_content(kit, forms),
         Board::Feed => feed_content(kit, forms),
         Board::List => list_content(kit, forms, 122.0),
         Board::ListLow => list_content(kit, forms, 430.0),
@@ -1719,6 +1740,107 @@ fn creation_content(kit: Kit, forms: &Forms) -> Vec<El> {
                 )
             }),
         ),
+    );
+    screen
+}
+
+/// The creation tab as React Native's accessibility lists it on the
+/// Simulator (task 5.1; task 4.7, N6; the mirror's `create-rn-ios`): a view
+/// that draws something is a node holding nothing, what it lays out listed
+/// after it as its siblings. The header's view, then its button and the
+/// status line; the list, in a view wrapping it, scrolled `forms.offset`
+/// points, down to the bottom of the screen, holding a heading, the button
+/// beside the paste control and the paste control, 38 of their 48 points
+/// under the primary button, and a last button that the list's end brings
+/// above the primary button; the primary button, disabled; the footer's
+/// view, from the button's bottom down, drawn over the list's lower part;
+/// and then the footer's tabs.
+fn creation_rn_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let width = kit.width();
+    let scrolled = |el: El| scrolled_by(el, forms.offset, kit.height());
+    let content = [
+        kit.heading(
+            "placeholder-heading-18",
+            "placeholder-heading-18",
+            [20.0, 130.0, 382.0, 162.0],
+        )
+        .key("placeholder-heading-18"),
+        kit.heading(
+            "placeholder-heading-24",
+            "placeholder-heading-24",
+            [20.0, 648.0, 382.0, 670.0],
+        )
+        .key("placeholder-heading-24"),
+        kit.button(
+            "placeholder-button-19",
+            "placeholder-button-19",
+            [20.0, 726.0, 197.0, 774.0],
+        )
+        .key("placeholder-button-19"),
+        kit.button(
+            "placeholder-id-8",
+            "placeholder-button-20",
+            [205.0, 726.0, 382.0, 774.0],
+        ),
+        kit.button(
+            "placeholder-button-22",
+            "placeholder-button-22",
+            [20.0, 1000.0, 382.0, 1048.0],
+        )
+        .key("placeholder-button-22"),
+    ]
+    .map(scrolled);
+    let mut flags = ScrollFlags::EMPTY;
+    if forms.offset > 0.0 {
+        flags |= ScrollFlags::BACK;
+    }
+    if forms.offset < CREATION_MAX {
+        flags |= ScrollFlags::FORWARD;
+    }
+    let scroll = Scroll {
+        axis: ScrollAxis::VERTICAL,
+        flags,
+        range: None,
+        position: None,
+    };
+    let mut screen = vec![
+        kit.group([0.0, 62.0, width, 122.0]),
+        kit.button(
+            "placeholder-id-7",
+            "placeholder-button-9",
+            [20.0, 70.0, 64.0, 114.0],
+        ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [76.0, 76.0, 306.0, 108.0],
+        ),
+        kit.group(CREATION_LIST).child(
+            kit.scroll_view(CREATION_LIST)
+                .scroll(scroll)
+                .children(content),
+        ),
+        kit.button(CREATION_DISABLED, "placeholder-button-21", CREATION_PRIMARY)
+            .set(protocol::snapshot::NodeFlags::ENABLED, false),
+        kit.group(CREATION_FOOTER),
+    ];
+    screen.extend(
+        [
+            ("placeholder-tab-1", "placeholder-generic-3", false),
+            ("placeholder-tab-2", "placeholder-heading-18", true),
+            ("placeholder-tab-3", "placeholder-generic-4", false),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(k, (id, label, selected))| {
+            let left = width / 3.0 * k as f64;
+            kit.tab(
+                id,
+                label,
+                selected,
+                [left, 791.0, left + width / 3.0, kit.height()],
+            )
+        }),
     );
     screen
 }

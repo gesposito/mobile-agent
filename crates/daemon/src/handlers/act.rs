@@ -3126,6 +3126,61 @@ mod tests {
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
     }
 
+    /// Design D48 (task 5.1; task 4.7, N6): on the creation tab as React
+    /// Native's accessibility lists it, the footer's view holds nothing, its
+    /// tabs listed after it, and the fourth acceptance run's click on the
+    /// paste control tapped its lower 10 points, below the disabled button
+    /// and under the footer, opening nothing. The click by identifier is
+    /// refused with `element_covered`, naming the disabled button a tap at
+    /// the control's centre would hit, and taps nothing.
+    #[test]
+    fn a_click_on_a_control_whose_strip_lies_under_a_footer_react_native_lists_empty_is_refused() {
+        let (mut target, sent) = on_board("creation-rn");
+        let failure = click_on(&mut target, "#placeholder-id-8").expect_err(&format!(
+            "the footer covers what the disabled button leaves; taps {:?}",
+            taps(&sent)
+        ));
+        assert_eq!(failure.code, "element_covered", "{}", failure.message);
+        assert!(
+            failure.message.contains("button \"placeholder-button-21\""),
+            "{}",
+            failure.message
+        );
+        assert!(taps(&sent).is_empty(), "nothing tapped: {:?}", taps(&sent));
+        assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
+    }
+
+    /// Design D48, scenario "React Native scroll view" (task 5.1): on the
+    /// creation tab as React Native's accessibility lists it, `scroll
+    /// --until` strokes through what the list shows, above the footer drawn
+    /// over its lower part, its strokes as long as three quarters of that,
+    /// so none comes down on the disabled button floating over the list's
+    /// last part or on the footer, either of which would take the touch and
+    /// move nothing, and in strokes of up to 600 points it reaches the
+    /// list's last button.
+    #[test]
+    fn scroll_until_strokes_inside_what_a_scroll_view_shows_above_a_footer() {
+        let (mut target, sent) = on_board("creation-rn");
+        let reply = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": "text==placeholder-button-22"}),
+        );
+        let strokes = swipes(&sent);
+        let data = reply
+            .unwrap_or_else(|failure| panic!("{failure:?}; strokes {strokes:?}"))
+            .data;
+        assert_eq!(data["visible"], 1.0, "{data}");
+        assert!(!strokes.is_empty(), "{data}");
+        for (start, end) in &strokes {
+            for point in [start, end] {
+                assert!(
+                    point.y > 122.0 && point.y < 708.0,
+                    "inside what the list shows, above the button: {strokes:?}"
+                );
+            }
+        }
+    }
+
     /// Design D37 (task 3.1; section 1b of the masked listings): the
     /// acceptance run's `scroll --until` on the paste control answered at
     /// once, `visible` 1.0, no stroke, while the disabled button covered
