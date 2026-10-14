@@ -43,7 +43,13 @@
 //! nothing, as while a hardware keyboard serves the field in focus and iOS
 //! keeps the host view below the screen (rn-app-fixes, design D52). The
 //! mirror cuts an element's visible bounds by that window (task 10.21). The
-//! window metadata of protocol task 3.6:
+//! text effects window UIKit keeps beside the application's own, which
+//! holds the edit menu, spans the screen and lets touches through outside
+//! what it draws too; it stays in the application's tree, after the
+//! application's window, its bounds what it draws: the edit menu's list
+//! while the menu is up, none while it draws nothing a user reads, so it
+//! covers no more than that (rn-app-fixes, design D55). The window
+//! metadata of protocol task 3.6:
 //!
 //! - `emits_events` is `Some(false)` on every window: the Simulator sends no
 //!   change events (spikes S3 and S4), so the mirror reads its windows again
@@ -111,6 +117,13 @@ pub const XCUI_PREFIX: &str = "XCUIElementType";
 
 /// The platform class of the window that holds the keyboard.
 pub const KEYBOARD_WINDOW_CLASS: &str = "UIRemoteKeyboardWindow";
+
+/// The platform class of the window UIKit keeps beside an application's own
+/// for its text effects: the edit menu, a field's input accessory views and
+/// the keyboard's placeholder, as the reader read it on iOS 26.5. The
+/// keyboard's window is one of its kind and leaves the application's tree
+/// for a window of its own.
+pub const TEXT_EFFECTS_WINDOW_CLASS: &str = "UITextEffectsWindow";
 
 /// Set in a keyboard window's id, which is otherwise its process id.
 pub const KEYBOARD_WINDOW: u32 = 1 << 31;
@@ -296,6 +309,16 @@ pub fn snapshot(read: &Read) -> Snapshot {
     } else {
         take_sheet(&mut app, builder.screen)
     };
+    // The text effects window spans the screen and lets touches through
+    // outside what it draws, as the keyboard's does: its bounds are what it
+    // draws (rn-app-fixes, design D55).
+    for window in app
+        .children
+        .iter_mut()
+        .filter(|w| is_text_effects_window(w))
+    {
+        window.frame = drawn_area(window, builder.screen, shows);
+    }
 
     let title = present(&app.label)
         .map(str::to_owned)
@@ -391,6 +414,18 @@ fn is_keyboard_window(element: &Element) -> bool {
     element.class.as_deref() == Some(KEYBOARD_WINDOW_CLASS)
 }
 
+fn is_text_effects_window(element: &Element) -> bool {
+    element.class.as_deref() == Some(TEXT_EFFECTS_WINDOW_CLASS)
+}
+
+/// Whether `element` or one of its descendants shows something a user reads:
+/// a label or a value.
+fn shows(element: &Element) -> bool {
+    present(&element.label).is_some()
+        || present(&element.value).is_some()
+        || element.children.iter().any(shows)
+}
+
 /// Less than this, in points, between two edges counts as none.
 const EDGE_SLACK: f64 = 0.5;
 
@@ -408,17 +443,43 @@ const EDGE_SLACK: f64 = 0.5;
 /// covers what the host view keeps on screen, the strip of a keyboard
 /// toolbar, if any. `None` when the window shows nothing.
 fn keyboard_area(window: &Element, screen: Option<[f64; 4]>) -> Option<[f64; 4]> {
-    fn collect(element: &Element, within: [f64; 4], area: &mut Option<[f64; 4]>) {
+    drawn_area(window, screen, |_| true)
+}
+
+/// The part of the screen `window` draws on, in points: the union of its
+/// outermost descendants on screen that do not span it and that `draws`
+/// keeps, clipped to it, a descent stopping at each, as the keyboard's
+/// window is bounded ([`keyboard_area`]). A descendant with an area wholly
+/// off the screen draws nothing there, nor does what it holds. The text
+/// effects window keeps those that show something a user reads
+/// ([`shows`]): with iOS's edit menu up, its gesture view and the menu's
+/// container span the screen and the keyboard's placeholder in it holds
+/// the keyboard's place, from 539 points down on an iPhone 17, drawing
+/// nothing, so the window draws the menu's list alone (rn-app-fixes,
+/// design D55). `None` when the window draws nothing.
+fn drawn_area(
+    window: &Element,
+    screen: Option<[f64; 4]>,
+    draws: fn(&Element) -> bool,
+) -> Option<[f64; 4]> {
+    fn collect(
+        element: &Element,
+        within: [f64; 4],
+        draws: fn(&Element) -> bool,
+        area: &mut Option<[f64; 4]>,
+    ) {
         for child in &element.children {
             match child
                 .frame
                 .map(|frame| (frame, intersection(frame, within)))
             {
                 Some((_, Some(shown))) if !spans(shown, within) => {
-                    *area = Some(area.map_or(shown, |area| union(area, shown)));
+                    if draws(child) {
+                        *area = Some(area.map_or(shown, |area| union(area, shown)));
+                    }
                 }
                 Some(([_, _, width, height], None)) if width > 0.0 && height > 0.0 => {}
-                _ => collect(child, within, area),
+                _ => collect(child, within, draws, area),
             }
         }
     }
@@ -427,7 +488,7 @@ fn keyboard_area(window: &Element, screen: Option<[f64; 4]>) -> Option<[f64; 4]>
         .filter(|[_, _, width, height]| *width > 0.0 && *height > 0.0)
         .or(screen)?;
     let mut area = None;
-    collect(window, within, &mut area);
+    collect(window, within, draws, &mut area);
     area
 }
 
