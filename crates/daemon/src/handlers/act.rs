@@ -992,7 +992,7 @@ const EMPTY_WAIT: Duration = Duration::from_secs(1);
 
 /// Waits until the replica shows `field`, emptied at `at`, empty where it
 /// held its text, as `source` says: its value empty, nothing below it, or
-/// its name no longer `before`; at most [`EMPTY_WAIT`]. Returns the field's
+/// its name other than `before`; at most [`EMPTY_WAIT`]. Returns the field's
 /// name then, the one the read-back compares a changed name with (design
 /// D49).
 fn emptied(
