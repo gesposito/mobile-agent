@@ -318,3 +318,29 @@ fn selectors_match_text_identifier_role_and_ref_on_screen_only() {
     );
     assert!(found(&mut covered, Selector::identifier("inapp-alert-ok")));
 }
+
+/// Rn-app-fixes D53 (task 6.2): a wait for an element attached, as an
+/// action's selector resolves one, gives the match on screen and not
+/// covered before a match the replica holds that a view covers, whatever
+/// their order: on the consent screen the heading the footer covers comes
+/// first in the tree, and the footer's button named alike is what a tap
+/// reaches; the heading is held still.
+#[test]
+fn an_attached_wait_gives_the_match_on_screen_before_one_a_view_covers() {
+    let screen = Screen::load("consent-ios").patched(json!([
+        {"find": "placeholder-accept", "desc": "Placeholder section 3"}
+    ]));
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let held = |mirror: &mut Mirror, selector: Selector| {
+        mirror
+            .wait(&selector, Condition::Attached, ms(10))
+            .expect("the replica holds a match")
+            .element
+            .expect("the match")
+    };
+    let found = held(&mut mirror, Selector::text("Placeholder section 3"));
+    assert_eq!(found.identifier.as_deref(), Some("placeholder-accept"));
+    let covered = held(&mut mirror, Selector::identifier("placeholder-section-3"));
+    assert_eq!(covered.name, "Placeholder section 3");
+}
