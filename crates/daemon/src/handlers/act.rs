@@ -338,6 +338,29 @@ fn sight(
     Ok(Some(seen))
 }
 
+/// Refuses `element`, which `given` names for text that `action`, the
+/// command, enters, when a selector found it where no tap reaches it,
+/// covered or out of view, as the path of a tap on it ([`sight`]) refuses
+/// it: with `element_covered` naming what a tap at its centre would land on,
+/// or with `element_offscreen` once its window was read again (rn-app-fixes,
+/// design D53). An element the read brings into view is let through.
+pub(super) fn within_reach(
+    target: &mut Attached,
+    action: &str,
+    element: &Element,
+    given: &str,
+) -> Result<(), Failure> {
+    let reached = target
+        .mirror
+        .visibility(element.id)
+        .is_some_and(|seen| seen.reachable.is_some());
+    if reached {
+        return Ok(());
+    }
+    let mut aimed = Target::Point(element.bounds.center());
+    sight(target, action, element, given, &mut aimed).map(drop)
+}
+
 /// The refusal of a tap on `element`, which `given` names, aimed as
 /// `aimed`, when something covers it ([`mirror::Mirror::covered_by`]): for a
 /// ref the mirror's own, which `sight` leaves to it; for a point,
@@ -1414,7 +1437,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let text = text_param(request)?;
     let given = request.required_str("target")?;
     let aim = Aim::parse(given)?;
-    let aimed = aim::text_ref(target, session, &aim, timeout(request)?)?;
+    let aimed = aim::text_ref(target, session, (&aim, given, "fill"), timeout(request)?)?;
     let (platform, class) = (target.info.platform, target.info.class);
     let (field, into, held) = match aimed {
         TextTarget::Within(reference, holder) => {
@@ -1529,7 +1552,7 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
     let (into, named, warning) = match request.str("target") {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            match aim::text_ref(target, session, &aim, timeout(request)?)? {
+            match aim::text_ref(target, session, (&aim, given, "type"), timeout(request)?)? {
                 TextTarget::Within(reference, holder) => {
                     let field = target.mirror.resolve(reference)?;
                     let into = ready_held(target, (&field, &holder), given, "type")?;

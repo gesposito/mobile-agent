@@ -5,14 +5,19 @@
 //! `role=<role>`.
 //!
 //! A session acts only on refs its own snapshots listed on the target,
-//! which keeps refs isolated between sessions. A selector waits for a match
-//! up to the command's timeout. Either first brings the replica up to the
-//! display (`Attached::catch_up`), so an element is aimed at where it is.
+//! which keeps refs isolated between sessions. A selector an action or a
+//! query names resolves any element the replica holds, the first on screen
+//! and not covered before the rest, and waits up to the command's timeout
+//! only for one the tree does not hold yet (rn-app-fixes, designs D51 and
+//! D53): an action on a covered element, or one out of view, then takes the
+//! path an action on its ref takes and is refused naming the cover. Either
+//! first brings the replica up to the display (`Attached::catch_up`), so an
+//! element is aimed at where it is.
 //!
-//! The mirror's selectors match text by containment, so an exact-text
-//! selector looks through the full listing instead, where every element on
-//! screen and not covered is listed with its computed name and value, and
-//! waits between looks while the mirror keeps the replica current.
+//! A wait for an exact text on screen, and the look of `scroll --until`,
+//! go through the full listing, where every element on screen and not
+//! covered is listed with its computed name and value, and wait between
+//! looks while the mirror keeps the replica current.
 
 use std::time::{Duration, Instant};
 
@@ -236,7 +241,8 @@ pub(crate) fn element(
 
 /// Where an action on an argument lands: a ref, which the mirror checks
 /// for being stale, covered or scrolled away, or for a selector the center
-/// of the element it matched; with the element a selector matched.
+/// of the element it matched among those the replica holds, on screen or
+/// not ([`find_held`]); with the element a selector matched.
 pub(crate) fn action_target(
     target: &mut Attached,
     session: &str,
@@ -249,9 +255,28 @@ pub(crate) fn action_target(
             check_seen(target, session, *reference)?;
             Ok((Target::Ref(*reference), Some(*reference), None))
         }
-        Aim::Select(selector) => Ok(aimed_at(find(target, selector, timeout)?)),
-        Aim::Exact(text) => Ok(aimed_at(find_exact(target, text, timeout)?)),
+        Aim::Select(selector) => Ok(aimed_at(find_held(target, selector, timeout)?)),
+        Aim::Exact(text) => Ok(aimed_at(find_held(target, &exact(text), timeout)?)),
     }
+}
+
+/// The element an action's selector names, as the replica holds it
+/// (rn-app-fixes, design D53): the first on screen and not covered that
+/// `selector` matches, else the first the replica holds, in view or not,
+/// within one read, as a query finds it; only for an element the tree does
+/// not hold yet does it wait, up to `timeout`, a timeout becoming
+/// `element_not_found` with the screen seen. On the fifth acceptance run a
+/// click by text on a text a button covered whole, a click by identifier on
+/// a control a footer's view held and a fill by identifier on a field
+/// behind a dialog waited out their 10 s for the element on screen and
+/// failed `element_not_found`, where their refs answered `element_covered`
+/// in 51 to 93 ms.
+fn find_held(
+    target: &mut Attached,
+    selector: &Selector,
+    timeout: Duration,
+) -> Result<Element, Failure> {
+    find_in(target, selector, Condition::Attached, timeout)
 }
 
 /// Where an action on a found element lands: its ref, which the mirror
@@ -277,20 +302,23 @@ pub(crate) enum TextTarget {
     Raising(Element, Selector),
 }
 
-/// Where text for the element an argument names goes, for text entry: its
-/// ref, which a selector's element gets from an interactive listing if no
-/// snapshot listed it. An identifier that names a node taking no text and
-/// holding exactly one field gives the field's ref, with the node it named
-/// (rn-app-fixes, design D39): on the acceptance run's code step the
-/// identifier named a React Native code input's view, around a field
-/// without an area. One that names such a node holding no field and without
-/// a ref gives the node, for the input a tap on it focuses (design D44): on
-/// the third acceptance run's second visit the code input's view held
-/// nothing, the app's input not in the tree.
+/// Where text for the element an argument names goes, for text entry, as
+/// `action`, the command given `given`, enters it: its ref, which a
+/// selector's element, found among those the replica holds ([`find_held`]),
+/// gets from an interactive listing if no snapshot listed it, once a tap
+/// reaches it: one covered, or out of view, is refused as a tap on it is
+/// (`act::within_reach`, rn-app-fixes design D53). An identifier that names
+/// a node taking no text and holding exactly one field gives the field's
+/// ref, with the node it named (design D39): on the acceptance run's code
+/// step the identifier named a React Native code input's view, around a
+/// field without an area. One that names such a node holding no field and
+/// without a ref gives the node, for the input a tap on it focuses (design
+/// D44): on the third acceptance run's second visit the code input's view
+/// held nothing, the app's input not in the tree.
 pub(crate) fn text_ref(
     target: &mut Attached,
     session: &str,
-    aim: &Aim,
+    (aim, given, action): (&Aim, &str, &str),
     timeout: Duration,
 ) -> Result<TextTarget, Failure> {
     target.catch_up()?;
@@ -300,7 +328,8 @@ pub(crate) fn text_ref(
             Ok(TextTarget::Field(*reference))
         }
         Aim::Select(selector) => {
-            let element = find(target, selector, timeout)?;
+            let element = find_held(target, selector, timeout)?;
+            super::act::within_reach(target, action, &element, given)?;
             let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
             if selector.identifier.is_none() || takes_text {
                 return Ok(TextTarget::Field(listed_ref(
@@ -323,7 +352,8 @@ pub(crate) fn text_ref(
             }
         }
         Aim::Exact(text) => {
-            let element = find_exact(target, text, timeout)?;
+            let element = find_held(target, &exact(text), timeout)?;
+            super::act::within_reach(target, action, &element, given)?;
             let reference = listed_ref(target, &element, &format!("exact text {text:?}"))?;
             Ok(TextTarget::Field(reference))
         }
