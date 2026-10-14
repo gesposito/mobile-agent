@@ -353,7 +353,13 @@ takes like the others, so the wait holds whichever way the text goes in. A
 field with the focus, or a keyboard already up, pays nothing, and the tap
 obeys the click's rule for an element out of view. The driver's own tap,
 which follows, finds the field focused. Android sets text without typing
-and does not wait.
+and does not wait. A keyboard window that draws nothing
+(`Mirror::keys_hidden`) ends the wait once the field shows the focus
+(design D52): with the Simulator's hardware keyboard connected iOS draws
+no keys and keeps the keyboard's window, its keys below the screen, and
+on the fifth acceptance run of 2026-10-14 a number pad's field, whose
+window drew nothing, waited out its second, the code fill taking 3.2 to
+3.3 s against 2.2 to 2.3.
 
 An identifier that names a node that takes no text but holds exactly one
 field (`Mirror::field_within`, design D39) sends `fill` and `type` into
@@ -370,8 +376,10 @@ acceptance run's second visit the code input's view held nothing, the
 app's input not in the tree, and `fill` and `type` by its identifier
 failed `invalid_argument` while a click on it raised the keyboard and an
 untargeted `type` landed the code. The node is tapped where a tap reaches
-it, the keyboard's window awaited up to 1 s on either platform, and the
-text goes untargeted to the input in focus, `fill` reading it back
+it, the keyboard's window awaited up to 1 s on either platform, a window
+that draws nothing telling that a hardware keyboard serves the input the
+tap focused (design D52), and the text goes untargeted to the input in
+focus, `fill` reading it back
 through the node found again by its identifier, its value, descendants or
 name; the reply's `ref` is null and a warning names the node and says the
 keyboard it brought up carried the text. No keyboard after the second, or
@@ -456,7 +464,18 @@ acceptance run of 2026-10-12 a tap at the centre of a card 70% under a
 sticky header pressed the header. A ref, an identifier and a text selector
 take this one path: the mirror aims a ref's tap itself, and a selector's
 element without a ref is aimed at the same point here, as is the tap with
-which `fill` focuses its field. An element nothing of which a tap reaches
+which `fill` focuses its field. A selector names any element the replica
+holds, in view or not, the first on screen and not covered given before
+the rest (`aim::find_held`, the mirror's wait for an element attached),
+and waits up to the command's timeout only while it holds none (design
+D53): on the fifth acceptance run of 2026-10-14 a click by text on a text
+a button covered whole, a click by identifier on a control a footer's
+view held and a fill by identifier on a field behind a dialog each waited
+out their 10 s and failed `element_not_found`, where their refs were
+refused at once. `fill` and `type` refuse an element no tap reaches the
+same way before looking for its ref (`act::within_reach`), which they
+otherwise missed in the interactive listing and refused with
+`invalid_argument`. An element nothing of which a tap reaches
 in view is not tapped at those bounds (design D32): in the React Native smoke test the keyboard moved a submit button up
 without an event, the replica kept the button's old bounds, under the
 keyboard, before a frame-driven re-read fell due, and the tap went to the
@@ -929,48 +948,51 @@ settle windows take real time, and a device model:
   `--env FIXTURE_INITIAL_TAB=<tab>` on iOS, `--env initial_tab=<tab>` on
   Android;
 - a settings app with a Wi-Fi switch;
-- the placeholder app `dev.mobileagent.placeholder`, whose screen
-  `--env PLACEHOLDER_SCREEN=<name>` picks at launch, under placeholder
-  names: `consent`, a heading half under the secondary one of two footer
-  buttons listed after the content and a 12-point text under the primary
-  one; `creation`, a list under a header listed before it, which a stroke
-  scrolls and which says which ways it scrolls, a disabled button drawn
-  after it over most of a control and a footer drawn after that over the
-  list's lower part and the rest of the control, `creation-open`, the
-  same without the footer, and `creation-rn`, the tab as React Native's
-  accessibility lists it, each view that draws something a node holding
-  nothing with what it lays out after it, the footer's view among them,
-  where a stroke that comes down on the primary button or the footer
-  moves nothing;
-  `feed`, a card partly above its list's top, where the header listed
-  before the list is drawn; `list`, a header listed before a list down to
-  122 points and a field in the list that brings the keyboard up, and
-  `list-low`, the header down to 430 points, which leaves 109 points of
-  the list above the keyboard; `code`, a code field whose name spells the
-  digits it holds, and `code-again`, the field without an area inside an
-  identified node, as on the step's second visit; `code-named`, the code
-  field named by its boxes, each its digit or a dash, before its label,
-  `code-masked`, a bullet for each digit, and `code-bare`, its node holding
-  no field, a tap on it focusing an input outside the tree, as the third
-  acceptance run met the step on its two visits (design D43, D44); `sheet`, a field without
-  an identifier whose view gains a counter at the focus and whose name
-  changes with its text, in the structure of the acceptance run of
-  2026-10-12 (design D37 to D41); and by default the form with the shapes
-  a React Native app showed in the smoke test of 2026-10-09: a heading; `placeholder-code`, a code field built of
+- the placeholder app `dev.mobileagent.placeholder`, whose screen `--env
+  PLACEHOLDER_SCREEN=<name>` picks at launch, under placeholder names:
+  `consent`, a heading half under the secondary one of two footer buttons
+  listed after the content, a 12-point text wholly under it and a 12-point
+  text under the primary one; `creation`, a list under a header listed
+  before it, which a stroke scrolls and which says which ways it scrolls, a
+  disabled button drawn after it over most of a control and a footer drawn
+  after that over the list's lower part and the rest of the control,
+  `creation-open`, the same without the footer, and `creation-rn`, the tab
+  as React Native's accessibility lists it, each view that draws something a
+  node holding nothing with what it lays out after it, the footer's view
+  among them, where a stroke that comes down on the primary button or the
+  footer moves nothing, and `creation-held`, the same with the footer's view
+  drawn from the primary button's top, holding the paste control and the
+  button beside it whole, as the fifth acceptance run met the tab; `feed`, a
+  card partly above its list's top, where the header listed before the list
+  is drawn; `list`, a header listed before a list down to 122 points and a
+  field in the list that brings the keyboard up, and `list-low`, the header
+  down to 430 points, which leaves 109 points of the list above the
+  keyboard; `code`, a code field whose name spells the digits it holds, and
+  `code-again`, the field without an area inside an identified node, as on
+  the step's second visit; `code-named`, the code field named by its boxes,
+  each its digit or a dash, before its label, `code-masked`, a bullet for
+  each digit, and `code-bare`, its node holding no field, a tap on it
+  focusing an input outside the tree, as the third acceptance run met the
+  step on its two visits (design D43, D44); `sheet`, a field without an
+  identifier whose view gains a counter at the focus and whose name changes
+  with its text, in the structure of the acceptance run of 2026-10-12
+  (design D37 to D41); `dialog`, a name field under a view the app marks
+  modal, as the fifth acceptance run met a dialog (design D53); and by
+  default the form with the shapes a React Native app showed in the smoke
+  test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
   `placeholder-secret`, a field the tree shows as a labelled node without
   traits, no value and nothing below it, as iOS reads a React Native field
   inside a view marked accessible, which takes text and never shows it;
   `placeholder-status`; `placeholder-hint`, a button the keyboard, once up,
   covers all but its top 14 points of; `placeholder-submit`, low on the
-  screen, which the layout moves above the keyboard 50 ms after the
-  keyboard came up, without an event and in no frame, so that the replica
-  keeps its old bounds until its next read (design D32);
-  `placeholder-help`, under the keyboard; `placeholder-terms` at the
-  bottom; and, once the hint is tapped, `placeholder-footer`, a toolbar
-  holding `placeholder-accept`, listed after the terms button and drawn
-  over it, as a fixed footer is. A tap on the keyboard enters a 5 into the
-  field in focus, as its number pad does.
+  screen, which the layout moves above the keyboard 50 ms after the keyboard
+  came up, without an event and in no frame, so that the replica keeps its
+  old bounds until its next read (design D32); `placeholder-help`, under the
+  keyboard; `placeholder-terms` at the bottom; and, once the hint is tapped,
+  `placeholder-footer`, a toolbar holding `placeholder-accept`, listed after
+  the terms button and drawn over it, as a fixed footer is. A tap on the
+  keyboard enters a 5 into the field in focus, as its number pad does.
 
 Android fakes use widget classes, a status bar, a keyboard window (from
 600 points down, while a field has focus) and dialog windows, and
@@ -995,7 +1017,8 @@ package, bounded by what the keyboard draws: from its prediction bar at
 539 points down, task 10.21), and a stroke that comes down on it types as
 on Android. The keyboard comes up with the focus; the tests' fakes can
 have it come up some time after the focus, an iOS field losing the text
-that reaches it sooner, typed or pasted, or never (`Slide`). Their states
+that reaches it sooner, typed or pasted, never, or with its keys hidden, as
+under a hardware keyboard, the window drawing nothing (`Slide`). Their states
 are `device`
 and `booted`; they have neither a capture nor a report. A fake iPhone
 (`ios-device`) is an iOS fake in the `ios-device` class, on iOS 26.6.2,
@@ -1232,6 +1255,8 @@ Worked around here without changing `crates/mirror`:
 | Wait predicates from the event stream (design D48) | React Native scroll view (the click on the creation tab in React Native's shape refused naming the disabled button; `scroll --until` stroking inside what the list shows above the footer) | `handlers::act::tests::a_click_on_a_control_whose_strip_lies_under_a_footer_react_native_lists_empty_is_refused`, `handlers::act::tests::scroll_until_strokes_inside_what_a_scroll_view_shows_above_a_footer`; the mirror's rows of this scenario |
 | Text entry verification (design D49) | Refill of the same text | `handlers::act::tests::a_refill_of_the_code_a_field_holds_empties_it_first_and_is_verified_through_the_name`, `handlers::act::tests::a_keyed_fill_into_a_field_holding_text_empties_it_and_types_once_it_reads_empty`, `devices::simulator::tests::text_into_the_field_in_focus_is_readied_as_text_into_a_field_it_taps` |
 | Queries reach elements out of view (design D51) | Box of a row scrolled above | `handlers::act::tests::get_and_a_wait_for_presence_resolve_a_row_scrolled_above_at_once_and_say_it_is_out_of_view`, `handlers::act::tests::only_an_element_the_tree_does_not_hold_is_not_found_and_a_wait_for_one_in_view_still_waits` |
+| Selectors resolve covered elements (design D53) | Click by text on a covered element | `handlers::act::tests::a_click_by_text_on_a_text_a_button_covers_whole_is_refused_naming_it_at_once`, `handlers::act::tests::a_click_by_identifier_on_a_control_a_view_holds_whole_is_refused_at_once`, `handlers::act::tests::a_fill_by_identifier_on_a_field_behind_a_dialog_is_refused_naming_it_at_once`, `handlers::act::tests::a_selector_on_an_element_the_tree_does_not_hold_waits_its_timeout` |
+| Snapshot content, spec `ui-mirror` (design D52) | Hardware keyboard connected | `handlers::act::tests::a_fill_on_ios_with_a_hardware_keyboard_types_once_the_field_has_the_focus`, `handlers::act::tests::fill_by_the_identifier_of_a_node_that_brings_up_a_keyboard_drawing_nothing_types_at_once`, on a fake whose keyboard window draws nothing (`Slide::Hidden`); the rest of the row in `crates/mirror/README.md` |
 | Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
 | Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
