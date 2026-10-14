@@ -43,3 +43,10 @@
 #### Scenario: Box of a row scrolled above
 - **WHEN** `get box` names a row the list has scrolled above the screen and the tree still holds
 - **THEN** the reply gives its bounds and says it is out of view, within one read
+
+### Requirement: Selectors resolve covered elements
+An action by text selector or identifier SHALL resolve any element the replica holds within one read and then take the same path as an action by ref, failing with `element_covered` naming the cover or `element_offscreen` as a ref would, within the time a ref takes; the selector wait SHALL apply only to an element the tree does not hold yet.
+
+#### Scenario: Click by text on a covered element
+- **WHEN** a click names by text an element one view covers whole
+- **THEN** it fails with `element_covered` naming the view within one read, never `element_not_found` after the selector timeout
