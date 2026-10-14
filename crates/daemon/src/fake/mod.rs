@@ -47,8 +47,9 @@
 //! down, on iOS the window the Simulator's reader gives the keyboard, from
 //! its prediction bar at 539 points down. The keyboard comes up with the
 //! focus, or as [`FakeDriver::with_slide`] says (see [`Slide`]): some time
-//! after it, an iOS field losing the text that comes sooner, or never. A
-//! stroke that comes down on the
+//! after it, an iOS field losing the text that comes sooner, never, or with
+//! its keys hidden, as under a hardware keyboard, its window drawing
+//! nothing. A stroke that comes down on the
 //! keyboard goes to the keyboard and moves nothing: its glide typing enters
 //! a word into the field in focus, as Gboard took the strokes of a `scroll`
 //! that started on its keys on a Nexus 5X
@@ -103,9 +104,14 @@ pub enum Slide {
     /// keyboard slid in, in 3 of 8 runs of the React Native smoke test of
     /// 2026-10-09; Android's text set types nothing and is never lost.
     After(Duration),
-    /// Never: no keyboard window shows, and fields take text, as with a
-    /// hardware keyboard connected to a Simulator.
+    /// Never: no keyboard window shows, and fields take text, as for a
+    /// field with an input view of its own.
     Never,
+    /// With its keys hidden: on iOS the keyboard's window shows with the
+    /// focus but draws nothing, its keys below the screen, and fields take
+    /// text at once, as on a Simulator whose hardware keyboard is connected
+    /// (rn-app-fixes task 6.1); on Android no keyboard window shows.
+    Hidden,
 }
 
 /// How fake targets' fields take text whose method the target may choose.

@@ -529,6 +529,9 @@ enum Keys {
     Coming,
     /// Up.
     Up,
+    /// Up with its keys hidden, drawing nothing, as [`Slide::Hidden`] has
+    /// it: a hardware keyboard serves the field in focus.
+    Hidden,
 }
 
 /// The fake device: which app is in front and every running app's state.
@@ -589,6 +592,19 @@ impl Device {
         Some(self.kit.keyboard(app).rect)
     }
 
+    /// The keyboard's window over `app`, the app in front: the keyboard
+    /// while it shows, or, on iOS, a window that draws nothing while its
+    /// keys are hidden.
+    fn keyboard_window(&self, app: &str) -> Option<Win> {
+        if self.keyboard().is_some() {
+            Some(self.kit.keyboard(app))
+        } else if self.keys == Keys::Hidden && self.kit.platform == Platform::Ios {
+            Some(self.kit.hidden_keyboard(app))
+        } else {
+            None
+        }
+    }
+
     /// Whether a field of the app in front has the focus.
     fn focused(&self) -> bool {
         match &self.foreground {
@@ -618,6 +634,7 @@ impl Device {
                 Slide::AtOnce => Keys::Up,
                 Slide::After(_) => Keys::Coming,
                 Slide::Never => Keys::Down,
+                Slide::Hidden => Keys::Hidden,
             };
         }
     }
@@ -1014,16 +1031,14 @@ impl Device {
                 windows.push(kit.app_window(self.settings_id(), "Settings", content));
             }
             Foreground::Fixture(app) => {
-                let keyboard = self.keyboard().is_some();
+                let keyboard = self.keyboard_window(app);
                 fixture_windows(kit, app, &self.fixtures[app], keyboard, &mut windows);
             }
             Foreground::Placeholder => {
                 if let Some(forms) = &self.placeholder {
                     let content = placeholder_content(kit, forms);
                     windows.push(kit.app_window(PLACEHOLDER, "Placeholder", content));
-                    if self.keyboard().is_some() {
-                        windows.push(kit.keyboard(PLACEHOLDER));
-                    }
+                    windows.extend(self.keyboard_window(PLACEHOLDER));
                 }
             }
         }
@@ -1200,9 +1215,15 @@ fn fixture_title(app: &str) -> &'static str {
     }
 }
 
-/// The windows `fixture`, running as `app`, shows, the keyboard among them
-/// when `keyboard` is set.
-fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windows: &mut Vec<Win>) {
+/// The windows `fixture`, running as `app`, shows, with `keyboard`, the
+/// keyboard's window, when one shows.
+fn fixture_windows(
+    kit: Kit,
+    app: &str,
+    fixture: &Fixture,
+    keyboard: Option<Win>,
+    windows: &mut Vec<Win>,
+) {
     let title = fixture_title(app);
     let (top, bottom) = kit.content();
     let area = [0.0, top, kit.width(), bottom];
@@ -1317,8 +1338,8 @@ fn fixture_windows(kit: Kit, app: &str, fixture: &Fixture, keyboard: bool, windo
     if windows.iter().any(|w| w.modal) {
         window.flags = WindowFlags::EMPTY;
     }
-    if keyboard {
-        windows.insert(0, kit.keyboard(app));
+    if let Some(keyboard) = keyboard {
+        windows.insert(0, keyboard);
     }
     windows.push(window);
 }

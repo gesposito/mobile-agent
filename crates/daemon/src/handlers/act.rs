@@ -4020,6 +4020,31 @@ mod tests {
         );
     }
 
+    /// Design D52 and D44, N11's knock-on on N1 (task 6.1; task 5.6): with
+    /// a hardware keyboard connected, a tap on the code step's node holding
+    /// no field gives the app's input the focus and brings up the
+    /// keyboard's window drawing nothing, its keys below the screen, and
+    /// `fill` and `type` by its identifier failed with `invalid_argument`,
+    /// "no keyboard came up within 1000 ms of a tap on it". The window that
+    /// came up tells that an input took the focus: the code goes in at once
+    /// and reads back through the node's name.
+    #[test]
+    fn fill_by_the_identifier_of_a_node_that_brings_up_a_keyboard_drawing_nothing_types_at_once() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Keys)
+            .with_slide(Slide::Hidden);
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=code-bare"]);
+        let reply = fill_in(&mut target, "#placeholder-id-3", "123456");
+        let success = reply.unwrap_or_else(|failure| panic!("{failure:?}"));
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["readFrom"], "name", "{data}");
+        assert_eq!(texts(&sent), [("123456".to_owned(), None)]);
+        let waited = text_after_tap(&sent).expect("fill taps the node, then types");
+        assert!(waited < Duration::from_millis(300), "{waited:?}");
+    }
+
     /// Design D44: an identifier on a node that takes no text, holds no
     /// field and raises no keyboard when tapped still fails with
     /// `invalid_argument`, once the keyboard has had its second to come, and
@@ -4162,8 +4187,8 @@ mod tests {
     }
 
     /// Design D34: the wait is bounded: a field whose keyboard never comes,
-    /// as with a hardware keyboard connected, gets its text 1 s after the
-    /// tap.
+    /// as a field with an input view of its own, gets its text 1 s after
+    /// the tap.
     #[test]
     fn a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes() {
         let (mut target, sent) = sliding("ios", Slide::Never, Typing::Keys);
@@ -4175,6 +4200,43 @@ mod tests {
             waited >= Duration::from_secs(1) && waited < Duration::from_millis(1300),
             "{waited:?}"
         );
+    }
+
+    /// Design D52, N11 of the fifth acceptance run (task 6.1): with a
+    /// hardware keyboard connected iOS draws no keys, and keeps the
+    /// keyboard's window, drawing nothing, while a field has the focus. Its
+    /// keys never show, and `fill` waited out its second before typing,
+    /// the code fill taking 3.2 to 3.3 s against 2.2 to 2.3 with the
+    /// software keyboard. The focus tells instead: the keys go out once the
+    /// field has it, and nothing is listed under the keyboard, so a click on
+    /// a tab below the field taps it.
+    #[test]
+    fn a_fill_on_ios_with_a_hardware_keyboard_types_once_the_field_has_the_focus() {
+        let (mut target, sent) = sliding("ios", Slide::Hidden, Typing::Keys);
+        let success = fill_in(&mut target, "#login-username", TWENTY).unwrap();
+        assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert_eq!(success.data["retried"], false, "{}", success.data);
+        assert_eq!(held(&mut target, "#login-username"), TWENTY);
+        let waited = text_after_tap(&sent).expect("fill taps the field, then types");
+        assert!(waited < Duration::from_millis(300), "{waited:?}");
+
+        let listing = super::super::view::snapshot(
+            &mut target,
+            "default",
+            &request(r#"{"action": "snapshot", "interactive": true}"#),
+        )
+        .unwrap();
+        let text = listing.data["snapshot"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        assert!(
+            text.contains("tab-list") && !text.contains("under the keyboard"),
+            "{text}"
+        );
+        sent.lock().unwrap().clear();
+        click_on(&mut target, "#tab-list").unwrap_or_else(|failure| panic!("{failure:?}"));
+        assert_eq!(taps(&sent).len(), 1, "{:?}", taps(&sent));
     }
 
     /// Design D34: a field that has the focus with the keyboard up gets no

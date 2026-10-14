@@ -703,6 +703,21 @@ impl Kit {
         }
     }
 
+    /// The keyboard's window over `app` on iOS while a hardware keyboard
+    /// serves the field in focus, as the Simulator's reader gives it
+    /// (rn-app-fixes task 6.1): the window's own node across the screen,
+    /// holding the keyboard below the screen, and bounded by what it draws,
+    /// nothing.
+    pub fn hidden_keyboard(self, app: &str) -> Win {
+        let mut window = self.keyboard(app);
+        let (width, height) = (self.width(), self.height());
+        let keys = [0.0, height + 78.0, width, height + 311.0];
+        window.rect = [0.0, 0.0, 0.0, 0.0];
+        window.root = El::new("XCUIElementTypeWindow", [0.0, 0.0, width, height])
+            .child(El::new("XCUIElementTypeKeyboard", keys).set(NodeFlags::VISIBLE, false));
+        window
+    }
+
     /// An Android dialog window that covers what lies below it, owned by
     /// the app or by system UI such as the permission controller.
     pub fn dialog(
