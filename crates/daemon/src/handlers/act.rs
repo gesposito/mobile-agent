@@ -3704,6 +3704,114 @@ mod tests {
         assert!(!failure.message.contains("123456"), "{}", failure.message);
     }
 
+    /// The fixture's list on a fake Simulator scrolled to its end, row 200
+    /// at its bottom and rows 1 to 186 above the screen, which the tree
+    /// still holds.
+    fn list_at_its_end() -> Attached {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, _) = recorded(&driver, FIXTURE, &["FIXTURE_INITIAL_TAB=list"]);
+        let reply = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": "#row-200"}),
+        );
+        reply.unwrap_or_else(|failure| panic!("the list scrolls to its end: {failure:?}"));
+        target
+    }
+
+    /// A query: `get` of `what` of `aimed` or a `wait` for it in `state`,
+    /// waiting at most `timeout` ms.
+    fn query(
+        target: &mut Attached,
+        action: &str,
+        what: &str,
+        aimed: &str,
+        timeout: u64,
+    ) -> Outcome {
+        let line = match action {
+            "get" => json!({"action": "get", "what": what, "target": aimed, "timeout": timeout}),
+            _ => json!({"action": "wait", "state": what, "target": aimed, "timeout": timeout}),
+        };
+        let line = line.to_string();
+        match action {
+            "get" => super::super::view::get(target, "default", &request(&line)),
+            _ => super::super::view::wait(target, "default", &request(&line)),
+        }
+    }
+
+    /// Design D51, N10 of the fourth acceptance run (task 5.4; task 4.7):
+    /// on the feed scrolled to its end `get box` on an identifier and on a
+    /// text of rows scrolled above failed `element_not_found` after the
+    /// full 10 s, while the hint counted the rows above, which the tree
+    /// held: a selector waited for an element on screen. `get` and a `wait`
+    /// for presence resolve any element the replica holds, in view or not,
+    /// at once, and say whether it is in view.
+    #[test]
+    fn get_and_a_wait_for_presence_resolve_a_row_scrolled_above_at_once_and_say_it_is_out_of_view()
+    {
+        let mut target = list_at_its_end();
+        for aimed in ["#row-3", "text==Row 3"] {
+            let started = Instant::now();
+            let reply = query(&mut target, "get", "box", aimed, 2000);
+            let data = reply
+                .unwrap_or_else(|failure| panic!("{aimed}: {failure:?}"))
+                .data;
+            assert!(
+                started.elapsed() < Duration::from_millis(500),
+                "{aimed}: at once, not after {:?}",
+                started.elapsed()
+            );
+            assert_eq!(data["inView"], false, "{aimed}: {data}");
+            assert!(
+                data["y"].as_f64().is_some_and(|y| y < 0.0),
+                "{aimed}: above the screen: {data}"
+            );
+            assert_eq!(data["height"], 48.0, "{aimed}: {data}");
+        }
+        let text = query(&mut target, "get", "text", "#row-3", 2000)
+            .unwrap()
+            .data;
+        assert_eq!(
+            (&text["text"], &text["inView"]),
+            (&json!("Row 3"), &json!(false))
+        );
+        let shown = query(&mut target, "get", "box", "#row-199", 2000)
+            .unwrap()
+            .data;
+        assert_eq!(shown["inView"], true, "{shown}");
+
+        let started = Instant::now();
+        let waited = query(&mut target, "wait", "attached", "#row-3", 2000)
+            .unwrap_or_else(|failure| panic!("{failure:?}"))
+            .data;
+        assert!(started.elapsed() < Duration::from_millis(500), "{waited}");
+        assert_eq!(waited["element"]["id"], "row-3", "{waited}");
+        assert_eq!(waited["inView"], false, "{waited}");
+    }
+
+    /// Design D51 (task 5.4): a wait for an element in view still waits for
+    /// one in view, and only an element the tree does not hold, as a row
+    /// once a row's detail has replaced the list, fails `element_not_found`
+    /// naming what the screen lists.
+    #[test]
+    fn only_an_element_the_tree_does_not_hold_is_not_found_and_a_wait_for_one_in_view_still_waits()
+    {
+        let mut target = list_at_its_end();
+        let failure = query(&mut target, "wait", "visible", "#row-3", 300).unwrap_err();
+        assert_eq!(failure.code, "wait_timeout", "{}", failure.message);
+
+        click_on(&mut target, "#row-200").unwrap();
+        let failure = query(&mut target, "get", "box", "#row-3", 300).unwrap_err();
+        assert_eq!(failure.code, "element_not_found", "{}", failure.message);
+        assert!(
+            failure.message.contains("the screen shows")
+                && failure
+                    .message
+                    .contains("- button \"Back\" [id=detail-back"),
+            "names what is listed: {}",
+            failure.message
+        );
+    }
+
     /// The times the texts among `sent` went out, in order.
     fn text_times(sent: &Sent) -> Vec<Instant> {
         sent.lock()
