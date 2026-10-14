@@ -127,6 +127,27 @@ fn the_agent_guide_says_what_fill_reads_from_a_name_and_what_a_snapshot_leaves_o
     }
 }
 
+/// Rn-app-fixes (design D50 and D51): the guide says that a hint names what
+/// covers what it counts, that the full listing keeps what a tap reaches
+/// none of at `visible=0%`, that `get` reads an element out of view and says
+/// whether it is in view, and that a wait for `attached` asks the tree.
+#[test]
+fn the_agent_guide_says_what_hints_count_what_snapshot_keeps_and_what_get_reads_out_of_view() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "2 of them behind the header",
+        "visible=0%",
+        "inView",
+        "attached",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 /// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
 /// the readiness states a command on one can fail with and where the step
 /// is named, the slower tier that makes settle and waits take longer, and
