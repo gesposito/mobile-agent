@@ -1219,6 +1219,58 @@ fn raise_keyboard(
     Ok(())
 }
 
+/// How long `fill` waits, once it has tapped to close iOS's edit menu, for
+/// the replica to show the menu gone.
+const MENU_WAIT: Duration = Duration::from_secs(1);
+
+/// Closes iOS's edit menu when the replica shows one up once `fill` has
+/// read back its paste into `field` (design D55): the tap on the field in
+/// focus that readies a paste opens the menu, and a paste that lands
+/// nothing leaves it up over the screen, as on the sixth acceptance run,
+/// where Command was lost. A tap on the field near its left end closes
+/// it, as a tap on the field in focus does on the Simulator, the caret
+/// going to the field's start, away from a clear button at its right end;
+/// on a field in focus without the menu that tap would open it, so it goes
+/// only once the read-back has ended and the replica shows the menu.
+/// Waits at most [`MENU_WAIT`] for the menu to go.
+fn close_edit_menu(target: &mut Attached, field: &Field) -> Result<(), Failure> {
+    if target.info.platform != Platform::Ios || target.mirror.edit_menu().is_none() {
+        return Ok(());
+    }
+    let Some(element) = field.element(target)? else {
+        return Ok(());
+    };
+    let Some(reach) = target
+        .mirror
+        .visibility(element.id)
+        .and_then(|seen| seen.reachable)
+    else {
+        return Ok(());
+    };
+    let at = Point::new(
+        reach.left + mirror::REACH_FLOOR.min(reach.width()) / 2.0,
+        reach.center().y,
+    );
+    let outcome = target.mirror.act(&Action::Tap {
+        target: Target::Point(at),
+        hold: None,
+    })?;
+    if !outcome.accepted {
+        return Err(rejected("tap that closes the edit menu"));
+    }
+    let deadline = Instant::now() + MENU_WAIT;
+    loop {
+        target.mirror.pump()?;
+        let now = Instant::now();
+        if target.mirror.edit_menu().is_none() || now >= deadline {
+            return Ok(());
+        }
+        target
+            .mirror
+            .run_until((now + KEYBOARD_SLICE).min(deadline))?;
+    }
+}
+
 /// The warning of an entry that an identifier `given` named through `node`,
 /// a node that takes no text and holds no field, a tap on which brought the
 /// keyboard up (design D44).
@@ -1426,7 +1478,8 @@ fn mismatch(
 /// [`raise_keyboard`]). A field that shows other
 /// text gets the text again in one piece, pasted on a Simulator, set through
 /// the runner on a physical iPhone and set directly on Android, and is read
-/// back again; a field that still shows
+/// back again, iOS's edit menu that paste left up closed after
+/// (see [`close_edit_menu`]); a field that still shows
 /// other text fails the fill with `text_mismatch`. A field that shows
 /// nothing to read back, neither a value nor anything below it, leaves the
 /// fill unverified, with a warning, and gets the text once. On Android an
@@ -1519,7 +1572,9 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
             described(value.as_deref())
         )
     };
-    match read_back(target, &field, &text, (entered, second), &before)? {
+    let read = read_back(target, &field, &text, (entered, second), &before)?;
+    close_edit_menu(target, &field)?;
+    match read {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
             Ok(filled(given, reference, second, check, true).warn(note(Some(again()))))
