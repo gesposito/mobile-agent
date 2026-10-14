@@ -103,6 +103,11 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
                     let _ = writeln!(out, "{label} {}", number(&data[key]));
                 }
             }
+            // An element the tree holds out of view (rn-app-fixes, design
+            // D51).
+            if data["inView"] == Value::Bool(false) {
+                let _ = writeln!(out, "out of view: scroll it into view before acting on it");
+            }
         }
         "screenshot" => {
             let _ = writeln!(out, "✓ Screenshot saved to {}", str_of(data, "path"));

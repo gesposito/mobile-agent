@@ -470,7 +470,7 @@ pub struct WaitArgs {
     /// Wait for an element whose name or value contains this text
     #[arg(long, conflicts_with = "target")]
     pub text: Option<String>,
-    /// What to wait for: visible (the default), hidden, detached or enabled
+    /// What to wait for: visible (the default), hidden or enabled on screen, attached or detached in the tree, in view or not
     #[arg(long, value_name = "STATE")]
     pub state: Option<String>,
     /// Wait until neither the tree nor the frames change for the quiet window
