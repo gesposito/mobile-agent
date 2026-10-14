@@ -15,21 +15,21 @@ The loop
 Snapshots
   - button "Sign in" [id=login-submit, ref=e4]
   One element per line: role, name in quotes, attributes, the ref last.
-  A field's value follows ": ". A line in parentheses, such as
-  "(12 more actionable items below, scroll down to reveal)", counts what
-  is scrolled out of view or under the keyboard. -i leaves out what a tap
-  reaches none of, as under a dialog, a header or a footer, and says
-  visible=35% of what it reaches part of. Every tab has a ref.
+  A field's value follows ": ". A line in parentheses, as "(8 more actionable
+  items above, 2 of them behind the header, scroll up to reveal)", counts what
+  is scrolled away, covered or under the keyboard. -i leaves out what a tap
+  reaches none of, as under a dialog, a header or a footer; snapshot lists it
+  at visible=0% unless one view covers it whole. Both say visible=35% of what
+  a tap reaches part of. Every tab has a ref.
   snapshot -i        only elements with refs; start here
   snapshot           every element, texts and system bars too
   snapshot -d 2      at most two levels deep
   snapshot --delta   only what changed since your last delta snapshot
 
 Refs
-  Write a ref as @e4; ref=e4 and e4 work too. A ref names one element for as
-  long as that element stays on screen, and a number is never reused. When
-  the element is gone the command fails with code stale_ref: snapshot again
-  and use the new refs.
+  Write a ref as @e4; ref=e4 and e4 work too. A ref names one element while
+  it stays on screen, and a number is never reused. When the element is gone
+  the command fails with code stale_ref: snapshot again and use the new refs.
 
 Selectors
   Where a ref goes, a selector works too: #login-submit (test id),
@@ -73,7 +73,8 @@ Waiting
                               3000 ms; a never-ending animation returns
                               settled: false and names what kept changing
   wait --text Welcome         until an element shows the text
-  wait '#spinner' --state hidden   until it is gone (also visible, enabled)
+  wait '#spinner' --state hidden   until it is off screen; also visible,
+                              enabled, and attached or detached in the tree
   wait 500                    fixed milliseconds, a last resort
   click waits for the tap's first effect, at most 1 s, so a snapshot right
   after it already sees the change; wait --settle waits out the rest.
@@ -81,7 +82,7 @@ Waiting
   else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000.
 
 Reading
-  get text @e5 | get value @e2 | get box @e4
+  get text @e5 | get value @e2 | get box @e4   in view or not, as inView says
   diff snapshot               what changed since your last snapshot
   screenshot shot.jpg         the latest frame as a JPEG
 
