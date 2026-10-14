@@ -1619,9 +1619,10 @@ fn under_keyboard(listing: &Snapshot) -> usize {
 /// before the list across its top is the header, named or not: the
 /// interactive listing's hint says three of them are behind it, and the two
 /// listings differ by those three rows alone, the full listing's hint
-/// counting what it leaves out, none of them. A row behind the header's
-/// frame, which the header covers whole and both listings leave out, is
-/// behind the header as well, in both hints.
+/// counting what it leaves out, none of them, the three above the screen
+/// (task 7.3). A row behind the header's frame, which the header covers
+/// whole, is behind the header as well in the interactive listing's hint,
+/// and the full listing keeps it at visible=0% (design D57).
 #[test]
 fn hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_what_the_listing_drops()
  {
@@ -1656,7 +1657,7 @@ fn hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_
     assert!(
         whole
             .text
-            .contains("\n(6 more actionable items above, scroll up to reveal)\n"),
+            .contains("\n(3 more actionable items above, scroll up to reveal)\n"),
         "{}",
         whole.text
     );
@@ -1676,9 +1677,17 @@ fn hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_
     );
     let whole = mirror.snapshot(&full()).unwrap();
     assert!(
-        whole.text.contains(
-            "(6 more actionable items above, 1 of them behind the header, scroll up to reveal)"
-        ),
+        whole
+            .text
+            .contains("(3 more actionable items above, scroll up to reveal)"),
+        "{}",
+        whole.text
+    );
+    assert_eq!(
+        whole
+            .by_identifier("placeholder-id-4")
+            .map(|row| row.visible),
+        Some(Some(0)),
         "{}",
         whole.text
     );
@@ -1884,8 +1893,9 @@ fn the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed(
 /// footer, whatever its bounds: one of the sixth acceptance run's listings
 /// with the edit menu up counted the screen's elements "(4 more actionable
 /// items behind the header)", the window spanning the screen as the reader
-/// gave it before task 7.1. Such a window covers what a tap at an element's
-/// centre would land on, and the hint names it so.
+/// gave it before task 7.1. The hint names what a tap at an element's
+/// centre would land on, the menu's cell over the password field, else the
+/// window, as a plain view.
 #[test]
 fn a_hint_never_calls_a_window_over_the_screen_a_header() {
     let spanning = edit_menu_with_window_at(json!([0, 0, 402, 874]));
@@ -1897,10 +1907,11 @@ fn a_hint_never_calls_a_window_over_the_screen_a_header() {
         "{}",
         listing.text
     );
+    assert_eq!(counted_left_out(&listing), 3, "{}", listing.text);
     assert!(
         listing
             .text
-            .contains("(3 more actionable items under the overlay)"),
+            .contains("(2 more actionable items under the overlay)"),
         "{}",
         listing.text
     );

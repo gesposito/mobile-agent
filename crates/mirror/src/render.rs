@@ -13,7 +13,10 @@
 //! none of and both marking the share a tap reaches (design D50); in a full
 //! listing, unnamed generic containers, containers whose label names the
 //! field inside them, unnamed text and images and window roots are skipped
-//! and their children listed in their place. Scroll hints sit next to their
+//! and their children listed in their place. A node a view drawn over it
+//! covers whole is left out of the interactive listing and kept in the
+//! full one at visible=0% when it has a ref, a modal's leaving it out of
+//! both (rn-app-fixes, design D57). Scroll hints sit next to their
 //! container's children: content above or to the left before them, below
 //! or to the right after them.
 
@@ -142,10 +145,18 @@ impl Walker<'_> {
     /// keyboard windows above the window lying at `keyboards`.
     fn walk(&mut self, w: usize, i: usize, depth: usize, keyboards: &[Rect]) {
         let facts = &self.view.windows[w][i];
-        if facts.hidden != Hidden::No {
+        let node = &self.replica.windows[w].nodes[i];
+        // A view drawn over the node covers it whole: the full listing keeps
+        // it at visible=0%, with what it holds, as the interactive listing's
+        // hints count it, but a scroll container, whose hints none count
+        // (rn-app-fixes, design D57); the interactive listing leaves it out.
+        let drawn_over = facts.hidden == Hidden::Covered
+            && !self.options.interactive
+            && self.view.drawn_over_whole(w, i)
+            && !crate::view::scrolls(node, facts);
+        if facts.hidden != Hidden::No && !drawn_over {
             return;
         }
-        let node = &self.replica.windows[w].nodes[i];
         let beside = beside(&facts.rect, keyboards);
         let under = self.options.interactive && beside.is_some_and(|share| share <= 0.0);
         if under && facts.visible && facts.bears_ref && !facts.absorbed {
@@ -156,7 +167,7 @@ impl Walker<'_> {
             && !facts.absorbed
             && !under
             && !(self.options.interactive && reached == Some(0.0))
-            && if self.options.interactive {
+            && if self.options.interactive || drawn_over {
                 facts.bears_ref
             } else {
                 listed_in_full(facts, node)

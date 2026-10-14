@@ -180,7 +180,7 @@ impl View {
             .or(self.modal);
         let at = self.windows[w][i].rect.center();
         Some(match cover {
-            Some(cover) => self.name(replica, cover, at),
+            Some(cover) => self.cover_name(replica, (w, i), cover, at),
             None => CoverName {
                 by: "modal".to_owned(),
                 drawn_over: false,
@@ -196,6 +196,48 @@ impl View {
             .iter()
             .find(|&&(cw, ci, _)| (cw, ci) == (w, i))
             .map(|&(_, _, cover)| cover)
+    }
+
+    /// Whether a view drawn over node `i` of window `w` covers all of it, as
+    /// D31's later siblings, Android's views on top, bars and pinned
+    /// headers do; such a node stays in the full listing at visible=0%
+    /// (rn-app-fixes, design D57), where a modal's cuts it.
+    pub(crate) fn drawn_over_whole(&self, w: usize, i: usize) -> bool {
+        matches!(self.whole_cover(w, i), Some(Cover::DrawnOver { .. }))
+    }
+
+    /// How hints and refusals name `cover` over node `i` of window `w`, by
+    /// one rule (rn-app-fixes, design D57): a view drawn over it is the
+    /// header or the footer of the scroll container the node counts in,
+    /// or of the window for a node outside any ([`edge`]), as the hints
+    /// have named it since designs D50 and D54; any other cover is named as
+    /// what a tap at `at` would land on ([`View::name`]). The sixth
+    /// acceptance run's click on a control under the creation tab's footer
+    /// was refused naming the overlay while the hint said the footer.
+    pub fn cover_name(
+        &self,
+        replica: &Replica,
+        (w, i): (usize, usize),
+        cover: Cover,
+        at: Point,
+    ) -> CoverName {
+        if let Cover::DrawnOver { w: cw, s } = cover
+            && cw == w
+        {
+            let (window, facts) = (&replica.windows[w], &self.windows[w]);
+            let list = owner(window, facts, i);
+            let area = list.map_or_else(
+                || Rect::from_pixels(window.bounds, replica.scale),
+                |c| facts[c].rect,
+            );
+            if let Some(edge) = edge(window, facts, s, (list, &area), pixel(replica)) {
+                return CoverName {
+                    by: edge.to_owned(),
+                    drawn_over: true,
+                };
+            }
+        }
+        self.name(replica, cover, at)
     }
 
     /// The views that lie over part of node `i` of window `w` without
@@ -1335,18 +1377,20 @@ pub(crate) fn scrolls(node: &RNode, facts: &Facts) -> bool {
 
 /// Scroll hints per container: `(window index, node index, hint)`, in
 /// pre-order of containers and, per container, above, left, below, right.
-/// An element is counted when it is off the screen or outside its
-/// container's bounds, and when the listing leaves it out for a cover: one
-/// a view drawn over it covers whole, which both listings leave out, and,
-/// in an `interactive` listing, one a tap reaches none of, as `reach` has
-/// the share of each element a tap reaches ([`crate::visibility::listed`]),
-/// which the full listing keeps at visible=0%; such an element inside the
-/// container's bounds counts on the side of the container's middle it lies
-/// on along the axis the container scrolls (rn-app-fixes, design D45). The
-/// hint names, beside what is scrolled away, the cover of each element it
-/// counts as left out ([`hint_cover`], design D50), so that the interactive
-/// listing's hints count what the full listing shows at visible=0% beside
-/// what the full listing's own hints count as left out (design D54).
+/// An element is counted when the listing leaves it out: one off the
+/// screen, and, in an `interactive` listing, one outside its container's
+/// bounds or one the listing leaves out for a cover, one a view drawn over
+/// it covers whole or one a tap reaches none of, as `reach` has the share
+/// of each element a tap reaches ([`crate::visibility::listed`]); such an
+/// element inside the container's bounds counts on the side of the
+/// container's middle it lies on along the axis the container scrolls
+/// (rn-app-fixes, design D45). The full listing keeps every element with a
+/// ref on the screen, at visible=0% when a tap reaches none of it, a view
+/// covering it whole or not, and counts none of them (design D57). The
+/// interactive listing's hint names, beside what is scrolled away, the cover
+/// of each element on the screen it counts as left out ([`hint_cover`],
+/// design D50), so that its hints count what the full listing shows at
+/// visible=0% (designs D54 and D57).
 pub(crate) fn hints(
     replica: &Replica,
     view: &View,
@@ -1363,7 +1407,7 @@ pub(crate) fn hints(
         // What covers the counted elements a tap reaches none of: the
         // container, the side and how the hint names the cover.
         let mut covered: Vec<(usize, usize, String)> = Vec::new();
-        for (x, node) in window.nodes.iter().enumerate() {
+        for x in 0..window.nodes.len() {
             let f = &facts[x];
             let whole = match f.hidden {
                 Hidden::No => None,
@@ -1376,28 +1420,16 @@ pub(crate) fn hints(
             if !f.bears_ref || f.absorbed {
                 continue;
             }
-            // The nearest scroll container above, unless another item on
-            // the way already stands for this one.
-            let mut up = node.parent;
-            let mut owner = None;
-            while let Some(a) = up {
-                if container(a) {
-                    owner = Some(a);
-                    break;
-                }
-                if facts[a].bears_ref && !facts[a].absorbed {
-                    break;
-                }
-                up = window.nodes[a].parent;
-            }
-            // What the listing leaves out for a cover.
-            let left_out = whole.is_some() || (interactive && reach.of(w, x) == Some(0.0));
+            // What the listing leaves out for a cover: the interactive
+            // listing what a view covers whole and what a tap reaches none
+            // of, which the full listing keeps at visible=0% (design D57).
+            let left_out = interactive && (whole.is_some() || reach.of(w, x) == Some(0.0));
             let reached = !left_out;
-            let Some(s) = owner else {
+            let Some(s) = owner(window, facts, x) else {
                 if left_out
                     && f.visible
                     && let Some((Some(c), by)) =
-                        hint_cover(replica, view, (w, x), whole, (None, &area), slack)
+                        hint_cover(replica, view, (w, x), whole, None, slack)
                 {
                     match out
                         .covered
@@ -1416,6 +1448,11 @@ pub(crate) fn hints(
             }
             let viewport = facts[s].rect.intersect(&area);
             if f.visible && f.rect.overlaps(&viewport) && reached {
+                continue;
+            }
+            // The full listing shows every element with a ref on the screen
+            // and counts none of them (design D57).
+            if !interactive && f.visible {
                 continue;
             }
             let r = &f.rect;
@@ -1445,15 +1482,12 @@ pub(crate) fn hints(
                 Direction::Below
             };
             counts[s][slot(direction)] += 1;
+            // A cover's count holds only what a listing could show, an
+            // element on the screen (design D57).
             if left_out
-                && let Some((_, by)) = hint_cover(
-                    replica,
-                    view,
-                    (w, x),
-                    whole,
-                    (Some((s, direction)), &facts[s].rect),
-                    slack,
-                )
+                && f.visible
+                && let Some((_, by)) =
+                    hint_cover(replica, view, (w, x), whole, Some((s, direction)), slack)
             {
                 covered.push((s, slot(direction), by));
             }
@@ -1507,75 +1541,144 @@ pub(crate) fn hints(
     out
 }
 
+/// The scroll container node `i` of `window` counts in, `facts` being the
+/// window's: the nearest above it, unless an element with a ref on the way
+/// stands for it; `None` for one outside any.
+fn owner(window: &Win, facts: &[Facts], i: usize) -> Option<usize> {
+    let mut up = window.nodes[i].parent;
+    while let Some(a) = up {
+        if scrolls(&window.nodes[a], &facts[a]) {
+            return Some(a);
+        }
+        if facts[a].bears_ref && !facts[a].absorbed {
+            return None;
+        }
+        up = window.nodes[a].parent;
+    }
+    None
+}
+
+/// The edge node `c` of `window` keeps of what scroll container `list`
+/// shows, as hints and refusals name it (designs D50, D54, D55 and D57):
+/// `"header"` for a view listed before the container across its top,
+/// whatever it holds, or a plain view across the top of `area`, the
+/// container's bounds or, for an element outside any container, its
+/// window's, short of its bottom; `"footer"` for a plain view across the
+/// bottom of `area`, short of its top; `None` for any other view, a plain
+/// one over all of `area` among them, as Bluesky's typeahead lies over its
+/// page, and for a window over the application's own, as the text effects
+/// window holding iOS's edit menu is.
+fn edge(
+    window: &Win,
+    facts: &[Facts],
+    c: usize,
+    (list, area): (Option<usize>, &Rect),
+    slack: f64,
+) -> Option<&'static str> {
+    let (node, f) = (&window.nodes[c], &facts[c]);
+    if &*node.class == roles::XCUI_WINDOW {
+        return None;
+    }
+    let plain = matches!(f.role, Role::Generic | Role::Group)
+        && f.name.is_empty()
+        && node.flags.contains(NodeFlags::ENABLED);
+    let across = f.rect.left <= area.left + slack && f.rect.right >= area.right - slack;
+    let (top, bottom) = (
+        f.rect.top <= area.top + slack,
+        f.rect.bottom >= area.bottom - slack,
+    );
+    if list.is_some_and(|s| heads(window, facts, c, s, slack))
+        || (plain && across && top && !bottom)
+    {
+        Some("header")
+    } else if plain && across && bottom && !top {
+        Some("footer")
+    } else {
+        None
+    }
+}
+
 /// What leaves a tap none of node `i` of window `w`, an element inside the
-/// scroll container `list` names, with the side of it the element counts
-/// on, or, outside any, a window at `list`'s bounds, and how a hint names
-/// it: the view drawn over all of it, `whole`, else the view drawn over part
-/// of it that holds its centre, a tab bar or toolbar that does, or the
-/// keyboard, which is no node; for an element nothing covers at its centre,
-/// out of what its container shows above or below, the container's header or
-/// footer on that side ([`edge_view`]); `None` when there is none, the
-/// scroll keeping it out of view. A view listed before the container across
-/// its top is the header the element lies behind, whatever it holds (design
-/// D54), and so is a plain view across its top; a plain view across its
-/// bottom is the footer the element lies under; a window, as the text
-/// effects window holding iOS's edit menu is, is neither (design D55); any
-/// other is named as a refusal names a cover (design D50).
+/// scroll container `container` names, with the side of it the element
+/// counts on, or outside any, and how a hint names it: the view drawn over
+/// all of it, `whole`, else the view drawn over part of it that holds its
+/// centre, a tab bar or toolbar that does, or the keyboard, which is no
+/// node; for an element nothing covers at its centre, out of what its
+/// container shows above or below, the container's header or footer on
+/// that side ([`edge_view`]); `None` when there is none, the scroll keeping
+/// it out of view. The hint names a view as a refusal does, by one rule
+/// ([`View::cover_name`], design D57): the header the element lies behind,
+/// the footer it lies under, or what a tap at its centre would land on.
 fn hint_cover(
     replica: &Replica,
     view: &View,
     (w, i): (usize, usize),
     whole: Option<usize>,
-    (container, list): (Option<(usize, Direction)>, &Rect),
+    container: Option<(usize, Direction)>,
     slack: f64,
 ) -> Option<(Option<usize>, String)> {
+    /// What lies over the element's centre: a view, a tab bar or toolbar,
+    /// or the container's edge beyond what it shows.
+    enum Over {
+        View(Cover),
+        Bar(usize),
+        Edge(usize),
+    }
     let (window, facts) = (&replica.windows[w], &view.windows[w]);
     let centre = facts[i].rect.center();
-    let cover = whole.or_else(|| {
-        view.over_part(w, i)
-            .filter(|(_, rect)| rect.contains(centre))
-            .last()
-            .and_then(|(cover, _)| match cover {
-                Cover::DrawnOver { s, .. } => Some(s),
-                Cover::Node { i, .. } => Some(i),
-                Cover::Window(_) => None,
-            })
-            .or_else(|| {
-                (0..window.nodes.len()).find(|&b| {
+    let over = whole
+        .map(|s| Over::View(Cover::DrawnOver { w, s }))
+        .or_else(|| {
+            view.over_part(w, i)
+                .filter(|(_, rect)| rect.contains(centre))
+                .last()
+                .and_then(|(cover, _)| match cover {
+                    Cover::Window(_) => None,
+                    cover => Some(Over::View(cover)),
+                })
+        })
+        .or_else(|| {
+            (0..window.nodes.len())
+                .find(|&b| {
                     let f = &facts[b];
                     matches!(f.role, Role::Tablist | Role::Toolbar)
                         && f.visible
                         && f.hidden == Hidden::No
                         && f.rect.contains(centre)
                 })
-            })
-    });
-    if cover.is_none()
+                .map(Over::Bar)
+        });
+    if over.is_none()
         && crate::visibility::keyboards_above(replica, w)
             .iter()
             .any(|keyboard| keyboard.contains(centre))
     {
         return Some((None, format!("under the {}", crate::visibility::KEYBOARD)));
     }
-    let c = cover
-        .or_else(|| container.and_then(|(s, side)| edge_view(window, facts, s, side, slack)))?;
-    let (node, f) = (&window.nodes[c], &facts[c]);
-    // A window over the application's own, as the text effects window
-    // that holds iOS's edit menu is, is no header and no footer, whatever
-    // its bounds (design D55).
-    let edge = &*node.class != roles::XCUI_WINDOW;
-    let plain = edge
-        && matches!(f.role, Role::Generic | Role::Group)
-        && f.name.is_empty()
-        && node.flags.contains(NodeFlags::ENABLED);
-    let across = f.rect.left <= list.left + slack && f.rect.right >= list.right - slack;
-    let header = edge && container.is_some_and(|(s, _)| heads(window, facts, c, s, slack));
-    let by = if header || (plain && across && f.rect.top <= list.top + slack) {
+    let over = over.or_else(|| {
+        container
+            .and_then(|(s, side)| edge_view(window, facts, s, side, slack))
+            .map(Over::Edge)
+    })?;
+    let (c, named) = match over {
+        Over::View(cover) => {
+            let c = match cover {
+                Cover::DrawnOver { s, .. } => s,
+                Cover::Node { i, .. } => i,
+                Cover::Window(_) => unreachable!("a modal window is no view over part"),
+            };
+            (c, view.cover_name(replica, (w, i), cover, centre))
+        }
+        Over::Bar(b) => (b, view.name_bar(replica, w, b)),
+        Over::Edge(c) => (
+            c,
+            view.cover_name(replica, (w, i), Cover::DrawnOver { w, s: c }, centre),
+        ),
+    };
+    let by = if named.by == "header" {
         "behind the header".to_owned()
-    } else if plain && across && f.rect.bottom >= list.bottom - slack {
-        "under the footer".to_owned()
     } else {
-        format!("under the {}", cover_label(node, f, "overlay"))
+        format!("under the {}", named.by)
     };
     Some((Some(c), by))
 }

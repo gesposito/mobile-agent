@@ -372,7 +372,7 @@ impl<'a> Sight<'a> {
                 over.into_iter()
                     .rev()
                     .find(|(_, cover)| cover.contains(at))
-                    .map(|(cover, _)| view.name(replica, cover, at))
+                    .map(|(cover, _)| view.cover_name(replica, (w, i), cover, at))
             };
             under(i)
                 .or_else(|| containers.clone().find_map(under))
@@ -412,10 +412,11 @@ pub(crate) struct Reaches<'a> {
 }
 
 impl Reaches<'_> {
-    /// The share of node `i` of window `w` a tap reaches; `None` for a node
-    /// the listing leaves out for another reason: one off the screen,
-    /// covered whole, folded into another or without a ref, and one wholly
-    /// under a keyboard, which the listing counts under it.
+    /// The share of node `i` of window `w` a tap reaches, 0 for one a view
+    /// drawn over it covers whole; `None` for a node the listing leaves out
+    /// for another reason: one off the screen, cut by a modal, folded into
+    /// another or without a ref, and one wholly under a keyboard, which the
+    /// listing counts under it.
     pub(crate) fn of(&self, w: usize, i: usize) -> Option<f64> {
         let start: usize = self.replica.windows[..w]
             .iter()
@@ -447,8 +448,14 @@ pub(crate) fn listed<'a>(replica: &'a Replica, view: &View) -> Reaches<'a> {
         let mut last: Option<(Option<usize>, Option<Rect>)> = None;
         for (i, node) in window.nodes.iter().enumerate() {
             let f = &facts[i];
-            if !f.visible || !f.bears_ref || f.absorbed || f.hidden != Hidden::No {
+            if !f.visible || !f.bears_ref || f.absorbed {
                 shares.push(None);
+                continue;
+            }
+            if f.hidden != Hidden::No {
+                // A view drawn over it whole leaves a tap none of it, which
+                // the full listing marks (rn-app-fixes, design D57).
+                shares.push(view.drawn_over_whole(w, i).then_some(0.0));
                 continue;
             }
             if beside(&f.rect, &keyboards).is_some_and(|share| share <= 0.0) {
