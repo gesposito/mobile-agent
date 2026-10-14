@@ -40,8 +40,10 @@
 //! view of its input views, which on iOS 26.5 runs from the prediction bar
 //! above the `Keyboard` element down through the dock to the bottom of the
 //! screen (539 to 874 points on an iPhone 17), or none when it draws
-//! nothing. The mirror cuts an element's visible bounds by that window
-//! (task 10.21). The window metadata of protocol task 3.6:
+//! nothing, as while a hardware keyboard serves the field in focus and iOS
+//! keeps the host view below the screen (rn-app-fixes, design D52). The
+//! mirror cuts an element's visible bounds by that window (task 10.21). The
+//! window metadata of protocol task 3.6:
 //!
 //! - `emits_events` is `Some(false)` on every window: the Simulator sends no
 //!   change events (spikes S3 and S4), so the mirror reads its windows again
@@ -398,15 +400,24 @@ const EDGE_SLACK: f64 = 0.5;
 /// touches through; below them the host view holds what the keyboard draws
 /// (on iOS 26.5 the prediction bar, the keys and the dock, from 539 points
 /// down on an iPhone 17), and a descent stops there, before the views of
-/// the prediction bar that reach beyond the screen. `None` when the window
-/// shows nothing.
+/// the prediction bar that reach beyond the screen. A descendant with an
+/// area wholly off the screen draws nothing there, nor does what it holds:
+/// while a hardware keyboard serves the field in focus, iOS keeps the host
+/// view below the screen, and a wrapper of its prediction bar reaches 600
+/// points above it onto the screen (rn-app-fixes, design D52), so the window
+/// covers what the host view keeps on screen, the strip of a keyboard
+/// toolbar, if any. `None` when the window shows nothing.
 fn keyboard_area(window: &Element, screen: Option<[f64; 4]>) -> Option<[f64; 4]> {
     fn collect(element: &Element, within: [f64; 4], area: &mut Option<[f64; 4]>) {
         for child in &element.children {
-            match child.frame.and_then(|frame| intersection(frame, within)) {
-                Some(shown) if !spans(shown, within) => {
+            match child
+                .frame
+                .map(|frame| (frame, intersection(frame, within)))
+            {
+                Some((_, Some(shown))) if !spans(shown, within) => {
                     *area = Some(area.map_or(shown, |area| union(area, shown)));
                 }
+                Some(([_, _, width, height], None)) if width > 0.0 && height > 0.0 => {}
                 _ => collect(child, within, area),
             }
         }
