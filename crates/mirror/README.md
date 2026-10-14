@@ -15,7 +15,7 @@ src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
                 timestamps, note_window_change, visibility, covered_by, scroll_viewport,
-                scroll_container_in, uncovered, field_within, fields_within
+                scroll_container_in, uncovered, keys_hidden, field_within, fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, what modals, views drawn over others, bars and pinned
@@ -145,7 +145,10 @@ Conventions a driver follows:
   An input-method window's bounds are what the keyboard covers, as the
   Android agent gives them, the pieces of the window's touchable region
   that hold what it shows (task 10.25), and as the Simulator's reader gives
-  the keyboard's window, which spans the screen (task 10.21).
+  the keyboard's window, which spans the screen (task 10.21): none for a
+  window that draws nothing, as while a hardware keyboard serves the field
+  in focus and iOS keeps the keyboard's keys below the screen, or the strip
+  it keeps for a keyboard toolbar (rn-app-fixes, design D52).
 - **Classes and labels.** Android passes widget classes. The Simulator driver
   passes `XCUIElementType` names, or the UIKit class for elements typed
   `Other` so that `_UIAlertControllerPhoneTVMacView` is recognized as an
@@ -278,48 +281,51 @@ also counts).
   window roots and unnamed, unidentified generic containers, texts and images,
   listing their children in their place.
 - Application windows come first, then system bars; a keyboard window is one
-  `- keyboard` line. An interactive listing leaves out the elements that lie
-  wholly under a keyboard window, bounded by what the keyboard draws (tasks
-  10.21 and 10.25), and counts them in the keyboard's place,
-  `(2 more actionable items under the keyboard, close it to reveal)`; an
-  element partly under one says how much of its bounds shows, `visible=35%`,
-  a whole percent and at least 1, in either listing (rn-app-fixes, design
-  D38): in the acceptance run of 2026-10-12 the elements under the keyboard
-  stayed listed, and clicks on a submit button 1 to 35% in view tapped its
-  centre on the keyboard. An interactive listing likewise leaves out an
-  element a tap reaches none of (`visibility`, below), whatever covers it,
-  a header, a view drawn over it or the edge of what its list shows, and
-  counts it in its scroll container's hint, and marks one a tap reaches
-  only part of with that share, `visible=50%`, the less of it and the share
-  beside the keyboard (design D45): the third acceptance run's listings
-  gave no sign of a heading half under a footer button or of a card 70%
-  under a header, and listed a card scrolled above the list's top and rows
-  behind a header. Most elements lie within what their containers show,
-  with no view over part of them, and only the rest are measured. The full
-  listing marks what a tap reaches part of likewise and keeps what it
-  reaches none of, at `visible=0%` (design D50): the fourth acceptance
-  run's full listings marked the keyboard's share alone. The top-most
-  modal, a modal window or an alert or
-  dialog node, cuts everything it covers. A view marked modal (the `modal` node
-  flag) cuts what its siblings hold within its bounds (task 10.22):
-  assistive technology, and XCTest's tree, leave out every sibling, but a
-  sibling outside the view is in sight and a tap reaches it, as Bluesky's
-  header is beside its typeahead, a sibling only because React Native
-  flattens the views between them. Each node is judged by its own bounds,
-  and acting on a covered one fails with `element_covered`, naming the view
-  by its role and name, or `modal view` when it has neither. On Android a
-  node drawn over the siblings it overlaps (the `on_top` node flag) cuts
-  what they hold within its bounds when it shows something, a node on
-  screen with a ref or a name in it or below it (task 10.28): Android
-  reports no occlusion inside a window and lists a view group's children
-  by where they lie, so Bluesky's typeahead and the Explore page under it,
-  both with the same bounds, read as siblings with the typeahead first. A
-  view drawn over others that shows nothing, such as the decoration Bluesky
-  draws over a video, may be transparent and hides nothing, and only a node
-  with an area is judged, since Android gives a node scrolled out of its
-  list bounds clipped to nothing: those rows keep counting in their list's
-  hint under the tab bar drawn over the list's bottom, which hides only
-  what lies wholly under it.
+  `- keyboard` line, but for one that draws nothing, which counts as no
+  keyboard (rn-app-fixes, design D52): with the Simulator's hardware
+  keyboard connected iOS draws no keys, and the fifth acceptance run's
+  listings counted every control below 274 points as under a keyboard the
+  screen did not show. An interactive listing leaves out the elements that
+  lie wholly under a keyboard window, bounded by what the keyboard draws
+  (tasks 10.21 and 10.25), and counts them in the keyboard's place, `(2 more
+  actionable items under the keyboard, close it to reveal)`; an element
+  partly under one says how much of its bounds shows, `visible=35%`, a whole
+  percent and at least 1, in either listing (rn-app-fixes, design D38): in
+  the acceptance run of 2026-10-12 the elements under the keyboard stayed
+  listed, and clicks on a submit button 1 to 35% in view tapped its centre
+  on the keyboard. An interactive listing likewise leaves out an element a
+  tap reaches none of (`visibility`, below), whatever covers it, a header, a
+  view drawn over it or the edge of what its list shows, and counts it in
+  its scroll container's hint, and marks one a tap reaches only part of with
+  that share, `visible=50%`, the less of it and the share beside the
+  keyboard (design D45): the third acceptance run's listings gave no sign of
+  a heading half under a footer button or of a card 70% under a header, and
+  listed a card scrolled above the list's top and rows behind a header. Most
+  elements lie within what their containers show, with no view over part of
+  them, and only the rest are measured. The full listing marks what a tap
+  reaches part of likewise and keeps what it reaches none of, at
+  `visible=0%` (design D50): the fourth acceptance run's full listings
+  marked the keyboard's share alone. The top-most modal, a modal window or
+  an alert or dialog node, cuts everything it covers. A view marked modal
+  (the `modal` node flag) cuts what its siblings hold within its bounds
+  (task 10.22): assistive technology, and XCTest's tree, leave out every
+  sibling, but a sibling outside the view is in sight and a tap reaches it,
+  as Bluesky's header is beside its typeahead, a sibling only because React
+  Native flattens the views between them. Each node is judged by its own
+  bounds, and acting on a covered one fails with `element_covered`, naming
+  the view by its role and name, or `modal view` when it has neither. On
+  Android a node drawn over the siblings it overlaps (the `on_top` node
+  flag) cuts what they hold within its bounds when it shows something, a
+  node on screen with a ref or a name in it or below it (task 10.28):
+  Android reports no occlusion inside a window and lists a view group's
+  children by where they lie, so Bluesky's typeahead and the Explore page
+  under it, both with the same bounds, read as siblings with the typeahead
+  first. A view drawn over others that shows nothing, such as the decoration
+  Bluesky draws over a video, may be transparent and hides nothing, and only
+  a node with an area is judged, since Android gives a node scrolled out of
+  its list bounds clipped to nothing: those rows keep counting in their
+  list's hint under the tab bar drawn over the list's bottom, which hides
+  only what lies wholly under it.
 - On iOS the order is what tells (rn-app-fixes, design D31): XCTest lists a
   view's subviews in the order UIKit draws them and reports no occlusion,
   so in a tree from XCTest's snapshot (a window rooted at an
@@ -397,20 +403,31 @@ also counts).
   other units or none at all gives the ways the container can scroll
   (`(more items below, ...)`); back reads as above or left, as in a
   left-to-right layout. Content above or left is hinted before the
-  container's children, below or right after them. An interactive listing
-  also counts there an element inside the container's bounds that a tap
-  reaches none of, on the side of the container's middle it lies on along
-  the axis the container scrolls (rn-app-fixes, design D45), and one a view
-  drawn over it covers whole, which both listings leave out, and names
-  beside what is scrolled away the view over each that a tap reaches none
-  of: `behind the header` for a plain view across the container's top,
-  `under the footer` for one across its bottom, `under the keyboard`, else
-  the view as a refusal names it, as in `(6 more actionable items above, 3
-  of them behind the header, scroll up to reveal)` (design D50); such an
-  element outside any scroll container is counted on a line after the view
-  over it, `(2 more actionable items behind the header)`. A modal or a view
-  marked modal cuts what it covers with no count, no scroll bringing it
-  out, and the keyboard keeps its own line.
+  container's children, below or right after them. Each listing also
+  counts there what it leaves out for a cover: an element a view drawn over
+  it covers whole, which both listings leave out, and, in an interactive
+  listing, one a tap reaches none of, which the full listing keeps at
+  `visible=0%`, inside the container's bounds on the side of the
+  container's middle it lies on along the axis the container scrolls
+  (rn-app-fixes, design D45); so the interactive listing's counts are the
+  full listing's `visible=0%` elements beside the full listing's own, by
+  construction, which a test checks on every fixture (design D54). Beside
+  what is scrolled away a hint names the view over each element it counts
+  so: the view over its centre, else, for one beyond what its container
+  shows above or below, the container's header or footer there, a view
+  across that edge listed before or after it; `behind the header` for a
+  view listed before the container across its top, whatever it holds, or a
+  plain view across its top, `under the footer` for a plain one across its
+  bottom, `under the keyboard`, else the view as a refusal names it, as in
+  `(6 more actionable items above, 3 of them behind the header, scroll up
+  to reveal)` (designs D50 and D54): the fifth acceptance run's header was
+  a named view, and the rows its list scrolled above its frame, on the
+  screen above the header, counted as scrolled away though the full listing
+  showed them at `visible=0%`. Such an element outside any scroll container
+  is counted on a line after the view over it, `(2 more actionable items
+  behind the header)`. A modal or a view marked modal cuts what it covers
+  with no count, no scroll bringing it out, and the keyboard keeps its own
+  line.
 - Empty listings read `(no interactive elements)` and `(empty screen)`.
 - Refs are `eN`, parsed from `@eN`, `ref=eN` or `eN`; numbers only grow. A
   ref names one control: its element, and for an element without an
@@ -593,24 +610,32 @@ the reasons in this order, each with advice:
   to it, and a keyboard takes it for typing (Gboard glide-typed a word
   into the focused field at every stroke of a scroll on a Nexus 5X), so
   the daemon strokes a scroll through what `uncovered` leaves.
+- `keys_hidden` tells, the same way, whether a keyboard window above the
+  window in front draws nothing (rn-app-fixes, design D52): iOS keeps the
+  keyboard's window while an input has the focus and a hardware keyboard
+  serves it, its keys below the screen, and the input takes keys at once,
+  so the daemon's keyboard waits take such a window for the keyboard, with
+  the field's focus for a field.
 - `wait` evaluates after every item the target reports and every re-read,
   sleeping on the event stream in between; selectors match text in the name
   or value, or the whole name or value when `exact`, the identifier, the
   role and a ref, among elements on screen and not covered, or, for
   `Attached` and `Detached`, among every element the replica holds, in view
   or not, a keyboard's keys aside, as a query looks for one (rn-app-fixes,
-  design D51). A timeout fails with `wait_timeout` and a summary of an
-  interactive snapshot. Its first look takes in what arrived and leaves a
-  read that is due for later while the replica is current by the mirror's
-  own rules: no read of every window due (before the first read, after a
-  resync or a window change), no window an event named or input went to
-  since its read. A condition that holds then answers at once, without the
-  poll or the re-read after frames or text that is due, which the next
-  pump takes (rn-app-fixes, design D36): in the smoke test a wait paid 43
-  to 473 ms for that read, 380 ms at the median. Otherwise, and once it
-  does not hold, the wait reads first as before; it never answers from a
-  replica that has not been read, where nothing would match and every
-  disappearance would hold, nor from the screen before a tap.
+  design D51), the first on screen and not covered given before the rest, as
+  an action's selector resolves through it (design D53). A timeout fails
+  with `wait_timeout` and a summary of an interactive snapshot. Its first
+  look takes in what arrived and leaves a read that is due for later while
+  the replica is current by the mirror's own rules: no read of every window
+  due (before the first read, after a resync or a window change), no window
+  an event named or input went to since its read. A condition that holds
+  then answers at once, without the poll or the re-read after frames or text
+  that is due, which the next pump takes (rn-app-fixes, design D36): in the
+  smoke test a wait paid 43 to 473 ms for that read, 380 ms at the median.
+  Otherwise, and once it does not hold, the wait reads first as before; it
+  never answers from a replica that has not been read, where nothing would
+  match and every disappearance would hold, nor from the screen before a
+  tap.
 - `diff` matches elements by identity and lists added, removed and changed
   elements with the changed fields; bounds are not compared.
 - `delta_snapshot` follows agent-browser's `--delta`: revisions count from 1;
@@ -679,6 +704,8 @@ apps, in device points with the scale beside them:
 | `header-top-ios` | a React Native list on iOS with the keyboard up (D38, D41): a plain header listed before the list, its frame down to the list's top, a 44-point row at 2 points in it, a field with the focus and a button partly under the keyboard (placeholder names) |
 | `form-keyboard-ios` | a React Native sign-in form on iOS with the keyboard up (D37, D38): the submit button 3.67 of its 48 points above the keyboard's top, two links under the keyboard (placeholder names) |
 | `sheet-ios` | a React Native paste sheet on iOS (D39): a title field without an identifier in an unidentified view among four of one class, which gains a counter at the focus, the field's name changing with its text (placeholder names) |
+| `keyboard-hardware-ios` | the SwiftUI fixture's Login tab with its username field in focus while the Simulator's hardware keyboard is connected, read by the in-guest reader on an iPhone 17 (D52): iOS draws no keys, the keyboard's host view lies below the screen, keys trimmed to four, and a wrapper of the prediction bar reaches 600 points above it onto the screen; the window's bounds as the reader gives them, none |
+| `header-named-ios` | a React Native organizations list on iOS (D54): a header the app names listed before the list, three rows the list scrolled above its frame lying on the screen above the header, three above the screen (placeholder names) |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -830,6 +857,8 @@ cargo test -p mirror
 | | Condition already holds | `waits::a_wait_that_holds_in_the_replica_answers_before_a_poll_that_is_due`, `waits::a_wait_does_not_answer_from_a_replica_behind_a_tap_or_an_event` |
 | | React Native scroll view | `interactive::a_react_native_scroll_view_is_told_by_its_element_type`, `interactive::a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refused`, `visibility::a_footer_react_native_lists_holding_nothing_cuts_what_its_scroll_view_shows`, `visibility::a_view_react_native_lists_holding_nothing_covers_only_part_of_a_scroll_view` (rn-app-fixes 5.1, design D48); in the daemon, `handlers::act::tests::a_click_on_a_control_whose_strip_lies_under_a_footer_react_native_lists_empty_is_refused` and `handlers::act::tests::scroll_until_strokes_inside_what_a_scroll_view_shows_above_a_footer` |
 | | Hints agree with the listing | `interactive::the_hints_count_what_a_cover_leaves_nothing_of_and_name_the_cover`, `interactive::the_full_listing_marks_what_a_tap_reaches_part_or_none_of_and_keeps_it` (rn-app-fixes 5.3, design D50) |
+| | Hardware keyboard connected | `interactive::a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard`, and in the Simulator's reader `elements::tests::a_keyboard_window_whose_keys_lie_below_the_screen_covers_nothing`, `elements::tests::a_keyboard_window_under_a_hardware_keyboard_covers_the_strip_it_keeps_for_a_toolbar`; the waits in the daemon, `handlers::act::tests::a_fill_on_ios_with_a_hardware_keyboard_types_once_the_field_has_the_focus`, `handlers::act::tests::fill_by_the_identifier_of_a_node_that_brings_up_a_keyboard_drawing_nothing_types_at_once` (rn-app-fixes 6.1, design D52) |
+| | Counts agree by construction | `interactive::hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_what_the_listing_drops`, `interactive::the_card_above_the_feed_is_counted_behind_the_header`, `interactive::on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out` (rn-app-fixes 6.3, design D54) |
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
