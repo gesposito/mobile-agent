@@ -669,33 +669,53 @@ enum Reading {
 
 /// Whether `value`, the own value of a field that is not a text field,
 /// shows the text `fill` entered, `text`, the field's value having been
-/// `reference` in the reading the read-back compares with (design D56).
+/// `reference` in the reading the read-back compares with, the one after
+/// the emptying or before the entry, or none to compare with (design D56):
+/// a value that is no placeholder, as long as the text at least and more
+/// than separators and empty boxes' dashes, and that changed with the
+/// entry. On the sixth acceptance run the code step's node showed "4" with
+/// the keyboard up, a single box's placeholder or the last digit an
+/// emptying left, which the read-back took for what the field held where
+/// the node's name spelled the code.
 fn value_shown(value: &str, reference: Option<&str>, text: &str) -> bool {
-    let _ = (reference, text);
-    !value.is_empty()
+    let placeholder = spelled(value).is_empty() || value.chars().count() < text.chars().count();
+    !placeholder && reference.is_none_or(|held| held != value)
 }
 
-/// What `element` shows, for a read-back (design D33): its own value when
-/// it has one, or when it is a text field, whose empty value the platform
-/// reports as none; else its descendants' values or texts, joined in the
-/// order of the full listing, as a React Native code input built of boxes
-/// keeps its characters in its boxes' texts; else its accessible name when
-/// it is not `before`, the name it had before the entry, as a React Native
-/// code input that spells its digits in its name (design D39); else
+/// What `element` shows, for a read-back (design D33), the text `fill`
+/// entered being `text`: its own value when it is a text field, whose empty
+/// value the platform reports as none, or when its value shows the text,
+/// one that changed with the entry and is no placeholder ([`value_shown`],
+/// design D56); else its descendants' values or texts, joined in the order
+/// of the full listing, as a React Native code input built of boxes keeps
+/// its characters in its boxes' texts; else its accessible name when it is
+/// not the name it had in the reading compared with, `before`'s, as a React
+/// Native code input that spells its digits in its name (design D39); else
 /// nothing. A name that did not change is a label, never compared.
-fn reading(target: &mut Attached, element: &Element, before: &str) -> Result<Reading, Failure> {
-    let own = element
-        .value
-        .as_deref()
-        .is_some_and(|value| value_shown(value, None, ""));
-    if own || matches!(element.role, Role::Textbox | Role::Searchbox) {
+/// `before` holds that reading's name and value, the value `None` before
+/// any entry, when nothing changed with one yet.
+fn reading(
+    target: &mut Attached,
+    element: &Element,
+    (name, value): (&str, Option<&str>),
+    text: &str,
+) -> Result<Reading, Failure> {
+    let text_field = matches!(element.role, Role::Textbox | Role::Searchbox);
+    let own = element.value.as_deref().is_some_and(|shown| {
+        if text_field {
+            !shown.is_empty()
+        } else {
+            value_shown(shown, value, text)
+        }
+    });
+    if own || text_field {
         return Ok(Reading::Own(element.value.clone()));
     }
     let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
     let below = shown_below(&listing.elements, element.id);
     Ok(if !below.is_empty() {
         Reading::Below(below)
-    } else if element.name != before {
+    } else if element.name != name {
         Reading::Name(element.name.clone())
     } else {
         Reading::Nothing
@@ -922,14 +942,15 @@ impl Field {
 /// the mirror reading it again as reads fall due meanwhile. What the field
 /// shows at the bound stands. A field that shows nothing to read back once
 /// the screen has held still since a settle's quiet window after the entry
-/// ([`READ_BACK_HOLD`]) is unreadable. `before` is the field's name before
-/// `fill` entered the text.
+/// ([`READ_BACK_HOLD`]) is unreadable. `before` is the field's name and
+/// value in the reading compared with, as the emptying left them or before
+/// `fill` entered the text (see [`reading`]).
 fn read_back(
     target: &mut Attached,
     field: &Field,
     text: &str,
     (entered, method): (Instant, Option<TextMethod>),
-    before: &str,
+    before: (&str, Option<&str>),
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
     let quiet = entered + READ_BACK_HOLD;
@@ -938,7 +959,7 @@ fn read_back(
         let Some(element) = field.element(target)? else {
             return Ok(ReadBack::Gone);
         };
-        let reading = reading(target, &element, before)?;
+        let reading = reading(target, &element, before, text)?;
         let now = Instant::now();
         let after = now.saturating_duration_since(entered);
         let rereads = target.mirror.next_wakeup().is_some();
@@ -952,7 +973,7 @@ fn read_back(
                 compare(Some(below), &element.name, text),
                 Source::Descendants,
             ),
-            Reading::Name(name) => (compare_name(name, before, text), Source::Name),
+            Reading::Name(name) => (compare_name(name, before.0, text), Source::Name),
             Reading::Nothing => (None, Source::Value),
         };
         match (shown, reading) {
@@ -967,7 +988,7 @@ fn read_back(
                 return Ok(ReadBack::Other(Some(below)));
             }
             (None, Reading::Name(name)) if now >= deadline => {
-                return Ok(ReadBack::Other(Some(held_in_name(&name, before))));
+                return Ok(ReadBack::Other(Some(held_in_name(&name, before.0))));
             }
             _ => {}
         }
@@ -990,8 +1011,9 @@ fn typed_as_keys(class: TargetClass, text: &str) -> bool {
 
 /// Where `field` holds text that keys `fill` types replace, when it holds
 /// any and the text goes in as keys ([`typed_as_keys`]), so that `fill`
-/// empties it first (design D49): its own value, what lies below it, or,
-/// for a field known only by its name, a name that spells the text
+/// empties it first (design D49): its own value, unless a field that is not
+/// a text field shows a placeholder there ([`value_shown`]), what lies below
+/// it, or, for a field known only by its name, a name that spells the text
 /// already, where keys over the field would leave the name as it was and
 /// nothing to read back. `None` for a field that holds nothing, for a
 /// paste, and for a field gone.
@@ -1002,16 +1024,18 @@ fn held_text(target: &mut Attached, field: &Field, text: &str) -> Result<Option<
     let Some(element) = field.element(target)? else {
         return Ok(None);
     };
-    Ok(match reading(target, &element, &element.name)? {
-        Reading::Own(value) => value
-            .is_some_and(|value| !value.is_empty())
-            .then_some(Source::Value),
-        Reading::Below(_) => Some(Source::Descendants),
-        Reading::Name(_) | Reading::Nothing => {
-            let want = spelled(text);
-            (!want.is_empty() && spelled(&element.name).contains(&want)).then_some(Source::Name)
-        }
-    })
+    Ok(
+        match reading(target, &element, (&element.name, None), text)? {
+            Reading::Own(value) => value
+                .is_some_and(|value| !value.is_empty())
+                .then_some(Source::Value),
+            Reading::Below(_) => Some(Source::Descendants),
+            Reading::Name(_) | Reading::Nothing => {
+                let want = spelled(text);
+                (!want.is_empty() && spelled(&element.name).contains(&want)).then_some(Source::Name)
+            }
+        },
+    )
 }
 
 /// How long `fill` waits, once it has emptied a field, for the replica to
@@ -1023,21 +1047,22 @@ const EMPTY_WAIT: Duration = Duration::from_secs(1);
 
 /// Waits until the replica shows `field`, emptied at `at`, empty where it
 /// held its text, as `source` says: its value empty, nothing below it, or
-/// its name other than `before`; at most [`EMPTY_WAIT`]. Returns the field's
-/// name then, the one the read-back compares a changed name with (design
-/// D49).
+/// its name other than `before`, a value that shows no text `text` would be
+/// aside ([`value_shown`]); at most [`EMPTY_WAIT`]. Returns the field's name
+/// and value then, the reading the read-back compares with (designs D49
+/// and D56).
 fn emptied(
     target: &mut Attached,
     field: &Field,
     (at, source): (Instant, Source),
-    before: &str,
-) -> Result<String, Failure> {
+    (before, text): (&str, &str),
+) -> Result<(String, Option<String>), Failure> {
     let deadline = at + EMPTY_WAIT;
     loop {
         let Some(element) = field.element(target)? else {
-            return Ok(before.to_owned());
+            return Ok((before.to_owned(), None));
         };
-        let empty = match reading(target, &element, before)? {
+        let empty = match reading(target, &element, (before, None), text)? {
             Reading::Own(value) => value.is_none_or(|value| value.is_empty()),
             Reading::Below(_) => false,
             Reading::Name(_) => true,
@@ -1045,7 +1070,7 @@ fn emptied(
         };
         let now = Instant::now();
         if empty || now >= deadline {
-            return Ok(element.name);
+            return Ok((element.name, element.value));
         }
         target
             .mirror
@@ -1518,10 +1543,11 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
         }
     };
     let reference = field.reference();
-    // What a read-back takes a changed name as (design D39).
-    let mut before = field
+    // The reading a read-back compares a changed name and value with
+    // (designs D39 and D56).
+    let mut before: (String, Option<String>) = field
         .element(target)?
-        .map(|element| element.name)
+        .map(|element| (element.name, element.value))
         .unwrap_or_default();
     let note = |warning: Option<String>| match (held.clone(), warning) {
         (Some(held), Some(warning)) => Some(format!("{held}; {warning}")),
@@ -1533,9 +1559,10 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     let mut keys_into = into;
     if let Some(source) = held_text(target, &field, &text)? {
         enter(target, into, "", TextMethod::AUTO)?;
-        before = emptied(target, &field, (Instant::now(), source), &before)?;
+        before = emptied(target, &field, (Instant::now(), source), (&before.0, &text))?;
         keys_into = None;
     }
+    let before = (before.0.as_str(), before.1.as_deref());
     let first = enter(target, keys_into, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
@@ -1543,7 +1570,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let value = match read_back(target, &field, &text, (entered, first), &before)? {
+    let value = match read_back(target, &field, &text, (entered, first), before)? {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
             return Ok(filled(given, reference, first, check, false).warn(note(None)));
@@ -1580,7 +1607,7 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
             described(value.as_deref())
         )
     };
-    let read = read_back(target, &field, &text, (entered, second), &before)?;
+    let read = read_back(target, &field, &text, (entered, second), before)?;
     close_edit_menu(target, &field)?;
     match read {
         ReadBack::Shown { shown, from, after } => {
@@ -4166,10 +4193,11 @@ mod tests {
                 [(String::new(), None), ("123456".to_owned(), None)],
                 "{slide:?}: emptied, then typed"
             );
+            let listing = target.mirror.snapshot(&SnapshotOptions::full()).unwrap();
             assert_eq!(
-                text_of(&mut target, "#placeholder-id-3"),
+                listing.by_identifier("placeholder-id-3").unwrap().name,
                 "1, 2, 3, 4, 5, 6, Verification code, required",
-                "{slide:?}"
+                "{slide:?}: the field holds the code"
             );
         }
     }
