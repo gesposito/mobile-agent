@@ -168,6 +168,28 @@ fn the_agent_guide_says_a_hardware_keyboard_covers_nothing_and_a_selector_is_ref
     }
 }
 
+/// Rn-app-fixes (designs D55 to D57): the guide says that iOS's edit menu
+/// covers only the strip it draws on and that fill closes the one a lost
+/// paste leaves up, that a code field's value counts only when the text
+/// changed it, and that a refusal names what covers an element as a hint
+/// does.
+#[test]
+fn the_agent_guide_says_what_the_edit_menu_covers_and_when_a_code_fields_value_counts() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "edit menu only its strip",
+        "closes the edit menu",
+        "only when the text changed it",
+        "named as hints name it",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
+}
+
 /// Physical-ios, task 5.3: the guide says where a physical iPhone differs:
 /// the readiness states a command on one can fail with and where the step
 /// is named, the slower tier that makes settle and waits take longer, and
