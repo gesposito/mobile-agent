@@ -1220,10 +1220,12 @@ impl Mirror {
     /// falls due, and fails at `timeout` with a summary of the screen.
     /// Only elements on screen and not covered match, but for `Attached`
     /// and `Detached`, which ask whether the replica holds a match, in view
-    /// or not (rn-app-fixes, design D51), as a query does. A condition that
-    /// holds in the replica answers at once, without a read that is due,
-    /// while the replica is current by the mirror's own rules: read since
-    /// the last window change, event naming a window and injected input.
+    /// or not (rn-app-fixes, design D51), as a query does, and give the
+    /// match on screen and not covered first, as an action's selector
+    /// resolves (design D53). A condition that holds in the replica answers
+    /// at once, without a read that is due, while the replica is current by
+    /// the mirror's own rules: read since the last window change, event
+    /// naming a window and injected input.
     pub fn wait(
         &mut self,
         selector: &Selector,
@@ -1287,19 +1289,23 @@ impl Mirror {
     /// The first element that matches `selector` as `condition` looks for
     /// it: on screen, not covered, and enabled for `Enabled`; any element
     /// the replica holds for `Attached` and `Detached`, a keyboard's keys
-    /// aside.
+    /// aside, the first on screen and not covered among them before the
+    /// rest, so that a selector an action resolves this way names what a
+    /// tap reaches when it can (rn-app-fixes, design D53).
     fn first_match(&self, selector: &Selector, condition: Condition) -> Option<Element> {
         let view = View::build(&self.replica);
         let held = matches!(condition, Condition::Attached | Condition::Detached);
+        let mut out_of_sight = None;
         for (w, window) in self.replica.windows.iter().enumerate() {
             for (i, node) in window.nodes.iter().enumerate() {
                 let facts = &view.windows[w][i];
+                let shown = facts.visible && facts.hidden == Hidden::No;
                 let listed = if held {
                     facts.hidden != Hidden::Keyboard
                 } else {
-                    facts.visible && facts.hidden == Hidden::No
+                    shown
                 };
-                if !listed {
+                if !listed || (!shown && out_of_sight.is_some()) {
                     continue;
                 }
                 if condition == Condition::Enabled && !node.flags.contains(NodeFlags::ENABLED) {
@@ -1317,11 +1323,15 @@ impl Mirror {
                     facts.role,
                     reference,
                 ) {
-                    return Some(element(window, node, facts, reference));
+                    let found = element(window, node, facts, reference);
+                    if shown {
+                        return Some(found);
+                    }
+                    out_of_sight = Some(found);
                 }
             }
         }
-        None
+        out_of_sight
     }
 
     /// A summary of the screen as an interactive snapshot shows it.
