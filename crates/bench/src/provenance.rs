@@ -87,7 +87,8 @@ pub struct Provenance {
 /// The host machine.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Host {
-    /// CPU and machine model, such as `Apple M1 Max`.
+    /// The CPU, such as `Apple M1 Max`: the class of host a reader needs
+    /// beside the cores, memory and OS, without the machine's model.
     pub hardware: Option<String>,
     pub cpu_cores: Option<u32>,
     pub memory_bytes: Option<u64>,
@@ -141,13 +142,8 @@ pub enum ToolStatus {
 /// of `std::env::consts::OS` for the host.
 pub fn capture_host(probe: &dyn Probe, os: &str) -> Host {
     if os == "macos" {
-        let brand = probe.output("sysctl", &["-n", "machdep.cpu.brand_string"]);
-        let model = probe.output("sysctl", &["-n", "hw.model"]);
         Host {
-            hardware: match (brand, model) {
-                (Some(brand), Some(model)) => Some(format!("{brand} ({model})")),
-                (brand, model) => brand.or(model),
-            },
+            hardware: probe.output("sysctl", &["-n", "machdep.cpu.brand_string"]),
             cpu_cores: parsed(probe, "sysctl", &["-n", "hw.ncpu"]),
             memory_bytes: parsed(probe, "sysctl", &["-n", "hw.memsize"]),
             os: mac_os(probe),

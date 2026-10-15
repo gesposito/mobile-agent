@@ -75,7 +75,7 @@ JSON, schema version 1:
 |---|---|
 | `schema_version` | `1` |
 | `provenance.started_at`, `finished_at` | RFC 3339 UTC |
-| `provenance.host` | `hardware` (CPU and machine model), `cpu_cores`, `memory_bytes`, `os` (`macOS 26.6.2 (25G83)`), `load_average` (1, 5, 15 minutes at the start) |
+| `provenance.host` | `hardware` (the CPU, `Apple M1 Max`, without the machine's model), `cpu_cores`, `memory_bytes`, `os` (`macOS 26.6.2 (25G83)`), `load_average` (1, 5, 15 minutes at the start) |
 | `provenance.xcode` | `Xcode 27.0 (27A266a)`, or null |
 | `provenance.commit` | `sha` and `dirty` of the checkout the harness ran from, or null |
 | `provenance.harness` | `version`, `iterations`, `warmup`, `retries` |
