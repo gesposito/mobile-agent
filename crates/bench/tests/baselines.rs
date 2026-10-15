@@ -896,6 +896,49 @@ const CLOSED: &str = "echo '{\"success\":true,\"data\":{\"session\":\"mobile-age
 /// A `close` that failed.
 const CLOSE_FAILS: &str = "echo '{\"success\":false,\"error\":{\"code\":\"COMMAND_FAILED\",\"message\":\"the session did not end\"}}'; exit 1";
 
+/// A run whose tool under test, watched into `events`, runs the tab-list
+/// flow on `target`, then, once the baselines added after it have run, takes
+/// the target back for its process start: the frame of every hand-off test.
+fn watched(target: &Target, events: &Events) -> Harness {
+    let fake = FakeAdapter::new(FakeScript {
+        tool: "mobile-agent".into(),
+        version: Some("0.1.0".into()),
+        role: Role::UnderTest,
+        targets: vec![target.clone()],
+        series: vec![
+            FakeSeries::new(
+                &target.id,
+                Some(Fixture::Expo),
+                None,
+                Subject::Flow("tab-list".into()),
+                vec![300.0],
+            ),
+            FakeSeries::new(
+                &target.id,
+                None,
+                None,
+                Subject::Primitive(Primitive::CliStart),
+                vec![4.0],
+            ),
+        ],
+        flows: vec![tab_flow()],
+    });
+    Harness::new(
+        RunConfig {
+            iterations: 2,
+            warmup: 0,
+            retries: 0,
+        },
+        fake.targets(),
+        fake.series(),
+    )
+    .flows(fake.flows())
+    .tool(Box::new(Watched {
+        inner: fake,
+        events: Rc::clone(events),
+    }))
+}
+
 /// On the fake host of `target`, `SIM-1` or `emulator-5554`, the tool under
 /// test runs the tab-list flow, then agent-device does, whose `close` runs
 /// `close`, a shell command; then the tool under test takes the target back
@@ -947,43 +990,7 @@ fn hand_back(
     };
     // The tool under test runs the flow, then agent-device does; then the
     // tool under test takes the target back for its process start.
-    let fake = FakeAdapter::new(FakeScript {
-        tool: "mobile-agent".into(),
-        version: Some("0.1.0".into()),
-        role: Role::UnderTest,
-        targets: vec![target.clone()],
-        series: vec![
-            FakeSeries::new(
-                &target.id,
-                Some(Fixture::Expo),
-                None,
-                Subject::Flow("tab-list".into()),
-                vec![300.0],
-            ),
-            FakeSeries::new(
-                &target.id,
-                None,
-                None,
-                Subject::Primitive(Primitive::CliStart),
-                vec![4.0],
-            ),
-        ],
-        flows: vec![tab_flow()],
-    });
-    let mut harness = Harness::new(
-        RunConfig {
-            iterations: 2,
-            warmup: 0,
-            retries: 0,
-        },
-        fake.targets(),
-        fake.series(),
-    )
-    .flows(fake.flows())
-    .tool(Box::new(Watched {
-        inner: fake,
-        events: Rc::clone(&events),
-    }));
+    let mut harness = watched(&target, &events);
     for baseline in baselines(&setup.config()) {
         harness = harness.tool(baseline);
     }
@@ -1339,43 +1346,7 @@ fn on_a_phone(name: &str, held: &[(&str, u32)]) -> (Report, Vec<String>, Vec<Str
         terminated_at: Cell::new(None),
         scripted: common::probe(),
     };
-    let fake = FakeAdapter::new(FakeScript {
-        tool: "mobile-agent".into(),
-        version: Some("0.1.0".into()),
-        role: Role::UnderTest,
-        targets: vec![target.clone()],
-        series: vec![
-            FakeSeries::new(
-                &target.id,
-                Some(Fixture::Expo),
-                None,
-                Subject::Flow("tab-list".into()),
-                vec![300.0],
-            ),
-            FakeSeries::new(
-                &target.id,
-                None,
-                None,
-                Subject::Primitive(Primitive::CliStart),
-                vec![4.0],
-            ),
-        ],
-        flows: vec![tab_flow()],
-    });
-    let mut harness = Harness::new(
-        RunConfig {
-            iterations: 2,
-            warmup: 0,
-            retries: 0,
-        },
-        fake.targets(),
-        fake.series(),
-    )
-    .flows(fake.flows())
-    .tool(Box::new(Watched {
-        inner: fake,
-        events: Rc::clone(&events),
-    }));
+    let mut harness = watched(&target, &events);
     let config = BaselineConfig {
         ios_signing: Some(team_signing()),
         ..setup.config().for_targets([TargetClass::IosDevice])
