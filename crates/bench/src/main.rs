@@ -1,8 +1,10 @@
 //! `mobile-agent-bench`: benchmark harness and baseline adapters.
 //!
-//! Exit status: 0 when every gate passed, 1 when any gate failed, 2 when the
-//! harness itself could not run. `micro`: 0 without a regression, 1 on any,
-//! 2 when the host was busy or the run could not complete.
+//! Exit status: 0 when every gate passed or, with `--gates none`, none was
+//! judged, 1 when any gate failed, 2 when the harness itself could not run.
+//! `micro`, with `--ab` too: 0 without a regression, 1 on any, 2 when the
+//! host was busy or the run could not complete. `trend`: 0 when its two
+//! reports read and are of one kind, 2 otherwise.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,6 +28,7 @@ use bench::provenance::{Probe, SystemProbe, capture_host, compact_timestamp};
 use bench::ratio;
 use bench::report::Report;
 use bench::target::TargetClass;
+use bench::trend;
 use clap::builder::PossibleValuesParser;
 use clap::{Args, Parser, Subcommand};
 
@@ -52,6 +55,8 @@ enum Command {
     Baselines,
     /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, and write report.json and report.md
     Micro(MicroArgs),
+    /// Print a report beside the previous scheduled run's of the same kind, two microbenchmark A/B reports or two runs', with the changes, shown and never judged
+    Trend(TrendArgs),
     /// Start WebDriverAgent on a physical iPhone through its test manager, print its localhost URL and serve until standard input closes: the WebDriverAgent baseline's helper
     #[command(hide = true)]
     WdaSession(WdaSessionArgs),
@@ -195,6 +200,15 @@ struct RunArgs {
 }
 
 #[derive(Args)]
+struct TrendArgs {
+    /// The previous scheduled run's report.json
+    previous: PathBuf,
+
+    /// This run's report.json
+    report: PathBuf,
+}
+
+#[derive(Args)]
 struct GatesArgs {
     /// A report.json written by `run`
     report: PathBuf,
@@ -217,6 +231,7 @@ fn main() -> ExitCode {
             Ok(ExitCode::SUCCESS)
         }
         Command::Micro(args) => run_micro(&args),
+        Command::Trend(args) => compare_trend(&args),
         Command::WdaSession(args) => wda_session(&args),
     };
     result.unwrap_or_else(|message| {
@@ -522,6 +537,15 @@ fn wda_session(args: &WdaSessionArgs) -> Result<ExitCode, String> {
 #[cfg(not(target_os = "macos"))]
 fn wda_session(_: &WdaSessionArgs) -> Result<ExitCode, String> {
     Err("WebDriverAgent on a physical iPhone needs macOS".to_owned())
+}
+
+/// A report beside the previous scheduled run's, printed as markdown; the
+/// changes are shown and never judged, so the status is 0 whenever both
+/// reports read and are of one kind.
+fn compare_trend(args: &TrendArgs) -> Result<ExitCode, String> {
+    let markdown = trend::compare(&read(&args.previous)?, &read(&args.report)?)?;
+    print!("{markdown}");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn judge(args: &GatesArgs) -> Result<ExitCode, String> {

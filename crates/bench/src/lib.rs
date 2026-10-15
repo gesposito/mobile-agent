@@ -33,3 +33,4 @@ pub mod ratio;
 pub mod report;
 pub mod stats;
 pub mod target;
+pub mod trend;
