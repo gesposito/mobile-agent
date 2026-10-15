@@ -33,7 +33,7 @@ mod macos;
 mod unsupported;
 
 pub use cadence::Cadence;
-pub use compat::{CallSite, Compatibility, Row, Status};
+pub use compat::{CallSite, Compatibility, Row, Status, table};
 pub use driver::{Frames, Input, Lifecycle, Tree};
 pub use error::{Error, Failure, Result, TreeFailure};
 pub use frames::FrameStream;
@@ -44,10 +44,13 @@ pub use model::{
     RuntimeInfo, Screenshot, ScreenshotOptions, Swipe, TargetStatus, TextEntry, TextMethod,
     TransportChoice, TransportKind, TreeStatus,
 };
+// The iPhone driver's compatibility table compares and prints versions as
+// this one does.
 pub use tree::{
     ALERT_CLASSES, Alert, AlertButton, Degradation, Foreground, ForegroundTree, TreeBackend,
     TreeChoice, TreeOptions,
 };
+pub use version::Version;
 
 // The frame thread's pixel work and its JPEG encoder, public so that
 // benches/frames.rs can time them.

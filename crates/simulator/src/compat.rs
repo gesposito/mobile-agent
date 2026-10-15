@@ -250,8 +250,9 @@ impl Compatibility {
     }
 }
 
-/// Left-aligned columns, two spaces apart, the last one unpadded.
-fn table<const N: usize>(header: [&str; N], rows: &[[&str; N]]) -> String {
+/// Left-aligned columns, two spaces apart, the last one unpadded, as both
+/// drivers' compatibility tables print.
+pub fn table<const N: usize>(header: [&str; N], rows: &[[&str; N]]) -> String {
     let mut widths = header.map(|cell| cell.chars().count());
     for row in rows {
         for (width, cell) in widths.iter_mut().zip(row) {

@@ -7,7 +7,7 @@
 //! measures. A device outside the supported range is refused with its version
 //! named ([`crate::Readiness::UnsupportedIos`]).
 
-use crate::version::Version;
+use simulator::{Version, table};
 
 /// The first supported iOS: lockdown's `CoreDeviceProxy` carries the
 /// CoreDevice tunnel over usbmuxd from iOS 17.4; before it the tunnel needs
@@ -351,30 +351,6 @@ pub fn render() -> String {
         .map(|site| [site.call, site.service, site.validated_on, site.note])
         .collect();
     out.push_str(&table(["Call", "Service", "Validated on", "Note"], &rows));
-    out
-}
-
-/// Left-aligned columns, two spaces apart, the last one unpadded.
-fn table<const N: usize>(header: [&str; N], rows: &[[&str; N]]) -> String {
-    let mut widths = header.map(|cell| cell.chars().count());
-    for row in rows {
-        for (width, cell) in widths.iter_mut().zip(row) {
-            *width = (*width).max(cell.chars().count());
-        }
-    }
-    let mut out = String::new();
-    for row in std::iter::once(&header).chain(rows) {
-        let mut line = String::new();
-        for (index, (cell, width)) in row.iter().zip(widths).enumerate() {
-            if index + 1 == N {
-                line.push_str(cell);
-            } else {
-                line.push_str(&format!("{cell:<width$}  "));
-            }
-        }
-        out.push_str(line.trim_end());
-        out.push('\n');
-    }
     out
 }
 

@@ -30,7 +30,6 @@ mod readiness;
 mod runner;
 mod services;
 mod touch;
-mod version;
 
 #[cfg(target_os = "macos")]
 mod macos;

@@ -31,11 +31,11 @@ src/
   identity.rs      the host's signing identity for the runner, through security
   bundle.rs        the app bundle an install takes, checked on the host
   services.rs      the RSD services the driver needs
-  compat.rs        the supported iOS range, the input path's gate and the call-site table
+  compat.rs        the supported iOS range, the input path's gate and the call-site table,
+                   compared and printed with the Simulator driver's Version and table
   runner.rs        what the runner's hello must name, and how the test manager's failures read
   touch.rs         touches as timed mainTouchscreen reports: taps, presses, swipes that rest
   frames.rs        the frame pipeline: PNG decode, the change below the status bar, FrameStream
-  version.rs       dotted version comparison
   unsupported.rs   the driver on hosts other than macOS
   macos/
     host.rs        the Host and Link seams: usbmuxd, the lockdown probe, the lock, the screen,
