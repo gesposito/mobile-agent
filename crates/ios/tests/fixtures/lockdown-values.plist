@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
 The lockdown values the driver reads, as the iPhone SE (3rd generation) with
-iOS 26.6.2 answered them in spikes S9 and S10 (spikes/s9-ios-transport/results/probe.json,
-spikes/s10-ios-runner/results/device.json): the first four without a session,
+iOS 26.6.2 answered them in spikes S9 and S10 (S9's results/probe.json and
+S10's results/device.json, kept privately with the spikes' programs,
+docs/spikes/README.md): the first four without a session,
 the last two inside a session with the host's pairing record,
 DeveloperModeStatus from the com.apple.security.mac.amfi domain. The device's
 name is a placeholder; the phone's own name stays on the phone.

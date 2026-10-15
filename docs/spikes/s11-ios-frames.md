@@ -1,6 +1,6 @@
 # S11: iOS frames
 
-Spike S11 (task 2.3 of `physical-ios`) looks for a host-side frame stream of a physical iPhone that gives the change signal design D23 needs: 30 frames a second under a quarter of a core, and a tap's first changed frame within 100 ms. It also checks the host-side input of design D22, the developer disk image's `dtuhidd` over RSD, on the same phone. The research note `docs/research/ios-device.md` named the three frame paths and the spike's additions. The code is `spikes/s11-ios-frames/`, and every table in Measurements is generated from its `results/` by `s11-ios-frames report`. Snapshot date: 2026-10-09.
+Spike S11 (task 2.3 of `physical-ios`) looks for a host-side frame stream of a physical iPhone that gives the change signal design D23 needs: 30 frames a second under a quarter of a core, and a tap's first changed frame within 100 ms. It also checks the host-side input of design D22, the developer disk image's `dtuhidd` over RSD, on the same phone. The research note `docs/research/ios-device.md` named the three frame paths and the spike's additions. The code is `spikes/s11-ios-frames/`, kept privately since the repository was made public (`docs/spikes/README.md`), and every table in Measurements is generated from its `results/` by `s11-ios-frames report`. Snapshot date: 2026-10-09.
 
 **In brief.** No-go for D23's gate on this phone today; go for D22's host input.
 
@@ -31,7 +31,7 @@ Rust 1.98.1, release profile.
 
 **Code.** The timed series ran on this spike's measurement code as committed in `6cb976a`, with three differences. The table generator came after the series. So did the last candidate tolerances: the tables recount every tolerance from the saved frames, and the `changes_per_tolerance` field in the series files predates the final list. The phone-load probe was written after the series, then run. Earlier exploratory runs (`src/explore.rs`) went to the scratch directory and are not reported, except where Measurements says so.
 
-**Privileges.** One unprivileged process; no `sudo` anywhere. Nothing was installed on the phone, and no setting changed. The spike copies S9's usbmuxd, lockdown and tunnel setup, the quiet-host guard and the percentiles (`spikes/s11-ios-frames/README.md`).
+**Privileges.** One unprivileged process; no `sudo` anywhere. Nothing was installed on the phone, and no setting changed. The spike copies S9's usbmuxd, lockdown and tunnel setup, the quiet-host guard and the percentiles (the program's `README.md`, kept privately with it).
 
 **Screens.** Settings' top level, relaunched through CoreDevice's app service before each series. Bluetooth's page, opened from its row at (187, 550) points and closed with its back button at (38, 42); no switch lies under either point. Settings' list, scrolled by drags along its labels at x = 187 points. Safari's address field, for the keyboards. The home screen, for the home button.
 
@@ -46,7 +46,7 @@ Rust 1.98.1, release profile.
 **Rerun**, with the phone on USB, unlocked and trusted, and `MOBILE_AGENT_IOS_UDID` exported:
 
 ```sh
-cd spikes/s11-ios-frames
+cd spikes/s11-ios-frames                         # in the private copy
 cargo test                                       # unit tests: assembler, pipeline comparisons, PNG decode, guard
 cargo build --release
 ./target/release/s11-ios-frames device           # results/device.json: phone and host versions

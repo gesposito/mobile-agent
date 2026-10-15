@@ -1,6 +1,6 @@
 # S6: ADB transport
 
-Spike S6 (tasks.md 2.9) measures the host-side ADB transport for design decision D3. The same operations are timed through two Rust client crates for the adb server protocol, through the `adb` binary, and through a small reference client written for the spike. Code: `spikes/s6-adb-transport/`. Snapshot date: 2026-09-26.
+Spike S6 (tasks.md 2.9) measures the host-side ADB transport for design decision D3. The same operations are timed through two Rust client crates for the adb server protocol, through the `adb` binary, and through a small reference client written for the spike. Code: `spikes/s6-adb-transport/`, kept privately since the repository was made public (`docs/spikes/README.md`). Snapshot date: 2026-09-26.
 
 ## Setup
 
@@ -21,7 +21,7 @@ Spike S6 (tasks.md 2.9) measures the host-side ADB transport for design decision
 - **Rerun**, with the Android SDK on PATH and the emulator booted:
 
 ```sh
-cd spikes/s6-adb-transport
+cd spikes/s6-adb-transport          # in the private copy
 kotlin/build.sh                   # echo server jar into target/kotlin/
 ../../agent-android/build.sh      # the agent jar used as a push payload
 cargo test                        # 41 unit tests

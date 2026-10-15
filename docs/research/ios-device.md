@@ -379,7 +379,7 @@ S11, frames:
 
 The measurements and gates are design D18 to D23's; the additions come from this note and are marked. Every timed operation runs at least 20 times on a quiet host, under the harness's guard with the load recorded. The device is plugged in, unlocked, with auto-lock off and the battery above half. The report's provenance records that, along with the iOS, Xcode, CoreDevice and DDI versions and `idevice`'s.
 
-**S9, transport and lifecycle (`spikes/s9-ios-transport/`, D18 and D19).**
+**S9, transport and lifecycle (D18 and D19; `docs/spikes/s9-ios-transport.md`).**
 - List the device over usbmuxd. Read `ProductVersion`, the Developer Mode status and the lock state through lockdown with the host's pairing record, from an unprivileged process.
 - Open the CoreDevice tunnel in process (`CoreDeviceProxy`, CDTunnel, jktcp) and do the RSD handshake; time both. Addition: run once with Device Hub and Xcode closed, and once with Device Hub showing the device.
 - Check the DDI and mount it when missing; record which form mounted and the RSD services it adds. Addition: record whether `com.apple.coredevice.displayservice`, `.hid.indigo`, `.hid.universalhidservice` and `.screencaptureservice` are listed on iOS 26.6.2.
@@ -388,7 +388,7 @@ The measurements and gates are design D18 to D23's; the additions come from this
 - Time `devicectl` for the same operations (`device process launch`, `terminate`, `capture screenshot`, `info lockState`), its process start included.
 - Gate: the tunnel without root, a launch under 2 s at p95, a screenshot under 500 ms.
 
-**S10, the runner (`spikes/s10-ios-runner/`, D20 to D22).**
+**S10, the runner (D20 to D22; `docs/spikes/s10-ios-runner.md`).**
 - Build the minimum: an Objective-C `XCTestCase` subclass and the Rust agent in one Mach-O, placed as `PlugIns/<Name>.xctest` in a copy of Xcode's `XCTRunner.app` named `<Name>-Runner`. Sign it with the team from the environment through a minimal `xcodebuild` host project, with no XCTest frameworks embedded. Record the build and signing time, and whether the loader takes the `cdylib` or needs the bundle link.
 - Start it through `idevice`'s `xctest` session. Record the cold start to the runner's hello over a usbmuxd `Connect` to its port, and the start with the bundle already installed.
 - Read warm snapshots of the SwiftUI and Expo 500-cell screens with the Simulator reader's extraction (D21). Addition: record whether `userTestingSnapshotForElement:options:error:` works in the runner's own process on another app's pid, and time it against `XCAXClient_iOS -requestSnapshotForElement:attributes:parameters:error:`.
@@ -399,7 +399,7 @@ The measurements and gates are design D18 to D23's; the additions come from this
 - Addition: register for accessibility notifications through `_XCT_registerForAccessibilityNotification:reply:`, and count what arrives for a tap, a scroll and a screen change. If they arrive, the device's windows could send change events, which D21 sets false.
 - Gates: tap dispatch under 150 ms at p95, a tree under 1 s at p95 on either screen, no restart in the session. Record the private call sites with their iOS and Xcode versions for the compatibility table.
 
-**S11, frames (`spikes/s11-ios-frames/`, D23).**
+**S11, frames (D23; `docs/spikes/s11-ios-frames.md`).**
 - Candidates:
   - the display stream through `idevice`, decoded with VideoToolbox in the daemon's process to BGRA, then downscaled and hashed with `scale_bgra`, `pixels_hash` and `content_hash`;
   - AVFoundation capture through the CoreMediaIO allowance (`objc2-av-foundation`, `objc2-core-media`, `objc2-core-media-io`), through the same pipeline;

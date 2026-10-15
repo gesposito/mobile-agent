@@ -3,7 +3,8 @@
 <!--
 The image mounter's CopyDevices EntryList on the iPhone SE (3rd generation)
 with iOS 26.6.2 and Xcode 27.0's developer disk image mounted, as spike S9
-recorded it (spikes/s9-ios-transport/results/probe.json, ddi.image_mounter_entries).
+recorded it (its results/probe.json, ddi.image_mounter_entries, kept privately
+with the spike's program, docs/spikes/README.md).
 -->
 <plist version="1.0">
 <array>

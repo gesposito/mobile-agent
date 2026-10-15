@@ -1,6 +1,6 @@
 # S9: iOS transport and lifecycle
 
-Spike S9 (task 2.1 of `physical-ios`) measures whether the host reaches a physical iPhone's developer services from Rust without root, through the `idevice` crate, and what launching, killing and screenshotting an app cost that way, against `xcrun devicectl` for the same operations. It decides design D18 (transport) and D19 (lifecycle). The research note `docs/research/ios-device.md` named the services, the risks and the measurements, in its Spike plan with additions. The code is `spikes/s9-ios-transport/`, and every table in Measurements is generated from its `results/` by `s9-ios-transport report`. Snapshot date: 2026-10-08.
+Spike S9 (task 2.1 of `physical-ios`) measures whether the host reaches a physical iPhone's developer services from Rust without root, through the `idevice` crate, and what launching, killing and screenshotting an app cost that way, against `xcrun devicectl` for the same operations. It decides design D18 (transport) and D19 (lifecycle). The research note `docs/research/ios-device.md` named the services, the risks and the measurements, in its Spike plan with additions. The code is `spikes/s9-ios-transport/`, kept privately since the repository was made public (`docs/spikes/README.md`), and every table in Measurements is generated from its `results/` by `s9-ios-transport report`. Snapshot date: 2026-10-08.
 
 **In brief.** Go. From an unprivileged process, `idevice` 0.1.68 opens the CoreDevice tunnel without root or a TUN device. With RSD's handshake it takes 59.9 ms at p50 and 70.0 ms at p95. Through the tunnel, DVT launches Settings in 42.5 and 46.4 ms and takes a screenshot in 42.3 and 43.5 ms, against D18's gate of 2 s and 500 ms. CoreDevice's app service and screen capture cost the same within noise. `devicectl` takes 228 to 370 ms at p50 for each of these operations, a process each, about 250 ms of which pass before its request reaches the device. The iPhone lists all four CoreDevice services the frame and input candidates need, and has the personalized developer disk image mounted. Four findings on iOS 26.6.2 change D19 and the driver:
 
@@ -36,7 +36,7 @@ D18 stands with its numbers; D19 now terminates through `sendSignal:toPid:` and 
 **Rerun**, with the device on USB, unlocked and trusted, and `MOBILE_AGENT_IOS_UDID` exported:
 
 ```sh
-cd spikes/s9-ios-transport
+cd spikes/s9-ios-transport            # in the private copy
 cargo test                          # 10 unit tests: percentiles, image headers, the host guard
 cargo build --release
 ./target/release/s9-ios-transport probe          # results/probe.json: services, disk image, values, capture formats

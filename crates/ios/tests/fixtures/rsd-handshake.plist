@@ -3,7 +3,8 @@
 <!--
 The RSD handshake's services on the iPhone SE (3rd generation) with iOS 26.6.2
 and Xcode 27.0's developer disk image mounted, as spike S9 recorded them
-(spikes/s9-ios-transport/results/probe.json, rsd): 82 services with their
+(its results/probe.json, rsd, kept privately with the spike's program,
+docs/spikes/README.md): 82 services with their
 entitlements, features and versions, and the device properties that do not
 identify the phone. Ports change with every tunnel, so the tests' fake
 endpoint gives each service one of its own.

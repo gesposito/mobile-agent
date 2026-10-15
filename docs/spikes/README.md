@@ -1,6 +1,8 @@
 # Spike reports
 
-One report per spike, S1 to S7 from group 2 of the archived change `mobile-automation-foundation` and S8 from task 1.2 of `microbenchmarks`, and S9 to S11 from group 2 of `physical-ios`, named `s<N>-<slug>.md` after the spike's directory under `spikes/`, for example `s2-simulator-frames.md`. The report is the lasting output of a spike; design.md decisions cite it by file name.
+One report per spike, S1 to S7 from group 2 of the archived change `mobile-automation-foundation` and S8 from task 1.2 of `microbenchmarks`, and S9 to S11 from group 2 of `physical-ios`, named `s<N>-<slug>.md` after the spike's program, for example `s2-simulator-frames.md`. The report is the lasting output of a spike; design.md decisions cite it by file name.
+
+The programs, throwaway code the crates never built on, and their raw results were in `spikes/` until the repository was made public, and are kept privately since: each report's Setup says how its program ran and at which commit, and its Measurements carry the numbers. The paths and commands under `spikes/` that the reports and the archived changes name are those of the private copy.
 
 Every report has these sections, in this order:
 

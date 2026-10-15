@@ -4,8 +4,8 @@
 //! checks are scripted; and fake tools for runs of the binary.
 //!
 //! `tests/fixtures/micro/s8-home/` holds unchanged copies of spike S8's
-//! `spikes/s8-bench-harness/results/quiet/criterion/round-01/decode/` and
-//! `decode_slow/`, which `bench.sh` copied out of `$CRITERION_HOME/<id>/new/`
+//! `results/quiet/criterion/round-01/decode/` and `decode_slow/`, from the
+//! spike's program kept privately (`docs/spikes/README.md`), which `bench.sh` copied out of `$CRITERION_HOME/<id>/new/`
 //! after a run, put back where criterion wrote them; `s8-round-01.txt` is
 //! that run's output, `round-01.txt` beside them. `list.stdout` is what the
 //! suites printed on stdout for `cargo bench --workspace --bench codec

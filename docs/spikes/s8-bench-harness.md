@@ -1,6 +1,6 @@
 # Spike S8: microbenchmark harness
 
-Task 1.2 of `microbenchmarks`. It measures, on this host, how far each candidate harness's reported value for one microbenchmark moves from run to run, and whether the harness tells a 5% slower variant apart, on a quiet host and under load. The results choose the harness of design D13 and set the threshold of D16 and the load bound of D15. The candidates come from the research note `docs/research/microbenchmarks.md`. The spike code is `spikes/s8-bench-harness/`; every table in Measurements is generated from its `results/` by `cargo run --release --bin s8 -- report`.
+Task 1.2 of `microbenchmarks`. It measures, on this host, how far each candidate harness's reported value for one microbenchmark moves from run to run, and whether the harness tells a 5% slower variant apart, on a quiet host and under load. The results choose the harness of design D13 and set the threshold of D16 and the load bound of D15. The candidates come from the research note `docs/research/microbenchmarks.md`. The spike code is `spikes/s8-bench-harness/`, kept privately since the repository was made public (`docs/spikes/README.md`); every table in Measurements is generated from its `results/` by `cargo run --release --bin s8 -- report`.
 
 **In brief.** On the quiet host, criterion, divan and tango pass design D13's gate and glassbench does not. The coefficient of variation (CV) of the reported `decode` value across ten runs is 1.15% for criterion, 1.37% for divan, 1.73% for tango and 2.16% for glassbench. The variant made 5.06% slower comes out slower in 10 of 10 runs under the first three and 9 of 10 under glassbench. Of the three that pass, only criterion gives a machine-readable result per benchmark without parsing text (`estimates.json`), so it is the choice. It costs 48 crates against divan's 17 and tango's 80, and 19.6 s per run of two benchmarks against 0.1 and 0.2 s. Under four busy cores criterion also held best: CV 0.34%, and the variant told apart in 10 of 10 runs with its 95% intervals apart each time. Tango fell to 8 of 10 with a CV of 7.38%. But that load moved criterion's median up by 4.4%, close to a 5% threshold, so the guard's load bound stays at 4. D16's threshold is the 5% floor, since twice criterion's quiet CV is 2.3%.
 
@@ -55,7 +55,7 @@ Otherwise it checks again every 30 s, and after 90 minutes of waiting in all it 
 **Rerunning.**
 
 ```sh
-cd spikes/s8-bench-harness
+cd spikes/s8-bench-harness                 # in the private copy
 cargo test                               # the input's shape and bytes, the parsers
 ./bench.sh all                           # env, build, deps, calibrate, quiet, loaded -> results/
 cargo run --release --bin s8 -- report   # the tables below

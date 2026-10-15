@@ -12,7 +12,7 @@ Spike S3 (task 2.6) checks the input half of D6 from Rust: a host process opens 
 - App geometry, in points: tab bar centre line y 812, Login tab x 40.2, List tab x 120.6, username field (201, 113), password field (201, 168), Sign in (201, 218).
 - Rust 1.95.0. Crates, all added with `sfw cargo add`: `objc2` 0.6.4 with the `exception` feature, `objc2-foundation` 0.3.2, `objc2-core-foundation` 0.3.2, `objc2-io-surface` 0.3.2, `block2` 0.6.2, `dispatch2` 0.3.1, `libc` 0.2.189. No XPC crate: libxpc is bound by hand, 25 functions and 2 data symbols in one `extern "C"` block. Both profiles set `panic = "unwind"`.
 - Reused from S2 unchanged: the `dlopen` loader, the exception guard, the forwarded-send helper for ROCKit proxies, the display registration and the frame pipeline. `main_display` takes `-[SimDevice io]` instead of the device, and the hash gained a size parameter and a crop (below).
-- Code: `spikes/s3-simulator-hid`. Rerun with `cargo build --release`, then `./measure.sh dtuhidd <udid> <out-dir>`, `./measure.sh indigo <FixtureExpo.app> <out-dir>` (creates, uses and deletes its own device) and `./measure.sh unlock <udid> <out-dir>`. `cargo test` runs the unit tests; two of them load the host's CoreSimulator and one checks where SimulatorKit is.
+- Code: `spikes/s3-simulator-hid`, kept privately since the repository was made public (`docs/spikes/README.md`). Rerun with `cargo build --release`, then `./measure.sh dtuhidd <udid> <out-dir>`, `./measure.sh indigo <FixtureExpo.app> <out-dir>` (creates, uses and deletes its own device) and `./measure.sh unlock <udid> <out-dir>`. `cargo test` runs the unit tests; two of them load the host's CoreSimulator and one checks where SimulatorKit is.
 
 Private symbols, resolved at run time:
 

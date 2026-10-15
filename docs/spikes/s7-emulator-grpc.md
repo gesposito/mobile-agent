@@ -1,6 +1,6 @@
 # S7: emulator gRPC controller
 
-Spike for task 2.10 of `mobile-automation-foundation`. It checks the android-driver requirement "Emulator fast path" and design D7: can the emulator's gRPC controller (`android.emulation.control.EmulatorController`), found through the emulator's own discovery file and token, carry taps and frames, and does that path meet the harness gate "tap-to-frame-change p95 under 50 ms on an emulator"? The code is in `spikes/s7-emulator-grpc/`.
+Spike for task 2.10 of `mobile-automation-foundation`. It checks the android-driver requirement "Emulator fast path" and design D7: can the emulator's gRPC controller (`android.emulation.control.EmulatorController`), found through the emulator's own discovery file and token, carry taps and frames, and does that path meet the harness gate "tap-to-frame-change p95 under 50 ms on an emulator"? The code is in `spikes/s7-emulator-grpc/`, kept privately since the repository was made public (`docs/spikes/README.md`).
 
 **In brief.** The controller works as the fast path. A tonic client generated from the proto that ships with the installed emulator connected through the discovery file's port and bearer token. sendTouch is acknowledged in 0.49 ms at p50 and 0.74 ms at p95. Frames arrive only when the guest posts one, at up to 46 fps under a continuous drag at 540 px wide, and 15 to 30 ms after the emulator timestamps them. The tap-to-frame-change gate is not met on this AVD: p95 is 147 ms at 540 px and 155 ms at native size. About 80 % of each trial passes before the emulator has the changed frame. The guest renders in software (`gpu auto` resolved to lavapipe and SwiftShader), so the time is spent in the guest, not on the control path. An emulator started without `-grpc` wrote no discovery file and served no controller, and the client fell back with the launch-flag warning. The console's `grpc <port>` command can start a token-protected endpoint on such an emulator at run time. Verdict: go for the fast path, no-go for the gate on this configuration.
 
@@ -17,7 +17,7 @@ Spike for task 2.10 of `mobile-automation-foundation`. It checks the android-dri
 | Client | Rust 1.95.0; tonic and tonic-prost 0.14.6, prost 0.14.4, tonic-prost-build 0.14.6 running libprotoc 31.1 from protoc-bin-vendored 3.2.0; hyper 1.11.1, h2 0.4.19, tokio 1.53.1; xxhash-rust 0.8.18 |
 | Spike code | `787e113` (client and discovery) and `bcb6f1b` (measurements). Every kept result comes from this Rust code; the touch run used an earlier revision of `measure.sh` with the same command line. `negative.sh` runs the negative path. |
 
-To rerun: `cd spikes/s7-emulator-grpc && eval "$(mise env)" && ./measure.sh emulator-5554`, then `./negative.sh`. `build.rs` compiles the proto found under `$ANDROID_HOME`, or the one named by `S7_EMULATOR_PROTO`. `results/` holds the output of every kept run, the raw samples as CSV, and `host.txt`, which logs each run's starting and ending load, repeats included.
+To rerun, in the private copy: `cd spikes/s7-emulator-grpc && eval "$(mise env)" && ./measure.sh emulator-5554`, then `./negative.sh`. `build.rs` compiles the proto found under `$ANDROID_HOME`, or the one named by `S7_EMULATOR_PROTO`. `results/` holds the output of every kept run, the raw samples as CSV, and `host.txt`, which logs each run's starting and ending load, repeats included.
 
 **Method.**
 

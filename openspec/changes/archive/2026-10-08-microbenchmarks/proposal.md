@@ -29,7 +29,7 @@ None.
 
 - `crates/protocol`, `crates/mirror`, `crates/daemon`, `crates/simulator` and `crates/android` each gain `benches/` and a dev-dependency on the harness library, added through `sfw cargo add`; `[[bench]]` entries in their manifests. `cargo clippy --workspace --all-targets`, which `just lint` and CI already run, compiles the benches, so CI builds them without running them.
 - `crates/bench` gains the `micro` subcommand: the host guard, the cargo invocation, the harness output parser, the baseline comparison and the reports. Its `README.md` documents it.
-- `reports/micro/` holds the baseline and its README; `spikes/s8-bench-harness/` the throwaway spike, `docs/spikes/s8-bench-harness.md` its report.
+- `reports/micro/` holds the baseline and its README; `spikes/s8-bench-harness/` (kept privately) the throwaway spike, `docs/spikes/s8-bench-harness.md` its report.
 - `justfile`: `micro` recipe; `openspec-validate` recipe.
 - Design D13 (this change's design.md) records the harness choice and the threshold; `docs/overview.md`, `README.md` and the crates' READMEs gain the host costs and the suite's layout.
 - No change to the daemon, the CLI, the agent, the protocol or the mirror's behaviour; the fake target and the fixtures are reused as bench inputs. One mirror fixture may be added for the 1,049-node screen if none of the existing ones is that large.

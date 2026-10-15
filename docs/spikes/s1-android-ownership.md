@@ -1,6 +1,6 @@
 # S1: shell-user ownership of Android UI automation
 
-Spike S1, task 2.4 of `mobile-automation-foundation`. A throwaway Kotlin program started with `app_process` as the shell user takes the UI automation role, walks the accessibility tree, injects taps, records accessibility events, takes screenshots and serves an abstract socket through adb, on the API 36 emulator. It tests design decisions D2 (shell-user ownership), D3 (socket direction and token), D5 (tree cost model and mirror updates) and D8 (quiet window). Code: `spikes/s1-android-ownership/`. Raw output of every run: `spikes/s1-android-ownership/results/`.
+Spike S1, task 2.4 of `mobile-automation-foundation`. A throwaway Kotlin program started with `app_process` as the shell user takes the UI automation role, walks the accessibility tree, injects taps, records accessibility events, takes screenshots and serves an abstract socket through adb, on the API 36 emulator. It tests design decisions D2 (shell-user ownership), D3 (socket direction and token), D5 (tree cost model and mirror updates) and D8 (quiet window). Code: `spikes/s1-android-ownership/`, with the raw output of every run in its `results/`, both kept privately since the repository was made public (`docs/spikes/README.md`).
 
 ## Setup
 
@@ -14,7 +14,7 @@ Spike S1, task 2.4 of `mobile-automation-foundation`. A throwaway Kotlin program
 | Program | One `classes.dex` of 2.36 MB (the Kotlin stdlib included) in `s1-spike.jar`, started as `CLASSPATH=/data/local/tmp/s1-spike.jar app_process /data/local/tmp dev.mobileagent.spike.s1.Main <subcommand>` through `adb shell`, so it runs as uid 2000 |
 | Screens | Settings home; the Pixel launcher home; the Compose fixture `dev.mobileagent.fixture.compose` 1.0 (Compose UI 1.11.4, debug build) on Big, List, Anim and Login; the Expo fixture `dev.mobileagent.fixture.expo` 1.0.0 (React Native, release build with Hermes) on the same tabs |
 | Spike code | branch `spike/s1-android-ownership`: `f44d033` (check, red), `d4e6935` (ownership, tree), `b697144` (tap, events, screenshot, staleness), `07a80a0` (socket), `c32c770` (service stream), `168d677` (cleanup), `7df158f` (rotation note); `measure.sh` and the raw results come with this report |
-| Rerun | `cd spikes/s1-android-ownership && ./build.sh && (cd host && cargo build --release) && ./check.sh && ./measure.sh` |
+| Rerun | from the private copy: `cd spikes/s1-android-ownership && ./build.sh && (cd host && cargo build --release) && ./check.sh && ./measure.sh` |
 
 Timings are p50 and p95 by nearest rank over the stated runs, with warm-up runs excluded. Round trips are exact counts: the spike replaces the accessibility client's connection in `AccessibilityInteractionClient.sConnectionCache` with a proxy that counts every call, and the client's interaction id counter agreed with the count on every run.
 

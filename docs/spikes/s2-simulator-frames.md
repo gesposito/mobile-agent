@@ -15,7 +15,7 @@ Spike S2 (task 2.5) checks two assumptions from Rust. The first is D6's: the Sim
   - `png` 0.18.1.
   - Accelerate's public `vImageScale_ARGB8888`, as a reference scaler.
 - Both profiles set `panic = "unwind"`, which `objc2::exception::catch` needs.
-- Code: `spikes/s2-simulator-frames` at `64926b8`. The uncapped stream runs were made before a change to the `--max-fps` pacing, which is not on their code path.
+- Code: `spikes/s2-simulator-frames` at `64926b8`, kept privately since the repository was made public (`docs/spikes/README.md`). The uncapped stream runs were made before a change to the `--max-fps` pacing, which is not on their code path.
 - Rerun: `cargo build --release`, then `./measure.sh frames <udid> <FixtureExpo.app> <out-dir>` and `./measure.sh lifecycle <FixtureExpo.app> <out-dir>`. `cargo test` runs the unit tests and the `list` smoke test against the host's CoreSimulator.
 - Loading: `dlopen(RTLD_NOW | RTLD_GLOBAL)` of `CoreSimulator.framework/Versions/A/CoreSimulator`, then of `.../Frameworks/CoreSimDeviceIO.framework/Versions/A/CoreSimDeviceIO`. An `RTLD_NOLOAD` probe shows that CoreSimulator's re-export had already mapped the second.
 - `dlsym` names: none. S2 uses no private C function.

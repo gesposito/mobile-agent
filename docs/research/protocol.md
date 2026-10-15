@@ -114,7 +114,7 @@ Without the class table and prefix stripping on either side, CBOR integer-key ma
 
 ## S5 benchmark plan
 
-**Datasets**, committed under `spikes/s5-wire-format/data/` as logical JSON plus the generator seed:
+**Datasets**, committed with spike S5's program as logical JSON plus the generator seed, and kept privately with it since the repository was made public (`docs/spikes/README.md`):
 - `T500`: one snapshot response holding the 500-node tree. Each node has an id, a class index into a per-snapshot string table, a resource id with its package prefix interned, text, a content description, bounds as four i32, flags as a u32 bitmask, a window id and children. Capture it from the Compose fixture's 500-node screen through S1's agent when that exists; until then, generate it with the model's distributions.
 - `E10K`: 10,000 event frames, each a separate frame so per-frame overhead counts: stream, contiguous seq, kind, window id, a path of 2 to 10 u16, a timestamp in µs.
 - `R1K`: 1,000 mixed requests (tap, type, snapshot) for the host-to-device direction.

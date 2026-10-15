@@ -24,7 +24,7 @@ Spike S4 (task 2.7) measures the two ways D6 considers for reading a Simulator's
   - 767,328 bytes, Mach-O arm64, `LC_BUILD_VERSION` platform `IOSSIMULATOR`, minos 14.0, SDK 27.0.
   - Links Foundation, CoreFoundation, libobjc, libSystem and libiconv only.
   - Its only signature is the one the linker adds to every arm64 binary (`flags=0x20002(adhoc,linker-signed)`); nothing ran `codesign`.
-- Code: `spikes/s4-simulator-ax` at `5e6fb2e`. `wire` holds the framing, the tree model and the statistics; `guest-reader` is the reader; `host-client` spawns and times it and holds the translator path.
+- Code: `spikes/s4-simulator-ax` at `5e6fb2e`, kept privately since the repository was made public (`docs/spikes/README.md`). `wire` holds the framing, the tree model and the statistics; `guest-reader` is the reader; `host-client` spawns and times it and holds the translator path.
 - Rerun:
   - Build: `cargo build --release -p host-client` and `cargo build --release -p guest-reader --target aarch64-apple-ios-sim`.
   - Measure: `./measure.sh reads|spawn|relaunch|cold <udid> <out-dir>` on a booted device with both fixtures installed; `QUIET_LOAD` sets the load threshold (default 8; these runs used 6).

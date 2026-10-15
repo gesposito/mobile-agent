@@ -1,6 +1,6 @@
 # Spike S5: wire format
 
-Task 2.8 of `mobile-automation-foundation`. It benchmarks wire formats for the device link of design D4 on the "S5 benchmark plan" of `docs/research/protocol.md`, and replaces the research note's *model* numbers with measurements. The spike code is `spikes/s5-wire-format/`; every table in Measurements is generated from its `results/` by `cargo run --release -- report`.
+Task 2.8 of `mobile-automation-foundation`. It benchmarks wire formats for the device link of design D4 on the "S5 benchmark plan" of `docs/research/protocol.md`, and replaces the research note's *model* numbers with measurements. The spike code is `spikes/s5-wire-format/`, kept privately since the repository was made public (`docs/spikes/README.md`); every table in Measurements is generated from its `results/` by `cargo run --release -- report`.
 
 **In brief.** No candidate passes the plan's "3x better than JSON" criterion, and the only reason is bytes on the 500-node snapshot: CBOR is 2.49x smaller than JSON with readable keys, MessagePack 2.53x, protobuf 2.65x, where the research note's model predicted 2.35x to 2.60x. All three pass on 10,000 event frames (3.37x to 3.49x), are 7.6x to 21.7x faster than the faster platform JSON on the device-to-host path, and add 5.2 to 6.3 KB to the R8 dex against a 100 KB limit. The recommendation is CBOR, with minicbor on the host and a hand-rolled Kotlin codec on the device, chosen on time, dex size, evolution and debuggability while the criterion stays as written.
 
@@ -45,7 +45,7 @@ The Kotlin CBOR, MessagePack and protobuf encoders write exactly the bytes of mi
 **Rerunning.**
 
 ```sh
-cd spikes/s5-wire-format
+cd spikes/s5-wire-format                     # in the private copy
 cargo test --release                            # datasets, Rust round trips, Kotlin golden frames
 ANDROID_SERIAL=emulator-5554 kotlin/test.sh     # golden test on the device; refreshes golden/kotlin/
 ANDROID_SERIAL=emulator-5554 ./bench.sh all     # env, dex, rust, crit, kotlin -> results/

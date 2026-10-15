@@ -1,6 +1,6 @@
 # S10: iOS runner
 
-Spike S10 (task 2.2 of `physical-ios`) builds the smallest resident XCTest runner in Rust for a physical iPhone and measures what design D20 to D22 rest on: the runner's start through the test manager, the tree read inside it, input through XCTest's synthesis against the host's `dtuhidd`, typed and set text, XCTest's screenshot, and whether one session survives. The research note `docs/research/ios-device.md` named the steps, the private calls and the additions. The code is `spikes/s10-ios-runner/`, and every table in Measurements is generated from its `results/` by `s10-ios-runner report`. Snapshot date: 2026-10-09.
+Spike S10 (task 2.2 of `physical-ios`) builds the smallest resident XCTest runner in Rust for a physical iPhone and measures what design D20 to D22 rest on: the runner's start through the test manager, the tree read inside it, input through XCTest's synthesis against the host's `dtuhidd`, typed and set text, XCTest's screenshot, and whether one session survives. The research note `docs/research/ios-device.md` named the steps, the private calls and the additions. The code is `spikes/s10-ios-runner/`, kept privately since the repository was made public (`docs/spikes/README.md`), and every table in Measurements is generated from its `results/` by `s10-ios-runner report`. Snapshot date: 2026-10-09.
 
 **In brief.** Go for the runner and its tree, no-go for its input.
 
@@ -32,7 +32,7 @@ D20, D21 and D22 are rewritten with these numbers.
 **Rerun**, with the phone on USB, unlocked and trusted, `MOBILE_AGENT_IOS_UDID` and `MOBILE_AGENT_IOS_TEAM` exported:
 
 ```sh
-cd spikes/s10-ios-runner
+cd spikes/s10-ios-runner                        # in the private copy
 runner/build.sh && ./fixtures.sh swiftui && ./fixtures.sh expo   # the bundles, signed
 cargo test --workspace                          # unit tests: percentiles, guard, tolerance, PNG, tree conversion
 cargo build --release
@@ -46,7 +46,7 @@ cargo build --release
 ./target/release/s10-ios-runner report          # regenerate results/tables.md
 ```
 
-`spikes/s10-ios-runner/README.md` lists the layout and the other commands.
+The program's `README.md`, kept privately with it, lists the layout and the other commands.
 
 ### Conditions
 
