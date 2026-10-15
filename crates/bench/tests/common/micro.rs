@@ -19,6 +19,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use bench::micro::Suites;
+use bench::micro::ab::{Side, Trees};
 use bench::micro::criterion::{Measured, Spread};
 use bench::micro::guard::{Host, Process, Reading};
 use bench::micro::report::{GuardSettings, HarnessSettings, Provenance};
@@ -28,8 +29,15 @@ use serde_json::Value;
 /// What `rustc -V` prints in the checkout.
 pub const TOOLCHAIN: &str = "rustc 1.98.1 (48a229cea 2026-09-01)";
 
+/// The toolchain `rustup show active-toolchain` names in the checkout.
+pub const RUSTUP_TOOLCHAIN: &str = "1.98.1-aarch64-apple-darwin";
+
 /// The commit the scripted probe and the fake git report.
 pub const SHA: &str = "d7d0f41c0ffee0000000000000000000000000ab";
+
+/// The ref an A/B run compares the checkout with, and the commit it names.
+pub const BASE_REF: &str = "main~5";
+pub const BASE_SHA: &str = "be13c7b0ffee0000000000000000000000000042";
 
 /// The directory of the micro fixtures.
 pub fn fixtures() -> PathBuf {
@@ -201,6 +209,95 @@ impl Suites for RecordedSuites {
     }
 }
 
+/// Trees that write each round's recorded benchmarks instead of checking a
+/// base out and running `cargo bench`, and log what they were asked to do:
+/// `prepare <sha>`, `run <side> <criterion home>` and `finish`.
+#[derive(Debug, Default)]
+pub struct RecordedTrees {
+    /// Base's benchmarks round by round; a round past the last repeats it.
+    pub base: Vec<Vec<Recorded>>,
+    /// Head's, the same way.
+    pub head: Vec<Vec<Recorded>>,
+    pub log: Vec<String>,
+    /// Each run's filter, in order.
+    pub filters: Vec<Option<String>>,
+    /// Fail the preparation with this message.
+    pub fail_prepare: Option<String>,
+    /// Fail the run with this number, counting from 1 across both sides.
+    pub fail_run: Option<usize>,
+}
+
+impl RecordedTrees {
+    /// Base with `base` and head with `head` in every round.
+    pub fn new(base: Vec<Recorded>, head: Vec<Recorded>) -> Self {
+        RecordedTrees::rounds(vec![base], vec![head])
+    }
+
+    /// Base and head with their benchmarks round by round.
+    pub fn rounds(base: Vec<Vec<Recorded>>, head: Vec<Vec<Recorded>>) -> Self {
+        RecordedTrees {
+            base,
+            head,
+            ..RecordedTrees::default()
+        }
+    }
+
+    /// The runs of `side` so far.
+    fn runs(&self, side: &str) -> usize {
+        let prefix = format!("run {side} ");
+        self.log.iter().filter(|l| l.starts_with(&prefix)).count()
+    }
+}
+
+/// `base` or `head`.
+pub fn side_name(side: Side) -> &'static str {
+    match side {
+        Side::Base => "base",
+        Side::Head => "head",
+    }
+}
+
+impl Trees for RecordedTrees {
+    fn prepare(&mut self, sha: &str) -> Result<(), String> {
+        self.log.push(format!("prepare {sha}"));
+        match &self.fail_prepare {
+            Some(message) => Err(message.clone()),
+            None => Ok(()),
+        }
+    }
+
+    fn run(
+        &mut self,
+        side: Side,
+        criterion_home: &Path,
+        filter: Option<&str>,
+    ) -> Result<String, String> {
+        let name = side_name(side);
+        let round = self.runs(name);
+        self.log
+            .push(format!("run {name} {}", criterion_home.display()));
+        self.filters.push(filter.map(str::to_owned));
+        let number = self.log.iter().filter(|l| l.starts_with("run ")).count();
+        if self.fail_run == Some(number) {
+            return Err(format!("cargo bench failed in run {number}"));
+        }
+        let rounds = match side {
+            Side::Base => &self.base,
+            Side::Head => &self.head,
+        };
+        let benchmarks = &rounds[round.min(rounds.len() - 1)];
+        for b in benchmarks {
+            b.write(criterion_home);
+        }
+        Ok(stdout(benchmarks))
+    }
+
+    fn finish(&mut self) -> Result<(), String> {
+        self.log.push("finish".to_owned());
+        Ok(())
+    }
+}
+
 /// A host whose checks give `readings` in turn, and the last one again once
 /// they run out; it records each wait instead of sleeping.
 #[derive(Debug)]
@@ -307,11 +404,13 @@ pub fn us(ns: u64) -> String {
     format!("{}.{:03}", ns / 1000, ns % 1000)
 }
 
-/// Fake cargo, ps, git, rustc, sysctl and sw_vers for runs of the binary in
-/// a checkout of their own. The cargo, which the binary runs as `$CARGO`,
-/// records its arguments, its `CRITERION_HOME` and its directory, then
-/// copies the recorded benchmarks' files into `CRITERION_HOME` and prints
-/// their stdout, or fails when `cargo.status` holds an exit status.
+/// Fake cargo, ps, git, rustc, rustup, sysctl and sw_vers for runs of the
+/// binary in a checkout of their own. The cargo, which the binary runs as
+/// `$CARGO`, records its arguments, its `CRITERION_HOME` and its directory,
+/// then copies the recorded benchmarks' files into `CRITERION_HOME` and
+/// prints their stdout, or fails when `cargo.status` holds an exit status.
+/// The sysctl reports a 10-core host whose load averages `loadavg.txt`
+/// holds.
 pub struct FakeTools {
     pub dir: PathBuf,
     pub bin: PathBuf,
@@ -356,9 +455,20 @@ impl FakeTools {
         );
         tools.script("rustc", &format!("echo '{TOOLCHAIN}'\n"));
         tools.script(
+            "rustup",
+            &format!(
+                "case \"$*\" in\n\
+                 \"show active-toolchain\") echo \"{RUSTUP_TOOLCHAIN} (overridden by '{}/rust-toolchain.toml')\" ;;\n\
+                 *) exit 1 ;;\n\
+                 esac\n",
+                tools.root.display()
+            ),
+        );
+        tools.load("{ 1.20 1.50 1.80 }");
+        tools.script(
             "sysctl",
             "case \"$2\" in\n\
-             vm.loadavg) echo '{ 1.20 1.50 1.80 }' ;;\n\
+             vm.loadavg) cat \"$dir/loadavg.txt\" ;;\n\
              hw.ncpu) echo 10 ;;\n\
              hw.memsize) echo 68719476736 ;;\n\
              machdep.cpu.brand_string) echo 'Apple M1 Max' ;;\n\
@@ -375,6 +485,98 @@ impl FakeTools {
              esac\n",
         );
         tools
+    }
+
+    /// Fake tools for `micro --ab BASE_REF`: base's and head's benchmarks
+    /// round by round, a round past the last repeating it. The git also
+    /// resolves `BASE_REF` to `BASE_SHA` and adds and removes worktrees,
+    /// marking each added one as base's with a `.side` file. The cargo
+    /// appends a line per run to `cargo.log`, `<side>|<directory>|
+    /// <CARGO_TARGET_DIR>|<RUSTUP_TOOLCHAIN>|<CRITERION_HOME>|<arguments>`,
+    /// the side read from the directory's `.side`, and for a run that
+    /// measures copies that side's next round into `CRITERION_HOME` and
+    /// prints its stdout; it fails when `cargo.status` holds an exit status.
+    pub fn ab(name: &str, base: &[Vec<Recorded>], head: &[Vec<Recorded>]) -> Self {
+        let tools = FakeTools::new(name, &[]);
+        for (side, rounds) in [("base", base), ("head", head)] {
+            fs::write(
+                tools.dir.join(format!("rounds-{side}")),
+                rounds.len().to_string(),
+            )
+            .unwrap();
+            for (n, benchmarks) in rounds.iter().enumerate() {
+                let home = tools.dir.join(format!("home-{side}-{}", n + 1));
+                fs::create_dir_all(&home).unwrap();
+                for b in benchmarks {
+                    b.write(&home);
+                }
+                fs::write(
+                    tools.dir.join(format!("stdout-{side}-{}.txt", n + 1)),
+                    stdout(benchmarks),
+                )
+                .unwrap();
+            }
+        }
+        tools.script(
+            "cargo",
+            "cwd=$(pwd -P)\n\
+             if [ -f \"$cwd/.side\" ]; then side=$(cat \"$cwd/.side\"); else side=head; fi\n\
+             echo \"$side|$cwd|${CARGO_TARGET_DIR:-}|${RUSTUP_TOOLCHAIN:-}|${CRITERION_HOME:-}|$*\" >> \"$dir/cargo.log\"\n\
+             case \" $* \" in *\" --no-run \"*) exit 0 ;; esac\n\
+             if [ -f \"$dir/cargo.status\" ]; then echo 'error: bench failed' >&2; exit \"$(cat \"$dir/cargo.status\")\"; fi\n\
+             n=$(( $(cat \"$dir/runs-$side\" 2>/dev/null || echo 0) + 1 ))\n\
+             echo \"$n\" > \"$dir/runs-$side\"\n\
+             last=$(cat \"$dir/rounds-$side\")\n\
+             if [ \"$n\" -gt \"$last\" ]; then n=$last; fi\n\
+             cp -R \"$dir/home-$side-$n/.\" \"$CRITERION_HOME/\"\n\
+             cat \"$dir/stdout-$side-$n.txt\"\n",
+        );
+        tools.script(
+            "git",
+            &format!(
+                "echo \"$*\" >> \"$dir/git.log\"\n\
+                 case \"$*\" in\n\
+                 \"rev-parse --show-toplevel\") echo '{}' ;;\n\
+                 \"rev-parse HEAD\") echo {SHA} ;;\n\
+                 \"status --porcelain --untracked-files=no\") ;;\n\
+                 \"rev-parse --verify {BASE_REF}^{{commit}}\") echo {BASE_SHA} ;;\n\
+                 \"worktree prune\") ;;\n\
+                 \"worktree add --detach \"*) mkdir -p \"$4\" && echo base > \"$4/.side\" ;;\n\
+                 \"worktree remove --force \"*) rm -rf \"$4\" ;;\n\
+                 *) exit 1 ;;\n\
+                 esac\n",
+                tools.root.display()
+            ),
+        );
+        tools
+    }
+
+    /// The lines the A/B cargo logged, each split at its `|`s.
+    pub fn cargo_log(&self) -> Vec<Vec<String>> {
+        fs::read_to_string(self.dir.join("cargo.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| line.splitn(6, '|').map(str::to_owned).collect())
+            .collect()
+    }
+
+    /// The commands the A/B git logged.
+    pub fn git_log(&self) -> Vec<String> {
+        fs::read_to_string(self.dir.join("git.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The temporary directory the binary is given.
+    pub fn tmp(&self) -> PathBuf {
+        self.dir.join("tmp")
+    }
+
+    /// What the fake sysctl gives as the load averages from now on.
+    pub fn load(&self, text: &str) {
+        fs::write(self.dir.join("loadavg.txt"), format!("{text}\n")).unwrap();
     }
 
     /// Writes an executable `name` into the bin directory running `body`,
@@ -407,8 +609,10 @@ impl FakeTools {
     }
 
     /// `mobile-agent-bench micro <args>` in the checkout, with the fake tools
-    /// first on `PATH` and the fake cargo as `$CARGO`.
+    /// first on `PATH`, the fake cargo as `$CARGO`, a temporary directory of
+    /// the tools' own and no toolchain named in the environment.
     pub fn micro(&self, args: &[&str]) -> Command {
+        fs::create_dir_all(self.tmp()).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_mobile-agent-bench"));
         command
             .env(
@@ -416,7 +620,10 @@ impl FakeTools {
                 format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", self.bin.display()),
             )
             .env("CARGO", self.bin.join("cargo"))
+            .env("TMPDIR", self.tmp())
             .env_remove("CRITERION_HOME")
+            .env_remove("CARGO_TARGET_DIR")
+            .env_remove("RUSTUP_TOOLCHAIN")
             .current_dir(&self.root)
             .arg("micro")
             .args(args);

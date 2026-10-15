@@ -10,6 +10,7 @@
 //! seam, [`guard::Host`], [`Probe`] and [`Suites`], so tests script the
 //! readings and replace `cargo bench` with recorded output.
 
+pub mod ab;
 pub mod compare;
 pub mod criterion;
 pub mod guard;

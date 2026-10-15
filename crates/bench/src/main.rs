@@ -79,13 +79,21 @@ struct MicroArgs {
     #[arg(long, value_name = "MINUTES")]
     wait: Option<u32>,
 
-    /// Measure only while the 1-minute load average is under this; --save-baseline takes at most the default
-    #[arg(long, value_name = "N", default_value_t = micro::MAX_LOAD, value_parser = positive)]
-    max_load: f64,
+    /// Measure only while the 1-minute load average is under this; --save-baseline takes at most the default [default: 4, or the host's core count with --ab]
+    #[arg(long, value_name = "N", value_parser = positive)]
+    max_load: Option<f64>,
 
-    /// A median slower or faster than the baseline's by more than this percentage, and outside the interval the baseline recorded around its own median, is a regression or an improvement
-    #[arg(long, value_name = "PERCENT", default_value_t = micro::THRESHOLD_PCT, value_parser = positive)]
-    threshold: f64,
+    /// A median slower or faster than the baseline's by more than this percentage, and outside the interval the baseline recorded around its own median, is a regression or an improvement; with --ab, a head median slower or faster than base's by more than it [default: 5, or 10 with --ab]
+    #[arg(long, value_name = "PERCENT", value_parser = positive)]
+    threshold: Option<f64>,
+
+    /// Compare the checkout with this ref instead of reports/micro/baseline.json: the ref checked out beside it, both built on this host and their suites run in rounds, base and head in turn
+    #[arg(long, value_name = "REF", conflicts_with = "save_baseline")]
+    ab: Option<String>,
+
+    /// With --ab, how many times each side runs the suites
+    #[arg(long, value_name = "N", requires = "ab", value_parser = clap::value_parser!(u32).range(1..))]
+    rounds: Option<u32>,
 
     /// Run only the benchmarks whose ids match this regular expression, criterion's filter, such as protocol/decode
     #[arg(long, value_name = "NAME")]
@@ -373,11 +381,14 @@ fn run_micro(args: &MicroArgs) -> Result<ExitCode, String> {
         .filter(|root| !root.is_empty())
         .map(PathBuf::from)
         .ok_or("micro runs in the repository's checkout, and git finds none here")?;
+    if let Some(base) = &args.ab {
+        return run_micro_ab(args, base, &root);
+    }
     let settings = Settings {
         out: args.out.clone(),
-        max_load: args.max_load,
+        max_load: args.max_load.unwrap_or(micro::MAX_LOAD),
         wait: Duration::from_secs(u64::from(args.wait.unwrap_or(0)) * 60),
-        threshold_pct: args.threshold,
+        threshold_pct: args.threshold.unwrap_or(micro::THRESHOLD_PCT),
         filter: args.filter.clone(),
         save_baseline: args.save_baseline,
         ..Settings::new(&root)
@@ -400,6 +411,13 @@ fn run_micro(args: &MicroArgs) -> Result<ExitCode, String> {
     println!();
     print!("{}", finished.report.verdict());
     Ok(ExitCode::from(finished.report.summary.exit_status))
+}
+
+/// The A/B mode of `micro`: the checkout at `root` against `base`, both
+/// built and run on this host behind the guard.
+fn run_micro_ab(args: &MicroArgs, base: &str, root: &Path) -> Result<ExitCode, String> {
+    let _ = (args, base, root);
+    Err("the A/B mode is not built yet".to_owned())
 }
 
 /// The WebDriverAgent baseline's helper: WebDriverAgent started through the
