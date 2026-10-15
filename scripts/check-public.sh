@@ -128,7 +128,9 @@ if command -v gitleaks > /dev/null 2>&1; then
   printf '%s\n' '{{range .}}gitleaks: {{.RuleID}} at {{.File}}:{{.StartLine}}' '{{end}}' > "$scratch/report.tmpl"
   # From inside the copy, so that the findings name repo-relative paths.
   status=0
-  (cd "$scratch/tree" && gitleaks dir --no-banner --log-level error --redact --config "$root/.gitleaks.toml" \
+  config=()
+  if [ -f "$root/.gitleaks.toml" ]; then config=(--config "$root/.gitleaks.toml"); fi
+  (cd "$scratch/tree" && gitleaks dir --no-banner --log-level error --redact ${config[@]+"${config[@]}"} \
     --report-format template --report-template "$scratch/report.tmpl" --report-path "$scratch/gitleaks" .) \
     || status=$?
   if [ "$status" -gt 1 ]; then
