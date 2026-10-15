@@ -247,3 +247,46 @@ fn ci_lints_and_audits_the_workflows() {
         "zizmor runs with the job's token"
     );
 }
+
+/// Task 3.2: Dependabot proposes new versions of the actions, the crates and
+/// the toolchain after 7 days, and CI checks the dependencies' advisories,
+/// licenses, bans and sources with cargo-deny, for both Cargo workspaces.
+#[test]
+fn dependabot_waits_a_week_and_ci_checks_the_dependencies_with_cargo_deny() {
+    let dependabot = read(".github/dependabot.yml");
+    let mut ecosystems = Vec::new();
+    for entry in dependabot.split("\n  - package-ecosystem: ").skip(1) {
+        let name = entry.lines().next().unwrap().trim().to_owned();
+        assert!(
+            entry.contains("    cooldown:\n      default-days: 7\n"),
+            "{name} waits 7 days"
+        );
+        assert!(
+            entry.contains("      interval: weekly\n"),
+            "{name} runs weekly"
+        );
+        ecosystems.push(name);
+    }
+    assert_eq!(ecosystems, ["rust-toolchain", "github-actions", "cargo"]);
+
+    let ci = read(".github/workflows/ci.yml");
+    let (_, audit) = jobs(&ci)
+        .into_iter()
+        .find(|(name, _)| name == "audit")
+        .expect("ci.yml has an audit job");
+    let runs: Vec<&str> = audit
+        .iter()
+        .map(|line| line.trim().trim_start_matches("run: "))
+        .collect();
+    assert!(
+        runs.contains(&"cargo deny check advisories licenses bans sources"),
+        "{runs:#?}"
+    );
+    assert!(
+        runs.contains(
+            &"cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources"
+        ),
+        "{runs:#?}"
+    );
+    assert!(read("deny.toml").contains("[licenses.private]\nignore = true\n"));
+}
