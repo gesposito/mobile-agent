@@ -58,8 +58,13 @@ git ls-files > "$scratch/names"
 for i in "${!PUBLIC_REGEXES[@]}"; do
   name=${PUBLIC_NAMES[$i]}
   regex=${PUBLIC_REGEXES[$i]}
+  spared=()
+  while IFS= read -r path; do
+    if [ -n "$path" ]; then spared+=(":(exclude)$path"); fi
+  done <<< "${PUBLIC_SPARED[$i]}"
   status=0
-  git --no-pager grep -n -I -P -e "$regex" -- . "${exclude[@]}" > "$scratch/hits" || status=$?
+  # The spared list may be empty, which bash before 4.4 calls unbound.
+  git --no-pager grep -n -I -P -e "$regex" -- . "${exclude[@]}" ${spared[@]+"${spared[@]}"} > "$scratch/hits" || status=$?
   grep_status "$status"
   while IFS= read -r hit; do
     path=${hit%%:*}
