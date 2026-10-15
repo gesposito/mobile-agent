@@ -31,12 +31,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install actionlint and zizmor from their releases, checked against their SHA-256
+      - name: Install actionlint, zizmor and cargo-deny from their releases, checked against their SHA-256
         env:
           ACTIONLINT_VERSION: "1.7.12"
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
           ZIZMOR_VERSION: "1.30.1"
           ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
         run: |
           mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/tools"
           cd "$RUNNER_TEMP/tools"
@@ -44,9 +46,14 @@ jobs:
             "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           curl -fsSL --retry 3 -o zizmor.tar.gz \
             "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-          printf '%s  %s\n' "$ACTIONLINT_SHA256" actionlint.tar.gz "$ZIZMOR_SHA256" zizmor.tar.gz | sha256sum -c -
+          curl -fsSL --retry 3 -o cargo-deny.tar.gz \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/$CARGO_DENY_VERSION/cargo-deny-$CARGO_DENY_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" actionlint.tar.gz "$ZIZMOR_SHA256" zizmor.tar.gz \
+            "$CARGO_DENY_SHA256" cargo-deny.tar.gz | sha256sum -c -
           tar -xzf actionlint.tar.gz -C "$HOME/.local/bin" actionlint
           tar -xzf zizmor.tar.gz -C "$HOME/.local/bin" zizmor
+          tar -xzf cargo-deny.tar.gz --strip-components 1 -C "$HOME/.local/bin" \
+            "cargo-deny-$CARGO_DENY_VERSION-x86_64-unknown-linux-musl/cargo-deny"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Lint the workflows
         run: actionlint
@@ -55,6 +62,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: zizmor --no-progress .github
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        # cargo-deny reads the dependency graph through cargo metadata.
+        run: rustup toolchain install --no-self-update
+      - name: Check the dependencies' advisories, licenses, bans and sources
+        run: cargo deny check advisories licenses bans sources
+      - name: Check the Android agent's host tests' dependencies, a workspace of their own
+        run: cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources
 
   linux:
     name: Linux

@@ -45,6 +45,10 @@ check-public:
 
 alias check-paths := check-public
 
+# Check the dependencies' advisories, licenses, bans and sources with cargo-deny (deny.toml), for the workspace and the Android agent's host tests, skipped when cargo-deny is not installed
+deny:
+    if cargo deny --version >/dev/null 2>&1; then cargo deny check advisories licenses bans sources && cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources; else echo "cargo-deny not present, skipping"; fi
+
 # Lint the workflows with actionlint and audit them and Dependabot's configuration with zizmor, each skipped when it is not installed
 lint-workflows:
     if command -v actionlint >/dev/null 2>&1; then actionlint; else echo "actionlint not present, skipping"; fi
@@ -93,5 +97,5 @@ bench-ab base *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-public, lint-workflows, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-public lint-workflows test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-public, lint-workflows, deny, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-public lint-workflows deny test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
