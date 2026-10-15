@@ -274,7 +274,7 @@ mirror's conventions (`reader/src/elements.rs`):
   so the window draws the menu's list, 121 to 165 points down over the
   SwiftUI fixture's login, and none while the menu is down. With the
   window's frame as its bounds the mirror took it for a view drawn over
-  the whole application, and the sixth acceptance run's listing with the
+  the whole application, and the sixth production-app run's listing with the
   menu up held the menu's cells alone. The iOS runner, which converts its
   tree the same way, serves this from 0.2.2;
 - an application's alert on screen moves, with the view that presents it,
@@ -579,7 +579,7 @@ again.
 
 A React Native field takes its keys through the app's JavaScript thread,
 and a field whose value the app owns, on a screen that renders for longer
-than the pause between keys, loses some: the acceptance run of
+than the pause between keys, loses some: the production-app run of
 `rn-app-fixes` lost an address's "@" in 2 of 15 typed entries and a code's
 digit in 1 of 5 (task 2.2). `Cadence::for_read` gives the fields of a read
 React Native's cadence, 60 ms, when one of the read's classes starts with
@@ -610,7 +610,7 @@ series started on a quiet host:
 | The same field, its value the app's and its label changing once it holds text, on a screen that takes 30 ms to render | 13 of 20 | 10 of 20 | 20 of 20 |
 | Typing the 36 characters into the first, p50 / p95 | 637 / 651 ms | 1,180 / 1,218 ms | 2,236 / 2,264 ms |
 
-The second field, the shape of the acceptance's fields, which no fixture
+The second field, the shape of the production app's fields, which no fixture
 has, was a throwaway variant of the Expo fixture, not committed. Each of its
 losses was one character, more at 30 ms than at 15, as keys then come about
 once per render; the fixture's own loss at 15 ms kept only the first key.
@@ -620,7 +620,7 @@ read-back finds and its paste repairs; `type` reads nothing back.
 
 A field that already holds text is filled by selecting it with Command-A
 and typing over the selection, and there autocorrection rewrites what the
-keys typed: the acceptance run of `rn-app-fixes` typed "Smoke Org" over an
+keys typed: the production-app run of `rn-app-fixes` typed "Smoke Org" over an
 organization's name and the field showed "smoke Org", four times out of
 four (task 3.7). Task 4.5 traced it on the spike Simulator with throwaway
 screens, not committed, of four fields, one per auto-capitalization setting,
@@ -671,7 +671,7 @@ identifier on a view holding no field, is readied as text into a field the
 input taps, Command-A first, but for the tap (`readying`). A paste and
 `type`, which selects nothing, keep the readying they had. The tap that
 readies text into a field already in focus opens iOS's edit menu, and a
-paste that then lands nothing, as on the sixth acceptance run's Simulator
+paste that then lands nothing, as on the sixth production-app run's Simulator
 with its hardware keyboard disconnected and Command lost, leaves the menu
 up; the daemon's `fill` closes it after its paste's read-back with a tap
 on the field near its left end, which on this Simulator closed the menu

@@ -6,7 +6,7 @@ Task 1.2 of `microbenchmarks`. It measures, on this host, how far each candidate
 
 ## Setup
 
-**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GiB, macOS 26.6.2 (25G83), shared with other sessions that build and run emulators (see Measurement hygiene).
+**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GiB, macOS 26.6.2 (25G83), shared with other work that builds and runs emulators (see Measurement hygiene).
 
 **Toolchain and crates.** Rust 1.98.1, pinned by `rust-toolchain.toml`, in the bench profile the workspace's `cargo bench` uses (opt-level 3, no LTO, 16 codegen units). The harnesses are criterion 0.8.2 with default features off, divan 0.1.21, tango-bench 0.8.0 and glassbench 0.5.0, the latest releases on 2026-10-07. The shipped `protocol` crate comes in by path, on minicbor 2.3.0. Every crate came through `sfw cargo add` and `sfw cargo fetch`, and the builds ran offline.
 
@@ -50,7 +50,7 @@ Otherwise it checks again every 30 s, and after 90 minutes of waiting in all it 
 - the crates the harness alone adds to the spike's lock file and builds for this host;
 - whether its output is machine-readable per benchmark without parsing prose.
 
-**Measurement hygiene.** All 81 measured runs (the calibration, 40 quiet and 40 loaded) started on a host the guard passed; nothing was measured on a busy host and no run was repeated. Before the calibration the guard waited 36 checks of 30 s, from 22:56:00 to 23:14:03. At 35 of them one or two emulator processes (`qemu-system-aarch64-headless`, another session's) were above 5% of a core, once together with a `java` process, and the 1-minute load ranged from 1.63 to 14.57. The calibration started at a load of 3.14 4.64 6.29 and ended at 2.89 4.53 6.23. The quiet series ran from 23:14:17 to 23:18:49, every run starting at a 1-minute load between 2.89 and 3.95; it waited once, 30 s before round 8, at 4.65. It ended at 3.27 3.93 5.49. The loaded series started from that quiet host, ran from 23:18:49 to 23:25:58 at 1-minute loads up to 7.99 at the start of a run, and ended at 7.93 7.44 6.65. It waited six checks before round 9, at loads of 8.70 to 11.84: other work on top of the four `yes` processes, with no watched process busy. In all, 125 checks, 43 of them waits, or 21.5 minutes. `results/hygiene.tsv` lists every check.
+**Measurement hygiene.** All 81 measured runs (the calibration, 40 quiet and 40 loaded) started on a host the guard passed; nothing was measured on a busy host and no run was repeated. Before the calibration the guard waited 36 checks of 30 s, from 22:56:00 to 23:14:03. At 35 of them one or two emulator processes (`qemu-system-aarch64-headless`, of other work on the host) were above 5% of a core, once together with a `java` process, and the 1-minute load ranged from 1.63 to 14.57. The calibration started at a load of 3.14 4.64 6.29 and ended at 2.89 4.53 6.23. The quiet series ran from 23:14:17 to 23:18:49, every run starting at a 1-minute load between 2.89 and 3.95; it waited once, 30 s before round 8, at 4.65. It ended at 3.27 3.93 5.49. The loaded series started from that quiet host, ran from 23:18:49 to 23:25:58 at 1-minute loads up to 7.99 at the start of a run, and ended at 7.93 7.44 6.65. It waited six checks before round 9, at loads of 8.70 to 11.84: other work on top of the four `yes` processes, with no watched process busy. In all, 125 checks, 43 of them waits, or 21.5 minutes. `results/hygiene.tsv` lists every check.
 
 **Rerunning.**
 

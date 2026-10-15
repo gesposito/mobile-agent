@@ -277,7 +277,7 @@ fn input_series() {
     );
 }
 
-/// The lock button as an Indigo button event, with a person at the phone:
+/// The lock button as an Indigo button event, with someone at the phone:
 /// whether the phone locks, read from lockdown's `PasswordProtected`, then a
 /// wait of up to ten minutes for the person to unlock it.
 #[test]

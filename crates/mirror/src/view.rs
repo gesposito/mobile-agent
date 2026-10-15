@@ -18,7 +18,8 @@
 //! 5. a field with no label of its own takes the label of the container it
 //!    sits in, when that container holds no other field, as React Native
 //!    lays out a field marked accessible with a label (Ignite's sign-in
-//!    fields in the React Native smoke test); the container is then not
+//!    fields in the React Native smoke test, reports/10.4-rn-smoke.md); the
+//!    container is then not
 //!    listed again;
 //! 6. a labelled node without traits whose children, if any, are static
 //!    text, or that is selected, gets a ref unless an actionable element
@@ -212,7 +213,7 @@ impl View {
     /// or of the window for a node outside any ([`edge`]), as the hints
     /// have named it since designs D50 and D54; any other cover is named as
     /// what a tap at `at` would land on ([`View::name`]). The sixth
-    /// acceptance run's click on a control under the creation tab's footer
+    /// production-app run's click on a control under the creation tab's footer
     /// was refused naming the overlay while the hint said the footer.
     pub fn cover_name(
         &self,
@@ -659,7 +660,7 @@ fn untraited_controls(window: &Win, facts: &mut [Facts]) {
 /// Lists as tabs the labelled nodes without traits laid out in one row
 /// with a selected one, the selected one with its state (rn-app-fixes,
 /// design D40): React Native exposes a tab so on iOS, the `selected` trait
-/// on the selected tab alone, and the acceptance run found an unselected
+/// on the selected tab alone, and the production-app run found an unselected
 /// tab holding its icon's text, a text whose only child is its own text,
 /// with nothing else to tell it a control by. A row is the siblings whose
 /// bounds overlap the selected one's over at least half the height of the
@@ -1049,7 +1050,7 @@ fn scrolling_nodes(window: &Win, facts: &[Facts]) -> Vec<usize> {
 /// lying over part of a scroll container among `lists` that `e` holds or
 /// is: over it, without holding all of it, as a background listed after a
 /// list would (rn-app-fixes, design D48). On the creation tab of the fourth
-/// acceptance run the footer's view, which React Native's accessibility
+/// production-app run the footer's view, which React Native's accessibility
 /// lists holding nothing, its tabs after it, lies over the lower part of a
 /// scroll view that runs on to the bottom of the screen.
 fn over_part_of_a_list(
@@ -1106,7 +1107,7 @@ fn pinned_over(window: &Win, facts: &[Facts], h: usize, c: usize, slack: f64) ->
 /// whatever the order (rn-app-fixes, design D38). XCTest lists a navigation
 /// bar before the content its controller draws it over, and a React Native
 /// header before the list it is drawn over, the rows the list scrolled up
-/// past its top lying in the header's frame (the acceptance run's 44-point
+/// past its top lying in the header's frame (the production-app run's 44-point
 /// row at 2 points): a bar by its class ([`BAR_CLASSES`]) covers what its
 /// later siblings hold within its bounds, and a header pinned across a
 /// scrolling sibling's top ([`pinned_over`]) what that sibling holds within
@@ -1714,7 +1715,7 @@ fn across_top(header: &Rect, list: &Rect, slack: f64) -> bool {
 /// width from inside it to its bottom or below; of those neither holding
 /// the container nor held by it nor a window (design D55), the one listed
 /// last. On the fifth
-/// acceptance run rows a list scrolled above its frame lay on the screen
+/// production-app run rows a list scrolled above its frame lay on the screen
 /// above the header, where the status bar is drawn, and nothing over their
 /// centres named a cover (rn-app-fixes, design D54).
 fn edge_view(

@@ -284,7 +284,7 @@ fn reference_json(reference: Option<mirror::Ref>) -> Value {
 /// nothing is read again or tapped; a point aimed at one fails the same
 /// way here. Nothing a tap reaches of an uncovered element can be bounds
 /// the replica holds from before a layout change that no event reported and
-/// no read has seen yet: in the React Native smoke test the keyboard moved
+/// no read has seen yet: in the production-app smoke test the keyboard moved
 /// a submit button up, the replica kept its old bounds under the keyboard,
 /// and the click tapped the number pad there (design D32). So the
 /// element's window is read again once, and the tap goes where that read
@@ -673,7 +673,7 @@ enum Reading {
 /// the emptying or before the entry, or none to compare with (design D56):
 /// a value that is no placeholder, as long as the text at least and more
 /// than separators and empty boxes' dashes, and that changed with the
-/// entry. On the sixth acceptance run the code step's node showed "4" with
+/// entry. On the sixth production-app run the code step's node showed "4" with
 /// the keyboard up, a single box's placeholder or the last digit an
 /// emptying left, which the read-back took for what the field held where
 /// the node's name spelled the code.
@@ -1103,7 +1103,7 @@ fn keyboard_up(target: &mut Attached) -> Result<bool, Failure> {
 /// below the screen, while one serves the input in focus, and `field`, the
 /// field the tap was for, shows the focus; for an input the tree does not
 /// show, `field` being `None`, the window alone tells. On the fifth
-/// acceptance run, with the Simulator's hardware keyboard connected, `fill`
+/// production-app run, with the Simulator's hardware keyboard connected, `fill`
 /// waited out its second for keys that never showed, and the node of the
 /// code step that holds no field was refused for want of a keyboard.
 fn served_without_keys(target: &mut Attached, field: Option<Ref>) -> bool {
@@ -1142,7 +1142,7 @@ fn focus_taken(target: &mut Attached, tapped: Instant, field: Option<Ref>) -> bo
 /// or a keyboard window that draws nothing while the field has the focus, a
 /// hardware keyboard serving it (design D52), or, once a keyboard window
 /// drawing no keys has been seen, the focus alone (design D57), at most
-/// [`KEYBOARD_WAIT`] from the tap ([`keyboard_within`]). In the React Native smoke test the first keys typed into a
+/// [`KEYBOARD_WAIT`] from the tap ([`keyboard_within`]). In the production-app smoke test the first keys typed into a
 /// just-focused field were lost in 3 of 8 runs while the Simulator's
 /// keyboard slid in; a paste is Command-V, a key too, so text waits
 /// whichever way it goes in. A field with the focus, or a keyboard up
@@ -1206,7 +1206,7 @@ fn tap_for_text(
 /// one came. Once a wait has seen a keyboard window that draws no keys, and
 /// until one sees a keyboard with keys, the wait ends at the focus
 /// ([`focus_taken`], design D57): under a hardware keyboard a number pad
-/// brings up no keyboard window at all, and the sixth acceptance run's code
+/// brings up no keyboard window at all, and the sixth production-app run's code
 /// fill waited out the second there.
 fn keyboard_within(
     target: &mut Attached,
@@ -1243,7 +1243,7 @@ fn keyboard_within(
 /// command, enters, and waits until the keyboard is up, at most
 /// [`KEYBOARD_WAIT`] from the tap (design D44), or a keyboard window that
 /// draws nothing comes up, a hardware keyboard serving the input the tap
-/// focused (design D52): on the third acceptance run's second visit to the
+/// focused (design D52): on the third production-app run's second visit to the
 /// code step, the code input's view held nothing, the app's input not in
 /// the tree, and a tap on the view gave that input the focus. Fails with
 /// `invalid_argument`, as an entry into a node that takes no text does,
@@ -1293,7 +1293,7 @@ const MENU_WAIT: Duration = Duration::from_secs(1);
 /// Closes iOS's edit menu when the replica shows one up once `fill` has
 /// read back its paste into `field` (design D55): the tap on the field in
 /// focus that readies a paste opens the menu, and a paste that lands
-/// nothing leaves it up over the screen, as on the sixth acceptance run,
+/// nothing leaves it up over the screen, as on the sixth production-app run,
 /// where Command was lost. A tap on the field near its left end closes
 /// it, as a tap on the field in focus does on the Simulator, the caret
 /// going to the field's start, away from a clear button at its right end;
@@ -1460,7 +1460,7 @@ fn filled(
 /// field does ([`ready_keyboard`] on iOS); one without an area, as a React
 /// Native code input's, which a tap cannot reach, takes the tap on the
 /// node around it, and the text as the field in focus (design D39), as a
-/// click on the node and a `type` did in the acceptance run.
+/// click on the node and a `type` did in the production-app run.
 fn ready_held(
     target: &mut Attached,
     (field, holder): (&Element, &Element),
@@ -1837,7 +1837,7 @@ fn longest_in(area: &Rect, vertical: bool) -> f64 {
 /// other, so one floating inside them, as Gboard's stylus toolbar, cuts
 /// nothing. With the keyboard up the stroke goes through what shows of the
 /// scroll container that shows the most of what is left, less a header the
-/// app pins over it (design D41): the acceptance run's `scroll up 300`
+/// app pins over it (design D41): the production-app run's `scroll up 300`
 /// stroked the middle of what the keyboard left of the screen, on a fixed
 /// header, and moved nothing. Fails with `covered_by_keyboard`, after
 /// `strokes` strokes, when the keyboard leaves too little for a stroke
@@ -2156,7 +2156,7 @@ fn in_view(seen: &Visibility) -> String {
 /// [`UNTIL_STROKES`] strokes, or at the command's timeout; an element on
 /// screen then gives its share in view as `data.visible`, and the failure
 /// names the last stroke's start and end, as `data.from` and `data.to`, and
-/// what moved after it ([`after_stroke`]): the third acceptance run's scroll
+/// what moved after it ([`after_stroke`]): the third production-app run's scroll
 /// stopped after strokes that went the other way, which its reply did not
 /// say (rn-app-fixes, design D46).
 fn scroll_until(
@@ -2566,7 +2566,7 @@ mod tests {
     }
 
     /// Task 7.1 (task 6.5, N13): with the Simulator's hardware keyboard
-    /// disconnected, the sixth acceptance run's configuration lost Shift and
+    /// disconnected, the sixth production-app run's configuration lost Shift and
     /// Command, so the address field typed "@" as "2", the paste that
     /// followed landed nothing, and the tap on the field in focus that
     /// readied the paste left iOS's edit menu up over the screen. A fill
@@ -2643,7 +2643,7 @@ mod tests {
     /// Design D43: a name is compared by the part of it the entry changed,
     /// what lies between what the names before and after share at their
     /// start and their end, with the separators a name spells characters
-    /// with left out of it and of the text: the boxes of the acceptance
+    /// with left out of it and of the text: the boxes of the production-app
     /// run's code field before its label, a code after a label, a name
     /// in front of a label, a cleared field's dashes, a code entered over
     /// one it starts as. Other digits, digits missing, and bullets for each
@@ -3139,7 +3139,7 @@ mod tests {
         assert_eq!(held(&mut target, "#login-username"), "agent");
     }
 
-    /// The placeholder app: one screen with the shapes the React Native
+    /// The placeholder app: one screen with the shapes the production-app
     /// smoke test met (`crate::fake`).
     const PLACEHOLDER: &str = "dev.mobileagent.placeholder";
 
@@ -3226,7 +3226,7 @@ mod tests {
             .clone()
     }
 
-    /// Design D32: in the React Native smoke test the keyboard's appearance
+    /// Design D32: in the production-app smoke test the keyboard's appearance
     /// moved a submit button up without an event, the replica still held its
     /// old bounds, none of them in view under the keyboard, and the click
     /// tapped the number pad there. On the placeholder app's screen the
@@ -3288,7 +3288,7 @@ mod tests {
     /// Designs D32 and D37: a button partly in view keeps the click's
     /// warning, and the tap goes to the part of it in view: the keyboard
     /// covers all but the hint button's top 14 of 48 points, and the tap
-    /// goes to their centre, where the acceptance run's taps at the centres
+    /// goes to their centre, where the production-app run's taps at the centres
     /// of submit buttons 1 to 35% in view hit the keyboard.
     #[test]
     fn a_click_on_a_button_partly_in_view_taps_the_part_in_view_with_a_warning() {
@@ -3308,7 +3308,7 @@ mod tests {
     }
 
     /// The placeholder app on a fake Simulator, showing `board`, one of the
-    /// screens of the acceptance run, and the inputs it is sent.
+    /// screens of the production-app run, and the inputs it is sent.
     fn on_board(board: &str) -> (Attached, Sent) {
         let driver = FakeDriver::parse("ios").unwrap();
         recorded(
@@ -3319,7 +3319,7 @@ mod tests {
     }
 
     /// Design D37, scenario "Card partly under a sticky header" (task 3.1;
-    /// section 2 of the masked listings): on the feed the acceptance run's
+    /// section 2 of the masked listings): on the feed the production-app run's
     /// click on a card 30% in view tapped its centre, (201, 99), on the
     /// heading of the header listed before the list, with the warning that
     /// the card was not mostly in view. The click taps the centre of the
@@ -3348,7 +3348,7 @@ mod tests {
 
     /// Design D37, scenario "Heading half under a footer button" (task 3.1;
     /// section 1a of the masked listings): on the consent screen the
-    /// acceptance run's click on the heading half under the secondary
+    /// production-app run's click on the heading half under the secondary
     /// footer button tapped its centre, the button's top edge, and declined
     /// the consent; its click by exact text on the 12-point text under the
     /// primary button tapped that button and consented. The click on the
@@ -3393,7 +3393,7 @@ mod tests {
     /// Designs D37, D38 and D45 (tasks 3.1 and 4.3; section 1b of the
     /// masked listings, task 3.7's N6): on the creation tab the paste
     /// control lies 38 of its 48 points under the disabled primary button,
-    /// and the second acceptance run's clicks at its centre landed on that
+    /// and the second production-app run's clicks at its centre landed on that
     /// button, twice; its lower 10 points lie under the footer drawn over
     /// the list's lower part, outside what the list shows, and the third
     /// run's click tapped them and opened nothing. The click by identifier
@@ -3418,7 +3418,7 @@ mod tests {
 
     /// Design D48 (task 5.1; task 4.7, N6): on the creation tab as React
     /// Native's accessibility lists it, the footer's view holds nothing, its
-    /// tabs listed after it, and the fourth acceptance run's click on the
+    /// tabs listed after it, and the fourth production-app run's click on the
     /// paste control tapped its lower 10 points, below the disabled button
     /// and under the footer, opening nothing. The click by identifier is
     /// refused with `element_covered`, naming the disabled button a tap at
@@ -3458,7 +3458,7 @@ mod tests {
     /// read or two, well short of the selector's timeout of 3 s.
     const REFUSED_WITHIN: Duration = Duration::from_millis(500);
 
-    /// Design D53, N12 of the fifth acceptance run (task 6.2; task 5.6): a
+    /// Design D53, N12 of the fifth production-app run (task 6.2; task 5.6): a
     /// click by text on a text the declined consent's secondary button
     /// covers whole, as the run's 12-point text at 737 points under its
     /// Decline, answered `element_not_found` after the full timeout, 10,079
@@ -3490,7 +3490,7 @@ mod tests {
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
     }
 
-    /// Design D53, N12 and N6 of the fifth acceptance run (task 6.2; task
+    /// Design D53, N12 and N6 of the fifth production-app run (task 6.2; task
     /// 5.6): on the creation tab as that run met it the footer's view holds
     /// the paste control and the button beside it whole, which the
     /// interactive listing leaves out, and a click by the control's
@@ -3526,7 +3526,7 @@ mod tests {
         assert_eq!(text_of(&mut target, "#placeholder-status"), "Not tapped");
     }
 
-    /// Design D53, N12 of the fifth acceptance run (task 6.2; task 5.6):
+    /// Design D53, N12 of the fifth production-app run (task 6.2; task 5.6):
     /// behind a dialog the app marks modal, a fill by the identifier of the
     /// field under it answered `element_not_found` after the full timeout,
     /// 10,090 ms, where a click on a ref behind it answered
@@ -3611,7 +3611,7 @@ mod tests {
     }
 
     /// Design D37 (task 3.1; section 1b of the masked listings): the
-    /// acceptance run's `scroll --until` on the paste control answered at
+    /// production-app run's `scroll --until` on the paste control answered at
     /// once, `visible` 1.0, no stroke, while the disabled button covered
     /// most of it. It judges arrival by the part a tap reaches: one stroke
     /// brings the control above the button, and the reply says so.
@@ -3630,7 +3630,7 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
-    /// Design D46, N5 of the third acceptance run (task 4.4; task 3.7): on
+    /// Design D46, N5 of the third production-app run (task 4.4; task 3.7): on
     /// the creation tab `scroll down --until` the paste control failed with
     /// `element_not_found`, the content having stopped moving after three
     /// strokes, while a plain `scroll down 300` right after moved the content
@@ -3703,7 +3703,7 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
-    /// Design D46 (task 4.4; task 3.7's N5): the third acceptance run's
+    /// Design D46 (task 4.4; task 3.7's N5): the third production-app run's
     /// `scroll --until` gave up, the content having stopped moving, "after 3
     /// strokes of 300 points down", and nothing in the reply said where the
     /// strokes ran, the other way as it was. A scroll that looks for an
@@ -3831,7 +3831,7 @@ mod tests {
     }
 
     /// Design D41 (task 3.2; section 3 of the masked listings): with the
-    /// keyboard up the acceptance run's `scroll up 300` stroked from (201,
+    /// keyboard up the production-app run's `scroll up 300` stroked from (201,
     /// 119.5), the middle of what the keyboard left of the screen less 150
     /// points, on the header listed before the list, and moved nothing. A
     /// scroll of the screen with the keyboard up strokes inside what shows
@@ -3874,7 +3874,7 @@ mod tests {
     }
 
     /// Design D33: a React Native code input built of boxes holds its code
-    /// in the boxes' texts and has no value of its own, so in the smoke test
+    /// in the boxes' texts and has no value of its own, so in the production-app smoke test
     /// `fill` typed the code and then failed with `text_mismatch`. A field
     /// without a value is read back through its descendants' values or
     /// texts, in order: six digits are verified through the six boxes, with
@@ -3958,7 +3958,7 @@ mod tests {
     /// Design D39 (task 3.3; section 4 of the masked listings): on the code
     /// step's first visit the code field is a labelled node without traits
     /// whose accessible name spells the digits it holds, neither a value nor
-    /// anything below it, so every fill of the acceptance run answered
+    /// anything below it, so every fill of the production-app run answered
     /// `verified: false`, `no_value_to_read`, and a wrong code went
     /// unreported. The read-back takes the field's name when it changed
     /// with the entry: the code is verified through it, and a field that
@@ -3995,7 +3995,7 @@ mod tests {
         );
     }
 
-    /// Design D43, defect 3 of the third acceptance run (task 4.1; task
+    /// Design D43, defect 3 of the third production-app run (task 4.1; task
     /// 3.7): the code step's field names its six boxes before its label, a
     /// dash for each empty one, "–, –, –, –, –, –, Verification code,
     /// required" before the entry and "1, 2, 3, 4, 5, 6, Verification code,
@@ -4082,7 +4082,7 @@ mod tests {
         }
     }
 
-    /// Design D51, N10 of the fourth acceptance run (task 5.4; task 4.7):
+    /// Design D51, N10 of the fourth production-app run (task 5.4; task 4.7):
     /// on the feed scrolled to its end `get box` on an identifier and on a
     /// text of rows scrolled above failed `element_not_found` after the
     /// full 10 s, while the hint counted the rows above, which the tree
@@ -4166,7 +4166,7 @@ mod tests {
             .collect()
     }
 
-    /// Design D49, N8 of the fourth acceptance run (task 5.2; task 4.7): a
+    /// Design D49, N8 of the fourth production-app run (task 5.2; task 4.7): a
     /// refill of the code the code step's field already holds answered
     /// `verified: false`, `no_value_to_read`, the field's name spelling the
     /// same digits before the entry and after it. A fill typed as keys into
@@ -4203,7 +4203,7 @@ mod tests {
         }
     }
 
-    /// Design D56, N14 of the sixth acceptance run (task 7.2; task 6.5):
+    /// Design D56, N14 of the sixth production-app run (task 7.2; task 6.5):
     /// with the keyboard up and the hardware keyboard disconnected, a refill
     /// of the code the code step's field held on its second visit read back
     /// a value, "4", rather than the field's name and failed `text_mismatch`
@@ -4328,7 +4328,7 @@ mod tests {
         assert_eq!(texts(&sent).len(), 1, "a paste keeps its path");
     }
 
-    /// Design D39, N1 of the acceptance run (task 3.3; section 4 of the
+    /// Design D39, N1 of the production-app run (task 3.3; section 4 of the
     /// masked listings): on the code step's second visit the code field's
     /// identifier named a labelled node holding a field without an area,
     /// which got no ref, and `fill` and `type` by the identifier failed
@@ -4383,7 +4383,7 @@ mod tests {
             .collect()
     }
 
-    /// Design D44, N1 of the third acceptance run (task 4.2; task 3.7): on
+    /// Design D44, N1 of the third production-app run (task 4.2; task 3.7): on
     /// the code step's second visit the code field is a node with its
     /// identifier and nothing listed below it, the app's input not in the
     /// tree, so no field lies inside it for D39's rule and it gets no ref,
@@ -4485,7 +4485,7 @@ mod tests {
         assert!(!warning.contains("keyboard"), "{warning}");
     }
 
-    /// Design D39, N2 of the acceptance run (task 3.3; section 7 of the
+    /// Design D39, N2 of the production-app run (task 3.3; section 7 of the
     /// masked listings): on the paste sheet a fill by the ref of the title
     /// field, whose view gains a counter when the field takes the focus and
     /// whose name changes once it holds text, failed with `stale_ref`
@@ -4534,7 +4534,7 @@ mod tests {
     }
 
     /// A 20-character text that starts with a lower-case letter, as the
-    /// keys the smoke test lost the first of.
+    /// keys the production-app smoke test lost the first of.
     const TWENTY: &str = "placeholder-entry-20";
 
     /// A fake target of `platform` whose keyboard comes up as `slide` says
@@ -4563,7 +4563,7 @@ mod tests {
     }
 
     /// Design D57 (task 7.3; task 6.5, N11): with the hardware keyboard
-    /// connected the sixth acceptance run's code fill took a second longer
+    /// connected the sixth production-app run's code fill took a second longer
     /// than with the software keyboard, 3.2 to 3.3 s against 2.3 to 2.6: a
     /// number pad brings up no keyboard window under a hardware keyboard, so
     /// the keyboard wait ran out. A session that has seen a keyboard window
@@ -4619,7 +4619,7 @@ mod tests {
         assert!(!target.keys_hidden_seen);
     }
 
-    /// Design D34: in the React Native smoke test the first keys typed into
+    /// Design D34: in the production-app smoke test the first keys typed into
     /// a just-focused field were lost in 3 of 8 runs while the Simulator's
     /// keyboard slid in. On iOS `fill` into a field without the focus, the
     /// keyboard down, taps the field, then types once the replica shows the
@@ -4676,7 +4676,7 @@ mod tests {
         );
     }
 
-    /// Design D52, N11 of the fifth acceptance run (task 6.1): with a
+    /// Design D52, N11 of the fifth production-app run (task 6.1): with a
     /// hardware keyboard connected iOS draws no keys, and keeps the
     /// keyboard's window, drawing nothing, while a field has the focus. Its
     /// keys never show, and `fill` waited out its second before typing,

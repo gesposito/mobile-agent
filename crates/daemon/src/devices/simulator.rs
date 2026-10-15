@@ -1595,7 +1595,7 @@ mod tests {
     }
 
     /// Task 4.5 of `rn-app-fixes`: a `fill` of "Smoke Org" over what the
-    /// field held typed "smoke Org" in the acceptance run, four times out
+    /// field held typed "smoke Org" in the production-app run, four times out
     /// of four, autocorrection rewriting the first word at the space; the
     /// field's selection deleted and a read showing it empty first, the
     /// keys land as sent. A lower-case first letter loses nothing to the

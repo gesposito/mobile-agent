@@ -4,7 +4,7 @@ Spike S6 (tasks.md 2.9) measures the host-side ADB transport for design decision
 
 ## Setup
 
-- **Host.** Apple M1 Max, 10 cores, 64 GB, macOS 26.6.2. Other agents shared the host and the emulator for the whole session, running their own spikes, builds and Simulators (see Conditions).
+- **Host.** Apple M1 Max, 10 cores, 64 GB, macOS 26.6.2. Other work shared the host and the emulator throughout, running its own spikes, builds and Simulators (see Conditions).
 - **Android.** platform-tools 37.0.1 (adb 1.0.41), one adb server on 127.0.0.1:5037 shared by every agent; Android Emulator 37.1.11.0; build-tools 37.0.0 for d8; platform android-36.
 - **Target.** `emulator-5554`, AVD `pixel_api36` started with `-no-window -no-audio -no-boot-anim -grpc 8554 -grpc-use-token`. System image `google/sdk_gphone64_arm64/emu64a:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys` (API 36, Android 16, security patch 2025-07-05), 4 vCPUs, 2.5 GB RAM, SELinux enforcing, adbd running as `shell`.
 - **Columns.**
@@ -17,7 +17,7 @@ Spike S6 (tasks.md 2.9) measures the host-side ADB transport for design decision
 - **Echo server.** `kotlin/src/placeholder/s6/Main.kt`, built by `kotlin/build.sh` with the agent-android recipe (kotlinc against android-36, d8 with the stdlib, a jar holding one dex of 2,285,408 bytes; the jar is 666,480 bytes), started with `app_process` as the shell user. `--listen NAME` accepts on the abstract socket NAME. `--dial localabstract:NAME` or `--dial tcp:PORT` connects out, redials after every session, and polls every 200 µs while nothing listens. Every connection gets a hello frame first, then frames (a u32 big-endian length and the payload) are echoed unchanged.
 - **Tests.** 38 unit tests for the percentiles, the `adb devices -l` parser, the frame echo protocol and the smart-socket helpers were committed first and failed (`0 passed; 38 failed`, commit `5db57e8`), then passed. Three more were each seen red, then green: two cover the host-quiet filter, and one covers the reverse-listing matcher. `cargo test` runs 41.
 - **Spike commits.** All measurements come from `153cc42`, which the harness recorded in both runs below. `c44cb13` then changes only how reverse rules are torn down, outside the timed sections (see the adb server abort under Forward versus reverse).
-- **Method.** Each candidate runs 10 warm-up iterations per operation, which are discarded. Then 200 iterations are timed for the listing, the shell and the 64-byte echoes, and 100 for everything else. Candidates alternate round robin inside each iteration, so load drift reaches every column alike. After each push operation, `sha256sum` on the device checks every candidate's file. Before every 10 iterations a gate checks for an external burst: 1-minute load under 10, the emulator's qemu process under 300% CPU, and no gradle, xcodebuild or kotlinc process. It pauses until all three hold, for at most 20 minutes per operation. The thresholds sit above what the harness causes itself (qemu up to 223% during the 10 MiB pushes) and below the bursts other agents caused (load up to 660, qemu up to 760%).
+- **Method.** Each candidate runs 10 warm-up iterations per operation, which are discarded. Then 200 iterations are timed for the listing, the shell and the 64-byte echoes, and 100 for everything else. Candidates alternate round robin inside each iteration, so load drift reaches every column alike. After each push operation, `sha256sum` on the device checks every candidate's file. Before every 10 iterations a gate checks for an external burst: 1-minute load under 10, the emulator's qemu process under 300% CPU, and no gradle, xcodebuild or kotlinc process. It pauses until all three hold, for at most 20 minutes per operation. The thresholds sit above what the harness causes itself (qemu up to 223% during the 10 MiB pushes) and below the bursts other work caused (load up to 660, qemu up to 760%).
 - **Rerun**, with the Android SDK on PATH and the emulator booted:
 
 ```sh
@@ -35,9 +35,9 @@ cargo build --release
 
 ### Conditions
 
-`uptime` and `pgrep -fl "gradle|xcodebuild|kotlinc"` were checked before every run. That pattern also matches other agents' `zsh -c` wrappers whose text only mentions a build, including their own wait loops. The gate therefore ignores `sh`, `bash` and `zsh -c` wrappers and continuation lines; a real build still matches through its own xcodebuild, kotlinc or Gradle java process. Earlier timing attempts were stopped or discarded:
+`uptime` and `pgrep -fl "gradle|xcodebuild|kotlinc"` were checked before every run. That pattern also matches other work's `zsh -c` wrappers whose text only mentions a build, including their own wait loops. The gate therefore ignores `sh`, `bash` and `zsh -c` wrappers and continuation lines; a real build still matches through its own xcodebuild, kotlinc or Gradle java process. Earlier timing attempts were stopped or discarded:
 
-- three were stopped while waiting for a calm host, with other agents pushing the load up to 180 and qemu up to 750%;
+- three were stopped while waiting for a calm host, with other work pushing the load up to 180 and qemu up to 750%;
 - one completed but saw load 116 to 660 during its later operations, so it is not reported;
 - one ended when the emulator's adb transport dropped.
 
@@ -48,7 +48,7 @@ These two runs are reported:
 | 7, the tables below | 23:11 | none | 4.3 to 5.7 | 19% to 223% | `transport_id:5` throughout |
 | 6, the stability check | 22:56 | one, 490 s, before the first operation | 5.4 to 9.8 | 4% to 92% | reconnected during `forward-echo`, whose samples were discarded |
 
-The emulator's adb transport reconnected four times during the session (`transport_id` 1 to 5), at 21:53, 22:53, 23:01 and 23:05. Each time, the adb server logged `emulator-5554: connection terminated: read failed`. For the last two, whose device log was still available, adbd logged `connection terminated: write failed`. The 23:01 reconnect happened while this spike's harness was paused and sent nothing. The other three coincided with activity from this spike and from other agents, and their cause is not known. The harness now records a failed operation, discards its partial samples, waits for the device and goes on.
+The emulator's adb transport reconnected four times during the run (`transport_id` 1 to 5), at 21:53, 22:53, 23:01 and 23:05. Each time, the adb server logged `emulator-5554: connection terminated: read failed`. For the last two, whose device log was still available, adbd logged `connection terminated: write failed`. The 23:01 reconnect happened while this spike's harness was paused and sent nothing. The other three coincided with activity from this spike and from other work, and their cause is not known. The harness now records a failed operation, discards its partial samples, waits for the device and goes on.
 
 This spike also aborted the shared adb server once, at 23:13:19, during a `probe` run (see "The adb server can abort on reverse" below). The next adb command started a new server. Every client of the old server, in every agent, lost its connections and its forward rules at that moment.
 
@@ -172,7 +172,7 @@ The `probe` subcommand ran three times: before `153cc42` was committed, at `153c
 - **A service stream fails explicitly.** adb's `docs/dev/services.md` documents opening `localabstract:<name>` as a device service after `host:transport:<serial>`. Against the live socket this took 2.1 ms with the hello. Against a missing socket, the server answered `FAIL` with the message `closed` in 1.8 ms.
 - **Reverse works as well.** With the echo server dialing `localabstract:<name>`, `reverse localabstract:<name> tcp:<port>` from all four clients delivered the hello and an echo. So did `reverse tcp:<port> tcp:<port>` through mozdevice's typed API, with the agent dialing a device TCP port.
 - **Costs at p50.** Forward setup plus first connect takes about 3 ms through a protocol client. A service stream plus hello takes 2.5 ms. Reverse setup plus connect-out takes about 4.1 ms (5.7 ms with the first echo). Echoes cost the same over either: about 1.6 ms at 64 B and 2.6 to 3.5 ms at 64 KiB.
-- **Lifecycle.** With reverse, the agent is the side that connects. A resident agent that later daemon sessions reuse (the spec's "Compatible agent reused") would have to keep dialing, or be woken, to reach each new daemon. With forward, or with a service stream, the daemon connects to a listening agent whenever it needs to. Forward rules live in the adb server and reverse rules in adbd, and both belong to a transport that reconnected four times in this session *(inference: the rules are dropped with their transport)*. A service stream has no rule to reinstall.
+- **Lifecycle.** With reverse, the agent is the side that connects. A resident agent that later daemon sessions reuse (the spec's "Compatible agent reused") would have to keep dialing, or be woken, to reach each new daemon. With forward, or with a service stream, the daemon connects to a listening agent whenever it needs to. Forward rules live in the adb server and reverse rules in adbd, and both belong to a transport that reconnected four times in this run *(inference: the rules are dropped with their transport)*. A service stream has no rule to reinstall.
 
 #### The adb server can abort on reverse
 
@@ -224,7 +224,7 @@ No candidate needed the binary for `forward` or `reverse`.
 
 ### Direct USB: not measured
 
-No physical device was attached, and an emulator has no USB side, so the direct device-protocol path could not be timed. An adapter over adb_client's `ADBUSBDevice` compiles behind `--features usb` (`src/adapters/usb.rs`; `cargo clippy --features usb` is clean) and never ran. The emulator does expose the same device protocol over TCP on its adbd port (5555), but that path was not tried. The shared adb server already holds that transport, and a second host connection could have disconnected the other agents. As D3 notes, direct USB also cannot coexist with an adb server that has claimed the device.
+No physical device was attached, and an emulator has no USB side, so the direct device-protocol path could not be timed. An adapter over adb_client's `ADBUSBDevice` compiles behind `--features usb` (`src/adapters/usb.rs`; `cargo clippy --features usb` is clean) and never ran. The emulator does expose the same device protocol over TCP on its adbd port (5555), but that path was not tried. The shared adb server already holds that transport, and a second host connection could have disconnected the other work's clients. As D3 notes, direct USB also cannot coexist with an adb server that has claimed the device.
 
 ## Verdict
 

@@ -858,7 +858,7 @@ fn acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view() {
 /// 3.1; section 3 of the masked listings): XCTest lists a React Native
 /// header before the list it is drawn over and reports whole frames, so
 /// the rows the list scrolled up past its top lie in the header's frame,
-/// out of the list's bounds: the acceptance run's 44-point row at 2 points
+/// out of the list's bounds: the production-app run's 44-point row at 2 points
 /// stayed listed, with the two headings below it, counted among the six
 /// above the list. A plain view listed before a list, across its top and
 /// as wide, is a header the app pins: it covers what lies in its frame.
@@ -925,7 +925,7 @@ fn a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it() {
 /// moved up wholly within it. The paste control is left out, and a tap on
 /// it is refused naming the disabled control; the button beside it, only
 /// partly under the view, stays. The list ends above the tab bar, as the
-/// second acceptance run read the tab ([`creation_open`]).
+/// second production-app run read the tab ([`creation_open`]).
 #[test]
 fn a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows() {
     let screen = creation_open();
@@ -983,12 +983,12 @@ fn tap_on(mirror: &mut Mirror, reference: mirror::Ref) -> Result<mirror::Point, 
 /// Rn-app-fixes D37, scenario "Heading half under a footer button" (task
 /// 3.1; section 1a of the masked listings): the consent screen's ninth
 /// heading, 22 points tall, lies with its lower 11 points under the
-/// secondary footer button, which declines the consent. The acceptance
+/// secondary footer button, which declines the consent. The production-app
 /// run's tap at its centre landed on that button's top edge and declined
 /// the consent. A tap goes to the centre of what of the heading shows, its
 /// upper half; with 6 points of it left above the button, fewer than 8, it
 /// is refused naming the button, and nothing is tapped. The listing is the
-/// screen's as the acceptance run read it, the half-covered heading and the
+/// screen's as the production-app run read it, the half-covered heading and the
 /// texts that straddle the buttons still in it.
 #[test]
 fn a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows() {
@@ -1039,7 +1039,7 @@ fn a_tap_on_a_heading_half_under_a_footer_button_lands_on_the_half_that_shows() 
 /// D37, scenario "Card partly under a sticky header" (task 3.1; section 2
 /// of the masked listings): on the feed the card at 41 points, 116 tall,
 /// lies 81 points above its list's top, where the header listed before the
-/// list is drawn, and the acceptance run's tap at its centre landed on the
+/// list is drawn, and the production-app run's tap at its centre landed on the
 /// header's heading. A tap goes to the centre of the 30% of the card in
 /// view. So it does when the list runs under the header, drawn after it
 /// over the list's top.
@@ -1068,7 +1068,7 @@ fn a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view() {
     }
 }
 
-/// The creation tab as the second acceptance run read it (section 1b of the
+/// The creation tab as the second production-app run read it (section 1b of the
 /// masked listings): its list ends above the tab bar, which no footer
 /// holds, so nothing but the disabled button lies over the paste control.
 fn creation_open() -> Screen {
@@ -1081,7 +1081,7 @@ fn creation_open() -> Screen {
 
 /// D37 and D38 (task 3.1; section 1b of the masked listings): on the
 /// creation tab the paste control lies 38 of its 48 points under the
-/// disabled primary button drawn after the tab's list, and the acceptance
+/// disabled primary button drawn after the tab's list, and the production-app
 /// run's taps at its centre landed on the disabled button, twice, doing
 /// nothing. With the list ending above the tab bar, as that run read it,
 /// the control stays listed, and a tap goes to the centre of its lower 10
@@ -1106,7 +1106,7 @@ fn a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it() {
 
 /// Rn-app-fixes D57 (task 7.3; task 6.5, N6): a refusal names a cover as
 /// the hint counting the element names it, by one function: the sixth
-/// acceptance run's click on the paste control under the creation tab's
+/// production-app run's click on the paste control under the creation tab's
 /// footer was refused naming "the overlay" where the hint said "under the
 /// footer". On each fixture of D31 the interactive listing's hint and an
 /// action on the covered element's ref name the footer, the header or the
@@ -1149,7 +1149,7 @@ fn a_refusal_names_a_cover_as_the_hint_counting_the_element_does() {
 
 /// Rn-app-fixes D57 (task 7.3; task 6.5, N7): a view that covers a control
 /// whole leaves it in the full listing at visible=0%, as one a tap reaches
-/// none of is, rather than leaving it out: the sixth acceptance run's full
+/// none of is, rather than leaving it out: the sixth production-app run's full
 /// listing of the creation tab left out the two controls the footer holds
 /// while the interactive hint counted them. The full listing's hints count
 /// only what it leaves out, so none of what it shows at visible=0%: the
@@ -1220,7 +1220,7 @@ fn acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_heade
 }
 
 /// Rn-app-fixes D45, scenario "Strip clipped by the scroll view" (task 4.3;
-/// task 3.7, N6): on the creation tab as the third acceptance run met it,
+/// task 3.7, N6): on the creation tab as the third production-app run met it,
 /// the lower 10 points of the paste control and of the button beside it lie
 /// below the disabled primary button, under the footer drawn over the
 /// list's lower part, outside what the list shows. Neither keeps a part a
@@ -1263,7 +1263,7 @@ fn a_control_whose_strip_below_a_floating_button_lies_under_a_footer_is_left_out
 
 /// Rn-app-fixes D48, scenario "React Native scroll view" (task 5.1; task
 /// 4.7, N6): the creation tab as a throwaway screen read on the Simulator
-/// gives it, the fourth acceptance run's boxes to the point. The scroll
+/// gives it, the fourth production-app run's boxes to the point. The scroll
 /// view is told by its element type, an `XCUIElementTypeScrollView` inside
 /// React Native's `RCTScrollViewComponentView`, which the full listing does
 /// not print, an unnamed container: its semantics give the hint after its
@@ -1340,7 +1340,7 @@ fn a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refus
 }
 
 /// The organizations list of section 3 of the masked listings as the third
-/// acceptance run met it (task 3.7, N7): the header is listed after the
+/// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins
 /// nothing, and the rows the list has scrolled up behind it lie outside the
 /// list's bounds, out of view rather than covered.
@@ -1356,7 +1356,7 @@ fn header_after_its_list() -> Screen {
 }
 
 /// Rn-app-fixes D45, scenario "Partly covered elements marked" (task 4.3;
-/// task 3.7, N7): the third acceptance run's interactive listings gave no
+/// task 3.7, N7): the third production-app run's interactive listings gave no
 /// sign of the consent screen's heading half under a footer button or of
 /// the feed's card 70% under the header, and listed a card scrolled above
 /// the list's top and the rows behind the organizations list's header,
@@ -1416,7 +1416,7 @@ fn partly_covered_elements_say_how_much_shows_and_those_a_tap_cannot_reach_are_c
     );
 }
 
-/// Rn-app-fixes D50, N9 of the fourth acceptance run (task 5.3; task 4.7):
+/// Rn-app-fixes D50, N9 of the fourth production-app run (task 5.3; task 4.7):
 /// the full listing marked `visible=` for the keyboard's cover alone, while
 /// the interactive listing marked every element a tap reaches part of. The
 /// full listing marks the heading half under a footer button, the card 70%
@@ -1463,7 +1463,7 @@ fn the_full_listing_marks_what_a_tap_reaches_part_or_none_of_and_keeps_it() {
 
 /// The organizations list of `header_after_its_list` with two controls
 /// outside the list, listed before the header, their parts on the screen
-/// behind it, as the fourth acceptance run met them (task 4.7, N7).
+/// behind it, as the fourth production-app run met them (task 4.7, N7).
 fn two_controls_behind_the_header() -> Screen {
     let mut screen = header_after_its_list();
     let content = screen.0["windows"][1]["root"]["children"][0]["children"][0]["children"]
@@ -1520,7 +1520,7 @@ fn the_hints_count_what_a_cover_leaves_nothing_of_and_name_the_cover() {
 }
 
 /// Rn-app-fixes D38, scenario "Elements under the keyboard" (task 3.2;
-/// section 5 of the masked listings): the acceptance run's interactive
+/// section 5 of the masked listings): the production-app run's interactive
 /// listings kept what lay under the keyboard, and its clicks went to the
 /// centres of submit buttons 1 to 35% in view. With the keyboard up an
 /// element wholly under it is left out of the interactive listing, the
@@ -1611,7 +1611,7 @@ fn under_keyboard(listing: &Snapshot) -> usize {
 }
 
 /// Rn-app-fixes D54, scenario "Counts agree by construction" (task 6.3;
-/// task 5.6, N7): on the organizations list the fifth acceptance run met
+/// task 5.6, N7): on the organizations list the fifth production-app run met
 /// after a fill scrolled it, three rows lie on the screen above the header
 /// the app names, outside the list's frame, and the full listing showed
 /// them at visible=0% while both hints read "(6 more actionable items above,
@@ -1716,7 +1716,7 @@ fn the_card_above_the_feed_is_counted_behind_the_header() {
 /// cover, the elements with refs the full listing shows at visible=0%, a
 /// view that covers an element whole leaving it in the full listing there,
 /// so that the hints and the two listings agree by construction; the fifth
-/// acceptance run's verifier found the feed's hint at 11 against 1 element
+/// production-app run found the feed's hint at 11 against 1 element
 /// at visible=0%, and a list's at 6 against 3, and the sixth run's full
 /// listing repeated the interactive listing's count while it showed those
 /// elements at visible=0%. The full listing's hints count only what it
@@ -1798,7 +1798,7 @@ fn counted(listing: &Snapshot) -> u32 {
 /// the Simulator's hardware keyboard connected iOS draws no keys but keeps
 /// the keyboard's window while a field has the focus, its keys below the
 /// screen, which the reader bounds by what it draws: nothing. The fifth
-/// acceptance run's sign-in screen read wholly under a keyboard the screen
+/// production-app run's sign-in screen read wholly under a keyboard the screen
 /// did not show, and taps on fully visible controls were refused. No
 /// element lies under such a window, a tap on a tab goes to the tab, and
 /// the window counts as no keyboard: the full listing has no keyboard line,
@@ -1857,7 +1857,7 @@ fn edit_menu_with_window_at(bounds: serde_json::Value) -> Screen {
 /// they draw on and nothing more. The screen's fields and its submit stay
 /// listed, the password field partly under the menu marked with the share a
 /// tap reaches, and the submit, which the menu does not cover, is reached
-/// whole and tapped at its centre, where the sixth acceptance run's listing
+/// whole and tapped at its centre, where the sixth production-app run's listing
 /// held the menu's cells alone and every element of the screen read out of
 /// view.
 #[test]
@@ -1890,7 +1890,7 @@ fn the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed(
 
 /// Rn-app-fixes D55 (task 7.1; task 6.5, N13): a window of the application
 /// listed after its own, as the text effects window is, is no header and no
-/// footer, whatever its bounds: one of the sixth acceptance run's listings
+/// footer, whatever its bounds: one of the sixth production-app run's listings
 /// with the edit menu up counted the screen's elements "(4 more actionable
 /// items behind the header)", the window spanning the screen as the reader
 /// gave it before task 7.1. The hint names what a tap at an element's
@@ -1956,7 +1956,7 @@ fn a_control_wholly_under_the_edit_menu_is_left_out_and_refused_naming_the_menu(
 /// D37 and D38 (task 3.2; section 5 of the masked listings): a tap on a
 /// submit button partly under the keyboard goes to the part of it in view:
 /// 17 of its 48 points above the keyboard's top, 35%, take the tap at their
-/// centre, where the acceptance run's tap at the button's centre hit the
+/// centre, where the production-app run's tap at the button's centre hit the
 /// keyboard; 3.67 points, 8%, are too few, and the tap is refused naming
 /// the keyboard, which a tap at the button's centre would land on; a
 /// button wholly under the keyboard is out of view.

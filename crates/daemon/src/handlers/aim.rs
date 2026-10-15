@@ -180,7 +180,7 @@ fn find_in(
 /// as a query reads it (rn-app-fixes, design D51): a ref's element, or the
 /// first the replica holds that a selector matches, waiting up to `timeout`
 /// for one; a timeout becomes `element_not_found` with the screen seen. On
-/// the fourth acceptance run's feed scrolled to its end, `get box` on rows
+/// the fourth production-app run's feed scrolled to its end, `get box` on rows
 /// scrolled above, which the tree held, waited out its 10 s for a match on
 /// screen.
 pub(crate) fn held(
@@ -265,7 +265,7 @@ pub(crate) fn action_target(
 /// `selector` matches, else the first the replica holds, in view or not,
 /// within one read, as a query finds it; only for an element the tree does
 /// not hold yet does it wait, up to `timeout`, a timeout becoming
-/// `element_not_found` with the screen seen. On the fifth acceptance run a
+/// `element_not_found` with the screen seen. On the fifth production-app run a
 /// click by text on a text a button covered whole, a click by identifier on
 /// a control a footer's view held and a fill by identifier on a field
 /// behind a dialog waited out their 10 s for the element on screen and
@@ -309,11 +309,11 @@ pub(crate) enum TextTarget {
 /// reaches it: one covered, or out of view, is refused as a tap on it is
 /// (`act::within_reach`, rn-app-fixes design D53). An identifier that names
 /// a node taking no text and holding exactly one field gives the field's
-/// ref, with the node it named (design D39): on the acceptance run's code
+/// ref, with the node it named (design D39): on the production-app run's code
 /// step the identifier named a React Native code input's view, around a
 /// field without an area. One that names such a node holding no field and
 /// without a ref gives the node, for the input a tap on it focuses (design
-/// D44): on the third acceptance run's second visit the code input's view
+/// D44): on the third production-app run's second visit the code input's view
 /// held nothing, the app's input not in the tree.
 pub(crate) fn text_ref(
     target: &mut Attached,

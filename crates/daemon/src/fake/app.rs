@@ -90,7 +90,7 @@ fn take(value: &mut String, text: &str, entry: Entry, typing: Typing) {
 pub(crate) const FIXTURE: &str = "dev.mobileagent.fixture.expo";
 
 /// The placeholder app: one screen with the shapes a React Native app
-/// showed in the smoke test of 2026-10-09, under placeholder names (see
+/// showed in the production-app smoke test of 2026-10-09, under placeholder names (see
 /// [`placeholder_content`]).
 pub(crate) const PLACEHOLDER: &str = "dev.mobileagent.placeholder";
 
@@ -292,8 +292,8 @@ impl FormField {
 const BOARD_OPTION: &str = "PLACEHOLDER_SCREEN";
 
 /// Which screen the placeholder app shows, as [`BOARD_OPTION`] names it:
-/// the form of the smoke test of 2026-10-09, or one of the screens the
-/// acceptance run of 2026-10-12 met (rn-app-fixes, task 2.2), in the
+/// the form of the production-app smoke test of 2026-10-09, or one of the screens the
+/// production-app run of 2026-10-12 met (rn-app-fixes, task 2.2), in the
 /// structure of the masked listings' sections, laid out in an iPhone's
 /// points on either platform.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -315,7 +315,7 @@ enum Board {
     /// task 4.7, N6): the footer's view holds nothing, its tabs listed after
     /// it as its siblings.
     CreationRn,
-    /// The same tab as the fifth acceptance run met it (task 5.6, N6 and
+    /// The same tab as the fifth production-app run met it (task 5.6, N6 and
     /// N12): the footer's view drawn from the primary button's top, so that
     /// it holds the paste control and the button beside it whole, as the
     /// run's listings left both out.
@@ -335,7 +335,7 @@ enum Board {
     /// The code step on its second visit (section 4): the code field's node
     /// holds a field without an area, and so gets no ref.
     CodeAgain,
-    /// The code step as the third acceptance run met it (task 3.7): the
+    /// The code step as the third production-app run met it (task 3.7): the
     /// code field is a labelled node without traits named by its six boxes,
     /// each the digit it holds or a dash, then by its label.
     CodeNamed,
@@ -345,7 +345,7 @@ enum Board {
     /// only an empty view out of sight, the app's input not in the tree; a
     /// tap on the node gives that input the focus and brings the keyboard up.
     CodeBare,
-    /// The second visit as the sixth acceptance run met it with the
+    /// The second visit as the sixth production-app run met it with the
     /// keyboard up (task 6.5, N14): the node also shows a value, the last
     /// digit its boxes hold or, with none, an empty box's dash, as a single
     /// box's placeholder or the last digit an emptying left, which the
@@ -418,7 +418,7 @@ const CREATION_PRIMARY: [f64; 4] = [20.0, 708.0, 382.0, 764.0];
 /// button's bottom to the bottom of the screen.
 const CREATION_FOOTER: [f64; 4] = [0.0, 764.0, 402.0, 874.0];
 
-/// Where the footer's view lies on the creation tab as the fifth acceptance
+/// Where the footer's view lies on the creation tab as the fifth production-app
 /// run met it, in points: from the primary button's top to the bottom of
 /// the screen.
 const CREATION_HELD_FOOTER: [f64; 4] = [0.0, 708.0, 402.0, 874.0];
@@ -508,7 +508,7 @@ impl Forms {
 
     /// A tap that landed on `hit`, or on the keyboard when `on_keyboard`
     /// says so: a key of the number pad, entered into the field in focus.
-    /// A field takes the focus. On the screens of the acceptance run the
+    /// A field takes the focus. On the screens of the production-app run the
     /// status names what else the tap landed on, but for the creation tab's
     /// disabled button, which does nothing.
     fn tap(&mut self, hit: Option<&str>, on_keyboard: bool) {
@@ -1458,7 +1458,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
     }
 }
 
-/// The code field's name on the code step of the third acceptance run
+/// The code field's name on the code step of the third production-app run
 /// (task 3.7): its boxes, each the digit it holds, a bullet in the digit's
 /// place when `masked`, or a dash when empty, then its label.
 fn boxes_name(pin: &str, masked: bool) -> String {
@@ -1485,7 +1485,7 @@ fn boxes_name(pin: &str, masked: bool) -> String {
 /// visit the code field's node also holds a field without an area, which
 /// the tree reports as off the screen, so the node gets no ref; and two
 /// more labelled nodes with identifiers hold no field and two of them. On
-/// the step as the third acceptance run met it, the field's name spells its
+/// the step as the third production-app run met it, the field's name spells its
 /// boxes before its label ([`boxes_name`]), and on its second visit the
 /// field's node holds an empty view out of sight and no field, so it gets
 /// no ref either.
@@ -1689,7 +1689,7 @@ fn list_content(kit: Kit, forms: &Forms, header: f64) -> Vec<El> {
 
 /// The consent screen (section 1a of the masked listings): a scroll view
 /// holding the status line, the eighth and ninth headings, a 12-point text
-/// wholly under the secondary footer button, as the fifth acceptance run's
+/// wholly under the secondary footer button, as the fifth production-app run's
 /// text at 737 points (task 5.6, N12), the text that straddles the gap
 /// between the footer buttons and the 12-point text, and the secondary and
 /// primary footer buttons listed after it, drawn over what is scrolled
@@ -1889,7 +1889,7 @@ fn creation_footer(board: Board) -> [f64; 4] {
 /// under the primary button, and a last button that the list's end brings
 /// above the primary button; the primary button, disabled; the footer's
 /// view, from the button's bottom down, drawn over the list's lower part,
-/// or from its top down on the board of the fifth acceptance run; and then
+/// or from its top down on the board of the fifth production-app run; and then
 /// the footer's tabs.
 fn creation_rn_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let width = kit.width();

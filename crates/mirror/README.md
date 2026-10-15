@@ -272,9 +272,9 @@ also counts).
   all the read has of the field, and a tap by its ref lands on its center,
   over the field. A selected one gets a ref whatever it holds: React Native
   exposes a tab this way on iOS, with no trait but `selected`, and the
-  smoke test's selected tab, which also showed its label under its icon,
+  production-app smoke test's selected tab, which also showed its label under its icon,
   got none (D35). The other tabs of such a bar have neither the trait nor
-  anything else to tell them by (the acceptance run of 2026-10-12 found an
+  anything else to tell them by (the production-app run of 2026-10-12 found an
   unselected tab holding its icon's glyph as a text whose only child is its
   own text, and no ref for it), so the labelled generic nodes laid out in
   one row with a selected one among its siblings, each overlapping it over
@@ -288,7 +288,7 @@ also counts).
 - Application windows come first, then system bars; a keyboard window is one
   `- keyboard` line, but for one that draws nothing, which counts as no
   keyboard (rn-app-fixes, design D52): with the Simulator's hardware
-  keyboard connected iOS draws no keys, and the fifth acceptance run's
+  keyboard connected iOS draws no keys, and the fifth production-app run's
   listings counted every control below 274 points as under a keyboard the
   screen did not show. An interactive listing leaves out the elements that
   lie wholly under a keyboard window, bounded by what the keyboard draws
@@ -296,24 +296,24 @@ also counts).
   actionable items under the keyboard, close it to reveal)`; an element
   partly under one says how much of its bounds shows, `visible=35%`, a whole
   percent and at least 1, in either listing (rn-app-fixes, design D38): in
-  the acceptance run of 2026-10-12 the elements under the keyboard stayed
+  the production-app run of 2026-10-12 the elements under the keyboard stayed
   listed, and clicks on a submit button 1 to 35% in view tapped its centre
   on the keyboard. An interactive listing likewise leaves out an element a
   tap reaches none of (`visibility`, below), whatever covers it, a header, a
   view drawn over it or the edge of what its list shows, and counts it in
   its scroll container's hint, and marks one a tap reaches only part of with
   that share, `visible=50%`, the less of it and the share beside the
-  keyboard (design D45): the third acceptance run's listings gave no sign of
+  keyboard (design D45): the third production-app run's listings gave no sign of
   a heading half under a footer button or of a card 70% under a header, and
   listed a card scrolled above the list's top and rows behind a header. Most
   elements lie within what their containers show, with no view over part of
   them, and only the rest are measured. The full listing marks what a tap
   reaches part of likewise and keeps what it reaches none of, at
-  `visible=0%` (design D50): the fourth acceptance run's full listings
+  `visible=0%` (design D50): the fourth production-app run's full listings
   marked the keyboard's share alone. It keeps there too an element with a
   ref a view drawn over it covers whole, which the interactive listing
   leaves out, with what it holds, but in a scroll container the view
-  covers whole, whose hints none count (design D57): the sixth acceptance
+  covers whole, whose hints none count (design D57): the sixth production-app
   run's full listing left out two controls the creation tab's footer held
   while the interactive hint counted them. The top-most modal, a modal window or
   an alert or dialog node, cuts everything it covers. A view marked modal
@@ -345,8 +345,8 @@ also counts).
   bounds, under the conditions of `on_top`: it shows something, only nodes
   with an area are judged, and the walk enters no node outside its bounds,
   so what a scroll container clips stays in the container's hint. The
-  shapes verified are those of the first smoke test of a production React
-  Native app on an iOS 26 Simulator, as synthetic fixtures: a consent
+  shapes verified are those of the production-app smoke test of
+  2026-10-09, on an iOS 26 Simulator, as synthetic fixtures: a consent
   screen's footer over the heading scrolled inside its Accept and continue
   button, a create screen's floating button over a list's last row, a
   feed's sticky header over the post scrolled under it; and Bluesky's
@@ -354,7 +354,7 @@ also counts).
   order covers without its modal flag. A node reported disabled counts as
   showing something, since UIKit hit-tests a disabled control as an enabled
   one and the touch goes nowhere (rn-app-fixes, design D38): in the
-  acceptance run a control mostly under a disabled button was tapped on the
+  production-app run a control mostly under a disabled button was tapped on the
   button. Bars are spared from the siblings listed after them, since XCTest
   lists a navigation bar before the content its controller draws it over,
   which runs under it (the SwiftUI fixture's List tab); instead a bar by its
@@ -366,7 +366,7 @@ also counts).
   what that sibling holds within its bounds, whatever the order, the
   sibling covering none of it (D38): React Native lists its header before
   the list it is drawn over, and the rows the list scrolled up past its top
-  lie in the header's frame, where the acceptance run found a 44-point row
+  lie in the header's frame, where the production-app run found a 44-point row
   at 2 points still listed. A tab bar listed after a list covers the rows
   wholly under it, as on Android. React Native's accessibility lists a view
   that draws something, as a footer's background, as a node that holds
@@ -377,7 +377,7 @@ also counts).
   container it lies over part of, covers what it lies over, as a later
   sibling that shows something does, and one that holds all of the
   container, as a background listed after a list would, covers none of it.
-  On the fourth acceptance run's creation tab the scroll view runs on to
+  On the fourth production-app run's creation tab the scroll view runs on to
   the bottom of the screen under the footer, whose view held nothing, and
   a tap on a control's strip under it opened nothing (`create-rn-ios`). An alert's static text is spared too
   (design D26 of physical-ios): UIKit's alert controller
@@ -392,13 +392,13 @@ also counts).
   frame left a tap 61% of it, which the interactive listing would mark, as
   it would every row along a list's edge (rn-app-fixes task 4.3). The risk
   is 10.28's: a later sibling transparent where it spans an earlier one
-  hides it as if drawn, and nothing in the tree tells; the smoke test's and
-  Bluesky's screens showed none, the alert's indicators aside, and a screen
+  hides it as if drawn, and nothing in the tree tells; the production-app
+  smoke test's screens and Bluesky's showed none, the alert's indicators aside, and a screen
   that shows another is recorded here and the rule gated further. The text
   effects window, listed after the application's window, covers what lies
   under iOS's edit menu as such a later sibling, its node bounded by the
   menu's list (design D55): with the window's frame across the screen the
-  sixth acceptance run's listing held the menu's cells alone.
+  sixth production-app run's listing held the menu's cells alone.
   A view that covers part of an element leaves it listed, and a tap on it
   goes to the part a tap reaches (`visibility`, below). On either platform,
   acting on what a view drawn over it covers, all of it or so much that no
@@ -412,7 +412,7 @@ also counts).
   `disabled control` when it is a disabled one, else a bar there, else the
   `keyboard` when its window holds the point, and advises bringing the
   element out from under it rather than acting on the cover: the smoke
-  test's tap on that heading accepted the consent, and the sixth acceptance
+  test's tap on that heading accepted the consent, and the sixth production-app
   run's click on a control the creation tab's footer held was refused
   naming the `overlay` while the hint said `under the footer`.
 - Scroll hints come from actionable nodes outside a container's viewport when
@@ -432,7 +432,7 @@ also counts).
   listing's `visible=0%` elements, by construction, which a test checks on
   every fixture (designs D54 and D57). The full listing's hints count only
   what it leaves out, elements off the screen, none of what it shows at
-  `visible=0%` (design D57): the sixth acceptance run's full listing
+  `visible=0%` (design D57): the sixth production-app run's full listing
   repeated the interactive listing's count while it showed those elements.
   Beside what is scrolled away a hint names the cover of each element it
   counts so, as a refused action names it: the view over its centre, else,
@@ -444,7 +444,7 @@ also counts).
   top, a window over the application's own neither (design D55), `under
   the keyboard`, else what a tap at its centre would land on, as in `(6
   more actionable items above, 3 of them behind the header, scroll up to
-  reveal)` (designs D50, D54 and D57): the fifth acceptance run's header
+  reveal)` (designs D50, D54 and D57): the fifth production-app run's header
   was a named view, and the rows its list scrolled above its frame, on the
   screen above the header, counted as scrolled away though the full
   listing showed them at `visible=0%`. Such an element outside any scroll
@@ -567,7 +567,7 @@ the reasons in this order, each with advice:
   them leaves nothing. They are clipped too by what each of those
   containers shows, as `scroll_viewport` tells it, which loses the side of
   a view drawn across the container that the container does not fit in
-  (rn-app-fixes, design D45): on the third acceptance run a paste control's
+  (rn-app-fixes, design D45): on the third production-app run a paste control's
   lower 10 points lay below a floating button but under a footer drawn
   over its list, a row whose frame ends at the footer's top holding the
   control, so that no view in the tree lay over them, and a tap there
@@ -576,14 +576,14 @@ the reasons in this order, each with advice:
   part of it, at least 8 points on each side (`REACH_FLOOR`), or as long as
   the element on a side where it is shorter, and a tap on the element goes
   to its centre; `None` when no such rectangle is left (rn-app-fixes,
-  design D37): in the acceptance run of 2026-10-12 a tap at the centre of a
+  design D37): in the production-app run of 2026-10-12 a tap at the centre of a
   card 70% under a sticky header pressed the header, and a tap on a heading
   half under a footer's button pressed the button. A view over part of the
   element and across it also cuts the visible bounds, on the side the
   element fits in with the least movement, which `scroll --until` aims a
   stroke for, of the sides its scroll containers can carry it to, as their
   semantics say: up or left when one scrolls forward, down or right when
-  one scrolls back (design D46). On the third acceptance run strokes aimed
+  one scrolls back (design D46). On the third production-app run strokes aimed
   below a floating button pushed a list standing at its top, which moved
   nothing. `fraction` is the share of the element's bounds a tap
   reaches. Android reports bounds clipped to every ancestor, so an
@@ -616,7 +616,7 @@ the reasons in this order, each with advice:
   the top-most window that has one, the one whose visible bounds share the
   most of it. With the keyboard up the daemon strokes a scroll only through
   that part of what `uncovered` leaves, below a pinned header and above the
-  keyboard: in the acceptance run of 2026-10-12 `scroll up 300` came down on
+  keyboard: in the production-app run of 2026-10-12 `scroll up 300` came down on
   the header at 119.5 points and moved nothing.
 - `field_within` tells the one field a node holds, with a ref for it, when
   it holds exactly one (D39): `fill` and `type` given an identifier on a
@@ -660,7 +660,7 @@ the reasons in this order, each with advice:
   an event named or input went to since its read. A condition that holds
   then answers at once, without the poll or the re-read after frames or text
   that is due, which the next pump takes (rn-app-fixes, design D36): in the
-  smoke test a wait paid 43 to 473 ms for that read, 380 ms at the median.
+  production-app smoke test a wait paid 43 to 473 ms for that read, 380 ms at the median.
   Otherwise, and once it does not hold, the wait reads first as before; it
   never answers from a replica that has not been read, where nothing would
   match and every disappearance would hold, nor from the screen before a
@@ -726,9 +726,9 @@ apps, in device points with the scale beside them:
 | `feed-ios` | a React Native feed on iOS: a sticky header listed after the list, over the post scrolled under it, the first post above the screen (placeholder names) |
 | `tabbar-ios` | a React Native tab bar on iOS (rn-app-fixes, design D35 and D40): three tabs, labelled `Other`s, the middle one selected and also showing its label, a text whose only child is its own text, the other two holding their icon's glyph likewise (placeholder names) |
 | `members-ios` | a React Native members screen on iOS: checkboxes React Native announces only in their value (`checkbox, checked`), a heading and a text each repeated by their only child, and the list's two scroll bars likewise (placeholder names) |
-| `consent-footer-ios` | a React Native consent screen on iOS in the structure of the acceptance run of 2026-10-12 (rn-app-fixes, design D37): two footer buttons listed after the scroll view, a 22-point heading with its lower half under the secondary one, a 12-point text with its upper 9 points under the primary one (placeholder names) |
+| `consent-footer-ios` | a React Native consent screen on iOS in the structure of the production-app run of 2026-10-12 (rn-app-fixes, design D37): two footer buttons listed after the scroll view, a 22-point heading with its lower half under the secondary one, a 12-point text with its upper 9 points under the primary one (placeholder names) |
 | `create-disabled-ios` | a React Native creation tab on iOS (D37, D38, D45, D46): its disabled 56-point primary button listed after the scroll view, over 38 of the 48 points of the paste control and the button beside it, and a footer listed after it, from the button's bottom down, over the list's lower part, holding a tab bar whose first tab holds its icon's glyph; the two controls sit in a row whose frame ends at the footer's top, their lower 10 points under the footer (placeholder names) |
-| `create-rn-ios` | a React Native creation tab on iOS (D48, D50), the raw read of a throwaway screen built to the fourth acceptance run's boxes of the tab, which it gives to the point: a scroll view, an `XCUIElementTypeScrollView` inside `RCTScrollViewComponentView`, running on under the footer to the bottom of the screen, a disabled primary button over 38 of the 48 points of the paste control and the button beside it, and the footer's view, which holds nothing, its tabs listed after it, over their lower 10 points (placeholder names) |
+| `create-rn-ios` | a React Native creation tab on iOS (D48, D50), the raw read of a throwaway screen built to the fourth production-app run's boxes of the tab, which it gives to the point: a scroll view, an `XCUIElementTypeScrollView` inside `RCTScrollViewComponentView`, running on under the footer to the bottom of the screen, a disabled primary button over 38 of the 48 points of the paste control and the button beside it, and the footer's view, which holds nothing, its tabs listed after it, over their lower 10 points (placeholder names) |
 | `feed-sticky-ios` | a React Native feed on iOS (D37, D45): the sticky header listed before the list, a card 70% above the list's top in the header's frame, a card above it whose lower 27.67 points lie on screen above the header, twelve cards above the screen (placeholder names) |
 | `header-top-ios` | a React Native list on iOS with the keyboard up (D38, D41): a plain header listed before the list, its frame down to the list's top, a 44-point row at 2 points in it, a field with the focus and a button partly under the keyboard (placeholder names) |
 | `form-keyboard-ios` | a React Native sign-in form on iOS with the keyboard up (D37, D38): the submit button 3.67 of its 48 points above the keyboard's top, two links under the keyboard (placeholder names) |
@@ -805,7 +805,7 @@ cargo test -p mirror
   The mirror counts among them a labelled generic node whose children, if
   any, are static text, outside actionable elements, which the platform
   exposes as an element without traits. The React Native smoke test's iOS
-  read of Ignite's sign-in screen shows each field as such a node with
+  read of Ignite's sign-in screen (`reports/10.4-rn-smoke.md`) shows each field as such a node with
   nothing below it, labelled Email or Password, the text field hidden, and
   agent-device lists them as cells (`reports/10.4-rn-smoke.md`, finding 1);
   Bluesky's sheet options and language rows are such nodes over static
@@ -864,7 +864,7 @@ cargo test -p mirror
 | | (rn-app-fixes 1.1: a floating button over a list's last row; bars spared, a tab bar covering what lies wholly under it; overlapping siblings in any order) | `interactive::a_floating_button_drawn_after_a_list_on_ios_hides_its_last_row`, `interactive::acting_on_what_a_view_drawn_after_it_covers_on_ios_fails_naming_the_view`, `visibility::bars_over_a_list_cut_its_visible_bounds_and_a_whole_frame_shows_its_share`, `visibility::the_bars_over_a_list_are_left_out_of_its_visible_bounds`, and the unit tests `view::tests::*` |
 | | (physical-ios task 9.5, design D26: an alert's message under its scroll indicators' frames) | `interactive::an_alerts_message_is_listed_once_under_it_on_the_simulator_and_the_phone` |
 | | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so`, `controls::a_row_without_a_selected_node_lists_no_tabs` (rn-app-fixes 3.4, design D40) |
-| | Control under a disabled button | `interactive::a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows`; partly under it, `interactive::a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it` (rn-app-fixes 3.1, design D38), on the tab as the second acceptance read it, its list ending above the tab bar |
+| | Control under a disabled button | `interactive::a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows`; partly under it, `interactive::a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it` (rn-app-fixes 3.1, design D38), on the tab as the second production-app run read it, its list ending above the tab bar |
 | | Control behind a header listed first | `interactive::a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it`, `interactive::a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it`, `interactive::acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header` (D38) |
 | | Elements under the keyboard | `interactive::what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_how_much_shows`, `interactive::a_tap_on_a_button_partly_under_the_keyboard_lands_on_what_shows_or_is_refused_naming_it` (rn-app-fixes 3.2, design D38) |
 | | Ref across a label change | `controls::a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place`, `controls::a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android`; the fill by that ref in the daemon, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (rn-app-fixes 3.3, design D39) |

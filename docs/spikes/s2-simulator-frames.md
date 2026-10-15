@@ -4,7 +4,7 @@ Spike S2 (task 2.5) checks two assumptions from Rust. The first is D6's: the Sim
 
 ## Setup
 
-- Host: Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other agents' builds, benchmarks and an Android emulator ran intermittently throughout; every measured step records the load averages it started under (below).
+- Host: Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work's builds, benchmarks and an Android emulator ran intermittently throughout; every measured step records the load averages it started under (below).
 - Xcode 27.0 (27A266a). CoreSimulator 1171.7 is in `/Library/Developer/PrivateFrameworks`. It re-exports CoreSimDeviceIO 1171.7 and links ROCKit 47 from the same directory. SimulatorKit 1005.2 was not loaded, because S2 needs nothing from it. Runtime iOS 26.5 (23F77).
 - Devices: `mobile-agent-spike`, an iPhone 17 (1206x2622 pixels at 3x) booted headless, carried the frame measurements. `mobile-agent-s2` was created, used, shut down and deleted twice for the lifecycle. DeviceHub.app and Simulator.app were never running.
 - App: the Expo fixture (`dev.mobileagent.fixture.expo`), Release build of main at `a443dc0`, which reads the `FIXTURE_INITIAL_TAB` launch option from fixtures/CONTRACT.md.

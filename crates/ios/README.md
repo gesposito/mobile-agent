@@ -83,7 +83,7 @@ come with every point release before 0.2. Its features are `usbmuxd`,
 runner's session), `core_device` (screen capture, the display service) and
 `display_stream`, which carries the HID clients though no stream is
 opened; its default TLS is rustls on aws-lc-rs. Lockdown needs no feature,
-and pairing (`pair`) is not used: the person at the phone trusts the Mac.
+and pairing (`pair`) is not used: whoever holds the phone trusts the Mac.
 `idevice` and tokio are macOS-only dependencies. Built everywhere: `plist`,
 `protocol` (the runner speaks the device protocol), `png` (the device's
 screenshots) and `simulator`, for the frame pipeline's `scale_bgra`,
@@ -270,7 +270,7 @@ and unmounting it is not this driver's to do.
   iOS 26.6.2 left the app running and dropped every DVT connection (S9).
 
 On the iPhone SE (3rd generation) with iOS 26.6.2, in the device tests'
-functional runs (the host's 1-minute load 8 to 13 from other sessions, so
+functional runs (the host's 1-minute load 8 to 13 from other work on the host, so
 these are not measurements): the first launch after an install took 2.2 s
 three times out of three and a relaunch 26 to 41 ms with the lock read; one
 read of the process list, about 580 processes through the tunnel, 474 to
@@ -608,7 +608,7 @@ The rate passes task 3.5's 15 a second and the CPU its quarter of a core:
 in the release build, as the daemon runs, 4.0% in this process and 7.5% in
 usbmuxd, which relays the PNGs, 11.5% together (28.3% in the debug build,
 whose TCP stack is unoptimized). The release series started at 19:27 after
-one busy check; the load rose to 4.43 from other sessions by its end. S11
+one busy check; the load rose to 4.43 from other work on the host by its end. S11
 measured 16.8 a second from two pollers on a busy phone, and 6.5 to 15.5%
 in its process with usbmuxd's 3.2 to 7.4% beside it.
 
@@ -631,7 +631,7 @@ Every tap reached the screen, none missed. The resting swipe, 200 points
 acknowledged in 86 ms each, their 80 ms hold included, and each showed the
 volume HUD in a frame captured after the press; each was pressed once, so
 the volume came back to where it was. The lock button, pressed with a
-person at the phone to unlock it (`input::the_lock_button`), locked it:
+someone at the phone to unlock it (`input::the_lock_button`), locked it:
 lockdown's `PasswordProtected` read true 652 ms after the press, which was
 acknowledged in 419 ms, the HID connections opened first in a new
 process; the phone was unlocked by hand 33 s after the test asked.
@@ -787,7 +787,7 @@ MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
 cargo test -p ios --test lifecycle -- --ignored --nocapture install_series
 cargo test -p ios --test frames -- --ignored --nocapture frames_series
 cargo test -p ios --test input -- --ignored --nocapture input_series
-# with a person at the phone
+# with someone at the phone
 cargo test -p ios --test input -- --ignored --nocapture the_lock_button
 cargo test -p ios --test containment -- --ignored --nocapture
 # task 9.7's device check, once the phone was restarted

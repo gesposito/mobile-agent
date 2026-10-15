@@ -84,7 +84,7 @@ pub fn load() -> [f64; 3] {
 }
 
 /// The watched processes above 5% of a core, as `name cpu%`: builds and
-/// emulators of other sessions that would skew a measurement.
+/// emulators of other work on the host that would skew a measurement.
 pub fn busy() -> Vec<String> {
     const WATCHED: [&str; 7] = [
         "cargo",

@@ -1,4 +1,4 @@
-//! Tasks 3.4 and 3.6 on the device, with a person at the phone: a runner
+//! Tasks 3.4 and 3.6 on the device, with someone at the phone: a runner
 //! session live, the USB cable pulled, the next command failing as
 //! `disconnected` with its cause, and after the replug a new attach that
 //! starts over, ending the runner process the pull left behind (S10 saw it

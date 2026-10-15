@@ -391,7 +391,7 @@ fn a_labelled_control_under_an_alert_is_covered() {
 /// Rn-app-fixes D35, scenario "Selected tab keeps its ref", and D40 (task
 /// 3.4; section 6 of the masked listings): React Native exposes a tab as a
 /// labelled node without traits, the selected one with the `selected`
-/// trait, and the acceptance run found an unselected tab holding its icon
+/// trait, and the production-app run found an unselected tab holding its icon
 /// glyph, a text whose only child is its own text, without a ref (0 of 2).
 /// Labelled nodes without traits laid out in one row with a selected one
 /// are tabs: all three get refs as tabs, the selected one with its state,

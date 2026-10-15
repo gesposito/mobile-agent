@@ -86,7 +86,7 @@ mobile-agent-daemon [--socket-dir <dir>] [--idle-timeout <time>] [--drivers <nam
 | `--fake-activation` | `MOBILE_AGENT_FAKE_ACTIVATION_MS` | `0`; how long after it starts a fake target's input session activates |
 | `--fake-stop` | `MOBILE_AGENT_FAKE_STOP_MS` | `0`; how long detaching a fake target takes, as stopping the Android agent takes |
 | `--fake-fling` | `MOBILE_AGENT_FAKE_FLING` (`1`, `true`, `yes` or `on`) | off; fake targets' lists glide on after a stroke whose finger lifts moving, as far as their platform's fling carries them |
-| `--fake-typing` | `MOBILE_AGENT_FAKE_TYPING` | `whole`; how fake targets' fields take text whose method the target may choose, as `fill` sends it: `whole`, set directly as the Android agent sets it; `keys`, typed key by key up to 32 characters and pasted beyond, as a Simulator enters it; `reorder`, as `keys` with each key from the fourth on landing before the field's last character; `max:<n>`, whole, the fields keeping their first `n` characters however text reaches them; `unshifted`, as `keys` without Shift and Command, a shifted character typed as its key unshifted ("A@b" as "a2b") and a paste landing nothing, which on iOS leaves up the edit menu the tap readying the paste opened, as on the sixth acceptance run's Simulator with its hardware keyboard disconnected. Any other value is a usage error |
+| `--fake-typing` | `MOBILE_AGENT_FAKE_TYPING` | `whole`; how fake targets' fields take text whose method the target may choose, as `fill` sends it: `whole`, set directly as the Android agent sets it; `keys`, typed key by key up to 32 characters and pasted beyond, as a Simulator enters it; `reorder`, as `keys` with each key from the fourth on landing before the field's last character; `max:<n>`, whole, the fields keeping their first `n` characters however text reaches them; `unshifted`, as `keys` without Shift and Command, a shifted character typed as its key unshifted ("A@b" as "a2b") and a paste landing nothing, which on iOS leaves up the edit menu the tap readying the paste opened, as on the sixth production-app run's Simulator with its hardware keyboard disconnected. Any other value is a usage error |
 
 Flags beat the environment. A daemon exits 0 after `shutdown`, after its
 idle timeout, or when a daemon of the same build already serves the socket;
@@ -197,7 +197,7 @@ element's visible bounds, where it spans them from one side to the other
 and reaches one of their edges, and while the keyboard cuts them, through
 what shows of the scroll container that shows the most of what is left
 (`Mirror::scroll_container_in`, design D41), so below a header pinned over
-the list and above the keyboard: in the acceptance run of 2026-10-12
+the list and above the keyboard: in the production-app run of 2026-10-12
 `scroll up 300` with the keyboard up came down at 119.5 points on a fixed
 header and moved nothing. A stroke that comes down on the keyboard
 goes to the keyboard, which takes it for typing (task 10.32: on a Nexus 5X
@@ -226,7 +226,7 @@ stopped moving), when no stroke along its axis brings more of an element on
 screen in, after 50 strokes, or at its timeout, naming its last stroke's
 start and end, in the message and as `data.from` and `data.to`, and what
 moved after it: the element by how many points which way, else the screen,
-else nothing (design D46: the third acceptance run's scroll gave up after
+else nothing (design D46: the third production-app run's scroll gave up after
 strokes that went the other way, its reply naming only the step). A stroke
 that brings an element in aims at the side of a view across it that the
 element's list can carry it to, as `Visibility::viewport` keeps it, where
@@ -312,12 +312,12 @@ reports as none (design D33). A field without a value of its own is read
 back through its descendants: their values, else the names of the texts
 and untraited nodes with nothing listed below them, joined in the order of
 the full listing, as a React Native code input built of six boxes keeps
-its digits in the boxes' texts (in the smoke test of 2026-10-09 `fill`
+its digits in the boxes' texts (in the production-app smoke test of 2026-10-09 `fill`
 typed such a code and failed with `text_mismatch`, reading the field
 alone); the reply's `readFrom` says `descendants`. A field with nothing
 below it whose accessible name the entry changed is read back through the
 name (design D39), as a React Native code input on iOS spells the digits
-it holds in its name (in the acceptance run of 2026-10-12 all 7 fills of a
+it holds in its name (in the production-app run of 2026-10-12 all 7 fills of a
 code replied `verified: false` while the name spelled the digits, and a
 wrong code went unreported): the part of the name the entry changed, what
 lies between the words the names before and after the entry share at
@@ -326,7 +326,7 @@ dashes and underscores, compared with the text, both without those
 separators (design D43), as a code field names its six boxes, each its
 digit or a dash, before its label: "–, –, –, –, –, –, Verification code,
 required" becomes "1, 2, 3, 4, 5, 6, Verification code, required", where
-the third acceptance run compared the whole name and failed every right
+the third production-app run compared the whole name and failed every right
 code with `text_mismatch`. The part takes in the shared words next to it
 when they spell the text with it, as a code entered over one it starts as
 does; a part that shows only bullets tells nothing but the text's length
@@ -344,7 +344,7 @@ field is what it shows only when the value changed with the entry from the
 reading compared with, after the emptying or before the entry, and is no
 placeholder, as long as the entry and more than separators and empty
 boxes' dashes (`value_shown`, design D56); else the field is read through
-its descendants or its name: on the sixth acceptance run a refill of the
+its descendants or its name: on the sixth production-app run a refill of the
 code with the keyboard up read the code field's value, "4", and failed
 `text_mismatch` where its name spelled the code. A text field's value
 stays what it shows. iOS's edit menu that the tap readying a paste into
@@ -359,7 +359,7 @@ On iOS, `fill` into a field without the focus while no keyboard is up taps
 the field itself first, then enters the text once the replica shows the
 keyboard's window (an input-method window that cuts the screen, as
 `Mirror::uncovered` has it), at most 1 s after the tap (design D34): in the
-React Native smoke test the first keys typed into a just-focused field were
+production-app smoke test of 2026-10-09 the first keys typed into a just-focused field were
 lost in 3 of 8 runs while the Simulator's keyboard slid in, and spike S3
 measured the slide-in at about 1.2 s, the keyboard's window showing in the
 tree before the animation ends. A paste is Command-V, a key the keyboard
@@ -371,10 +371,10 @@ and does not wait. A keyboard window that draws nothing
 (`Mirror::keys_hidden`) ends the wait once the field shows the focus
 (design D52): with the Simulator's hardware keyboard connected iOS draws
 no keys and keeps the keyboard's window, its keys below the screen, and
-on the fifth acceptance run of 2026-10-14 a number pad's field, whose
+on the fifth production-app run of 2026-10-14 a number pad's field, whose
 window drew nothing, waited out its second, the code fill taking 3.2 to
 3.3 s against 2.2 to 2.3. A number pad under a hardware keyboard brings
-up no window at all, and the sixth acceptance run's code fill still took
+up no window at all, and the sixth production-app run's code fill still took
 a second longer than with the software keyboard: once a keyboard wait has
 seen a keyboard window drawing no keys, and until one sees a keyboard with
 keys, the keyboard waits, this one and the tap on a node holding no field
@@ -385,7 +385,7 @@ begun after the tap. A fresh session waits as before.
 
 An identifier that names a node that takes no text but holds exactly one
 field (`Mirror::field_within`, design D39) sends `fill` and `type` into
-that field, with a warning naming it and its ref: in the acceptance run of
+that field, with a warning naming it and its ref: in the production-app run of
 2026-10-12 `fill` and `type` by the identifier of a React Native code
 input's view failed `invalid_argument` on the step's second visit (4 of
 4), while a click on the identifier and a `type` worked. A field with an
@@ -394,7 +394,7 @@ cannot reach, takes the tap on the node around it unless it has the focus,
 and the text as the field in focus. An identifier on a node that takes no
 text, holds no field (`Mirror::fields_within`) and has no ref sends `fill`
 and `type` to the input a tap on it focuses (design D44): on the third
-acceptance run's second visit the code input's view held nothing, the
+production-app run's second visit the code input's view held nothing, the
 app's input not in the tree, and `fill` and `type` by its identifier
 failed `invalid_argument` while a click on it raised the keyboard and an
 untargeted `type` landed the code. The node is tapped where a tap reaches
@@ -411,7 +411,7 @@ that takes no text does; a node holding several fields fails at once. A
 field whose label changes once it holds text keeps its ref across the
 change, and its view its identity when it gains a counter at the focus
 (`crates/mirror/README.md`, Snapshots), so a `fill` by that ref reads the
-field back, where in the acceptance run it failed `stale_ref` before
+field back, where in the production-app run it failed `stale_ref` before
 anything was typed.
 
 `open` waits for the launched app's first tree before it settles: until the
@@ -476,13 +476,13 @@ mostly in view as `scroll --until` has it (task 10.15), naming the point
 the tap went to and saying to bring the element in first. The tap goes to
 the centre of the part of the element a tap reaches (`Visibility::reachable`,
 design D37): its bounds within what shows of them, and within what each
-scroll container around it shows (design D45: on the third acceptance run
+scroll container around it shows (design D45: on the third production-app run
 a tap on a control's strip under a footer drawn over its list opened
 nothing), less every view drawn over part of it, the largest rectangle left that is at least 8 points on
 each side, or as long as the element where it is shorter. The centre of
 its bounds may lie on what covers it: on iOS, whose frames are whole, the
 centre of a row the tab bar covers lies on the tab bar, and in the
-acceptance run of 2026-10-12 a tap at the centre of a card 70% under a
+production-app run of 2026-10-12 a tap at the centre of a card 70% under a
 sticky header pressed the header. A ref, an identifier and a text selector
 take this one path: the mirror aims a ref's tap itself, and a selector's
 element without a ref is aimed at the same point here, as is the tap with
@@ -490,7 +490,7 @@ which `fill` focuses its field. A selector names any element the replica
 holds, in view or not, the first on screen and not covered given before
 the rest (`aim::find_held`, the mirror's wait for an element attached),
 and waits up to the command's timeout only while it holds none (design
-D53): on the fifth acceptance run of 2026-10-14 a click by text on a text
+D53): on the fifth production-app run of 2026-10-14 a click by text on a text
 a button covered whole, a click by identifier on a control a footer's
 view held and a fill by identifier on a field behind a dialog each waited
 out their 10 s and failed `element_not_found`, where their refs were
@@ -498,7 +498,7 @@ refused at once. `fill` and `type` refuse an element no tap reaches the
 same way before looking for its ref (`act::within_reach`), which they
 otherwise missed in the interactive listing and refused with
 `invalid_argument`. An element nothing of which a tap reaches
-in view is not tapped at those bounds (design D32): in the React Native smoke test the keyboard moved a submit button up
+in view is not tapped at those bounds (design D32): in the production-app smoke test of 2026-10-09 the keyboard moved a submit button up
 without an event, the replica kept the button's old bounds, under the
 keyboard, before a frame-driven re-read fell due, and the tap went to the
 number pad there. The click reads the windows again once (the mirror
@@ -521,7 +521,7 @@ before any read again and any tap. The keyboard covers only once that read
 still has it over the element, since its coming up moves a layout without
 an event. `scroll --until` judges arrival by the same part: an element
 mostly under a view drawn over it is not mostly in view, where in the
-acceptance run it called a control under a disabled button visible 1.0.
+production-app run it called a control under a disabled button visible 1.0.
 
 A settle wait (`wait --settle`) ends one quiet window after the latest of
 the last tree change (event, noted window change or delta), the last frame
@@ -984,7 +984,7 @@ settle windows take real time, and a device model:
   among them, where a stroke that comes down on the primary button or the
   footer moves nothing, and `creation-held`, the same with the footer's view
   drawn from the primary button's top, holding the paste control and the
-  button beside it whole, as the fifth acceptance run met the tab; `feed`, a
+  button beside it whole, as the fifth production-app run met the tab; `feed`, a
   card partly above its list's top, where the header listed before the list
   is drawn; `list`, a header listed before a list down to 122 points and a
   field in the list that brings the keyboard up, and `list-low`, the header
@@ -994,15 +994,15 @@ settle windows take real time, and a device model:
   the step's second visit; `code-named`, the code field named by its boxes,
   each its digit or a dash, before its label, `code-masked`, a bullet for
   each digit, and `code-bare`, its node holding no field, a tap on it
-  focusing an input outside the tree, as the third acceptance run met the
+  focusing an input outside the tree, as the third production-app run met the
   step on its two visits (design D43, D44), and `code-valued`, the same
   node also showing a value, the last digit its boxes hold or an empty
-  box's dash, as the sixth acceptance run met it with the keyboard up
+  box's dash, as the sixth production-app run met it with the keyboard up
   (design D56); `sheet`, a field without an
   identifier whose view gains a counter at the focus and whose name changes
-  with its text, in the structure of the acceptance run of 2026-10-12
+  with its text, in the structure of the production-app run of 2026-10-12
   (design D37 to D41); `dialog`, a name field under a view the app marks
-  modal, as the fifth acceptance run met a dialog (design D53); and by
+  modal, as the fifth production-app run met a dialog (design D53); and by
   default the form with the shapes a React Native app showed in the smoke
   test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;

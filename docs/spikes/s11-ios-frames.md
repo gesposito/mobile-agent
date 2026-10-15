@@ -13,7 +13,7 @@ D23 is rewritten around screenshots as the iOS 26 frame source, with AVFoundatio
 
 ## Setup
 
-**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other sessions used it throughout: an Android emulator, Simulators, and build and Java processes (see Conditions).
+**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work used it throughout: an Android emulator, Simulators, and build and Java processes (see Conditions).
 
 **Apple tools.** Xcode 27.0 (27A266a); CoreDevice and `devicectl` 642.16; the developer disk image of Xcode 27.0, which the phone has mounted (spike S9).
 
@@ -63,7 +63,7 @@ cargo build --release
 
 ### Conditions
 
-The guard made 243 checks between 00:23:40 and 02:34:11, one row each in `results/hygiene.tsv`; the full blocks are in the git-ignored `results/hygiene.log`. 231 checks found the host busy. Another session's Android emulator ran throughout: it was above 5% of a core at 229 of the busy checks, up to 8.3 cores. The 1-minute load at the busy checks ranged from 3.5 to 16.1. At 47 checks a watched process was above 5% as well: java, and 5 times rustc, this spike's own compiles of its table generator while the guard waited. Every series started at a load under 4, so none used the fallback. The load rose during several series, to 6.1 at most. The two-poller drag series waited 20 minutes without a quiet check and was stopped, so it is not reported. Earlier runs with `S11_DRY_RUN=1` went to the scratch directory and are not reported either.
+The guard made 243 checks between 00:23:40 and 02:34:11, one row each in `results/hygiene.tsv`; the full blocks are in the git-ignored `results/hygiene.log`. 231 checks found the host busy. A concurrent Android emulator ran throughout: it was above 5% of a core at 229 of the busy checks, up to 8.3 cores. The 1-minute load at the busy checks ranged from 3.5 to 16.1. At 47 checks a watched process was above 5% as well: java, and 5 times rustc, this spike's own compiles of its table generator while the guard waited. Every series started at a load under 4, so none used the fallback. The load rose during several series, to 6.1 at most. The two-poller drag series waited 20 minutes without a quiet check and was stopped, so it is not reported. Earlier runs with `S11_DRY_RUN=1` went to the scratch directory and are not reported either.
 
 | Series | Checks that waited | Started | Finished | 1-minute load before / after |
 |---|---:|---|---|---|

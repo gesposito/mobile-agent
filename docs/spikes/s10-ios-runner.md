@@ -13,7 +13,7 @@ D20, D21 and D22 are rewritten with these numbers.
 
 ## Setup
 
-**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other sessions used it throughout: Simulators, a Maestro runner on a Simulator, Xcode builds and Java processes (see Conditions).
+**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work used it throughout: Simulators, a Maestro runner on a Simulator, Xcode builds and Java processes (see Conditions).
 
 **Apple tools.** Xcode 27.0 (27A266a); CoreDevice and `devicectl` 642.16; the iOS developer disk image (DDI) of Xcode 27.0 (27A266a), with XCTest 25228, mounted on the phone as the personalized image at `/System/Developer` (see The developer disk image).
 
@@ -42,7 +42,7 @@ cargo build --release
 ./target/release/s10-ios-runner checks          # results/checks.json
 ./target/release/s10-ios-runner measured        # every timed series behind the guard, then results/tables.md
 ./target/release/s10-ios-runner survival        # 30 minutes of mixed commands
-./target/release/s10-ios-runner replug          # one cable pull and replug, with a person at the phone
+./target/release/s10-ios-runner replug          # one cable pull and replug, with someone at the phone
 ./target/release/s10-ios-runner report          # regenerate results/tables.md
 ```
 
@@ -52,11 +52,11 @@ The program's `README.md`, kept privately with it, lists the layout and the othe
 
 The guard made 249 checks between 11:42:45 and 14:46:57, one row each in `results/hygiene.tsv`; the full blocks are in the git-ignored `results/hygiene.log`. 234 checks found the host busy:
 
-- another session's Android emulator was above 5% of a core at 175 of them;
+- a concurrent Android emulator was above 5% of a core at 175 of them;
 - at 53 of them a watched process was above 5% as well: java at 42, xcodebuild at 18, and rustc at 4, the last being this spike's own compiles while the guard waited;
 - the 1-minute load at the busy checks ranged from 3.9 to 63.9.
 
-Every series started at a 1-minute load under 4, so none used the fallback. The load rose during four series, from other sessions' work: to 6.98 during `tap-synthesized`, 6.62 during `tap-dtuhidd`, 6.97 during `type-36` and 27.93 by the end of `cold-start-install`. That last series' start times stay in line with `cold-start-installed`'s.
+Every series started at a 1-minute load under 4, so none used the fallback. The load rose during four series, from other work on the host: to 6.98 during `tap-synthesized`, 6.62 during `tap-dtuhidd`, 6.97 during `type-36` and 27.93 by the end of `cold-start-install`. That last series' start times stay in line with `cold-start-installed`'s.
 
 Two runs were lost and repeated:
 
@@ -133,7 +133,7 @@ Five things stood between the first try and a hello, each with the text the phon
 | cold-start-install | 20 | 730.93 / 794.60 | 296.95 / 334.47 | 319.18 / 354.64 | 1117.71 / 1290.08 | 1844.67 / 2022.90 | 3.08 / 27.93 |
 
 - **With the runner installed** its hello comes 772 ms after the session's start at p50 and 873 ms at p95. The runner reports `_XCT_testRunnerReadyWithCapabilities:` at 330 ms, has its test bundle loaded at 337 ms and asks for automation mode at 340 ms; the remaining 430 ms are XCTest's preparation for UI testing, the test's start, the agent's listener and the host's 25 ms polling.
-- **Installed anew** through the installation proxy (the 3.7 MB bundle uploaded over AFC, then `Install`), the runner takes 1,118 and 1,290 ms to install and its hello comes 1,845 and 2,023 ms after the install began. The host's load rose to 27.9 by the end of this series, from other sessions.
+- **Installed anew** through the installation proxy (the 3.7 MB bundle uploaded over AFC, then `Install`), the runner takes 1,118 and 1,290 ms to install and its hello comes 1,845 and 2,023 ms after the install began. The host's load rose to 27.9 by the end of this series, from other work.
 - **The test bundle as an `MH_DYLIB`**, the shape a Rust `cdylib` has, loaded too: one start, hello after 707 ms.
 
 ### The developer disk image

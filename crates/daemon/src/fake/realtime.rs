@@ -242,7 +242,7 @@ enum Change {
     Screen,
     /// Within the screen, a view the layout moved, which the target shows
     /// without an event and in no frame the mirror takes in before its next
-    /// read: the React Native smoke test's submit button, which the keyboard
+    /// read: the production-app smoke test's submit button, which the keyboard
     /// moved up while the replica kept its old bounds, the frame-driven
     /// re-read not yet due (design D32).
     Layout,

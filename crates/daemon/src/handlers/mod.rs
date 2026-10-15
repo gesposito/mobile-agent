@@ -422,7 +422,8 @@ const FIRST_FRAME_WAIT: Duration = Duration::from_secs(2);
 
 /// How long after its start `open` lets the target's input session
 /// activate: dtuhidd's first session of a boot took 270 to 330 ms (spike
-/// S3), and 957 ms under load in the Bluesky smoke test.
+/// S3), and 957 ms under load in the Bluesky run of the React Native smoke test
+/// (reports/10.4-rn-smoke.md).
 const SESSION_WAIT: Duration = Duration::from_secs(2);
 
 /// Waits until `deadline` for the target's input session, if it has one,

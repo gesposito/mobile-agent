@@ -13,7 +13,7 @@ D18 stands with its numbers; D19 now terminates through `sendSignal:toPid:` and 
 
 ## Setup
 
-**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other sessions used it throughout: an Android emulator before the measured run, and Xcode builds and Java processes during it (see Conditions).
+**Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work used it throughout: an Android emulator before the measured run, and Xcode builds and Java processes during it (see Conditions).
 
 **Apple tools.** Xcode 27.0 (27A266a); CoreDevice and `devicectl` 642.16; the iOS developer disk image (DDI) of Xcode 27.0 (27A266a, XCTest 25228), which is the one the device has mounted.
 
@@ -50,7 +50,7 @@ Each series also runs alone (`listing`, `lockdown`, `tunnel`, `dvt-lifecycle`, `
 
 ### Conditions
 
-The guard made 102 checks between 20:01:59 and 20:46:52, one row each in `results/hygiene.tsv`; the full blocks are in the git-ignored `results/hygiene.log`. 80 checks found the host busy. At 50 of them a watched process was above 5% of a core: another session's `xcodebuild` at 42, a `java` process at 19, both at 11. The other 30 held the series back on the load alone. The 1-minute load at those checks ranged from 2.3 to 41.7, and no emulator process was above 5% at any check. Every series started at a 1-minute load under 4, so none used the fallback, and the 40 minutes of waiting stayed inside the 90-minute budget. Nothing was measured on a busy host. Earlier runs of the program, with `S9_DRY_RUN=1` to try its code paths, went to a scratch directory and are not reported. The load rose during three series, from other sessions' builds: to 5.04 during the DVT lifecycle with `sendSignal:toPid:`, to 6.48 during the app service's, and to 8.59 during `devicectl`'s screenshots.
+The guard made 102 checks between 20:01:59 and 20:46:52, one row each in `results/hygiene.tsv`; the full blocks are in the git-ignored `results/hygiene.log`. 80 checks found the host busy. At 50 of them a watched process was above 5% of a core: a concurrent `xcodebuild` at 42, a `java` process at 19, both at 11. The other 30 held the series back on the load alone. The 1-minute load at those checks ranged from 2.3 to 41.7, and no emulator process was above 5% at any check. Every series started at a 1-minute load under 4, so none used the fallback, and the 40 minutes of waiting stayed inside the 90-minute budget. Nothing was measured on a busy host. Earlier runs of the program, with `S9_DRY_RUN=1` to try its code paths, went to a scratch directory and are not reported. The load rose during three series, from other builds on the host: to 5.04 during the DVT lifecycle with `sendSignal:toPid:`, to 6.48 during the app service's, and to 8.59 during `devicectl`'s screenshots.
 
 | Series | Waits | Ran | 1-minute load before | 1-minute load after |
 |---|---:|---|---:|---:|
@@ -174,7 +174,7 @@ A launch on a locked phone therefore neither fails reliably nor says why in the 
 
 - **Installing the fixture** through the installation proxy, D19's install path. It needs the SwiftUI fixture signed for the device, and this host has no signing identity yet (design.md, Context: creating the certificate is the account holder's step). Task 3.3 measures it once the identity exists.
 - **Mounting the DDI.** It was already mounted (see above).
-- **A series with Device Hub showing the device**, the research note's addition. Opening Device Hub has effects on this shared host. It attaches to a Simulator's `dtuhidd` at boot, and quitting it shuts down every booted Simulator (archived design D6), which would touch another session's Simulators. Showing the phone would also start a display media stream on it, which takes the camera and microphone from other apps while it runs. Not done.
+- **A series with Device Hub showing the device**, the research note's addition. Opening Device Hub has effects on this shared host. It attaches to a Simulator's `dtuhidd` at boot, and quitting it shuts down every booted Simulator (archived design D6), which would touch the Simulators of other work on the host. Showing the phone would also start a display media stream on it, which takes the camera and microphone from other apps while it runs. Not done.
 - **CoreDevice's JPEG screenshot**, refused by the device (see above).
 - **The app's first frame on screen.** Nothing in DVT's notifications says when it is up; the launch numbers end at the reply, the `Running` notification and the process list. Spike S11's frame stream gives the first changed frame.
 

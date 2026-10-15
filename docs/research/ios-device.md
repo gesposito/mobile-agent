@@ -166,7 +166,7 @@ The code that exists builds the XCTest driver with `xcodebuild clean build-for-t
 
 ### agent-device
 
-agent-device 0.21.22 has a physical lane [ad-handoff][ad-launch][ad-shot][ad-usbmux][ad-mux]:
+agent-device 0.21.22 has a physical-device path [ad-handoff][ad-launch][ad-shot][ad-usbmux][ad-mux]:
 - its XCTest runner runs under an `xcodebuild` process against the device (its start timings name `build_xctestrun` and `launch_xcodebuild` phases); that process stays alive under a lease, and the next daemon adopts it;
 - app lifecycle and screenshots go through `devicectl` (`device process launch`, `device capture screenshot`), with the runner's XCTest screenshot as the fallback;
 - the runner's HTTP goes over usbmux `Connect` first, and to the CoreDevice tunnel address only for a Wi-Fi device, which usbmuxd does not list.

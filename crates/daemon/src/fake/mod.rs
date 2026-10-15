@@ -7,8 +7,8 @@
 //! Settings), the fixture app of `fixtures/CONTRACT.md` under the ids
 //! `dev.mobileagent.fixture.expo` and the platform's native fixture, a
 //! settings app, and the placeholder app `dev.mobileagent.placeholder`, one
-//! screen with the shapes a React Native app showed in the smoke test of
-//! 2026-10-09 under placeholder names. Taps, text, keys and swipes change it
+//! screen with the shapes a React Native app showed in the production-app
+//! smoke test of 2026-10-09 under placeholder names. Taps, text, keys and swipes change it
 //! as the real apps change; screenshots return placeholder bytes, not an
 //! image. Emulators and Simulators have a frame source and Android devices
 //! none, as design D7 has it, and emulators have none either when the
@@ -101,7 +101,7 @@ pub enum Slide {
     /// That long after the field took the focus. On iOS text that reaches
     /// the field before then is lost, typed or pasted, as the first keys
     /// typed into a just-focused field were lost while the Simulator's
-    /// keyboard slid in, in 3 of 8 runs of the React Native smoke test of
+    /// keyboard slid in, in 3 of 8 runs of the production-app smoke test of
     /// 2026-10-09; Android's text set types nothing and is never lost.
     After(Duration),
     /// Never: no keyboard window shows, and fields take text, as for a
@@ -115,7 +115,7 @@ pub enum Slide {
     /// As [`Slide::Hidden`] for a field that takes a text keyboard, while
     /// one that takes a number pad, the placeholder app's code fields,
     /// brings up no keyboard window at all, as a number pad does on iOS
-    /// under a hardware keyboard: on the sixth acceptance run the code fill
+    /// under a hardware keyboard: on the sixth production-app run the code fill
     /// waited out the keyboard wait there (rn-app-fixes task 6.5).
     HiddenPad,
 }
@@ -138,7 +138,7 @@ pub enum Typing {
     Max(usize),
     /// As [`Typing::Keys`] without Shift and Command: a shifted character
     /// types as its key does unshifted, "A@b" as "a2b", and a paste lands
-    /// nothing, as on the sixth acceptance run's Simulator with its
+    /// nothing, as on the sixth production-app run's Simulator with its
     /// hardware keyboard disconnected (rn-app-fixes task 6.5). On iOS such
     /// a paste into the field in focus, after the tap that readies it,
     /// leaves the edit menu that tap opened up over the screen.

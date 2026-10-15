@@ -196,7 +196,7 @@ fn a_wait_that_already_holds_returns_at_once() {
 /// Rn-app-fixes D36, scenario "Condition already holds": a wait for text
 /// the replica already lists answers from it at once, without the read
 /// that is due, here a poll of a window that sends no change events, which
-/// a wait paid 43 to 473 ms for in the smoke test; the next pump takes the
+/// a wait paid 43 to 473 ms for in the production-app smoke test; the next pump takes the
 /// read.
 #[test]
 fn a_wait_that_holds_in_the_replica_answers_before_a_poll_that_is_due() {

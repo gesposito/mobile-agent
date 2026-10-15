@@ -2,7 +2,7 @@
 
 Research note for task 1.1 of `ci-benchmarks`. It feeds the A/B mode of `micro` (design D2), spike S12 on the runners' noise (D3), the harness's reduced plan and its ratios (D4), the workflow's outputs and trend (D5) and its cost (D6). Every claim was read from the pinned sources at the end on 2026-10-15, and versions are the latest released that day. Library and platform facts come from current documentation: Context7 for criterion, critcmp, Bencher, GitHub Actions and GitHub's REST API. Context7 indexes CodSpeed only through its pytest plugin and indexes neither github-action-benchmark, the Android emulator runner action nor the runner images, so for those the note reads the vendor's documentation site, the repository's README at the pinned commit and GitHub's billing pages, and says so in each section. It builds on `docs/research/microbenchmarks.md`, which surveyed the harnesses and the continuous-benchmarking services from a quiet host's side; what that note found is not repeated here, only what changes on a shared runner.
 
-Out of scope: choosing the harness (archived design D13 of `microbenchmarks`), profilers, and physical devices in CI, which need a self-hosted runner and, on iOS, a person at the phone for its approval prompt (proposal, What Changes).
+Out of scope: choosing the harness (archived design D13 of `microbenchmarks`), profilers, and physical devices in CI, which need a self-hosted runner and, on iOS, someone at the phone for its approval prompt (proposal, What Changes).
 
 ## Findings in brief
 

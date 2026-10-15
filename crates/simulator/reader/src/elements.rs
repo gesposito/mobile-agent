@@ -2348,7 +2348,7 @@ mod tests {
     /// below the screen, and the wrapper around the prediction bar's scroll
     /// view reached onto the screen from 274 points down, so the window
     /// counted as a keyboard over everything below that: the fifth
-    /// acceptance run's sign-in screen read wholly under it, and a tap on a
+    /// production-app run's sign-in screen read wholly under it, and a tap on a
     /// tab of the SwiftUI fixture was refused under a keyboard the screen
     /// did not show. A view wholly off the screen draws nothing there, nor
     /// does what it holds.
@@ -2412,7 +2412,7 @@ mod tests {
     /// window, which spans the screen and lets touches through outside what
     /// it draws; with the window's frame as its bounds the mirror took it
     /// for a view drawn over the whole application, and with the menu up the
-    /// sixth acceptance run's interactive listing held the menu's cells
+    /// sixth production-app run's interactive listing held the menu's cells
     /// alone, every element of the application out of view. The window
     /// covers the menu's strip, what it draws, the keyboard's placeholder in
     /// it drawing nothing.

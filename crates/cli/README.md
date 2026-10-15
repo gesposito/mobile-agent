@@ -85,7 +85,7 @@ finger lifts and with the finger moving at most 400 points a second, so
 that a fling, were the platform still to take the finger as moving, stays
 short. An element under part of a view across it, as a floating button,
 is carried to the side of the view it reaches with the least movement,
-of the sides its list can carry it to: in the acceptance run of
+of the sides its list can carry it to: in the production-app run of
 2026-10-12 strokes aimed below a floating button pushed a list that stood
 at its top, and the scroll gave up while a plain scroll moved the list. The reply's `visible` is the share of the element's bounds in view,
 from 0 to 1, rounded to a hundredth; an `element_not_found` for an element
@@ -98,7 +98,7 @@ part of it, the tap landing at the centre of the largest
 rectangle left that is at least 8 points on each side, or as long as the
 element where it is shorter (`crates/mirror/README.md`, Visibility). An
 element whose reachable part is not most of it is tapped there, with a
-warning naming the point: in the acceptance run of 2026-10-12 a tap at
+warning naming the point: in the production-app run of 2026-10-12 a tap at
 the centre of a card under a sticky header pressed the header. For an
 element nothing of which a tap reaches in view the windows are read again
 once, since a layout can move without an event (in the React Native smoke
@@ -120,13 +120,13 @@ order; on Android a view the agent flags so (`crates/mirror/README.md`,
 Snapshots). The keyboard covers too, once that read still has it over the
 element. Such a view, as a fixed footer, a floating button or a sticky
 header, would take the tap itself, so the message advises scrolling the
-element out from under it rather than tapping it: in the smoke test a tap
+element out from under it rather than tapping it: in the production-app smoke test a tap
 on a heading under a consent screen's footer accepted the consent. A ref,
 an identifier and a text selector take this one path, as does the tap
 with which `fill` focuses its field: a selector names any element the
 replica holds, in view or not, one on screen and not covered first, so
 that an action on one that is covered or out of view is refused at once,
-as on its ref, where in the fifth acceptance run of 2026-10-14 a click by
+as on its ref, where in the fifth production-app run of 2026-10-14 a click by
 text on a text a button covered whole, a click by identifier on a control
 a footer's view held and a fill by identifier on a field behind a dialog
 each waited out their 10 s and failed `element_not_found` (rn-app-fixes,

@@ -458,7 +458,7 @@ fn the_host_is_checked_again_once_both_trees_are_built_and_the_rounds_start_on_a
     let root = checkout("ab-guard-after-build");
     let id = "protocol/decode/snapshot-500";
     let mut trees = RecordedTrees::new(vec![at(id, 100_000)], vec![at(id, 100_000)]);
-    // Quiet before the builds; once they are done, another session's build
+    // Quiet before the builds; once they are done, another build on the host
     // is busy, then gone.
     let mut host = ScriptedHost::new(vec![
         quiet(1.0),

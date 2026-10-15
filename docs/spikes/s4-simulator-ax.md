@@ -4,7 +4,7 @@ Spike S4 (task 2.7) measures the two ways D6 considers for reading a Simulator's
 
 ## Setup
 
-- Host: Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other agents' builds and benchmarks, an Android emulator and two other booted Simulators ran throughout, including spike S3's timing runs. Before each timed series, and before each screen's reads, `measure.sh` waited until the 1-minute load average was below 6 with no gradle, xcodebuild or kotlinc process running, for up to 20 minutes; the translator's reads of a screen followed its guest reads without a second wait. Every table gives the 1-minute load its step started under.
+- Host: Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work's builds and benchmarks, an Android emulator and two other booted Simulators ran throughout, including spike S3's timing runs. Before each timed series, and before each screen's reads, `measure.sh` waited until the 1-minute load average was below 6 with no gradle, xcodebuild or kotlinc process running, for up to 20 minutes; the translator's reads of a screen followed its guest reads without a second wait. Every table gives the 1-minute load its step started under.
 - Xcode 27.0 (27A266a). CoreSimulator 1171.7. AccessibilityPlatformTranslation 545.18 on the host. Runtime iOS 26.5 (23F77).
 - Devices, all iPhone 17 (402x874 points) booted headless; DeviceHub.app and Simulator.app never ran:
   - `mobile-agent-spike-ax` carried the timed reads, the warm spawns and the relaunch series.

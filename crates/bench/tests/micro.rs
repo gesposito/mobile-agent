@@ -98,7 +98,7 @@ fn output(mut command: Command) -> (Option<i32>, String, String) {
 
 /// `ps -A -o pid=,ppid=,pcpu=,comm=` on a host where the runner, pid 800,
 /// started under `just` and runs cargo, which runs rustc, while another
-/// session's emulator, a Gradle daemon's `java` and a Simulator are busy.
+/// emulator, a Gradle daemon's `java` and a Simulator are busy.
 const LISTING: &str = "    1     0   0.1 /sbin/launchd
   500     1  13.3 /Applications/Placeholder Terminal.app/Contents/MacOS/stable
   600   500   0.0 -zsh

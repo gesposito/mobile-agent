@@ -694,7 +694,7 @@ impl Mirror {
     /// below the element that take text, as [`Mirror::field_within`] looks
     /// for them. An identifier `fill` or `type` is given can name a node
     /// that holds none, the app's input outside the tree, as a React Native
-    /// code input's view on the acceptance run's second visit to the code
+    /// code input's view on the production-app run's second visit to the code
     /// step (rn-app-fixes, design D44). `None` when the replica no longer
     /// holds the element.
     pub fn fields_within(&self, holder: ElementId) -> Option<usize> {

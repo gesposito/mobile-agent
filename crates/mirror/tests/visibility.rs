@@ -308,7 +308,7 @@ fn system_bars_and_the_keyboard_above_the_app_cut_its_visible_bounds() {
 /// Task 10.21: the Simulator's reader gives the keyboard's window the bounds
 /// of what it draws, from the prediction bar down to the bottom of the
 /// screen, as it read on Bluesky's search screen; what lies above stays in
-/// view, the Cancel search button the smoke test's click warned about
+/// view, the Cancel search button the React Native smoke test's click warned about
 /// included, and the tab bar under the keyboard does not.
 #[test]
 fn the_ios_keyboard_cuts_from_its_prediction_bar_down() {
@@ -604,7 +604,7 @@ fn visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it()
 }
 
 /// Rn-app-fixes D45, scenario "Strip clipped by the scroll view" (task 4.3;
-/// task 3.7, N6): on the creation tab as the third acceptance run met it,
+/// task 3.7, N6): on the creation tab as the third production-app run met it,
 /// the paste control's lower 10 points lie below the disabled primary
 /// button, under the footer drawn over the list's lower part, outside what
 /// the list shows; the control sits in a row whose frame ends at the
@@ -615,7 +615,7 @@ fn visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it()
 /// them, before the views over it are taken away: the control keeps no part
 /// to tap, and what covers it is the disabled button, which a tap at its
 /// centre would hit. With the list ending above the footer, as the second
-/// acceptance run read the tab, the 10 points take the tap (design D38).
+/// production-app run read the tab, the 10 points take the tap (design D38).
 #[test]
 fn what_a_tap_reaches_is_clipped_by_what_its_scroll_view_shows() {
     let (_, mut create) = support::mirror_on("create-disabled-ios");
@@ -649,7 +649,7 @@ fn what_a_tap_reaches_is_clipped_by_what_its_scroll_view_shows() {
 
 /// Rn-app-fixes D48, scenario "React Native scroll view" (task 5.1; task
 /// 4.7, N6): on the creation tab as a throwaway screen read on the
-/// Simulator gives it, the fourth acceptance run's boxes to the point, the
+/// Simulator gives it, the fourth production-app run's boxes to the point, the
 /// scroll view runs on to the bottom of the screen under the footer, and
 /// React Native's accessibility lists the footer's view as a node holding
 /// nothing, its tabs after it as its siblings. The footer draws over the
@@ -747,7 +747,7 @@ fn a_view_react_native_lists_holding_nothing_covers_only_part_of_a_scroll_view()
 /// whose 48 points the button covers fits below it with the least movement,
 /// 38 points down, but the list stands at its top and cannot carry its
 /// content down, so a stroke aiming there moves nothing, as the third
-/// acceptance run's three strokes did. The visible bounds keep the side
+/// production-app run's three strokes did. The visible bounds keep the side
 /// above the button, 74 points up, where a stroke can carry the control; a
 /// list that can scroll back keeps the side of least movement.
 #[test]
