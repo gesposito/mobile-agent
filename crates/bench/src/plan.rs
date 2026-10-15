@@ -5,12 +5,53 @@
 use crate::adapter::Scenario;
 use crate::fixture::{Fixture, Screen};
 use crate::flow::{self, Flow};
-use crate::harness::{Series, Subject};
+use crate::harness::{RunConfig, Series, Subject};
 use crate::primitive::Primitive;
 use crate::target::{Platform, Target, TargetClass};
 
 /// Every fixture, in report order.
 pub const FIXTURES: [Fixture; 3] = [Fixture::SwiftUi, Fixture::Expo, Fixture::Compose];
+
+/// Which plan a run follows: the full one of a measured host, or the reduced
+/// one of a CI runner (design D4 of `ci-benchmarks`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Plan {
+    /// Every fixture of each target's platform, 50 measured iterations after
+    /// 3 warm-up.
+    Full,
+    /// One fixture per platform, SwiftUI on iOS and Compose on Android, 10
+    /// measured iterations after 2 warm-up.
+    Ci,
+}
+
+impl Plan {
+    /// Every plan, the default first.
+    pub const ALL: [Plan; 2] = [Plan::Full, Plan::Ci];
+
+    /// The plan's name for `--plan`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Plan::Full => "full",
+            Plan::Ci => "ci",
+        }
+    }
+
+    /// The plan `--plan` names, if any.
+    pub fn from_id(id: &str) -> Option<Plan> {
+        Plan::ALL.into_iter().find(|plan| plan.id() == id)
+    }
+
+    /// The fixtures the plan runs on a target of `platform`.
+    pub fn fixtures(self, platform: Platform) -> Vec<Fixture> {
+        fixtures(platform)
+    }
+
+    /// The iteration counts the plan runs with, unless the run names its
+    /// own.
+    pub fn config(self) -> RunConfig {
+        RunConfig::default()
+    }
+}
 
 /// The fixtures `platform` has, in report order: SwiftUI and Expo on iOS,
 /// Expo and Compose on Android.
@@ -335,6 +376,40 @@ mod tests {
         assert_eq!(series(&iphone, &fixtures), series(&simulator, &fixtures));
         assert_eq!(TargetClass::IosDevice.platform(), Platform::Ios);
         assert_eq!(TargetClass::IosDevice.to_string(), "ios-device");
+    }
+
+    #[test]
+    fn the_ci_plan_runs_swiftui_on_ios_and_compose_on_android_at_10_iterations_after_2_warm_up() {
+        assert_eq!(Plan::Ci.fixtures(Platform::Ios), [Fixture::SwiftUi]);
+        assert_eq!(Plan::Ci.fixtures(Platform::Android), [Fixture::Compose]);
+        assert_eq!(Plan::Full.fixtures(Platform::Ios), fixtures(Platform::Ios));
+        assert_eq!(
+            Plan::Full.fixtures(Platform::Android),
+            fixtures(Platform::Android)
+        );
+        assert_eq!(
+            Plan::Ci.config(),
+            RunConfig {
+                iterations: 10,
+                warmup: 2,
+                retries: 1,
+            }
+        );
+        assert_eq!(Plan::Full.config(), RunConfig::default());
+        for plan in Plan::ALL {
+            assert_eq!(Plan::from_id(plan.id()), Some(plan));
+        }
+        // On its one fixture the ci plan measures what the full plan does:
+        // CLI start, every other primitive in its scenario and the three
+        // flows.
+        let emulator = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        let planned = series(&emulator, &Plan::Ci.fixtures(Platform::Android));
+        assert_eq!(planned.len(), 13);
+        assert!(
+            planned
+                .iter()
+                .all(|s| s.fixture.is_none_or(|f| f == Fixture::Compose))
+        );
     }
 
     #[test]

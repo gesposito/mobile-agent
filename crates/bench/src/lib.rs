@@ -7,7 +7,10 @@
 //! summary, so the two outputs cannot disagree.
 //!
 //! [`micro`] runs the host microbenchmarks (design D15) on a quiet host and
-//! compares them with the committed baseline (design D16).
+//! compares them with the committed baseline (design D16), or with another
+//! ref built on the same host ([`micro::ab`]). [`ratio`] gives how many times
+//! faster the tool under test was than each baseline in a run, the judgement
+//! a CI runner's run takes in place of the gates.
 
 pub mod adapter;
 pub mod baseline;
@@ -26,6 +29,7 @@ pub mod plan;
 pub mod primitive;
 pub mod process;
 pub mod provenance;
+pub mod ratio;
 pub mod report;
 pub mod stats;
 pub mod target;

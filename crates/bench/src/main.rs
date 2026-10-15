@@ -145,6 +145,10 @@ struct RunArgs {
     #[arg(long, value_name = "TOOL", value_parser = ["mobile-agent"], default_value = "mobile-agent")]
     tool: String,
 
+    /// The run plan: full, every fixture of each target's platform at 50 measured iterations after 3 warm-up, or ci, a runner's, one fixture per platform, swiftui on iOS and compose on Android, at 10 after 2
+    #[arg(long, value_name = "PLAN", value_parser = ["full", "ci"], default_value = "full")]
+    plan: String,
+
     /// The mobile-agent executable to drive [default: the mobile-agent beside mobile-agent-bench, else mobile-agent on PATH]
     #[arg(long, value_name = "PATH", conflicts_with = "fake")]
     cli: Option<PathBuf>,
@@ -159,13 +163,13 @@ struct RunArgs {
     #[arg(long, value_name = "DIR")]
     out: Option<PathBuf>,
 
-    /// Measured iterations per series and tool
-    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..))]
-    iterations: u32,
+    /// Measured iterations per series and tool [default: 50, or 10 with --plan ci]
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    iterations: Option<u32>,
 
-    /// Warm-up iterations per series and tool, run first and excluded from statistics
-    #[arg(long, default_value_t = 3)]
-    warmup: u32,
+    /// Warm-up iterations per series and tool, run first and excluded from statistics [default: 3, or 2 with --plan ci]
+    #[arg(long)]
+    warmup: Option<u32>,
 
     /// Retries of a failed attempt within one iteration; an iteration that passes
     /// on a retry counts as a flake, one that never passes as a failure
@@ -233,9 +237,11 @@ fn load_gates(path: Option<&Path>) -> Result<GateSet, String> {
 
 fn run(args: &RunArgs) -> Result<ExitCode, String> {
     let gates = load_gates(args.gates.as_deref())?;
+    let plan = plan::Plan::from_id(&args.plan).unwrap_or(plan::Plan::Full);
+    let planned = plan.config();
     let config = RunConfig {
-        iterations: args.iterations,
-        warmup: args.warmup,
+        iterations: args.iterations.unwrap_or(planned.iterations),
+        warmup: args.warmup.unwrap_or(planned.warmup),
         retries: args.retries,
     };
     let dir = args.out.clone().unwrap_or_else(|| {

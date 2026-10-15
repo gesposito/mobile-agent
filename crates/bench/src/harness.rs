@@ -250,6 +250,7 @@ impl Harness {
             measurements,
             handoffs: handoffs.done,
             gates: None,
+            ratios: None,
         })
     }
 

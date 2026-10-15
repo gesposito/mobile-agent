@@ -14,6 +14,7 @@ use crate::gates::GateReport;
 use crate::handoff::HandOff;
 use crate::harness::Subject;
 use crate::provenance::Provenance;
+use crate::ratio::Ratios;
 use crate::stats::{Summary, percent, summarize};
 use crate::target::TargetClass;
 
@@ -31,9 +32,14 @@ pub struct Report {
     #[serde(default)]
     pub handoffs: Vec<HandOff>,
     /// The gate verdicts, once [`crate::gates::GateSet::evaluate`] has judged
-    /// the run.
+    /// the run; `None` for a run that judged no gate (`--gates none`).
     #[serde(default)]
     pub gates: Option<GateReport>,
+    /// How many times faster the tool under test was than each baseline, once
+    /// [`crate::ratio::of`] has computed them; `None` in a report from before
+    /// them.
+    #[serde(default)]
+    pub ratios: Option<Ratios>,
 }
 
 /// One series as measured by one tool.
