@@ -45,6 +45,11 @@ check-public:
 
 alias check-paths := check-public
 
+# Lint the workflows with actionlint and audit them and Dependabot's configuration with zizmor, each skipped when it is not installed
+lint-workflows:
+    if command -v actionlint >/dev/null 2>&1; then actionlint; else echo "actionlint not present, skipping"; fi
+    if command -v zizmor >/dev/null 2>&1; then zizmor --no-progress .github; else echo "zizmor not present, skipping"; fi
+
 # Check the repository's own scripts, the reports' scrub and the publish scan, in a scratch directory without the network
 scripts-test:
     scripts/test.sh
@@ -88,5 +93,5 @@ bench-ab base *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-public, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-public test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-public, lint-workflows, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-public lint-workflows test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
