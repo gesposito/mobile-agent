@@ -1,0 +1,28 @@
+# cargo-about's configuration for THIRD-PARTY-NOTICES.md, which
+# `cargo about generate --fail about.hbs -o THIRD-PARTY-NOTICES.md` writes:
+# the license texts of the crates the workspace's binaries and libraries are
+# built from, for the targets deny.toml checks, with the licenses deny.toml
+# allows, MIT first where a crate offers a choice.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "BlueOak-1.0.0",
+  "CDLA-Permissive-2.0",
+  "IJG",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-ios-sim",
+  "aarch64-apple-ios",
+]
+# Build tools and test-only crates are in no binary.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# The workspace's own crates are this repository's, under its LICENSE.
+private = { ignore = true }

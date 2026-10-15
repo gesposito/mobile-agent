@@ -49,6 +49,10 @@ alias check-paths := check-public
 deny:
     if cargo deny --version >/dev/null 2>&1; then cargo deny check advisories licenses bans sources && cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources; else echo "cargo-deny not present, skipping"; fi
 
+# Write THIRD-PARTY-NOTICES.md again with cargo-about (about.toml, about.hbs), as after a change of the dependencies
+notices:
+    cargo about generate --fail about.hbs -o THIRD-PARTY-NOTICES.md
+
 # Lint the workflows with actionlint and audit them and Dependabot's configuration with zizmor, each skipped when it is not installed
 lint-workflows:
     if command -v actionlint >/dev/null 2>&1; then actionlint; else echo "actionlint not present, skipping"; fi

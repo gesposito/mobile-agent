@@ -1,0 +1,71 @@
+# Third-party notices
+
+mobile-agent is under the MIT License (`LICENSE`). Its binaries and libraries are built from the crates listed under [Crates](#crates), each under the license whose text follows it, and they embed, link or compile in the components of the first section. This file is generated: `cargo about generate --fail about.hbs -o THIRD-PARTY-NOTICES.md`, with cargo-about 0.9.2 and `about.toml`; the text outside the crates' list is `about.hbs`'s.
+
+## Components outside the crates
+
+### libjpeg-turbo
+
+The Simulator driver's frame encoder links libjpeg-turbo statically on macOS (`crates/simulator`, through the `turbojpeg` crate), from Homebrew's `jpeg-turbo`, 3.2.0 when this file was written. libjpeg-turbo is covered by the IJG License and the Modified (3-clause) BSD License; its SIMD code and zlib are under the zlib License, subsumed by them (libjpeg-turbo's `LICENSE.md`).
+
+This software is based in part on the work of the Independent JPEG Group.
+
+The Modified (3-clause) BSD License, for the TurboJPEG API library:
+
+```text
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 2018-2023 Randy <randy408@protonmail.com>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+- Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+- Neither the name of the libjpeg-turbo Project nor the names of its
+  contributors may be used to endorse or promote products derived from this
+  software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS",
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```
+
+### The Kotlin standard library
+
+The Android agent's dex, which the daemon embeds (`agent-android/build.sh`), holds the parts of the Kotlin standard library that R8 keeps: kotlin-stdlib 2.4.20, Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors, under the Apache License 2.0, whose text is under [Crates](#crates).
+
+### The Android emulator's controller protocol
+
+`crates/android/proto/emulator_controller.proto`, which the Android driver compiles into its gRPC client: Copyright (C) 2018 The Android Open Source Project, under the Apache License 2.0, whose text is under [Crates](#crates).
+
+### The fixtures
+
+The reference apps under `fixtures/` are built on a developer's machine and never shipped. The Expo fixture starts from Expo's template, whose MIT license `fixtures/expo/LICENSE` keeps, and installs its npm packages from `fixtures/expo/bun.lock` when it is built; the Compose fixture's Android libraries come through Gradle when it is built, and its Gradle wrapper (`fixtures/compose/gradlew`, `gradlew.bat` and `gradle/wrapper/`) is the Gradle project's, under the Apache License 2.0; the SwiftUI fixture uses Apple's SDK alone. The iPhone runner's bundle is built the same way, from Xcode's `XCTRunner.app`, and is not in the repository.
+
+## Crates
+
+{{#each overview}}
+- {{{name}}}: {{count}}
+{{/each}}
+
+{{#each licenses}}
+### {{{name}}}
+
+Used by {{#each used_by}}[{{crate.name}} {{crate.version}}](https://crates.io/crates/{{crate.name}}){{#unless @last}}, {{/unless}}{{/each}}.
+
+```text
+{{{text}}}
+```
+
+{{/each}}
