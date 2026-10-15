@@ -4,7 +4,7 @@
          SwiftUI Login tab 10826 ms with the attach (first tree 1102 ms, settled at 1735 ms); the runner 0.2.0 said hello 6110 ms
          after its start, the maintainer approving Enable UI Automation at the phone; the disk image personalized at /System/Developer,
          mounted by the driver; shutdown 752 ms
-# The branch rebased onto main 51de99f (tasks 9.7 and 9.8), the release CLI, daemon and bench built again at 9a13a43:
+# The branch rebased onto main 2880e5e (tasks 9.7 and 9.8), the release CLI, daemon and bench built again at 9652e5e:
 #   daemon 0.1.0+e87090.18dd7d37380c9c86; the CLI and the bench byte for byte the earlier builds; agent-ios/build.sh 0.2.0, not installed
 13:39:08 and 13:41:26 task 9.7's device check, cargo test -p ios --test input -- --ignored one_hundred_twenty_emptying_fills_in_one_session
          (debug build): failed twice in its setup, before any fill, 2.9 and 2.8 s into the test, with

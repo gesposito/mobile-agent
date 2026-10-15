@@ -12,7 +12,7 @@ Started 2026-09-27T20:28:12Z, finished 2026-09-27T20:35:43Z. Durations are milli
 | Host OS | macOS 26.6.2 (25G83) |
 | Load average at start | 3.66 3.83 4.14 |
 | Xcode | Xcode 27.0 (27A266a) |
-| Commit under test | b32ea8c1ab2ed1ae1f5671e40bb1c5109ed635e2 (clean) |
+| Commit under test | ce96be469cb33513fa192f1670b0b4166cc7641b (clean) |
 | Harness | bench 0.1.0, 50 iterations after 3 warm-up, 1 retry |
 
 ### Targets
@@ -97,7 +97,7 @@ All 3 gate checks passed. 1 not measured.
 
 This section was added after the run; the rest of this file and `report.json` are as the bench wrote them, and neither names a home directory, so nothing was rewritten to `$HOME`.
 
-Run 2 of task 10.1 (`reports/10.1-emulator-agent/`, 15:33 to 16:20 UTC) measured the agent path on an emulator started with `-ports 5554,5555` and no `-grpc`, which leaves the controller unserved, at commit 05a4756 through the 10.1 CLI shim, with both fixtures. This run (20:28 to 20:35 UTC) measured it on the same emulator started with `-grpc 8554 -grpc-use-token`, the controller served and left unused by `MOBILE_AGENT_EMULATOR_CONTROLLER=off` (task 10.12), at commit b32ea8c (tasks 10.11 and 10.12), with the Expo fixture only:
+Run 2 of task 10.1 (`reports/10.1-emulator-agent/`, 15:33 to 16:20 UTC) measured the agent path on an emulator started with `-ports 5554,5555` and no `-grpc`, which leaves the controller unserved, at commit 60e528a through the 10.1 CLI shim, with both fixtures. This run (20:28 to 20:35 UTC) measured it on the same emulator started with `-grpc 8554 -grpc-use-token`, the controller served and left unused by `MOBILE_AGENT_EMULATOR_CONTROLLER=off` (task 10.12), at commit ce96be4 (tasks 10.11 and 10.12), with the Expo fixture only:
 
 ```sh
 MOBILE_AGENT_DRIVERS=android MOBILE_AGENT_EMULATOR_CONTROLLER=off \

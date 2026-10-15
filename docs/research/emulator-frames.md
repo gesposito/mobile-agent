@@ -62,7 +62,7 @@ SurfaceFlinger then presents through the emulator's composer HAL, which composes
 - **Host.** Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2. The endpoint security extension the 10.1 report names was at times the busiest process, and each series records the 1-minute load average.
 - **Emulator.** 37.1.11 as `emulator -avd pixel_api36 -no-window -no-audio -no-boot-anim -gpu host -grpc 8554 -grpc-use-token`: `pixel_api36`, API 36 userdebug, 1080x2400 at 420 dpi and 60 Hz, gfxstream on Metal. Started as a background job of zsh, whose `BG_NICE` option is on by default, it runs at nice 5; the lever series and the traced taps ran so. For the host-state series it was relaunched at nice 0 (`setopt NO_BG_NICE`), which made no difference on an idle host (section 4.4).
 - **Fixtures.** The APKs of the 10.1 run: the Compose debug APK `bfc1d3b7…` and the Expo release APK `ac3770d8…`.
-- **Tools.** Release builds of `cli` and `daemon` at main `9828090` with the stream-width setting of section 3.3, embedding agent 0.3.0, and the measurements in `crates/android/tests/frame_timing.rs`, run with `cargo test --release`. No other automation ran on the emulator.
+- **Tools.** Release builds of `cli` and `daemon` at main `08fdde7` with the stream-width setting of section 3.3, embedding agent 0.3.0, and the measurements in `crates/android/tests/frame_timing.rs`, run with `cargo test --release`. No other automation ran on the emulator.
 
 ### 3.2 Decomposition
 

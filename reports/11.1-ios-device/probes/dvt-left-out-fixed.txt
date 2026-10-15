@@ -1,5 +1,5 @@
 # DVT's screenshot failing again on the iPhone SE, 2026-10-11 UTC, about 1 h 40 min after the reboot (probes/health-reboot-fixed.txt),
-# with 9.6's build at 9a13a43 (daemon 0.1.0+e87090.18dd7d37380c9c86), which holds task 9.8's reopen and fallback.
+# with 9.6's build at 9652e5e (daemon 0.1.0+e87090.18dd7d37380c9c86), which holds task 9.8's reopen and fallback.
 15:18    phase e3, the 21st of its 53 cold attaches and every one after: device_error: DVT's capabilities failed on the device: device
          socket io failed: remote server connection closed (e3-expo-primitives-fixed/report.json: cold-attach 33 of 50 failed, and the
          first 8 first-snapshot iterations, with one service_missing among them); e3's screenshot series: 9 of 50 flaked on

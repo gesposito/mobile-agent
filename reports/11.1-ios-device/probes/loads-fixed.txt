@@ -1,4 +1,4 @@
-# Task 9.6's probes, 2026-10-11 UTC, one daemon of the build at 9a13a43 (daemon 0.1.0+e87090.18dd7d37380c9c86), 15:49 to 15:55:
+# Task 9.6's probes, 2026-10-11 UTC, one daemon of the build at 9652e5e (daemon 0.1.0+e87090.18dd7d37380c9c86), 15:49 to 15:55:
 # each probe's host check before and after, the frame pollers after it (DVT's left out since phase e3, probes/dvt-left-out-fixed.txt),
 # and the sampler every 20 s; the probes' own files carry the load before and after too.
 # reads swiftui: before

@@ -12,7 +12,7 @@ Started 2026-09-28T07:47:02Z, finished 2026-09-28T08:06:02Z. Durations are milli
 | Host OS | macOS 26.6.2 (25G83) |
 | Load average at start | 1.92 3.06 3.53 |
 | Xcode | Xcode 27.0 (27A266a) |
-| Commit under test | 93e3b6bcc5d995a52f8f5f6a880f127000c39cbe (clean) |
+| Commit under test | 202bb4d529c0823d2e0215faca4a07043624af72 (clean) |
 | Harness | bench 0.1.0, 50 iterations after 3 warm-up, 1 retry |
 
 ### Targets
@@ -93,7 +93,7 @@ All 3 gate checks passed. 1 not measured.
 
 This section was added after the run; the rest of this file and `report.json` are as the bench wrote them, and neither names a home directory, so nothing was rewritten to `$HOME`.
 
-Task 10.11's agent-path run (`reports/10.11-agent-path/`, 2026-09-27, 20:28 to 20:35 UTC, commit b32ea8c) and this one (2026-09-28, 07:47 to 08:06 UTC, commit 93e3b6b, tasks 10.13 and 10.14) measured emulator-5554 started with `-gpu host -grpc 8554 -grpc-use-token`, its controller served and left unused by `MOBILE_AGENT_EMULATOR_CONTROLLER=off`, with the Expo fixture only, through the same command (this run's daemon kept its socket in a directory of its own, through `MOBILE_AGENT_SOCKET_DIR`):
+Task 10.11's agent-path run (`reports/10.11-agent-path/`, 2026-09-27, 20:28 to 20:35 UTC, commit ce96be4) and this one (2026-09-28, 07:47 to 08:06 UTC, commit 202bb4d, tasks 10.13 and 10.14) measured emulator-5554 started with `-gpu host -grpc 8554 -grpc-use-token`, its controller served and left unused by `MOBILE_AGENT_EMULATOR_CONTROLLER=off`, with the Expo fixture only, through the same command (this run's daemon kept its socket in a directory of its own, through `MOBILE_AGENT_SOCKET_DIR`):
 
 ```sh
 MOBILE_AGENT_DRIVERS=android MOBILE_AGENT_EMULATOR_CONTROLLER=off \

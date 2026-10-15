@@ -2,7 +2,7 @@
 # Capture rates as mobile-agent's status gave them (screenshots polled on DVT and CoreDevice; spike S11: about 7.8 a second
 # from one poller, 16.8 from two):
 08:29 the 9.x device checks (probes/runner-loss-status-9x.txt): 14.3 and 17.3 captures a second
-08:57 this run's first attach, 180dc23's daemon: 0.8, then 9.2 and 11.0 captures a second, 1 to 4 frames received
+08:57 this run's first attach, 4914f9b's daemon: 0.8, then 9.2 and 11.0 captures a second, 1 to 4 frames received
 10:05 phase a4, during its screenshot series: 8.0 captures a second, 8 received
 # Phase a4 (a4-swiftui-primitives-fixed/report.json), 09:55 to 10:16: the screenshot series' 106 attempts, 2 in each of 53
 # iterations, all failed with
@@ -10,8 +10,8 @@
 # Between 10:17 and 10:21, no other daemon of this run's attached:
 #   CoreDevice's screenshot through devicectl (xcrun devicectl device capture screenshot), no daemon: 1430, 516 and 499 ms,
 #     a 750x1334 PNG of 127186 bytes each time (spike S9: 370 ms)
-#   a new daemon of 180dc23, `screenshot`: failed after 12252 and 10193 ms with the same error; status 10.8 and 10.7 captures
+#   a new daemon of 4914f9b, `screenshot`: failed after 12252 and 10193 ms with the same error; status 10.8 and 10.7 captures
 #     a second, 0 and 1 received
-#   97ea3f5's daemon (task 7.1's commit, built from its sources in a scratch directory), `screenshot`: failed after 12479 ms
+#   f8e840b's daemon (task 7.1's commit, built from its sources in a scratch directory), `screenshot`: failed after 12479 ms
 #     with the same error; status 10.6 captures a second, 0 received
 # Launches through DVT's process control kept working: every open of phases a2 to a4 and of the text probes succeeded.

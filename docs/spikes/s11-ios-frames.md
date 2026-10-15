@@ -29,7 +29,7 @@ D23 is rewritten around screenshots as the iOS 26 frame source, with AVFoundatio
 
 Rust 1.98.1, release profile.
 
-**Code.** The timed series ran on this spike's measurement code as committed in `6cb976a`, with three differences. The table generator came after the series. So did the last candidate tolerances: the tables recount every tolerance from the saved frames, and the `changes_per_tolerance` field in the series files predates the final list. The phone-load probe was written after the series, then run. Earlier exploratory runs (`src/explore.rs`) went to the scratch directory and are not reported, except where Measurements says so.
+**Code.** The timed series ran on this spike's measurement code as committed in `3b6f84b`, with three differences. The table generator came after the series. So did the last candidate tolerances: the tables recount every tolerance from the saved frames, and the `changes_per_tolerance` field in the series files predates the final list. The phone-load probe was written after the series, then run. Earlier exploratory runs (`src/explore.rs`) went to the scratch directory and are not reported, except where Measurements says so.
 
 **Privileges.** One unprivileged process; no `sudo` anywhere. Nothing was installed on the phone, and no setting changed. The spike copies S9's usbmuxd, lockdown and tunnel setup, the quiet-host guard and the percentiles (the program's `README.md`, kept privately with it).
 

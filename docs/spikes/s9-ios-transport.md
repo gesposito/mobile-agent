@@ -21,7 +21,7 @@ D18 stands with its numbers; D19 now terminates through `sendSignal:toPid:` and 
 
 **Crates.** `idevice` 0.1.68, pinned with `=` as its README asks, with the features `usbmuxd`, `core_device_proxy`, `tunnel_tcp_stack`, `rsd`, `xpc`, `mobile_image_mounter`, `dvt`, `device_info`, `core_device` and `cryptexd`, and its default TLS (rustls 0.23.45 on aws-lc-rs 1.18.1); jktcp 0.1.7 through it; tokio 1.53.2; plist 1.10.1. The lock file holds 135 crates, which came in through `sfw cargo add` and `sfw cargo fetch`. Rust 1.98.1, release profile.
 
-**Code.** The measurements ran on commit `063e36b`. Commits `efe93dd` and `de8a42b` change only the table generator, and `ffc080f` adds the results.
+**Code.** The measurements ran on commit `d44734f`. Commits `43e711f` and `50ad50a` change only the table generator, and `0f6ca18` adds the results.
 
 **Privileges.** One unprivileged process, and no `sudo` anywhere. The probe and the tunnel series record that the effective user is not root, and that the host's `utun` interfaces are the same before the tunnel opens and while it is open: jktcp carries the tunnel inside the process, with no TUN device.
 

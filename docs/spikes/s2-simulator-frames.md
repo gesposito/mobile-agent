@@ -7,7 +7,7 @@ Spike S2 (task 2.5) checks two assumptions from Rust. The first is D6's: the Sim
 - Host: Apple M1 Max (8 performance and 2 efficiency cores), 64 GB, macOS 26.6.2 (25G83). Other work's builds, benchmarks and an Android emulator ran intermittently throughout; every measured step records the load averages it started under (below).
 - Xcode 27.0 (27A266a). CoreSimulator 1171.7 is in `/Library/Developer/PrivateFrameworks`. It re-exports CoreSimDeviceIO 1171.7 and links ROCKit 47 from the same directory. SimulatorKit 1005.2 was not loaded, because S2 needs nothing from it. Runtime iOS 26.5 (23F77).
 - Devices: `mobile-agent-spike`, an iPhone 17 (1206x2622 pixels at 3x) booted headless, carried the frame measurements. `mobile-agent-s2` was created, used, shut down and deleted twice for the lifecycle. DeviceHub.app and Simulator.app were never running.
-- App: the Expo fixture (`dev.mobileagent.fixture.expo`), Release build of main at `a443dc0`, which reads the `FIXTURE_INITIAL_TAB` launch option from fixtures/CONTRACT.md.
+- App: the Expo fixture (`dev.mobileagent.fixture.expo`), Release build of main at `9a65ef4`, which reads the `FIXTURE_INITIAL_TAB` launch option from fixtures/CONTRACT.md.
 - Rust 1.95.0. Crates (all added with `sfw cargo add`), from `Cargo.lock`:
   - Runtime: `objc2` 0.6.4 with the `exception` feature, `objc2-foundation` 0.3.2, `objc2-core-foundation` 0.3.2, `objc2-io-surface` 0.3.2, `block2` 0.6.2, `dispatch2` 0.3.1, `libc` 0.2.189.
   - `turbojpeg` 1.5.1 (`turbojpeg-sys` 1.2.0). Its default build compiles the vendored libjpeg-turbo with cmake, which this host lacks, so it links the host's libjpeg-turbo 3.2.0 statically through `TURBOJPEG_SOURCE=explicit` in `.cargo/config.toml`.

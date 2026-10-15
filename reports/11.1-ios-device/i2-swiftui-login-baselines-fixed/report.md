@@ -12,7 +12,7 @@ Started 2026-10-11T16:50:32Z, finished 2026-10-11T17:12:35Z. Durations are milli
 | Host OS | macOS 26.6.2 (25G83) |
 | Load average at start | 1.54 2.30 3.15 |
 | Xcode | Xcode 27.0 (27A266a) |
-| Commit under test | ae70885a07c9add3c0f1f89fa805c1901dd28be2 (clean) |
+| Commit under test | 54ed22a64dfa83d94b034467f6ad1840a8e6769d (clean) |
 | Harness | bench 0.1.0, 50 iterations after 3 warm-up, 1 retry |
 
 ### Targets
