@@ -45,7 +45,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run every series, write report.json and report.md, and judge the gates
+    /// Run every series, write report.json and report.md, and judge the gates, or with --gates none report mobile-agent's ratios against the baselines alone
     Run(RunArgs),
     /// Judge the gates on a report.json written by `run`
     Gates(GatesArgs),
@@ -53,7 +53,7 @@ enum Command {
     DefaultGates,
     /// Look for Maestro, maestro-runner, agent-device and Appium's WebDriverAgent on PATH and print what was found
     Baselines,
-    /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, and write report.json and report.md
+    /// Run the host microbenchmarks on a quiet host, compare them with reports/micro/baseline.json, or with --ab with another ref built and run on this host, and write report.json and report.md
     Micro(MicroArgs),
     /// Print a report beside the previous scheduled run's of the same kind, two microbenchmark A/B reports or two runs', with the changes, shown and never judged
     Trend(TrendArgs),
@@ -93,11 +93,11 @@ struct MicroArgs {
     #[arg(long, value_name = "PERCENT", value_parser = positive)]
     threshold: Option<f64>,
 
-    /// Compare the checkout with this ref instead of reports/micro/baseline.json: the ref checked out beside it, both built on this host and their suites run in rounds, base and head in turn
+    /// Compare the checkout with this ref instead of reports/micro/baseline.json: the ref checked out into a worktree of its own, both built on this host and their suites run in rounds, the side that goes first alternating
     #[arg(long, value_name = "REF", conflicts_with = "save_baseline")]
     ab: Option<String>,
 
-    /// With --ab, how many times each side runs the suites
+    /// With --ab, how many times each side runs the suites [default: 3]
     #[arg(long, value_name = "N", requires = "ab", value_parser = clap::value_parser!(u32).range(1..))]
     rounds: Option<u32>,
 
@@ -105,11 +105,11 @@ struct MicroArgs {
     #[arg(long, value_name = "NAME")]
     filter: Option<String>,
 
-    /// Rewrite reports/micro/baseline.json with this run's values and provenance, after comparing; refused with --filter or a raised --max-load
+    /// Rewrite reports/micro/baseline.json with this run's values and provenance, after comparing; refused with --filter, a raised --max-load or --ab
     #[arg(long)]
     save_baseline: bool,
 
-    /// Directory for report.json, report.md and criterion's files [default: target/bench/micro/ and the UTC start time, in the repository root]
+    /// Directory for report.json, report.md and criterion's files [default: target/bench/micro/, or target/bench/micro-ab/ with --ab, and the UTC start time, in the repository root]
     #[arg(long, value_name = "DIR")]
     out: Option<PathBuf>,
 }
