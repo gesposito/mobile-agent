@@ -1,8 +1,11 @@
 [package]
 name = "protocol"
+description = "The wire protocol between the mobile-agent daemon and every device agent: the message schema, the framing and the handshake"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 [lints]

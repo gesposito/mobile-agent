@@ -1,8 +1,11 @@
 [package]
 name = "ios"
+description = "mobile-agent's physical iPhone driver over USB: the device's services, input, screenshots as frames and an XCTest runner's tree"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 # The runner speaks the device protocol (`protocol`). `idevice`'s HID clients

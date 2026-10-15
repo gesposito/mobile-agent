@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.95"
 publish = false
+license = "MIT"
 description = "Host-side tests that drive the Android agent on a device through the protocol crate"
 
 # Its own workspace root, so the repository workspace neither builds nor

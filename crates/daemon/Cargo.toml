@@ -1,8 +1,11 @@
 [package]
 name = "daemon"
+description = "The mobile-agent daemon: one process that holds every device connection and a mirror per attached target, and answers the CLI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 # The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.

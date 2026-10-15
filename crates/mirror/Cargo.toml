@@ -1,8 +1,11 @@
 [package]
 name = "mirror"
+description = "The live UI replica of one target: its windows, accessibility tree and latest frame, and the listings, waits and settle checks answered from them"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 [lints]

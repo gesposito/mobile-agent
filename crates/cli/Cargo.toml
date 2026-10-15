@@ -1,8 +1,11 @@
 [package]
 name = "cli"
+description = "mobile-agent, the command line agents drive Android devices, emulators, iOS Simulators and iPhones with"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 # The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.

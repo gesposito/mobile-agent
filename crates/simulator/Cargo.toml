@@ -1,8 +1,11 @@
 [package]
 name = "simulator"
+description = "mobile-agent's iOS Simulator driver, entirely from the host: the lifecycle, input through dtuhidd, frames from the display and the tree from an in-guest reader"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 [lints]

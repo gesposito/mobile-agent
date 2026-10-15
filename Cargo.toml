@@ -8,6 +8,9 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
+license = "MIT"
+# Nothing is published yet; a first release adds `repository` beside it
+# (docs/research/open-sourcing.md, What a first release will need).
 publish = false
 
 [workspace.lints.rust]

@@ -1,8 +1,11 @@
 [package]
 name = "android"
+description = "mobile-agent's Android driver: the adb client, the agent's deploy and session, and the emulator's gRPC controller"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
 publish.workspace = true
 
 [lints]
