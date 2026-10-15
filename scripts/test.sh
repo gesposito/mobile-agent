@@ -23,7 +23,7 @@
 #      pattern: machine paths, iOS identifiers and their prefix, Android
 #      serials, Apple team ids, emails and Mac model identifiers, and a file
 #      whose name holds one; placeholders for a team, a serial and an emulator
-#      pass.
+#      pass, as do GitHub's own support and noreply addresses.
 #      An author's address in the third-party notices and their template
 #      passes.
 #   6. It refuses a value of the private terms file in any case, naming the
@@ -245,6 +245,12 @@ planted "an Apple team id is refused" "an Apple team id" "MOBILE_AGENT_IOS_TEAM=
 planted "a signing identity's team id is refused" "an Apple team id" "Apple Development: placeholder (${identity})"
 at="@"
 planted "an email address is refused" "an email address" "write to someone${at}placeholder-mail.com"
+printf 'Signed-off-by: placeholder[bot] <support%sgithub.com>, from noreply%sgithub.com\n' "$at" "$at" \
+  > "$repo/github.md"
+git -C "$repo" add github.md
+scan
+expect "GitHub's own support and noreply addresses pass" test "$status" = 0
+unstage github.md
 model="Mac"
 model+="BookPro99,9"
 planted "a Mac model identifier is refused" "a Mac model identifier" "measured on a ${model}"
