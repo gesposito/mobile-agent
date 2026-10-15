@@ -381,11 +381,12 @@ pub struct Finished {
 
 /// One A/B run of design D2: refuses, before anything is checked out, a
 /// base the checkout has no commit for and a host that is not quiet within
-/// `settings.wait`; then prepares the trees, runs the rounds, removes the
-/// base's checkout whether or not they completed, compares the sides and
-/// writes both reports. Every error is one the runner exits 2 on; the
-/// report's summary holds the exit status of a run that measured, 1 on any
-/// regression and 0 otherwise.
+/// `settings.wait`; then prepares the trees, checks the host again, as long
+/// again, once they are built, runs the rounds, removes the base's checkout
+/// whether or not they completed, compares the sides and writes both
+/// reports. Every error is one the runner exits 2 on; the report's summary
+/// holds the exit status of a run that measured, 1 on any regression and 0
+/// otherwise.
 pub fn run(
     settings: &Settings,
     host: &mut dyn Host,
@@ -402,14 +403,13 @@ pub fn run(
                 settings.base
             )
         })?;
-    let quiet = guard::wait_quiet(host, settings.max_load, settings.wait)?;
+    let before = guard::wait_quiet(host, settings.max_load, settings.wait)?;
 
-    let started = SystemTime::now();
     let out = settings.out.clone().unwrap_or_else(|| {
         settings
             .root
             .join("target/bench/micro-ab")
-            .join(compact_timestamp(started))
+            .join(compact_timestamp(SystemTime::now()))
     });
     // The bench binaries run in their crates' directories, so criterion is
     // given absolute paths, under a directory of the run's own, so that
@@ -424,16 +424,15 @@ pub fn run(
         )
     })?;
     let mut machine = capture_host(probe, &settings.os);
-    machine.load_average = Some(quiet.load_average);
     let commit = capture_commit(probe);
     let toolchain = probe.output("rustc", &["-V"]);
     let library = fs::read_to_string(settings.root.join("Cargo.lock"))
         .ok()
         .and_then(|lock| criterion::version(&lock));
 
-    let measured = rounds(settings, &sha, &homes, trees);
+    let measured = measure(settings, host, &sha, &homes, trees);
     let removed = trees.finish();
-    let (base_rounds, head_rounds) = match measured {
+    let measured = match measured {
         Ok(measured) => measured,
         Err(error) => {
             return Err(match removed {
@@ -442,8 +441,9 @@ pub fn run(
             });
         }
     };
+    machine.load_average = Some(measured.quiet.load_average);
     let provenance = Provenance {
-        started_at: utc_timestamp(started),
+        started_at: utc_timestamp(measured.started),
         finished_at: utc_timestamp(SystemTime::now()),
         host: machine,
         load_average_end: host.check().load_average,
@@ -452,7 +452,7 @@ pub fn run(
         harness: HarnessSettings::criterion(library),
         guard: GuardSettings {
             max_load: settings.max_load,
-            waited_s: quiet.waited.as_secs(),
+            waited_s: (before.waited + measured.quiet.waited).as_secs(),
         },
     };
     let report = Report::new(
@@ -464,8 +464,8 @@ pub fn run(
         settings.rounds,
         settings.toolchain.clone(),
         settings.threshold_pct,
-        &base_rounds,
-        &head_rounds,
+        &measured.base,
+        &measured.head,
     );
     let files = report
         .write(&out)
@@ -480,14 +480,28 @@ pub fn run(
 /// One side's measurements, one list per round, in round order.
 type Rounds = Vec<Vec<Measured>>;
 
-/// Prepares the trees and runs the rounds: base's, then head's.
-fn rounds(
+/// What the rounds measured, and the check of the host that began them.
+struct Measurements {
+    /// The check that found the host quiet once the trees were built.
+    quiet: guard::Quiet,
+    /// When that check passed.
+    started: SystemTime,
+    base: Rounds,
+    head: Rounds,
+}
+
+/// Prepares the trees, waits for a quiet host once they are built, and runs
+/// the rounds.
+fn measure(
     settings: &Settings,
+    host: &mut dyn Host,
     sha: &str,
     homes: &Path,
     trees: &mut dyn Trees,
-) -> Result<(Rounds, Rounds), String> {
+) -> Result<Measurements, String> {
     trees.prepare(sha)?;
+    let quiet = guard::wait_quiet(host, settings.max_load, settings.wait)?;
+    let started = SystemTime::now();
     let mut base = Vec::new();
     let mut head = Vec::new();
     for (n, sides) in order(settings.rounds).into_iter().enumerate() {
@@ -510,7 +524,12 @@ fn rounds(
             }
         }
     }
-    Ok((base, head))
+    Ok(Measurements {
+        quiet,
+        started,
+        base,
+        head,
+    })
 }
 
 /// The trees on this host: head is the checkout at `root`; base is checked
