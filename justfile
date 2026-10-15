@@ -73,6 +73,11 @@ bench *args:
 micro *args:
     cargo run -p bench --release -- micro "$@"
 
+# Compare the host microbenchmarks of the checkout with those of another ref, both built and run here in alternating rounds, passing further arguments through
+[positional-arguments]
+bench-ab base *args:
+    cargo run -p bench --release -- micro --ab "$@"
+
 # Validate every active OpenSpec change and the main specs in strict mode
 openspec-validate:
     openspec validate --all --strict
