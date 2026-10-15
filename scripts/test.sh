@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks the repository's own scripts in a scratch directory, without the
-# network: the reports' scrub (reports/scrub.py).
+# network: the reports' scrub (reports/scrub.py) and the publish scan
+# (scripts/check-public.sh).
 #
 #   scripts/test.sh
 #
@@ -16,18 +17,36 @@
 #      with the file, the line and the term's line in the list, never the
 #      value; --check changes nothing and exits 1 when a scrub is due, 0 once
 #      it is done.
+#   5. The publish scan passes a repository of clean staged files and refuses
+#      one value per pattern planted in a staged file, naming the file and the
+#      pattern: machine paths, iOS identifiers and their prefix, Android
+#      serials, Apple team ids, emails and Mac model identifiers, and a file
+#      whose name holds one; placeholders for a team, a serial and an emulator
+#      pass.
+#   6. It refuses a value of the private terms file in any case, naming the
+#      term by its line in the list and never printing it, except in
+#      LICENSE's copyright line and in CODEOWNERS' owners; without the file it
+#      says so and checks the patterns alone, and a list it is pointed at that
+#      does not exist is an error.
+#   7. With gitleaks installed, it refuses a credential gitleaks knows, and
+#      .gitleaks.toml's placeholder token passes in its own file only.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
-# (a machine's model identifier, a sampler's top field) are put together at
-# run time, so that this file names none of them.
+# (a machine's model identifier, a sampler's top field, a device identifier,
+# an email) are put together at run time, so that this file names none of
+# them.
 #
 # Prints ok or FAIL for each check and exits 1 when any check failed.
+#
+# The single-quoted dollar signs below are literal on purpose: texts written
+# into files, and scripts that bash -c expands itself.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/scripts-test.XXXXXX")"
-trap 'rm -rf "$scratch"' EXIT
+trap 'rm -rf "${scratch:?}"' EXIT
 checks=0
 failures=0
 
@@ -140,6 +159,158 @@ expect "the refusal never prints the value" \
   bash -c '! grep -q placeholder-name "$1"' _ "$scratch/out.txt"
 expect "the refused file is left as it was" \
   same "$scratch/reports/other.md" "Written by placeholder-name on the host."
+
+# 5. The publish scan, in a repository of its own.
+repo="$scratch/repo"
+mkdir -p "$repo/scripts"
+cp "$root/scripts/check-public.sh" "$root/scripts/public-patterns.sh" "$repo/scripts/"
+cp "$root/.gitleaks.toml" "$repo/"
+git -C "$repo" init -q
+printf 'Build with `cargo build`; write $HOME, $TMPDIR or <repo> instead of a path.\n' > "$repo/notes.md"
+git -C "$repo" add -A
+mkdir -p "$scratch/home"
+# scan [VAR=value...]: the scan in the repository, with HOME holding no
+# private terms file, its output in out.txt and its status in $status.
+scan() {
+  status=0
+  (cd "$repo" && env HOME="$scratch/home" MOBILE_AGENT_PRIVATE_TERMS= "$@" scripts/check-public.sh) \
+    > "$scratch/out.txt" 2>&1 || status=$?
+}
+# unstage <file...>: the files out of the index and the checkout.
+unstage() {
+  local file
+  for file in "$@"; do
+    git -C "$repo" rm -q -f --cached -- "$file"
+    rm -f "${repo:?}/${file:?}"
+  done
+}
+# planted <description> <pattern name> <text> [file]: the text staged in a
+# file is refused, the output naming the file, the line and the pattern.
+planted() {
+  local description=$1 name=$2 text=$3 file=${4:-planted.md}
+  mkdir -p "$(dirname "$repo/$file")"
+  printf 'Before the value.\n%s\n' "$text" > "$repo/$file"
+  git -C "$repo" add -- "$file"
+  scan
+  if [ "$status" = 1 ] && grep -q -F "$file:2: $name" "$scratch/out.txt"; then
+    pass "$description"
+  else
+    fail "$description"
+    cat "$scratch/out.txt" >&2
+  fi
+  unstage "$file"
+}
+
+scan
+expect "the scan passes clean staged files" test "$status" = 0
+expect "without a private terms file the scan says it checks the patterns alone" \
+  grep -q 'no private terms file' "$scratch/out.txt"
+
+users="/Users/"
+homes="/home/"
+claude="/.claude"
+tmp_claude="/tmp/claude-"
+folders="/var/"
+worktrees="mobile-agent"
+hex16="01234567"
+hex16+="89ABCDEF"
+prefix="0000"
+prefix+="9ABC"
+android_id="0a1b2c3d"
+android_id+="4e5f6789"
+team="AB12CD"
+team+="34EF"
+identity="ZX98YW"
+identity+="76VU"
+planted "a macOS home directory is refused" "a macOS home directory" "see ${users}placeholderuser/code/app"
+planted "a Linux home directory is refused" "a Linux home directory" "see ${homes}placeholderuser/code/app"
+planted "Claude Code's directory under the home is refused" "Claude Code's per-user directory" "see ~${claude}/settings.json"
+planted "a Claude Code scratch directory is refused" "a Claude Code scratch directory" "under ${tmp_claude}1234/session"
+planted "the macOS per-user temporary directory is refused" "the macOS per-user temporary directory" "under ${folders}folders/xy/abc/T/"
+planted "the worktrees' directory is refused" "the directory of this repository's worktrees" "in ${worktrees}-wt/branch"
+planted "an iOS device identifier is refused" "an iOS device identifier" "the phone ${prefix}-${hex16}"
+planted "an iOS device identifier's prefix is refused" "an iOS device identifier's prefix" "identifier prefix ${prefix}"
+planted "an Android serial after adb -s is refused" "an Android device serial" "adb -s ${android_id} shell getprop"
+planted "an Android serial in a devices listing is refused" "an Android device serial" \
+  "${android_id}  android  android-device  Placeholder  device"
+planted "an Apple team id is refused" "an Apple team id" "MOBILE_AGENT_IOS_TEAM=${team}"
+planted "a signing identity's team id is refused" "an Apple team id" "Apple Development: placeholder (${identity})"
+at="@"
+planted "an email address is refused" "an email address" "write to someone${at}placeholder-mail.com"
+model="Mac"
+model+="BookPro99,9"
+planted "a Mac model identifier is refused" "a Mac model identifier" "measured on a ${model}"
+
+mkdir -p "$repo/probes"
+printf 'nothing else\n' > "$repo/probes/${prefix}-${hex16}.txt"
+git -C "$repo" add probes
+scan
+expect "a file whose name holds a device identifier is refused" \
+  grep -q -F "probes/${prefix}-${hex16}.txt: an iOS device identifier in the file's name" "$scratch/out.txt"
+unstage "probes/${prefix}-${hex16}.txt"
+
+printf 'MOBILE_AGENT_IOS_TEAM=TEAMPLACE1 and (PLACEHOLD0), emulator-5554, adb -s "$serial", NEXUS5X-SERIAL\n' \
+  > "$repo/placeholders.md"
+git -C "$repo" add placeholders.md
+scan
+expect "placeholders for a team, a serial and an emulator pass" test "$status" = 0
+unstage placeholders.md
+
+# 6. The private terms.
+printf '# placeholder terms\nplaceholder-private-value\n' > "$scratch/private-terms.txt"
+printf 'Written by Placeholder-Private-Value.\n' > "$repo/planted.md"
+git -C "$repo" add planted.md
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
+expect "a private term is refused in any case" test "$status" = 1
+expect "the refusal names the term by its line in the list" \
+  grep -q -F 'planted.md:1: private term on line 2 of' "$scratch/out.txt"
+expect "the refusal never prints the term" \
+  bash -c '! grep -q -i placeholder-private-value "$1"' _ "$scratch/out.txt"
+scan
+expect "without the list the same file passes" test "$status" = 0
+unstage planted.md
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/missing.txt"
+expect "a private terms file named but missing is an error" test "$status" = 2
+
+mkdir -p "$repo/.github"
+printf 'MIT License\n\nCopyright (c) 2026 placeholder-private-value\n' > "$repo/LICENSE"
+printf '* @placeholder-private-value\n' > "$repo/.github/CODEOWNERS"
+git -C "$repo" add LICENSE .github/CODEOWNERS
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
+expect "LICENSE's copyright line and CODEOWNERS' owners may hold a private term" test "$status" = 0
+printf 'MIT License\n\nCopyright (c) 2026 placeholder-private-value\nKept by placeholder-private-value.\n' \
+  > "$repo/LICENSE"
+printf '* @placeholder-private-value\n# placeholder-private-value\n' > "$repo/.github/CODEOWNERS"
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
+expect "LICENSE's other lines may not" grep -q -F 'LICENSE:4: private term' "$scratch/out.txt"
+expect "CODEOWNERS' comments may not" grep -q -F '.github/CODEOWNERS:2: private term' "$scratch/out.txt"
+unstage LICENSE .github/CODEOWNERS
+
+# 7. gitleaks, when installed.
+if command -v gitleaks > /dev/null 2>&1; then
+  key="AKIA"
+  key+="QYLPMN5HGT7RZ4WX"
+  printf 'aws_access_key_id = %s\n' "$key" > "$repo/planted.md"
+  git -C "$repo" add planted.md
+  scan
+  expect "a credential gitleaks knows is refused" grep -q 'gitleaks: aws-access-token at planted.md' "$scratch/out.txt"
+  unstage planted.md
+  token='token: "01234567'
+  token+='89abcdef"'
+  mkdir -p "$repo/crates/android/src/agent"
+  printf '%s\n' "$token" > "$repo/crates/android/src/agent/records.rs"
+  git -C "$repo" add crates/android/src/agent/records.rs
+  scan
+  expect "the placeholder token passes in the records' tests" test "$status" = 0
+  printf '%s\n' "$token" > "$repo/elsewhere.rs"
+  git -C "$repo" add elsewhere.rs
+  scan
+  expect "the placeholder token elsewhere is refused" \
+    grep -q 'gitleaks: generic-api-key at elsewhere.rs' "$scratch/out.txt"
+  unstage crates/android/src/agent/records.rs elsewhere.rs
+else
+  printf 'skip: gitleaks is not installed\n'
+fi
 
 if [ "$failures" -gt 0 ]; then
   printf '%s of %s checks failed\n' "$failures" "$checks" >&2
