@@ -20,6 +20,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 - [ ] A description and topics: the repository's front page, **About** (the gear beside it). The community standards count the description.
 - [ ] **Settings > General > Features**: Issues on; Wikis and Projects off, since the documentation lives in the tree.
 - [ ] **Settings > General > Pull Requests**: "Automatically delete head branches" on.
+- [ ] The labels the issue templates set, `bug` and `device report`: the **Issues** tab, **Labels > New label**.
 
 ## Rules
 

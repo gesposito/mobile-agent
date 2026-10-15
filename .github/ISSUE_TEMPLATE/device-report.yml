@@ -1,0 +1,55 @@
+name: Device report
+description: A device, OS or Xcode version mobile-agent ran on, or failed to, so the supported list can grow.
+labels: ["device report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README's Supported platforms table lists what has run. A report of another model, OS, emulator image or Xcode, working or not, tells what to add or fix. Leave out the device's identifier, serial and name.
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options:
+        - Android emulator
+        - Android device
+        - iOS Simulator
+        - iPhone
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and OS
+      description: Such as Pixel 8 on Android 16 (API 36), an iPhone SE (3rd generation) on iOS 26.6.2, or the Simulator's device type and runtime.
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: The host's OS and Xcode or Android SDK versions, such as macOS 26.6.2, Xcode 27.0, emulator 37.1.11.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: The commit mobile-agent was built from (`git rev-parse --short HEAD`).
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: mobile-agent doctor --json
+      description: Its output, with the identifiers replaced by placeholders.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What worked and what did not
+      description: snapshot, click, fill, scroll, screenshot, frames; the codes and warnings the commands answered.
+    validations:
+      required: true

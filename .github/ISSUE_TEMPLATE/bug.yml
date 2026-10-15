@@ -1,0 +1,56 @@
+name: Bug
+description: Something mobile-agent does wrong, with a way to see it again.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A vulnerability goes through SECURITY.md, not an issue. Leave out device identifiers, serials, team ids, names and paths of your machine: write placeholders such as IPHONE-UDID, ANDROID-SERIAL or $HOME.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command, what it answered and what you expected instead.
+      placeholder: |
+        mobile-agent --json click @e12
+        ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it again
+      description: From a running target, the commands in order, and the app or fixture they ran on.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: mobile-agent doctor --json
+      description: Its output, with the identifiers replaced by placeholders.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: The commit mobile-agent was built from (`git rev-parse --short HEAD`).
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options:
+        - Android emulator
+        - Android device
+        - iOS Simulator
+        - iPhone
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Logs, a snapshot listing, a screenshot of the screen if it shows nothing private.
