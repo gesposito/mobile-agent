@@ -546,7 +546,10 @@ fn the_ratios_give_how_many_times_faster_the_tool_under_test_was_than_each_basel
     assert_eq!((short.baseline_p50_us, short.ratio), (None, None));
     let note = short.note.as_deref().unwrap();
     assert!(note.starts_with("not timed: "), "{note}");
-    assert!(note.contains("Detail 97"), "{note}");
+    assert!(
+        note.contains("the end state differs from the golden"),
+        "{note}"
+    );
     assert_eq!(
         ratios.skipped,
         [ratio::Skipped {

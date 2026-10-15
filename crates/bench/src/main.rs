@@ -23,6 +23,7 @@ use bench::micro::{self, CargoBench, Settings, ab};
 use bench::plan;
 use bench::primitive::Primitive;
 use bench::provenance::{Probe, SystemProbe, capture_host, compact_timestamp};
+use bench::ratio;
 use bench::report::Report;
 use bench::target::TargetClass;
 use clap::builder::PossibleValuesParser;
@@ -176,8 +177,8 @@ struct RunArgs {
     #[arg(long, default_value_t = 1)]
     retries: u32,
 
-    /// Gate file replacing the default gates
-    #[arg(long, value_name = "FILE")]
+    /// Gate file replacing the default gates, or none to judge no gate, as on a CI runner, whose run the ratios against the baselines judge instead
+    #[arg(long, value_name = "FILE|none")]
     gates: Option<PathBuf>,
 
     /// Leave out Maestro, maestro-runner, agent-device and WebDriverAgent even when installed
@@ -236,7 +237,11 @@ fn load_gates(path: Option<&Path>) -> Result<GateSet, String> {
 }
 
 fn run(args: &RunArgs) -> Result<ExitCode, String> {
-    let gates = load_gates(args.gates.as_deref())?;
+    // `--gates none` judges no gate; a gate file, or the defaults, judge the run.
+    let gates = match args.gates.as_deref() {
+        Some(path) if path == Path::new("none") => None,
+        path => Some(load_gates(path)?),
+    };
     let plan = plan::Plan::from_id(&args.plan).unwrap_or(plan::Plan::Full);
     let planned = plan.config();
     let config = RunConfig {
@@ -256,7 +261,7 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
                 .tool(Box::new(fake));
             (harness, classes)
         }
-        None => mobile_agent(args, config, &dir)?,
+        None => mobile_agent(args, plan, config, &dir)?,
     };
     if !args.no_baselines {
         let settings = BaselineConfig::new(dir.join("flows")).for_targets(classes);
@@ -265,8 +270,9 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
         }
     }
     let mut report = harness.run()?;
-    let verdict = gates.evaluate(&report);
-    report.gates = Some(verdict.clone());
+    report.ratios = Some(ratio::of(&report));
+    let verdict = gates.map(|set| set.evaluate(&report));
+    report.gates = verdict.clone();
     let files = report
         .write(&dir)
         .map_err(|e| format!("cannot write the report into {}: {e}", dir.display()))?;
@@ -275,21 +281,42 @@ fn run(args: &RunArgs) -> Result<ExitCode, String> {
         files.json.display(),
         files.markdown.display()
     );
-    print!("{}", verdict.table());
-    Ok(ExitCode::from(verdict.exit_code()))
+    match verdict {
+        Some(verdict) => {
+            print!("{}", verdict.table());
+            Ok(ExitCode::from(verdict.exit_code()))
+        }
+        None => {
+            // The ratios stand in for the gate table.
+            if let Some(ratios) = report.ratios.as_ref().filter(|r| !r.is_empty()) {
+                println!("{}\n", ratios.table().trim_end());
+            }
+            println!("No gate judged (--gates none).");
+            Ok(ExitCode::SUCCESS)
+        }
+    }
 }
 
 /// The run of mobile-agent through the CLI adapter: the targets `--target`
-/// names among those `mobile-agent devices` lists, each with its fixtures,
-/// and the plan's series and flows for them, with the targets' classes. On
-/// a physical iPhone the fixtures' builds `--ios-app` names are installed
-/// first, and `--auto-lock-off` is recorded as stated. The golden checks
-/// run first, as in every run, then the timed series.
+/// names among those `mobile-agent devices` lists, each with the fixtures
+/// `plan` runs on it, and the plan's series and flows for them, with the
+/// targets' classes. On a physical iPhone the fixtures' builds `--ios-app`
+/// names are installed first, and `--auto-lock-off` is recorded as stated.
+/// The golden checks run first, as in every run, then the timed series. The
+/// ci plan refuses `--fixture`, since it picks the fixtures.
 fn mobile_agent(
     args: &RunArgs,
+    plan: plan::Plan,
     config: RunConfig,
     dir: &Path,
 ) -> Result<(Harness, Vec<TargetClass>), String> {
+    if plan == plan::Plan::Ci && !args.fixtures.is_empty() {
+        return Err(format!(
+            "--plan ci runs one fixture per platform, swiftui on iOS and compose on Android; \
+             --fixture names {}",
+            args.fixtures.join(", ")
+        ));
+    }
     let apps = args
         .ios_apps
         .iter()
@@ -318,6 +345,10 @@ fn mobile_agent(
     let mut series = Vec::new();
     let mut fixtures: Vec<Fixture> = Vec::new();
     for (mut target, runs) in plan::select(&connected, &args.targets, &chosen)? {
+        let runs = match plan {
+            plan::Plan::Full => runs,
+            plan::Plan::Ci => plan.fixtures(target.class.platform()),
+        };
         series.extend(plan::only(
             plan::series(&target, &runs),
             &primitives,

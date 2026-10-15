@@ -41,15 +41,29 @@ impl Plan {
         Plan::ALL.into_iter().find(|plan| plan.id() == id)
     }
 
-    /// The fixtures the plan runs on a target of `platform`.
+    /// The fixtures the plan runs on a target of `platform`: every fixture
+    /// it has in the full plan, its native fixture in the ci plan.
     pub fn fixtures(self, platform: Platform) -> Vec<Fixture> {
-        fixtures(platform)
+        match self {
+            Plan::Full => fixtures(platform),
+            Plan::Ci => vec![match platform {
+                Platform::Ios => Fixture::SwiftUi,
+                Platform::Android => Fixture::Compose,
+            }],
+        }
     }
 
     /// The iteration counts the plan runs with, unless the run names its
     /// own.
     pub fn config(self) -> RunConfig {
-        RunConfig::default()
+        match self {
+            Plan::Full => RunConfig::default(),
+            Plan::Ci => RunConfig {
+                iterations: 10,
+                warmup: 2,
+                ..RunConfig::default()
+            },
+        }
     }
 }
 

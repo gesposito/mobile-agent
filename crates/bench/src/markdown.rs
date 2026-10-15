@@ -29,6 +29,7 @@ pub fn render(report: &Report) -> String {
     provenance(&mut out, p);
     measurements(&mut out, &report.measurements);
     comparison(&mut out, report);
+    ratios(&mut out, report);
     handoffs(&mut out, &report.handoffs);
     if let Some(gates) = &report.gates {
         out.push_str("## Gates\n\n");
@@ -388,6 +389,24 @@ fn comparison(out: &mut String, report: &Report) {
     if !skipped.is_empty() {
         out.push_str(&format!("Skipped: {}.\n\n", skipped.join("; ")));
     }
+}
+
+/// The ratios of the tool under test against each baseline, with the
+/// baselines skipped, when the report has any.
+fn ratios(out: &mut String, report: &Report) {
+    let Some(ratios) = report.ratios.as_ref().filter(|r| !r.is_empty()) else {
+        return;
+    };
+    let tool = ratios.tool.as_deref().unwrap_or("the tool under test");
+    out.push_str("## Ratios\n\n");
+    out.push_str(&format!(
+        "How many times faster {tool}'s p50 was than each baseline's on the same flow, \
+         target and fixture, in this run: the baseline's p50 over {tool}'s, under 1 when the \
+         baseline was faster. A CI runner's run is judged by these rather than by the gates, \
+         whose limits belong to the measured hosts.\n\n"
+    ));
+    out.push_str(ratios.table().trim_end());
+    out.push_str("\n\n");
 }
 
 /// The hand-offs of targets between tools, when the run had any.

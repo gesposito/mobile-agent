@@ -87,12 +87,66 @@ fn missing(m: &Measurement) -> Option<String> {
 /// The ratios of `report`: each flow series of its tool under test against
 /// the same flow, target and fixture of every baseline that ran it.
 pub fn of(report: &Report) -> Ratios {
-    let _ = (report, missing, Role::UnderTest, ToolStatus::Available);
-    let _: Option<Subject> = None;
+    let tools = &report.provenance.tools;
+    let tool = tools
+        .iter()
+        .find(|t| t.role == Role::UnderTest)
+        .map(|t| t.name.clone());
+    let baselines: Vec<&str> = tools
+        .iter()
+        .filter(|t| t.role == Role::Baseline && t.status == ToolStatus::Available)
+        .map(|t| t.name.as_str())
+        .collect();
+    let mut rows = Vec::new();
+    for m in report
+        .measurements
+        .iter()
+        .filter(|m| Some(&m.tool) == tool.as_ref())
+    {
+        let Subject::Flow(flow) = &m.subject else {
+            continue;
+        };
+        for baseline in &baselines {
+            let Some(b) = report.measurements.iter().find(|b| {
+                b.tool == *baseline
+                    && b.target == m.target
+                    && b.fixture == m.fixture
+                    && b.subject == m.subject
+            }) else {
+                continue;
+            };
+            let tool_p50 = m.stats.map(|s| s.p50_us);
+            let baseline_p50 = b.stats.map(|s| s.p50_us);
+            let note = missing(b).or_else(|| missing(m).map(|why| format!("{} {why}", m.tool)));
+            rows.push(Row {
+                target: m.target.clone(),
+                target_class: m.target_class,
+                fixture: m.fixture,
+                flow: flow.clone(),
+                baseline: (*baseline).to_owned(),
+                tool_p50_us: tool_p50,
+                baseline_p50_us: baseline_p50,
+                ratio: tool_p50
+                    .zip(baseline_p50)
+                    .and_then(|(tool, baseline)| ratio(baseline, tool)),
+                baseline_failure_rate_pct: b.reliability.failure_rate_pct,
+                baseline_flake_rate_pct: b.reliability.flake_rate_pct,
+                note,
+            });
+        }
+    }
+    let skipped = tools
+        .iter()
+        .filter(|t| t.role == Role::Baseline && t.status == ToolStatus::Skipped)
+        .map(|t| Skipped {
+            tool: t.name.clone(),
+            note: t.note.clone(),
+        })
+        .collect();
     Ratios {
-        tool: None,
-        rows: Vec::new(),
-        skipped: Vec::new(),
+        tool,
+        rows,
+        skipped,
     }
 }
 
