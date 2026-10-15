@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks the repository's own scripts in a scratch directory, without the
-# network: the reports' scrub (reports/scrub.py) and the publish scan
-# (scripts/check-public.sh).
+# network: the reports' scrub (reports/scrub.py), the publish scan
+# (scripts/check-public.sh) and its scan of the history
+# (scripts/check-history.sh).
 #
 #   scripts/test.sh
 #
@@ -32,6 +33,11 @@
 #      does not exist is an error.
 #   7. With gitleaks installed, it refuses a credential gitleaks knows, and
 #      .gitleaks.toml's placeholder token passes in its own file only.
+#   8. The history scan (scripts/check-history.sh) passes a clean history and
+#      refuses, in commits the tip no longer holds, an identifier, naming the
+#      blob's path, the pattern and the commit, a private term by its line in
+#      the list, a machine path in a commit message, and, with gitleaks
+#      installed, a credential.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
 # (a machine's model identifier, a sampler's top field, a device identifier,
@@ -320,6 +326,71 @@ if command -v gitleaks > /dev/null 2>&1; then
   unstage crates/android/src/agent/records.rs elsewhere.rs
 else
   printf 'skip: gitleaks is not installed\n'
+fi
+
+# 8. The history scan, over the commits of a repository of its own.
+history="$scratch/history"
+mkdir -p "$history/scripts"
+cp "$root/scripts/check-history.sh" "$root/scripts/public-patterns.sh" "$history/scripts/"
+cp "$root/.gitleaks.toml" "$history/"
+git -C "$history" init -q
+commit() {
+  git -C "$history" add -A
+  git -C "$history" -c user.name=placeholder -c user.email=placeholder@example.com \
+    commit -q -m "$1"
+}
+# history_scan [VAR=value...]: the scan of every commit, its output in
+# out.txt and its status in $status.
+history_scan() {
+  status=0
+  (cd "$history" && env HOME="$scratch/home" MOBILE_AGENT_PRIVATE_TERMS= "$@" scripts/check-history.sh) \
+    > "$scratch/out.txt" 2>&1 || status=$?
+}
+printf 'Build with `cargo build`.\n' > "$history/notes.md"
+commit "docs: the first note"
+history_scan
+expect "the history scan passes a clean history" test "$status" = 0
+expect "the history scan counts the blobs and commits it read" \
+  grep -q 'check-history: 1 commit' "$scratch/out.txt"
+
+printf 'the phone %s-%s\n' "$prefix" "$hex16" > "$history/probe.txt"
+commit "docs: a probe"
+rm -f "${history:?}/probe.txt"
+commit "docs: the probe without its identifier"
+history_scan
+expect "an identifier in a commit the tip no longer holds is refused" test "$status" = 1
+expect "the refusal names the blob's path and the pattern" \
+  grep -q -F "probe.txt:1: an iOS device identifier" "$scratch/out.txt"
+expect "the refusal names the commit that brought the blob" \
+  grep -q -F "$(git -C "$history" rev-parse --short HEAD~1)" "$scratch/out.txt"
+
+git -C "$history" reset -q --hard HEAD~2
+printf 'Written by Placeholder-Private-Value.\n' > "$history/old.md"
+commit "docs: an old line"
+printf 'Written by the maintainer.\n' > "$history/old.md"
+commit "docs: the line without the name"
+history_scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
+expect "a private term in an old blob is refused by its line in the list" \
+  grep -q -F 'old.md:1: private term on line 2 of' "$scratch/out.txt"
+expect "the history scan never prints the term" \
+  bash -c '! grep -q -i placeholder-private-value "$1"' _ "$scratch/out.txt"
+
+git -C "$history" reset -q --hard HEAD~2
+printf 'more\n' >> "$history/notes.md"
+commit "docs: notes from ${users}placeholderuser/code"
+history_scan
+expect "a machine path in a commit message is refused" \
+  grep -q -E "^[0-9a-f]{7,}: a macOS home directory in the message" "$scratch/out.txt"
+
+git -C "$history" reset -q --hard HEAD~1
+if command -v gitleaks > /dev/null 2>&1; then
+  printf 'aws_access_key_id = %s\n' "$key" > "$history/creds.md"
+  commit "docs: a key"
+  rm -f "${history:?}/creds.md"
+  commit "docs: no key"
+  history_scan
+  expect "a credential gitleaks knows in an old commit is refused" \
+    grep -q 'gitleaks: aws-access-token at creds.md' "$scratch/out.txt"
 fi
 
 if [ "$failures" -gt 0 ]; then
