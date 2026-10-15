@@ -9,8 +9,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
+# No permission unless a job asks for one (Astral's practice; docs/research/open-sourcing.md).
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,16 +21,55 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint and zizmor from their releases, checked against their SHA-256
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ZIZMOR_VERSION: "1.30.1"
+          ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
+        run: |
+          mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          curl -fsSL --retry 3 -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o zizmor.tar.gz \
+            "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" actionlint.tar.gz "$ZIZMOR_SHA256" zizmor.tar.gz | sha256sum -c -
+          tar -xzf actionlint.tar.gz -C "$HOME/.local/bin" actionlint
+          tar -xzf zizmor.tar.gz -C "$HOME/.local/bin" zizmor
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Lint the workflows
+        run: actionlint
+      - name: Audit the workflows and Dependabot's configuration
+        # The online audits, impostor-commit among them, read the actions' repositories with the job's token.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --no-progress .github
+
   linux:
     name: Linux
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       # The image's Android SDK, named here too so that the cache paths below can use it.
       ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/cache@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Standard cargo cache paths plus the install tracker (.crates*), without
           # which a restored ~/.cargo/bin/just makes `cargo install just` refuse to overwrite.
@@ -46,14 +85,16 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
       - name: Install just and the OpenSpec CLI
-        # TODO: run both through Socket Firewall (sfw cargo install, sfw npm install) like local installs.
+        # just at a pinned version from its own lockfile; OpenSpec from .github/tools' lockfile, written
+        # through Socket Firewall, whose integrity hashes npm ci checks.
         run: |
-          cargo install just --locked
-          npm install -g @fission-ai/openspec@1.13.1
+          cargo install just@1.58.0 --locked
+          npm ci --prefix .github/tools --no-audit --no-fund
+          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent
         # kotlin installs the kotlin-compiler zip of JetBrains' release, whose SHA-256 mise checks;
         # the action caches both installs. TODO: Socket Firewall does not wrap mise.
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.9.7
           mise_toml: |
@@ -65,7 +106,7 @@ jobs:
         run: |
           java -version 2>&1 | grep '"21\.'
           kotlinc -version 2>&1 | grep 'kotlinc-jvm 2\.4\.20 '
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ env.ANDROID_HOME }}/platforms/android-36
@@ -78,7 +119,7 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platforms;android-36" "build-tools;36.0.0" "build-tools;37.0.0"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Gradle's dependencies and wrapper distribution, for the Compose fixture.
           path: |
@@ -96,6 +137,8 @@ jobs:
     name: macOS (Xcode ${{ matrix.xcode }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -106,16 +149,21 @@ jobs:
           - xcode: "27"
             runner: xcode-27
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Select Xcode ${{ matrix.xcode }}
         id: xcode
+        env:
+          XCODE_MAJOR: ${{ matrix.xcode }}
+          RUNNER_LABEL: ${{ matrix.runner }}
         run: |
           # Keep the image default when it is already this major, else pick the newest Xcode_<major>*.app.
           current=$(xcodebuild -version | sed -n '1s/^Xcode //p')
-          if [ "${current%%.*}" != "${{ matrix.xcode }}" ]; then
-            app=$(find /Applications -maxdepth 1 -name 'Xcode_${{ matrix.xcode }}*.app' | sort -V | tail -n 1)
+          if [ "${current%%.*}" != "$XCODE_MAJOR" ]; then
+            app=$(find /Applications -maxdepth 1 -name "Xcode_${XCODE_MAJOR}*.app" | sort -V | tail -n 1)
             if [ -z "$app" ]; then
-              echo "::warning::Xcode ${{ matrix.xcode }} is not installed on ${{ matrix.runner }}; skipping"
+              echo "::warning::Xcode $XCODE_MAJOR is not installed on $RUNNER_LABEL; skipping"
               echo "available=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -124,7 +172,7 @@ jobs:
           xcodebuild -version
           echo "available=true" >> "$GITHUB_OUTPUT"
       - if: steps.xcode.outputs.available == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Same paths as the linux job; the key adds the Xcode major so the legs never share target/.
           path: |
@@ -145,15 +193,16 @@ jobs:
         run: rustup target add aarch64-apple-ios-sim
       - name: Install just and the OpenSpec CLI
         if: steps.xcode.outputs.available == 'true'
-        # TODO: run both through Socket Firewall (sfw cargo install, sfw npm install) like local installs.
+        # As on Linux: just at a pinned version, locked, and OpenSpec from .github/tools' lockfile.
         run: |
-          cargo install just --locked
-          npm install -g @fission-ai/openspec@1.13.1
+          cargo install just@1.58.0 --locked
+          npm ci --prefix .github/tools --no-audit --no-fund
+          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Install Bun for the Expo fixture
         if: steps.xcode.outputs.available == 'true'
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: "1.4.3"
       - name: Install libjpeg-turbo for the Simulator driver's frame encoder
         if: steps.xcode.outputs.available == 'true'
         # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
@@ -163,18 +212,22 @@ jobs:
         if: steps.xcode.outputs.available == 'true'
         # sfw is the Socket wrapper itself, so nothing wraps its own install. The npm launcher
         # resolves its binary through the unauthenticated GitHub API, which shared runners exhaust,
-        # so fetch the release asset directly; the download endpoint is not rate limited.
+        # so fetch the release asset directly, at a pinned release, and check its SHA-256; the
+        # download endpoint is not rate limited.
+        env:
+          SFW_VERSION: "1.15.4"
+          SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
         run: |
           mkdir -p "$HOME/.local/bin"
           for attempt in 1 2 3 4 5; do
             if curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-                 https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-macos-arm64; then
+                 "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"; then
               break
             fi
             echo "download attempt $attempt failed; retrying in 15 s"
             sleep 15
           done
-          test -s "$HOME/.local/bin/sfw"
+          echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           file "$HOME/.local/bin/sfw"

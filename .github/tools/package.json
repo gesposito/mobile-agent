@@ -1,0 +1,9 @@
+{
+  "name": "mobile-agent-ci-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Node tools CI installs with npm ci from this directory's lockfile: the OpenSpec CLI that just openspec-validate runs.",
+  "dependencies": {
+    "@fission-ai/openspec": "1.13.1"
+  }
+}

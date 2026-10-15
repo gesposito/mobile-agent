@@ -38,10 +38,9 @@ on:
         type: string
         required: false
 
-permissions:
-  contents: read
-  # The previous scheduled run and its artifacts.
-  actions: read
+# No permission unless a job asks for one; each job reads the repository's
+# contents and actions (docs/research/open-sourcing.md).
+permissions: {}
 
 concurrency:
   # One benchmark run at a time; a second one waits instead of cancelling it.
@@ -61,6 +60,9 @@ jobs:
     name: Refs and the previous scheduled run
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # the previous scheduled run and its artifacts, through the REST API
     outputs:
       suite: ${{ steps.resolve.outputs.suite }}
       base: ${{ steps.resolve.outputs.base }}
@@ -68,10 +70,11 @@ jobs:
       iterations: ${{ steps.resolve.outputs.iterations }}
       previous: ${{ steps.resolve.outputs.previous }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Every branch and tag, so that a dispatched ref such as main~5 resolves.
           fetch-depth: 0
+          persist-credentials: false
       - name: Resolve the suites, the refs and the previous scheduled run
         id: resolve
         env:
@@ -137,17 +140,21 @@ jobs:
     runs-on: ubuntu-latest
     # About 85 minutes: three rounds of 62 benchmarks per side and two builds.
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read # the previous scheduled run and its artifacts, through the REST API
     env:
       # The daemon's bench serves a fake target, so no Android agent is embedded.
       SKIP_AGENT_BUILD: "1"
     steps:
       - name: Name the job's directories
         run: echo "OUT=$RUNNER_TEMP/bench/micro-linux" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
           # The base is checked out from this history into a worktree of its own.
           fetch-depth: 0
+          persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
       - name: Build the runner
@@ -174,7 +181,7 @@ jobs:
           if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" micro-linux "$RUNNER_TEMP/previous"; then
             target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: micro-linux
@@ -195,15 +202,19 @@ jobs:
     if: needs.resolve.outputs.suite != 'harness'
     runs-on: macos-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # the previous scheduled run and its artifacts, through the REST API
     env:
       SKIP_AGENT_BUILD: "1"
     steps:
       - name: Name the job's directories
         run: echo "OUT=$RUNNER_TEMP/bench/micro-macos" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         # Its targets include the iOS Simulator's, for the Simulator driver's tree reader.
         run: rustup toolchain install --no-self-update
@@ -235,7 +246,7 @@ jobs:
           if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" micro-macos "$RUNNER_TEMP/previous"; then
             target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: micro-macos
@@ -259,6 +270,9 @@ jobs:
     # the xcode-27 preview image (actions/runner-images#14404), with the iOS 27.0 runtime.
     runs-on: xcode-27
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # the previous scheduled run and its artifacts, through the REST API
     env:
       # No Android target here.
       SKIP_AGENT_BUILD: "1"
@@ -272,9 +286,10 @@ jobs:
             echo "MOBILE_AGENT_SOCKET_DIR=$RUNNER_TEMP/mobile-agent"
             echo "AGENT_DEVICE_STATE_DIR=$RUNNER_TEMP/agent-device"
           } >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
+          persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
       - name: Install libjpeg-turbo for the Simulator driver's frame encoder
@@ -295,12 +310,16 @@ jobs:
           xcrun simctl list devices "$udid"
           echo "UDID=$udid" >> "$GITHUB_ENV"
       - name: Install Socket Firewall
-        # As ci.yml's macOS legs do: the release asset directly, since the npm launcher's
-        # GitHub API lookups are rate limited on shared runners.
+        # As ci.yml's macOS legs do: the release asset directly, at a pinned release with its
+        # SHA-256, since the npm launcher's GitHub API lookups are rate limited on shared runners.
+        env:
+          SFW_VERSION: "1.15.4"
+          SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
         run: |
           mkdir -p "$HOME/.local/bin"
           curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-            https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-macos-arm64
+            "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"
+          echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install the baselines, Maestro and agent-device
@@ -335,7 +354,7 @@ jobs:
           if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" harness-simulator "$RUNNER_TEMP/previous"; then
             target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: harness-simulator
@@ -356,6 +375,9 @@ jobs:
     if: needs.resolve.outputs.suite != 'micro'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # the previous scheduled run and its artifacts, through the REST API
     env:
       # The image's Android SDK, as in ci.yml.
       ANDROID_HOME: /usr/local/lib/android/sdk
@@ -367,9 +389,10 @@ jobs:
             echo "MOBILE_AGENT_SOCKET_DIR=$RUNNER_TEMP/mobile-agent"
             echo "AGENT_DEVICE_STATE_DIR=$RUNNER_TEMP/agent-device"
           } >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
+          persist-credentials: false
       - name: Let the runner's user open /dev/kvm for the emulator's acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -379,7 +402,7 @@ jobs:
         run: rustup toolchain install --no-self-update
       - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent and Maestro
         # As in ci.yml. TODO: Socket Firewall does not wrap mise.
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.9.7
           mise_toml: |
@@ -400,10 +423,14 @@ jobs:
           apk=$(fixtures/compose/build.sh)
           echo "COMPOSE_APK=$apk" >> "$GITHUB_ENV"
       - name: Install Socket Firewall
+        env:
+          SFW_VERSION: "1.15.4"
+          SFW_SHA256: cf9f55b8343e1ef6e6dcccdb09b99c70c0430a22ed7d0079286eccddeaf72670
         run: |
           mkdir -p "$HOME/.local/bin"
           curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-            https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-linux-x86_64
+            "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-linux-x86_64"
+          echo "$SFW_SHA256  $HOME/.local/bin/sfw" | sha256sum -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install the baselines, Maestro and agent-device
@@ -415,7 +442,7 @@ jobs:
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
           sfw npm install -g "agent-device@$AGENT_DEVICE_VERSION"
       - name: Run the reduced plan on an API 36 emulator
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
           ITERATIONS: ${{ needs.resolve.outputs.iterations }}
         with:
@@ -444,7 +471,7 @@ jobs:
           if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" harness-emulator "$RUNNER_TEMP/previous"; then
             target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: harness-emulator
