@@ -524,6 +524,17 @@ mod tests {
     }
 
     #[test]
+    fn a_mac_host_is_described_by_its_chip_and_never_by_its_model() {
+        // The model answers, and the host is the chip, cores, memory and OS.
+        let host = capture_host(&mac(), "macos");
+        let hardware = host.hardware.unwrap();
+        assert!(!hardware.contains("placeholder-model"), "{hardware}");
+        // Without the chip's name, the model does not stand in for it.
+        let modelled = ScriptedProbe::new().with("sysctl -n hw.model", "placeholder-model");
+        assert_eq!(capture_host(&modelled, "macos").hardware, None);
+    }
+
+    #[test]
     fn a_linux_host_is_read_from_uname_and_proc() {
         let probe = ScriptedProbe::new()
             .with(

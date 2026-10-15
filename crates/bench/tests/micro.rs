@@ -100,7 +100,7 @@ fn output(mut command: Command) -> (Option<i32>, String, String) {
 /// started under `just` and runs cargo, which runs rustc, while another
 /// session's emulator, a Gradle daemon's `java` and a Simulator are busy.
 const LISTING: &str = "    1     0   0.1 /sbin/launchd
-  500     1  13.3 /Applications/Warp.app/Contents/MacOS/stable
+  500     1  13.3 /Applications/Placeholder Terminal.app/Contents/MacOS/stable
   600   500   0.0 -zsh
   700   600   0.4 just
   800   700  25.0 /opt/rust/target/release/mobile-agent-bench
@@ -251,8 +251,8 @@ fn the_guard_counts_watched_processes_above_five_percent_outside_its_own_process
     assert_eq!(names[11], "com.apple.CoreSimulator.CoreSimulatorService");
     assert_eq!(names[12], "placeholder scanner");
     // The runner's cargo and rustc are its own; the java under 5% and the
-    // rustc at exactly 5% are not busy; cargo-clippy, Warp and the scanner are
-    // not watched.
+    // rustc at exactly 5% are not busy; cargo-clippy, the terminal and the
+    // scanner are not watched.
     let found = guard::busy(&processes, 800);
     let busy: Vec<(u32, &str)> = found.iter().map(|p| (p.pid, p.name.as_str())).collect();
     assert_eq!(

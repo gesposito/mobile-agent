@@ -430,7 +430,7 @@ impl FakeTools {
         }
         fs::write(dir.join("stdout.txt"), stdout(benchmarks)).unwrap();
         let tools = FakeTools { dir, bin, root };
-        tools.processes("    1     0   0.1 /sbin/launchd\n  500     1  13.3 /Applications/Warp.app/Contents/MacOS/stable\n");
+        tools.processes("    1     0   0.1 /sbin/launchd\n  500     1  13.3 /Applications/Placeholder Terminal.app/Contents/MacOS/stable\n");
         tools.script(
             "cargo",
             "echo \"$@\" > \"$dir/cargo.args\"\n\
