@@ -20,9 +20,11 @@
 #   - an Apple team id, ten capitals and digits, after a team's variable or
 #     name or in a signing identity's parentheses; placeholders starting with
 #     TEAM or PLACEHOLD pass;
-#   - an email address, other than one under example.com, .org or .net and
-#     Kotlin's this@Class, and outside the third-party notices and their
-#     template, which keep their authors' addresses as they wrote them;
+#   - an email address, other than one under example.com, .org or .net,
+#     GitHub's own support@ and noreply@ addresses, which a bot's sign-off
+#     carries, and Kotlin's this@Class, and outside the third-party notices
+#     and their template, which keep their authors' addresses as they wrote
+#     them;
 #   - a Mac's model identifier, as `sysctl -n hw.model` prints it.
 #
 # Write the model, the environment variable or a placeholder instead
@@ -71,7 +73,7 @@ public_pattern "an Android device serial" \
 public_pattern "an Apple team id" \
   '(?:DEVELOPMENT_TEAM|TEAM_ID|IOS_TEAM|TeamIdentifier|\b[Tt]eam(?: [Ii][Dd]| identifier)?)[`'"'"'"]?\s*[=:]?\s*[`'"'"'"(]?(?!TEAM|PLACEHOLD)(?=[A-Z0-9]*[0-9])(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10}(?![A-Za-z0-9])|\((?!TEAM|PLACEHOLD)(?=[A-Z0-9]*[0-9])(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10}\)'
 public_pattern "an email address" \
-  '(?<![A-Za-z0-9._%+-])(?!this@)[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' \
+  '(?<![A-Za-z0-9._%+-])(?!this@)(?!(?:support|noreply)@github\.com\b)[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' \
   THIRD-PARTY-NOTICES.md about.hbs
 public_pattern "a Mac model identifier" \
   '\b(?:MacBookPro|MacBookAir|MacBook|Macmini|MacPro|iMacPro|iMac|MacStudio|Mac)[0-9]+,[0-9]+\b'
