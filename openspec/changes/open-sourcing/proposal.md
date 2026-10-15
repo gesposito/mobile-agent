@@ -10,7 +10,7 @@ The maintainer wants the repository public without leaking personal, private or 
 
 - A research note on open-sourcing a Rust project: Astral's practices, OpenSSF Scorecard and the best-practices badge, GitHub's community standards and its guidance on removing sensitive data, cargo-deny and third-party notices, Dependabot cooldowns.
 - The tree scrubbed of internal detail: the reports' and tests' provenance say the host's class, not its model or its security product; raw samplers keep loads and CPU shares without process names; a scan script refuses the terms and patterns that must never be tracked, run by `just validate` with the path check.
-- Material that is not for the public moved to a local folder outside the repository: the archived changes' `tasks.md` records and `spikes/` (their reports in `docs/spikes/` stay, as do proposals, designs and specs).
+- Material that is not for the public moved to a local folder outside the repository: `spikes/` (its reports in `docs/spikes/` stay, as does everything under `openspec/`, the archived changes' `tasks.md` records included, which the maintainer chose to keep).
 - The history rewritten once with `git filter-repo`: the five known leaks replaced, the moved material removed from every commit, the host and product names replaced, the author kept; a backup bundle before, a full-history scan after; the force-push and GitHub's cleanup of cached objects are the maintainer's steps.
 - CI hardened: every action pinned to a full commit SHA, `permissions: {}` at the top of each workflow and the least per job, `persist-credentials: false`, tool installs from lockfiles with checksums, zizmor in validation, Dependabot for actions and cargo with a cooldown, `cargo deny` for advisories and licenses.
 - Community and metadata: MIT `LICENSE`, third-party notices, `CONTRIBUTING.md` (the project's process), `CODE_OF_CONDUCT.md`, `SECURITY.md` with a disclosure path, issue and pull-request templates, `CHANGELOG.md`, crate metadata, the README's opening and its note on private APIs; a maintainer's checklist for the repository settings (rulesets, 2FA, secret scanning, private vulnerability reporting, tag protection).
@@ -29,5 +29,5 @@ None: tooling, documentation, history and settings; no requirement of the produc
 ## Impact
 
 - `.github/` (workflows, Dependabot, templates, CODEOWNERS), `deny.toml`, `justfile`, `scripts/check-local-paths.sh` (extended), `Cargo.toml` and the crates' manifests (metadata), `LICENSE`, `THIRD-PARTY-NOTICES.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, `README.md`, `docs/research/open-sourcing.md`, `docs/maintaining.md`.
-- `reports/` and `crates/bench` (provenance wording and the raw samplers' format), `openspec/changes/archive/*/tasks.md` and `spikes/` (moved out), the git history (rewritten).
+- `reports/` and `crates/bench` (provenance wording and the raw samplers' format), `spikes/` (moved out), the git history (rewritten).
 - No change to the drivers, the mirror, the daemon or the CLI's behaviour.
