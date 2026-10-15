@@ -43,6 +43,10 @@ fmt-check:
 check-paths:
     scripts/check-local-paths.sh
 
+# Check the repository's own scripts, such as the reports' scrub, in a scratch directory without the network
+scripts-test:
+    scripts/test.sh
+
 # Build the Android agent, skipping with SKIP_AGENT_BUILD=1 or when agent-android/build.sh is absent
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
@@ -82,5 +86,5 @@ bench-ab base *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-paths, test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-paths test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-paths, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-paths test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
