@@ -620,7 +620,7 @@ fn worktree(git: &[String]) -> PathBuf {
 }
 
 #[test]
-fn micro_ab_checks_the_base_out_beside_the_checkout_builds_both_trees_apart_and_alternates_them() {
+fn micro_ab_checks_the_base_out_outside_the_checkout_builds_both_trees_apart_and_alternates_them() {
     let id = "protocol/decode/snapshot-500";
     let other = "mirror/pump/first-read-grid";
     let tools = FakeTools::ab(
