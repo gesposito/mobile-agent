@@ -1,5 +1,8 @@
 name: CI
 
+# Validation only: build, lint, test and validate on every push to main and
+# every pull request. The benchmarks live in benchmarks.yml, which runs on a
+# schedule or on demand and never per push or pull request.
 on:
   push:
     branches: [main]

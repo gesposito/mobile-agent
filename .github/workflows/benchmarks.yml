@@ -1,0 +1,455 @@
+name: Benchmarks
+
+# The host microbenchmarks and the comparison harness, run on a schedule or on
+# demand and never on a push or a pull request (design D1 of the ci-benchmarks
+# change); ci.yml validates and runs no benchmark. A dispatch picks the
+# suites, the two refs and the harness's iterations; the schedule runs both
+# suites, head being the default branch and base the commit the previous
+# scheduled run measured. Each job writes its tables to the job summary,
+# keeps report.json and report.md as an artifact for 90 days, and prints the
+# deltas against the previous scheduled run's artifact of the same name, shown
+# and never judged, since the two runs had different machines.
+
+on:
+  schedule:
+    # Sundays at 02:17 UTC, off the start of the hour, when GitHub delays or
+    # drops scheduled runs (docs/research/ci-benchmarks.md).
+    - cron: "17 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "The suites: micro (Linux and macOS), harness (Simulator and emulator) or both"
+        type: choice
+        options:
+          - micro
+          - harness
+          - both
+        default: micro
+      base:
+        description: "The ref head is compared with (default: the commit the previous scheduled run measured, else main)"
+        type: string
+        required: false
+      head:
+        description: "The ref to measure (default: the dispatching ref)"
+        type: string
+        required: false
+      iterations:
+        description: "The harness's measured iterations per series (default: the reduced plan's 10)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  # The previous scheduled run and its artifacts.
+  actions: read
+
+concurrency:
+  # One benchmark run at a time; a second one waits instead of cancelling it.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # The baselines at the versions the reports measured; each bump is a line in
+  # docs/research/ci-benchmarks.md.
+  MAESTRO_VERSION: "2.10.0"
+  MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
+  AGENT_DEVICE_VERSION: "0.21.14"
+
+jobs:
+  resolve:
+    name: Refs and the previous scheduled run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      suite: ${{ steps.resolve.outputs.suite }}
+      base: ${{ steps.resolve.outputs.base }}
+      head: ${{ steps.resolve.outputs.head }}
+      iterations: ${{ steps.resolve.outputs.iterations }}
+      previous: ${{ steps.resolve.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every branch and tag, so that a dispatched ref such as main~5 resolves.
+          fetch-depth: 0
+      - name: Resolve the suites, the refs and the previous scheduled run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SUITE: ${{ inputs.suite }}
+          BASE_REF: ${{ inputs.base }}
+          HEAD_REF: ${{ inputs.head }}
+          ITERATIONS: ${{ inputs.iterations }}
+        run: |
+          suite=${SUITE:-both}
+          if [ "$EVENT" = schedule ]; then suite=both; fi
+          case "$suite" in
+            micro|harness|both) ;;
+            *) echo "::error::suite must be micro, harness or both, not $suite"; exit 1 ;;
+          esac
+          if [ -n "$ITERATIONS" ] && ! [[ $ITERATIONS =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::iterations must be a positive whole number, not $ITERATIONS"
+            exit 1
+          fi
+          previous=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/benchmarks.yml/runs?event=schedule&status=completed&per_page=20" \
+            --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID)][0].id // empty")
+          base=$BASE_REF
+          if [ -z "$base" ] && [ -n "$previous" ]; then
+            # The commit the previous scheduled run measured, from the first of its reports found.
+            for name in micro-linux micro-macos harness-emulator harness-simulator; do
+              if scripts/previous-artifact.sh "$previous" "$name" "$RUNNER_TEMP/previous-$name"; then
+                base=$(jq -r '.provenance.commit.sha // empty' "$RUNNER_TEMP/previous-$name/report.json" || true)
+                if [ -n "$base" ]; then break; fi
+              fi
+            done
+          fi
+          base=${base:-main}
+          head=${HEAD_REF:-$GITHUB_SHA}
+          commit() {
+            git rev-parse --verify --quiet "$1^{commit}" || git rev-parse --verify --quiet "origin/$1^{commit}" \
+              || { echo "::error::no commit $1 in the repository" >&2; return 1; }
+          }
+          base_sha=$(commit "$base")
+          head_sha=$(commit "$head")
+          {
+            echo "suite=$suite"
+            echo "base=$base_sha"
+            echo "head=$head_sha"
+            echo "iterations=$ITERATIONS"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Benchmarks: $suite"
+            echo
+            echo "| Side | Ref | Commit |"
+            echo "|---|---|---|"
+            echo "| base | $base | $base_sha |"
+            echo "| head | $head | $head_sha |"
+            echo
+            echo "Previous scheduled run: ${previous:-none}. Harness iterations: ${ITERATIONS:-10, the reduced plan}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  micro-linux:
+    name: Microbenchmarks, Linux (protocol, mirror, daemon, android)
+    needs: resolve
+    if: needs.resolve.outputs.suite != 'harness'
+    runs-on: ubuntu-latest
+    # About 85 minutes: three rounds of 62 benchmarks per side and two builds.
+    timeout-minutes: 120
+    env:
+      # The daemon's bench serves a fake target, so no Android agent is embedded.
+      SKIP_AGENT_BUILD: "1"
+    steps:
+      - name: Name the job's directories
+        run: echo "OUT=$RUNNER_TEMP/bench/micro-linux" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.head }}
+          # The base is checked out from this history into a worktree of its own.
+          fetch-depth: 0
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install --no-self-update
+      - name: Build the runner
+        run: cargo build --release -p bench
+      - name: Compare base with head
+        id: micro
+        env:
+          BASE: ${{ needs.resolve.outputs.base }}
+        run: |
+          status=0
+          target/release/mobile-agent-bench micro --ab "$BASE" --wait 10 \
+            --filter '^(protocol|mirror|daemon|android)/' --out "$OUT" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Write the summary
+        if: always()
+        run: |
+          if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Compare with the previous scheduled run
+        if: always() && github.event_name == 'schedule' && needs.resolve.outputs.previous != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.resolve.outputs.previous }}
+        run: |
+          if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" micro-linux "$RUNNER_TEMP/previous"; then
+            target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: micro-linux
+          path: |
+            ${{ runner.temp }}/bench/micro-linux/report.json
+            ${{ runner.temp }}/bench/micro-linux/report.md
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Fail on a regression
+        if: steps.micro.outputs.status != '' && steps.micro.outputs.status != '0'
+        env:
+          STATUS: ${{ steps.micro.outputs.status }}
+        run: exit "$STATUS"
+
+  micro-macos:
+    name: Microbenchmarks, macOS (the Simulator's frame pipeline)
+    needs: resolve
+    if: needs.resolve.outputs.suite != 'harness'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      SKIP_AGENT_BUILD: "1"
+    steps:
+      - name: Name the job's directories
+        run: echo "OUT=$RUNNER_TEMP/bench/micro-macos" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.head }}
+          fetch-depth: 0
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        # Its targets include the iOS Simulator's, for the Simulator driver's tree reader.
+        run: rustup toolchain install --no-self-update
+      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
+        # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
+        # TODO: Socket Firewall does not wrap Homebrew.
+        run: brew install jpeg-turbo
+      - name: Build the runner
+        run: cargo build --release -p bench
+      - name: Compare base with head
+        id: micro
+        env:
+          BASE: ${{ needs.resolve.outputs.base }}
+        run: |
+          status=0
+          target/release/mobile-agent-bench micro --ab "$BASE" --wait 10 \
+            --filter '^simulator/' --out "$OUT" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Write the summary
+        if: always()
+        run: |
+          if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Compare with the previous scheduled run
+        if: always() && github.event_name == 'schedule' && needs.resolve.outputs.previous != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.resolve.outputs.previous }}
+        run: |
+          if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" micro-macos "$RUNNER_TEMP/previous"; then
+            target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: micro-macos
+          path: |
+            ${{ runner.temp }}/bench/micro-macos/report.json
+            ${{ runner.temp }}/bench/micro-macos/report.md
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Fail on a regression
+        if: steps.micro.outputs.status != '' && steps.micro.outputs.status != '0'
+        env:
+          STATUS: ${{ steps.micro.outputs.status }}
+        run: exit "$STATUS"
+
+  harness-simulator:
+    name: Harness, iOS Simulator (SwiftUI)
+    needs: resolve
+    if: needs.resolve.outputs.suite != 'micro'
+    # The Simulator driver types keys and text through dtuhidd, which needs Xcode 27's
+    # CoreSimulator (crates/simulator/README.md, Compatibility); Xcode 27 ships only on
+    # the xcode-27 preview image (actions/runner-images#14404), with the iOS 27.0 runtime.
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      # No Android target here.
+      SKIP_AGENT_BUILD: "1"
+    steps:
+      - name: Name the job's directories
+        # The daemon's socket directory is short, as a socket path must be, and
+        # agent-device's state directory is the run's own (crates/bench/README.md).
+        run: |
+          {
+            echo "OUT=$RUNNER_TEMP/bench/harness-simulator"
+            echo "MOBILE_AGENT_SOCKET_DIR=$RUNNER_TEMP/mobile-agent"
+            echo "AGENT_DEVICE_STATE_DIR=$RUNNER_TEMP/agent-device"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.head }}
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install --no-self-update
+      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
+        # TODO: Socket Firewall does not wrap Homebrew.
+        run: brew install jpeg-turbo
+      - name: Build mobile-agent, its daemon and the harness
+        run: cargo build --release -p cli -p daemon -p bench
+      - name: Build the SwiftUI fixture
+        run: |
+          xcodebuild -version
+          app=$(fixtures/swiftui/build.sh)
+          echo "SWIFTUI_APP=$app" >> "$GITHUB_ENV"
+      - name: Boot a Simulator and install the fixture
+        run: |
+          udid=$(xcrun simctl create mobile-agent-bench "iPhone 17")
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$SWIFTUI_APP"
+          xcrun simctl list devices "$udid"
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+      - name: Install Socket Firewall
+        # As ci.yml's macOS legs do: the release asset directly, since the npm launcher's
+        # GitHub API lookups are rate limited on shared runners.
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
+            https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-macos-arm64
+          chmod +x "$HOME/.local/bin/sfw"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install the baselines, Maestro and agent-device
+        # WebDriverAgent's adapter drives physical iPhones only, so the run lists it
+        # skipped with its note.
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/maestro.zip" \
+            "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-$MAESTRO_VERSION/maestro.zip"
+          echo "$MAESTRO_SHA256  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+          sfw npm install -g "agent-device@$AGENT_DEVICE_VERSION"
+      - name: Run the reduced plan
+        id: run
+        env:
+          ITERATIONS: ${{ needs.resolve.outputs.iterations }}
+        run: |
+          mkdir -p "$MOBILE_AGENT_SOCKET_DIR" "$AGENT_DEVICE_STATE_DIR"
+          target/release/mobile-agent-bench baselines
+          target/release/mobile-agent-bench run --plan ci --gates none --target "$UDID" \
+            ${ITERATIONS:+--iterations "$ITERATIONS"} --out "$OUT"
+      - name: Write the summary
+        if: always()
+        run: |
+          if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Compare with the previous scheduled run
+        if: always() && github.event_name == 'schedule' && needs.resolve.outputs.previous != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.resolve.outputs.previous }}
+        run: |
+          if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" harness-simulator "$RUNNER_TEMP/previous"; then
+            target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: harness-simulator
+          path: |
+            ${{ runner.temp }}/bench/harness-simulator/report.json
+            ${{ runner.temp }}/bench/harness-simulator/report.md
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Shut the Simulator down
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID"
+
+  harness-emulator:
+    name: Harness, Android emulator (Compose)
+    needs: resolve
+    if: needs.resolve.outputs.suite != 'micro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The image's Android SDK, as in ci.yml.
+      ANDROID_HOME: /usr/local/lib/android/sdk
+    steps:
+      - name: Name the job's directories
+        run: |
+          {
+            echo "OUT=$RUNNER_TEMP/bench/harness-emulator"
+            echo "MOBILE_AGENT_SOCKET_DIR=$RUNNER_TEMP/mobile-agent"
+            echo "AGENT_DEVICE_STATE_DIR=$RUNNER_TEMP/agent-device"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.head }}
+      - name: Let the runner's user open /dev/kvm for the emulator's acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install --no-self-update
+      - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent and Maestro
+        # As in ci.yml. TODO: Socket Firewall does not wrap mise.
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.7
+          mise_toml: |
+            [tools]
+            java = "temurin-21"
+            kotlin = { version = "2.4.20", asset_pattern = "kotlin-compiler-*.zip", bin_path = "kotlinc/bin" }
+      - name: Install the Android SDK packages
+        # The agent takes d8 and R8 from build-tools 37.0.0; 36.0.0 is the Compose fixture's.
+        # TODO: Socket Firewall does not wrap sdkmanager.
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-36" "build-tools;36.0.0" "build-tools;37.0.0" platform-tools
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+      - name: Build mobile-agent, its daemon with the Android agent, and the harness
+        run: cargo build --release -p cli -p daemon -p bench
+      - name: Build the Compose fixture
+        run: |
+          apk=$(fixtures/compose/build.sh)
+          echo "COMPOSE_APK=$apk" >> "$GITHUB_ENV"
+      - name: Install Socket Firewall
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
+            https://github.com/SocketDev/sfw-free/releases/latest/download/sfw-free-linux-x86_64
+          chmod +x "$HOME/.local/bin/sfw"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install the baselines, Maestro and agent-device
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/maestro.zip" \
+            "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-$MAESTRO_VERSION/maestro.zip"
+          echo "$MAESTRO_SHA256  $RUNNER_TEMP/maestro.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+          sfw npm install -g "agent-device@$AGENT_DEVICE_VERSION"
+      - name: Run the reduced plan on an API 36 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ITERATIONS: ${{ needs.resolve.outputs.iterations }}
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          # Software rendering, and the gRPC controller on, as the measured runs had it.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -grpc 8554 -grpc-use-token
+          disable-animations: false
+          # Each line runs in a shell of its own.
+          script: |
+            mkdir -p "$MOBILE_AGENT_SOCKET_DIR" "$AGENT_DEVICE_STATE_DIR"
+            adb -s emulator-5554 install -r "$COMPOSE_APK"
+            target/release/mobile-agent-bench baselines
+            target/release/mobile-agent-bench run --plan ci --gates none --target emulator-5554 ${ITERATIONS:+--iterations "$ITERATIONS"} --out "$OUT"
+      - name: Write the summary
+        if: always()
+        run: |
+          if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Compare with the previous scheduled run
+        if: always() && github.event_name == 'schedule' && needs.resolve.outputs.previous != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.resolve.outputs.previous }}
+        run: |
+          if [ -f "$OUT/report.json" ] && scripts/previous-artifact.sh "$PREVIOUS" harness-emulator "$RUNNER_TEMP/previous"; then
+            target/release/mobile-agent-bench trend "$RUNNER_TEMP/previous/report.json" "$OUT/report.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: harness-emulator
+          path: |
+            ${{ runner.temp }}/bench/harness-emulator/report.json
+            ${{ runner.temp }}/bench/harness-emulator/report.md
+          if-no-files-found: warn
+          retention-days: 90
