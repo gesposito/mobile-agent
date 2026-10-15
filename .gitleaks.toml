@@ -1,0 +1,11 @@
+# gitleaks' default rules, which scripts/check-public.sh runs over the tracked
+# files and scripts/check-history.sh over every commit, with one allowance:
+# the Android agent's record tests use the placeholder token 0123456789abcdef.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The placeholder token of the Android agent's record tests"
+condition = "AND"
+paths = ['''crates/android/src/agent/records\.rs$''']
+regexes = ['''0123456789abcdef''']

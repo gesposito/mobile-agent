@@ -39,11 +39,13 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Check that no tracked file names a machine-local path, such as a home or scratch directory
-check-paths:
-    scripts/check-local-paths.sh
+# Check that no tracked file holds a machine path, a device identifier, a team id, an email, a host model, a private term or a credential gitleaks knows
+check-public:
+    scripts/check-public.sh
 
-# Check the repository's own scripts, such as the reports' scrub, in a scratch directory without the network
+alias check-paths := check-public
+
+# Check the repository's own scripts, the reports' scrub and the publish scan, in a scratch directory without the network
 scripts-test:
     scripts/test.sh
 
@@ -86,5 +88,5 @@ bench-ab base *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-paths, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-paths test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-public, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-public test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
