@@ -23,6 +23,8 @@
 #      serials, Apple team ids, emails and Mac model identifiers, and a file
 #      whose name holds one; placeholders for a team, a serial and an emulator
 #      pass.
+#      An author's address in the third-party notices and their template
+#      passes.
 #   6. It refuses a value of the private terms file in any case, naming the
 #      term by its line in the list and never printing it, except in
 #      LICENSE's copyright line and in CODEOWNERS' owners; without the file it
@@ -255,6 +257,14 @@ git -C "$repo" add placeholders.md
 scan
 expect "placeholders for a team, a serial and an emulator pass" test "$status" = 0
 unstage placeholders.md
+
+# Third parties' notices keep their authors' addresses as they wrote them.
+printf 'Copyright (C) 2018 Placeholder <author%splaceholder-mail.com>\n' "$at" > "$repo/THIRD-PARTY-NOTICES.md"
+printf 'Copyright (C) 2018 Placeholder <author%splaceholder-mail.com>\n' "$at" > "$repo/about.hbs"
+git -C "$repo" add THIRD-PARTY-NOTICES.md about.hbs
+scan
+expect "an author's address in the third-party notices and their template passes" test "$status" = 0
+unstage THIRD-PARTY-NOTICES.md about.hbs
 
 # 6. The private terms.
 printf '# placeholder terms\nplaceholder-private-value\n' > "$scratch/private-terms.txt"
