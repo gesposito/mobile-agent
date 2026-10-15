@@ -119,3 +119,9 @@ Behavioural fixes behind the same commands and codes; `fill` replies gain `verif
 - `type` is not gated on the keyboard, since a second tap on a non-empty field selects a word on iOS; the Simulator driver taps the field before typing, and skipping that tap when its latest read shows the field focused would spare `fill`'s second tap too (task 1.4's finding).
 
 - Whether the device's tree (physical-ios D21) carries the attributes D31 and D35 need; decided when task 4.4 of that change lands.
+
+- A control the app places under the status bar strip (the paste sheet's close button at y 37 with the keyboard up, task 7.5) reads as in view and its tap is accepted without effect; whether the status bar takes the touch, and whether the strip should count as a cover on iOS, is decided by a measurement on the Simulator (a tap at y 45 on a control there, with and without the status bar).
+
+- Typed fills of React Native fields dropped keys in 9 of 21 non-address fills of the seventh acceptance against 2 in the sixth, at host loads of 4 to 12 (task 7.5); the read-back's paste repaired all but one. Whether typing as soon as the field shows focus after a keys-less keyboard has been seen (D57) raises the rate, against the cadence of D42 and the host's load, is measured on the Expo fixture at a load under 4 with the focus rule on and off before the rule is kept, relaxed or gated further.
+
+- A refusal behind a dialog names "the modal view" (10.22's cover) rather than the dialog's title, and texts a button covers whole are absent from the full listing while `get` finds them; both are the listing's words and cuts, left as they are until an agent is misled by them.
