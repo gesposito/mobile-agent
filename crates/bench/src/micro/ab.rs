@@ -533,7 +533,7 @@ fn measure(
 }
 
 /// The trees on this host: head is the checkout at `root`; base is checked
-/// out with `git worktree add --detach` into `dir`, outside the checkout,
+/// out with `git worktree add --force --detach` into `dir`, outside the checkout,
 /// since cargo reads `.cargo/config.toml` from every directory above the one
 /// it runs in, and built in a target directory of its own. Both build and
 /// run with the same toolchain.
@@ -598,9 +598,9 @@ impl Worktrees {
 impl Trees for Worktrees {
     fn prepare(&mut self, sha: &str) -> Result<(), String> {
         let dir = self.dir.display().to_string();
-        // A worktree whose directory is gone, as a killed run can leave, is
-        // forgotten, and a directory still there from one is removed.
-        self.git(&["worktree", "prune"])?;
+        // A directory a killed run left is removed; `--force` adds the
+        // worktree over the registration such a run leaves for the path,
+        // and the repository's other worktrees are not touched.
         if self.dir.exists() {
             let _ = self.git(&["worktree", "remove", "--force", &dir]);
             if self.dir.exists() {
@@ -608,7 +608,7 @@ impl Trees for Worktrees {
                     .map_err(|e| format!("cannot remove {dir}, left by an earlier run: {e}"))?;
             }
         }
-        self.git(&["worktree", "add", "--detach", &dir, sha])?;
+        self.git(&["worktree", "add", "--force", "--detach", &dir, sha])?;
         self.added = true;
         self.head.build()?;
         self.base.build()
