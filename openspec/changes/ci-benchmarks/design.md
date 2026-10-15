@@ -1,0 +1,45 @@
+# Design
+
+## Context
+
+`just micro` (`crates/bench/src/micro/`) runs the 68 criterion benchmarks behind a quiet-host guard (load under 4, no busy builders) and compares `estimates.json` medians with `reports/micro/baseline.json`: a regression is a median more than 5% slower and above the baseline's 95% interval, allocations exact (`openspec/changes/archive/2026-10-08-microbenchmarks/design.md`, D13 to D17). The harness (`mobile-agent-bench run`) drives the release CLI on the fixtures with the gates of `openspec/specs/benchmark-harness/spec.md`, the baselines as adapters, hand-offs and provenance, 50 iterations after 3 warm-up; a Simulator run with the baselines took 6.5 hours on this host. CI (`.github/workflows/ci.yml`) runs `just validate` on a Linux and a macOS leg, blocked at present by the account's billing. GitHub's hosted runners are shared virtual machines: a benchmark's median varies between runs by amounts the local 5% threshold would flag as regressions, and a macOS runner has three cores. Linux runners offer KVM, so the Android emulator runs with hardware acceleration; macOS runners ship Xcode and boot Simulators. The maintainer's rule: benchmarks never per push, only scheduled or on demand.
+
+## Goals / Non-Goals
+
+**Goals:**
+- A scheduled and dispatchable comparison of the host microbenchmarks between two refs, judged on one runner by their relative difference, with the threshold set by measured noise rather than guessed.
+- A scheduled comparison of mobile-agent with the baselines on a Simulator and an emulator, reported as ratios.
+- Results readable in the job summary and kept as artifacts, with the previous scheduled run as the trend's other point.
+- No benchmark minutes spent on pushes or pull requests.
+
+**Non-Goals:**
+- Absolute gates on shared runners; those stay the maintainer's measured hosts' (the reports).
+- Physical devices in CI.
+- A hosted benchmarking service with its own dashboard; the research note records what they offer, the summary and artifacts are enough for now.
+
+## Decisions
+
+### D1. Triggers and inputs
+`benchmarks.yml` runs on `schedule` (weekly, Sunday 02:00 UTC) and `workflow_dispatch` with inputs `suite` (`micro`, `harness`, `both`; default `micro`), `base` (a ref; default: the ref the previous scheduled run measured, read from its artifact, else `main`), `head` (default: the dispatching ref), `iterations` (the harness's measured iterations; default the reduced plan's). `push` and `pull_request` never trigger it; `ci.yml` keeps a comment saying so. Alternatives: a label on pull requests that runs the benchmarks (rejected: the maintainer wants the minutes spent deliberately), the benchmarks inside `ci.yml` behind an `if` (rejected: one workflow per purpose keeps the validation legs readable).
+
+### D2. The A/B mode of `micro`
+`mobile-agent-bench micro --ab <base-ref>` checks out `base` into a worktree beside the checkout, builds both trees' benchmark targets (separate `target/` directories, the same toolchain), then runs the suites in rounds, alternating base and head within each round, for `--rounds` rounds (default 3); criterion's per-run `estimates.json` and the allocation lines are read as today. The judgement per benchmark: the median of each side's round medians, the relative difference, a regression when head is slower than base by more than `--threshold` (default 10% in CI, set by S12) or when allocations differ; the report says same, faster or regressed with both values. The committed baseline is not consulted in this mode; the quiet-host guard keeps its busy-process check and bounds the load by the runner's core count rather than the host's 4. Alternatives: criterion's own `--save-baseline`/`--baseline` (rejected as the whole mechanism: it compares within one target directory and one build; it is used underneath for the per-run files), a hosted service such as CodSpeed, which instruments instruction counts and is noise-free (recorded in the research note as the option if relative medians prove too noisy on the runners; it would be a dependency and an account).
+
+### D3. The runner's noise, measured
+Spike S12 runs the micro suite five times on an Ubuntu runner and five on a macOS runner, and an A/B of `main` against `main` in three rounds, recording each benchmark's coefficient of variation and the false-regression rate at thresholds of 5, 10 and 15%; the threshold D2 defaults to is the smallest at which `main` against `main` shows no regression in those runs, per runner kind. The spike runs once Actions is available; until then the A/B mode is checked locally (two refs on this host, the same code path) and the threshold stays at 10%.
+
+### D4. The harness on runners
+A reduced plan, `run --plan ci`: one fixture per platform (SwiftUI on the Simulator, Compose on the emulator), 10 measured iterations after 2 warm-up, the three flows and the primitives the fixture supports; the baselines installed at pinned versions (Maestro from its release archive, agent-device and Appium with its XCUITest driver from npm, WebDriverAgent built from the driver's copy and signed for the Simulator, which needs no team); `--gates none` on a runner, the judgement the ratios of mobile-agent's flow times against each baseline's, listed per flow and platform with the baselines that were skipped and why. The Simulator job runs on `macos-latest` (Xcode present, a Simulator booted by the job), the emulator job on `ubuntu-latest` with KVM and the API 36 image through the emulator runner action; each job is bounded by a timeout of 90 minutes. Absolute gates are not judged there: a three-core VM measures a different machine, and the ratios are what the comparison asks.
+
+### D5. Outputs and the trend
+Each job writes its tables to `$GITHUB_STEP_SUMMARY` (the micro A/B table; the harness's flow and ratio tables with provenance) and uploads `report.json` and `report.md` as artifacts kept 90 days; a scheduled run downloads the previous scheduled run's artifact through the API, compares the same benchmarks' medians and the same flows' ratios, and prints the deltas beside the values. Nothing is committed by CI. Alternatives: a `benchmarks` branch or GitHub Pages with a history (deferred: an artifact chain gives the trend for the cost of one download; a page can be built from the artifacts later).
+
+### D6. Prerequisites and cost
+The workflow cannot run until the account's Actions billing is fixed or the repository is public (macOS minutes are the cost: the Simulator job near an hour each week, the micro macOS leg a few minutes; the Linux legs are cheap). The research note records the per-minute prices and the estimated monthly cost at the weekly schedule. Secrets: none (no team, no device, no signing beyond the Simulator's).
+
+## Risks / Trade-offs
+
+- [Runner noise defeats the relative judgement] → S12 sets the threshold from `main` against `main`; if no threshold under 15% holds, the micro job reports without failing and the research note's instruction-count service is the next step.
+- [A Simulator or emulator job flakes (boot, fixture build, a baseline's install)] → each step retries once, a failed baseline is skipped with its note as on a host, and the job's summary says which steps ran; the harness's own reliability metrics are in the report.
+- [The baselines' versions drift under us] → pinned in the workflow, bumped on purpose, each bump a line in the research note.
+- [Cost grows with the schedule] → weekly by default; the harness only on `both` or the schedule, never on a plain micro dispatch.
