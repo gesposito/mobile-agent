@@ -21,7 +21,7 @@ A comparison of two refs SHALL build both on the same runner and run their suite
 - **THEN** the benchmark is listed as the same and the run passes
 
 #### Scenario: Regression past the threshold
-- **WHEN** a benchmark's head median is 20% slower than its base median, or its allocations differ
+- **WHEN** a benchmark's head median is 20% slower than its base median, or its allocations rose
 - **THEN** the benchmark is listed as a regression with both values and the run fails
 
 ### Requirement: Harness comparison in CI by ratios

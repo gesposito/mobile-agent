@@ -19,10 +19,10 @@ use bench::gates::GateSet;
 use bench::harness::{Harness, RunConfig};
 use bench::install;
 use bench::micro::guard::SystemHost;
-use bench::micro::{self, CargoBench, Settings};
+use bench::micro::{self, CargoBench, Settings, ab};
 use bench::plan;
 use bench::primitive::Primitive;
-use bench::provenance::{Probe, SystemProbe, compact_timestamp};
+use bench::provenance::{Probe, SystemProbe, capture_host, compact_timestamp};
 use bench::report::Report;
 use bench::target::TargetClass;
 use clap::builder::PossibleValuesParser;
@@ -414,10 +414,60 @@ fn run_micro(args: &MicroArgs) -> Result<ExitCode, String> {
 }
 
 /// The A/B mode of `micro`: the checkout at `root` against `base`, both
-/// built and run on this host behind the guard.
+/// built and run on this host behind the guard, whose load bound is the
+/// host's core count unless `--max-load` gives one. The base is checked out
+/// into the system's temporary directory and built in
+/// `target/bench/micro-ab/target/`, and both sides build and run with the
+/// toolchain `RUSTUP_TOOLCHAIN` names, else the one rustup resolves in the
+/// checkout.
 fn run_micro_ab(args: &MicroArgs, base: &str, root: &Path) -> Result<ExitCode, String> {
-    let _ = (args, base, root);
-    Err("the A/B mode is not built yet".to_owned())
+    let probe = SystemProbe;
+    let os = std::env::consts::OS;
+    let cores = capture_host(&probe, os).cpu_cores.or_else(|| {
+        std::thread::available_parallelism()
+            .ok()
+            .and_then(|n| u32::try_from(n.get()).ok())
+    });
+    let toolchain = std::env::var("RUSTUP_TOOLCHAIN")
+        .ok()
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            probe
+                .output("rustup", &["show", "active-toolchain"])
+                .and_then(|line| line.split_whitespace().next().map(str::to_owned))
+        });
+    let settings = ab::Settings {
+        root: root.to_owned(),
+        base: base.to_owned(),
+        out: args.out.clone(),
+        rounds: args.rounds.unwrap_or(ab::ROUNDS),
+        max_load: args.max_load.unwrap_or_else(|| ab::default_max_load(cores)),
+        wait: Duration::from_secs(u64::from(args.wait.unwrap_or(0)) * 60),
+        threshold_pct: args.threshold.unwrap_or(ab::THRESHOLD_PCT),
+        filter: args.filter.clone(),
+        toolchain: toolchain.clone(),
+        os: os.to_owned(),
+    };
+    let dir = std::env::temp_dir().join(format!("mobile-agent-bench-ab-{}", std::process::id()));
+    let mut trees = ab::Worktrees::new(
+        root,
+        dir,
+        root.join("target/bench/micro-ab/target"),
+        toolchain,
+    );
+    let mut host = SystemHost::new(Box::new(SystemProbe), os, std::process::id());
+    let finished = ab::run(&settings, &mut host, &probe, &mut trees)?;
+    println!(
+        "\nwrote {} and {}",
+        finished.files.json.display(),
+        finished.files.markdown.display()
+    );
+    if let Some(leftover) = &finished.leftover {
+        eprintln!("mobile-agent-bench: {leftover}");
+    }
+    println!();
+    print!("{}", finished.report.verdict());
+    Ok(ExitCode::from(finished.report.summary.exit_status))
 }
 
 /// The WebDriverAgent baseline's helper: WebDriverAgent started through the

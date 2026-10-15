@@ -509,24 +509,51 @@ fn both_reports_agree_on_every_number_and_name_the_base_the_rounds_and_the_order
     );
     assert_eq!(field(&table, "Toolchain for both sides"), RUSTUP_TOOLCHAIN);
     assert_eq!(field(&table, "Load average at start"), "6.50 3.50 4.00");
+    // The third round repeats each side's second.
     let (table, row) = row(&md, "protocol/decode/snapshot-500");
     assert_eq!(
         table.cell(&row, "Base rounds µs"),
-        "100.000, 101.000, 100.000"
+        "100.000, 101.000, 101.000"
     );
     assert_eq!(
         table.cell(&row, "Head rounds µs"),
         "125.000, 124.000, 124.000"
     );
-    assert_eq!(table.cell(&row, "Base µs"), us(100_000));
+    assert_eq!(table.cell(&row, "Base µs"), us(101_000));
     assert_eq!(table.cell(&row, "Head µs"), us(124_000));
-    assert_eq!(table.cell(&row, "Difference"), "+24.0%");
+    assert_eq!(table.cell(&row, "Difference"), "+22.8%");
     let (table, row) = self::row(&md, "simulator/content_hash/460x1000");
     assert_eq!(table.cell(&row, "Verdict"), "faster");
     assert_eq!(table.cell(&row, "Base allocations"), "—");
 }
 
 // Through the binary.
+
+/// The load bound an A/B run through the binary is given: none on macOS,
+/// where the fake sysctl reports the host's load and its 10 cores, and a
+/// raised one elsewhere, where the load is the host's own.
+fn bound() -> Vec<&'static str> {
+    if cfg!(target_os = "macos") {
+        Vec::new()
+    } else {
+        vec!["--max-load", "1000"]
+    }
+}
+
+/// `micro --ab BASE_REF`, under [`bound`], then `args`.
+fn ab_args<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut all = vec!["--ab", BASE_REF];
+    all.extend(bound());
+    all.extend(args);
+    all
+}
+
+#[test]
+fn an_ab_run_s_load_bound_is_the_host_s_core_count_else_the_quiet_host_s() {
+    assert_eq!(ab::default_max_load(Some(3)), 3.0);
+    assert_eq!(ab::default_max_load(Some(10)), 10.0);
+    assert_eq!(ab::default_max_load(None), 4.0);
+}
 
 /// The worktree the binary checks the base out into, as its git saw it.
 fn worktree(git: &[String]) -> PathBuf {
@@ -557,8 +584,7 @@ fn micro_ab_checks_the_base_out_beside_the_checkout_builds_both_trees_apart_and_
     // A load of 6.5 is under the 10 cores' bound, though over the default 4.
     tools.load("{ 6.50 5.00 4.00 }");
     let out = tools.dir.join("out");
-    let (status, stdout, stderr) =
-        output(tools.micro(&["--ab", BASE_REF, "--out", out.to_str().unwrap()]));
+    let (status, stdout, stderr) = output(tools.micro(&ab_args(&["--out", out.to_str().unwrap()])));
     assert_eq!(status, Some(0), "stdout: {stdout}\nstderr: {stderr}");
 
     // The base is resolved, checked out outside the checkout and removed at
@@ -644,7 +670,12 @@ fn micro_ab_checks_the_base_out_beside_the_checkout_builds_both_trees_apart_and_
     assert_eq!(homes.len(), 6);
 
     let report = Report::from_json(&fs::read_to_string(out.join("report.json")).unwrap()).unwrap();
-    assert_eq!(report.provenance.guard.max_load, 10.0);
+    let max_load = if cfg!(target_os = "macos") {
+        10.0
+    } else {
+        1000.0
+    };
+    assert_eq!(report.provenance.guard.max_load, max_load);
     assert_eq!(report.provenance.host.cpu_cores, Some(10));
     assert_eq!(report.threshold_pct, 10.0);
     assert_eq!(report.base.sha, BASE_SHA);
@@ -674,7 +705,7 @@ fn micro_ab_exits_1_on_a_regression_and_2_on_a_refused_option_or_a_busy_host() {
     );
     let out = |name: &str| tools.dir.join(name).to_str().unwrap().to_owned();
     let (status, stdout, stderr) =
-        output(tools.micro(&["--ab", BASE_REF, "--out", &out("out-regression")]));
+        output(tools.micro(&ab_args(&["--out", &out("out-regression")])));
     assert_eq!(status, Some(1), "stdout: {stdout}\nstderr: {stderr}");
     let table = common::table(&stdout, "Regressions");
     assert_eq!(table.cell(&table.rows[0], "Base"), "100.000");
@@ -698,7 +729,7 @@ fn micro_ab_exits_1_on_a_regression_and_2_on_a_refused_option_or_a_busy_host() {
         "    1     0   0.1 /sbin/launchd\n \
          4242     1  17.2 /opt/android-sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless\n",
     );
-    let (status, _, stderr) = output(tools.micro(&["--ab", BASE_REF, "--out", &out("out-busy")]));
+    let (status, _, stderr) = output(tools.micro(&ab_args(&["--out", &out("out-busy")])));
     assert_eq!(status, Some(2), "{stderr}");
     assert!(
         stderr.contains("qemu-system-aarch64-headless (pid 4242, 17.2% of a core)"),
@@ -707,10 +738,12 @@ fn micro_ab_exits_1_on_a_regression_and_2_on_a_refused_option_or_a_busy_host() {
 
     // Without --ab the bound stays 4, which a load of 6.5 is not under.
     tools.processes("    1     0   0.1 /sbin/launchd\n");
-    tools.load("{ 6.50 5.00 4.00 }");
-    let (status, _, stderr) = output(tools.micro(&["--out", &out("out-baseline")]));
-    assert_eq!(status, Some(2), "{stderr}");
-    assert!(stderr.contains("6.50, not under 4"), "{stderr}");
+    if cfg!(target_os = "macos") {
+        tools.load("{ 6.50 5.00 4.00 }");
+        let (status, _, stderr) = output(tools.micro(&["--out", &out("out-baseline")]));
+        assert_eq!(status, Some(2), "{stderr}");
+        assert!(stderr.contains("6.50, not under 4"), "{stderr}");
+    }
     let (status, _, stderr) = output(tools.micro(&["--ab", "no-such-ref"]));
     assert_eq!(status, Some(2), "{stderr}");
     assert!(stderr.contains("--ab no-such-ref"), "{stderr}");

@@ -410,7 +410,7 @@ pub fn us(ns: u64) -> String {
 /// then copies the recorded benchmarks' files into `CRITERION_HOME` and
 /// prints their stdout, or fails when `cargo.status` holds an exit status.
 /// The sysctl reports a 10-core host whose load averages `loadavg.txt`
-/// holds.
+/// holds, and nproc the same cores.
 pub struct FakeTools {
     pub dir: PathBuf,
     pub bin: PathBuf,
@@ -464,6 +464,7 @@ impl FakeTools {
                 tools.root.display()
             ),
         );
+        tools.script("nproc", "echo 10\n");
         tools.load("{ 1.20 1.50 1.80 }");
         tools.script(
             "sysctl",

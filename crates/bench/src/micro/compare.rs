@@ -140,8 +140,12 @@ pub fn compare(
     }
 }
 
-/// `measured` against `saved`, the baseline's values for it, if any.
-fn judge(measured: &Measured, saved: Option<&Measured>, threshold_pct: f64) -> Benchmark {
+/// `measured` against `saved`, the baseline's values for it, if any: new
+/// without them, else judged by the median's difference against the
+/// threshold and the interval `saved` recorded, or the threshold alone when
+/// it recorded none, as an A/B run's base does, and by the allocations
+/// exactly.
+pub fn judge(measured: &Measured, saved: Option<&Measured>, threshold_pct: f64) -> Benchmark {
     let Some(saved) = saved else {
         return Benchmark {
             measured: measured.clone(),

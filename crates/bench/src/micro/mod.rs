@@ -9,6 +9,11 @@
 //! The host, the provenance commands and the suites are each read through a
 //! seam, [`guard::Host`], [`Probe`] and [`Suites`], so tests script the
 //! readings and replace `cargo bench` with recorded output.
+//!
+//! [`ab`], `micro --ab <ref>`, compares the checkout with another ref built
+//! and run on the same host instead of with the baseline (design D2 of
+//! `ci-benchmarks`), through the same guard, reader and reports, its two
+//! trees read through the seam [`ab::Trees`].
 
 pub mod ab;
 pub mod compare;
@@ -128,6 +133,12 @@ pub struct CargoBench {
     /// `PATH`.
     pub program: PathBuf,
     pub root: PathBuf,
+    /// The target directory cargo is given as `CARGO_TARGET_DIR`; `None`
+    /// for cargo's own choice.
+    pub target_dir: Option<PathBuf>,
+    /// The toolchain cargo is given as `RUSTUP_TOOLCHAIN`; `None` for the
+    /// one rustup resolves in `root`.
+    pub toolchain: Option<String>,
 }
 
 impl CargoBench {
@@ -137,7 +148,46 @@ impl CargoBench {
             program: std::env::var_os("CARGO")
                 .map_or_else(|| PathBuf::from("cargo"), PathBuf::from),
             root: root.into(),
+            target_dir: None,
+            toolchain: None,
         }
+    }
+
+    /// The command for `args`, in `root` with the target directory and the
+    /// toolchain this cargo is given.
+    fn command(&self, args: &[String]) -> Command {
+        let mut command = Command::new(&self.program);
+        command.args(args).current_dir(&self.root);
+        if let Some(dir) = &self.target_dir {
+            command.env("CARGO_TARGET_DIR", dir);
+        }
+        if let Some(toolchain) = &self.toolchain {
+            command.env("RUSTUP_TOOLCHAIN", toolchain);
+        }
+        command
+    }
+
+    /// Builds every suite without running it: [`CARGO_BENCH`] and
+    /// `--no-run`, cargo's output going straight through.
+    pub fn build(&self) -> Result<(), String> {
+        let args: Vec<String> = CARGO_BENCH
+            .into_iter()
+            .chain(["--no-run"])
+            .map(str::to_owned)
+            .collect();
+        let program = self.program.display().to_string();
+        let status = self
+            .command(&args)
+            .stdin(Stdio::null())
+            .status()
+            .map_err(|e| format!("cannot start {program}: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "cargo bench --no-run failed in {} with {status}; nothing was measured",
+                self.root.display()
+            ));
+        }
+        Ok(())
     }
 
     /// The arguments for `filter`: [`CARGO_BENCH`], `--`, [`CRITERION_FLAGS`]
@@ -156,10 +206,9 @@ impl CargoBench {
 impl Suites for CargoBench {
     fn run(&mut self, criterion_home: &Path, filter: Option<&str>) -> Result<String, String> {
         let program = self.program.display().to_string();
-        let mut child = Command::new(&self.program)
-            .args(CargoBench::args(filter))
+        let mut child = self
+            .command(&CargoBench::args(filter))
             .env("CRITERION_HOME", criterion_home)
-            .current_dir(&self.root)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

@@ -1,13 +1,15 @@
-//! The markdown summary of a microbenchmark [`Report`]. Times are
-//! microseconds with three decimals, exact renderings of the JSON's whole
-//! nanoseconds, and differences the JSON's tenths of a percent, so the two
-//! outputs agree on every number and every comparison.
+//! The markdown summaries of a microbenchmark [`Report`] and of an A/B
+//! [`ab::Report`]. Times are microseconds with three decimals, exact
+//! renderings of the JSON's whole nanoseconds, and differences the JSON's
+//! tenths of a percent, so the two outputs agree on every number and every
+//! comparison.
 
 use crate::markdown::{Table, or_dash};
 
+use super::ab::{self, SideResult};
 use super::compare::{Benchmark, Verdict};
 use super::criterion::{Measured, Spread};
-use super::report::{Provenance, Report};
+use super::report::{Provenance, Report, Summary};
 
 /// Renders `report` as markdown: the summary line, the provenance, the
 /// baseline compared against, the benchmarks grouped by crate, then the
@@ -28,7 +30,7 @@ pub fn render(report: &Report) -> String {
          other.\n\n",
         p.started_at, p.finished_at, report.threshold_pct, report.threshold_pct
     ));
-    provenance(&mut out, p);
+    provenance(&mut out, p, &[]);
     baseline(&mut out, report);
     benchmarks(&mut out, report);
     moved(&mut out, report, Verdict::Regression);
@@ -66,19 +68,25 @@ fn interval(spread: Spread) -> String {
 
 /// `Exit status <n>: <reason>.`, then the counts.
 fn summary_line(report: &Report) -> String {
-    let s = &report.summary;
+    counts(&report.summary, "in the baseline not measured")
+}
+
+/// `Exit status <n>: <reason>.`, then the counts, the missing ones as
+/// `missing`.
+fn counts(s: &Summary, missing: &str) -> String {
     let benchmarks = match s.benchmarks {
         1 => "1 benchmark".to_owned(),
         n => format!("{n} benchmarks"),
     };
     format!(
         "Exit status {}: {}. Of {benchmarks}: {} regressed, {} improved, {} the same, {} \
-         new; {} in the baseline not measured.",
+         new; {} {missing}.",
         s.exit_status, s.reason, s.regressions, s.improvements, s.same, s.new, s.missing
     )
 }
 
-fn provenance(out: &mut String, p: &Provenance) {
+/// The provenance table, with `extra` rows after the run's own.
+fn provenance(out: &mut String, p: &Provenance, extra: &[(&str, String)]) {
     out.push_str("## Provenance\n\n");
     let mut table = Table::new(&["Field", "Value"]);
     let mut field = |name: &str, value: String| table.row(vec![name.to_owned(), value]);
@@ -112,6 +120,9 @@ fn provenance(out: &mut String, p: &Provenance) {
             p.guard.max_load, p.guard.waited_s
         ),
     );
+    for (name, value) in extra {
+        field(name, value.clone());
+    }
     table.render(out);
 }
 
@@ -348,6 +359,238 @@ fn missing(out: &mut String, missing: &[Measured]) {
             us(m.median_ns),
             or_dash(m.allocations),
             or_dash(m.bytes_allocated),
+        ]);
+    }
+    table.render(out);
+}
+
+/// Renders an A/B `report` as markdown: the summary line, the provenance
+/// with the base, the rounds and the toolchain, the benchmarks grouped by
+/// crate with both sides' values, then the regressions, the improvements and
+/// the benchmarks head did not measure.
+pub fn render_ab(report: &ab::Report) -> String {
+    let p = &report.provenance;
+    let mut out = String::new();
+    out.push_str("# Microbenchmark A/B report\n\n");
+    out.push_str(&ab_summary_line(report));
+    out.push_str("\n\n");
+    out.push_str(&format!(
+        "Started {}, finished {}. Head is the checkout under test and base `{}`, checked out \
+         into a worktree of its own and built in a target directory of its own; each side ran \
+         the suites {} times, the side that went first alternating from round to round. A \
+         side's time for a \
+         benchmark is the median of its rounds' medians, criterion's medians in microseconds \
+         to the nanosecond; allocations and bytes are per iteration, where the bench counts \
+         them. A head median more than {:.1}% slower than base's is a regression and one more \
+         than {:.1}% faster an improvement; any change in allocations or bytes is one or the \
+         other.\n\n",
+        p.started_at,
+        p.finished_at,
+        report.base.name,
+        report.rounds,
+        report.threshold_pct,
+        report.threshold_pct
+    ));
+    let rounds: Vec<String> = report
+        .order
+        .iter()
+        .map(|[first, second]| format!("{first} then {second}"))
+        .collect();
+    provenance(
+        &mut out,
+        p,
+        &[
+            (
+                "Base",
+                format!("{} at {}", report.base.name, report.base.sha),
+            ),
+            (
+                "Rounds",
+                format!("{}: {}", report.rounds, rounds.join(", ")),
+            ),
+            (
+                "Toolchain for both sides",
+                report
+                    .rustup_toolchain
+                    .clone()
+                    .unwrap_or_else(|| "each tree's own".to_owned()),
+            ),
+        ],
+    );
+    ab_benchmarks(&mut out, report);
+    ab_moved(&mut out, report, Verdict::Regression);
+    ab_moved(&mut out, report, Verdict::Improvement);
+    ab_missing(&mut out, &report.missing);
+    out
+}
+
+/// The regressions and the improvements of an A/B `report` as tables, when
+/// there are any, then the summary line.
+pub fn verdict_ab(report: &ab::Report) -> String {
+    let mut out = String::new();
+    ab_moved(&mut out, report, Verdict::Regression);
+    ab_moved(&mut out, report, Verdict::Improvement);
+    out.push_str(&ab_summary_line(report));
+    out.push('\n');
+    out
+}
+
+fn ab_summary_line(report: &ab::Report) -> String {
+    counts(&report.summary, "in base not measured in head")
+}
+
+/// A side's round medians in round order, such as `100.000, 104.000`.
+fn rounds_cell(side: &SideResult) -> String {
+    let rounds: Vec<String> = side.rounds_ns.iter().map(|&ns| us(ns)).collect();
+    rounds.join(", ")
+}
+
+/// The verdict of an A/B benchmark, with the measures that moved:
+/// `regressed (median, allocations)`, `faster`, `fewer allocations`, `same`
+/// or `new`.
+fn ab_verdict_cell(b: &ab::Benchmark) -> String {
+    let moved = |way| {
+        [
+            (b.time_verdict, "median"),
+            (b.allocations_verdict, "allocations"),
+        ]
+        .into_iter()
+        .filter(move |&(verdict, _)| verdict == Some(way))
+        .map(|(_, measure)| measure)
+    };
+    match b.verdict {
+        Verdict::Regression => {
+            let measures: Vec<&str> = moved(Verdict::Regression).collect();
+            format!("regressed ({})", measures.join(", "))
+        }
+        Verdict::Improvement => {
+            let words: Vec<&str> = moved(Verdict::Improvement)
+                .map(|measure| match measure {
+                    "median" => "faster",
+                    _ => "fewer allocations",
+                })
+                .collect();
+            words.join(", ")
+        }
+        Verdict::Same => "same".to_owned(),
+        Verdict::New => "new".to_owned(),
+    }
+}
+
+/// One table per crate, in id order, with both sides' values.
+fn ab_benchmarks(out: &mut String, report: &ab::Report) {
+    out.push_str("## Benchmarks\n\n");
+    let mut crates: Vec<&str> = Vec::new();
+    for b in &report.benchmarks {
+        let name = krate(&b.id);
+        if !crates.contains(&name) {
+            crates.push(name);
+        }
+    }
+    for name in crates {
+        out.push_str(&format!("### {name}\n\n"));
+        let mut table = Table::new(&[
+            "Benchmark",
+            "Base µs",
+            "Head µs",
+            "Difference",
+            "Base rounds µs",
+            "Head rounds µs",
+            "Base allocations",
+            "Head allocations",
+            "Base bytes",
+            "Head bytes",
+            "Verdict",
+        ]);
+        for b in report.benchmarks.iter().filter(|b| krate(&b.id) == name) {
+            let base = b.base.as_ref();
+            table.row(vec![
+                b.id.clone(),
+                or_dash(base.map(|s| us(s.median_ns))),
+                us(b.head.median_ns),
+                or_dash(b.difference_pct.map(percent)),
+                or_dash(base.map(rounds_cell)),
+                rounds_cell(&b.head),
+                or_dash(base.and_then(|s| s.allocations)),
+                or_dash(b.head.allocations),
+                or_dash(base.and_then(|s| s.bytes_allocated)),
+                or_dash(b.head.bytes_allocated),
+                ab_verdict_cell(b),
+            ]);
+        }
+        table.render(out);
+    }
+}
+
+/// Every measure of an A/B report that moved as `way`, with base's and
+/// head's values, under its heading; nothing when none did.
+fn ab_moved(out: &mut String, report: &ab::Report, way: Verdict) {
+    let mut table = Table::new(&[
+        "Benchmark",
+        "Measure",
+        "Base",
+        "Head",
+        "Difference",
+        "Threshold",
+    ]);
+    let mut rows = 0;
+    for b in &report.benchmarks {
+        let Some(base) = &b.base else {
+            continue;
+        };
+        if b.time_verdict == Some(way) {
+            table.row(vec![
+                b.id.clone(),
+                "median µs".to_owned(),
+                us(base.median_ns),
+                us(b.head.median_ns),
+                or_dash(b.difference_pct.map(percent)),
+                format!("{:.1}%", report.threshold_pct),
+            ]);
+            rows += 1;
+        }
+        for (measure, before, now) in [
+            ("allocations", base.allocations, b.head.allocations),
+            ("bytes", base.bytes_allocated, b.head.bytes_allocated),
+        ] {
+            if let (Some(before), Some(now)) = (before, now)
+                && direction(before, now) == way
+            {
+                table.row(vec![
+                    b.id.clone(),
+                    measure.to_owned(),
+                    before.to_string(),
+                    now.to_string(),
+                    if now > before { "more" } else { "fewer" }.to_owned(),
+                    "exact".to_owned(),
+                ]);
+                rows += 1;
+            }
+        }
+    }
+    if rows == 0 {
+        return;
+    }
+    out.push_str(match way {
+        Verdict::Regression => "## Regressions\n\n",
+        _ => "## Improvements\n\n",
+    });
+    table.render(out);
+}
+
+/// Base's benchmarks head did not measure, when there are any.
+fn ab_missing(out: &mut String, missing: &[ab::Missing]) {
+    if missing.is_empty() {
+        return;
+    }
+    out.push_str("## Missing\n\nMeasured by base, and not by head:\n\n");
+    let mut table = Table::new(&["Benchmark", "Base µs", "Base allocations", "Base bytes"]);
+    for m in missing {
+        table.row(vec![
+            m.id.clone(),
+            us(m.base.median_ns),
+            or_dash(m.base.allocations),
+            or_dash(m.base.bytes_allocated),
         ]);
     }
     table.render(out);
