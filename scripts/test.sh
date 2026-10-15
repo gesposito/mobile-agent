@@ -36,8 +36,8 @@
 #   8. The history scan (scripts/check-history.sh) passes a clean history and
 #      refuses, in commits the tip no longer holds, an identifier, naming the
 #      blob's path, the pattern and the commit, a private term by its line in
-#      the list, a machine path in a commit message, and, with gitleaks
-#      installed, a credential.
+#      the list, a machine path in a commit message, an identifier in a file's
+#      name, and, with gitleaks installed, a credential.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
 # (a machine's model identifier, a sampler's top field, a device identifier,
@@ -383,6 +383,15 @@ expect "a machine path in a commit message is refused" \
   grep -q -E "^[0-9a-f]{7,}: a macOS home directory in the message" "$scratch/out.txt"
 
 git -C "$history" reset -q --hard HEAD~1
+printf 'a flow\n' > "$history/flow-$prefix-$hex16.yaml"
+commit "docs: a flow"
+git -C "$history" mv "flow-$prefix-$hex16.yaml" flow-placeholder.yaml
+commit "docs: the flow renamed"
+history_scan
+expect "an identifier in a file name the tip no longer has is refused" \
+  grep -q -F "flow-$prefix-$hex16.yaml: an iOS device identifier in the file's name" "$scratch/out.txt"
+
+git -C "$history" reset -q --hard HEAD~2
 if command -v gitleaks > /dev/null 2>&1; then
   printf 'aws_access_key_id = %s\n' "$key" > "$history/creds.md"
   commit "docs: a key"
