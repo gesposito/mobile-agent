@@ -612,7 +612,7 @@ fn an_ab_run_s_load_bound_is_the_host_s_core_count_else_the_quiet_host_s() {
 fn worktree(git: &[String]) -> PathBuf {
     let added = git
         .iter()
-        .find_map(|line| line.strip_prefix("worktree add --detach "))
+        .find_map(|line| line.strip_prefix("worktree add --force --detach "))
         .unwrap_or_else(|| panic!("no worktree added in {git:?}"));
     let (dir, sha) = added.rsplit_once(' ').unwrap();
     assert_eq!(sha, BASE_SHA);
@@ -656,12 +656,13 @@ fn micro_ab_checks_the_base_out_beside_the_checkout_builds_both_trees_apart_and_
         .map(String::as_str)
         .filter(|l| l.starts_with("rev-parse --verify") || l.starts_with("worktree"))
         .collect();
+    // Only the run's own worktree is touched: no prune of the repository's
+    // others, and --force over a registration of its path a killed run left.
     assert_eq!(
         commands,
         [
             format!("rev-parse --verify {BASE_REF}^{{commit}}").as_str(),
-            "worktree prune",
-            format!("worktree add --detach {} {BASE_SHA}", dir.display()).as_str(),
+            format!("worktree add --force --detach {} {BASE_SHA}", dir.display()).as_str(),
             format!("worktree remove --force {}", dir.display()).as_str(),
         ]
     );

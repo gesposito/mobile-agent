@@ -541,8 +541,7 @@ impl FakeTools {
                  \"rev-parse HEAD\") echo {SHA} ;;\n\
                  \"status --porcelain --untracked-files=no\") ;;\n\
                  \"rev-parse --verify {BASE_REF}^{{commit}}\") echo {BASE_SHA} ;;\n\
-                 \"worktree prune\") ;;\n\
-                 \"worktree add --detach \"*) mkdir -p \"$4\" && echo base > \"$4/.side\" ;;\n\
+                 \"worktree add --force --detach \"*) mkdir -p \"$5\" && echo base > \"$5/.side\" ;;\n\
                  \"worktree remove --force \"*) rm -rf \"$4\" ;;\n\
                  *) exit 1 ;;\n\
                  esac\n",
