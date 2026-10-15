@@ -454,6 +454,59 @@ fn a_ref_the_checkout_lacks_or_a_busy_host_is_refused_before_anything_is_checked
 }
 
 #[test]
+fn the_host_is_checked_again_once_both_trees_are_built_and_the_rounds_start_on_a_quiet_one() {
+    let root = checkout("ab-guard-after-build");
+    let id = "protocol/decode/snapshot-500";
+    let mut trees = RecordedTrees::new(vec![at(id, 100_000)], vec![at(id, 100_000)]);
+    // Quiet before the builds; once they are done, another session's build
+    // is busy, then gone.
+    let mut host = ScriptedHost::new(vec![
+        quiet(1.0),
+        reading(3.0, vec![process(4711, "rustc", 99.0)]),
+        bench::micro::guard::Reading {
+            load_average: Some([2.2, 2.5, 2.9]),
+            busy: Some(Vec::new()),
+        },
+        // Once the rounds have run.
+        quiet(2.4),
+    ]);
+    let mut settings = settings(&root);
+    settings.wait = Duration::from_secs(10 * 60);
+    let finished = ab::run(&settings, &mut host, &probe(), &mut trees).unwrap();
+    assert_eq!(host.checks, 4);
+    assert_eq!(host.waits.len(), 1);
+    assert!(
+        host.waits[0].1.contains("rustc (pid 4711"),
+        "{:?}",
+        host.waits
+    );
+    let p = &finished.report.provenance;
+    assert_eq!(p.host.load_average, Some([2.2, 2.5, 2.9]));
+    assert_eq!(p.guard.waited_s, 30);
+    assert_eq!(trees.log.len(), 8, "{:?}", trees.log);
+
+    // Without a wait, a host busy once the trees are built is refused and
+    // the base's checkout removed, nothing measured.
+    let mut trees = RecordedTrees::new(vec![at(id, 100_000)], vec![at(id, 100_000)]);
+    let mut host = ScriptedHost::new(vec![
+        quiet(1.0),
+        reading(3.0, vec![process(4711, "rustc", 99.0)]),
+    ]);
+    let error = ab::run(
+        &self::settings(&checkout("ab-guard-after-build-refused")),
+        &mut host,
+        &probe(),
+        &mut trees,
+    )
+    .unwrap_err();
+    assert!(error.contains("rustc (pid 4711"), "{error}");
+    assert_eq!(
+        trees.log,
+        [format!("prepare {BASE_SHA}"), "finish".to_owned()]
+    );
+}
+
+#[test]
 fn both_reports_agree_on_every_number_and_name_the_base_the_rounds_and_the_order() {
     let root = checkout("ab-two-outputs");
     let mut trees = RecordedTrees::rounds(
