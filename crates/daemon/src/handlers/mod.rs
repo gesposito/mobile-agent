@@ -63,6 +63,10 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
             code::UNKNOWN_ACTION,
             "unknown action \"shutdown\"; run mobile-agent --help for the commands",
         )),
+        Command::Cancel(_) => Err(Failure::new(
+            code::UNKNOWN_ACTION,
+            "unknown action \"cancel\"; run mobile-agent --help for the commands",
+        )),
     }
 }
 

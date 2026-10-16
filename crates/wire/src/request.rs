@@ -97,6 +97,7 @@ pub enum Command {
     Status(Status),
     Devices(Devices),
     Close(Close),
+    Cancel(Cancel),
     SetTimeout(SetTimeout),
     Doctor(Doctor),
     Open(Open),
@@ -117,10 +118,11 @@ pub enum Command {
 
 impl Command {
     /// Every action's name, as a line's `action` gives it.
-    pub const ACTIONS: [&'static str; 18] = [
+    pub const ACTIONS: [&'static str; 19] = [
         "status",
         "devices",
         "close",
+        "cancel",
         "set_timeout",
         "doctor",
         "open",
@@ -144,6 +146,7 @@ impl Command {
             Command::Status(_) => "status",
             Command::Devices(_) => "devices",
             Command::Close(_) => "close",
+            Command::Cancel(_) => "cancel",
             Command::SetTimeout(_) => "set_timeout",
             Command::Doctor(_) => "doctor",
             Command::Open(_) => "open",
@@ -174,10 +177,27 @@ pub struct Status {}
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 pub struct Devices {}
 
-/// `close`: stops the app the session opened and releases its target.
+/// `close`: stops the app the session opened and releases its target, or
+/// with `keep` releases the target and leaves the app running.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
-pub struct Close {}
+pub struct Close {
+    /// Release the target without stopping the app, which keeps running
+    /// for the next session to attach to.
+    #[serde(
+        default,
+        deserialize_with = "param::flag",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
+    pub keep: bool,
+}
+
+/// `cancel`: ends the session's command in flight on the targets it holds,
+/// which fails with `cancelled`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
+pub struct Cancel {}
 
 /// `set_timeout`: sets the session's default timeout for waiting commands.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -316,8 +336,8 @@ pub struct Get {
     pub timeout: Param<Option<u64>>,
 }
 
-/// `wait`: waits some milliseconds, for the screen to settle, or for an
-/// element or a text.
+/// `wait`: waits some milliseconds, for the screen to settle or to change,
+/// or for an element or a text.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(rename_all = "camelCase")]
@@ -352,6 +372,16 @@ pub struct Wait {
     )]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub tree_only: bool,
+    /// Wait until the tree or the frames change from what the session's
+    /// last snapshot saw, and answer with the delta that `snapshot` with
+    /// `delta` gives.
+    #[serde(
+        default,
+        deserialize_with = "param::flag",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
+    pub change: bool,
     /// Wait for an element whose name or value contains this text.
     #[serde(
         default,
@@ -391,6 +421,7 @@ impl Default for Wait {
             settle: false,
             quiet: param::whole::<QUIET_MS>(),
             tree_only: false,
+            change: false,
             text: None,
             target: None,
             state: param::visible(),
@@ -399,7 +430,7 @@ impl Default for Wait {
     }
 }
 
-/// `screenshot`: saves the screen as a JPEG.
+/// `screenshot`: saves the screen as a JPEG, or returns it in the reply.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(rename_all = "camelCase")]
@@ -429,6 +460,15 @@ pub struct Screenshot {
     )]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub max_dimension: Param<u64>,
+    /// Return the image in the reply, base64-encoded, beside the file when
+    /// `path` names one; without `path`, write no file.
+    #[serde(
+        default,
+        deserialize_with = "param::flag",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
+    pub inline: bool,
 }
 
 impl Default for Screenshot {
@@ -437,6 +477,7 @@ impl Default for Screenshot {
             path: None,
             quality: param::whole::<QUALITY>(),
             max_dimension: param::whole::<MAX_DIMENSION>(),
+            inline: false,
         }
     }
 }

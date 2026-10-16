@@ -47,7 +47,7 @@ pub fn build(command: &Command, cwd: &Path) -> Result<wire::Command, Failure> {
             })
         }
         Command::Devices => wire::Command::Devices(wire::Devices {}),
-        Command::Close => wire::Command::Close(wire::Close {}),
+        Command::Close => wire::Command::Close(wire::Close::default()),
         Command::Status => wire::Command::Status(wire::Status {}),
         Command::Shutdown => wire::Command::Shutdown(wire::Shutdown {}),
         Command::Open(open) => wire::Command::Open(wire::Open {

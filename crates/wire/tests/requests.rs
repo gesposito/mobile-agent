@@ -2,8 +2,10 @@
 //! `mcp-server` change). `lines.json` holds, for each command and option,
 //! the line `crates/cli/src/request.rs` built for it before the types
 //! existed, with the fields the CLI adds to every line (`id`, `session`, and
-//! `platform`, `device`, `force` and `defaultTimeout` when set), and the
-//! line `doctor` asks the daemon with (`crates/cli/src/doctor.rs`).
+//! `platform`, `device`, `force` and `defaultTimeout` when set), the line
+//! `doctor` asks the daemon with (`crates/cli/src/doctor.rs`), and the lines
+//! of the commands and options added since (`close --keep`, `cancel`,
+//! `wait --change`, task 4 of the change) as the types write them.
 
 use std::collections::BTreeSet;
 
@@ -183,8 +185,8 @@ fn a_string_of_another_type_is_absent_and_only_true_sets_a_flag() {
             json!({"action": "snapshot", "interactive": true, "delta": true, "full": true}),
         ),
         (
-            json!({"action": "wait", "text": 5, "target": ["#a"], "state": false, "settle": "true"}),
-            json!({"action": "wait", "text": "a", "target": "#a", "state": "hidden", "settle": true}),
+            json!({"action": "wait", "text": 5, "target": ["#a"], "state": false, "settle": "true", "change": 1}),
+            json!({"action": "wait", "text": "a", "target": "#a", "state": "hidden", "settle": true, "change": true}),
         ),
         (
             json!({"action": "scroll", "direction": 1, "target": {}, "until": 2}),
@@ -195,8 +197,12 @@ fn a_string_of_another_type_is_absent_and_only_true_sets_a_flag() {
             json!({"action": "swipe", "direction": "left"}),
         ),
         (
-            json!({"action": "screenshot", "path": 7}),
-            json!({"action": "screenshot", "path": "/tmp/a.jpg"}),
+            json!({"action": "screenshot", "path": 7, "inline": "yes"}),
+            json!({"action": "screenshot", "path": "/tmp/a.jpg", "inline": true}),
+        ),
+        (
+            json!({"action": "close", "keep": "true"}),
+            json!({"action": "close", "keep": true}),
         ),
         (
             json!({"action": "open", "app": 5, "relaunch": "yes"}),
@@ -240,6 +246,7 @@ fn null_is_a_parameter_not_given() {
                 ("settle", json!(true)),
                 ("quiet", json!(5)),
                 ("treeOnly", json!(true)),
+                ("change", json!(true)),
                 ("text", json!("a")),
                 ("target", json!("#a")),
                 ("state", json!("hidden")),
@@ -280,8 +287,10 @@ fn null_is_a_parameter_not_given() {
                 ("path", json!("/tmp/a.jpg")),
                 ("quality", json!(5)),
                 ("maxDimension", json!(5)),
+                ("inline", json!(true)),
             ][..],
         ),
+        ("close", &[("keep", json!(true))][..]),
         (
             "click",
             &[
@@ -313,6 +322,7 @@ fn an_action_s_default_parameters_are_those_of_a_request_that_gives_none() {
         Command::Status(Default::default()),
         Command::Devices(Default::default()),
         Command::Close(Default::default()),
+        Command::Cancel(Default::default()),
         Command::SetTimeout(Default::default()),
         Command::Doctor(Default::default()),
         Command::Open(Default::default()),

@@ -19,7 +19,7 @@ fn of<T: JsonSchema>() -> Schema {
     schema_for!(T)
 }
 
-const REQUESTS: [Expected; 18] = [
+const REQUESTS: [Expected; 19] = [
     Expected {
         action: "status",
         schema: of::<wire::Status>,
@@ -35,6 +35,12 @@ const REQUESTS: [Expected; 18] = [
     Expected {
         action: "close",
         schema: of::<wire::Close>,
+        parameters: &["keep"],
+        required: &[],
+    },
+    Expected {
+        action: "cancel",
+        schema: of::<wire::Cancel>,
         parameters: &[],
         required: &[],
     },
@@ -78,14 +84,14 @@ const REQUESTS: [Expected; 18] = [
         action: "wait",
         schema: of::<wire::Wait>,
         parameters: &[
-            "ms", "settle", "quiet", "treeOnly", "text", "target", "state", "timeout",
+            "ms", "settle", "quiet", "treeOnly", "change", "text", "target", "state", "timeout",
         ],
         required: &[],
     },
     Expected {
         action: "screenshot",
         schema: of::<wire::Screenshot>,
-        parameters: &["path", "quality", "maxDimension"],
+        parameters: &["path", "quality", "maxDimension", "inline"],
         required: &[],
     },
     Expected {
@@ -196,10 +202,11 @@ fn every_request_schema_is_a_flat_object_of_typed_and_described_parameters() {
 
 #[test]
 fn every_reply_schema_is_an_object() {
-    let replies: [(&str, Schema); 18] = [
+    let replies: [(&str, Schema); 19] = [
         ("status", of::<wire::reply::Status>()),
         ("devices", of::<wire::reply::Devices>()),
         ("close", of::<wire::reply::Close>()),
+        ("cancel", of::<wire::reply::Cancel>()),
         ("set_timeout", of::<wire::reply::SetTimeout>()),
         ("doctor", of::<wire::reply::Doctor>()),
         ("open", of::<wire::reply::Open>()),

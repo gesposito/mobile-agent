@@ -136,15 +136,33 @@ pub struct Device {
     pub claimed_by: Option<String>,
 }
 
-/// `close`: the app stopped and the target released.
+/// `close`: the app stopped, or left running, and the target released.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(deny_unknown_fields)]
 pub struct Close {
     pub closed: bool,
-    /// The app the session had opened, which was stopped.
+    /// The app the session had opened, which was stopped, or with `keep`
+    /// left running.
     pub app: Option<String>,
     pub target: String,
+    /// With `keep`, true: the app was left running.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kept: bool,
+}
+
+/// `cancel`: the session's command it ended, if one was in flight.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
+#[serde(deny_unknown_fields)]
+pub struct Cancel {
+    /// Whether a command of the session was in flight, which the cancel
+    /// ended.
+    pub cancelled: bool,
+    /// That command's action; null when none was in flight.
+    pub action: Option<String>,
+    /// The target it ran on; null when none was in flight.
+    pub target: Option<String>,
 }
 
 /// `set_timeout`: the session's default timeout.
@@ -405,7 +423,7 @@ pub struct Get {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Wait {
-    /// `time`, `settle`, `selector` or `text`.
+    /// `time`, `settle`, `change`, `selector` or `text`.
     pub waited: String,
     /// For `time`, the milliseconds waited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -414,7 +432,8 @@ pub struct Wait {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settled: Option<bool>,
     /// For `settle`, the signal that changed last: `tree`, `frame`, `both`
-    /// or `none`; or `timeout`.
+    /// or `none`; or `timeout`. For `change`, what moved since the
+    /// session's last snapshot: `tree`, `frame` or `both`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -426,6 +445,10 @@ pub struct Wait {
     pub tree_changes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_changes: Option<u64>,
+    /// For `change`, the delta against the session's last delta snapshot,
+    /// as `snapshot` with `delta` gives it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<DeltaSnapshot>,
     /// For an element or a text, the element; null once it is gone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<Element>,
@@ -440,12 +463,14 @@ pub struct Wait {
     pub text: Option<String>,
 }
 
-/// `screenshot`: the image written.
+/// `screenshot`: the image written, or with `inline` returned.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Screenshot {
-    pub path: String,
+    /// Where the image was written; null with `inline` and no path, which
+    /// writes none.
+    pub path: Option<String>,
     /// `jpeg` or `png`.
     pub format: String,
     pub width: u32,
@@ -457,6 +482,12 @@ pub struct Screenshot {
     /// `capture` when the driver took it now, `frame` for the mirror's
     /// latest frame.
     pub source: String,
+    /// With `inline`, the image's bytes, base64-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// With `inline`, the image's type: `image/jpeg` or `image/png`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
 }
 
 /// `click`: where the tap went and what it set off, from its dispatch.

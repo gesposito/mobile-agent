@@ -23,7 +23,9 @@ src/
                 absent, the defaults and their tests, the schemas' joined descriptions
   reply.rs      Reply (the envelope), one struct of data per action, Details (what a failure carries)
 tests/
-  lines.json    the request line the CLI sent for each command and option before these types existed
+  lines.json    the request line the CLI sends for each command and option: as it sent them before
+                these types existed, and for close --keep, cancel and wait --change as the types
+                write them
   requests.rs   those lines parse into their actions and serialize back; what a request keeps and ignores
   schemas.rs    with the feature, each request schema is a flat object of typed, described parameters
 ```
@@ -38,7 +40,7 @@ A request line is one JSON object: the envelope's `id`, `session`,
 action's parameters beside them at the top level, as agent-browser's
 requests carry them. `Request` holds the envelope and flattens `Command`,
 an enum tagged by `action` whose variants hold the actions' structs:
-`Status`, `Devices`, `Close`, `SetTimeout`, `Doctor`, `Open`, `Snapshot`,
+`Status`, `Devices`, `Close`, `Cancel`, `SetTimeout`, `Doctor`, `Open`, `Snapshot`,
 `DiffSnapshot`, `Get`, `Wait`, `Screenshot`, `Click`, `Fill`, `TypeText`
 (the `type` action), `Press`, `Swipe`, `Scroll` and `Shutdown`. A key the
 action does not take is ignored, as the daemon has always ignored it.
@@ -77,10 +79,14 @@ and `code` and `warning` when set, with `T` the action's data, such as
 `reply::Snapshot`, or `reply::Details` for a failure. Every reply type
 refuses fields it does not name. A reply whose shape depends on the request
 has one struct with a field for each shape: `get`'s `text`, `value` or
-bounds, `wait`'s by what it waited for, `scroll`'s with `until`, and a
+bounds, `wait`'s by what it waited for, a change wait's delta object in
+`snapshot`, `screenshot`'s image with `inline`, base64-encoded beside its
+`mimeType`, `close`'s `kept` with `keep`, `scroll`'s with `until`, and a
 snapshot's listing as text or as the mirror's delta object
-(`reply::DeltaSnapshot`). `status`'s per-target `driver` report and
-`doctor`'s `iosRunner` are the drivers' own objects, kept as JSON.
+(`reply::DeltaSnapshot`). `cancel`'s data (`reply::Cancel`) says whether a
+command of the session was in flight and names its action and target.
+`status`'s per-target `driver` report and `doctor`'s `iosRunner` are the
+drivers' own objects, kept as JSON.
 
 The handlers build their replies themselves (`crates/daemon/src/handlers`,
 design D3); `crates/daemon/tests/replies.rs` holds these types to them. It
