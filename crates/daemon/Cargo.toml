@@ -35,6 +35,7 @@ xxhash-rust = { version = "0.8.18", features = ["xxh3"] }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }
+wire = { version = "0.1.0", path = "../wire" }
 
 # The microbenchmarks of the JSON wire and a snapshot through the socket of a daemon on a fake target (benches/daemon.rs), run by mobile-agent-bench micro; criterion's own harness is off.
 [[bench]]

@@ -1,0 +1,27 @@
+[package]
+name = "wire"
+description = "The daemon's requests and replies as types: the envelope, one struct of parameters per action, one struct of reply data per action, and their JSON schemas behind the schema feature"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+schemars = { version = "1.2.3", optional = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[features]
+# The JSON schemas of the requests and replies (schemars' JsonSchema on
+# every type), for the MCP server's tool inputs and outputs. The CLI and the
+# daemon leave it off, so they link no schema code.
+schema = ["dep:schemars"]
+
+# The crate's own tests check the schemas, so they build it with the feature.
+[dev-dependencies]
+wire = { path = ".", features = ["schema"] }
