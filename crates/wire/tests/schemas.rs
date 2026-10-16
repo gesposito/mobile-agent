@@ -84,7 +84,8 @@ const REQUESTS: [Expected; 19] = [
         action: "wait",
         schema: of::<wire::Wait>,
         parameters: &[
-            "ms", "settle", "quiet", "treeOnly", "change", "text", "target", "state", "timeout",
+            "ms", "settle", "quiet", "treeOnly", "change", "frames", "text", "target", "state",
+            "timeout",
         ],
         required: &[],
     },

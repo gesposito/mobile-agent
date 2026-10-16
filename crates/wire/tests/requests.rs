@@ -5,7 +5,8 @@
 //! `platform`, `device`, `force` and `defaultTimeout` when set), the line
 //! `doctor` asks the daemon with (`crates/cli/src/doctor.rs`), and the lines
 //! of the commands and options added since (`close --keep`, `cancel`,
-//! `wait --change`, task 4 of the change) as the types write them.
+//! `wait --change` and `wait --change --frames`, task 4 of the change) as
+//! the types write them.
 
 use std::collections::BTreeSet;
 
@@ -185,8 +186,8 @@ fn a_string_of_another_type_is_absent_and_only_true_sets_a_flag() {
             json!({"action": "snapshot", "interactive": true, "delta": true, "full": true}),
         ),
         (
-            json!({"action": "wait", "text": 5, "target": ["#a"], "state": false, "settle": "true", "change": 1}),
-            json!({"action": "wait", "text": "a", "target": "#a", "state": "hidden", "settle": true, "change": true}),
+            json!({"action": "wait", "text": 5, "target": ["#a"], "state": false, "settle": "true", "change": 1, "frames": "yes"}),
+            json!({"action": "wait", "text": "a", "target": "#a", "state": "hidden", "settle": true, "change": true, "frames": true}),
         ),
         (
             json!({"action": "scroll", "direction": 1, "target": {}, "until": 2}),
@@ -247,6 +248,7 @@ fn null_is_a_parameter_not_given() {
                 ("quiet", json!(5)),
                 ("treeOnly", json!(true)),
                 ("change", json!(true)),
+                ("frames", json!(true)),
                 ("text", json!("a")),
                 ("target", json!("#a")),
                 ("state", json!("hidden")),

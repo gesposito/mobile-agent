@@ -45,6 +45,8 @@
   {"argv": ["wait", "--settle", "--quiet", "200"], "line": {"action": "wait", "id": "r123456", "quiet": 200, "session": "default", "settle": true}},
   {"argv": ["wait", "--change"], "line": {"action": "wait", "change": true, "id": "r123456", "session": "default"}},
   {"argv": ["wait", "--change", "--timeout", "2000"], "line": {"action": "wait", "change": true, "id": "r123456", "session": "default", "timeout": 2000}},
+  {"argv": ["wait", "--change", "--frames"], "line": {"action": "wait", "change": true, "frames": true, "id": "r123456", "session": "default"}},
+  {"argv": ["wait", "--change", "--frames", "--timeout", "1500"], "line": {"action": "wait", "change": true, "frames": true, "id": "r123456", "session": "default", "timeout": 1500}},
   {"argv": ["get", "text", "@e5"], "line": {"action": "get", "id": "r123456", "session": "default", "target": "@e5", "what": "text"}},
   {"argv": ["get", "value", "#login-username", "--timeout", "1000"], "line": {"action": "get", "id": "r123456", "session": "default", "target": "#login-username", "timeout": 1000, "what": "value"}},
   {"argv": ["get", "box", "@e3"], "line": {"action": "get", "id": "r123456", "session": "default", "target": "@e3", "what": "box"}},
