@@ -183,6 +183,7 @@ pub fn build(command: &Command, cwd: &Path) -> Result<wire::Command, Failure> {
                 args.tree_only = wait.tree_only;
             } else if wait.change {
                 args.change = true;
+                args.frames = wait.frames;
             } else if let Some(text) = &wait.text {
                 args.text = Some(text.clone());
             } else if let Some(target) = &wait.target {

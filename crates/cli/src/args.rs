@@ -295,13 +295,17 @@ defaultTimeout, else 10000 ms. wait --settle ends once neither the tree nor
 the frames change for the quiet window, or at --timeout, default 3000 ms.
 endedBy says which signal changed last (tree, frame, both or none) or
 timeout, and stillChanging what kept changing. wait --change ends once the
-tree or the frames changed since this session's last snapshot, at once for
-a change that came before it, and prints what moved (endedBy: tree, frame or
-both) and the delta snapshot --delta prints.
+listing in the options of this session's last snapshot changed from what
+that snapshot showed, at once for a change that came before it, and prints
+what moved (endedBy: tree, frame or both) and the delta snapshot --delta
+prints; a change the listing does not show leaves it waiting. With --frames
+a frame change ends it too, for a canvas, a map or a screen the tree does
+not describe.
 
 Examples:
   mobile-agent wait --settle
   mobile-agent wait --change
+  mobile-agent wait --change --frames
   mobile-agent wait @e5
   mobile-agent wait '#spinner' --state hidden
   mobile-agent wait --text 'Welcome' --timeout 5000
@@ -510,9 +514,12 @@ pub struct WaitArgs {
     /// Settle on tree changes alone, ignoring frames (for video)
     #[arg(long, requires = "settle")]
     pub tree_only: bool,
-    /// Wait until the tree or the frames change from what this session's last snapshot saw, then print the delta
+    /// Wait until the listing in the options of this session's last snapshot changes, then print the delta
     #[arg(long, conflicts_with_all = ["target", "text", "settle"])]
     pub change: bool,
+    /// With --change, end the wait at a frame change too, for a canvas, a map or a screen the tree does not describe
+    #[arg(long, requires = "change")]
+    pub frames: bool,
     /// Longest wait, in ms [default: the session's, else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000; with --settle 3000]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
