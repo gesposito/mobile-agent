@@ -27,4 +27,4 @@ The maintainer decided the tool stays standalone: its own MCP server over the da
 ## Impact
 
 - `crates/cli` (a second binary `mobile-agent-mcp`, `client.rs` and `request.rs` shared, `rmcp` and `tokio` added to that binary alone so the CLI's start time is untouched), a new `crates/wire` (the request and reply types with their schemas), `crates/daemon` (handlers read the typed requests; `wait --change`, `close --keep`, `cancel`), `crates/bench` (reads replies through the types), `docs/overview.md` section 7, `README.md` (an "Agent surfaces" section), `crates/cli/README.md`, the agent guide, `docs/spikes/s13-mcp-server.md`.
-- No change to the drivers or the mirror beyond what `wait --change` reads of it.
+- No change to the drivers, and none to the mirror beyond what `wait --change` reads of it and the cancel flag its waits look at (design D7).
