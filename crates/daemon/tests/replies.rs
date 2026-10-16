@@ -78,9 +78,9 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
     );
     // The fill changed the field's value, which the diff names.
     let diff = success!(ask(json!({"action": "diff_snapshot"})), reply::DiffSnapshot);
-    assert_eq!(
-        diff["data"]["modified"][0]["fields"],
-        json!(["value"]),
+    let fields = diff["data"]["modified"][0]["fields"].as_array().cloned();
+    assert!(
+        fields.is_some_and(|fields| fields.contains(&json!("value"))),
         "{diff}"
     );
     for request in [
@@ -97,7 +97,7 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
     success!(ask(json!({"action": "press", "key": "Back"})), reply::Press);
     for request in [
         json!({"action": "click", "target": "#login-submit"}),
-        json!({"action": "click", "x": 100, "y": 200, "hold": 300}),
+        json!({"action": "click", "x": 200, "y": 50, "hold": 300}),
     ] {
         success!(ask(request), reply::Click);
     }

@@ -37,11 +37,15 @@ const ACTIONS: [&str; 18] = [
 /// The lines that give a parameter at its default, by their command line,
 /// with those parameters: a request leaves a parameter at its default out
 /// of the line it serializes to, which the daemon reads the same.
-const AT_DEFAULT: [(&str, &[&str]); 7] = [
+const AT_DEFAULT: [(&str, &[&str]); 8] = [
     ("swipe up", &["direction"]),
     ("swipe down 300", &["distance"]),
     ("scroll down", &["direction"]),
     ("scroll up 300", &["amount"]),
+    (
+        "scroll down 600 -s @e7 --until #row-150 --timeout 9000",
+        &["direction"],
+    ),
     (
         "screenshot --quality 80 --max-dimension 1000",
         &["maxDimension", "quality"],
@@ -309,5 +313,42 @@ fn null_is_a_parameter_not_given() {
         let alone = parse(&alone);
         assert_eq!(parse(&nulls), alone, "{action}");
         assert_ne!(parse(&values), alone, "{action}");
+    }
+}
+
+/// A command's `Default` is the request that gives none of its parameters,
+/// as a tool called with `{}` gives none.
+#[test]
+fn an_action_s_default_parameters_are_those_of_a_request_that_gives_none() {
+    use wire::Command;
+    let defaults = [
+        Command::Status(Default::default()),
+        Command::Devices(Default::default()),
+        Command::Close(Default::default()),
+        Command::SetTimeout(Default::default()),
+        Command::Doctor(Default::default()),
+        Command::Open(Default::default()),
+        Command::Snapshot(Default::default()),
+        Command::DiffSnapshot(Default::default()),
+        Command::Get(Default::default()),
+        Command::Wait(Default::default()),
+        Command::Screenshot(Default::default()),
+        Command::Click(Default::default()),
+        Command::Fill(Default::default()),
+        Command::Type(Default::default()),
+        Command::Press(Default::default()),
+        Command::Swipe(Default::default()),
+        Command::Scroll(Default::default()),
+        Command::Shutdown(Default::default()),
+    ];
+    for command in defaults {
+        let request = Request::new(command);
+        let action = request.command.action();
+        assert_eq!(parse(&line(json!({"action": action}))), request, "{action}");
+        assert_eq!(
+            serde_json::to_value(&request).expect("serializes"),
+            json!({"action": action, "session": "default"}),
+            "{action}"
+        );
     }
 }
