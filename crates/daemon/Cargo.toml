@@ -23,6 +23,7 @@ workspace = true
 [dependencies]
 agent-ios = { version = "0.1.0", path = "../../agent-ios" }
 android = { version = "0.1.0", path = "../android" }
+base64 = "0.22.1"
 ios = { version = "0.1.0", path = "../ios" }
 libc = "0.2"
 mirror = { version = "0.1.0", path = "../mirror" }

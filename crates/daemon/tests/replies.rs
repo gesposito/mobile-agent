@@ -111,10 +111,13 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         success!(ask(request), reply::Wait);
     }
     let path = dir.path().join("shot.jpg");
-    success!(
-        ask(json!({"action": "screenshot", "path": path.to_string_lossy()})),
-        reply::Screenshot
-    );
+    for request in [
+        json!({"action": "screenshot", "path": path.to_string_lossy()}),
+        json!({"action": "screenshot", "path": path.to_string_lossy(), "inline": true}),
+        json!({"action": "screenshot", "inline": true}),
+    ] {
+        success!(ask(request), reply::Screenshot);
+    }
     for request in [
         json!({"action": "swipe", "direction": "left"}),
         json!({"action": "swipe", "from": [200, 700], "to": [200, 600], "duration": 100}),

@@ -460,6 +460,7 @@ version = "0.1.0"
 dependencies = [
  "agent-ios",
  "android",
+ "base64 0.22.1",
  "criterion",
  "ios",
  "libc",

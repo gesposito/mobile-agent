@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use mirror::{
     Condition, Diff, Element, FrameRequest, Selector, SettleOptions, Signal, Signals, Snapshot,
     SnapshotOptions,
@@ -488,8 +490,12 @@ pub(super) fn screenshot(
             }
         }
     };
+    // The path names the file; without one, a new file in the temporary
+    // directory, unless the image goes in the reply alone (design D6 of
+    // mcp-server).
     let path = match args.path.as_deref() {
-        Some(path) => PathBuf::from(path),
+        Some(path) => Some(PathBuf::from(path)),
+        None if args.inline => None,
         None => {
             let stamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -507,17 +513,19 @@ pub(super) fn screenshot(
                 })
                 .collect();
             let extension = if shot.format == "png" { "png" } else { "jpg" };
-            std::env::temp_dir().join(format!("mobile-agent-{name}-{stamp}.{extension}"))
+            Some(std::env::temp_dir().join(format!("mobile-agent-{name}-{stamp}.{extension}")))
         }
     };
-    std::fs::write(&path, &shot.data).map_err(|e| {
-        Failure::new(
-            IO_ERROR,
-            format!("cannot write the screenshot to {}: {e}", path.display()),
-        )
-    })?;
-    Ok(Success::new(json!({
-        "path": path.to_string_lossy(),
+    if let Some(path) = &path {
+        std::fs::write(path, &shot.data).map_err(|e| {
+            Failure::new(
+                IO_ERROR,
+                format!("cannot write the screenshot to {}: {e}", path.display()),
+            )
+        })?;
+    }
+    let mut data = json!({
+        "path": path.as_ref().map(|path| path.to_string_lossy()),
         "format": shot.format,
         "width": shot.width,
         "height": shot.height,
@@ -525,7 +533,17 @@ pub(super) fn screenshot(
         "seq": shot.seq,
         "ageMs": millis(shot.age),
         "source": shot.source,
-    })))
+    });
+    if args.inline {
+        data["image"] = BASE64.encode(&shot.data).into();
+        data["mimeType"] = if shot.format == "png" {
+            "image/png"
+        } else {
+            "image/jpeg"
+        }
+        .into();
+    }
+    Ok(Success::new(data))
 }
 
 /// An encoded screenshot, from the driver or the latest frame.
