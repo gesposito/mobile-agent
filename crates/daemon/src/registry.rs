@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::driver::{CompatibilityRow, Driver, Platform, Report, TargetInfo};
 use crate::wire::{Failure, code};
-use crate::worker::{Handle, Status, Worker};
+use crate::worker::{Handle, InFlight, Status, Worker};
 
 /// How long a listing of targets is reused before the drivers are asked
 /// again; `devices` always asks.
@@ -379,6 +379,11 @@ impl Registry {
         self.workers.get(target).and_then(Worker::report)
     }
 
+    /// The command `target`'s worker runs, as `cancel` finds it.
+    pub fn in_flight(&self, target: &str) -> Option<Arc<InFlight>> {
+        self.workers.get(target).map(Worker::in_flight)
+    }
+
     /// Stops every worker, detaching every target: all at once, then waits
     /// for them together, up to [`STOP_WAIT`]. Returns the targets whose
     /// worker had not finished detaching by then, by id. No worker starts
@@ -409,6 +414,7 @@ mod tests {
     use crate::driver::AttachOptions;
     use crate::fake::FakeDriver;
     use crate::wire::Success;
+    use crate::worker::Label;
 
     /// A registry of the fake targets `spec`, each taking `stop` to detach,
     /// with every one attached.
@@ -419,7 +425,9 @@ mod tests {
             registry
                 .handle(&target)
                 .unwrap()
-                .run(AttachOptions::default(), |_| Ok(Success::new(json!({}))))
+                .run(AttachOptions::default(), Label::default(), |_| {
+                    Ok(Success::new(json!({})))
+                })
                 .unwrap();
         }
         registry
@@ -525,7 +533,9 @@ mod tests {
         registry
             .handle(&phone)
             .unwrap()
-            .run(AttachOptions::default(), |_| Ok(Success::new(json!({}))))
+            .run(AttachOptions::default(), Label::default(), |_| {
+                Ok(Success::new(json!({})))
+            })
             .unwrap();
         assert_eq!(driver.listings(), 1);
         registry.listed = Instant::now().checked_sub(DISCOVERY_TTL * 2);

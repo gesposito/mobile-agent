@@ -49,6 +49,9 @@ pub mod code {
     pub const IO_ERROR: &str = "io_error";
     /// The daemon is shutting down and attaches no more targets.
     pub const DAEMON_STOPPING: &str = "daemon_stopping";
+    /// The session's `cancel` ended the command at its next wakeup, as the
+    /// mirror's waits report it (design D7 of mcp-server).
+    pub const CANCELLED: &str = mirror::code::CANCELLED;
     /// The daemon failed unexpectedly.
     pub const INTERNAL: &str = "internal";
 }

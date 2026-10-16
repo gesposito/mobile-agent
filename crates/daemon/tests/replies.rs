@@ -189,6 +189,32 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
     assert_eq!(stopped["data"]["stopped"], true, "{stopped}");
 }
 
+/// `cancel`'s reply with a command in flight and without, and the failure
+/// of the command it ends, which carries no details.
+#[test]
+fn a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types() {
+    let daemon = Daemon::start("android");
+    let idle = success!(daemon.request(json!({"action": "cancel"})), reply::Cancel);
+    assert_eq!(idle["data"]["cancelled"], false, "{idle}");
+    success!(
+        daemon.request(json!({"action": "open", "app": APP})),
+        reply::Open
+    );
+    let socket = daemon.socket();
+    let waiting = std::thread::spawn(move || {
+        support::request_at(
+            &socket,
+            &json!({"action": "wait", "text": "Nobody shows this"}),
+        )
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let cancel = success!(daemon.request(json!({"action": "cancel"})), reply::Cancel);
+    assert_eq!(cancel["data"]["cancelled"], true, "{cancel}");
+    let ended = waiting.join().expect("the wait's connection");
+    let ended = failure!(ended, "cancelled");
+    assert!(ended["data"].is_null(), "{ended}");
+}
+
 #[test]
 fn several_targets_give_the_candidates_and_a_short_typing_target_a_mismatch() {
     let several = Daemon::start("android,ios");

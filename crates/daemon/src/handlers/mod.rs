@@ -5,6 +5,7 @@ mod act;
 mod aim;
 mod view;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mirror::backend::Owner;
@@ -16,7 +17,7 @@ use crate::driver::{AttachOptions, Launch, Platform, TargetInfo, TargetReport};
 use crate::registry::Selection;
 use crate::server::Daemon;
 use crate::wire::{Command, Failure, Param, Request, Success, arg, code, needed};
-use crate::worker::{Attached, Outcome};
+use crate::worker::{Attached, InFlight, Label, Outcome};
 
 /// How long waiting commands wait when neither they, their session nor
 /// the client name a timeout.
@@ -44,6 +45,7 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
         Command::Status(_) => status(daemon),
         Command::Devices(_) => devices(daemon, request),
         Command::Close(args) => close(daemon, request, args.keep),
+        Command::Cancel(_) => cancel(daemon, &request.session),
         Command::SetTimeout(args) => set_timeout(daemon, &request.session, args),
         Command::Doctor(_) => doctor(daemon),
         Command::Open(args) => run(daemon, request, args, open),
@@ -62,10 +64,6 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
         Command::Shutdown(_) => Err(Failure::new(
             code::UNKNOWN_ACTION,
             "unknown action \"shutdown\"; run mobile-agent --help for the commands",
-        )),
-        Command::Cancel(_) => Err(Failure::new(
-            code::UNKNOWN_ACTION,
-            "unknown action \"cancel\"; run mobile-agent --help for the commands",
         )),
     }
 }
@@ -246,8 +244,82 @@ where
     let options = AttachOptions {
         force: request.force,
     };
-    let success = handle.run(options, move |attached| command(attached, &call))?;
+    let action = request.command.action();
+    let label = Label {
+        session: request.session.clone(),
+        action,
+    };
+    let success = handle
+        .run(options, label, move |attached| command(attached, &call))
+        .map_err(|failure| ended_by_cancel(failure, action))?;
     Ok((success, target))
+}
+
+/// A failure the session's `cancel` caused, its message naming `action`,
+/// the command it ended; any other failure as it is.
+fn ended_by_cancel(failure: Failure, action: &str) -> Failure {
+    if failure.code != code::CANCELLED {
+        return failure;
+    }
+    Failure::new(
+        code::CANCELLED,
+        format!(
+            "{action} was cancelled: its session's cancel ended it; take a snapshot to see the screen as it left it"
+        ),
+    )
+}
+
+/// How long `cancel` waits for the commands it ends to be over: a wait
+/// sees the cancel within the mirror's cancel slice, and a device call in
+/// flight runs to its end first.
+const CANCEL_WAIT: Duration = Duration::from_secs(5);
+
+/// Ends the commands of `session` in flight on the targets it holds and
+/// waits for them to be over, up to [`CANCEL_WAIT`] (design D7 of
+/// mcp-server). The reply names the first by target id; one that was not
+/// over by then, held in a device call, is named in a warning.
+fn cancel(daemon: &Daemon, session: &str) -> Outcome {
+    let held: Vec<(String, Arc<InFlight>)> = {
+        let registry = daemon.registry();
+        registry
+            .held_by(session)
+            .into_iter()
+            .filter_map(|target| registry.in_flight(&target).map(|flight| (target, flight)))
+            .collect()
+    };
+    let raised: Vec<(String, Arc<InFlight>, u64, &'static str)> = held
+        .into_iter()
+        .filter_map(|(target, flight)| {
+            let (number, action) = flight.raise(session)?;
+            Some((target, flight, number, action))
+        })
+        .collect();
+    let deadline = Instant::now() + CANCEL_WAIT;
+    let unfinished: Vec<String> = raised
+        .iter()
+        .filter(|(_, flight, number, _)| !flight.wait_over(*number, deadline))
+        .map(|(target, _, _, action)| format!("{action} on {target}"))
+        .collect();
+    let Some((target, _, _, action)) = raised.first() else {
+        return Ok(Success::new(json!({
+            "cancelled": false,
+            "action": null,
+            "target": null,
+        })));
+    };
+    let warning = (!unfinished.is_empty()).then(|| {
+        format!(
+            "{} had not ended within {} s: a device call in flight runs to its end, and the command fails with cancelled once it returns",
+            unfinished.join(", "),
+            CANCEL_WAIT.as_secs()
+        )
+    });
+    Ok(Success::new(json!({
+        "cancelled": true,
+        "action": action,
+        "target": target,
+    }))
+    .warn(warning))
 }
 
 pub(crate) fn millis(duration: Duration) -> f64 {

@@ -3,11 +3,14 @@
 //! theirs, and between commands it keeps the mirror current, pumping it
 //! whenever a poll or a frame-driven re-read falls due. A target whose
 //! connection is gone is detached, and the next command attaches it again.
+//! The command running is in flight where `cancel` finds it from another
+//! connection, which raises the flag the mirror's waits look at.
 
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -37,9 +40,103 @@ pub(crate) type Outcome = Result<Success, Failure>;
 type Task = Box<dyn FnOnce(&mut Attached) -> Outcome + Send>;
 
 enum Job {
-    /// A command, and how to attach when the target is not attached.
-    Run(Task, AttachOptions, Sender<Outcome>),
+    /// A command, how to attach when the target is not attached, and what
+    /// it is.
+    Run(Task, AttachOptions, Label, Sender<Outcome>),
     Stop,
+}
+
+/// What a command is, as `cancel` finds it: its session and action.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Label {
+    pub session: String,
+    pub action: &'static str,
+}
+
+/// The command a target's worker runs, which `cancel` ends from another
+/// connection (design D7 of mcp-server): the worker runs one command at a
+/// time, so a cancel cannot wait its turn in the queue. The flag is the
+/// one the mirror's waits look at (`Mirror::cancel_on`), raised only while
+/// the command it ends runs: it is lowered under the same lock as the
+/// command ends.
+#[derive(Default)]
+pub(crate) struct InFlight {
+    running: Mutex<Running>,
+    over: Condvar,
+    flag: Arc<AtomicBool>,
+}
+
+/// The worker's commands as [`InFlight`] counts them.
+#[derive(Default)]
+struct Running {
+    /// The command running: its number, then what it is.
+    command: Option<(u64, Label)>,
+    /// How many commands the worker has begun.
+    begun: u64,
+}
+
+/// Ends the command's span in flight when dropped, however it ended.
+struct Begun<'a>(&'a InFlight);
+
+impl Drop for Begun<'_> {
+    fn drop(&mut self) {
+        self.0.end();
+    }
+}
+
+impl InFlight {
+    /// The flag the mirror's waits look at.
+    pub fn flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.flag)
+    }
+
+    /// Records `label`'s command as running until the returned guard drops.
+    fn begin(&self, label: Label) -> Begun<'_> {
+        let mut running = lock(&self.running);
+        running.begun += 1;
+        running.command = Some((running.begun, label));
+        Begun(self)
+    }
+
+    /// Records that the command running is over and lowers the flag.
+    fn end(&self) {
+        let mut running = lock(&self.running);
+        running.command = None;
+        self.flag.store(false, Ordering::Release);
+        self.over.notify_all();
+    }
+
+    /// Raises the flag when the command running is `session`'s: its number
+    /// and action.
+    pub fn raise(&self, session: &str) -> Option<(u64, &'static str)> {
+        let running = lock(&self.running);
+        let (number, label) = running.command.as_ref()?;
+        if label.session != session {
+            return None;
+        }
+        self.flag.store(true, Ordering::Release);
+        Some((*number, label.action))
+    }
+
+    /// Waits until the command numbered `number` is over, at most until
+    /// `deadline`; whether it is.
+    pub fn wait_over(&self, number: u64, deadline: Instant) -> bool {
+        let mut running = lock(&self.running);
+        loop {
+            if running.command.as_ref().is_none_or(|(n, _)| *n != number) {
+                return true;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            running = self
+                .over
+                .wait_timeout(running, deadline - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
 }
 
 /// What one session keeps about one target.
@@ -190,6 +287,7 @@ pub(crate) struct Worker {
     handle: Handle,
     status: Arc<Mutex<Status>>,
     report: ReportSlot,
+    in_flight: Arc<InFlight>,
     thread: Option<JoinHandle<()>>,
     /// Disconnects as the thread ends, its target detached.
     ended: Receiver<()>,
@@ -209,7 +307,9 @@ impl Worker {
         let (ending, ended) = mpsc::channel();
         let status = Arc::new(Mutex::new(Status::default()));
         let report: ReportSlot = Arc::new(Mutex::new(None));
+        let in_flight = Arc::new(InFlight::default());
         let (shared_status, shared_report) = (Arc::clone(&status), Arc::clone(&report));
+        let shared_in_flight = Arc::clone(&in_flight);
         let name = format!("target {}", info.id);
         let target = info.clone();
         let thread = std::thread::Builder::new()
@@ -223,6 +323,7 @@ impl Worker {
                     &queue,
                     &shared_status,
                     &shared_report,
+                    &shared_in_flight,
                 );
             })
             .ok();
@@ -231,6 +332,7 @@ impl Worker {
             handle: Handle { jobs },
             status,
             report,
+            in_flight,
             thread,
             ended,
         }
@@ -252,6 +354,11 @@ impl Worker {
     /// What the driver reports about the target, while it is attached.
     pub fn report(&self) -> Option<Arc<dyn Report>> {
         lock(&self.report).clone()
+    }
+
+    /// The command the worker runs, as `cancel` finds it.
+    pub fn in_flight(&self) -> Arc<InFlight> {
+        Arc::clone(&self.in_flight)
     }
 
     /// Asks the worker to stop, which detaches its target.
@@ -277,15 +384,16 @@ impl Worker {
 }
 
 impl Handle {
-    /// Runs `task` on the worker and waits for its outcome, attaching with
-    /// `options` when the target is not attached.
-    pub fn run<F>(&self, options: AttachOptions, task: F) -> Outcome
+    /// Runs `task`, the command `label` names, on the worker and waits for
+    /// its outcome, attaching with `options` when the target is not
+    /// attached.
+    pub fn run<F>(&self, options: AttachOptions, label: Label, task: F) -> Outcome
     where
         F: FnOnce(&mut Attached) -> Outcome + Send + 'static,
     {
         let (reply, outcome) = mpsc::channel();
         self.jobs
-            .send(Job::Run(Box::new(task), options, reply))
+            .send(Job::Run(Box::new(task), options, label, reply))
             .map_err(|_| Failure::internal("the target's worker has stopped"))?;
         outcome
             .recv()
@@ -318,6 +426,7 @@ fn serve(
     queue: &Receiver<Job>,
     status: &Arc<Mutex<Status>>,
     report: &ReportSlot,
+    in_flight: &InFlight,
 ) {
     let mut attached: Option<Attached> = None;
     loop {
@@ -329,7 +438,10 @@ fn serve(
                     .clamp(Duration::from_millis(1), IDLE_PUMP)
             });
         match queue.recv_timeout(wait) {
-            Ok(Job::Run(task, options, reply)) => {
+            Ok(Job::Run(task, options, label, reply)) => {
+                // In flight until the command's answer is out and a target
+                // it lost detached.
+                let _begun = in_flight.begin(label);
                 if attached.is_none() {
                     match driver.attach(info, &options) {
                         Ok(attachment) => {
@@ -340,7 +452,9 @@ fn serve(
                             current.error = None;
                             drop(current);
                             *lock(report) = attachment.report.clone();
-                            attached = Some(Attached::new(info, attachment, status));
+                            let mut target = Attached::new(info, attachment, status);
+                            target.mirror.cancel_on(in_flight.flag());
+                            attached = Some(target);
                         }
                         Err(error) => {
                             lock(status).error = Some(error.message.clone());
@@ -503,14 +617,14 @@ mod tests {
         let worker = Worker::spawn(info, driver);
         let handle = worker.handle();
         let refused = handle
-            .run(AttachOptions::default(), |_| {
+            .run(AttachOptions::default(), Label::default(), |_| {
                 Ok(Success::new(serde_json::json!({})))
             })
             .unwrap_err();
         assert_eq!(refused.code, "automation_conflict");
         assert!(!worker.status().attached);
         handle
-            .run(AttachOptions { force: true }, |_| {
+            .run(AttachOptions { force: true }, Label::default(), |_| {
                 Ok(Success::new(serde_json::json!({})))
             })
             .expect("the forced attach succeeds");
@@ -765,7 +879,9 @@ mod tests {
         let phone = Worker::spawn(listed[0].clone(), Arc::clone(&driver));
         let simulator = Worker::spawn(listed[1].clone(), Arc::clone(&driver));
         let run = |worker: &Worker, task: fn(&mut Attached) -> Outcome| {
-            worker.handle().run(AttachOptions::default(), task)
+            worker
+                .handle()
+                .run(AttachOptions::default(), Label::default(), task)
         };
         run(&phone, look).expect("the phone serves");
         run(&simulator, look).expect("the Simulator serves");
@@ -832,7 +948,7 @@ mod tests {
         let phone = Worker::spawn(driver.discover().unwrap().remove(0), driver);
         phone
             .handle()
-            .run(AttachOptions::default(), look)
+            .run(AttachOptions::default(), Label::default(), look)
             .expect("serves");
         let deadline = Instant::now() + Duration::from_secs(3);
         while phone.status().attached && Instant::now() < deadline {
@@ -844,7 +960,7 @@ mod tests {
         );
         phone
             .handle()
-            .run(AttachOptions::default(), look)
+            .run(AttachOptions::default(), Label::default(), look)
             .expect("attached again");
         assert_eq!(phone.status().attaches, 2);
         phone.signal_stop();
@@ -881,8 +997,11 @@ mod tests {
         let driver: Arc<dyn Driver> = Arc::clone(&fake) as Arc<dyn Driver>;
         let info = driver.discover().unwrap().remove(0);
         let phone = Worker::spawn(info.clone(), Arc::clone(&driver));
-        let run =
-            |task: fn(&mut Attached) -> Outcome| phone.handle().run(AttachOptions::default(), task);
+        let run = |task: fn(&mut Attached) -> Outcome| {
+            phone
+                .handle()
+                .run(AttachOptions::default(), Label::default(), task)
+        };
         run(look).expect("the phone serves");
 
         fake.stall_runner(&info.id);
@@ -928,6 +1047,36 @@ mod tests {
             fake.runners_on(&info.id).is_empty(),
             "the stop ended the stalled runner"
         );
+    }
+
+    /// Design D7 of mcp-server: a cancel raises the flag for the session's
+    /// command running alone, the flag goes down as the command ends, and a
+    /// wait for that command's end returns once it is over, whatever runs
+    /// next.
+    #[test]
+    fn a_cancel_raises_the_flag_for_the_session_s_command_alone_until_it_ends() {
+        let in_flight = InFlight::default();
+        let up = || in_flight.flag().load(Ordering::Acquire);
+        assert_eq!(in_flight.raise("alice"), None, "nothing in flight");
+        let begun = in_flight.begin(Label {
+            session: "alice".into(),
+            action: "wait",
+        });
+        assert_eq!(in_flight.raise("bob"), None, "another session's command");
+        assert!(!up());
+        let (number, action) = in_flight.raise("alice").expect("alice's wait");
+        assert_eq!(action, "wait");
+        assert!(up());
+        let soon = Instant::now() + Duration::from_millis(20);
+        assert!(!in_flight.wait_over(number, soon), "the wait still runs");
+        drop(begun);
+        assert!(!up(), "lowered as the command ended");
+        let _next = in_flight.begin(Label {
+            session: "alice".into(),
+            action: "snapshot",
+        });
+        assert!(in_flight.wait_over(number, Instant::now()), "another runs");
+        assert!(!up(), "the next command runs with the flag down");
     }
 
     #[test]

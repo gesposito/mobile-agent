@@ -176,8 +176,8 @@ struct Spans {
     tree_delta: Option<Duration>,
     /// How long the effects were watched.
     watched: Duration,
-    /// Why the watch stopped early, if it failed.
-    problem: Option<String>,
+    /// Why the watch stopped early: it failed, or a cancel ended it.
+    problem: Option<MirrorError>,
 }
 
 /// Watches the effects of a tap dispatched at `start`, when the replica
@@ -238,7 +238,7 @@ fn watch(
             break (frame, tree);
         }
         if let Err(error) = target.mirror.run_until((now + WATCH_SLICE).min(deadline)) {
-            problem = Some(error.to_string());
+            problem = Some(error);
             target.mirror.drain();
             break (first_frame_change(target), tree_delta(target));
         }
@@ -533,10 +533,17 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
             ));
         }
     }
-    if let Some(problem) = spans.problem {
-        warnings.push(format!(
+    // The tap went in, so the click answers what it did whatever ended
+    // the watch, a session's cancel among them (design D7 of mcp-server).
+    match spans.problem {
+        Some(MirrorError::Cancelled) => warnings.push(format!(
+            "the tap went in, and a cancel ended the watch of its effects after {} ms; take a snapshot to see what it did",
+            spans.watched.as_millis()
+        )),
+        Some(problem) => warnings.push(format!(
             "the tap went in, but watching its effects failed: {problem}"
-        ));
+        )),
+        None => {}
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
     Ok(Success::new(Value::Object(data)).warn(warning))

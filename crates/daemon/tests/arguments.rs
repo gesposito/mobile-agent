@@ -166,12 +166,13 @@ fn the_target_s_selection_is_read_as_before() {
                 json!({"action": "devices", "platform": "windows"}),
                 windows(),
             ),
-            // Neither status nor set_timeout selects a target.
+            // Neither status, set_timeout nor cancel selects a target.
             (json!({"action": "status", "platform": "windows"}), Done),
             (
                 json!({"action": "set_timeout", "ms": 5000, "platform": "windows"}),
                 Done,
             ),
+            (json!({"action": "cancel", "platform": "windows"}), Done),
             // A platform or device of another type than a string is none, and
             // only true forces.
             (json!({"action": "snapshot", "platform": 5}), Done),
@@ -454,6 +455,14 @@ fn strings_a_command_needs_are_refused_by_name_and_others_of_another_type_are_no
             (
                 json!({"action": "press", "key": ["Enter"]}),
                 invalid("press needs a \"key\" string"),
+            ),
+            // Only true sets a flag: a change of another value is no
+            // change wait.
+            (
+                json!({"action": "wait", "change": "yes"}),
+                invalid(
+                    "wait takes an element, a number of milliseconds, --text, --settle or --change",
+                ),
             ),
             (
                 json!({"action": "wait", "target": 5, "state": "gone"}),
