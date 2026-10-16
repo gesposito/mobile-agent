@@ -20,6 +20,7 @@ use rmcp::{ErrorData, RoleServer, ServerHandler};
 use serde_json::{Map, Value};
 
 use crate::results;
+use crate::sessions::Sessions;
 use crate::tools::{Call, Tool};
 
 /// The server's name, as `initialize` and `server/discover` answer it.
@@ -29,7 +30,7 @@ pub const NAME: &str = "mobile-agent-mcp";
 /// alone within the 512 characters Codex keeps of it.
 pub const INSTRUCTIONS: &str = "Drives Android devices, emulators, iOS Simulators and iPhones through the mobile-agent daemon. Call snapshot for the screen's elements and their refs (@e3), then act by ref or selector with click, fill, type, press, swipe and scroll; replies verify each action, and an error names its code and what to do next. This server acts in a session of its own and, when it exits, releases its target with the app left running.";
 
-/// The server: the daemon's endpoint, its session and the tools'
+/// The server: the daemon's endpoint, its sessions and the tools'
 /// definitions, shared by every call.
 #[derive(Clone)]
 pub struct Server(Arc<Shared>);
@@ -37,8 +38,8 @@ pub struct Server(Arc<Shared>);
 pub struct Shared {
     pub endpoint: Endpoint,
     /// The session the server minted, `mcp-<pid>`, which a call's
-    /// `session` overrides.
-    pub session: String,
+    /// `session` overrides, and the targets its calls' sessions hold.
+    pub sessions: Sessions,
     /// The directory relative paths are taken from.
     cwd: PathBuf,
     /// Each tool with its definition.
@@ -53,10 +54,14 @@ impl Server {
             .collect();
         Server(Arc::new(Shared {
             endpoint,
-            session,
+            sessions: Sessions::new(session),
             cwd,
             tools,
         }))
+    }
+
+    pub fn shared(&self) -> &Shared {
+        &self.0
     }
 
     /// Runs `call` of `tool` and answers with its result.
@@ -64,12 +69,15 @@ impl Server {
         if tool.action == "doctor" {
             let probe = cli::doctor::System {
                 endpoint: self.0.endpoint.clone(),
-                session: call.session.unwrap_or_else(|| self.0.session.clone()),
+                session: call.session.unwrap_or_else(|| self.0.sessions.own.clone()),
             };
             let report = blocking(move || cli::doctor::run_checks(&probe)).await?;
             return Ok(results::doctor(&report));
         }
         let reply = self.send(call.line).await?;
+        if let Some(session) = &call.session {
+            self.0.sessions.record(session, tool.action, &reply);
+        }
         Ok(results::of(tool.action, &reply))
     }
 
@@ -124,7 +132,7 @@ impl ServerHandler for Server {
             ));
         };
         let arguments = request.arguments.unwrap_or_default();
-        let call = tool.call(definition, &arguments, &self.0.session, &self.0.cwd);
+        let call = tool.call(definition, &arguments, &self.0.sessions.own, &self.0.cwd);
         Ok(self.run(tool, call).await?.into())
     }
 }

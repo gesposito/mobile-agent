@@ -4,20 +4,33 @@
 //! `initialize` and the 2026-07-28 revision's `server/discover`, with one
 //! tool per daemon action an agent drives, each call one request on the
 //! daemon's socket in a session of the server's own. It writes its own
-//! lines to standard error alone. See the crate's README.
+//! lines to standard error alone.
+//!
+//! It ends when its input ends, at SIGTERM or SIGINT, and when the client
+//! leaves before choosing a lifecycle, and on each of these ways out it
+//! releases the targets its sessions hold with the apps left running
+//! (design D9). See the crate's README.
 
 mod results;
 mod server;
+mod sessions;
 mod tools;
 
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use cli::client::Endpoint;
 use rmcp::ServiceExt;
 use rmcp::service::ServerInitializeError;
+use tokio::signal::unix::{SignalKind, signal};
 
 use crate::server::{NAME, Server};
+
+/// How long the server waits on its way out for the daemon to release its
+/// sessions' targets. A release still queued behind a command in flight
+/// when the bound passes goes ahead in the daemon all the same.
+const RELEASE: Duration = Duration::from_secs(5);
 
 /// The daemon's endpoint as the CLI resolves it: the socket directory from
 /// `MOBILE_AGENT_SOCKET_DIR`, else the CLI's default; the daemon executable
@@ -44,25 +57,63 @@ fn endpoint() -> Endpoint {
     }
 }
 
-/// Serves the client on standard input and output until it leaves, and
-/// returns the exit status.
-async fn serve(server: Server) -> ExitCode {
+/// Serves the client on standard input and output until it leaves or a
+/// signal ends the server, and returns the exit status. The signals'
+/// handlers are in place before the first request is read.
+async fn serve(server: Server) -> i32 {
+    let (mut terminate, mut interrupt) = match (
+        signal(SignalKind::terminate()),
+        signal(SignalKind::interrupt()),
+    ) {
+        (Ok(terminate), Ok(interrupt)) => (terminate, interrupt),
+        (Err(error), _) | (_, Err(error)) => {
+            eprintln!("{NAME}: cannot handle signals: {error}");
+            return 1;
+        }
+    };
+    tokio::select! {
+        status = serving(server) => status,
+        _ = terminate.recv() => 0,
+        _ = interrupt.recv() => 0,
+    }
+}
+
+/// Serves the client until its input ends.
+async fn serving(server: Server) -> i32 {
     match server.serve(rmcp::transport::stdio()).await {
         Ok(running) => {
             let _ = running.waiting().await;
-            ExitCode::SUCCESS
+            0
         }
         // The client left before a request that chooses a lifecycle, as
         // one that only discovered the server does.
-        Err(ServerInitializeError::ConnectionClosed(_)) => ExitCode::SUCCESS,
+        Err(ServerInitializeError::ConnectionClosed(_)) => 0,
         Err(error) => {
             eprintln!("{NAME}: {error}");
-            ExitCode::FAILURE
+            1
         }
     }
 }
 
-fn main() -> ExitCode {
+/// Releases the targets the server's sessions hold, waiting at most
+/// [`RELEASE`] for the daemon.
+fn release(server: &Server) {
+    let (done, finished) = mpsc::channel();
+    let server = server.clone();
+    std::thread::spawn(move || {
+        let shared = server.shared();
+        shared.sessions.release(&shared.endpoint);
+        let _ = done.send(());
+    });
+    if finished.recv_timeout(RELEASE).is_err() {
+        eprintln!(
+            "{NAME}: the daemon had not released the session's targets within {} s",
+            RELEASE.as_secs()
+        );
+    }
+}
+
+fn main() {
     let endpoint = endpoint();
     let session = format!("mcp-{}", std::process::id());
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -79,8 +130,13 @@ fn main() -> ExitCode {
         Ok(runtime) => runtime,
         Err(error) => {
             eprintln!("{NAME}: cannot start the runtime: {error}");
-            return ExitCode::FAILURE;
+            std::process::exit(1);
         }
     };
-    runtime.block_on(serve(server))
+    let status = runtime.block_on(serve(server.clone()));
+    release(&server);
+    // The runtime is left running: dropping it would wait for the read of
+    // standard input that a signal interrupted, which never ends while the
+    // client holds the pipe open.
+    std::process::exit(status);
 }
