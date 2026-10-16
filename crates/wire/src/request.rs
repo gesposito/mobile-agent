@@ -372,9 +372,10 @@ pub struct Wait {
     )]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub tree_only: bool,
-    /// Wait until the tree or the frames change from what the session's
-    /// last snapshot saw, and answer with the delta that `snapshot` with
-    /// `delta` gives.
+    /// Wait until the listing, in the options of the session's last
+    /// snapshot, changes from the one that snapshot showed, and answer with
+    /// the delta that `snapshot` with `delta` gives; a change the listing
+    /// does not show leaves it waiting.
     #[serde(
         default,
         deserialize_with = "param::flag",
@@ -382,6 +383,16 @@ pub struct Wait {
     )]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub change: bool,
+    /// With `change`, end the wait at a frame change too, for a canvas, a
+    /// map or a screen the tree does not describe, whose listing may then
+    /// be unchanged.
+    #[serde(
+        default,
+        deserialize_with = "param::flag",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
+    pub frames: bool,
     /// Wait for an element whose name or value contains this text.
     #[serde(
         default,
@@ -422,6 +433,7 @@ impl Default for Wait {
             quiet: param::whole::<QUIET_MS>(),
             tree_only: false,
             change: false,
+            frames: false,
             text: None,
             target: None,
             state: param::visible(),
