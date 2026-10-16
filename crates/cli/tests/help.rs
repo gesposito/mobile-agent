@@ -222,8 +222,9 @@ fn the_agent_guide_says_where_a_physical_iphone_differs() {
 }
 
 /// The `mcp-server` change (designs D7 to D9): the guide says when to wait
-/// for a change, that `close --keep` leaves the app running for the next
-/// session, and that `cancel` ends a command left in flight.
+/// for a change, what `--frames` adds to it, that `close --keep` leaves the
+/// app running for the next session, and that `cancel` ends a command left
+/// in flight.
 #[test]
 fn the_agent_guide_says_when_to_wait_for_a_change_and_what_close_keep_leaves() {
     let env = TestEnv::new("android");
@@ -231,6 +232,7 @@ fn the_agent_guide_says_when_to_wait_for_a_change_and_what_close_keep_leaves() {
     for needle in [
         "wait --change",
         "may still be arriving",
+        "--frames",
         "close --keep",
         "app running",
         "cancel",
@@ -294,6 +296,23 @@ fn waiting_commands_document_their_default_timeouts() {
     }
     let open = env.cli(&["open", "--help"]).ok().stdout;
     assert!(open.contains("3000"), "{open}");
+}
+
+/// `wait --help` shows `--frames` beside `--change` (design D8 of the
+/// `mcp-server` change): what it adds and that it goes with `--change`.
+#[test]
+fn wait_help_shows_frames_for_a_change_wait() {
+    let env = TestEnv::new("android");
+    let wait = env.cli(&["wait", "--help"]).ok().stdout;
+    let line = wait
+        .lines()
+        .find(|line| line.trim_start().starts_with("--frames"))
+        .unwrap_or_else(|| panic!("wait --help lacks --frames:\n{wait}"));
+    assert!(line.contains("--change"), "{line}");
+    assert!(
+        wait.contains("mobile-agent wait --change --frames"),
+        "wait --help shows no example of --frames:\n{wait}"
+    );
 }
 
 #[test]

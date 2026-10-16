@@ -932,7 +932,8 @@ fn shutdown_stops_the_daemon() {
 
 /// `wait --change` (design D8 of the `mcp-server` change) prints what moved
 /// and the delta as `snapshot --delta` prints it, and fails with
-/// `wait_timeout` on a still screen as other waits do.
+/// `wait_timeout` on a still screen as other waits do, and on frames that
+/// move alone unless `--frames` asks for them.
 #[test]
 fn wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen() {
     let env = TestEnv::start("android");
@@ -964,12 +965,22 @@ fn wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen()
         human.stderr
     );
 
+    // The Anim tab's spinner moves the frames alone, which end a change
+    // wait only with --frames.
     env.cli(&["click", "#tab-anim"]).ok();
     env.cli(&["snapshot", "-i", "--delta"]).ok();
-    let reply = env.cli(&["--json", "wait", "--change"]).ok().json();
+    let running = env
+        .cli(&["--json", "wait", "--change", "--timeout", "300"])
+        .failed()
+        .json();
+    assert_eq!(running["code"], "wait_timeout", "{running}");
+    let reply = env
+        .cli(&["--json", "wait", "--change", "--frames"])
+        .ok()
+        .json();
     assert_eq!(reply["data"]["waited"], "change", "{reply}");
     assert_eq!(reply["data"]["endedBy"], "frame", "{reply}");
-    let frames = env.cli(&["wait", "--change"]).ok().stdout;
+    let frames = env.cli(&["wait", "--change", "--frames"]).ok().stdout;
     assert!(
         frames.starts_with("✓ Frames changed after ") && frames.contains("\nunchanged (revision "),
         "{frames}"
@@ -986,6 +997,22 @@ fn wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen()
             run.stderr
         );
     }
+    // --frames needs --change, as --quiet and --tree-only need --settle.
+    for needing in [
+        vec!["wait", "--frames"],
+        vec!["wait", "--frames", "--timeout", "300"],
+    ] {
+        let run = env.cli(&needing).failed();
+        assert!(
+            run.stderr.starts_with(
+                "error: the following required arguments were not provided:\n  --change\n"
+            ),
+            "{needing:?}: {}",
+            run.stderr
+        );
+    }
+    let reply = env.cli(&["--json", "wait", "--frames"]).failed().json();
+    assert_eq!(reply["code"], "invalid_argument", "{reply}");
 }
 
 /// `close --keep` (design D9) releases the target and leaves the app
