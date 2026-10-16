@@ -1,13 +1,16 @@
 //! The mirror: one target's replica and the questions it answers.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use protocol::message::TextMethod;
 use protocol::snapshot::{Bounds, NodeFlags, Truncation, WindowFlags, WindowType};
 
 use crate::backend::{
-    Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadReason, ReadRequest, Release,
+    Backend, BackendInfo, EncodeRequest, Input, NodeHandle, Owner, ReadReason, ReadRequest,
+    Release, StreamItem, Timed,
 };
 use crate::delta::{self, DeltaContext, DeltaSnapshot, DeltaState, RefEntry};
 use crate::diff::Diff;
@@ -87,6 +90,12 @@ pub const DEFAULT_OVERSCROLL: Duration = Duration::from_millis(500);
 /// screenshots showed a tap's first change 222 to 439 ms after its
 /// acknowledgement at p95 (spike S11).
 pub const DEFAULT_FIRST_FRAME_WAIT: Duration = Duration::from_millis(500);
+
+/// The longest a wait blocks between two looks at the mirror's cancel flag,
+/// once it has one ([`Mirror::cancel_on`]), so that a raised flag ends the
+/// wait within this long, but for a read or an input in flight, which runs
+/// to its end first (design D7 of mcp-server).
+pub const CANCEL_SLICE: Duration = Duration::from_millis(50);
 
 /// Frames that come slowly: screenshots polled one at a time rather than a
 /// stream, as a physical iPhone's on iOS 26, about 19 a second over two
@@ -319,6 +328,8 @@ pub struct Mirror {
     listed: Vec<Ref>,
     /// The last delta snapshot's listing.
     delta: Option<DeltaState>,
+    /// The flag whose raising ends the mirror's waits.
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl Mirror {
@@ -338,6 +349,40 @@ impl Mirror {
             refs: RefTable::new(),
             listed: Vec::new(),
             delta: None,
+            cancel: None,
+        }
+    }
+
+    /// Ends the mirror's waits once `flag` is raised: `run_until`, `wait`
+    /// and `settle` look at it before they block and at least every
+    /// [`CANCEL_SLICE`] while they do, and fail with
+    /// [`MirrorError::Cancelled`] while it is up. A read or an input in
+    /// flight runs to its end first. The daemon raises it for a session's
+    /// `cancel` and lowers it once the command it ends is over.
+    pub fn cancel_on(&mut self, flag: Arc<AtomicBool>) {
+        self.cancel = Some(flag);
+    }
+
+    /// The next item the target reports, waiting until `wake` at most;
+    /// with a cancel flag, in slices of [`CANCEL_SLICE`], failing once the
+    /// flag is up, before the first slice too.
+    fn next_item(&mut self, wake: Instant) -> Result<Option<Timed<StreamItem>>, MirrorError> {
+        if self.cancel.is_none() {
+            return Ok(self.backend.events.next(wake));
+        }
+        loop {
+            if self
+                .cancel
+                .as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Acquire))
+            {
+                return Err(MirrorError::Cancelled);
+            }
+            let slice = wake.min(self.now() + CANCEL_SLICE);
+            let item = self.backend.events.next(slice);
+            if item.is_some() || slice >= wake {
+                return Ok(item);
+            }
         }
     }
 
@@ -484,7 +529,8 @@ impl Mirror {
     }
 
     /// Keeps the replica current until `deadline`: applies items as they
-    /// arrive and performs reads as they fall due.
+    /// arrive and performs reads as they fall due. A raised cancel flag
+    /// ends it early ([`Mirror::cancel_on`]).
     pub fn run_until(&mut self, deadline: Instant) -> Result<(), MirrorError> {
         loop {
             self.pump()?;
@@ -497,7 +543,7 @@ impl Mirror {
                 .next_due(now, &self.config)
                 .map_or(deadline, |due| due.min(deadline))
                 .max(now);
-            if let Some(item) = self.backend.events.next(wake) {
+            if let Some(item) = self.next_item(wake)? {
                 self.replica.apply(item);
             }
         }
@@ -1131,7 +1177,7 @@ impl Mirror {
             if let Some(until) = first_frame {
                 wake = wake.min(until);
             }
-            if let Some(item) = self.backend.events.next(wake.max(now)) {
+            if let Some(item) = self.next_item(wake.max(now))? {
                 self.replica.apply(item);
             }
         }
@@ -1305,7 +1351,7 @@ impl Mirror {
                 .next_due(now, &self.config)
                 .map_or(deadline, |due| due.min(deadline))
                 .max(now);
-            if let Some(item) = self.backend.events.next(wake) {
+            if let Some(item) = self.next_item(wake)? {
                 self.replica.apply(item);
             }
         }

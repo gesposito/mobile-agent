@@ -14,7 +14,7 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, visibility, covered_by, scroll_viewport,
+                timestamps, note_window_change, cancel_on, visibility, covered_by, scroll_viewport,
                 scroll_container_in, uncovered, keys_hidden, edit_menu, field_within, fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
@@ -46,8 +46,8 @@ benches/        microbenchmarks of pump, snapshot, visibility, scroll_viewport, 
                 its built-in bench harness never sees criterion's options), or with every suite
                 against the committed baseline through `just micro` (reports/micro/README.md)
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
-                timestamps, editables, controls, visibility, and bench_inputs for the fixtures the
-                benchmarks read
+                timestamps, editables, controls, visibility, cancel, and bench_inputs for the
+                fixtures the benchmarks read
 tests/support/  the fixture loader
 ```
 
@@ -206,6 +206,17 @@ text falls due.
 `drain` applies what arrived without reading the tree, even when a read is
 due, and returns how many items it applied; the reads those items call for
 happen at the next `pump`, snapshot, wait or ref.
+
+`cancel_on(flag)` gives the mirror a flag that ends its waits (design D7 of
+mcp-server): `run_until`, `wait` and `settle` look at it before they block
+on the event stream and at least every `CANCEL_SLICE` (50 ms) while they
+do, and fail with `cancelled` while it is up. A read or an input in flight
+runs to its end first, and a wait with nothing to wait for, as a settle on
+a screen already quiet, ends as it would without the flag. Without a flag
+the waits block until their next item or wake-up; with one lowered they
+block in slices, with the same reads and results. The daemon raises a
+target's flag for its session's `cancel` and lowers it once the command in
+flight is over.
 
 What the daemon needs to know about a target's timing it reads from the
 mirror, not from the backend (task 7.10):
@@ -492,6 +503,7 @@ the reasons in this order, each with advice:
 | `DEFAULT_FIRST_FRAME_WAIT` | 500 ms | design D23 of physical-ios: how long the re-read after input, and settle after it, hold for the input's first changed frame on such a target; spike S11 saw a tap's first changed frame 222 to 439 ms after its acknowledgement at p95 |
 | `DEFAULT_MAX_DIMENSION` | 1000 px | spike S2's measured output size |
 | `DEFAULT_QUALITY` | 80 | spikes S1 and S2 |
+| `CANCEL_SLICE` | 50 ms | design D7 of mcp-server: the longest a wait blocks between two looks at its cancel flag, under the 100 ms within which a cancel ends a wait |
 
 - `settle` ends once neither tree changes (events as they arrive, window
   changes noted to the mirror, deltas of re-reads) nor frame hash changes
@@ -689,6 +701,7 @@ the reasons in this order, each with advice:
 | `wait_timeout` | yes | the condition did not hold in time; the error carries the screen |
 | `no_frame` | yes | no frame source, or no frame yet |
 | `disconnected` | no | the target is gone |
+| `cancelled` | yes | the cancel flag was raised while the mirror waited (`cancel_on`) |
 
 Backend errors keep the driver's code and retryable flag.
 
@@ -893,6 +906,7 @@ cargo test -p mirror
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
+| (design D7 of mcp-server, the cancel flag) | (a raised flag ends the waits; one that stays down changes nothing) | `cancel::a_raised_flag_ends_run_until_wait_and_settle_with_cancelled_before_they_block`, `cancel::a_flag_raised_while_a_wait_blocks_ends_it_within_a_slice`, `cancel::a_flag_that_stays_down_changes_nothing_a_wait_does`; the daemon's `cancel::*` end to end |
 | Replica maintained from device events | (task 7.10: timing and draining for the daemon) | `timestamps::nothing_has_happened_before_the_first_read_and_the_first_read_gives_its_span`, `timestamps::the_last_frame_and_frame_change_come_from_the_frames_the_mirror_took_in`, `timestamps::only_the_latest_1024_frame_changes_are_kept`, `timestamps::the_last_tree_change_is_an_event_arrival_or_the_end_of_a_read_that_found_a_delta`, `timestamps::the_last_action_is_when_the_mirror_injected_input`, `timestamps::drain_takes_in_what_arrived_without_reading_the_tree` |
 | Resynchronization | Backend fallback | `resync::a_backend_fallback_rebuilds_the_replica_stales_old_refs_and_names_the_fallback`, `resync::a_read_from_another_backend_rebuilds_the_replica_even_unannounced`, `resync::a_sequence_gap_rebuilds_the_replica_and_stales_earlier_refs`, `resync::an_out_of_sync_report_from_the_driver_also_rebuilds_the_replica`, `resync::events_a_read_already_reflects_are_skipped_but_a_gap_is_not`, `resync::a_reconnection_rebuilds_the_replica_and_restarts_sequence_numbers`, `resync::events_on_streams_this_version_does_not_know_are_ignored_even_with_gaps` |
 | (what covers an element) | (named as `element_covered` names it; the part a tap reaches beside the covers) | `visibility::what_covers_an_element_is_named_as_an_action_on_its_ref_names_it`, `visibility::visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it`, and the unit tests `visibility::tests::*` |

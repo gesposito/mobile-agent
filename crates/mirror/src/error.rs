@@ -29,6 +29,9 @@ pub mod code {
     pub const NO_FRAME: &str = "no_frame";
     /// The target's connection is gone. The same code as the protocol's.
     pub const DISCONNECTED: &str = protocol::code::DISCONNECTED;
+    /// The mirror's cancel flag was raised while it waited
+    /// ([`crate::Mirror::cancel_on`]).
+    pub const CANCELLED: &str = "cancelled";
 }
 
 /// Why a ref is stale.
@@ -110,6 +113,8 @@ pub enum MirrorError {
     Backend(BackendError),
     /// The target is gone.
     Disconnected(String),
+    /// The cancel flag was raised while the mirror waited.
+    Cancelled,
 }
 
 impl MirrorError {
@@ -124,6 +129,7 @@ impl MirrorError {
             MirrorError::NoFrame => code::NO_FRAME,
             MirrorError::Backend(e) => &e.code,
             MirrorError::Disconnected(_) => code::DISCONNECTED,
+            MirrorError::Cancelled => code::CANCELLED,
         }
     }
 
@@ -131,7 +137,7 @@ impl MirrorError {
     pub fn retryable(&self) -> bool {
         match self {
             MirrorError::Backend(e) => e.retryable,
-            MirrorError::WaitTimeout { .. } | MirrorError::NoFrame => true,
+            MirrorError::WaitTimeout { .. } | MirrorError::NoFrame | MirrorError::Cancelled => true,
             MirrorError::StaleRef { .. }
             | MirrorError::UnknownRef(_)
             | MirrorError::Covered { .. }
@@ -209,6 +215,7 @@ impl fmt::Display for MirrorError {
                 f,
                 "the target is disconnected ({why}); reconnect to it before acting"
             ),
+            MirrorError::Cancelled => f.write_str("the wait was cancelled"),
         }
     }
 }
