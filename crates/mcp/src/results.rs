@@ -34,6 +34,39 @@ fn failure(reply: &Reply, printed: &str) -> String {
     }
 }
 
+/// The line a screenshot with `ifChanged` answers when its image is the
+/// session's last.
+pub const UNCHANGED: &str = "unchanged since the last screenshot";
+
+/// The result of a screenshot (design D6): the image the daemon returned
+/// inline, as image content; the path alone when the call named one, the
+/// daemon having written the file; [`UNCHANGED`] instead of either when
+/// `unchanged`. A warning follows, marked as the CLI marks it.
+pub fn screenshot(reply: &Reply, unchanged: bool) -> CallToolResult {
+    let warning = reply
+        .warning
+        .as_deref()
+        .map(|warning| format!("⚠ {warning}"));
+    let data = &reply.data;
+    let said = if unchanged {
+        UNCHANGED
+    } else if let Some(path) = data["path"].as_str() {
+        path
+    } else {
+        let (Some(image), Some(mime)) = (data["image"].as_str(), data["mimeType"].as_str()) else {
+            return of("screenshot", reply);
+        };
+        let mut content = vec![ContentBlock::image(image, mime)];
+        content.extend(warning.map(ContentBlock::text));
+        return CallToolResult::success(content);
+    };
+    let text = match warning {
+        Some(warning) => format!("{said}\n{warning}"),
+        None => said.to_owned(),
+    };
+    CallToolResult::success(vec![ContentBlock::text(text)])
+}
+
 /// `text` without the newline that ends the CLI's last line.
 pub fn lines(text: &str) -> String {
     text.trim_end_matches('\n').to_owned()

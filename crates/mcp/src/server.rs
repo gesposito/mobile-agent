@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use crate::results;
 use crate::sessions::Sessions;
-use crate::tools::{Call, Tool};
+use crate::tools::{Call, IF_CHANGED, Tool};
 
 /// The server's name, as `initialize` and `server/discover` answer it.
 pub const NAME: &str = "mobile-agent-mcp";
@@ -65,7 +65,7 @@ impl Server {
     }
 
     /// Runs `call` of `tool` and answers with its result.
-    async fn run(&self, tool: &'static Tool, call: Call) -> Result<CallToolResult, ErrorData> {
+    async fn run(&self, tool: &'static Tool, mut call: Call) -> Result<CallToolResult, ErrorData> {
         if tool.action == "doctor" {
             let probe = cli::doctor::System {
                 endpoint: self.0.endpoint.clone(),
@@ -74,9 +74,21 @@ impl Server {
             let report = blocking(move || cli::doctor::run_checks(&probe)).await?;
             return Ok(results::doctor(&report));
         }
-        let reply = self.send(call.line).await?;
-        if let Some(session) = &call.session {
-            self.0.sessions.record(session, tool.action, &reply);
+        let reply = self.send(std::mem::take(&mut call.line)).await?;
+        let Some(session) = &call.session else {
+            return Ok(results::of(tool.action, &reply));
+        };
+        self.0.sessions.record(session, tool.action, &reply);
+        if tool.action == "screenshot" && reply.success {
+            let unchanged = reply.data["image"].as_str().is_some_and(|image| {
+                self.0
+                    .sessions
+                    .screenshot(session, call.device.as_deref(), image)
+            });
+            return Ok(results::screenshot(
+                &reply,
+                unchanged && call.flag(IF_CHANGED),
+            ));
         }
         Ok(results::of(tool.action, &reply))
     }

@@ -274,6 +274,13 @@ pub struct Call {
     pub flags: Vec<&'static str>,
 }
 
+impl Call {
+    /// Whether the call set the tool's own flag `name`.
+    pub fn flag(&self, name: &str) -> bool {
+        self.flags.contains(&name)
+    }
+}
+
 impl Tool {
     /// The tool's definition, as `tools/list` gives it.
     pub fn definition(&self) -> rmcp::model::Tool {

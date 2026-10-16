@@ -5,9 +5,11 @@
 //! replies named. On its way out, whichever way that is, it sends `close`
 //! with `keep` and the target's id for each target its sessions hold, so
 //! that the claims are released and the apps keep running for the next
-//! session to attach to as they are.
+//! session to attach to as they are. It also keeps a hash of each
+//! session's last screenshot, which `ifChanged` compares (design D6).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::os::unix::net::UnixStream;
 use std::sync::{Mutex, PoisonError};
 
@@ -20,6 +22,9 @@ pub struct Sessions {
     pub own: String,
     /// Each session a call went out in, with the targets its replies named.
     held: Mutex<BTreeMap<String, BTreeSet<String>>>,
+    /// The hash of each session's last screenshot, by the `device` its call
+    /// named, since a screenshot's reply names no target.
+    shots: Mutex<HashMap<(String, Option<String>), u64>>,
 }
 
 impl Sessions {
@@ -28,7 +33,20 @@ impl Sessions {
         Sessions {
             own,
             held: Mutex::new(BTreeMap::new()),
+            shots: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Notes the image of a screenshot in `session` on the target `device`
+    /// names, and tells whether it is the image of the session's last
+    /// screenshot there. The image is hashed as its base64 text, which
+    /// stands for its bytes one for one.
+    pub fn screenshot(&self, session: &str, device: Option<&str>, image: &str) -> bool {
+        let mut hasher = DefaultHasher::new();
+        image.hash(&mut hasher);
+        let hash = hasher.finish();
+        let mut shots = self.shots.lock().unwrap_or_else(PoisonError::into_inner);
+        shots.insert((session.to_owned(), device.map(str::to_owned)), hash) == Some(hash)
     }
 
     /// Notes what the reply to a call of `action` in `session` says of the
@@ -173,5 +191,28 @@ mod tests {
             &reply(true, json!({"closed": true, "target": "emulator-5554"})),
         );
         assert_eq!(held(&sessions)["mcp-1"], BTreeSet::new());
+    }
+
+    #[test]
+    fn a_screenshot_is_the_last_one_s_when_its_image_is_on_the_same_session_and_device() {
+        let sessions = Sessions::new("mcp-1".into());
+        assert!(!sessions.screenshot("mcp-1", None, "aGVsbG8="));
+        assert!(sessions.screenshot("mcp-1", None, "aGVsbG8="));
+        assert!(
+            !sessions.screenshot("resumed", None, "aGVsbG8="),
+            "another session"
+        );
+        assert!(
+            !sessions.screenshot("mcp-1", Some("emulator-5556"), "aGVsbG8="),
+            "another target"
+        );
+        assert!(
+            !sessions.screenshot("mcp-1", None, "d29ybGQ="),
+            "another image"
+        );
+        assert!(
+            !sessions.screenshot("mcp-1", None, "aGVsbG8="),
+            "the image before"
+        );
     }
 }
