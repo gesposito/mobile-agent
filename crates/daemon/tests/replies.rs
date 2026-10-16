@@ -178,8 +178,12 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         assert!(refused["data"].is_null(), "{refused}");
     }
 
-    for _ in 0..2 {
-        success!(ask(json!({"action": "close"})), reply::Close);
+    for request in [
+        json!({"action": "close", "keep": true}),
+        json!({"action": "close"}),
+        json!({"action": "close"}),
+    ] {
+        success!(ask(request), reply::Close);
     }
     let stopped = success!(ask(json!({"action": "shutdown"})), reply::Shutdown);
     assert_eq!(stopped["data"]["stopped"], true, "{stopped}");

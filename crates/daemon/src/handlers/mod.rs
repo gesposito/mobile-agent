@@ -43,7 +43,7 @@ pub(crate) fn handle(daemon: &Daemon, request: &Request) -> Outcome {
     match &request.command {
         Command::Status(_) => status(daemon),
         Command::Devices(_) => devices(daemon, request),
-        Command::Close(_) => close(daemon, request),
+        Command::Close(args) => close(daemon, request, args.keep),
         Command::SetTimeout(args) => set_timeout(daemon, &request.session, args),
         Command::Doctor(_) => doctor(daemon),
         Command::Open(args) => run(daemon, request, args, open),
@@ -80,7 +80,7 @@ pub(crate) fn run_on(target: &mut Attached, session: &str, request: &Request) ->
         default_timeout: request.default_timeout.clone(),
     };
     match &request.command {
-        Command::Close(_) => close_app(target, &call),
+        Command::Close(args) => close_app(target, &call, args.keep),
         Command::Open(args) => open(target, &call, args),
         Command::Snapshot(args) => view::snapshot(target, &call, args),
         Command::DiffSnapshot(args) => view::diff_snapshot(target, &call, args),
@@ -618,25 +618,36 @@ fn shows(snapshot: &Snapshot, app: &str) -> bool {
             .any(|reason| matches!(reason, Degradation::SparseTree { .. }))
 }
 
-fn close(daemon: &Daemon, request: &Request) -> Outcome {
-    let (success, target) = on_target(daemon, request, close_app)?;
+/// Closes the session's app and releases its target; with `keep`, releases
+/// the target and leaves the app running (design D9 of mcp-server).
+fn close(daemon: &Daemon, request: &Request, keep: bool) -> Outcome {
+    let (success, target) = on_target(daemon, request, move |attached, call| {
+        close_app(attached, call, keep)
+    })?;
     daemon.registry().release(&target.id, &request.session);
     Ok(success)
 }
 
-fn close_app(target: &mut Attached, call: &Call) -> Outcome {
+/// Stops the app the session's `open` launched, or with `keep` forgets it
+/// and leaves it running, so that the session's next `close` stops nothing
+/// and `status` still names the app on the target.
+fn close_app(target: &mut Attached, call: &Call, keep: bool) -> Outcome {
     let app = target.session(&call.session).app.take();
-    if let Some(app) = &app {
+    if let Some(app) = app.as_deref().filter(|_| !keep) {
         target.apps.terminate(app)?;
         // As for a launch: the window in front changed.
         target.mirror.note_window_change();
         target.set_app(None);
     }
-    Ok(Success::new(json!({
+    let mut data = json!({
         "closed": true,
         "app": app,
         "target": target.info.id,
-    })))
+    });
+    if keep {
+        data["kept"] = true.into();
+    }
+    Ok(Success::new(data))
 }
 
 /// The app in front, as agent-browser's `origin` names the page: system UI
