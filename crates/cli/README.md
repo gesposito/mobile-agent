@@ -5,7 +5,8 @@ thin client of the daemon in `crates/daemon` that speaks agent-browser's
 grammar, ref syntax and JSON envelope, so skills and prompts written for the
 web tool carry over where devices have the same concepts. It links nothing
 of the daemon; each command is one JSON request over the daemon's Unix
-socket, and the first command starts the daemon.
+socket, built from the request types of `crates/wire`, and the first
+command starts the daemon.
 
 ```sh
 cargo build --release -p cli -p daemon    # mobile-agent and mobile-agent-daemon, side by side
@@ -19,7 +20,7 @@ src/
   main.rs            the mobile-agent binary
   lib.rs             run(): parse, settings, dispatch; help topics; doctor; the code module
   args.rs            the grammar, with each command's examples and defaults
-  request.rs         a parsed command to its daemon request
+  request.rs         a parsed command to its daemon request, built from crates/wire's request types
   client.rs          socket directory, auto-start, version check, retries, reply wait
   output.rs          human output and agent-browser's JSON envelope
   batch.rs           batch: word splitting, entries, the aggregate array

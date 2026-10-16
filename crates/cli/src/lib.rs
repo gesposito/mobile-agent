@@ -18,7 +18,6 @@ use std::path::Path;
 
 use clap::Parser;
 use clap::error::ErrorKind;
-use serde_json::Value;
 
 use crate::client::{Failure, Reply};
 use crate::code::{DOCTOR_FAILED, INVALID_CONFIG, UNKNOWN_COMMAND};
@@ -182,30 +181,13 @@ pub struct Settings {
 
 /// Runs one command against the daemon: its action and the reply.
 pub(crate) fn execute(command: &args::Command, settings: &Settings, cwd: &Path) -> (String, Reply) {
-    let mut request = match request::build(command, cwd) {
+    let request = match request::request(command, settings, cwd, client::request_id()) {
         Ok(request) => request,
         Err(failure) => return (String::new(), Reply::failed(failure)),
     };
-    let action = request
-        .get("action")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    request.insert("id".into(), client::request_id().into());
-    request.insert("session".into(), settings.session.clone().into());
-    if let Some(platform) = &settings.platform {
-        request.insert("platform".into(), platform.to_ascii_lowercase().into());
-    }
-    if let Some(device) = &settings.device {
-        request.insert("device".into(), device.clone().into());
-    }
-    if settings.force {
-        request.insert("force".into(), Value::Bool(true));
-    }
-    if let Some(ms) = settings.default_timeout {
-        request.insert("defaultTimeout".into(), ms.into());
-    }
-    let reply = client::call(&settings.endpoint, &request).unwrap_or_else(Reply::failed);
+    let action = request.command.action().to_owned();
+    let reply =
+        client::call(&settings.endpoint, &request::line(&request)).unwrap_or_else(Reply::failed);
     (action, reply)
 }
 
