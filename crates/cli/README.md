@@ -37,7 +37,8 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 |---|---|
 | `devices` | lists connected targets with their state, and what makes an unusable one usable |
 | `open <app> [--relaunch] [--env K=V]...` | launches an app, claims its target, waits for the screen to settle |
-| `close` | stops the app this session opened and releases the target |
+| `close [--keep]` | stops the app this session opened and releases the target; `--keep` releases the target and leaves the app running, so the next session finds it as this one left it |
+| `cancel` | ends this session's command in flight, such as a wait another shell or client left running: it fails with `cancelled` within about 100 ms, a tap or tree read already under way finishing first and a click whose tap went in completing with a warning; replies once the command has ended, naming it, or that nothing was in flight |
 | `snapshot [-i] [-d N] [--delta [--full]]` | lists elements, one per line with role, name and ref, marking with `visible=NN%` what a tap reaches part of; `-i` leaves out what a tap reaches none of, which the full listing keeps at `visible=0%`, a view covering it whole or not, unless a dialog covers it; `-i`'s hint lines count what it leaves out for a cover beside what is scrolled away, naming the cover as a refused action does (`2 of them behind the header`, a view listed before a list across its top being its header whatever it holds), and the full listing's count only what it leaves out, so that `-i`'s counts of covered elements are the full listing's `visible=0%` elements; a keyboard window that draws no keys, as under a hardware keyboard, covers nothing and gets no `- keyboard` line, and iOS's edit menu covers only the strip it draws on |
 | `click <target>` or `click <x> <y>` (alias `tap`) `[--hold MS]` | taps a ref, a selector or a point in device points |
 | `fill <target> <text>` | replaces a field's text and reads it back, from the field's value or, for a field without one, from what lies inside it, as a code field's boxes hold its digits, or else from the part of its name the entry changed, separators left out, as a code field that names its boxes, each its digit or a dash, before its label (`readFrom`: `value`, `descendants`, `name`); text typed as keys, as on a Simulator, into a field that holds text, or known only by its name a name that spells the text already, goes in once the field has been emptied and reads empty, and is read back against the emptied field, so a refill of the code a code field holds reads back through its name; the value of a field that is not a text field counts only when it changed with the entry and is no placeholder, as long as the entry and more than dashes, so a code field that shows a box's placeholder as its value reads back through its boxes or its name; an identifier on a view that takes no text but holds exactly one field fills that field, which a warning names, and one on such a view that holds no field and has no ref taps it, waits up to 1 s for the keyboard, or for its window drawing nothing while a hardware keyboard serves the input, and enters the text where the tap put the focus, reading it back through the view, with `ref: null` and a warning saying the keyboard carried the text, or fails with `invalid_argument` when no keyboard comes up: text typed that the field took otherwise is entered again in one piece, with a warning naming what the keys left; a field that still holds other text fails with `text_mismatch`, naming what it holds, the part of a name that changed for a name, and one that shows nothing to read back succeeds with `verified: false`, `reason: no_value_to_read` and a warning; iOS's edit menu that a paste landing nothing leaves up, opened by the tap readying the paste, is closed with a tap on the field near its left end before the reply. `method` is `keys` for typed text and `direct` for text entered in one piece: on iOS a paste, which replaces the device's pasteboard and can show iOS's paste banner, on Android a set |
@@ -46,7 +47,7 @@ tests/               one file per concern: snapshot, errors, commands, sessions,
 | `swipe <direction> [distance]` or `swipe <x1> <y1> <x2> <y2>` | moves the finger |
 | `scroll [direction] [amount] [-s <target>] [--until <target>]` | moves the content, in strokes longer than a tap (more than 8 points on Android, 10 on iOS, else `stroke_too_short`) that keep off the keyboard and the system bars and, with the keyboard up, inside what shows of the list (`covered_by_keyboard` when the keyboard leaves less than 120 points of what it scrolls); with `--until`, stroke by stroke until the element is mostly in view, each stroke at rest before the finger lifts and short enough that the element cannot pass unseen, `visible` giving the share of it in view, and a scroll that stops naming its last stroke's start and end, also as `data.from` and `data.to`, and what moved after it |
 | `screenshot [path] [--quality N] [--max-dimension PX]` | saves the latest frame as a JPEG |
-| `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle` | waits for an element (`--state visible\|hidden\|enabled` on screen, `attached\|detached` held in the tree, in view or not, the reply's `inView` saying which), time, text or a settled screen |
+| `wait <target>`, `wait <ms>`, `wait --text <t>`, `wait --settle`, `wait --change` | waits for an element (`--state visible\|hidden\|enabled` on screen, `attached\|detached` held in the tree, in view or not, the reply's `inView` saying which), time, text or a settled screen; `--change` returns once the tree or the frames moved since this session's last snapshot, at once for a change that came before it, and prints what moved and the delta `snapshot --delta` prints |
 | `get text\|value\|box <target>` | reads an element the tree holds, in view or not, at once: `inView` says which, and the human output adds a line when it is out of view; one the tree does not hold fails with `element_not_found` at the timeout, naming what the screen lists |
 | `diff snapshot` | compares the screen with this session's last snapshot |
 | `batch [--bail] [command]...` | runs commands in order |
@@ -220,11 +221,43 @@ The other kinds are `{"baseRevision", "kind": "unchanged", "revision"}` and
 "kind": "delta", "revision", "treeChange": {"deleteCount", "lines",
 "startLine"}}`. `crates/daemon/README.md` lists every action's data.
 
+`wait --change` prints what moved and after how long, then the delta as
+`snapshot --delta` prints it; frames that move alone, as an animation's,
+leave the tree `unchanged`:
+
+```
+$ mobile-agent click '#tab-list'
+✓ Done (dispatch 0.9 ms, first frame change 0.1 ms, first tree delta 0.9 ms)
+$ mobile-agent wait --change
+✓ The tree and frames changed after 0.02 ms
+- button "Row 1" [id=row-1, ref=e10]
+- button "Row 2" [id=row-2, ref=e11]
+…
+$ mobile-agent click '#tab-anim'
+✓ Done (dispatch 2.8 ms, first frame change 2.6 ms, first tree delta 2.9 ms)
+$ mobile-agent snapshot -i --delta > /dev/null
+$ mobile-agent wait --change
+✓ Frames changed after 0.04 ms
+unchanged (revision 5)
+```
+
+The first wait answered at once, since the List tab came in during the
+click, after the session's last snapshot; the delta was the whole listing,
+the List tab replacing most of the Login tab's.
+
+With `--json` the data is `{"waited": "change", "endedBy": "tree|frame|both",
+"elapsedMs", "snapshot": <the delta object>}`, and a still screen fails with
+`wait_timeout` at the wait's timeout. `close --keep` prints `✓ Released
+emulator-5554; dev.mobileagent.fixture.expo keeps running` and its data
+gains `"kept": true`; `cancel` prints `✓ Cancelled the wait in flight on
+emulator-5554`, or `✓ Nothing in flight to cancel`, its data
+`{"cancelled", "action", "target"}`.
+
 Every failure exits with status 1 and carries a snake_case code. The CLI's
 own are `invalid_argument` (usage), `unknown_command`, `invalid_config`,
 `daemon_unavailable`, `daemon_timeout` and `doctor_failed`; the daemon's,
 such as `stale_ref`, `target_claimed` or `ambiguous_target`, arrive in its
-reply.
+reply, and so does `cancelled`, for a command its session's `cancel` ended.
 
 ## Timing spans
 
@@ -314,8 +347,8 @@ ceiling.
 
 ## Timeouts
 
-Waiting commands take `--timeout <ms>`: `wait` for an element or text, and
-`click`, `fill`, `type`, `get` and `scroll` on a selector. Without one,
+Waiting commands take `--timeout <ms>`: `wait` for an element, text or a
+change, and `click`, `fill`, `type`, `get` and `scroll` on a selector. Without one,
 the session's default applies (`set timeout`), else `--default-timeout`,
 `MOBILE_AGENT_DEFAULT_TIMEOUT` or the config's `defaultTimeout`, else 10000
 ms. `wait --settle` waits at most 3000 ms unless given `--timeout`; `open`
@@ -456,12 +489,14 @@ Never for long runs`.
 
 Every command's help ends with examples and states its defaults; `help
 <command>` prints the same as `<command> --help`, and `help get text`
-reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 118 lines
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 119 lines
 for an agent's prompt, under the spec's 120: the snapshot, act and
 snapshot-again loop, the listing format and what it leaves out, refs and
 `stale_ref`, selectors, acting, what an action on an element out of sight
-fails with and what `fill` reads back, waiting and settle, reading, output
-and codes, targets and sessions, where a physical iPhone differs (the
+fails with and what `fill` reads back, waiting, settle and `wait --change`
+after an action whose effect may still be arriving, reading, output and
+codes, targets and sessions with `close --keep` leaving the app running and
+`cancel`, where a physical iPhone differs (the
 readiness codes a command on it fails with and where `devices` and
 `doctor` name the step, the slower tier, a tree read of a 500-cell screen
 about 0.5 s and frames 19 a second, and text through the runner, `direct`
@@ -538,6 +573,11 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
   a paste on iOS, which replaces the device's pasteboard, a set on Android)
   and `retried`; agent-browser's `fill` clears the field and types, and its
   documentation checks the result with a snapshot or `diff snapshot`.
+- `wait --change`, `close --keep` and `cancel` are this tool's own: they
+  serve agents that work through the MCP server (the `mcp-server` change,
+  designs D7 to D9), which waits for a change instead of polling
+  snapshots, leaves the app it drove running when it exits and ends a
+  wait its client gave up on.
 - The version file names the build as well as the release.
 - A config file cannot set the socket directory, and there is no
   namespace flag; `--socket-dir` covers both uses.
@@ -555,6 +595,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Sessions | Claimed target | `sessions::a_claimed_target_refuses_another_session_naming_the_holder_until_forced`, `sessions::refs_are_isolated_between_sessions`, `sessions::the_session_and_json_flags_have_environment_twins`, `selection::claims_are_per_target`; the daemon's `claims::*` |
 | Batch execution | Batch with failure | `batch::a_bailing_batch_stops_after_the_failing_second_command`, `batch::a_batch_without_bail_runs_every_command_and_still_fails`, `batch::a_batch_reads_a_json_array_of_argv_arrays_from_stdin`, `batch::quoted_arguments_keep_their_spaces`, `batch::a_human_batch_prints_each_result_with_a_blank_line_between`, `batch::a_command_that_does_not_parse_is_a_failed_entry_with_a_code`, `batch::a_batch_applies_its_global_flags_to_every_command`, `batch::an_empty_batch_prints_an_empty_array`, `batch::tests::words_split_as_a_shell_splits_them` |
 | Configurable timeouts | Per-command timeout | `timeouts::a_2_s_wait_fails_at_2_s_not_after_the_session_default`, `timeouts::the_session_default_applies_to_waits_that_name_no_timeout`, `timeouts::session_defaults_belong_to_their_session`, `timeouts::the_environment_default_applies_when_the_session_sets_none`, `timeouts::timeouts_are_bounded_and_must_be_numbers`, `timeouts::a_long_wait_outlasts_a_short_idle_timeout`, `help::waiting_commands_document_their_default_timeouts`, `client::tests::waits_get_their_own_timeout_plus_a_margin_and_other_commands_30_s` |
+| Change waits, claim release and cancel | Wait for the next change; Close and keep | `commands::wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen`, `commands::close_keep_releases_the_target_and_leaves_the_app_running`, `commands::cancel_ends_the_session_s_wait_that_another_shell_started`, `help::every_command_has_help_with_examples` (`cancel` among them), `help::the_agent_guide_says_when_to_wait_for_a_change_and_what_close_keep_leaves`, `request::tests::every_command_sends_the_line_it_sent_before_less_the_parameters_at_their_default` over `crates/wire/tests/lines.json`'s lines for them; the daemon's `changes::*`, `cancel::*` and `claims::close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session` |
 | Agent-facing help | Prompt guide | `help::the_agent_guide_fits_in_120_lines_and_covers_the_loop_refs_and_settle`, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back`, `help::the_agent_guide_says_where_a_tap_goes_and_what_the_keyboard_hides` (rn-app-fixes, design D37 to D40), `help::the_agent_guide_says_what_fill_reads_from_a_name_and_what_a_snapshot_leaves_out` (design D43 to D45), `help::the_agent_guide_says_what_hints_count_what_snapshot_keeps_and_what_get_reads_out_of_view` (design D50 and D51), `help::the_agent_guide_says_a_hardware_keyboard_covers_nothing_and_a_selector_is_refused_as_its_ref` (design D52 and D53), `help::the_agent_guide_says_what_the_edit_menu_covers_and_when_a_code_fields_value_counts` (design D55 to D57), `help::the_agent_guide_says_where_a_physical_iphone_differs` (physical-ios task 5.3), `help::every_command_has_help_with_examples`, `help::the_top_level_help_points_to_the_agent_guide`, `help::help_for_an_unknown_topic_fails_with_a_code` |
 | Text entry verification | Composite code field; Value that cannot be read back; Mismatch; Code field that names its digits; Identifier on the field's wrapper; Name with a fixed suffix; Node without a field that raises the keyboard; Refill of the same text; Refill with the keyboard up | the daemon's `handlers::act::tests::a_fill_of_a_code_into_a_field_of_boxes_is_verified_through_their_texts`, `handlers::act::tests::a_fill_into_a_field_with_no_value_to_read_succeeds_unverified` and `handlers::act::tests::a_fill_whose_field_reads_back_other_text_after_the_retry_fails_naming_both` (rn-app-fixes, design D33); through a name the entry changed, a wrapper's identifier and a field whose label changes, `handlers::act::tests::a_fill_of_a_code_into_a_field_whose_name_spells_it_is_verified_through_the_name`, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_fields_wrapper_go_into_the_field` and `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (design D39); through the part of a name the entry changed, `handlers::act::tests::a_name_shows_the_text_in_the_part_the_entry_changed` and `handlers::act::tests::a_fill_of_a_code_into_a_field_named_by_its_boxes_compares_what_the_entry_changed` (design D43); through a view holding no field, `handlers::act::tests::fill_and_type_by_the_identifier_of_a_node_that_raises_the_keyboard_go_to_the_input_it_focuses` and `handlers::act::tests::an_identifier_on_a_node_whose_tap_raises_no_keyboard_still_takes_no_text` (design D44); the emptying before keys and the read-back against the emptied field, `handlers::act::tests::a_refill_of_the_code_a_field_holds_empties_it_first_and_is_verified_through_the_name` and `handlers::act::tests::a_keyed_fill_into_a_field_holding_text_empties_it_and_types_once_it_reads_empty` (design D49); a code field showing a placeholder value, `handlers::act::tests::a_code_field_showing_a_placeholder_value_is_read_back_through_its_name_in_both_keyboard_states` and `handlers::act::tests::a_value_shows_the_entry_only_when_it_changed_with_it_and_is_no_placeholder` (design D56); the edit menu a lost paste leaves up, `handlers::act::tests::a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up` (design D55); end to end, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` and `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`; `method` and its side effect on the pasteboard in the guide, `help::the_agent_guide_says_what_a_click_refuses_and_what_fill_reads_back` |
 | Selectors resolve covered elements | Click by text on a covered element | the daemon's `handlers::act::tests::a_click_by_text_on_a_text_a_button_covers_whole_is_refused_naming_it_at_once`, `handlers::act::tests::a_click_by_identifier_on_a_control_a_view_holds_whole_is_refused_at_once`, `handlers::act::tests::a_fill_by_identifier_on_a_field_behind_a_dialog_is_refused_naming_it_at_once` and `handlers::act::tests::a_selector_on_an_element_the_tree_does_not_hold_waits_its_timeout`, and the mirror's `waits::an_attached_wait_gives_the_match_on_screen_before_one_a_view_covers` (rn-app-fixes, design D53); in the guide, `help::the_agent_guide_says_a_hardware_keyboard_covers_nothing_and_a_selector_is_refused_as_its_ref` |

@@ -37,19 +37,21 @@ src/
   wire.rs       a request line read into the request types of crates/wire, the reads of their
                 parameters, the reply envelope, the error codes
   registry.rs   discovery, target selection, claims, session settings, workers
-  worker.rs     one thread per target owning its mirror; per-session state
-  handlers/     what each action does: mod (status, devices, open, close, set_timeout,
-                doctor), view (snapshot, diff, get, wait, screenshot), act (click,
-                fill, type, press, swipe, scroll), aim (refs and selectors)
+  worker.rs     one thread per target owning its mirror; per-session state; the command in
+                flight, which cancel ends
+  handlers/     what each action does: mod (status, devices, open, close, cancel,
+                set_timeout, doctor), view (snapshot, diff, get, wait, screenshot), act
+                (click, fill, type, press, swipe, scroll), aim (refs and selectors)
   keys.rs       key names to Android key codes and iOS HID usages
   signals.rs    the signal a settle ended on, from the changes the mirror timed
   driver.rs     the Driver factory contract and the registration point
   devices/      the device drivers: simulator (Simulator driver), ios (physical iPhones),
                 android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          arguments, claims, controller, idle, ios_device, lifecycle and replies, over the
-                socket against the binary; bench_inputs, the same for the screen the benches
-                time; devices, the CLI against a real Simulator, emulator and iPhone
+tests/          arguments, cancel, changes, claims, controller, idle, ios_device, lifecycle,
+                replies and screenshots, over the socket against the binary; bench_inputs, the
+                same for the screen the benches time; devices, the CLI against a real
+                Simulator, emulator and iPhone
 benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
                 wire::parse of the line the CLI sends for snapshot -i, reply_line of the
                 reply to it on the fake fixture's Big tab (500 cells), with their
@@ -152,7 +154,8 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers, emulatorController}`, `targets [{id, platform, class, name, state, attached, attaches, frameSource, app, claimedBy, driver}]` (`attaches` how many times the daemon attached the target; `frameSource` whether the attached target has a frame source, null before it is attached; `driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
 | `devices` | `platform` | `devices [{id, platform, class, name, state, model, os, advice, claimedBy}]` (`advice` only for a target its state keeps from automation) |
 | `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` (from the launch request until the screen settled), `firstTreeMs` (until the replica showed the app, null when it did not) |
-| `close` | | `closed`, `app`, `target`; the claim is released |
+| `close` | `keep` | `closed`, `app`, `target`; the claim is released. With `keep`, `kept`: the session forgets its app without stopping it, so the app keeps running, `status` still names it, and the session's next `close` stops nothing (design D9 of mcp-server) |
+| `cancel` | | `cancelled` (whether a command of the session was in flight on a target it holds), `action` and `target` (that command's, null when none was). It ends that command and replies once it is over (see Sessions and claims) |
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
 | `diff_snapshot` | `interactive`, `maxDepth` (without a baseline) | `changed`, `diff`, `additions`, `removals`, `modifications`, `unchanged`, `added`, `removed`, `modified` (elements, with `fields`), `baseReplicaRevision`, `replicaRevision`, `target` |
 | `click` | `target` or `x`, `y`; `hold`, `timeout` | `clicked`, `ref`, `x`, `y`, `accepted`, `dispatchMs`, `frameChangeMs` and `treeDeltaMs` when they came, `watchedMs` |
@@ -161,8 +164,8 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `press` | `key` | `pressed`, `code`, `meta` |
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
 | `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`, `from` and `to` (where the last stroke came down and lifted, as `[x, y]`: every stroke's without `until`, null when it made none); with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow; a scroll with `until` that stops gives its last stroke's `from` and `to` in its failure's data |
-| `screenshot` | `path`, `quality`, `maxDimension` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame) |
-| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}`, `inView` (whether a tap reaches part of it); `state` `visible`, `hidden` and `enabled` look on screen, `attached` and `detached` at every element the replica holds, in view or not (design D51) |
+| `screenshot` | `path`, `quality`, `maxDimension`, `inline` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame). With `inline`, `image` (the bytes, base64-encoded) and `mimeType` (`image/jpeg`, or `image/png` for a driver's own capture in PNG) beside the file `path` names; without a path no file is written and `path` is null (design D6 of mcp-server) |
+| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `change`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `change`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; change: `endedBy` (what moved: `tree`, `frame` or `both`), `elapsedMs`, `snapshot` (the delta object `snapshot` with `delta` gives; see Tap spans and settle signals); elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}`, `inView` (whether a tap reaches part of it); `state` `visible`, `hidden` and `enabled` look on screen, `attached` and `detached` at every element the replica holds, in view or not (design D51) |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height`, and `inView`: the element is any the replica holds, in view or not, found at once; one it does not hold fails with `element_not_found` at the timeout, naming what the screen lists (design D51) |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
 | `doctor` | | `pid`, `version`, `drivers`, `emulatorController`, `compatibility {rows [{subject, feature, status, note}], note}` |
@@ -552,6 +555,27 @@ that springs back with no event, and until it rests it takes a tap on a
 row for the start of a drag, so a click sent right after a settle that
 ended sooner opens nothing.
 
+A change wait (`wait` with `change`, design D8 of mcp-server) returns once
+the replica's revision or the frames have moved since the session's last
+snapshot (a plain one, a delta, a diff's, or an earlier change wait's),
+which the session keeps per target with the latest frame change it saw: a
+change that came between that snapshot and the wait ends it at once, which
+is the wait's use, after an action whose effect may still be arriving,
+where a click's watch ended before it came. It looks every 5 ms, the
+mirror keeping the replica current in between with `run_until`; once
+something moved it brings the tree up to the frames as a snapshot does
+(`Attached::catch_up`) and takes the reads that are due, so a frame change
+that a window without events shows only at its re-read reports the tree as
+well. `endedBy` names what moved, `tree`, `frame` or `both`, and
+`snapshot` carries the delta `snapshot` with `delta` gives in the options
+of the session's last snapshot (interactive for a session that took none),
+which becomes the session's last snapshot: frames that move alone, as an
+animation's or the end of a transition after its tree changed, give
+`frame` and `unchanged`. A session that took no snapshot has seen no
+screen, so its change wait answers at once with the whole listing and
+`tree`. A still screen fails with `wait_timeout` at the wait's bound, its
+`timeout`, else the session's default, else 10000 ms.
+
 ## Reading the tree after the display changed
 
 On a window that sends no change events (every Simulator window, Compose on
@@ -591,7 +615,31 @@ A target command claims its target for the request's session when nobody
 holds it. Another session is refused with `target_claimed`, naming the
 holder in the message and as `data.holder`, unless it passes `force`, which
 moves the claim. `close` stops the app the session's `open` launched and
-releases the claim. Claims last until then or until the daemon exits.
+releases the claim; `close` with `keep` releases it and leaves the app
+running, forgotten by the session, for the next session to attach to as it
+is (design D9 of mcp-server). Claims last until then or until the daemon
+exits.
+
+`cancel` ends the session's command in flight (design D7 of mcp-server). A
+target's worker runs one command at a time, so a cancel cannot wait its
+turn: the connection thread finds the targets the session holds through
+the claims, and on each whose worker runs a command of the session raises
+the flag of the target's mirror (`Mirror::cancel_on`), which every wait
+looks at before it blocks and every 50 ms while it does: `wait` in every
+mode, settle, `scroll --until`, `open`'s waits for the app, `fill`'s
+read-back and keyboard waits, a selector's wait for its element, and the
+reads after the display changed. The command fails with `cancelled`, its
+message naming its action, and its reply goes to its own connection. A
+device call in flight, a tap being delivered or a tree read, runs to its
+end, and the command fails at the next wait after it, but for a click
+whose tap went in: its watch ends and it completes, with a warning that a
+cancel ended the watch. The worker lowers the flag as the command ends,
+under the lock the cancel raises it with, so a cancel that comes as a
+command ends never reaches the next. `cancel` replies once the command is
+over, up to 5 s, with a warning naming one that was not, held in a device
+call; with nothing of the session in flight it changes nothing and
+replies `cancelled: false`. It takes no target: whatever `device` or
+`platform` a request names, it looks at the session's claims.
 
 Refs are isolated between sessions: a session acts only on refs its own
 snapshots (and waits and diffs) listed on the target; any other ref fails
@@ -621,8 +669,8 @@ as the iPhone driver forgets the signing identity it checked.
 
 ## Timeouts and idle exit
 
-A waiting command (a wait for an element or text, or a click, fill, type,
-get or scroll on a selector) waits for its own `timeout`, else its
+A waiting command (a wait for an element, text or change, or a click, fill,
+type, get or scroll on a selector) waits for its own `timeout`, else its
 session's default (`set_timeout`), else the client's `defaultTimeout`, else
 10000 ms. `wait` with `settle` and `open` wait at most 3000 ms (design D8)
 unless given `timeout`; `open` first waits for the launched app's first
@@ -1149,6 +1197,7 @@ source and reports the agent's paths, as a real emulator does.
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
 | `daemon_stopping` | the daemon is shutting down, and a target command reached it after it stopped its targets; run the command again to start a new daemon |
+| `cancelled` | the session's `cancel` ended the command at its next wait; the message names the command's action |
 | `internal` | a command failed unexpectedly; the worker detaches the target |
 
 A command that fails `disconnected`, a code the mirror and the drivers
@@ -1211,7 +1260,8 @@ Worked around here without changing `crates/mirror`:
 
 - `Mirror::delta_snapshot` returns neither the verdict nor the foreground,
   so a delta reply's `origin` and `verdict` come from a plain snapshot taken
-  just before it: one more listing per delta request.
+  just before it, as a change wait's warning and refs do: one more listing
+  per delta request.
 - Refs are issued only by `Mirror::snapshot`; `Mirror::wait` returns an
   element without a ref when no snapshot listed it, so text entry by
   selector takes an interactive snapshot to obtain one.
@@ -1246,6 +1296,7 @@ Worked around here without changing `crates/mirror`:
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Sessions | Claimed target | `claims::a_claimed_target_refuses_another_session_naming_the_holder`, `claims::force_takes_the_target_over_and_the_previous_holder_is_refused`, `claims::every_target_command_claims_an_unclaimed_target`, `claims::a_released_target_serves_another_session_without_force`, `claims::the_holder_keeps_using_its_target`, `claims::status_names_the_holder_of_each_target`, `claims::a_request_without_a_session_uses_the_default_session` |
+| Change waits, claim release and cancel (mcp-server, designs D6 to D9) | Wait for the next change; Close and keep; (cancel; inline screenshot) | `changes::a_change_wait_returns_at_the_tree_change_a_tap_s_late_effect_brings`, `changes::on_targets_with_frames_a_tap_s_late_effect_moves_the_tree_and_the_frames`, `changes::a_change_since_the_session_s_last_snapshot_returns_at_once`, `changes::frames_that_move_alone_end_the_wait_with_the_tree_unchanged`, `changes::a_still_screen_fails_with_wait_timeout_at_the_wait_s_bound`, `changes::a_session_without_a_snapshot_gets_the_whole_listing_at_once`; `claims::close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session`; `cancel::a_cancel_ends_the_session_s_wait_with_cancelled_and_the_next_command_runs_at_once`, `cancel::a_cancel_with_nothing_in_flight_says_so_and_changes_nothing`, `cancel::a_cancel_during_a_tap_s_device_call_leaves_the_click_completing`, `cancel::every_kind_of_wait_ends_at_a_cancel`, `worker::tests::a_cancel_raises_the_flag_for_the_session_s_command_alone_until_it_ends`, and the mirror's `cancel::*`; `screenshots::an_inline_screenshot_carries_the_image_and_writes_a_file_only_where_a_path_names_one`; the replies in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` and `replies::a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types` |
 | Daemon lifecycle | (idle exit, configurable) | `idle::the_daemon_exits_after_its_idle_timeout_and_removes_its_files`, `idle::requests_postpone_the_idle_exit`, `idle::an_idle_timeout_of_zero_disables_the_exit`, `idle::the_idle_timeout_defaults_to_one_hour`, `idle::idle_timeouts_take_the_units_agent_browser_takes`, `idle::a_daemon_whose_socket_file_was_removed_still_exits_when_idle` (task 8.14) |
 | Daemon lifecycle | (version file, replacement, socket) | `lifecycle::the_daemon_writes_its_pid_and_version_files`, `lifecycle::a_daemon_of_another_version_is_shut_down_and_replaced`, `lifecycle::a_second_daemon_of_the_same_version_leaves_the_first_serving`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_a_new_one`, `lifecycle::shutdown_stops_the_daemon_and_removes_its_files`, `lifecycle::the_socket_lives_under_the_runtime_directory`, `lifecycle::an_overlong_socket_path_is_refused_with_a_hint`; task 8.14: `lifecycle::shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory`, `server::tests::an_exiting_daemon_removes_the_lock_unless_a_startup_holds_it`, `server::tests::a_startup_takes_the_lock_again_after_an_exit_removed_its_file` |
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
