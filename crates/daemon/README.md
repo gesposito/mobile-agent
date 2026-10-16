@@ -165,7 +165,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `swipe` | `direction`, `distance`, or `from`, `to` as `[x, y]`; `duration` | `swiped`, `from`, `to` |
 | `scroll` | `direction`, `amount`, `target`, `until`, `timeout` | `scrolled`, `direction`, `amount`, `strokes`, `from` and `to` (where the last stroke came down and lifted, as `[x, y]`: every stroke's without `until`, null when it made none); with `until`, `amount` is the length of the strokes that look for the element, and `until`, `visible` (the share of the element's bounds in view, from 0 to 1) and `element` follow; a scroll with `until` that stops gives its last stroke's `from` and `to` in its failure's data |
 | `screenshot` | `path`, `quality`, `maxDimension`, `inline` | `path`, `format`, `width`, `height`, `quality`, `seq`, `ageMs`, `source` (`capture` when the driver took it now, with `seq` null; `frame` for the mirror's latest frame). With `inline`, `image` (the bytes, base64-encoded) and `mimeType` (`image/jpeg`, or `image/png` for a driver's own capture in PNG) beside the file `path` names; without a path no file is written and `path` is null (design D6 of mcp-server) |
-| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `change`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `change`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; change: `endedBy` (what moved: `tree`, `frame` or `both`), `elapsedMs`, `snapshot` (the delta object `snapshot` with `delta` gives; see Tap spans and settle signals); elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}`, `inView` (whether a tap reaches part of it); `state` `visible`, `hidden` and `enabled` look on screen, `attached` and `detached` at every element the replica holds, in view or not (design D51) |
+| `wait` | `ms`; or `settle`, `quiet`, `treeOnly`, `timeout`; or `change`, `frames`, `timeout`; or `target` or `text`, `state`, `timeout` | `waited` (`time`, `settle`, `change`, `selector`, `text`); settle: `settled`, `endedBy` (`tree`, `frame`, `both`, `none`, `timeout`), `elapsedMs`, `stillChanging` (`tree`, `frame`), `treeChanges`, `frameChanges`; change: `endedBy` (what moved: `tree`, the listing, `frame` or `both`), `elapsedMs`, `snapshot` (the delta object `snapshot` with `delta` gives; see Tap spans and settle signals); elements: `elapsedMs`, `element {ref, role, name, id, value, enabled, bounds}`, `inView` (whether a tap reaches part of it); `state` `visible`, `hidden` and `enabled` look on screen, `attached` and `detached` at every element the replica holds, in view or not (design D51) |
 | `get` | `what` (`text`, `value`, `box`), `target`, `timeout` | `text`, or `value`, or `x`, `y`, `width`, `height`, and `inView`: the element is any the replica holds, in view or not, found at once; one it does not hold fails with `element_not_found` at the timeout, naming what the screen lists (design D51) |
 | `set_timeout` | `ms` | `session`, `defaultTimeoutMs` |
 | `doctor` | | `pid`, `version`, `drivers`, `emulatorController`, `compatibility {rows [{subject, feature, status, note}], note}` |
@@ -556,25 +556,34 @@ row for the start of a drag, so a click sent right after a settle that
 ended sooner opens nothing.
 
 A change wait (`wait` with `change`, design D8 of mcp-server) returns once
-the replica's revision or the frames have moved since the session's last
-snapshot (a plain one, a delta, a diff's, or an earlier change wait's),
-which the session keeps per target with the latest frame change it saw: a
-change that came between that snapshot and the wait ends it at once, which
-is the wait's use, after an action whose effect may still be arriving,
-where a click's watch ended before it came. It looks every 5 ms, the
-mirror keeping the replica current in between with `run_until`; once
-something moved it brings the tree up to the frames as a snapshot does
-(`Attached::catch_up`) and takes the reads that are due, so a frame change
-that a window without events shows only at its re-read reports the tree as
-well. `endedBy` names what moved, `tree`, `frame` or `both`, and
-`snapshot` carries the delta `snapshot` with `delta` gives in the options
-of the session's last snapshot (interactive for a session that took none),
-which becomes the session's last snapshot: frames that move alone, as an
-animation's or the end of a transition after its tree changed, give
-`frame` and `unchanged`. A session that took no snapshot has seen no
-screen, so its change wait answers at once with the whole listing and
-`tree`. A still screen fails with `wait_timeout` at the wait's bound, its
-`timeout`, else the session's default, else 10000 ms.
+the session's listing changed: the listing in the options of the session's
+last snapshot (a plain one, a delta, a diff's, or an earlier change
+wait's), which the session keeps per target with the latest frame change
+it saw, against the text that snapshot listed. A change that came between
+that snapshot and the wait ends it at once, which is the wait's use, after
+an action whose effect may still be arriving, where a click's watch ended
+before it came. It looks every 5 ms, the mirror keeping the replica
+current in between with `run_until`, and takes the listing again, a
+`Mirror::snapshot` in those options, only when the replica's revision
+moved since it last took it: a change the listing does not show, such as a
+text an interactive listing leaves out, leaves it waiting, that revision
+its new last look. Frames end it only with `frames`, for a canvas, a map
+or a screen the tree does not describe, since a caret's blink, a spinner
+or the end of a transition after its tree changed move them all the time.
+Once something ended it, it brings the tree up to the frames as a snapshot
+does (`Attached::catch_up`) and takes the reads that are due, so a frame
+change that a window without events shows only at its re-read reports the
+tree as well. `endedBy` names what moved, `tree` for the listing, `frame`
+for frames with the listing as it was, a change outside it included, or
+`both`, and `snapshot` carries the delta `snapshot` with `delta` gives in
+the options of the session's last snapshot (interactive for a session that
+took none), which becomes the session's last snapshot: with `frames`,
+frames that move alone, as an animation's, give `frame` and `unchanged`. A
+session that took no snapshot has seen no screen, so its change wait
+answers at once with the whole listing and `tree`. A listing that holds
+still fails with `wait_timeout` at the wait's bound, its `timeout`, else
+the session's default, else 10000 ms, the message saying that the listing,
+and with `frames` the frames, did not change.
 
 ## Reading the tree after the display changed
 
@@ -1266,8 +1275,10 @@ Worked around here without changing `crates/mirror`:
   element without a ref when no snapshot listed it, so text entry by
   selector takes an interactive snapshot to obtain one.
 - `Mirror::snapshot` computes `removed_refs` against the last snapshot
-  anyone took, and `Mirror::wait` takes one on timeout for its summary, so
-  `removedRefs` is per target, not per session.
+  anyone took, `Mirror::wait` takes one on timeout for its summary, and a
+  change wait takes one each time the revision moves, its listing being the
+  only one the mirror gives, so `removedRefs` is per target, not per
+  session.
 - The backend has no app lifecycle, screen size, on-demand screenshot or
   status; the driver contract adds `AppControl`, `display`, `Capture` and
   `Report`. Fake targets without a frame source answer `screenshot` with
@@ -1296,7 +1307,7 @@ Worked around here without changing `crates/mirror`:
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Sessions | Claimed target | `claims::a_claimed_target_refuses_another_session_naming_the_holder`, `claims::force_takes_the_target_over_and_the_previous_holder_is_refused`, `claims::every_target_command_claims_an_unclaimed_target`, `claims::a_released_target_serves_another_session_without_force`, `claims::the_holder_keeps_using_its_target`, `claims::status_names_the_holder_of_each_target`, `claims::a_request_without_a_session_uses_the_default_session` |
-| Change waits, claim release and cancel (mcp-server, designs D6 to D9) | Wait for the next change; Close and keep; (cancel; inline screenshot) | `changes::a_change_wait_returns_at_the_tree_change_a_tap_s_late_effect_brings`, `changes::on_targets_with_frames_a_tap_s_late_effect_moves_the_tree_and_the_frames`, `changes::a_change_since_the_session_s_last_snapshot_returns_at_once`, `changes::frames_that_move_alone_end_the_wait_with_the_tree_unchanged`, `changes::a_still_screen_fails_with_wait_timeout_at_the_wait_s_bound`, `changes::a_session_without_a_snapshot_gets_the_whole_listing_at_once`; `claims::close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session`; `cancel::a_cancel_ends_the_session_s_wait_with_cancelled_and_the_next_command_runs_at_once`, `cancel::a_cancel_with_nothing_in_flight_says_so_and_changes_nothing`, `cancel::a_cancel_during_a_tap_s_device_call_leaves_the_click_completing`, `cancel::every_kind_of_wait_ends_at_a_cancel`, `worker::tests::a_cancel_raises_the_flag_for_the_session_s_command_alone_until_it_ends`, and the mirror's `cancel::*`; `screenshots::an_inline_screenshot_carries_the_image_and_writes_a_file_only_where_a_path_names_one`; the replies in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` and `replies::a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types` |
+| Change waits, claim release and cancel (mcp-server, designs D6 to D9) | Wait for the next change; Change before the wait; A change outside the listing; Frames on request; Close and keep; (cancel; inline screenshot) | `changes::a_change_wait_returns_at_the_tree_change_a_tap_s_late_effect_brings`, `changes::on_targets_with_frames_a_tap_s_late_effect_moves_the_tree_and_the_frames`, `changes::a_change_since_the_session_s_last_snapshot_returns_at_once`, `changes::a_change_outside_the_session_s_listing_leaves_the_wait_running_to_its_bound`, `changes::a_change_inside_the_listing_ends_the_wait_after_one_outside_it`, `changes::frames_that_move_alone_leave_a_wait_without_frames_running_to_its_bound`, `changes::with_frames_frames_that_move_alone_end_the_wait_with_the_listing_unchanged`, `changes::with_frames_a_change_outside_the_listing_ends_the_wait_where_frames_show_it`, `changes::a_still_screen_fails_with_wait_timeout_at_the_wait_s_bound`, `changes::a_session_without_a_snapshot_gets_the_whole_listing_at_once`; `claims::close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session`; `cancel::a_cancel_ends_the_session_s_wait_with_cancelled_and_the_next_command_runs_at_once`, `cancel::a_cancel_with_nothing_in_flight_says_so_and_changes_nothing`, `cancel::a_cancel_during_a_tap_s_device_call_leaves_the_click_completing`, `cancel::every_kind_of_wait_ends_at_a_cancel`, `worker::tests::a_cancel_raises_the_flag_for_the_session_s_command_alone_until_it_ends`, and the mirror's `cancel::*`; `screenshots::an_inline_screenshot_carries_the_image_and_writes_a_file_only_where_a_path_names_one`; the replies in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` and `replies::a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types` |
 | Daemon lifecycle | (idle exit, configurable) | `idle::the_daemon_exits_after_its_idle_timeout_and_removes_its_files`, `idle::requests_postpone_the_idle_exit`, `idle::an_idle_timeout_of_zero_disables_the_exit`, `idle::the_idle_timeout_defaults_to_one_hour`, `idle::idle_timeouts_take_the_units_agent_browser_takes`, `idle::a_daemon_whose_socket_file_was_removed_still_exits_when_idle` (task 8.14) |
 | Daemon lifecycle | (version file, replacement, socket) | `lifecycle::the_daemon_writes_its_pid_and_version_files`, `lifecycle::a_daemon_of_another_version_is_shut_down_and_replaced`, `lifecycle::a_second_daemon_of_the_same_version_leaves_the_first_serving`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_a_new_one`, `lifecycle::shutdown_stops_the_daemon_and_removes_its_files`, `lifecycle::the_socket_lives_under_the_runtime_directory`, `lifecycle::an_overlong_socket_path_is_refused_with_a_hint`; task 8.14: `lifecycle::shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory`, `server::tests::an_exiting_daemon_removes_the_lock_unless_a_startup_holds_it`, `server::tests::a_startup_takes_the_lock_again_after_an_exit_removed_its_file` |
 | Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |

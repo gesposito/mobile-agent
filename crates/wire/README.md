@@ -24,8 +24,8 @@ src/
   reply.rs      Reply (the envelope), one struct of data per action, Details (what a failure carries)
 tests/
   lines.json    the request line the CLI sends for each command and option: as it sent them before
-                these types existed, and for close --keep, cancel and wait --change as the types
-                write them
+                these types existed, and for close --keep, cancel, wait --change and
+                wait --change --frames as the types write them
   requests.rs   those lines parse into their actions and serialize back; what a request keeps and ignores
   schemas.rs    with the feature, each request schema is a flat object of typed, described parameters
 ```
