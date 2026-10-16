@@ -5,10 +5,11 @@ mod support;
 
 use support::TestEnv;
 
-const COMMANDS: [&str; 20] = [
+const COMMANDS: [&str; 21] = [
     "devices",
     "open",
     "close",
+    "cancel",
     "snapshot",
     "click",
     "tap",
@@ -218,6 +219,27 @@ fn the_agent_guide_says_where_a_physical_iphone_differs() {
         guide.contains("pasted on a Simulator"),
         "the guide says the paste is a Simulator's:\n{guide}"
     );
+}
+
+/// The `mcp-server` change (designs D7 to D9): the guide says when to wait
+/// for a change, that `close --keep` leaves the app running for the next
+/// session, and that `cancel` ends a command left in flight.
+#[test]
+fn the_agent_guide_says_when_to_wait_for_a_change_and_what_close_keep_leaves() {
+    let env = TestEnv::new("android");
+    let guide = env.cli(&["help", "agent"]).ok().stdout;
+    for needle in [
+        "wait --change",
+        "may still be arriving",
+        "close --keep",
+        "app running",
+        "cancel",
+    ] {
+        assert!(
+            guide.contains(needle),
+            "the guide lacks {needle:?}:\n{guide}"
+        );
+    }
 }
 
 #[test]

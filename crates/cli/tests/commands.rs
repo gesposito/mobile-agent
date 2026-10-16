@@ -929,3 +929,113 @@ fn shutdown_stops_the_daemon() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
+
+/// `wait --change` (design D8 of the `mcp-server` change) prints what moved
+/// and the delta as `snapshot --delta` prints it, and fails with
+/// `wait_timeout` on a still screen as other waits do.
+#[test]
+fn wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["snapshot", "-i", "--delta"]).ok();
+    env.cli(&["click", "#tab-list"]).ok();
+    let changed = env.cli(&["wait", "--change"]).ok().stdout;
+    let mut lines = changed.lines();
+    let first = lines.next().unwrap_or_default();
+    assert!(
+        first.starts_with("✓ The tree and frames changed after ") && first.ends_with(" ms"),
+        "{changed}"
+    );
+    assert!(changed.contains("id=row-1,"), "the delta: {changed}");
+
+    let still = env
+        .cli(&["--json", "wait", "--change", "--timeout", "300"])
+        .failed()
+        .json();
+    assert_eq!(still["code"], "wait_timeout", "{still}");
+    let human = env.cli(&["wait", "--change", "--timeout", "300"]).failed();
+    assert!(
+        human.stderr.starts_with("✗ waited 300 ms"),
+        "{}",
+        human.stderr
+    );
+
+    env.cli(&["click", "#tab-anim"]).ok();
+    env.cli(&["snapshot", "-i", "--delta"]).ok();
+    let reply = env.cli(&["--json", "wait", "--change"]).ok().json();
+    assert_eq!(reply["data"]["waited"], "change", "{reply}");
+    assert_eq!(reply["data"]["endedBy"], "frame", "{reply}");
+    let frames = env.cli(&["wait", "--change"]).ok().stdout;
+    assert!(
+        frames.starts_with("✓ Frames changed after ") && frames.contains("\nunchanged (revision "),
+        "{frames}"
+    );
+    for refused in [
+        vec!["wait", "--change", "@e1"],
+        vec!["wait", "--change", "--text", "Welcome"],
+        vec!["wait", "--change", "--settle"],
+    ] {
+        let run = env.cli(&refused).failed();
+        assert!(
+            run.stderr.contains("cannot be used with"),
+            "{refused:?}: {}",
+            run.stderr
+        );
+    }
+}
+
+/// `close --keep` (design D9) releases the target and leaves the app
+/// running, so another session works on the app as it is.
+#[test]
+fn close_keep_releases_the_target_and_leaves_the_app_running() {
+    let env = TestEnv::start("android");
+    env.cli(&["--session", "alice", "open", APP]).ok();
+    let kept = env.cli(&["--session", "alice", "close", "--keep"]).ok();
+    assert_eq!(
+        kept.stdout,
+        format!("✓ Released emulator-5554; {APP} keeps running\n")
+    );
+    let listing = env.cli(&["--session", "bob", "snapshot", "-i"]).ok().stdout;
+    assert!(listing.contains("id=login-submit,"), "{listing}");
+    let reply = env
+        .cli(&["--json", "--session", "bob", "close", "--keep"])
+        .ok()
+        .json();
+    assert_eq!(reply["data"]["kept"], true, "{reply}");
+    assert_eq!(reply["data"]["app"], Value::Null, "{reply}");
+}
+
+/// `cancel` (design D7) ends the session's command in flight, here a wait
+/// another shell started, which fails with `cancelled`, and says when
+/// nothing was in flight.
+#[test]
+fn cancel_ends_the_session_s_wait_that_another_shell_started() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    let waiting = env
+        .command(&["wait", "--text", "Nobody shows this"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the wait starts");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let cancelled = env.cli(&["cancel"]).ok();
+    assert_eq!(
+        cancelled.stdout,
+        "✓ Cancelled the wait in flight on emulator-5554\n"
+    );
+    let ended = waiting.wait_with_output().expect("the wait ends");
+    assert_eq!(ended.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&ended.stderr);
+    assert!(stderr.starts_with("✗ wait was cancelled"), "{stderr}");
+
+    let idle = env.cli(&["cancel"]).ok();
+    assert_eq!(idle.stdout, "✓ Nothing in flight to cancel\n");
+    let reply = env.cli(&["--json", "cancel"]).ok().json();
+    assert_eq!(
+        reply["data"],
+        serde_json::json!({"cancelled": false, "action": null, "target": null}),
+        "{reply}"
+    );
+    env.cli(&["cancel", "now"]).failed();
+}
