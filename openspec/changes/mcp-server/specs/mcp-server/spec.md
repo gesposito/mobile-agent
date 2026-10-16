@@ -6,7 +6,7 @@ The Model Context Protocol surface over the daemon: a stdio server an agent clie
 ## ADDED Requirements
 
 ### Requirement: Tools over the daemon
-The server SHALL expose one tool per daemon action under agent-browser's stems where the concepts match, with flat input schemas generated from the shared request types, SHALL send each call as one request on the daemon's socket in the session the server owns, and SHALL return the reply's text (a listing without the refs map, the reply's data in one line, any `warning` kept) as text content and a failure as an execution error carrying the daemon's code and message, so that a model sees what the CLI's user sees.
+The server SHALL expose one tool per daemon action an agent drives (every action but `set_timeout`, `shutdown` and `cancel`), under agent-browser's stems where the concepts match, with flat input schemas generated from the shared request types, SHALL send each call as one request on the daemon's socket in the session the server owns, and SHALL return the reply's text (a listing without the refs map, the CLI's lines for the rest, any `warning` kept) as text content and a failure as an execution error carrying the daemon's code and message, so that a model sees what the CLI's user sees.
 
 #### Scenario: Snapshot through the server
 - **WHEN** a client calls the snapshot tool with `interactive` on a target
@@ -38,7 +38,7 @@ A tool that waits SHALL send progress notifications while it waits, SHALL end at
 - **THEN** progress arrives while it waits, the call ends at 55 s with `wait_timeout` and the screen's summary, and the next call runs at once
 
 ### Requirement: Profiles and instructions
-The server SHALL offer a `--tools` option with a read-only profile (devices, status, snapshot, diff, get, wait, screenshot, help) and the full set, SHALL give the client an instructions card whose first 512 characters stand alone and whose whole stays under 4,096, and SHALL serve the agent guide through a `help` tool.
+The server SHALL offer a `--tools` option with a read-only profile (devices, status, doctor, snapshot, diff_snapshot, get, wait, screenshot, help) and the full set, SHALL give the client an instructions card whose first 512 characters stand alone and whose whole stays under 4,096, and SHALL serve the agent guide through a `help` tool.
 
 #### Scenario: Read-only profile
 - **WHEN** the server starts with the read-only profile
