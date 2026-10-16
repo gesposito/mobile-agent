@@ -45,8 +45,12 @@ enum Job {
 /// What one session keeps about one target.
 #[derive(Default)]
 pub(crate) struct SessionOnTarget {
-    /// The last snapshot the session took, the baseline of `diff snapshot`.
+    /// The last snapshot the session took, the baseline of `diff snapshot`
+    /// and of `wait` with `change`.
     pub last: Option<Snapshot>,
+    /// The latest frame change that snapshot saw, the frames' baseline of
+    /// `wait` with `change`.
+    pub frames: Option<Instant>,
     /// The refs the session's snapshots listed: a session acts only on refs
     /// issued to it, so refs stay isolated between sessions.
     pub seen: HashSet<Ref>,

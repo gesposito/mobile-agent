@@ -53,12 +53,7 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
     let snapshot = target.mirror.snapshot(&options)?;
     let mut data = Map::new();
     if args.delta {
-        // Another session's delta state is no base for this one.
-        let full = args.full || target.delta_session.as_deref() != Some(session);
-        let delta = target.mirror.delta_snapshot(&options, full)?;
-        target.delta_session = Some(session.to_owned());
-        let delta: Value = serde_json::from_str(&delta.to_json())
-            .map_err(|e| Failure::internal(format!("the delta snapshot is not JSON: {e}")))?;
+        let delta = delta_of(target, session, &options, args.full)?;
         data.insert("snapshot".into(), delta);
     } else {
         let refs: Map<String, Value> = snapshot
@@ -99,10 +94,30 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
     Ok(Success::new(Value::Object(data)).warn(warning))
 }
 
-/// Keeps `snapshot` as the session's last and its refs as the session's.
+/// The listing with `options` as `snapshot` with `delta` gives it: the
+/// delta against the mirror's last delta snapshot, or the whole listing
+/// when `full` or when another session took that snapshot, whose delta
+/// state is no base for this one.
+fn delta_of(
+    target: &mut Attached,
+    session: &str,
+    options: &SnapshotOptions,
+    full: bool,
+) -> Result<Value, Failure> {
+    let full = full || target.delta_session.as_deref() != Some(session);
+    let delta = target.mirror.delta_snapshot(options, full)?;
+    target.delta_session = Some(session.to_owned());
+    serde_json::from_str(&delta.to_json())
+        .map_err(|e| Failure::internal(format!("the delta snapshot is not JSON: {e}")))
+}
+
+/// Keeps `snapshot` as the session's last, with the latest frame change it
+/// saw, and its refs as the session's.
 fn remember(target: &mut Attached, session: &str, snapshot: Snapshot) {
+    let frames = target.mirror.timestamps().last_frame_change;
     let entry = target.session(session);
     entry.seen.extend(snapshot.refs());
+    entry.frames = frames;
     entry.last = Some(snapshot);
 }
 
@@ -212,13 +227,16 @@ pub(super) fn wait(target: &mut Attached, call: &Call, args: &::wire::Wait) -> O
     if args.settle {
         return settle(target, args);
     }
+    if args.change {
+        return change(target, call, args);
+    }
     let (aimed, kind, given) = match args.text.as_deref() {
         Some(text) => (Aim::Select(Selector::text(text)), "text", text.to_owned()),
         None => {
             let given = args.target.as_deref().ok_or_else(|| {
                 Failure::new(
                     code::INVALID_ARGUMENT,
-                    "wait takes an element, a number of milliseconds, --text or --settle",
+                    "wait takes an element, a number of milliseconds, --text, --settle or --change",
                 )
             })?;
             let aimed = match Aim::parse(given)? {
@@ -312,6 +330,115 @@ fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
         "stillChanging": settled.still_changing.iter().map(signal_name).collect::<Vec<_>>(),
         "treeChanges": settled.tree_changes,
         "frameChanges": settled.frame_changes,
+    }))
+    .warn(warning))
+}
+
+/// How often a change wait looks whether the replica or the frames moved;
+/// the mirror keeps the replica current in between.
+const CHANGE_SLICE: Duration = Duration::from_millis(5);
+
+/// What a session's last snapshot saw: the replica's revision and the
+/// latest frame change.
+struct Seen {
+    revision: u64,
+    frames: Option<Instant>,
+}
+
+/// What moved since a session's last snapshot.
+#[derive(Clone, Copy)]
+struct Moved {
+    tree: bool,
+    frames: bool,
+}
+
+impl Moved {
+    /// What moved on `target` since `seen`; for a session that took no
+    /// snapshot, the tree, which it has not seen.
+    fn since(target: &Attached, seen: Option<&Seen>) -> Moved {
+        match seen {
+            Some(seen) => Moved {
+                tree: target.mirror.revision() > seen.revision,
+                frames: target.mirror.timestamps().last_frame_change > seen.frames,
+            },
+            None => Moved {
+                tree: true,
+                frames: false,
+            },
+        }
+    }
+
+    fn any(self) -> bool {
+        self.tree || self.frames
+    }
+
+    /// As `endedBy` names it, with the names a settle's reply uses.
+    fn name(self) -> &'static str {
+        match (self.tree, self.frames) {
+            (true, true) => "both",
+            (true, false) => "tree",
+            _ => "frame",
+        }
+    }
+}
+
+/// `wait` with `change` (design D8 of mcp-server): waits until the
+/// replica's revision or the frames have moved since the session's last
+/// snapshot, a change that came before the wait ending it at once, then
+/// answers with the delta `snapshot` with `delta` gives, in the options of
+/// that snapshot (interactive for a session that took none), which becomes
+/// the session's last snapshot as a snapshot does.
+fn change(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
+    let session = call.session.as_str();
+    let timeout = timeout(&args.timeout, call)?;
+    let started = Instant::now();
+    let deadline = started + timeout;
+    let (seen, options) = {
+        let entry = target.session(session);
+        let seen = entry.last.as_ref().map(|last| Seen {
+            revision: last.revision,
+            frames: entry.frames,
+        });
+        let options = entry
+            .last
+            .as_ref()
+            .map_or_else(SnapshotOptions::interactive, |last| last.options);
+        (seen, options)
+    };
+    loop {
+        target.mirror.drain();
+        if Moved::since(target, seen.as_ref()).any() {
+            break;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(Failure::new(
+                mirror::code::WAIT_TIMEOUT,
+                format!(
+                    "waited {} ms for a change since the session's last snapshot; neither the tree nor the frames changed, so that snapshot still shows the screen",
+                    timeout.as_millis()
+                ),
+            ));
+        }
+        target
+            .mirror
+            .run_until((now + CHANGE_SLICE).min(deadline))?;
+    }
+    // Frames that moved call for the read that shows what they show, and an
+    // event that arrived for the read it calls for.
+    target.catch_up()?;
+    target.mirror.pump()?;
+    let moved = Moved::since(target, seen.as_ref());
+    let elapsed = started.elapsed();
+    let snapshot = target.mirror.snapshot(&options)?;
+    let delta = delta_of(target, session, &options, false)?;
+    let warning = verdict_warning(&snapshot.verdict);
+    remember(target, session, snapshot);
+    Ok(Success::new(json!({
+        "waited": "change",
+        "endedBy": moved.name(),
+        "elapsedMs": millis(elapsed),
+        "snapshot": delta,
     }))
     .warn(warning))
 }

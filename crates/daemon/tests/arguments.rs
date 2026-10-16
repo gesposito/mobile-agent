@@ -457,7 +457,9 @@ fn strings_a_command_needs_are_refused_by_name_and_others_of_another_type_are_no
             ),
             (
                 json!({"action": "wait", "target": 5, "state": "gone"}),
-                invalid("wait takes an element, a number of milliseconds, --text or --settle"),
+                invalid(
+                    "wait takes an element, a number of milliseconds, --text, --settle or --change",
+                ),
             ),
             (
                 json!({"action": "wait", "target": "#login-title", "state": "gone", "timeout": "x"}),

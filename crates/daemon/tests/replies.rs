@@ -127,6 +127,14 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         reply::Click
     );
     success!(ask(json!({"action": "wait", "settle": true})), reply::Wait);
+    // The list came in since the session's last snapshot: a change wait
+    // answers at once with the delta, and then waits out its bound.
+    let changed = success!(ask(json!({"action": "wait", "change": true})), reply::Wait);
+    assert_eq!(changed["data"]["waited"], "change", "{changed}");
+    failure!(
+        ask(json!({"action": "wait", "change": true, "timeout": 300})),
+        "wait_timeout"
+    );
     for request in [
         json!({"action": "scroll", "direction": "down", "amount": 300}),
         json!({"action": "scroll", "direction": "up", "amount": 600, "until": "#row-2"}),
