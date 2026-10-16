@@ -1,7 +1,10 @@
 //! `wait` with `change` (design D8 of the `mcp-server` change): a wait that
-//! returns once the replica's revision or the target's frames have moved
-//! since the session's last snapshot, with the delta `snapshot` with `delta`
-//! gives and what moved, or fails with `wait_timeout` at its bound.
+//! returns once the session's listing, in the options of its last snapshot,
+//! differs from the one that snapshot showed, or with `frames` once the
+//! frames moved too, with the delta `snapshot` with `delta` gives and what
+//! moved, or fails with `wait_timeout` at its bound. A change the listing
+//! does not show, such as the Login tab's status, a text an interactive
+//! listing leaves out, leaves it waiting.
 
 mod support;
 
@@ -22,12 +25,51 @@ fn opened(spec: &str, latency_ms: u64) -> Daemon {
     daemon
 }
 
-/// Takes the session's baseline: an interactive delta snapshot.
+/// Takes the session's baseline, an interactive delta snapshot, and returns
+/// the replica's revision it listed.
 #[track_caller]
-fn baseline(daemon: &Daemon) {
+fn baseline(daemon: &Daemon) -> u64 {
     let snapshot =
         daemon.request(json!({"action": "snapshot", "interactive": true, "delta": true}));
     assert_eq!(snapshot["success"], true, "{snapshot}");
+    snapshot["data"]["replicaRevision"]
+        .as_u64()
+        .expect("replicaRevision")
+}
+
+/// Taps the Login tab's Sign in with no password. Its effect, the status
+/// "Invalid credentials" in place of "Signed out", is a change of the tree
+/// that an interactive listing does not show: the status is a text, which
+/// gets no ref.
+#[track_caller]
+fn sign_in(daemon: &Daemon) {
+    let clicked = daemon.request(json!({"action": "click", "target": "#login-submit"}));
+    assert_eq!(clicked["success"], true, "{clicked}");
+}
+
+/// The Login tab's status as the replica holds it.
+#[track_caller]
+fn status(daemon: &Daemon) -> String {
+    let reply = daemon.request(json!({"action": "get", "what": "text", "target": "#login-status"}));
+    assert_eq!(reply["success"], true, "{reply}");
+    reply["data"]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Waits for a change for at most `ms` and checks that it failed with
+/// `wait_timeout` at that bound.
+#[track_caller]
+fn times_out(daemon: &Daemon, request: Value, ms: u64, what: &str) {
+    let started = Instant::now();
+    let reply = daemon.request(request);
+    let took = started.elapsed();
+    assert_eq!(reply["code"], "wait_timeout", "{what}: {reply}");
+    assert!(
+        took >= Duration::from_millis(ms) && took < Duration::from_millis(ms + 1500),
+        "{what}: it waited to its bound: {took:?}"
+    );
 }
 
 /// The listing lines a delta object carries: the whole tree of a `full`
@@ -125,16 +167,100 @@ fn a_change_since_the_session_s_last_snapshot_returns_at_once() {
     assert!(elapsed < 100.0, "it returned at once: {reply}");
 }
 
-/// Frames that move without the tree, as an animation's, end the wait with
-/// `frame` and an unchanged tree.
+/// The spec's "A change outside the listing": the status, which the
+/// session's interactive listing leaves out, changes during the wait, which
+/// waits on to its bound, on a target without frames and on targets whose
+/// frames move with the change.
 #[test]
-fn frames_that_move_alone_end_the_wait_with_the_tree_unchanged() {
+fn a_change_outside_the_session_s_listing_leaves_the_wait_running_to_its_bound() {
+    for spec in ["android:R58M123", "android", "ios"] {
+        let daemon = opened(spec, 400);
+        let revision = baseline(&daemon);
+        sign_in(&daemon);
+        times_out(
+            &daemon,
+            json!({"action": "wait", "change": true, "timeout": 1000}),
+            1000,
+            spec,
+        );
+        // The tree changed, outside the listing.
+        assert_eq!(status(&daemon), "Invalid credentials", "{spec}");
+        let after =
+            daemon.request(json!({"action": "snapshot", "interactive": true, "delta": true}));
+        assert_eq!(
+            after["data"]["snapshot"]["kind"], "unchanged",
+            "{spec}: {after}"
+        );
+        assert!(
+            after["data"]["replicaRevision"]
+                .as_u64()
+                .is_some_and(|now| now > revision),
+            "{spec}: the replica moved past the baseline's revision {revision}: {after}"
+        );
+    }
+}
+
+/// The wait compares the listing again each time the revision moves: the
+/// status that changed after the session's last snapshot is passed over,
+/// and the List tab a later tap brings in ends the wait with its delta.
+#[test]
+fn a_change_inside_the_listing_ends_the_wait_after_one_outside_it() {
+    for (spec, moved) in [("android:R58M123", "tree"), ("ios", "both")] {
+        let daemon = opened(spec, 400);
+        baseline(&daemon);
+        sign_in(&daemon);
+        let waited = daemon.request(json!({"action": "wait", "ms": 600}));
+        assert_eq!(waited["success"], true, "{spec}: {waited}");
+        assert_eq!(status(&daemon), "Invalid credentials", "{spec}");
+        let clicked = daemon.request(json!({"action": "click", "target": "#tab-list"}));
+        assert_eq!(clicked["success"], true, "{spec}: {clicked}");
+        let reply = daemon.request(json!({"action": "wait", "change": true}));
+        let data = saw_the_list(&reply, moved);
+        let elapsed = data["elapsedMs"].as_f64().expect("elapsedMs");
+        assert!(
+            elapsed > 50.0 && elapsed < 2000.0,
+            "{spec}: it waited past the status for the list: {reply}"
+        );
+    }
+}
+
+/// Frames that move alone, as the Anim tab's spinner's, leave a wait
+/// without `frames` waiting to its bound, though they moved since the
+/// session's last snapshot, as a wait with `frames` then shows at once.
+#[test]
+fn frames_that_move_alone_leave_a_wait_without_frames_running_to_its_bound() {
     for spec in ["android", "ios"] {
         let daemon = opened(spec, 0);
         let clicked = daemon.request(json!({"action": "click", "target": "#tab-anim"}));
         assert_eq!(clicked["success"], true, "{spec}: {clicked}");
         baseline(&daemon);
-        let reply = daemon.request(json!({"action": "wait", "change": true}));
+        times_out(
+            &daemon,
+            json!({"action": "wait", "change": true, "timeout": 1000}),
+            1000,
+            spec,
+        );
+        let started = Instant::now();
+        let framed = daemon.request(json!({"action": "wait", "change": true, "frames": true}));
+        assert_eq!(framed["data"]["endedBy"], "frame", "{spec}: {framed}");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "{spec}: the frames had moved: {framed}"
+        );
+    }
+}
+
+/// The spec's "Frames on request": with `frames`, frames that move alone, as
+/// the Anim tab's spinner's, end the wait with `frame` and the listing
+/// `unchanged`, as for a canvas or a map the tree does not describe.
+#[test]
+fn with_frames_frames_that_move_alone_end_the_wait_with_the_listing_unchanged() {
+    for spec in ["android", "ios"] {
+        let daemon = opened(spec, 0);
+        let clicked = daemon.request(json!({"action": "click", "target": "#tab-anim"}));
+        assert_eq!(clicked["success"], true, "{spec}: {clicked}");
+        baseline(&daemon);
+        let reply = daemon.request(json!({"action": "wait", "change": true, "frames": true}));
         assert_eq!(reply["success"], true, "{spec}: {reply}");
         assert_eq!(reply["data"]["endedBy"], "frame", "{spec}: {reply}");
         assert_eq!(
@@ -142,6 +268,37 @@ fn frames_that_move_alone_end_the_wait_with_the_tree_unchanged() {
             "{spec}: {reply}"
         );
     }
+}
+
+/// With `frames` a change outside the listing ends the wait where frames
+/// show it, as `frame` with the listing `unchanged`, `both` naming a
+/// listing that changed; on a target without frames the listing alone
+/// counts, so the wait runs to its bound.
+#[test]
+fn with_frames_a_change_outside_the_listing_ends_the_wait_where_frames_show_it() {
+    for spec in ["android", "ios"] {
+        let daemon = opened(spec, 400);
+        baseline(&daemon);
+        sign_in(&daemon);
+        let reply = daemon
+            .request(json!({"action": "wait", "change": true, "frames": true, "timeout": 2000}));
+        assert_eq!(reply["success"], true, "{spec}: {reply}");
+        assert_eq!(reply["data"]["endedBy"], "frame", "{spec}: {reply}");
+        assert_eq!(
+            reply["data"]["snapshot"]["kind"], "unchanged",
+            "{spec}: {reply}"
+        );
+    }
+    let daemon = opened("android:R58M123", 400);
+    baseline(&daemon);
+    sign_in(&daemon);
+    times_out(
+        &daemon,
+        json!({"action": "wait", "change": true, "frames": true, "timeout": 1000}),
+        1000,
+        "a device without frames",
+    );
+    assert_eq!(status(&daemon), "Invalid credentials");
 }
 
 /// A still screen ends the wait at its bound with `wait_timeout`: the
