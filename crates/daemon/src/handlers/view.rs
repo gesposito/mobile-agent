@@ -336,47 +336,36 @@ fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
     .warn(warning))
 }
 
-/// How often a change wait looks whether the replica or the frames moved;
-/// the mirror keeps the replica current in between.
+/// How often a change wait looks whether the replica's revision or the
+/// frames moved; the mirror keeps the replica current in between.
 const CHANGE_SLICE: Duration = Duration::from_millis(5);
 
-/// What a session's last snapshot saw: the replica's revision and the
-/// latest frame change.
+/// What a session's last snapshot saw: the replica's revision it listed and
+/// the latest frame change.
 struct Seen {
     revision: u64,
     frames: Option<Instant>,
 }
 
-/// What moved since a session's last snapshot.
+impl Seen {
+    /// Whether the frames of `target` changed since.
+    fn frames_moved(&self, target: &Attached) -> bool {
+        target.mirror.timestamps().last_frame_change > self.frames
+    }
+}
+
+/// What moved since a session's last snapshot: its listing, and the frames.
 #[derive(Clone, Copy)]
 struct Moved {
-    tree: bool,
+    listing: bool,
     frames: bool,
 }
 
 impl Moved {
-    /// What moved on `target` since `seen`; for a session that took no
-    /// snapshot, the tree, which it has not seen.
-    fn since(target: &Attached, seen: Option<&Seen>) -> Moved {
-        match seen {
-            Some(seen) => Moved {
-                tree: target.mirror.revision() > seen.revision,
-                frames: target.mirror.timestamps().last_frame_change > seen.frames,
-            },
-            None => Moved {
-                tree: true,
-                frames: false,
-            },
-        }
-    }
-
-    fn any(self) -> bool {
-        self.tree || self.frames
-    }
-
-    /// As `endedBy` names it, with the names a settle's reply uses.
+    /// As `endedBy` names it, with the names a settle's reply uses, a
+    /// change of the listing being the tree's.
     fn name(self) -> &'static str {
-        match (self.tree, self.frames) {
+        match (self.listing, self.frames) {
             (true, true) => "both",
             (true, false) => "tree",
             _ => "frame",
@@ -384,12 +373,25 @@ impl Moved {
     }
 }
 
-/// `wait` with `change` (design D8 of mcp-server): waits until the
-/// replica's revision or the frames have moved since the session's last
-/// snapshot, a change that came before the wait ending it at once, then
-/// answers with the delta `snapshot` with `delta` gives, in the options of
-/// that snapshot (interactive for a session that took none), which becomes
-/// the session's last snapshot as a snapshot does.
+/// Whether `current` lists other lines than the last snapshot of
+/// `session`, which lists none for a session that took no snapshot.
+fn listing_moved(target: &mut Attached, session: &str, current: &Snapshot) -> bool {
+    target
+        .session(session)
+        .last
+        .as_ref()
+        .is_none_or(|last| last.text != current.text)
+}
+
+/// `wait` with `change` (design D8 of mcp-server): waits until the listing
+/// in the options of the session's last snapshot (interactive for a session
+/// that took none) differs from the one that snapshot showed, and with
+/// `frames` until the frames moved too, a change that came before the wait
+/// ending it at once. The listing is taken again only when the replica's
+/// revision moved since the wait last took it, so a change that the listing
+/// does not show leaves the wait running. It answers with the delta
+/// `snapshot` with `delta` gives in those options, which becomes the
+/// session's last snapshot as a snapshot does.
 fn change(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
     let session = call.session.as_str();
     let timeout = timeout(&args.timeout, call)?;
@@ -407,32 +409,54 @@ fn change(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
             .map_or_else(SnapshotOptions::interactive, |last| last.options);
         (seen, options)
     };
-    loop {
-        target.mirror.drain();
-        if Moved::since(target, seen.as_ref()).any() {
-            break;
+    // A session that took no snapshot has seen no listing.
+    let mut listing = seen.is_none();
+    if let Some(seen) = &seen {
+        // The revision at which the wait last took the listing.
+        let mut look = seen.revision;
+        loop {
+            target.mirror.drain();
+            if args.frames && seen.frames_moved(target) {
+                break;
+            }
+            if target.mirror.revision() > look {
+                let current = target.mirror.snapshot(&options)?;
+                look = current.revision;
+                if listing_moved(target, session, &current) {
+                    listing = true;
+                    break;
+                }
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                let unchanged = if args.frames {
+                    "neither its listing nor the frames changed"
+                } else {
+                    "its listing did not change"
+                };
+                return Err(Failure::new(
+                    mirror::code::WAIT_TIMEOUT,
+                    format!(
+                        "waited {} ms for a change since the session's last snapshot; {unchanged}, so that snapshot still shows the screen",
+                        timeout.as_millis()
+                    ),
+                ));
+            }
+            target
+                .mirror
+                .run_until((now + CHANGE_SLICE).min(deadline))?;
         }
-        let now = Instant::now();
-        if now >= deadline {
-            return Err(Failure::new(
-                mirror::code::WAIT_TIMEOUT,
-                format!(
-                    "waited {} ms for a change since the session's last snapshot; neither the tree nor the frames changed, so that snapshot still shows the screen",
-                    timeout.as_millis()
-                ),
-            ));
-        }
-        target
-            .mirror
-            .run_until((now + CHANGE_SLICE).min(deadline))?;
     }
     // Frames that moved call for the read that shows what they show, and an
     // event that arrived for the read it calls for.
     target.catch_up()?;
     target.mirror.pump()?;
-    let moved = Moved::since(target, seen.as_ref());
     let elapsed = started.elapsed();
     let snapshot = target.mirror.snapshot(&options)?;
+    let moved = Moved {
+        listing: listing || listing_moved(target, session, &snapshot),
+        frames: seen.as_ref().is_some_and(|seen| seen.frames_moved(target)),
+    };
     let delta = delta_of(target, session, &options, false)?;
     let warning = verdict_warning(&snapshot.verdict);
     remember(target, session, snapshot);
