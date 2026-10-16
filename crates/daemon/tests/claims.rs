@@ -92,3 +92,42 @@ fn a_request_without_a_session_uses_the_default_session() {
     let refused = daemon.request(json!({"action": "snapshot", "session": "bob"}));
     assert_eq!(refused["data"]["holder"], "default", "{refused}");
 }
+
+/// Design D9 of the `mcp-server` change: `close` with `keep` releases the
+/// session's claim and forgets its app without stopping it, so another
+/// session attaches to the app as it is, and the first session's next
+/// `close` has no app to stop.
+#[test]
+fn close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session() {
+    let daemon = Daemon::start("android:emulator-5554");
+    let opened = daemon.request(json!({"action": "open", "session": "alice", "app": APP}));
+    assert_eq!(opened["success"], true, "{opened}");
+
+    let closed = daemon.request(json!({"action": "close", "session": "alice", "keep": true}));
+    assert_eq!(closed["success"], true, "{closed}");
+    assert_eq!(
+        closed["data"],
+        json!({"closed": true, "app": APP, "target": "emulator-5554", "kept": true}),
+        "{closed}"
+    );
+    let status = daemon.request(json!({"action": "status"}));
+    assert_eq!(
+        status["data"]["targets"][0]["claimedBy"],
+        json!(null),
+        "{status}"
+    );
+    assert_eq!(status["data"]["targets"][0]["app"], APP, "{status}");
+
+    let again = daemon.request(json!({"action": "close", "session": "alice"}));
+    assert_eq!(again["data"]["app"], json!(null), "{again}");
+    let attached =
+        daemon.request(json!({"action": "snapshot", "session": "bob", "interactive": true}));
+    assert_eq!(attached["success"], true, "{attached}");
+    assert_eq!(attached["data"]["origin"], APP, "{attached}");
+    assert!(
+        attached["data"]["snapshot"]
+            .as_str()
+            .is_some_and(|listing| listing.contains("id=login-submit,")),
+        "the app is still in front: {attached}"
+    );
+}
