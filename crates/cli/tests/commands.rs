@@ -948,6 +948,10 @@ fn wait_change_prints_what_moved_and_the_delta_and_times_out_on_a_still_screen()
     );
     assert!(changed.contains("id=row-1,"), "the delta: {changed}");
 
+    // The tab's transition animates on after its tree changed: a still
+    // screen is one the session's last snapshot took once it settled.
+    env.cli(&["wait", "--settle"]).ok();
+    env.cli(&["snapshot", "-i", "--delta"]).ok();
     let still = env
         .cli(&["--json", "wait", "--change", "--timeout", "300"])
         .failed()

@@ -47,7 +47,8 @@ pub fn build(command: &Command, cwd: &Path) -> Result<wire::Command, Failure> {
             })
         }
         Command::Devices => wire::Command::Devices(wire::Devices {}),
-        Command::Close => wire::Command::Close(wire::Close::default()),
+        Command::Close(close) => wire::Command::Close(wire::Close { keep: close.keep }),
+        Command::Cancel => wire::Command::Cancel(wire::Cancel {}),
         Command::Status => wire::Command::Status(wire::Status {}),
         Command::Shutdown => wire::Command::Shutdown(wire::Shutdown {}),
         Command::Open(open) => wire::Command::Open(wire::Open {
@@ -180,6 +181,8 @@ pub fn build(command: &Command, cwd: &Path) -> Result<wire::Command, Failure> {
                     args.quiet = quiet.into();
                 }
                 args.tree_only = wait.tree_only;
+            } else if wait.change {
+                args.change = true;
             } else if let Some(text) = &wait.text {
                 args.text = Some(text.clone());
             } else if let Some(target) = &wait.target {
@@ -189,7 +192,7 @@ pub fn build(command: &Command, cwd: &Path) -> Result<wire::Command, Failure> {
                 }
             } else {
                 return Err(invalid(
-                    "wait takes an element, a number of milliseconds, --text or --settle",
+                    "wait takes an element, a number of milliseconds, --text, --settle or --change",
                 ));
             }
             if let Some(state) = &wait.state {

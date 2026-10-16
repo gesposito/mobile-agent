@@ -57,19 +57,20 @@ Acting
   its cover, named as hints name it, a dialog, a button, disabled or not, a
   bar or the keyboard; act on a dialog first, else scroll it out from under
   the view. element_offscreen: none of it in view; close the keyboard or scroll.
-  fill's reply says what it read back: verified: text, or length for a
-  masked field, from the field's value, a code field's value counting
+  fill's reply says what it read back: verified: text, or length for a masked
+  field, from the field's value, a code field's value counting
   only when the text changed it; readFrom: descendants from its boxes,
-  readFrom: name from the part of its name the text changed;
-  verified: false and reason: no_value_to_read when the field shows
-  nothing to read: look at a screenshot. An id on a field's wrapper fills
-  the field inside it; on a view holding none, fill and type tap it and
-  the keyboard it brings up takes the text. method: keys means typed, direct
-  entered in one piece: set on Android and iPhones, pasted on a Simulator,
-  which replaces the pasteboard and can show iOS's paste banner; fill
-  closes the edit menu a lost paste leaves up.
+  readFrom: name from the part of its name the text changed; verified: false
+  and reason: no_value_to_read when the field shows nothing to read: look at
+  a screenshot. An id on a field's wrapper fills the field inside it; on a
+  view holding none, fill and type tap it and the keyboard it brings up takes
+  the text. method: keys means typed, direct entered in one piece: set on
+  Android and iPhones, pasted on a Simulator, which replaces the pasteboard and
+  can show iOS's paste banner; fill closes the edit menu a lost paste leaves up.
 
 Waiting
+  wait --change               the delta once the tree or frames move from your
+                              last snapshot, at once if they already moved
   wait --settle               no tree or frame change for 200 ms, at most
                               3000 ms; settled: false names what kept changing
   wait --text Welcome         until an element shows the text
@@ -77,9 +78,9 @@ Waiting
                               enabled, and attached or detached in the tree
   wait 500                    fixed milliseconds, a last resort
   click waits for the tap's first effect, at most 1 s, so a snapshot right
-  after it already sees the change; wait --settle waits out the rest.
-  Waits take --timeout MS. The default is the session's (set timeout 5000),
-  else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000.
+  after it sees the change; wait --change gets one that may still be arriving
+  and wait --settle the rest. Waits take --timeout MS, by default the session's
+  (set timeout 5000), else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000.
 
 Reading
   get text @e5 | get value @e2 | get box @e4   in view or not, as inView says
@@ -88,32 +89,31 @@ Reading
 
 Output and errors
   --json prints one object: {"success", "data", "error"}, plus "code" and
-  "warning" when set. A failure exits with status 1 and always has a
-  snake_case code, such as stale_ref, unknown_ref, element_not_found,
-  wait_timeout, target_claimed or ambiguous_target; text_mismatch means
-  fill left other text in the field, which its message names, and
-  covered_by_keyboard that the keyboard covers what you scroll: close it
-  (press Back on Android), then scroll again. Without --json, errors go to
-  stderr. A warning, such as a degraded snapshot, says to check the screen
-  before you trust what is missing from it.
+  "warning" when set. A failure exits with status 1 and always has a snake_case
+  code, such as stale_ref, unknown_ref, element_not_found, wait_timeout,
+  target_claimed or ambiguous_target; text_mismatch means fill left other text
+  in the field, which its message names, and covered_by_keyboard that the
+  keyboard covers what you scroll: close it (press Back on Android), then scroll
+  again. Without --json, errors go to stderr. A warning, such as a degraded
+  snapshot, says to check the screen before you trust what is missing from it.
 
 Targets and sessions
   devices lists the targets. With several, pass --device ID or --platform.
   --session NAME keeps target claims and refs apart. A target that another
   session holds is refused with target_claimed, unless you pass --force.
+  close --keep frees the target and leaves the app running for the next
+  session. cancel ends your session's command in flight, such as a wait.
 
 iPhones
-  A phone on USB is a target when MOBILE_AGENT_DRIVERS names ios. A command
-  on one that is not ready fails with its state as the code: device_locked
-  (unlock it), developer_mode_off, not_trusted, disk_image_unmounted,
-  no_signing_identity, or automation_not_enabled (approve Enable UI
-  Automation on the phone); devices and doctor name the step. It is slower:
-  a tree read of a 500-cell screen takes about 0.5 s, and frames come
-  19 a second, so settle and waits take longer. Text goes in
-  through the runner: method: keys means typed, direct the field's value
-  set, not a paste, so the pasteboard is left alone.
+  A phone on USB is a target when MOBILE_AGENT_DRIVERS names ios. A command on
+  one that is not ready fails with its state as the code: device_locked (unlock
+  it), developer_mode_off, not_trusted, disk_image_unmounted,
+  no_signing_identity or automation_not_enabled (approve Enable UI Automation);
+  devices and doctor name the step. It is slower: a tree read of a 500-cell
+  screen takes about 0.5 s and frames come 19 a second, so settle and waits take
+  longer. Text goes in through the runner: method: keys means typed, direct the
+  field's value set, not a paste, so the pasteboard is left alone.
 
 Batch
-  mobile-agent batch --bail 'open com.example.app' 'snapshot -i' 'click @e3'
-  runs commands in order and stops at the first failure. With --json it
-  prints one array of {command, success, result, error}.
+  batch --bail 'open com.example.app' 'snapshot -i' runs commands in order,
+  stopping at the first failure; with --json, one array of results.

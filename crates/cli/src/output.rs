@@ -77,6 +77,13 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             );
         }
         "close" => match data.get("app").and_then(Value::as_str) {
+            Some(app) if data["kept"] == Value::Bool(true) => {
+                let _ = writeln!(
+                    out,
+                    "✓ Released {}; {app} keeps running",
+                    str_of(data, "target")
+                );
+            }
             Some(app) => {
                 let _ = writeln!(
                     out,
@@ -88,6 +95,17 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
                 let _ = writeln!(out, "✓ Released {}", str_of(data, "target"));
             }
         },
+        "cancel" if data["cancelled"] == Value::Bool(true) => {
+            let _ = writeln!(
+                out,
+                "✓ Cancelled the {} in flight on {}",
+                str_of(data, "action"),
+                str_of(data, "target")
+            );
+        }
+        "cancel" => {
+            let _ = writeln!(out, "✓ Nothing in flight to cancel");
+        }
         "get" => {
             if let Some(text) = data.get("text").and_then(Value::as_str) {
                 let _ = writeln!(out, "{text}");
@@ -113,6 +131,7 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             let _ = writeln!(out, "✓ Screenshot saved to {}", str_of(data, "path"));
         }
         "wait" if str_of(data, "waited") == "settle" => settle(data, out),
+        "wait" if str_of(data, "waited") == "change" => change(data, out),
         "click" => click(data, out),
         "shutdown" => {
             let _ = writeln!(out, "✓ Daemon stopped");
@@ -150,6 +169,22 @@ fn click(data: &Value, out: &mut String) {
     } else {
         let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
     }
+}
+
+/// A change wait: what moved and when, then the delta as `snapshot
+/// --delta` prints it.
+fn change(data: &Value, out: &mut String) {
+    let what = match str_of(data, "endedBy") {
+        "tree" => "The tree",
+        "frame" => "Frames",
+        _ => "The tree and frames",
+    };
+    let _ = writeln!(
+        out,
+        "✓ {what} changed after {} ms",
+        number(&data["elapsedMs"])
+    );
+    snapshot(data, out);
 }
 
 /// A settle wait and the signal it ended on.

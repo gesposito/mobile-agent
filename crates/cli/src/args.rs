@@ -148,10 +148,26 @@ Examples:
 
     /// Stop the app this session opened and release the target
     #[command(after_help = "\
+With --keep the target is released and the app keeps running, so the next
+session finds it as this one left it.
+
 Examples:
   mobile-agent close
+  mobile-agent close --keep
   mobile-agent --session alice close")]
-    Close,
+    Close(CloseArgs),
+
+    /// End this session's command in flight, such as a wait another shell left running
+    #[command(after_help = "\
+The command ends at its next wakeup, within about 100 ms, and fails with
+cancelled; a tap or tree read already under way finishes first, and a click
+whose tap went in completes. cancel replies once the command has ended,
+naming it, and says when nothing was in flight.
+
+Examples:
+  mobile-agent cancel
+  mobile-agent --session alice cancel")]
+    Cancel,
 
     /// List the screen's elements, one per line with role, name and ref
     #[command(after_help = "\
@@ -271,16 +287,21 @@ Examples:
   mobile-agent screenshot --max-dimension 600 --quality 70")]
     Screenshot(ScreenshotArgs),
 
-    /// Wait for an element, for text, for some milliseconds or for the screen to settle
+    /// Wait for an element, for text, for some milliseconds, for the screen to settle or to change
     #[command(after_help = "\
-Element and text waits end at --timeout: the session's default (set timeout),
-else MOBILE_AGENT_DEFAULT_TIMEOUT or the config's defaultTimeout, else 10000 ms.
-wait --settle ends once neither the tree nor the frames change for the quiet
-window, or at --timeout, default 3000 ms. endedBy says which signal changed
-last (tree, frame, both or none) or timeout, and stillChanging what kept changing.
+Element, text and change waits end at --timeout: the session's default
+(set timeout), else MOBILE_AGENT_DEFAULT_TIMEOUT or the config's
+defaultTimeout, else 10000 ms. wait --settle ends once neither the tree nor
+the frames change for the quiet window, or at --timeout, default 3000 ms.
+endedBy says which signal changed last (tree, frame, both or none) or
+timeout, and stillChanging what kept changing. wait --change ends once the
+tree or the frames changed since this session's last snapshot, at once for
+a change that came before it, and prints what moved (endedBy: tree, frame or
+both) and the delta snapshot --delta prints.
 
 Examples:
   mobile-agent wait --settle
+  mobile-agent wait --change
   mobile-agent wait @e5
   mobile-agent wait '#spinner' --state hidden
   mobile-agent wait --text 'Welcome' --timeout 5000
@@ -366,6 +387,13 @@ pub struct OpenArgs {
     /// Longest wait for the app's first tree and its settling, in ms [default: the session's timeout for the tree, then 3000 to settle]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
+}
+
+#[derive(Args, Debug)]
+pub struct CloseArgs {
+    /// Release the target and leave the app running, for the next session to attach to
+    #[arg(long)]
+    pub keep: bool,
 }
 
 #[derive(Args, Debug)]
@@ -482,6 +510,9 @@ pub struct WaitArgs {
     /// Settle on tree changes alone, ignoring frames (for video)
     #[arg(long, requires = "settle")]
     pub tree_only: bool,
+    /// Wait until the tree or the frames change from what this session's last snapshot saw, then print the delta
+    #[arg(long, conflicts_with_all = ["target", "text", "settle"])]
+    pub change: bool,
     /// Longest wait, in ms [default: the session's, else MOBILE_AGENT_DEFAULT_TIMEOUT, else 10000; with --settle 3000]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
