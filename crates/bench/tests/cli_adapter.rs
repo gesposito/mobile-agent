@@ -658,11 +658,11 @@ fn a_first_snapshot_follows_a_relaunch_on_the_big_screen_and_counts_its_refs() {
     assert_eq!(count["text"], "500 elements");
 }
 
-/// A snapshot reply that lists the Big screen's last cell, with what the
-/// daemon says the snapshot cost it.
+/// A snapshot reply as the daemon writes it, listing the Big screen's last
+/// cell, with what the snapshot cost the daemon.
 fn snapshot_reply(read_ms: f64, served_from_replica: bool) -> String {
     format!(
-        r#"{{"success":true,"data":{{"snapshot":"- cell \"500\" [id=cell-500, ref=e1]","refs":{{"e1":{{"role":"cell","name":"500"}}}},"readMs":{read_ms},"servedFromReplica":{served_from_replica}}},"error":null}}"#
+        r#"{{"success":true,"data":{{"snapshot":"- cell \"500\" [id=cell-500, ref=e1]","refs":{{"e1":{{"role":"cell","name":"500"}}}},"removedRefs":[],"origin":"dev.mobileagent.fixture.swiftui","readMs":{read_ms},"servedFromReplica":{served_from_replica},"replicaRevision":3,"target":"IPHONE-1","verdict":{{"backend":"fake","fallback":false,"degraded":false,"reasons":[]}}}},"error":null}}"#
     )
 }
 

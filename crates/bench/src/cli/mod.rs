@@ -15,8 +15,8 @@
 //! the target cannot produce is reported as not measured, with the reason:
 //! tap to frame change on a target that gives no frames, which `status` says.
 //! Snapshots count the refs in their reply as their nodes, and keep what the
-//! reply says the snapshot cost the daemon (`readMs`, `servedFromReplica`).
-//! The daemon keeps
+//! reply says the snapshot cost the daemon (`readMs`, `servedFromReplica`),
+//! read through the snapshot's reply type of `crates/wire`. The daemon keeps
 //! its agent, and on Android the device's one UI automation role with it,
 //! until it exits, so the adapter's release stops the daemon, whose
 //! `shutdown` answers once it has let go of its targets.
@@ -1029,14 +1029,15 @@ fn refs(reply: &Reply) -> Result<u32, AdapterError> {
 }
 
 /// What a snapshot reply says the snapshot cost the daemon: its `readMs`,
-/// to the microsecond, and `servedFromReplica`; `None` unless it says both.
+/// to the microsecond, and `servedFromReplica`, read through the snapshot's
+/// reply type (`crates/wire`), which the daemon's tests hold to its replies;
+/// `None` for data the type does not read.
 fn read(reply: &Reply) -> Option<Read> {
-    let ms = reply.data["readMs"]
-        .as_f64()
-        .filter(|ms| ms.is_finite() && *ms >= 0.0)?;
+    let snapshot = wire::reply::Snapshot::deserialize(&reply.data).ok()?;
+    let ms = Some(snapshot.read_ms).filter(|ms| ms.is_finite() && *ms >= 0.0)?;
     Some(Read {
         us: (ms * 1000.0).round() as u64,
-        served_from_replica: reply.data["servedFromReplica"].as_bool()?,
+        served_from_replica: snapshot.served_from_replica,
     })
 }
 
@@ -1234,6 +1235,46 @@ mod tests {
     fn selectors_become_the_cli_s_identifier_and_text_forms() {
         assert_eq!(selector(&Selector::id("login-status")), "id=login-status");
         assert_eq!(selector(&Selector::text("Sign in")), "text=Sign in");
+    }
+
+    /// A snapshot reply's data as the daemon writes it, the listing's fields
+    /// beside what the snapshot cost it.
+    fn snapshot_data(read_ms: f64, served_from_replica: bool) -> Value {
+        json!({
+            "snapshot": "- cell \"500\" [id=cell-500, ref=e1]",
+            "refs": {"e1": {"name": "500", "role": "cell"}},
+            "removedRefs": [],
+            "origin": "dev.mobileagent.fixture.expo",
+            "readMs": read_ms,
+            "servedFromReplica": served_from_replica,
+            "replicaRevision": 3,
+            "target": "emulator-5554",
+            "verdict": {"backend": "fake", "fallback": false, "degraded": false, "reasons": []},
+        })
+    }
+
+    #[test]
+    fn a_snapshot_s_read_comes_through_its_reply_type_which_refuses_fields_it_does_not_name() {
+        let reply = |data: Value| Reply {
+            success: true,
+            data,
+            error: None,
+            code: None,
+            warning: None,
+            started: Instant::now(),
+            elapsed: Duration::ZERO,
+        };
+        assert_eq!(
+            read(&reply(snapshot_data(438.269, false))),
+            Some(Read {
+                us: 438_269,
+                served_from_replica: false
+            })
+        );
+        let mut unnamed = snapshot_data(0.54, true);
+        unnamed["readsMs"] = json!([0.54]);
+        assert_eq!(read(&reply(unnamed)), None);
+        assert_eq!(read(&reply(snapshot_data(-1.0, true))), None);
     }
 
     #[test]
