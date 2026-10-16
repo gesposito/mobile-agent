@@ -8,31 +8,9 @@
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
-use wire::Request;
+use wire::{Command, Request};
 
 const LINES: &str = include_str!("lines.json");
-
-/// Every action the daemon answers, by the name its requests give.
-const ACTIONS: [&str; 18] = [
-    "status",
-    "devices",
-    "close",
-    "set_timeout",
-    "doctor",
-    "open",
-    "snapshot",
-    "diff_snapshot",
-    "get",
-    "wait",
-    "screenshot",
-    "click",
-    "fill",
-    "type",
-    "press",
-    "swipe",
-    "scroll",
-    "shutdown",
-];
 
 /// The lines that give a parameter at its default, by their command line,
 /// with those parameters: a request leaves a parameter at its default out
@@ -146,8 +124,19 @@ fn the_cli_lines_cover_every_action() {
         .iter()
         .map(|case| case.line["action"].as_str().expect("an action").to_owned())
         .collect();
-    let all: BTreeSet<String> = ACTIONS.iter().map(|action| (*action).to_owned()).collect();
+    let all: BTreeSet<String> = Command::ACTIONS
+        .iter()
+        .map(|action| (*action).to_owned())
+        .collect();
     assert_eq!(covered, all);
+}
+
+#[test]
+fn every_action_s_name_reads_as_its_command() {
+    for action in Command::ACTIONS {
+        let request = parse(&line(json!({"action": action})));
+        assert_eq!(request.command.action(), action);
+    }
 }
 
 #[test]
@@ -320,7 +309,6 @@ fn null_is_a_parameter_not_given() {
 /// as a tool called with `{}` gives none.
 #[test]
 fn an_action_s_default_parameters_are_those_of_a_request_that_gives_none() {
-    use wire::Command;
     let defaults = [
         Command::Status(Default::default()),
         Command::Devices(Default::default()),

@@ -34,7 +34,8 @@ src/
   main.rs       the mobile-agent-daemon binary: flags, environment, exit status
   server.rs     startup and replacement, sidecar files, connections, shutdown, idle exit
   paths.rs      the socket directory, its files, the build's version string
-  wire.rs       the request and reply envelope, the error codes
+  wire.rs       a request line read into the request types of crates/wire, the reads of their
+                parameters, the reply envelope, the error codes
   registry.rs   discovery, target selection, claims, session settings, workers
   worker.rs     one thread per target owning its mirror; per-session state
   handlers/     what each action does: mod (status, devices, open, close, set_timeout,
@@ -46,11 +47,11 @@ src/
   devices/      the device drivers: simulator (Simulator driver), ios (physical iPhones),
                 android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          claims, controller, idle, ios_device and lifecycle, over the socket against
-                the binary; bench_inputs, the same for the screen the benches time; devices,
-                the CLI against a real Simulator, emulator and iPhone
+tests/          arguments, claims, controller, idle, ios_device, lifecycle and replies, over the
+                socket against the binary; bench_inputs, the same for the screen the benches
+                time; devices, the CLI against a real Simulator, emulator and iPhone
 benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
-                Request::parse of the line the CLI sends for snapshot -i, reply_line of the
+                wire::parse of the line the CLI sends for snapshot -i, reply_line of the
                 reply to it on the fake fixture's Big tab (500 cells), with their
                 allocations, and that snapshot through the socket of a daemon on a fake
                 emulator, one request per iteration
@@ -129,7 +130,10 @@ an older build of the same release, not only from another release.
 ## Protocol
 
 One JSON object per line, one reply per request; a connection may carry
-several requests. Lines that start like an HTTP request are refused.
+several requests. Lines that start like an HTTP request are refused. The
+daemon reads each line into the request types of `crates/wire`: the
+envelope, then the action and its parameters, read as the table below names
+them, each where its command uses it (`crates/wire/README.md`, Requests).
 
 ```
 {"id": "r123456", "action": "snapshot", "session": "default", "interactive": true}
@@ -1291,6 +1295,7 @@ Worked around here without changing `crates/mirror`:
 | Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
 | Text entry, spec `simulator-driver` (design D34) | First keystroke lands | `handlers::act::tests::a_fill_on_ios_types_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_pastes_into_a_field_it_focused_once_the_keyboard_is_up`, `handlers::act::tests::a_fill_on_ios_waits_at_most_1_s_for_a_keyboard_that_never_comes`, `handlers::act::tests::a_fill_on_ios_into_a_field_with_the_focus_and_the_keyboard_up_does_not_wait`, `handlers::act::tests::a_fill_on_android_neither_taps_first_nor_waits_for_the_keyboard`, `fake::app::tests::an_ios_field_loses_text_while_its_keyboard_slides_in`; against a Simulator, ten fills by hand (task 1.4 of rn-app-fixes) |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
+| Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
 
 The CLI's tests (`crates/cli/README.md`) cover every scenario end to end
 through this daemon, on fake targets with the device drivers off

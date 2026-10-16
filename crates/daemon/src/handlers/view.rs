@@ -4,26 +4,28 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mirror::{
-    Condition, DEFAULT_MAX_DIMENSION, DEFAULT_QUALITY, DEFAULT_QUIET_WINDOW, Diff, Element,
-    FrameRequest, Selector, SettleOptions, Signal, Signals, Snapshot, SnapshotOptions,
+    Condition, Diff, Element, FrameRequest, Selector, SettleOptions, Signal, Signals, Snapshot,
+    SnapshotOptions,
 };
 use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim};
-use super::{millis, origin, settle_max, timeout, verdict_json, verdict_warning};
+use super::{Call, millis, origin, settle_max, timeout, verdict_json, verdict_warning};
 use crate::driver::CaptureRequest;
 use crate::signals::{LastChanges, ended_by};
 use crate::wire::code::{self, IO_ERROR};
-use crate::wire::{Failure, Request, Success};
+use crate::wire::{Failure, Param, Success, arg, needed};
 use crate::worker::{Attached, Outcome};
 
 /// The snapshot options a request asks for.
-pub(super) fn snapshot_options(request: &Request) -> Result<SnapshotOptions, Failure> {
-    let max_depth = request
-        .u64("maxDepth")?
-        .map(|depth| usize::try_from(depth).unwrap_or(usize::MAX));
+pub(super) fn snapshot_options(
+    interactive: bool,
+    max_depth: &Param<Option<u64>>,
+) -> Result<SnapshotOptions, Failure> {
+    let max_depth =
+        arg("maxDepth", max_depth)?.map(|depth| usize::try_from(depth).unwrap_or(usize::MAX));
     Ok(SnapshotOptions {
-        interactive: request.flag("interactive"),
+        interactive,
         max_depth,
     })
 }
@@ -42,16 +44,17 @@ pub(crate) fn element_json(element: &Element) -> Value {
     })
 }
 
-pub(super) fn snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let options = snapshot_options(request)?;
+pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapshot) -> Outcome {
+    let session = call.session.as_str();
+    let options = snapshot_options(args.interactive, &args.max_depth)?;
     let started = Instant::now();
     let read_before = target.mirror.timestamps().last_read;
     target.catch_up()?;
     let snapshot = target.mirror.snapshot(&options)?;
     let mut data = Map::new();
-    if request.flag("delta") {
+    if args.delta {
         // Another session's delta state is no base for this one.
-        let full = request.flag("full") || target.delta_session.as_deref() != Some(session);
+        let full = args.full || target.delta_session.as_deref() != Some(session);
         let delta = target.mirror.delta_snapshot(&options, full)?;
         target.delta_session = Some(session.to_owned());
         let delta: Value = serde_json::from_str(&delta.to_json())
@@ -103,11 +106,16 @@ fn remember(target: &mut Attached, session: &str, snapshot: Snapshot) {
     entry.last = Some(snapshot);
 }
 
-pub(super) fn diff_snapshot(target: &mut Attached, session: &str, request: &Request) -> Outcome {
+pub(super) fn diff_snapshot(
+    target: &mut Attached,
+    call: &Call,
+    args: &::wire::DiffSnapshot,
+) -> Outcome {
+    let session = call.session.as_str();
     let baseline = target.session(session).last.clone();
     let options = match &baseline {
         Some(baseline) => baseline.options,
-        None => snapshot_options(request)?,
+        None => snapshot_options(args.interactive, &args.max_depth)?,
     };
     target.catch_up()?;
     let current = target.mirror.snapshot(&options)?;
@@ -153,14 +161,14 @@ pub(super) fn diff_snapshot(target: &mut Attached, session: &str, request: &Requ
     Ok(Success::new(data))
 }
 
-pub(super) fn get(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let what = request.required_str("what")?;
-    let given = request.required_str("target")?;
+pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Outcome {
+    let what = needed("get", "what", &args.what)?;
+    let given = needed("get", "target", &args.target)?;
     let aim = Aim::parse(given)?;
     let data = match what {
         "text" | "value" | "box" => {
             // Any element the replica holds, in view or not (design D51).
-            let element = aim::held(target, session, &aim, timeout(request)?)?;
+            let element = aim::held(target, &call.session, &aim, timeout(&args.timeout, call)?)?;
             let in_view = aim::in_view(target, &element);
             let b = element.bounds;
             match what {
@@ -193,20 +201,21 @@ fn signal_name(signal: &Signal) -> &'static str {
     }
 }
 
-pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    if let Some(ms) = request.u64("ms")? {
+pub(super) fn wait(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
+    let session = call.session.as_str();
+    if let Some(ms) = arg("ms", &args.ms)? {
         target
             .mirror
             .run_until(Instant::now() + Duration::from_millis(ms))?;
         return Ok(Success::new(json!({"waited": "time", "ms": ms})));
     }
-    if request.flag("settle") {
-        return settle(target, request);
+    if args.settle {
+        return settle(target, args);
     }
-    let (aimed, kind, given) = match request.str("text") {
+    let (aimed, kind, given) = match args.text.as_deref() {
         Some(text) => (Aim::Select(Selector::text(text)), "text", text.to_owned()),
         None => {
-            let given = request.str("target").ok_or_else(|| {
+            let given = args.target.as_deref().ok_or_else(|| {
                 Failure::new(
                     code::INVALID_ARGUMENT,
                     "wait takes an element, a number of milliseconds, --text or --settle",
@@ -225,13 +234,13 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
     // Attached and detached ask whether the replica holds the element, in
     // view or not (design D51); visible, hidden and enabled whether it is on
     // screen.
-    let condition = match request.str("state") {
-        None | Some("visible") => Condition::Appear,
-        Some("attached") => Condition::Attached,
-        Some("hidden") => Condition::Disappear,
-        Some("detached") => Condition::Detached,
-        Some("enabled") => Condition::Enabled,
-        Some(other) => {
+    let condition = match args.state.as_str() {
+        "visible" => Condition::Appear,
+        "attached" => Condition::Attached,
+        "hidden" => Condition::Disappear,
+        "detached" => Condition::Detached,
+        "enabled" => Condition::Enabled,
+        other => {
             return Err(Failure::new(
                 code::INVALID_ARGUMENT,
                 format!(
@@ -240,7 +249,7 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
             ));
         }
     };
-    let timeout = timeout(request)?;
+    let timeout = timeout(&args.timeout, call)?;
     target.catch_up()?;
     let held = matches!(condition, Condition::Attached | Condition::Detached);
     let outcome = match &aimed {
@@ -268,12 +277,10 @@ pub(super) fn wait(target: &mut Attached, session: &str, request: &Request) -> O
     Ok(Success::new(data))
 }
 
-fn settle(target: &mut Attached, request: &Request) -> Outcome {
-    let max = settle_max(request)?;
-    let quiet = request
-        .u64("quiet")?
-        .map_or(DEFAULT_QUIET_WINDOW, Duration::from_millis);
-    let signals = if request.flag("treeOnly") {
+fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
+    let max = settle_max(&args.timeout)?;
+    let quiet = Duration::from_millis(arg("quiet", &args.quiet)?);
+    let signals = if args.tree_only {
         Signals::TreeOnly
     } else {
         Signals::TreeAndFrames
@@ -309,20 +316,21 @@ fn settle(target: &mut Attached, request: &Request) -> Outcome {
     .warn(warning))
 }
 
-pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
-    let max_dimension = request
-        .u64("maxDimension")?
-        .map(|px| u32::try_from(px).unwrap_or(u32::MAX));
-    let quality = request
-        .u64("quality")?
-        .map(|q| u8::try_from(q).unwrap_or(u8::MAX));
+pub(super) fn screenshot(
+    target: &mut Attached,
+    _call: &Call,
+    args: &::wire::Screenshot,
+) -> Outcome {
+    let max_dimension =
+        u32::try_from(arg("maxDimension", &args.max_dimension)?).unwrap_or(u32::MAX);
+    let quality = u8::try_from(arg("quality", &args.quality)?).unwrap_or(u8::MAX);
     // The driver's own screenshot when it takes one, the screen as it is
     // at any size; else the mirror's latest frame.
     let shot = match target.capture.as_mut() {
         Some(capture) => {
-            let quality = quality.unwrap_or(DEFAULT_QUALITY).clamp(1, 100);
+            let quality = quality.clamp(1, 100);
             let image = capture.screenshot(&CaptureRequest {
-                max_dimension: max_dimension.unwrap_or(DEFAULT_MAX_DIMENSION).max(1),
+                max_dimension: max_dimension.max(1),
                 quality,
             })?;
             Shot {
@@ -338,8 +346,8 @@ pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Reques
         }
         None => {
             let frame = target.mirror.frame(&FrameRequest {
-                max_dimension,
-                quality,
+                max_dimension: Some(max_dimension),
+                quality: Some(quality),
             })?;
             Shot {
                 data: frame.data,
@@ -353,7 +361,7 @@ pub(super) fn screenshot(target: &mut Attached, _session: &str, request: &Reques
             }
         }
     };
-    let path = match request.str("path") {
+    let path = match args.path.as_deref() {
         Some(path) => PathBuf::from(path),
         None => {
             let stamp = SystemTime::now()

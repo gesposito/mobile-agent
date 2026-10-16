@@ -13,27 +13,24 @@ use serde_json::{Map, Value, json};
 
 use super::aim::{self, Aim, TextTarget};
 use super::view::element_json;
-use super::{millis, timeout};
+use super::{Call, millis, timeout};
 use crate::driver::{Platform, TargetClass};
 use crate::keys;
 use crate::wire::code::{
     self, COVERED_BY_KEYBOARD, INPUT_REJECTED, STROKE_TOO_SHORT, TEXT_MISMATCH,
 };
-use crate::wire::{Failure, Request, Success};
+use crate::wire::{Failure, Success, arg, needed};
 use crate::worker::{Attached, Outcome};
 
-/// How long a swipe takes when the command names no duration.
-const SWIPE_DURATION: Duration = Duration::from_millis(300);
+/// How long a swipe takes when the command names no duration, and each of
+/// a scroll's strokes.
+const SWIPE_DURATION: Duration = Duration::from_millis(::wire::SWIPE_MS);
 
 /// The least of the scrolled area a scroll strokes through with the keyboard
 /// up, along the scroll's axis, in points (design D41): less, and what the
 /// keyboard and a header pinned over the list leave holds no stroke that
 /// moves the list's content, and the scroll asks to close the keyboard.
 const STROKE_ROOM: f64 = 120.0;
-
-/// How far `swipe` and `scroll` move when the command names no distance,
-/// in points, as agent-browser's default of 300 pixels.
-const DEFAULT_DISTANCE: f64 = 300.0;
 
 /// The longest stroke of a scroll, as a share of the scrolled area.
 const MAX_STROKE: f64 = 0.8;
@@ -460,9 +457,10 @@ fn offscreen(
     .with_data(json!({"ref": reference_json(element.reference), "visible": 0.0}))
 }
 
-pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let hold = request.u64("hold")?.map(Duration::from_millis);
-    let (mut aimed, reference, clicked, found) = match (request.f64("x")?, request.f64("y")?) {
+pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) -> Outcome {
+    let session = call.session.as_str();
+    let hold = arg("hold", &args.hold)?.map(Duration::from_millis);
+    let (mut aimed, reference, clicked, found) = match (arg("x", &args.x)?, arg("y", &args.y)?) {
         (Some(x), Some(y)) => (
             Target::Point(Point::new(x, y)),
             None,
@@ -470,10 +468,14 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
             None,
         ),
         _ => {
-            let given = request.required_str("target")?;
+            let given = needed(
+                "click",
+                "target",
+                args.target.as_deref().unwrap_or_default(),
+            )?;
             let aim = Aim::parse(given)?;
             let (aimed, reference, found) =
-                aim::action_target(target, session, &aim, timeout(request)?)?;
+                aim::action_target(target, session, &aim, timeout(&args.timeout, call)?)?;
             (aimed, reference, given.to_owned(), found)
         }
     };
@@ -540,11 +542,12 @@ pub(super) fn click(target: &mut Attached, session: &str, request: &Request) -> 
     Ok(Success::new(Value::Object(data)).warn(warning))
 }
 
-fn text_param(request: &Request) -> Result<String, Failure> {
-    request.str("text").map(str::to_owned).ok_or_else(|| {
+/// The text `action` enters, which may be empty.
+fn text_param(action: &str, text: Option<&str>) -> Result<String, Failure> {
+    text.map(str::to_owned).ok_or_else(|| {
         Failure::new(
             code::INVALID_ARGUMENT,
-            format!("{} needs a \"text\" string", request.action),
+            format!("{action} needs a \"text\" string"),
         )
     })
 }
@@ -1553,11 +1556,17 @@ fn mismatch(
 /// empty field reads as its hint, so an empty fill there is not read back.
 /// On iOS a field without the focus is focused first and gets its text once
 /// the keyboard is up (see [`ready_keyboard`]).
-pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let text = text_param(request)?;
-    let given = request.required_str("target")?;
+pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> Outcome {
+    let session = call.session.as_str();
+    let text = text_param("fill", args.text.as_deref())?;
+    let given = needed("fill", "target", &args.target)?;
     let aim = Aim::parse(given)?;
-    let aimed = aim::text_ref(target, session, (&aim, given, "fill"), timeout(request)?)?;
+    let aimed = aim::text_ref(
+        target,
+        session,
+        (&aim, given, "fill"),
+        timeout(&args.timeout, call)?,
+    )?;
     let (platform, class) = (target.info.platform, target.info.class);
     let (field, into, held) = match aimed {
         TextTarget::Within(reference, holder) => {
@@ -1671,12 +1680,14 @@ pub(super) fn fill(target: &mut Attached, session: &str, request: &Request) -> O
     }
 }
 
-pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let text = text_param(request)?;
-    let (into, named, warning) = match request.str("target") {
+pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeText) -> Outcome {
+    let session = call.session.as_str();
+    let text = text_param("type", args.text.as_deref())?;
+    let (into, named, warning) = match args.target.as_deref() {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            match aim::text_ref(target, session, (&aim, given, "type"), timeout(request)?)? {
+            let wait = timeout(&args.timeout, call)?;
+            match aim::text_ref(target, session, (&aim, given, "type"), wait)? {
                 TextTarget::Within(reference, holder) => {
                     let field = target.mirror.resolve(reference)?;
                     let into = ready_held(target, (&field, &holder), given, "type")?;
@@ -1709,8 +1720,8 @@ pub(super) fn type_text(target: &mut Attached, session: &str, request: &Request)
     .warn(warning))
 }
 
-pub(super) fn press(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
-    let key = request.required_str("key")?;
+pub(super) fn press(target: &mut Attached, _call: &Call, args: &::wire::Press) -> Outcome {
+    let key = needed("press", "key", &args.key)?;
     let code = keys::resolve(target.info.platform, key)?;
     let outcome = target.mirror.act(&Action::Key {
         code: code.code,
@@ -1887,32 +1898,24 @@ fn stroke_area(
     Ok(area)
 }
 
-fn point_param(request: &Request, key: &str) -> Result<Option<Point>, Failure> {
-    match request.params.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Array(pair)) if pair.len() == 2 => match (pair[0].as_f64(), pair[1].as_f64()) {
-            (Some(x), Some(y)) => Ok(Some(Point::new(x, y))),
-            _ => Err(Failure::new(
-                code::INVALID_ARGUMENT,
-                format!("\"{key}\" must be [x, y] in points"),
-            )),
-        },
-        Some(_) => Err(Failure::new(
-            code::INVALID_ARGUMENT,
-            format!("\"{key}\" must be [x, y] in points"),
-        )),
-    }
+/// A point parameter, `[x, y]` in points.
+fn point_param(
+    key: &str,
+    param: &::wire::Param<Option<[f64; 2]>>,
+) -> Result<Option<Point>, Failure> {
+    Ok(arg(key, param)?.map(|[x, y]| Point::new(x, y)))
 }
 
-pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) -> Outcome {
-    let duration = request
-        .u64("duration")?
-        .map_or(SWIPE_DURATION, Duration::from_millis);
-    let (from, to, swiped) = match (point_param(request, "from")?, point_param(request, "to")?) {
+pub(super) fn swipe(target: &mut Attached, _call: &Call, args: &::wire::Swipe) -> Outcome {
+    let duration = Duration::from_millis(arg("duration", &args.duration)?);
+    let (from, to, swiped) = match (
+        point_param("from", &args.from)?,
+        point_param("to", &args.to)?,
+    ) {
         (Some(from), Some(to)) => (from, to, Value::Bool(true)),
         _ => {
-            let direction = Direction::parse(request.str("direction").unwrap_or("up"))?;
-            let distance = request.f64("distance")?.unwrap_or(DEFAULT_DISTANCE);
+            let direction = Direction::parse(&args.direction)?;
+            let distance = arg("distance", &args.distance)?;
             let (from, to) = stroke(screen(target)?, direction, distance);
             (from, to, direction.name().into())
         }
@@ -1931,13 +1934,14 @@ pub(super) fn swipe(target: &mut Attached, _session: &str, request: &Request) ->
     ))
 }
 
-pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) -> Outcome {
-    let direction = Direction::parse(request.str("direction").unwrap_or("down"))?;
-    let amount = request.f64("amount")?.unwrap_or(DEFAULT_DISTANCE);
-    let scrolled = match request.str("target") {
+pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) -> Outcome {
+    let session = call.session.as_str();
+    let direction = Direction::parse(&args.direction)?;
+    let amount = arg("amount", &args.amount)?;
+    let scrolled = match args.target.as_deref() {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            let element = aim::element(target, session, &aim, timeout(request)?)?;
+            let element = aim::element(target, session, &aim, timeout(&args.timeout, call)?)?;
             Scrolled {
                 bounds: element.bounds,
                 element: Some(element.id),
@@ -1962,13 +1966,13 @@ pub(super) fn scroll(target: &mut Attached, session: &str, request: &Request) ->
     // tap.
     let longest = longest_in(&area, vertical);
     let platform = target.info.platform;
-    if let Some(until) = request.str("until") {
+    if let Some(until) = args.until.as_deref() {
         let step = amount.max(1.0).min(longest);
         check_stroke(platform, step, amount, longest)?;
         return scroll_until(
             target,
-            session,
-            request,
+            call,
+            &args.timeout,
             (&scrolled, direction, amount),
             until,
         );
@@ -2161,13 +2165,14 @@ fn in_view(seen: &Visibility) -> String {
 /// say (rn-app-fixes, design D46).
 fn scroll_until(
     target: &mut Attached,
-    session: &str,
-    request: &Request,
+    call: &Call,
+    own_timeout: &::wire::Param<Option<u64>>,
     (scrolled, direction, amount): (&Scrolled, Direction, f64),
     until: &str,
 ) -> Outcome {
+    let session = call.session.as_str();
     let aim = Aim::parse(until)?;
-    let deadline = Instant::now() + timeout(request)?;
+    let deadline = Instant::now() + timeout(own_timeout, call)?;
     let vertical = direction.vertical();
     let platform = target.info.platform;
     let slop = tap_slop(platform);
@@ -2229,7 +2234,7 @@ fn scroll_until(
         } else if now >= deadline {
             Some(format!(
                 "the {} ms timeout passed",
-                timeout(request)?.as_millis()
+                timeout(own_timeout, call)?.as_millis()
             ))
         } else {
             None
@@ -2337,6 +2342,7 @@ mod tests {
     use super::*;
     use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
     use crate::fake::{FakeDriver, Slide, Typing};
+    use crate::wire::Request;
 
     /// The fake fixture app.
     const FIXTURE: &str = "dev.mobileagent.fixture.expo";
@@ -2353,7 +2359,7 @@ mod tests {
         let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
         let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
         let open = json!({"action": "open", "app": FIXTURE}).to_string();
-        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        super::super::run_on(&mut target, "default", &request(&open)).unwrap();
         target
     }
 
@@ -2366,13 +2372,13 @@ mod tests {
     /// `fill` of `text` into the field `field` names.
     fn fill_in(target: &mut Attached, field: &str, text: &str) -> Outcome {
         let fill = json!({"action": "fill", "target": field, "text": text}).to_string();
-        super::fill(target, "default", &request(&fill))
+        super::super::run_on(target, "default", &request(&fill))
     }
 
     /// What the field `field` names holds, as `get value` reads it.
     fn held(target: &mut Attached, field: &str) -> Value {
         let get = json!({"action": "get", "what": "value", "target": field}).to_string();
-        super::super::view::get(target, "default", &request(&get))
+        super::super::run_on(target, "default", &request(&get))
             .unwrap()
             .data["value"]
             .clone()
@@ -2707,7 +2713,7 @@ mod tests {
     }
 
     fn request(line: &str) -> Request {
-        Request::parse(line).unwrap()
+        crate::wire::parse(line).unwrap()
     }
 
     /// Notes that every input waited for its transport to activate.
@@ -2729,7 +2735,7 @@ mod tests {
         let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
         attachment.input_notes = notes;
         let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
-        let listing = super::super::view::snapshot(
+        let listing = super::super::run_on(
             &mut target,
             "default",
             &request(r#"{"action": "snapshot", "interactive": true}"#),
@@ -2754,7 +2760,9 @@ mod tests {
     fn a_click_after_a_fresh_activation_watches_long_enough_for_its_late_effects() {
         let (mut warm, fixture) = slow_ios(None);
         let click = request(&format!(r#"{{"action": "click", "target": "{fixture}"}}"#));
-        let data = super::click(&mut warm, "default", &click).unwrap().data;
+        let data = super::super::run_on(&mut warm, "default", &click)
+            .unwrap()
+            .data;
         assert!(
             data.get("frameChangeMs").is_none(),
             "a warm watch ends 200 ms after a tap that changed nothing yet: {data}"
@@ -2762,7 +2770,9 @@ mod tests {
 
         let (mut fresh, fixture) = slow_ios(Some(Arc::new(Fresh)));
         let click = request(&format!(r#"{{"action": "click", "target": "{fixture}"}}"#));
-        let data = super::click(&mut fresh, "default", &click).unwrap().data;
+        let data = super::super::run_on(&mut fresh, "default", &click)
+            .unwrap()
+            .data;
         for span in ["frameChangeMs", "treeDeltaMs"] {
             assert!(
                 data[span].as_f64().is_some_and(|ms| ms >= 400.0),
@@ -2821,10 +2831,14 @@ mod tests {
         attachment.display = Box::new(Turning(Arc::clone(&turned)));
         let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
         let swipe = request(r#"{"action": "swipe", "direction": "up"}"#);
-        let upright = super::swipe(&mut target, "default", &swipe).unwrap().data;
+        let upright = super::super::run_on(&mut target, "default", &swipe)
+            .unwrap()
+            .data;
         assert_eq!(upright["from"][0], 200.0, "{upright}");
         turned.store(true, Ordering::SeqCst);
-        let rotated = super::swipe(&mut target, "default", &swipe).unwrap().data;
+        let rotated = super::super::run_on(&mut target, "default", &swipe)
+            .unwrap()
+            .data;
         assert_eq!(
             rotated["from"][0], 400.0,
             "the middle of the landscape screen: {rotated}"
@@ -3027,7 +3041,7 @@ mod tests {
         });
         let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
         let open = json!({"action": "open", "app": FIXTURE, "env": env}).to_string();
-        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        super::super::run_on(&mut target, "default", &request(&open)).unwrap();
         (target, strokes)
     }
 
@@ -3037,7 +3051,7 @@ mod tests {
         line.as_object_mut()
             .unwrap()
             .extend(params.as_object().unwrap().clone());
-        super::scroll(target, "default", &request(&line.to_string()))
+        super::super::run_on(target, "default", &request(&line.to_string()))
     }
 
     /// Where the fake Android keyboard starts, in points: it covers the
@@ -3174,7 +3188,7 @@ mod tests {
         });
         let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
         let open = json!({"action": "open", "app": app, "env": env}).to_string();
-        super::super::open(&mut target, "default", &request(&open)).unwrap();
+        super::super::run_on(&mut target, "default", &request(&open)).unwrap();
         sent.lock().unwrap().clear();
         (target, sent)
     }
@@ -3194,7 +3208,7 @@ mod tests {
     /// The ref an interactive snapshot gives the element named `name`, as
     /// `@eN`.
     fn ref_named(target: &mut Attached, name: &str) -> String {
-        let listing = super::super::view::snapshot(
+        let listing = super::super::run_on(
             target,
             "default",
             &request(r#"{"action": "snapshot", "interactive": true}"#),
@@ -3214,13 +3228,13 @@ mod tests {
     /// `click` on what `aimed` names.
     fn click_on(target: &mut Attached, aimed: &str) -> Outcome {
         let click = json!({"action": "click", "target": aimed}).to_string();
-        super::click(target, "default", &request(&click))
+        super::super::run_on(target, "default", &request(&click))
     }
 
     /// The text of the element `aimed` names, as `get text` reads it.
     fn text_of(target: &mut Attached, aimed: &str) -> Value {
         let get = json!({"action": "get", "what": "text", "target": aimed}).to_string();
-        super::super::view::get(target, "default", &request(&get))
+        super::super::run_on(target, "default", &request(&get))
             .unwrap()
             .data["text"]
             .clone()
@@ -3444,14 +3458,14 @@ mod tests {
     /// selector's element.
     fn click_within(target: &mut Attached, aimed: &str, timeout: u64) -> Outcome {
         let click = json!({"action": "click", "target": aimed, "timeout": timeout}).to_string();
-        super::click(target, "default", &request(&click))
+        super::super::run_on(target, "default", &request(&click))
     }
 
     /// `fill` of `text` into what `aimed` names, waiting at most `timeout`
     /// ms for a selector's element.
     fn fill_within(target: &mut Attached, aimed: &str, text: &str, timeout: u64) -> Outcome {
         let fill = json!({"action": "fill", "target": aimed, "text": text, "timeout": timeout});
-        super::fill(target, "default", &request(&fill.to_string()))
+        super::super::run_on(target, "default", &request(&fill.to_string()))
     }
 
     /// The longest a refusal by selector may take: the time a ref takes, a
@@ -4077,8 +4091,8 @@ mod tests {
         };
         let line = line.to_string();
         match action {
-            "get" => super::super::view::get(target, "default", &request(&line)),
-            _ => super::super::view::wait(target, "default", &request(&line)),
+            "get" => super::super::run_on(target, "default", &request(&line)),
+            _ => super::super::run_on(target, "default", &request(&line)),
         }
     }
 
@@ -4352,7 +4366,7 @@ mod tests {
         let (mut typing, _) = typed_board("code-again", Typing::Keys);
         let type_in = json!({"action": "type", "target": "#placeholder-id-3", "text": "42"});
         let typed =
-            super::type_text(&mut typing, "default", &request(&type_in.to_string())).unwrap();
+            super::super::run_on(&mut typing, "default", &request(&type_in.to_string())).unwrap();
         assert!(typed.warning.unwrap_or_default().contains("textbox"));
         assert!(
             text_of(&mut typing, "#placeholder-id-3")
@@ -4421,7 +4435,7 @@ mod tests {
 
         let (mut typing, sent) = typed_board("code-bare", Typing::Keys);
         let type_in = json!({"action": "type", "target": "#placeholder-id-3", "text": "42"});
-        let typed = super::type_text(&mut typing, "default", &request(&type_in.to_string()))
+        let typed = super::super::run_on(&mut typing, "default", &request(&type_in.to_string()))
             .unwrap_or_else(|failure| panic!("{failure:?}"));
         assert!(
             typed.warning.unwrap_or_default().contains("keyboard"),
@@ -4582,7 +4596,7 @@ mod tests {
         let board = |target: &mut Attached, board: &str| {
             let env = [format!("PLACEHOLDER_SCREEN={board}")];
             let open = json!({"action": "open", "app": PLACEHOLDER, "relaunch": true, "env": env});
-            super::super::open(target, "default", &request(&open.to_string())).unwrap();
+            super::super::run_on(target, "default", &request(&open.to_string())).unwrap();
         };
         let fresh = fill_in(&mut target, "#placeholder-id-3", "123456").unwrap();
         assert_eq!(fresh.data["readFrom"], "name", "{}", fresh.data);
@@ -4694,7 +4708,7 @@ mod tests {
         let waited = text_after_tap(&sent).expect("fill taps the field, then types");
         assert!(waited < Duration::from_millis(300), "{waited:?}");
 
-        let listing = super::super::view::snapshot(
+        let listing = super::super::run_on(
             &mut target,
             "default",
             &request(r#"{"action": "snapshot", "interactive": true}"#),

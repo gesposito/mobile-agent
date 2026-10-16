@@ -1,13 +1,14 @@
 //! The CLI-daemon protocol: newline-delimited JSON over the Unix socket in
 //! agent-browser's shape (design D1, research note `protocol.md`).
 //!
-//! A request is one line `{"id", "action", "session", ...parameters}`; the
-//! reply is one line `{"id", "success", "data", "error"}` plus `code` and
-//! `warning` when set. `error` is null on success; `data` is null on failure
+//! A request is one line `{"id", "action", "session", ...parameters}`, read
+//! into the request types of `crates/wire` ([`parse`]); the reply is one
+//! line `{"id", "success", "data", "error"}` plus `code` and `warning` when
+//! set. `error` is null on success; `data` is null on failure
 //! unless the error carries details, such as the holder of a claimed
 //! target. Every failure has a snake_case `code`.
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 /// The codes the daemon raises itself. Mirror and driver errors keep their
 /// own codes, such as `stale_ref`.
@@ -52,130 +53,132 @@ pub mod code {
     pub const INTERNAL: &str = "internal";
 }
 
-/// One parsed request.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Request {
-    /// Echoed in the reply; agent-browser's CLI sends `r` and a number.
-    pub id: Value,
-    pub action: String,
-    /// The session, `default` when the request names none.
-    pub session: String,
-    /// Everything else in the request object.
-    pub params: Map<String, Value>,
+pub use ::wire::{Command, Param, Request};
+
+/// Parses one request line into its request (`crates/wire`).
+///
+/// The types read every line that is a request; a line they refuse, one
+/// that is not JSON or not an object, whose envelope is not one, that gives
+/// a key twice or names an action they do not know, is read as a map, which
+/// words the refusal as the daemon always has and counts the last of a key
+/// given twice.
+pub fn parse(line: &str) -> Result<Request, Failure> {
+    serde_json::from_str(line).or_else(|_| parse_map(line))
 }
 
-impl Request {
-    /// Parses one request line.
-    pub fn parse(line: &str) -> Result<Request, Failure> {
-        let value: Value = serde_json::from_str(line).map_err(|e| {
-            Failure::new(
-                code::INVALID_REQUEST,
-                format!("the request is not JSON ({e}); send one JSON object per line"),
-            )
-        })?;
-        let Value::Object(mut params) = value else {
+/// Parses `line` read as a map: the envelope's `id`, `action` and
+/// `session`, in that order, then the request.
+fn parse_map(line: &str) -> Result<Request, Failure> {
+    let value: Value = serde_json::from_str(line).map_err(|e| {
+        Failure::new(
+            code::INVALID_REQUEST,
+            format!("the request is not JSON ({e}); send one JSON object per line"),
+        )
+    })?;
+    let Value::Object(fields) = value else {
+        return Err(Failure::new(
+            code::INVALID_REQUEST,
+            "the request is not a JSON object",
+        ));
+    };
+    let id = fields.get("id").cloned().unwrap_or(Value::Null);
+    let action = match fields.get("action") {
+        Some(Value::String(action)) => action.clone(),
+        _ => {
             return Err(Failure::new(
                 code::INVALID_REQUEST,
-                "the request is not a JSON object",
-            ));
-        };
-        let id = params.remove("id").unwrap_or(Value::Null);
-        let action = match params.remove("action") {
-            Some(Value::String(action)) => action,
-            _ => {
-                return Err(Failure::new(
-                    code::INVALID_REQUEST,
-                    "the request has no \"action\" string",
-                )
-                .with_id(id));
-            }
-        };
-        let session = match params.remove("session") {
-            Some(Value::String(session)) if !session.is_empty() => session,
-            None | Some(Value::Null) => "default".to_owned(),
-            Some(_) => {
-                return Err(Failure::new(
-                    code::INVALID_ARGUMENT,
-                    "\"session\" must be a non-empty string",
-                )
-                .with_id(id));
-            }
-        };
-        Ok(Request {
-            id,
-            action,
-            session,
-            params,
-        })
-    }
-
-    /// A string parameter, if present and a string.
-    pub fn str(&self, key: &str) -> Option<&str> {
-        self.params.get(key).and_then(Value::as_str)
-    }
-
-    /// A required string parameter.
-    pub fn required_str(&self, key: &str) -> Result<&str, Failure> {
-        match self.params.get(key) {
-            Some(Value::String(s)) if !s.is_empty() => Ok(s),
-            _ => Err(Failure::new(
+                "the request has no \"action\" string",
+            )
+            .with_id(id));
+        }
+    };
+    match fields.get("session") {
+        Some(Value::String(session)) if !session.is_empty() => {}
+        None | Some(Value::Null) => {}
+        Some(_) => {
+            return Err(Failure::new(
                 code::INVALID_ARGUMENT,
-                format!("{} needs a \"{key}\" string", self.action),
-            )),
+                "\"session\" must be a non-empty string",
+            )
+            .with_id(id));
         }
     }
-
-    /// A flag: true only when the parameter is `true`.
-    pub fn flag(&self, key: &str) -> bool {
-        self.params.get(key).and_then(Value::as_bool) == Some(true)
+    if !Command::ACTIONS.contains(&action.as_str()) {
+        return Err(Failure::new(
+            code::UNKNOWN_ACTION,
+            format!("unknown action {action:?}; run mobile-agent --help for the commands"),
+        )
+        .with_id(id));
     }
+    serde_json::from_value(Value::Object(fields)).map_err(|e| {
+        Failure::internal(format!("the request's parameters do not read: {e}")).with_id(id)
+    })
+}
 
-    /// An unsigned integer parameter, if present.
-    pub fn u64(&self, key: &str) -> Result<Option<u64>, Failure> {
-        match self.params.get(key) {
-            None | Some(Value::Null) => Ok(None),
-            Some(value) => value.as_u64().map(Some).ok_or_else(|| {
-                Failure::new(
-                    code::INVALID_ARGUMENT,
-                    format!("\"{key}\" must be a non-negative integer, not {value}"),
-                )
-            }),
+/// A parameter's value, or, for a value of another type, the failure that
+/// names `key` and the value given: a command reads each parameter where
+/// it uses it, so the first it reads is the one a request is refused for.
+pub fn arg<T: Clone + Refusal>(key: &str, param: &Param<T>) -> Result<T, Failure> {
+    match param {
+        Param::Valid(value) => Ok(value.clone()),
+        Param::Invalid(given) => Err(Failure::new(code::INVALID_ARGUMENT, T::refusal(key, given))),
+    }
+}
+
+/// A string `action` needs, which a request gives empty, of another type or
+/// not at all when it is refused.
+pub fn needed<'a>(action: &str, key: &str, value: &'a str) -> Result<&'a str, Failure> {
+    if value.is_empty() {
+        return Err(Failure::new(
+            code::INVALID_ARGUMENT,
+            format!("{action} needs a \"{key}\" string"),
+        ));
+    }
+    Ok(value)
+}
+
+/// What a parameter's value of another type is refused with, by the type.
+pub trait Refusal {
+    /// The message for `given` in the place of parameter `key`.
+    fn refusal(key: &str, given: &Value) -> String;
+}
+
+impl Refusal for u64 {
+    fn refusal(key: &str, given: &Value) -> String {
+        format!("\"{key}\" must be a non-negative integer, not {given}")
+    }
+}
+
+impl Refusal for f64 {
+    fn refusal(key: &str, given: &Value) -> String {
+        format!("\"{key}\" must be a number, not {given}")
+    }
+}
+
+/// A point, `[x, y]`.
+impl Refusal for [f64; 2] {
+    fn refusal(key: &str, _given: &Value) -> String {
+        format!("\"{key}\" must be [x, y] in points")
+    }
+}
+
+/// A list of strings: the first item that is no string, or the value that
+/// is no list.
+impl Refusal for Vec<String> {
+    fn refusal(key: &str, given: &Value) -> String {
+        match given {
+            Value::Array(items) => match items.iter().find(|item| !item.is_string()) {
+                Some(item) => format!("\"{key}\" must hold strings, not {item}"),
+                None => format!("\"{key}\" must be a list of strings, not {given}"),
+            },
+            _ => format!("\"{key}\" must be a list of strings, not {given}"),
         }
     }
+}
 
-    /// A number parameter, if present.
-    pub fn f64(&self, key: &str) -> Result<Option<f64>, Failure> {
-        match self.params.get(key) {
-            None | Some(Value::Null) => Ok(None),
-            Some(value) => value.as_f64().map(Some).ok_or_else(|| {
-                Failure::new(
-                    code::INVALID_ARGUMENT,
-                    format!("\"{key}\" must be a number, not {value}"),
-                )
-            }),
-        }
-    }
-
-    /// A list of strings, empty when absent.
-    pub fn strings(&self, key: &str) -> Result<Vec<String>, Failure> {
-        match self.params.get(key) {
-            None | Some(Value::Null) => Ok(Vec::new()),
-            Some(Value::Array(items)) => items
-                .iter()
-                .map(|item| {
-                    item.as_str().map(str::to_owned).ok_or_else(|| {
-                        Failure::new(
-                            code::INVALID_ARGUMENT,
-                            format!("\"{key}\" must hold strings, not {item}"),
-                        )
-                    })
-                })
-                .collect(),
-            Some(value) => Err(Failure::new(
-                code::INVALID_ARGUMENT,
-                format!("\"{key}\" must be a list of strings, not {value}"),
-            )),
-        }
+impl<T: Refusal> Refusal for Option<T> {
+    fn refusal(key: &str, given: &Value) -> String {
+        T::refusal(key, given)
     }
 }
 
@@ -287,17 +290,120 @@ pub fn looks_like_http(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::wire::Command;
     use serde_json::json;
 
     #[test]
     fn a_request_defaults_its_session_and_keeps_its_parameters() {
-        let request =
-            Request::parse(r#"{"id":"r1","action":"snapshot","interactive":true}"#).unwrap();
+        let request = parse(r#"{"id":"r1","action":"snapshot","interactive":true}"#).unwrap();
         assert_eq!(request.id, json!("r1"));
-        assert_eq!(request.action, "snapshot");
         assert_eq!(request.session, "default");
-        assert!(request.flag("interactive"));
-        assert!(!request.flag("delta"));
+        let Command::Snapshot(snapshot) = &request.command else {
+            panic!("{request:?}");
+        };
+        assert!(snapshot.interactive);
+        assert!(!snapshot.delta);
+    }
+
+    /// The lines the CLI sent before the types existed (`crates/wire`).
+    const LINES: &str = include_str!("../../wire/tests/lines.json");
+
+    #[test]
+    fn every_line_the_cli_sends_parses_as_the_request_types_read_it() {
+        let cases: Vec<Value> = serde_json::from_str(LINES).unwrap();
+        for case in cases {
+            let line = case["line"].to_string();
+            let typed: Request = serde_json::from_str(&line).unwrap();
+            assert_eq!(parse(&line), Ok(typed), "{line}");
+        }
+    }
+
+    /// Of a key given twice the last counts, as when the line was read into
+    /// a map, whichever of the line's keys it is.
+    #[test]
+    fn a_key_given_twice_counts_once_its_last_value() {
+        for (line, expected) in [
+            (
+                r#"{"action":"snapshot","interactive":false,"interactive":true}"#,
+                r#"{"action":"snapshot","interactive":true}"#,
+            ),
+            (
+                r#"{"action":"frobnicate","id":1,"action":"status","id":2}"#,
+                r#"{"action":"status","id":2}"#,
+            ),
+            (
+                r#"{"session":"alice","action":"close","session":"bob"}"#,
+                r#"{"action":"close","session":"bob"}"#,
+            ),
+        ] {
+            assert_eq!(parse(line), parse(expected), "{line}");
+            assert!(parse(expected).is_ok(), "{expected}");
+        }
+    }
+
+    #[test]
+    fn a_value_of_another_type_is_refused_naming_the_parameter_and_the_value() {
+        let refusal = |result: Result<(), Failure>| result.unwrap_err();
+        let given = |value: Value| Param::<Option<u64>>::Invalid(value);
+        assert_eq!(
+            refusal(arg("timeout", &given(json!("x"))).map(drop)),
+            Failure::new(
+                code::INVALID_ARGUMENT,
+                "\"timeout\" must be a non-negative integer, not \"x\""
+            )
+        );
+        assert_eq!(
+            refusal(arg("quiet", &Param::<u64>::Invalid(json!(-1))).map(drop)).message,
+            "\"quiet\" must be a non-negative integer, not -1"
+        );
+        assert_eq!(
+            refusal(arg("amount", &Param::<f64>::Invalid(json!("far"))).map(drop)).message,
+            "\"amount\" must be a number, not \"far\""
+        );
+        assert_eq!(
+            refusal(arg("x", &Param::<Option<f64>>::Invalid(json!([1]))).map(drop)).message,
+            "\"x\" must be a number, not [1]"
+        );
+        assert_eq!(
+            refusal(
+                arg(
+                    "from",
+                    &Param::<Option<[f64; 2]>>::Invalid(json!([1, 2, 3]))
+                )
+                .map(drop)
+            )
+            .message,
+            "\"from\" must be [x, y] in points"
+        );
+        assert_eq!(
+            refusal(arg("env", &Param::<Vec<String>>::Invalid(json!(["A=1", 2]))).map(drop))
+                .message,
+            "\"env\" must hold strings, not 2"
+        );
+        assert_eq!(
+            refusal(arg("env", &Param::<Vec<String>>::Invalid(json!("A=1"))).map(drop)).message,
+            "\"env\" must be a list of strings, not \"A=1\""
+        );
+        assert_eq!(arg("timeout", &Param::Valid(Some(5_u64))), Ok(Some(5)));
+        assert_eq!(
+            refusal(needed("open", "app", "").map(drop)),
+            Failure::new(code::INVALID_ARGUMENT, "open needs a \"app\" string")
+        );
+        assert_eq!(needed("open", "app", "a"), Ok("a"));
+    }
+
+    /// The defaults the request types give the parameters are the mirror's.
+    #[test]
+    fn the_parameters_defaults_are_the_mirror_s() {
+        assert_eq!(
+            std::time::Duration::from_millis(::wire::QUIET_MS),
+            mirror::DEFAULT_QUIET_WINDOW
+        );
+        assert_eq!(::wire::QUALITY, u64::from(mirror::DEFAULT_QUALITY));
+        assert_eq!(
+            ::wire::MAX_DIMENSION,
+            u64::from(mirror::DEFAULT_MAX_DIMENSION)
+        );
     }
 
     #[test]

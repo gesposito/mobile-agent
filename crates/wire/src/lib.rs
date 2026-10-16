@@ -4,7 +4,8 @@
 //! reply data per action under the names its handlers write ([`reply`]),
 //! with the JSON schemas of all of them behind the `schema` feature.
 //!
-//! The reply types are held to the handlers' replies by the daemon's tests
+//! The daemon reads its request lines into these types, and the reply
+//! types are held to the handlers' replies by the daemon's tests
 //! (`crates/daemon/tests/replies.rs`), which read every action's reply on a
 //! fake target with unknown fields refused. See `README.md`.
 

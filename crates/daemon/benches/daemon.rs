@@ -2,9 +2,9 @@
 //! socket (design D14), run by `mobile-agent-bench micro`: a warm
 //! interactive snapshot of the fake fixture's Big tab, its 500 cells and five
 //! tabs, through the socket of a daemon on a fake target, one request per
-//! iteration, the host's whole path less the CLI process; `Request::parse`
-//! of the line the CLI sends for it; and `reply_line` of the reply the daemon
-//! sends back. The wire benchmarks report their allocations per iteration
+//! iteration, the host's whole path less the CLI process; `wire::parse` of
+//! the line the CLI sends for it, into the typed request the daemon
+//! dispatches; and `reply_line` of the reply the daemon sends back. The wire benchmarks report their allocations per iteration
 //! beside the time; the socket benchmark's work is mostly in the daemon's
 //! process, which the counting allocator does not see.
 
@@ -12,8 +12,8 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use daemon::wire::{self, Failure, Request, Success};
-use serde_json::{Map, Value, json};
+use daemon::wire::{self, Command, Failure, Request, Success};
+use serde_json::{Value, json};
 
 #[path = "../../protocol/benches/support/alloc.rs"]
 mod alloc;
@@ -82,19 +82,18 @@ fn benches(c: &mut Criterion) {
     // Each `iter` below drops its routine's output inside the timed region,
     // as spike S8 timed decode: the request's maps and strings, the line.
     let line = support::INTERACTIVE_SNAPSHOT;
-    let (parsed, counts) = alloc::counted(|| Request::parse(line));
-    let expected = Request {
-        id: json!("r123456"),
-        action: "snapshot".to_owned(),
-        session: "default".to_owned(),
-        params: Map::from_iter([("interactive".to_owned(), json!(true))]),
-    };
+    let (parsed, counts) = alloc::counted(|| wire::parse(line));
+    let mut expected = Request::new(Command::Snapshot(::wire::Snapshot {
+        interactive: true,
+        ..Default::default()
+    }));
+    expected.id = json!("r123456");
     assert_eq!(parsed, Ok(expected));
     alloc::report("daemon/wire/parse-snapshot-request", counts);
     group.bench_with_input(
         BenchmarkId::new("wire", "parse-snapshot-request"),
         line,
-        |b, line| b.iter(|| Request::parse(black_box(line))),
+        |b, line| b.iter(|| wire::parse(black_box(line))),
     );
 
     // `reply_line` of the daemon's data is the daemon's line, byte for byte,

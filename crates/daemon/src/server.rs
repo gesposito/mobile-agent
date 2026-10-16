@@ -36,7 +36,7 @@ use crate::fake::Typing;
 use crate::handlers;
 use crate::paths::{self, Paths};
 use crate::registry::{Registry, STOP_WAIT};
-use crate::wire::{self, Failure, Request, Success, code};
+use crate::wire::{self, Command, Failure, Success, code};
 use crate::worker::Outcome;
 
 /// How long the daemon stays up without requests unless told otherwise.
@@ -747,7 +747,7 @@ fn respond(daemon: &Daemon, line: &str) -> Reply {
             close: true,
         };
     }
-    let request = match Request::parse(line) {
+    let request = match wire::parse(line) {
         Ok(request) => request,
         Err(failure) => {
             let id = failure.id.clone().unwrap_or(serde_json::Value::Null);
@@ -758,7 +758,7 @@ fn respond(daemon: &Daemon, line: &str) -> Reply {
             };
         }
     };
-    if request.action == "shutdown" {
+    if matches!(request.command, Command::Shutdown(_)) {
         let unstopped = daemon.shut_down();
         return Reply {
             line: wire::reply_line(&request.id, &Ok(stopped(&unstopped))),

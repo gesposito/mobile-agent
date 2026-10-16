@@ -116,6 +116,28 @@ pub enum Command {
 }
 
 impl Command {
+    /// Every action's name, as a line's `action` gives it.
+    pub const ACTIONS: [&'static str; 18] = [
+        "status",
+        "devices",
+        "close",
+        "set_timeout",
+        "doctor",
+        "open",
+        "snapshot",
+        "diff_snapshot",
+        "get",
+        "wait",
+        "screenshot",
+        "click",
+        "fill",
+        "type",
+        "press",
+        "swipe",
+        "scroll",
+        "shutdown",
+    ];
+
     /// The action's name, as the line's `action` gives it.
     pub fn action(&self) -> &'static str {
         match self {

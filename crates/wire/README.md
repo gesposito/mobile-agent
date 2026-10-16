@@ -3,7 +3,8 @@
 The daemon's requests and replies as types (design D3 of the `mcp-server`
 change): the envelope of a request line, one struct of parameters per
 action under the names the daemon reads, and one struct of reply data per
-action under the names its handlers write. With the `schema` feature,
+action under the names its handlers write. The daemon reads its request
+lines into them (`crates/daemon/src/wire.rs`). With the `schema` feature,
 every type derives schemars' `JsonSchema`, for an MCP server's tool inputs
 and outputs; the CLI and the daemon leave the feature off and link no schema
 code.
