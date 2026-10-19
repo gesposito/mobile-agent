@@ -136,6 +136,9 @@ pub fn clean_env(command: &mut Command) {
 pub struct TestEnv {
     pub dir: TempDir,
     pub fake: String,
+    /// Variables the daemon runs with beyond the fake's, such as the fake
+    /// driver's `MOBILE_AGENT_FAKE_ACTIVATION_MS`.
+    extra: Vec<(String, String)>,
     daemon: Option<Child>,
 }
 
@@ -143,9 +146,18 @@ impl TestEnv {
     /// A directory with a daemon serving `fake`, as
     /// `MOBILE_AGENT_FAKE_TARGETS` lists targets.
     pub fn start(fake: &str) -> TestEnv {
+        TestEnv::start_with(fake, &[])
+    }
+
+    /// As [`TestEnv::start`], with `extra` variables for the daemon.
+    pub fn start_with(fake: &str, extra: &[(&str, &str)]) -> TestEnv {
         let env = TestEnv {
             dir: TempDir::new(),
             fake: fake.to_owned(),
+            extra: extra
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect(),
             daemon: None,
         };
         env.started()
@@ -195,11 +207,13 @@ impl TestEnv {
 
     /// What a daemon started for the test, or by a server, runs with.
     fn daemon_vars(&self) -> Vec<(String, String)> {
-        vec![
+        let mut vars = vec![
             ("MOBILE_AGENT_FAKE_TARGETS".into(), self.fake.clone()),
             ("MOBILE_AGENT_DRIVERS".into(), "none".into()),
             ("MOBILE_AGENT_IDLE_TIMEOUT_MS".into(), "60000".into()),
-        ]
+        ];
+        vars.extend(self.extra.iter().cloned());
+        vars
     }
 
     /// The environment every server gets.
@@ -225,6 +239,12 @@ impl TestEnv {
     /// The server command with the test's environment, its error output
     /// appended to `server.log` in the test directory.
     pub fn server_command(&self) -> Command {
+        self.server_command_with(&[])
+    }
+
+    /// As [`TestEnv::server_command`], with `args` on the server's command
+    /// line.
+    pub fn server_command_with(&self, args: &[&str]) -> Command {
         let mut command = Command::new(SERVER);
         clean_env(&mut command);
         let log = std::fs::OpenOptions::new()
@@ -233,6 +253,7 @@ impl TestEnv {
             .open(self.path().join("server.log"))
             .expect("the server's log opens");
         command
+            .args(args)
             .envs(self.server_vars())
             .current_dir(self.path())
             .stdin(Stdio::piped())
@@ -328,6 +349,14 @@ fn exited(child: &mut Child) -> ExitStatus {
     }
 }
 
+/// A message the server sent that answered no request of the client's: a
+/// notification, or a response to a request the client cancelled.
+pub struct Notification {
+    /// When it arrived.
+    pub at: Instant,
+    pub message: Value,
+}
+
 /// The 2026-07-28 era's client: JSON-RPC lines over the server's standard
 /// input and output, one request in flight, every request's `_meta` naming
 /// the revision, the client and its capabilities.
@@ -336,26 +365,44 @@ pub struct Raw {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     next: u64,
-    /// The messages without an id that came while a response was awaited:
-    /// notifications.
-    pub notifications: Vec<Value>,
+    /// The messages that answered no awaited request, in the order they
+    /// came: notifications.
+    pub notifications: Vec<Notification>,
+    /// The result of `server/discover`, for a server opened with it.
+    pub discovered: Value,
 }
 
 impl Raw {
     /// Starts a server and opens it with `server/discover`.
     pub fn spawn(env: &TestEnv) -> Raw {
-        let mut raw = Raw::start(env);
+        Raw::spawn_with(env, &[])
+    }
+
+    /// Starts a server with `args` on its command line and opens it with
+    /// `server/discover`.
+    pub fn spawn_with(env: &TestEnv, args: &[&str]) -> Raw {
+        let mut raw = Raw::start_with(env, args);
         let discovered = raw.request("server/discover", json!({}));
         assert!(
             discovered.get("result").is_some(),
             "server/discover: {discovered}"
         );
+        raw.discovered = discovered["result"].clone();
         raw
     }
 
     /// Starts a server and sends it nothing.
     pub fn start(env: &TestEnv) -> Raw {
-        let mut child = env.server_command().spawn().expect("the server starts");
+        Raw::start_with(env, &[])
+    }
+
+    /// Starts a server with `args` on its command line and sends it
+    /// nothing.
+    pub fn start_with(env: &TestEnv, args: &[&str]) -> Raw {
+        let mut child = env
+            .server_command_with(args)
+            .spawn()
+            .expect("the server starts");
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("a stdout pipe");
         let (send, lines) = channel();
@@ -373,6 +420,7 @@ impl Raw {
             lines,
             next: 1,
             notifications: Vec::new(),
+            discovered: Value::Null,
         }
     }
 
@@ -396,22 +444,52 @@ impl Raw {
     /// Sends `method` with `params` and the era's `_meta`, and returns the
     /// response: its `result` or its `error`.
     #[track_caller]
-    pub fn request(&mut self, method: &str, mut params: Value) -> Value {
-        let id = self.next;
-        self.next += 1;
-        params["_meta"] = Raw::meta();
-        let message = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+    pub fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.send(method, params);
+        self.response(id)
+    }
+
+    /// Writes one message to the server.
+    fn write(&mut self, message: &Value) {
         let stdin = self.stdin.as_mut().expect("the server's input is open");
         let mut line = message.to_string();
         line.push('\n');
         stdin.write_all(line.as_bytes()).expect("the server reads");
         stdin.flush().expect("the server reads");
+    }
+
+    /// Sends `method` with `params`, whose `_meta` gains the era's keys
+    /// beside what it holds, such as a `progressToken`, and returns the
+    /// request's id without waiting for the response.
+    pub fn send(&mut self, method: &str, mut params: Value) -> u64 {
+        let id = self.next;
+        self.next += 1;
+        let mut meta = Raw::meta();
+        if let Some(given) = params.get("_meta").and_then(Value::as_object) {
+            for (key, value) in given {
+                meta[key] = value.clone();
+            }
+        }
+        params["_meta"] = meta;
+        self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
+        id
+    }
+
+    /// Sends the notification `method` with `params`.
+    pub fn notify(&mut self, method: &str, params: Value) {
+        self.write(&json!({"jsonrpc": "2.0", "method": method, "params": params}));
+    }
+
+    /// Waits for the response to the request `id`, keeping every other
+    /// message that comes meanwhile in `notifications`.
+    #[track_caller]
+    pub fn response(&mut self, id: u64) -> Value {
         let deadline = Instant::now() + ANSWER;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             let line = match self.lines.recv_timeout(left) {
                 Ok(line) => line,
-                Err(RecvTimeoutError::Timeout) => panic!("no answer to {method} within 60 s"),
+                Err(RecvTimeoutError::Timeout) => panic!("no answer to request {id} within 60 s"),
                 Err(RecvTimeoutError::Disconnected) => panic!("the server closed its output"),
             };
             let message: Value = serde_json::from_str(&line)
@@ -419,8 +497,31 @@ impl Raw {
             if message.get("id").and_then(Value::as_u64) == Some(id) {
                 return message;
             }
-            self.notifications.push(message);
+            self.notifications.push(Notification {
+                at: Instant::now(),
+                message,
+            });
         }
+    }
+
+    /// The progress notifications that came for `token`: each one's
+    /// `progress`, its `message` and when it arrived.
+    pub fn progress(&self, token: &str) -> Vec<(f64, String, Instant)> {
+        self.notifications
+            .iter()
+            .filter(|notification| {
+                notification.message["method"] == "notifications/progress"
+                    && notification.message["params"]["progressToken"] == token
+            })
+            .map(|notification| {
+                let params = &notification.message["params"];
+                (
+                    params["progress"].as_f64().unwrap_or(-1.0),
+                    params["message"].as_str().unwrap_or_default().to_owned(),
+                    notification.at,
+                )
+            })
+            .collect()
     }
 
     /// The tools `tools/list` gives.
@@ -476,11 +577,16 @@ pub struct Rmcp {
 impl Rmcp {
     /// Starts a server and initializes it.
     pub fn spawn(env: &TestEnv) -> Rmcp {
+        Rmcp::spawn_with(env, &[])
+    }
+
+    /// Starts a server with `args` on its command line and initializes it.
+    pub fn spawn_with(env: &TestEnv, args: &[&str]) -> Rmcp {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("a runtime");
-        let mut command = tokio::process::Command::from(env.server_command());
+        let mut command = tokio::process::Command::from(env.server_command_with(args));
         command.kill_on_drop(true);
         let (child, service) = runtime.block_on(async {
             let mut child = command.spawn().expect("the server starts");
@@ -624,11 +730,29 @@ pub enum Client {
 
 impl Client {
     pub fn spawn(env: &TestEnv, era: &str) -> Client {
+        Client::spawn_with(env, era, &[])
+    }
+
+    /// Starts the client of `era` on a server with `args` on its command
+    /// line.
+    pub fn spawn_with(env: &TestEnv, era: &str, args: &[&str]) -> Client {
         match era {
-            "legacy" => Client::Legacy(Box::new(Rmcp::spawn(env))),
-            "stateless" => Client::Stateless(Raw::spawn(env)),
+            "legacy" => Client::Legacy(Box::new(Rmcp::spawn_with(env, args))),
+            "stateless" => Client::Stateless(Raw::spawn_with(env, args)),
             other => panic!("no era {other}"),
         }
+    }
+
+    /// The instructions the server's opening carried.
+    pub fn instructions(&self) -> String {
+        let opened = match self {
+            Client::Legacy(client) => client.initialized(),
+            Client::Stateless(client) => client.discovered.clone(),
+        };
+        opened["instructions"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no instructions in {opened}"))
+            .to_owned()
     }
 
     pub fn list_tools(&mut self) -> Vec<Value> {
