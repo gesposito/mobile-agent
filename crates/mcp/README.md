@@ -20,36 +20,53 @@ cargo build --release -p mcp -p daemon    # mobile-agent-mcp and mobile-agent-da
 
 ```
 src/
-  main.rs       the mobile-agent-mcp binary: the daemon's endpoint, the runtime, serving stdio, the
-                ways out and the release on each
-  server.rs     rmcp's handler: the server's info and instructions, tools/list and tools/call, each
-                call one request on the daemon's socket
-  tools.rs      the tool table: names, actions, descriptions, annotations, the changes to the
-                request structs' schemas, and a call's arguments back into a request line
-  results.rs    a reply as a tool's result: the CLI's text, a failure's code, a screenshot's image
-  sessions.rs   the minted session, the targets each session's replies named, their release, and
-                each session's last screenshot
+  main.rs       the mobile-agent-mcp binary: the command line, the daemon's endpoint, the runtime,
+                serving stdio, the ways out and the release on each
+  server.rs     rmcp's handler: the server's info and card, tools/list and tools/call, each call
+                one request on the daemon's socket, selected against the progress tick, the
+                request's cancellation token and the bound
+  tools.rs      the tool table: names, actions, descriptions, annotations, the profile, the changes
+                to the request structs' schemas, the reply structs' schemas, and a call's arguments
+                back into a request line within the bound
+  results.rs    a reply as a tool's result: the CLI's text, a failure's code, a screenshot's image,
+                the bound's error and the structured content
+  sessions.rs   the minted session, the targets each session's replies named, their release, a
+                session's cancel, and each session's last screenshot
+  instructions.rs  the instructions card and the help tool's text
 tests/
   support/      a daemon on fake targets per test on a private socket directory, the server over
-                its stdio, rmcp's client (initialize) and a JSON-RPC exchange in the 2026-07-28 era
+                its stdio with its flags, rmcp's client (initialize) and a JSON-RPC exchange in the
+                2026-07-28 era, requests sent without waiting, notifications and their arrival
   tools.rs      the tools in both eras with their schemas, and the answers to snapshot, click,
                 fill, get, devices and status, failures among them
   sessions.rs   the minted session, a call's session, and the release on each way out
   screenshots.rs  image content, ifChanged and path
+  waits.rs      the flags, the bound and its cap, progress, a client's cancellation, the backstop
+  profiles.rs   the read-only profile, the card's sizes, help
+  structured.rs  outputSchema and structuredContent with the flag, neither without
 ```
 
 ## Running
 
-The client starts the binary, which takes no arguments, and speaks MCP on
-its standard input and output. The server writes its own lines to standard
-error alone: one naming its session and the daemon's socket at start, and
-any failure to release a target at exit. It serves both protocol eras with
+The client starts the binary and speaks MCP on its standard input and
+output. The command line:
+
+| Flag | Default | What it sets |
+|---|---|---|
+| `--call-timeout <SECONDS>` | 55, at least 3 | the bound of a call (Waits below), under Codex's 60 s |
+| `--tools <PROFILE>` | `all` | the tools served, `read-only` or `all` (Profiles below) |
+| `--structured` | off | an `outputSchema` on each tool and a `structuredContent` on each result (Structured results below) |
+
+The server writes its own lines to standard error alone: one at start
+naming its session, the daemon's socket, the bound and the profile; one
+when it sends the daemon a cancel, past the bound or on the client's
+cancellation; and any failure to release a target at exit, or to cancel a
+call. It serves both protocol eras with
 no code per era: rmcp's serve loop takes the lifecycle from the client's
 first request other than `server/discover`, `initialize` for clients of
 the 2025 revisions, any request with the version, the client's info and its
 capabilities in its `_meta` for the 2026-07-28 revision. The answer to
-either opening names the server, its version and a paragraph of
-instructions.
+either opening names the server, its version and the instructions card.
 
 | Variable | Default |
 |---|---|
@@ -85,6 +102,7 @@ cancel belongs to the server.
 | `doctor` | the CLI's checks of this host, `doctor` among them | `doctor` | yes |
 | `fill` | `fill` | `fill` | no |
 | `get` | `get` | `get_text`, `get_value`, `get_box` | yes |
+| `help` | none: the guide, answered by the server | none | yes |
 | `open` | `open` | `open` | no |
 | `press` | `press` | `press` | no |
 | `screenshot` | `screenshot` with `inline` | `screenshot` | yes |
@@ -154,6 +172,46 @@ a connection of its own with the CLI's retries, awaited on the runtime's
 blocking pool: the server runs tokio's current-thread runtime, and the
 calls of a client wait side by side.
 
+## Waits
+
+Every call is bounded by `--call-timeout`, 55 s by default (design D7),
+with one mechanism for every tool, in `src/server.rs`'s loop, which
+selects the blocking call against a tick, the request's cancellation token
+and the bound:
+
+- A request that takes `timeout` (`click`, `fill`, `type`, `get`,
+  `scroll`, `open` and `wait`) and whose call names none gets the bound
+  less a margin of 2 s as its `timeout`, so the daemon's own wait ends
+  first, with its `wait_timeout` and the screen's summary; a `wait` with
+  `settle` keeps its own maximum of 3 s. A `timeout` or `ms` above the
+  bound less the margin is capped to it, and the result's warning line
+  says so: `⚠ timeout 60000 ms was capped to 53000 ms, the server's bound
+  of 55 s less its margin of 2 s`. An `open` whose app keeps animating
+  settles until the bound rather than 3 s, since its `timeout` bounds its
+  settle; pass `timeout` to shorten it.
+- While a call runs, every 5 s, a request that carries a progress token in
+  its `_meta` gets `notifications/progress` through the request's peer:
+  `progress` is the seconds elapsed, with no total, and the message names
+  the tool, the seconds and what the arguments say the call waits for,
+  `wait: 5 s elapsed, waiting for the text "Welcome"`: `until`'s element,
+  the element, the text, the app, a change since the last snapshot, the
+  screen settling, the milliseconds, else the daemon's reply. The
+  notifications keep Claude Code's idle timer alive and show in its task
+  entry.
+- A client's `notifications/cancelled` fires the request's cancellation
+  token: the handler says so on standard error, sends the daemon the
+  session's `cancel` on a connection of its own (`src/sessions.rs`, as
+  `close` goes at exit) and lets the call go, so the command in flight
+  fails with `cancelled` and the target is free for the next call; rmcp
+  drops the abandoned call's response, and the daemon's reply to it is
+  dropped with it.
+- As a backstop, a call the daemon has not answered 5 s past the bound
+  gets the same `cancel`, said on standard error; the daemon's reply
+  within 5 s more is the call's answer (a tap held in its device call,
+  which no cancel interrupts, completes), else the call is an execution
+  error: `✗ daemon_timeout: click reached the server's bound of 55 s and
+  was cancelled`.
+
 ## Sessions and exit
 
 The server mints its session, `mcp-<pid>`, and every call goes out in it
@@ -191,10 +249,61 @@ screenshot's reply names no target; with `ifChanged`, an image whose hash
 is that session's last screenshot's there gives the line `unchanged since
 the last screenshot` instead.
 
+## Profiles
+
+`--tools read-only` serves the tools whose annotation is read-only alone,
+`devices`, `status`, `doctor`, `snapshot`, `diff_snapshot`, `get`, `wait`,
+`screenshot` and `help` (design D10), which also passes Codex's write
+approvals without prompts: `tools/list` shows them alone, and a call to
+another tool is refused with invalid params naming the profile and what it
+serves. `--tools all`, the default, serves every tool.
+
+## The instructions card and `help`
+
+The answer to `initialize` and to `server/discover` carries the
+instructions card (`src/instructions.rs`), built at start for the profile
+and the bound: a first paragraph of 369 characters that stands alone
+within the 512 Codex keeps, what the server drives, that refs come from
+`snapshot`, that replies verify and a failure names its code and what to
+do next, and that `help` holds the guide; then selectors and refs, the
+waits (`change`, `settle`, `text`), sessions and `close` with `keep`,
+screenshots with `ifChanged`, and the tools served, which says so when the
+profile is read-only: 2,202 characters in all, 2,243 when read-only, under
+the 4,096 Claude Code keeps.
+
+`help`, a read-only tool with no arguments of its own, answers with the
+CLI's agent guide (`mobile-agent help agent`, the CLI library's
+`AGENT_GUIDE`) after a table of 32 lines that maps each command the guide
+uses to its tool and arguments (`snapshot -i` is `snapshot`, whose
+`interactive` and `delta` are the defaults; `click @e3` is `click` with
+`selector`; `wait --change` is `wait` with `change`; `close --keep` is
+`close` with `keep`) and names the three the server has no tool for, `set
+timeout`, `cancel` and `batch`, with what stands in for them, so a model
+reads one guide for both surfaces.
+
+## Structured results
+
+With `--structured`, each tool whose answer is a daemon reply carries an
+`outputSchema`, the schema of its reply-data struct in `crates/wire`
+(`wire::reply::Snapshot` for `snapshot`, and so on, the root's title and
+description left out as rmcp strips them), and each successful result a
+`structuredContent`, the reply's data less what the content carries
+already: the refs map, at the top and in a delta, which the listing
+repeats, and a screenshot's image, which the image block holds, each
+optional in the schema. `doctor` and `help` have no reply struct, so no
+schema, and carry the report's JSON and `{"help": text}`. A failure
+carries no structured content, so its text, with the code, reaches a
+client that shows structured content alone, and a warning stays on the
+text. Without the flag, neither is sent (design D5): Codex shows a model
+only the structured content when a result has it, dropping images and
+text.
+
 ## Spec requirements and their tests
 
 | Requirement | Scenario | Tests |
 |---|---|---|
-| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action` and `a_call_goes_out_as_the_daemon_s_line_through_the_table`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning` and `a_failure_names_its_code_after_the_cli_s_mark` |
+| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
 | Sessions and claims | Server exits | `sessions::a_server_mints_its_session_and_a_call_may_name_another`, `sessions::a_server_whose_input_ends_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_signalled_to_stop_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_releases_a_claim_no_reply_named`, `sessions::a_server_that_was_only_discovered_exits_when_its_input_ends`; in `src/sessions.rs`, `a_reply_that_names_its_target_holds_it_and_close_releases_it` |
 | Screenshots inline | Unchanged screen | `screenshots::a_screenshot_is_the_daemon_s_image_within_the_long_edge_bound`, `screenshots::if_changed_answers_a_still_screen_with_a_line_and_a_changed_one_with_the_image`, `screenshots::a_screenshot_with_a_path_answers_with_the_path_alone`; in `src/sessions.rs`, `a_screenshot_is_the_last_one_s_when_its_image_is_on_the_same_session_and_device` |
+| Long waits bounded and cancellable | Wait past the bound | `waits::the_server_takes_its_bound_its_profile_and_structured_with_their_defaults`, `waits::a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout`, `waits::a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_token`, `waits::a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once`, `waits::a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server`; in `src/tools.rs`, `a_call_waits_within_the_bound_less_the_margin` and `a_call_says_what_it_waits_for`; in `src/main.rs`, `the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results` |
+| Profiles and instructions | Read-only profile | `profiles::the_read_only_profile_lists_the_read_only_tools_alone_and_refuses_the_rest`, `profiles::the_instructions_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients`, `profiles::help_answers_with_the_agent_guide_after_a_table_mapping_its_commands_to_the_tools`; in `src/instructions.rs`, `the_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients` and `help_is_the_table_then_the_guide` |
