@@ -116,6 +116,29 @@ impl Sessions {
     }
 }
 
+/// Ends `session`'s command in flight with the daemon's `cancel` (design
+/// D7), saying on standard error when the daemon refuses. A daemon that no
+/// longer serves runs no command, so none is started to end one.
+pub fn cancel(endpoint: &Endpoint, session: &str) {
+    if UnixStream::connect(endpoint.socket()).is_err() {
+        return;
+    }
+    let cancel = request::bare(
+        wire::Command::Cancel(wire::Cancel {}),
+        session,
+        cli::client::request_id(),
+    );
+    let failure = match cli::client::call(endpoint, &request::line(&cancel)) {
+        Ok(reply) if reply.success => return,
+        Ok(reply) => reply.error.unwrap_or_default(),
+        Err(failure) => failure.message,
+    };
+    eprintln!(
+        "{}: cannot cancel session {session}'s command: {failure}",
+        crate::server::NAME
+    );
+}
+
 /// Releases `target` from `session` with the app left running, saying on
 /// standard error when the daemon refuses.
 fn close(endpoint: &Endpoint, session: &str, target: &str) {

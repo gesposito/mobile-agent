@@ -6,21 +6,32 @@
 //! first when none of this build serves, the version check and the retries
 //! the CLI makes, and the reply awaited on the runtime's blocking pool, so
 //! the runtime's one thread keeps serving the other requests meanwhile.
+//!
+//! While a call waits for the daemon (design D7), the handler watches three
+//! things beside the reply, the same for every tool: a tick every 5 s, on
+//! which a client whose request carries a progress token gets a progress
+//! notification naming the tool, the seconds elapsed and what the call waits
+//! for; the request's cancellation token, which a client's cancellation
+//! fires, on which the server sends the daemon the session's `cancel` and
+//! lets the call go; and the bound, [`Options::bound`], 5 s past which a
+//! call the daemon has not answered gets the same `cancel`, the daemon's
+//! reply within 5 s more being its answer, else an execution error.
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use cli::client::{Endpoint, Reply};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
-    PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 use serde_json::{Map, Value};
 
 use crate::results;
-use crate::sessions::Sessions;
+use crate::sessions::{self, Sessions};
 use crate::tools::{Call, IF_CHANGED, Tool};
 
 /// The server's name, as `initialize` and `server/discover` answer it.
@@ -29,6 +40,23 @@ pub const NAME: &str = "mobile-agent-mcp";
 /// What the server tells a client about itself, in a paragraph that stands
 /// alone within the 512 characters Codex keeps of it.
 pub const INSTRUCTIONS: &str = "Drives Android devices, emulators, iOS Simulators and iPhones through the mobile-agent daemon. Call snapshot for the screen's elements and their refs (@e3), then act by ref or selector with click, fill, type, press, swipe and scroll; replies verify each action, and an error names its code and what to do next. This server acts in a session of its own and, when it exits, releases its target with the app left running.";
+
+/// How often a running call reports its progress.
+const PROGRESS: Duration = Duration::from_secs(5);
+
+/// How long past the bound the server waits for the daemon's reply before
+/// it cancels the call, and how long after the cancel before it gives the
+/// call up.
+const GRACE: Duration = Duration::from_secs(5);
+
+/// What the command line set.
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// The bound of a call (design D7): a waiting command's timeout when the
+    /// call names none, less a margin, and the point past which a call the
+    /// daemon has not answered is cancelled.
+    pub bound: Duration,
+}
 
 /// The server: the daemon's endpoint, its sessions and the tools'
 /// definitions, shared by every call.
@@ -40,6 +68,7 @@ pub struct Shared {
     /// The session the server minted, `mcp-<pid>`, which a call's
     /// `session` overrides, and the targets its calls' sessions hold.
     pub sessions: Sessions,
+    pub options: Options,
     /// The directory relative paths are taken from.
     cwd: PathBuf,
     /// Each tool with its definition.
@@ -47,7 +76,7 @@ pub struct Shared {
 }
 
 impl Server {
-    pub fn new(endpoint: Endpoint, session: String, cwd: PathBuf) -> Server {
+    pub fn new(endpoint: Endpoint, session: String, cwd: PathBuf, options: Options) -> Server {
         let tools = crate::tools::TOOLS
             .iter()
             .map(|tool| (tool, tool.definition()))
@@ -55,6 +84,7 @@ impl Server {
         Server(Arc::new(Shared {
             endpoint,
             sessions: Sessions::new(session),
+            options,
             cwd,
             tools,
         }))
@@ -74,7 +104,14 @@ impl Server {
             let report = blocking(move || cli::doctor::run_checks(&probe)).await?;
             return Ok(results::doctor(&report));
         }
-        let reply = self.send(std::mem::take(&mut call.line)).await?;
+        let mut reply = self.send(std::mem::take(&mut call.line)).await?;
+        if !call.capped.is_empty() {
+            let capped = call.capped.join("; ");
+            reply.warning = Some(match reply.warning.take() {
+                Some(warning) => format!("{warning}; {capped}"),
+                None => capped,
+            });
+        }
         let Some(session) = &call.session else {
             return Ok(results::of(tool.action, &reply));
         };
@@ -98,6 +135,18 @@ impl Server {
     async fn send(&self, line: Map<String, Value>) -> Result<Reply, ErrorData> {
         let endpoint = self.0.endpoint.clone();
         blocking(move || cli::client::call(&endpoint, &line).unwrap_or_else(Reply::failed)).await
+    }
+
+    /// Sends the daemon `session`'s `cancel` on a connection of its own,
+    /// detached from the call it ends, so that the command in flight fails
+    /// with `cancelled` and the target is free for the next call.
+    fn cancel(&self, session: Option<&str>) {
+        let Some(session) = session else {
+            return;
+        };
+        let endpoint = self.0.endpoint.clone();
+        let session = session.to_owned();
+        tokio::task::spawn_blocking(move || sessions::cancel(&endpoint, &session));
     }
 }
 
@@ -130,7 +179,7 @@ impl ServerHandler for Server {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let Some((tool, definition)) = self
             .0
@@ -144,7 +193,66 @@ impl ServerHandler for Server {
             ));
         };
         let arguments = request.arguments.unwrap_or_default();
-        let call = tool.call(definition, &arguments, &self.0.sessions.own, &self.0.cwd);
-        Ok(self.run(tool, call).await?.into())
+        let bound = self.0.options.bound;
+        let call = tool.call(
+            definition,
+            &arguments,
+            &self.0.sessions.own,
+            &self.0.cwd,
+            bound,
+        );
+        let session = call.session.clone();
+        let waits_for = call.waits_for();
+        let token = context.meta.get_progress_token();
+        let work = self.run(tool, call);
+        tokio::pin!(work);
+        let mut ticks = tokio::time::interval(PROGRESS);
+        ticks.tick().await;
+        let mut elapsed = 0;
+        let deadline = tokio::time::sleep(bound + GRACE);
+        tokio::pin!(deadline);
+        let mut cancelled = false;
+        loop {
+            tokio::select! {
+                result = &mut work => return Ok(result?.into()),
+                _ = ticks.tick() => {
+                    elapsed += PROGRESS.as_secs();
+                    if let Some(token) = &token {
+                        let progress = ProgressNotificationParam::new(token.clone(), elapsed as f64)
+                            .with_message(format!(
+                                "{}: {elapsed} s elapsed, waiting for {waits_for}",
+                                tool.name
+                            ));
+                        let _ = context.peer.notify_progress(progress).await;
+                    }
+                }
+                () = &mut deadline => {
+                    if cancelled {
+                        return Ok(results::bound(tool.name, bound).into());
+                    }
+                    cancelled = true;
+                    eprintln!(
+                        "{NAME}: {} had no answer {} s past the bound of {} s; the session's cancel was sent",
+                        tool.name,
+                        GRACE.as_secs(),
+                        bound.as_secs()
+                    );
+                    self.cancel(session.as_deref());
+                    deadline.as_mut().reset(tokio::time::Instant::now() + GRACE);
+                }
+                () = context.ct.cancelled() => {
+                    // The client gave the call up: rmcp drops the response.
+                    eprintln!(
+                        "{NAME}: the client cancelled {}; the session's cancel was sent",
+                        tool.name
+                    );
+                    self.cancel(session.as_deref());
+                    return Err(ErrorData::internal_error(
+                        format!("{} was cancelled", tool.name),
+                        None,
+                    ));
+                }
+            }
+        }
     }
 }

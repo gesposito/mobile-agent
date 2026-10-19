@@ -8,6 +8,8 @@
 //! with the daemon's code named after the mark, whose message says what to
 //! do next.
 
+use std::time::Duration;
+
 use cli::client::Reply;
 use cli::output;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -70,6 +72,18 @@ pub fn screenshot(reply: &Reply, unchanged: bool) -> CallToolResult {
 /// `text` without the newline that ends the CLI's last line.
 pub fn lines(text: &str) -> String {
     text.trim_end_matches('\n').to_owned()
+}
+
+/// The result of a call of `tool` the daemon had not answered 5 s past the
+/// server's `bound`, nor within 5 s of the cancel the server sent then
+/// (design D7): an execution error with the CLI's code for a daemon that
+/// did not answer in time.
+pub fn bound(tool: &str, bound: Duration) -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text(format!(
+        "✗ {}: {tool} reached the server's bound of {} s and was cancelled",
+        cli::code::DAEMON_TIMEOUT,
+        bound.as_secs()
+    ))])
 }
 
 /// The result of doctor's checks: the report as the CLI prints it, and

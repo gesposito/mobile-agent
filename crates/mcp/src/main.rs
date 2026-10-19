@@ -6,10 +6,12 @@
 //! daemon's socket in a session of the server's own. It writes its own
 //! lines to standard error alone.
 //!
-//! It ends when its input ends, at SIGTERM or SIGINT, and when the client
-//! leaves before choosing a lifecycle, and on each of these ways out it
-//! releases the targets its sessions hold with the apps left running
-//! (design D9). See the crate's README.
+//! Its command line sets the bound of a call (`--call-timeout`), the tools
+//! served (`--tools`) and whether results carry structured content
+//! (`--structured`). It ends when its input ends, at SIGTERM or SIGINT, and
+//! when the client leaves before choosing a lifecycle, and on each of these
+//! ways out it releases the targets its sessions hold with the apps left
+//! running (design D9). See the crate's README.
 
 mod results;
 mod server;
@@ -20,17 +22,41 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use clap::Parser;
 use cli::client::Endpoint;
 use rmcp::ServiceExt;
 use rmcp::service::ServerInitializeError;
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::server::{NAME, Server};
+use crate::server::{NAME, Options, Server};
+use crate::tools::Profile;
 
 /// How long the server waits on its way out for the daemon to release its
 /// sessions' targets. A release still queued behind a command in flight
 /// when the bound passes goes ahead in the daemon all the same.
 const RELEASE: Duration = Duration::from_secs(5);
+
+/// The command line.
+#[derive(Parser, Debug)]
+#[command(
+    name = NAME,
+    version,
+    about = "The Model Context Protocol server over the mobile-agent daemon: MCP on standard input and output, one tool per action an agent drives, in a session of its own",
+    disable_help_subcommand = true
+)]
+struct Args {
+    /// The bound of a tool call, in seconds: a waiting command gets it less 2 s as its timeout, and a call the daemon has not answered 5 s past it is cancelled
+    #[arg(long, value_name = "SECONDS", default_value_t = 55, value_parser = clap::value_parser!(u64).range(3..))]
+    call_timeout: u64,
+
+    /// The tools served: read-only (devices, status, doctor, snapshot, diff_snapshot, get, wait, screenshot and help) or all
+    #[arg(long, value_name = "PROFILE", value_enum, default_value = "all")]
+    tools: Profile,
+
+    /// Give each tool an outputSchema, its reply's, and each result a structuredContent, the reply's data
+    #[arg(long)]
+    structured: bool,
+}
 
 /// The daemon's endpoint as the CLI resolves it: the socket directory from
 /// `MOBILE_AGENT_SOCKET_DIR`, else the CLI's default; the daemon executable
@@ -114,15 +140,29 @@ fn release(server: &Server) {
 }
 
 fn main() {
+    let args = Args::parse();
+    let options = Options {
+        bound: Duration::from_secs(args.call_timeout),
+    };
     let endpoint = endpoint();
     let session = format!("mcp-{}", std::process::id());
     let cwd = std::env::current_dir().unwrap_or_default();
     eprintln!(
-        "{NAME} {}: session {session}, the daemon's socket {}",
+        "{NAME} {}: session {session}, the daemon's socket {}, calls bounded at {} s, {} tools{}",
         env!("CARGO_PKG_VERSION"),
-        endpoint.socket().display()
+        endpoint.socket().display(),
+        args.call_timeout,
+        match args.tools {
+            Profile::ReadOnly => "the read-only",
+            Profile::All => "all",
+        },
+        if args.structured {
+            ", structured results"
+        } else {
+            ""
+        }
     );
-    let server = Server::new(endpoint, session, cwd);
+    let server = Server::new(endpoint, session, cwd, options);
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -139,4 +179,31 @@ fn main() {
     // standard input that a signal interrupted, which never ends while the
     // client holds the pipe open.
     std::process::exit(status);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results() {
+        let args = Args::parse_from([NAME]);
+        assert_eq!(args.call_timeout, 55);
+        assert_eq!(args.tools, Profile::All);
+        assert!(!args.structured);
+        let args = Args::parse_from([
+            NAME,
+            "--call-timeout",
+            "12",
+            "--tools",
+            "read-only",
+            "--structured",
+        ]);
+        assert_eq!(args.call_timeout, 12);
+        assert_eq!(args.tools, Profile::ReadOnly);
+        assert!(args.structured);
+        // A bound under the margin would leave the daemon no time to wait.
+        assert!(Args::try_parse_from([NAME, "--call-timeout", "2"]).is_err());
+        assert!(Args::try_parse_from([NAME, "--tools", "none"]).is_err());
+    }
 }

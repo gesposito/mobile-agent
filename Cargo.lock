@@ -1129,6 +1129,7 @@ name = "mcp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "clap",
  "cli",
  "rmcp",
  "serde_json",

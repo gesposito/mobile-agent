@@ -23,9 +23,17 @@
 //! arguments go back through the same changes into the request line with
 //! their values as the call gave them, so the daemon refuses a malformed
 //! one with its own code and message.
+//!
+//! The server's bound of a call (design D7) reaches the line the same way
+//! for every tool: a request that takes `timeout` and names none gets the
+//! bound less [`MARGIN`], so the daemon's own wait ends first, unless the
+//! call sets `settle`, whose own maximum is under the bound; a `timeout` or
+//! `ms` above it is capped to it, which the call records for the result's
+//! text.
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rmcp::handler::server::common::schema_for_input;
 use rmcp::model::{JsonObject, ToolAnnotations};
@@ -37,6 +45,22 @@ const TARGET: &str = "target";
 
 /// The element argument as the tools name it, agent-browser's name.
 const SELECTOR: &str = "selector";
+
+/// How long before the server's bound a waiting command's timeout ends.
+pub const MARGIN: Duration = Duration::from_secs(2);
+
+/// The duration arguments the bound caps.
+const DURATIONS: [&str; 2] = ["timeout", "ms"];
+
+/// The tools the server serves (design D10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Profile {
+    /// The tools that change nothing on the device.
+    #[value(name = "read-only")]
+    ReadOnly,
+    /// Every tool.
+    All,
+}
 
 /// What a tool's annotations say it does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -272,12 +296,44 @@ pub struct Call {
     pub line: Map<String, Value>,
     /// The tool's own flags the call set.
     pub flags: Vec<&'static str>,
+    /// What the bound capped, one sentence each, for the result's text.
+    pub capped: Vec<String>,
 }
 
 impl Call {
     /// Whether the call set the tool's own flag `name`.
     pub fn flag(&self, name: &str) -> bool {
         self.flags.contains(&name)
+    }
+
+    /// What the call waits for, as its arguments say it, for a progress
+    /// message: the element `until` brings into view, the element, the
+    /// text, the app, a change, the screen settling or the milliseconds.
+    pub fn waits_for(&self) -> String {
+        let string = |key: &str| self.line.get(key).and_then(Value::as_str);
+        let flag = |key: &str| self.line.get(key) == Some(&Value::Bool(true));
+        if let Some(until) = string("until") {
+            return format!("{until:?} to come into view");
+        }
+        if let Some(target) = string(TARGET) {
+            return format!("the element {target:?}");
+        }
+        if let Some(text) = string("text") {
+            return format!("the text {text:?}");
+        }
+        if let Some(app) = string("app") {
+            return format!("{app} to show its first screen");
+        }
+        if flag("change") {
+            return "a change since the session's last snapshot".to_owned();
+        }
+        if flag("settle") {
+            return "the screen to settle".to_owned();
+        }
+        if let Some(ms) = self.line.get("ms").and_then(Value::as_u64) {
+            return format!("{ms} ms to pass");
+        }
+        "the daemon's reply".to_owned()
     }
 }
 
@@ -350,16 +406,17 @@ impl Tool {
     }
 
     /// The request a call with `arguments` sends, in `session` unless the
-    /// call names another, with relative paths taken from `cwd`. Only the
-    /// parameters `definition` lists go out, mapped back through the
-    /// table's changes, each value as the call gave it; null is a parameter
-    /// not given.
+    /// call names another, with relative paths taken from `cwd` and its
+    /// waits within `bound`. Only the parameters `definition` lists go out,
+    /// mapped back through the table's changes, each value as the call gave
+    /// it; null is a parameter not given.
     pub fn call(
         &self,
         definition: &rmcp::model::Tool,
         arguments: &JsonObject,
         session: &str,
         cwd: &Path,
+        bound: Duration,
     ) -> Call {
         let listed = definition.input_schema.get("properties");
         let takes = |name: &str| listed.and_then(|p| p.get(name)).is_some();
@@ -411,6 +468,28 @@ impl Tool {
         {
             *path = cwd.join(path.as_str()).to_string_lossy().into_owned();
         }
+        // The bound: a waiting command's timeout when the call names none,
+        // and the cap of the durations it names.
+        let limit = u64::try_from(bound.saturating_sub(MARGIN).as_millis()).unwrap_or(u64::MAX);
+        let mut capped = Vec::new();
+        for key in DURATIONS {
+            if let Some(given) = line.get(key).and_then(Value::as_u64)
+                && given > limit
+            {
+                line.insert(key.to_owned(), limit.into());
+                capped.push(format!(
+                    "{key} {given} ms was capped to {limit} ms, the server's bound of {} s less its margin of {} s",
+                    bound.as_secs(),
+                    MARGIN.as_secs()
+                ));
+            }
+        }
+        if takes("timeout")
+            && !line.contains_key("timeout")
+            && line.get("settle") != Some(&Value::Bool(true))
+        {
+            line.insert("timeout".to_owned(), limit.into());
+        }
         let device = line
             .get("device")
             .and_then(Value::as_str)
@@ -420,6 +499,7 @@ impl Tool {
             device,
             line,
             flags,
+            capped,
         }
     }
 }
@@ -435,7 +515,9 @@ mod tests {
         }
     }
 
-    fn line(tool: &str, value: Value) -> Map<String, Value> {
+    /// A call of `tool` with `value` as its arguments, within a bound of
+    /// 12 s.
+    fn call(tool: &str, value: Value) -> Call {
         let tool = TOOLS
             .iter()
             .find(|candidate| candidate.name == tool)
@@ -445,9 +527,17 @@ mod tests {
             &arguments(value),
             "mcp-1",
             Path::new("/work"),
+            Duration::from_secs(12),
         );
         call.line.remove("id");
-        call.line
+        call
+    }
+
+    /// The line of [`call`], its bound's timeout left out.
+    fn line(tool: &str, value: Value) -> Map<String, Value> {
+        let mut line = call(tool, value).line;
+        line.remove("timeout");
+        line
     }
 
     #[test]
@@ -503,6 +593,101 @@ mod tests {
             Value::Object(line("click", json!({"force": true, "platform": "ios"}))),
             json!({"action": "click", "session": "mcp-1"}),
             "force is open's alone, and platform no tool's"
+        );
+    }
+
+    #[test]
+    fn a_call_waits_within_the_bound_less_the_margin() {
+        let waiting = call("wait", json!({"text": "Welcome"}));
+        assert_eq!(
+            waiting.line["timeout"], 10_000,
+            "the bound of 12 s less 2 s"
+        );
+        assert!(waiting.capped.is_empty());
+        let given = call("wait", json!({"text": "Welcome", "timeout": 5000}));
+        assert_eq!(
+            given.line["timeout"], 5000,
+            "a timeout under the bound as given"
+        );
+        let above = call("wait", json!({"text": "Welcome", "timeout": 60_000}));
+        assert_eq!(above.line["timeout"], 10_000);
+        assert_eq!(
+            above.capped,
+            vec![
+                "timeout 60000 ms was capped to 10000 ms, the server's bound of 12 s less its margin of 2 s"
+            ]
+        );
+        let time = call("wait", json!({"ms": 30_000}));
+        assert_eq!(time.line["ms"], 10_000, "a time wait is capped too");
+        assert_eq!(time.capped.len(), 1);
+        let settle = call("wait", json!({"settle": true}));
+        assert!(
+            !settle.line.contains_key("timeout"),
+            "a settle keeps its own maximum: {:?}",
+            settle.line
+        );
+        let settle = call("wait", json!({"settle": true, "timeout": 20_000}));
+        assert_eq!(
+            settle.line["timeout"], 10_000,
+            "a settle's timeout is capped"
+        );
+        for (tool, arguments) in [
+            ("click", json!({"selector": "#submit"})),
+            ("fill", json!({"selector": "#name", "text": "agent"})),
+            ("open", json!({"app": "com.example"})),
+            ("scroll", json!({"until": "#row-150"})),
+        ] {
+            assert_eq!(
+                call(tool, arguments).line["timeout"],
+                10_000,
+                "{tool} takes the bound"
+            );
+        }
+        for (tool, arguments) in [
+            ("snapshot", json!({})),
+            ("screenshot", json!({})),
+            ("press", json!({"key": "Enter"})),
+        ] {
+            assert!(
+                !call(tool, arguments).line.contains_key("timeout"),
+                "{tool} takes no timeout"
+            );
+        }
+    }
+
+    #[test]
+    fn a_call_says_what_it_waits_for() {
+        assert_eq!(
+            call("wait", json!({"text": "Welcome"})).waits_for(),
+            "the text \"Welcome\""
+        );
+        assert_eq!(
+            call("wait", json!({"selector": "#spinner", "state": "hidden"})).waits_for(),
+            "the element \"#spinner\""
+        );
+        assert_eq!(
+            call("scroll", json!({"until": "#row-150"})).waits_for(),
+            "\"#row-150\" to come into view"
+        );
+        assert_eq!(
+            call("open", json!({"app": "com.example"})).waits_for(),
+            "com.example to show its first screen"
+        );
+        assert_eq!(
+            call("wait", json!({"change": true})).waits_for(),
+            "a change since the session's last snapshot"
+        );
+        assert_eq!(
+            call("wait", json!({"settle": true})).waits_for(),
+            "the screen to settle"
+        );
+        assert_eq!(
+            call("wait", json!({"ms": 500})).waits_for(),
+            "500 ms to pass"
+        );
+        assert_eq!(
+            call("snapshot", json!({})).waits_for(),
+            "the daemon's reply"
         );
     }
 }
