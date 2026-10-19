@@ -13,6 +13,7 @@
 //! ways out it releases the targets its sessions hold with the apps left
 //! running (design D9). See the crate's README.
 
+mod instructions;
 mod results;
 mod server;
 mod sessions;
@@ -143,6 +144,7 @@ fn main() {
     let args = Args::parse();
     let options = Options {
         bound: Duration::from_secs(args.call_timeout),
+        profile: args.tools,
     };
     let endpoint = endpoint();
     let session = format!("mcp-{}", std::process::id());

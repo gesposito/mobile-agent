@@ -23,23 +23,20 @@ use std::time::Duration;
 
 use cli::client::{Endpoint, Reply};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
-    PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities, ServerConfig,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities,
+    ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 use serde_json::{Map, Value};
 
-use crate::results;
 use crate::sessions::{self, Sessions};
-use crate::tools::{Call, IF_CHANGED, Tool};
+use crate::tools::{Call, IF_CHANGED, Profile, Tool};
+use crate::{instructions, results};
 
 /// The server's name, as `initialize` and `server/discover` answer it.
 pub const NAME: &str = "mobile-agent-mcp";
-
-/// What the server tells a client about itself, in a paragraph that stands
-/// alone within the 512 characters Codex keeps of it.
-pub const INSTRUCTIONS: &str = "Drives Android devices, emulators, iOS Simulators and iPhones through the mobile-agent daemon. Call snapshot for the screen's elements and their refs (@e3), then act by ref or selector with click, fill, type, press, swipe and scroll; replies verify each action, and an error names its code and what to do next. This server acts in a session of its own and, when it exits, releases its target with the app left running.";
 
 /// How often a running call reports its progress.
 const PROGRESS: Duration = Duration::from_secs(5);
@@ -56,6 +53,8 @@ pub struct Options {
     /// call names none, less a margin, and the point past which a call the
     /// daemon has not answered is cancelled.
     pub bound: Duration,
+    /// The tools served (design D10).
+    pub profile: Profile,
 }
 
 /// The server: the daemon's endpoint, its sessions and the tools'
@@ -71,14 +70,18 @@ pub struct Shared {
     pub options: Options,
     /// The directory relative paths are taken from.
     cwd: PathBuf,
-    /// Each tool with its definition.
+    /// Each tool the profile serves, with its definition.
     tools: Vec<(&'static Tool, rmcp::model::Tool)>,
+    /// The instructions card, as `initialize` and `server/discover` carry
+    /// it.
+    card: String,
 }
 
 impl Server {
     pub fn new(endpoint: Endpoint, session: String, cwd: PathBuf, options: Options) -> Server {
         let tools = crate::tools::TOOLS
             .iter()
+            .filter(|tool| options.profile.serves(tool))
             .map(|tool| (tool, tool.definition()))
             .collect();
         Server(Arc::new(Shared {
@@ -87,6 +90,7 @@ impl Server {
             options,
             cwd,
             tools,
+            card: instructions::card(options.profile, options.bound),
         }))
     }
 
@@ -96,6 +100,11 @@ impl Server {
 
     /// Runs `call` of `tool` and answers with its result.
     async fn run(&self, tool: &'static Tool, mut call: Call) -> Result<CallToolResult, ErrorData> {
+        if tool.action == "help" {
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                results::lines(&instructions::help()),
+            )]));
+        }
         if tool.action == "doctor" {
             let probe = cli::doctor::System {
                 endpoint: self.0.endpoint.clone(),
@@ -164,7 +173,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(NAME, env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(self.0.card.clone())
     }
 
     async fn list_tools(
@@ -187,10 +196,23 @@ impl ServerHandler for Server {
             .iter()
             .find(|(tool, _)| tool.name == request.name)
         else {
-            return Err(ErrorData::invalid_params(
-                format!("no tool is named {}", request.name),
-                None,
-            ));
+            let message = match crate::tools::TOOLS
+                .iter()
+                .find(|tool| tool.name == request.name)
+            {
+                Some(tool) => format!(
+                    "{} is not served: this server runs with --tools read-only, which serves {}",
+                    tool.name,
+                    self.0
+                        .tools
+                        .iter()
+                        .map(|(tool, _)| tool.name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                None => format!("no tool is named {}", request.name),
+            };
+            return Err(ErrorData::invalid_params(message, None));
         };
         let arguments = request.arguments.unwrap_or_default();
         let bound = self.0.options.bound;

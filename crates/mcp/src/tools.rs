@@ -62,6 +62,16 @@ pub enum Profile {
     All,
 }
 
+impl Profile {
+    /// Whether the profile serves `tool`.
+    pub fn serves(self, tool: &Tool) -> bool {
+        match self {
+            Profile::All => true,
+            Profile::ReadOnly => tool.effect == Effect::Reads,
+        }
+    }
+}
+
 /// What a tool's annotations say it does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Effect {
@@ -109,7 +119,7 @@ pub struct Tool {
 pub const IF_CHANGED: &str = "ifChanged";
 
 /// The tools, sorted by name, the order `tools/list` gives them in.
-pub const TOOLS: [Tool; 16] = [
+pub const TOOLS: [Tool; 17] = [
     Tool {
         name: "click",
         action: "click",
@@ -164,6 +174,14 @@ pub const TOOLS: [Tool; 16] = [
         description: "Read an element's text, value or bounds (`what`: `text`, `value` or `box`), in view or not.",
         effect: Effect::Reads,
         parameters: schema::<wire::Get>,
+        changes: &[],
+    },
+    Tool {
+        name: "help",
+        action: "help",
+        description: "Read the agent guide: the loop, snapshots, refs and selectors, acting, waiting, reading, errors, targets and sessions, after a table mapping the guide's commands to these tools and their arguments.",
+        effect: Effect::Reads,
+        parameters: no_parameters,
         changes: &[],
     },
     Tool {
@@ -255,6 +273,15 @@ pub const TOOLS: [Tool; 16] = [
 fn schema<T: JsonSchema + 'static>() -> Arc<JsonObject> {
     schema_for_input::<T>()
         .unwrap_or_else(|error| panic!("a request struct's schema is an object: {error}"))
+}
+
+/// The schema of a tool that sends no request, `help`: an object without
+/// properties of its own.
+fn no_parameters() -> Arc<JsonObject> {
+    let mut schema = JsonObject::new();
+    schema.insert("type".to_owned(), "object".into());
+    schema.insert("properties".to_owned(), Value::Object(Map::new()));
+    Arc::new(schema)
 }
 
 /// The envelope's `session`, which every tool takes.
@@ -548,7 +575,7 @@ mod tests {
         assert_eq!(names, sorted);
         for tool in &TOOLS {
             assert!(
-                wire::Command::ACTIONS.contains(&tool.action),
+                tool.action == "help" || wire::Command::ACTIONS.contains(&tool.action),
                 "{}",
                 tool.action
             );
