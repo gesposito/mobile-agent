@@ -265,11 +265,18 @@ instructions card (`src/instructions.rs`), built at start for the profile
 and the bound: a first paragraph of 369 characters that stands alone
 within the 512 Codex keeps, what the server drives, that refs come from
 `snapshot`, that replies verify and a failure names its code and what to
-do next, and that `help` holds the guide; then selectors and refs, the
-waits (`change`, `settle`, `text`), sessions and `close` with `keep`,
-screenshots with `ifChanged`, and the tools served, which says so when the
-profile is read-only: 2,202 characters in all, 2,243 when read-only, under
-the 4,096 Claude Code keeps.
+do next, and that `help` holds the guide; then selectors and refs, with
+where a plain text such as a status line is read, since it has no ref and
+is in neither the interactive listing nor a change wait's delta taken in
+it (`get`, `wait` with `text`, or `interactive: false`), the waits
+(`change`, `settle`, `text`), sessions and `close` with `keep`,
+screenshots with `ifChanged` and that one right after a click can show
+the transition the tap set off, so `settle` comes first, and the tools
+served, which says so when the profile is read-only: 2,594 characters in
+all, 2,635 when read-only, under the 4,096 Claude Code keeps. The two
+sentences on the plain text and the transition are what the acceptance's
+models worked around (`reports/12.1-mcp-acceptance.md`, findings 1 and
+4).
 
 `help`, a read-only tool with no arguments of its own, answers with the
 CLI's agent guide (`mobile-agent help agent`, the CLI library's
