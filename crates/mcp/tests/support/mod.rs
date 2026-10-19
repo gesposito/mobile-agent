@@ -537,11 +537,22 @@ impl Raw {
     /// Calls `name` with `arguments` and returns the call's result.
     #[track_caller]
     pub fn call(&mut self, name: &str, arguments: Value) -> Value {
+        self.try_call(name, arguments)
+            .unwrap_or_else(|e| panic!("tools/call {name}: {e}"))
+    }
+
+    /// Calls `name` with `arguments`: the call's result, or the protocol
+    /// error's code and message as `<code>: <message>`.
+    pub fn try_call(&mut self, name: &str, arguments: Value) -> Result<Value, String> {
         let called = self.request("tools/call", json!({"name": name, "arguments": arguments}));
-        called
-            .get("result")
-            .cloned()
-            .unwrap_or_else(|| panic!("tools/call {name}: {called}"))
+        match called.get("error") {
+            Some(error) => Err(format!(
+                "{}: {}",
+                error["code"],
+                error["message"].as_str().unwrap_or_default()
+            )),
+            None => Ok(called["result"].clone()),
+        }
     }
 
     /// Closes the server's input and waits for it to exit.
@@ -637,15 +648,24 @@ impl Rmcp {
     /// Calls `name` with `arguments` and returns the call's result as JSON.
     #[track_caller]
     pub fn call(&self, name: &str, arguments: Value) -> Value {
+        self.try_call(name, arguments)
+            .unwrap_or_else(|e| panic!("tools/call {name}: {e}"))
+    }
+
+    /// Calls `name` with `arguments`: the call's result, or the protocol
+    /// error's code and message as `<code>: <message>`.
+    pub fn try_call(&self, name: &str, arguments: Value) -> Result<Value, String> {
         let Value::Object(arguments) = arguments else {
             panic!("arguments are an object");
         };
         let params = CallToolRequestParams::new(name.to_owned()).with_arguments(arguments);
-        let result = self
-            .runtime
-            .block_on(self.service().call_tool(params))
-            .unwrap_or_else(|e| panic!("tools/call {name}: {e}"));
-        serde_json::to_value(result).expect("a result serializes")
+        match self.runtime.block_on(self.service().call_tool(params)) {
+            Ok(result) => Ok(serde_json::to_value(result).expect("a result serializes")),
+            Err(rmcp::service::ServiceError::McpError(error)) => {
+                Err(format!("{}: {}", error.code.0, error.message))
+            }
+            Err(error) => Err(error.to_string()),
+        }
     }
 
     /// Ends the session, which closes the server's input, and waits for
@@ -767,6 +787,14 @@ impl Client {
         match self {
             Client::Legacy(client) => client.call(name, arguments),
             Client::Stateless(client) => client.call(name, arguments),
+        }
+    }
+
+    /// The call's result, or the protocol error's code and message.
+    pub fn try_call(&mut self, name: &str, arguments: Value) -> Result<Value, String> {
+        match self {
+            Client::Legacy(client) => client.try_call(name, arguments),
+            Client::Stateless(client) => client.try_call(name, arguments),
         }
     }
 

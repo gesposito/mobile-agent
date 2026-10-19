@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use support::{APP, Client, ERAS, Raw, TestEnv, ends_with_ref, is_error, ok, ref_of, text};
 
 /// The tools, sorted by name.
-const TOOLS: [&str; 16] = [
+const TOOLS: [&str; 17] = [
     "click",
     "close",
     "devices",
@@ -23,6 +23,7 @@ const TOOLS: [&str; 16] = [
     "doctor",
     "fill",
     "get",
+    "help",
     "open",
     "press",
     "screenshot",
@@ -35,11 +36,12 @@ const TOOLS: [&str; 16] = [
 ];
 
 /// The tools that change nothing on the device (design D4).
-const READ_ONLY: [&str; 8] = [
+const READ_ONLY: [&str; 9] = [
     "devices",
     "diff_snapshot",
     "doctor",
     "get",
+    "help",
     "screenshot",
     "snapshot",
     "status",
