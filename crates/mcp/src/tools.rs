@@ -35,7 +35,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rmcp::handler::server::common::schema_for_input;
+use rmcp::handler::server::common::{schema_for_input, schema_for_output};
 use rmcp::model::{JsonObject, ToolAnnotations};
 use rmcp::schemars::JsonSchema;
 use serde_json::{Map, Value, json};
@@ -112,6 +112,10 @@ pub struct Tool {
     pub effect: Effect,
     /// The schema of the action's request struct.
     parameters: fn() -> Arc<JsonObject>,
+    /// The schema of the action's reply-data struct, which `--structured`
+    /// serves as the tool's `outputSchema` (design D5); none for a tool the
+    /// server answers itself.
+    reply: Option<fn() -> Arc<JsonObject>>,
     pub changes: &'static [Change],
 }
 
@@ -126,6 +130,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Tap an element (`selector`: a ref such as `@e3` from a snapshot, `#id` or `text=...`) or a point (`x`, `y`), and report what the tap set off: the first frame change and tree delta, or no change.",
         effect: Effect::Acts,
         parameters: schema::<wire::Click>,
+        reply: Some(reply_schema::<wire::reply::Click>),
         changes: &[],
     },
     Tool {
@@ -134,6 +139,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Stop the app this session opened and release its target; with `keep`, release the target and leave the app running.",
         effect: Effect::Stops,
         parameters: schema::<wire::Close>,
+        reply: Some(reply_schema::<wire::reply::Close>),
         changes: &[],
     },
     Tool {
@@ -142,6 +148,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "List the connected Android devices, emulators, iOS Simulators and iPhones, with the id `device` takes and the session holding each.",
         effect: Effect::Reads,
         parameters: schema::<wire::Devices>,
+        reply: Some(reply_schema::<wire::reply::Devices>),
         changes: &[],
     },
     Tool {
@@ -150,6 +157,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Compare the screen with this session's last snapshot: the elements added, removed and changed.",
         effect: Effect::Reads,
         parameters: schema::<wire::DiffSnapshot>,
+        reply: Some(reply_schema::<wire::reply::DiffSnapshot>),
         changes: &[],
     },
     Tool {
@@ -158,6 +166,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Check this host's toolchains and the daemon, each check with a status and, where something can be done, a hint.",
         effect: Effect::Reads,
         parameters: schema::<wire::Doctor>,
+        reply: None,
         changes: &[],
     },
     Tool {
@@ -166,6 +175,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Replace a text field's content with `text` and read the field back; fails with `text_mismatch` when the field shows other text.",
         effect: Effect::Acts,
         parameters: schema::<wire::Fill>,
+        reply: Some(reply_schema::<wire::reply::Fill>),
         changes: &[],
     },
     Tool {
@@ -174,6 +184,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Read an element's text, value or bounds (`what`: `text`, `value` or `box`), in view or not.",
         effect: Effect::Reads,
         parameters: schema::<wire::Get>,
+        reply: Some(reply_schema::<wire::reply::Get>),
         changes: &[],
     },
     Tool {
@@ -182,6 +193,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Read the agent guide: the loop, snapshots, refs and selectors, acting, waiting, reading, errors, targets and sessions, after a table mapping the guide's commands to these tools and their arguments.",
         effect: Effect::Reads,
         parameters: no_parameters,
+        reply: None,
         changes: &[],
     },
     Tool {
@@ -190,6 +202,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Launch an app, an Android package or an iOS bundle id, claim its target for this session and wait for its first screen to settle.",
         effect: Effect::Acts,
         parameters: schema::<wire::Open>,
+        reply: Some(reply_schema::<wire::reply::Open>),
         changes: &[Change::Force],
     },
     Tool {
@@ -198,6 +211,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Press a key: `Enter`, `Back`, `Home`, a letter or digit, or modifiers joined with `+` as in `Control+a`.",
         effect: Effect::Acts,
         parameters: schema::<wire::Press>,
+        reply: Some(reply_schema::<wire::reply::Press>),
         changes: &[],
     },
     Tool {
@@ -206,6 +220,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Capture the screen as a JPEG image, its long edge at most 1000 px by default; with `ifChanged`, a line instead when it is this session's last screenshot; with `path`, the file's path instead of the image.",
         effect: Effect::Reads,
         parameters: schema::<wire::Screenshot>,
+        reply: Some(reply_schema::<wire::reply::Screenshot>),
         changes: &[
             Change::Set("inline"),
             Change::Own(
@@ -224,6 +239,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Scroll the content in a direction, inside an element (`selector`) or the screen, or until an element (`until`) is mostly in view.",
         effect: Effect::Acts,
         parameters: schema::<wire::Scroll>,
+        reply: Some(reply_schema::<wire::reply::Scroll>),
         changes: &[],
     },
     Tool {
@@ -232,6 +248,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "List the screen's elements, one per line with role, name and a ref (`@e3`) to act on; by default the interactive elements as a delta: a session's first is the whole listing, later ones what changed or `unchanged (revision N)`.",
         effect: Effect::Reads,
         parameters: schema::<wire::Snapshot>,
+        reply: Some(reply_schema::<wire::reply::Snapshot>),
         changes: &[Change::On("interactive"), Change::On("delta")],
     },
     Tool {
@@ -240,6 +257,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Show the daemon, its targets with their state, app and holding session, and its sessions.",
         effect: Effect::Reads,
         parameters: schema::<wire::Status>,
+        reply: Some(reply_schema::<wire::reply::Status>),
         changes: &[],
     },
     Tool {
@@ -248,6 +266,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Move a finger in a direction from the screen's center, or from one point to another (`from`, `to`).",
         effect: Effect::Acts,
         parameters: schema::<wire::Swipe>,
+        reply: Some(reply_schema::<wire::reply::Swipe>),
         changes: &[],
     },
     Tool {
@@ -256,6 +275,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Type `text` as key events into an element (`selector`), or into the focused field, keeping what the field holds.",
         effect: Effect::Acts,
         parameters: schema::<wire::TypeText>,
+        reply: Some(reply_schema::<wire::reply::TypeText>),
         changes: &[],
     },
     Tool {
@@ -264,6 +284,7 @@ pub const TOOLS: [Tool; 17] = [
         description: "Wait some milliseconds (`ms`), for the screen to settle (`settle`) or to change from the last snapshot (`change`), or for an element (`selector`) or a text (`text`) to reach a `state`.",
         effect: Effect::Reads,
         parameters: schema::<wire::Wait>,
+        reply: Some(reply_schema::<wire::reply::Wait>),
         changes: &[],
     },
 ];
@@ -273,6 +294,12 @@ pub const TOOLS: [Tool; 17] = [
 fn schema<T: JsonSchema + 'static>() -> Arc<JsonObject> {
     schema_for_input::<T>()
         .unwrap_or_else(|error| panic!("a request struct's schema is an object: {error}"))
+}
+
+/// The schema of `T`, a reply-data struct, as rmcp generates a tool's
+/// output: the struct's with the root's title and description left out.
+fn reply_schema<T: JsonSchema + 'static>() -> Arc<JsonObject> {
+    schema_for_output::<T>()
 }
 
 /// The schema of a tool that sends no request, `help`: an object without
@@ -365,8 +392,9 @@ impl Call {
 }
 
 impl Tool {
-    /// The tool's definition, as `tools/list` gives it.
-    pub fn definition(&self) -> rmcp::model::Tool {
+    /// The tool's definition, as `tools/list` gives it, with its reply's
+    /// schema as `outputSchema` when `structured`.
+    pub fn definition(&self, structured: bool) -> rmcp::model::Tool {
         let mut schema = (self.parameters)().as_ref().clone();
         let mut properties = match schema.remove("properties") {
             Some(Value::Object(properties)) => properties,
@@ -421,7 +449,12 @@ impl Tool {
             Effect::Acts => ToolAnnotations::new().destructive(false),
             Effect::Stops => ToolAnnotations::new().destructive(true),
         };
-        rmcp::model::Tool::new(self.name, self.description, schema).with_annotations(annotations)
+        let mut definition = rmcp::model::Tool::new(self.name, self.description, schema)
+            .with_annotations(annotations);
+        if structured {
+            definition.output_schema = self.reply.map(|schema| schema());
+        }
+        definition
     }
 
     /// The tool's own flag `name`, if it has one.
@@ -550,7 +583,7 @@ mod tests {
             .find(|candidate| candidate.name == tool)
             .expect("a tool");
         let mut call = tool.call(
-            &tool.definition(),
+            &tool.definition(false),
             &arguments(value),
             "mcp-1",
             Path::new("/work"),
@@ -621,6 +654,29 @@ mod tests {
             json!({"action": "click", "session": "mcp-1"}),
             "force is open's alone, and platform no tool's"
         );
+    }
+
+    #[test]
+    fn a_definition_carries_its_reply_s_schema_when_structured() {
+        for tool in &TOOLS {
+            assert!(
+                tool.definition(false).output_schema.is_none(),
+                "{}: no outputSchema without the flag",
+                tool.name
+            );
+            let typed = tool.definition(true).output_schema;
+            let untyped = ["doctor", "help"].contains(&tool.name);
+            assert_eq!(typed.is_none(), untyped, "{}", tool.name);
+            if let Some(schema) = typed {
+                assert_eq!(
+                    schema.get("type"),
+                    Some(&Value::from("object")),
+                    "{}",
+                    tool.name
+                );
+                assert!(schema.get("title").is_none(), "{}", tool.name);
+            }
+        }
     }
 
     #[test]

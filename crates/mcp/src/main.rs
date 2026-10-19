@@ -145,6 +145,7 @@ fn main() {
     let options = Options {
         bound: Duration::from_secs(args.call_timeout),
         profile: args.tools,
+        structured: args.structured,
     };
     let endpoint = endpoint();
     let session = format!("mcp-{}", std::process::id());

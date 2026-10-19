@@ -55,6 +55,10 @@ pub struct Options {
     pub bound: Duration,
     /// The tools served (design D10).
     pub profile: Profile,
+    /// Whether each tool carries an `outputSchema`, its reply struct's, and
+    /// each successful result a `structuredContent`, the reply's data
+    /// (design D5).
+    pub structured: bool,
 }
 
 /// The server: the daemon's endpoint, its sessions and the tools'
@@ -82,7 +86,7 @@ impl Server {
         let tools = crate::tools::TOOLS
             .iter()
             .filter(|tool| options.profile.serves(tool))
-            .map(|tool| (tool, tool.definition()))
+            .map(|tool| (tool, tool.definition(options.structured)))
             .collect();
         Server(Arc::new(Shared {
             endpoint,
@@ -98,12 +102,29 @@ impl Server {
         &self.0
     }
 
-    /// Runs `call` of `tool` and answers with its result.
-    async fn run(&self, tool: &'static Tool, mut call: Call) -> Result<CallToolResult, ErrorData> {
+    /// Runs `call` of `tool` and answers with its result, a successful one
+    /// carrying the reply's data as structured content when the server
+    /// runs with `--structured`.
+    async fn run(&self, tool: &'static Tool, call: Call) -> Result<CallToolResult, ErrorData> {
+        let (mut result, data) = self.answer(tool, call).await?;
+        if self.0.options.structured && result.is_error != Some(true) {
+            result.structured_content = Some(results::structured(data));
+        }
+        Ok(result)
+    }
+
+    /// Runs `call` of `tool`: its result, and the data a structured result
+    /// carries.
+    async fn answer(
+        &self,
+        tool: &'static Tool,
+        mut call: Call,
+    ) -> Result<(CallToolResult, Value), ErrorData> {
         if tool.action == "help" {
-            return Ok(CallToolResult::success(vec![ContentBlock::text(
-                results::lines(&instructions::help()),
-            )]));
+            let text = results::lines(&instructions::help());
+            let data = serde_json::json!({"help": text});
+            let result = CallToolResult::success(vec![ContentBlock::text(text)]);
+            return Ok((result, data));
         }
         if tool.action == "doctor" {
             let probe = cli::doctor::System {
@@ -111,7 +132,7 @@ impl Server {
                 session: call.session.unwrap_or_else(|| self.0.sessions.own.clone()),
             };
             let report = blocking(move || cli::doctor::run_checks(&probe)).await?;
-            return Ok(results::doctor(&report));
+            return Ok((results::doctor(&report), report.to_json()));
         }
         let mut reply = self.send(std::mem::take(&mut call.line)).await?;
         if !call.capped.is_empty() {
@@ -122,7 +143,7 @@ impl Server {
             });
         }
         let Some(session) = &call.session else {
-            return Ok(results::of(tool.action, &reply));
+            return Ok((results::of(tool.action, &reply), reply.data));
         };
         self.0.sessions.record(session, tool.action, &reply);
         if tool.action == "screenshot" && reply.success {
@@ -131,12 +152,10 @@ impl Server {
                     .sessions
                     .screenshot(session, call.device.as_deref(), image)
             });
-            return Ok(results::screenshot(
-                &reply,
-                unchanged && call.flag(IF_CHANGED),
-            ));
+            let result = results::screenshot(&reply, unchanged && call.flag(IF_CHANGED));
+            return Ok((result, reply.data));
         }
-        Ok(results::of(tool.action, &reply))
+        Ok((results::of(tool.action, &reply), reply.data))
     }
 
     /// Sends one request line to the daemon and waits for its reply, as

@@ -13,6 +13,7 @@ use std::time::Duration;
 use cli::client::Reply;
 use cli::output;
 use rmcp::model::{CallToolResult, ContentBlock};
+use serde_json::Value;
 
 /// The result of `action`'s `reply`.
 pub fn of(action: &str, reply: &Reply) -> CallToolResult {
@@ -74,6 +75,21 @@ pub fn lines(text: &str) -> String {
     text.trim_end_matches('\n').to_owned()
 }
 
+/// A reply's `data` as a result's structured content (design D5): the data
+/// less what the result's content carries already, the refs map a listing
+/// or a delta repeats (`refs`, at the top and in `snapshot`) and a
+/// screenshot's image (`image`), each optional in the reply's schema.
+pub fn structured(mut data: Value) -> Value {
+    if let Some(object) = data.as_object_mut() {
+        object.remove("refs");
+        object.remove("image");
+        if let Some(delta) = object.get_mut("snapshot").and_then(Value::as_object_mut) {
+            delta.remove("refs");
+        }
+    }
+    data
+}
+
 /// The result of a call of `tool` the daemon had not answered 5 s past the
 /// server's `bound`, nor within 5 s of the cancel the server sent then
 /// (design D7): an execution error with the CLI's code for a daemon that
@@ -110,7 +126,7 @@ pub fn doctor(report: &cli::doctor::Report) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     fn reply(success: bool, data: Value, error: Option<&str>, code: Option<&str>) -> Reply {
         Reply {
@@ -148,6 +164,29 @@ mod tests {
         assert_eq!(
             text(&result),
             "✓ Done (dispatch 0.3 ms, no change in 202 ms)\n⚠ #row-20 was not mostly in view"
+        );
+    }
+
+    #[test]
+    fn structured_content_leaves_the_refs_and_the_image_to_the_content() {
+        let snapshot = json!({
+            "snapshot": {"kind": "full", "revision": 3, "tree": "- button", "refs": {"e1": {}}},
+            "refs": {"e1": {"name": "Sign in", "role": "button"}},
+            "target": "emulator-5554",
+        });
+        assert_eq!(
+            structured(snapshot),
+            json!({"snapshot": {"kind": "full", "revision": 3, "tree": "- button"}, "target": "emulator-5554"})
+        );
+        let shot =
+            json!({"path": null, "format": "jpeg", "image": "aGVsbG8=", "mimeType": "image/jpeg"});
+        assert_eq!(
+            structured(shot),
+            json!({"path": null, "format": "jpeg", "mimeType": "image/jpeg"})
+        );
+        assert_eq!(
+            structured(json!({"waited": "time", "ms": 500})),
+            json!({"waited": "time", "ms": 500})
         );
     }
 
