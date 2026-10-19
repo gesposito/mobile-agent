@@ -55,8 +55,8 @@ The reference apps under `fixtures/` are built on a developer's machine and neve
 
 ## Crates
 
-- MIT License: 155
-- Apache License 2.0: 4
+- MIT License: 167
+- Apache License 2.0: 6
 - ISC License: 4
 - BSD 3-Clause "New" or "Revised" License: 2
 - Blue Oak Model License 1.0.0: 2
@@ -276,7 +276,7 @@ limitations under the License.
 
 ### Apache License 2.0
 
-Used by [aws-lc-sys 0.45.0](https://crates.io/crates/aws-lc-sys), [sync_wrapper 1.0.2](https://crates.io/crates/sync_wrapper).
+Used by [aws-lc-sys 0.45.0](https://crates.io/crates/aws-lc-sys), [rmcp-macros 3.5.1](https://crates.io/crates/rmcp-macros), [rmcp 3.5.1](https://crates.io/crates/rmcp), [sync_wrapper 1.0.2](https://crates.io/crates/sync_wrapper).
 
 ```text
 Apache License
@@ -682,6 +682,68 @@ Copyright (c) 1995-2003 by Internet Software Consortium
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 
 THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+```
+
+### MIT License
+
+Used by [schemars 1.2.3](https://crates.io/crates/schemars).
+
+```text
+#![allow(clippy::all)]
+use crate::_alloc_prelude::*;
+// Copied from regex_syntax crate to avoid pulling in the whole crate just for a utility function
+// https://github.com/rust-lang/regex/blob/431c4e4867e1eb33eb39b23ed47c9934b2672f8f/regex-syntax/src/lib.rs
+//
+// Copyright (c) 2014 The Rust Project Developers
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
+pub fn escape(text: &str) -> String {
+    let mut quoted = String::new();
+    escape_into(text, &mut quoted);
+    quoted
+}
+
+fn escape_into(text: &str, buf: &mut String) {
+    buf.reserve(text.len());
+    for c in text.chars() {
+        if is_meta_character(c) {
+            buf.push('\\');
+        }
+        buf.push(c);
+    }
+}
+
+fn is_meta_character(c: char) -> bool {
+    match c {
+        '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+        | '#' | '&' | '-' | '~' => true,
+        _ => false,
+    }
+}
 
 ```
 
@@ -2647,12 +2709,70 @@ DEALINGS IN THE SOFTWARE.
 
 ### MIT License
 
+Used by [darling 0.24.1](https://crates.io/crates/darling), [darling_core 0.24.1](https://crates.io/crates/darling_core), [darling_macro 0.24.1](https://crates.io/crates/darling_macro).
+
+```text
+MIT License
+
+Copyright (c) 2017 Ted Driggs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+### MIT License
+
 Used by [crc32fast 1.5.2](https://crates.io/crates/crc32fast).
 
 ```text
 MIT License
 
 Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+### MIT License
+
+Used by [schemars 1.2.3](https://crates.io/crates/schemars), [schemars_derive 1.2.3](https://crates.io/crates/schemars_derive).
+
+```text
+MIT License
+
+Copyright (c) 2019 Graham Esau
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2976,7 +3096,34 @@ DEALINGS IN THE SOFTWARE.
 
 ### MIT License
 
-Used by [adler2 2.0.1](https://crates.io/crates/adler2), [anyhow 1.0.104](https://crates.io/crates/anyhow), [async-trait 0.1.92](https://crates.io/crates/async-trait), [atomic-waker 1.1.2](https://crates.io/crates/atomic-waker), [fastrand 2.5.0](https://crates.io/crates/fastrand), [futures-lite 2.6.1](https://crates.io/crates/futures-lite), [itoa 1.0.18](https://crates.io/crates/itoa), [once_cell 1.21.4](https://crates.io/crates/once_cell), [parking 2.2.1](https://crates.io/crates/parking), [pin-project-internal 1.1.13](https://crates.io/crates/pin-project-internal), [pin-project-lite 0.2.17](https://crates.io/crates/pin-project-lite), [pin-project 1.1.13](https://crates.io/crates/pin-project), [proc-macro2 1.0.107](https://crates.io/crates/proc-macro2), [quote 1.0.47](https://crates.io/crates/quote), [serde 1.0.229](https://crates.io/crates/serde), [serde_core 1.0.229](https://crates.io/crates/serde_core), [serde_derive 1.0.229](https://crates.io/crates/serde_derive), [serde_json 1.0.151](https://crates.io/crates/serde_json), [syn 2.0.119](https://crates.io/crates/syn), [syn 3.0.6](https://crates.io/crates/syn), [thiserror-impl 1.0.69](https://crates.io/crates/thiserror-impl), [thiserror-impl 2.0.21](https://crates.io/crates/thiserror-impl), [thiserror 1.0.69](https://crates.io/crates/thiserror), [thiserror 2.0.21](https://crates.io/crates/thiserror), [unicode-ident 1.0.26](https://crates.io/crates/unicode-ident), [zmij 1.0.23](https://crates.io/crates/zmij).
+Used by [ident_case 1.0.1](https://crates.io/crates/ident_case).
+
+```text
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+### MIT License
+
+Used by [adler2 2.0.1](https://crates.io/crates/adler2), [anyhow 1.0.104](https://crates.io/crates/anyhow), [async-trait 0.1.92](https://crates.io/crates/async-trait), [atomic-waker 1.1.2](https://crates.io/crates/atomic-waker), [dyn-clone 1.0.20](https://crates.io/crates/dyn-clone), [fastrand 2.5.0](https://crates.io/crates/fastrand), [futures-lite 2.6.1](https://crates.io/crates/futures-lite), [itoa 1.0.18](https://crates.io/crates/itoa), [once_cell 1.21.4](https://crates.io/crates/once_cell), [parking 2.2.1](https://crates.io/crates/parking), [pastey 0.2.3](https://crates.io/crates/pastey), [pin-project-internal 1.1.13](https://crates.io/crates/pin-project-internal), [pin-project-lite 0.2.17](https://crates.io/crates/pin-project-lite), [pin-project 1.1.13](https://crates.io/crates/pin-project), [proc-macro2 1.0.107](https://crates.io/crates/proc-macro2), [quote 1.0.47](https://crates.io/crates/quote), [ref-cast-impl 1.0.27](https://crates.io/crates/ref-cast-impl), [ref-cast 1.0.27](https://crates.io/crates/ref-cast), [serde 1.0.229](https://crates.io/crates/serde), [serde_core 1.0.229](https://crates.io/crates/serde_core), [serde_derive 1.0.229](https://crates.io/crates/serde_derive), [serde_derive_internals 0.30.0](https://crates.io/crates/serde_derive_internals), [serde_json 1.0.151](https://crates.io/crates/serde_json), [syn 2.0.119](https://crates.io/crates/syn), [syn 3.0.6](https://crates.io/crates/syn), [thiserror-impl 1.0.69](https://crates.io/crates/thiserror-impl), [thiserror-impl 2.0.21](https://crates.io/crates/thiserror-impl), [thiserror 1.0.69](https://crates.io/crates/thiserror), [thiserror 2.0.21](https://crates.io/crates/thiserror), [unicode-ident 1.0.26](https://crates.io/crates/unicode-ident), [zmij 1.0.23](https://crates.io/crates/zmij).
 
 ```text
 Permission is hereby granted, free of charge, to any
