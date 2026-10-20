@@ -192,9 +192,19 @@ setting.
 ## Output
 
 Human mode prints the listing or a short confirmation (`✓ Done`, as
-agent-browser does, which a click follows with its spans) on stdout and
-errors (`✗`) and warnings (`⚠`) on stderr. `--json` prints one line in agent-browser's envelope, fields in
-its order, `code` and `warning` only when set:
+agent-browser does) on stdout and errors (`✗`) and warnings (`⚠`) on
+stderr. A click follows its confirmation with its spans; `fill` with what
+the read-back found and how the text went in, `✓ Done (read back "agent",
+typed)`, `✓ Done (read back 7 masked characters, entered in one piece)`
+for a secure field, `entered in one piece` being `direct` as the JSON
+names it, a paste on iOS and a set on Android, with `retried` when the
+text went in again, and `✓ Done (nothing to read back, typed)` beside the
+warning for a field that shows nothing to read; `scroll` with its
+strokes, `✓ Done (2 strokes)`, and with `--until` how much of the element
+is in view, `✓ Done (3 strokes; "Row 57" is 100% in view)`, the element
+named as the listing names it. `--json` prints one line in
+agent-browser's envelope, fields in its order, `code` and `warning` only
+when set:
 
 ```json
 {"success":true,"data":{"origin":"com.android.launcher3","refs":{"e1":{"name":"Home","role":"heading"},"e2":{"name":"Fixture","role":"button"},"e3":{"name":"Settings","role":"button"}},"removedRefs":[],"replicaRevision":1,"snapshot":"- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]","target":"emulator-5554","verdict":{"backend":"fake","degraded":false,"fallback":false,"reasons":[]}},"error":null}
@@ -574,7 +584,8 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 - `fill` reads the field back and says what it read, `verified` (`text`,
   `length` for a masked field, or `false` with `reason: no_value_to_read`
   for a field that shows nothing to read) and `readFrom` (`value`,
-  `descendants` or `name`, the part of the name the entry changed), and how the text went in, `method` (`keys`, or `direct`:
+  `descendants` or `name`, the part of the name the entry changed), beside
+  the `text` as the request gave it, and how the text went in, `method` (`keys`, or `direct`:
   a paste on iOS, which replaces the device's pasteboard, a set on Android)
   and `retried`; agent-browser's `fill` clears the field and types, and its
   documentation checks the result with a snapshot or `diff snapshot`.
@@ -642,7 +653,16 @@ on fakes whose lists fling (`MOBILE_AGENT_FAKE_FLING`).
 Task 10.23 adds `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`
 and `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch`,
 on fakes whose fields take keys out of order or cut text short
-(`MOBILE_AGENT_FAKE_TYPING`).
+(`MOBILE_AGENT_FAKE_TYPING`). Tasks 6.4 and 6.5 of the `mcp-server` change
+add `output::tests::fill_says_what_it_read_back_and_how_the_text_went_in`
+and
+`output::tests::scroll_counts_its_strokes_and_says_where_until_s_element_ended`,
+with `fill`'s line checked end to end in
+`commands::fill_replaces_a_field_and_type_appends_to_it`,
+`commands::press_enter_submits_the_login_form` and
+`commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`,
+and `scroll`'s in `commands::scroll_and_swipe_move_the_list` and
+`commands::scroll_until_moves_the_content_until_the_element_is_on_screen`.
 
 Doctor (task 8.7) has no spec scenario of its own; `doctor::*` tests each
 check against scripted command outputs and

@@ -151,10 +151,15 @@ surfaces:
   is the whole listing first, then `unchanged (revision N)` or the changes
   as `snapshot --delta` prints them;
 - an action is the CLI's line: `✓ Done (dispatch 0.3 ms, no change in
-  202 ms)` for a click, `✓ Opened <app> on <target>` for `open`,
-  `✓ Released <target>; <app> keeps running` for `close` with `keep`,
-  `✓ Settled after 111 ms: the tree changed last` or `✓ The tree changed
-  after 300 ms` and the delta for a wait;
+  202 ms)` for a click, `✓ Done (read back "agent", typed)` for `fill`,
+  the count of masked characters for a secure field, `entered in one
+  piece` for text pasted or set, `retried` when it went in again and
+  `nothing to read back` beside the warning for a field that shows
+  nothing to read, `✓ Done (2 strokes)` for `scroll` and `✓ Done (3
+  strokes; "Row 57" is 100% in view)` with `until`, `✓ Opened <app> on
+  <target>` for `open`, `✓ Released <target>; <app> keeps running` for
+  `close` with `keep`, `✓ Settled after 111 ms: the tree changed last` or
+  `✓ The tree changed after 300 ms` and the delta for a wait;
 - `get`, `devices`, `status` and `diff_snapshot` are the CLI's lines;
 - `doctor` is the CLI's report, one line per check and the Xcode
   compatibility table;
@@ -309,7 +314,7 @@ text.
 
 | Requirement | Scenario | Tests |
 |---|---|---|
-| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
+| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::scroll_answers_with_its_strokes_and_where_until_s_element_ended`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
 | Sessions and claims | Server exits | `sessions::a_server_mints_its_session_and_a_call_may_name_another`, `sessions::a_server_whose_input_ends_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_signalled_to_stop_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_releases_a_claim_no_reply_named`, `sessions::a_server_that_was_only_discovered_exits_when_its_input_ends`; in `src/sessions.rs`, `a_reply_that_names_its_target_holds_it_and_close_releases_it` |
 | Screenshots inline | Unchanged screen | `screenshots::a_screenshot_is_the_daemon_s_image_within_the_long_edge_bound`, `screenshots::if_changed_answers_a_still_screen_with_a_line_and_a_changed_one_with_the_image`, `screenshots::a_screenshot_with_a_path_answers_with_the_path_alone`; in `src/sessions.rs`, `a_screenshot_is_the_last_one_s_when_its_image_is_on_the_same_session_and_device` |
 | Long waits bounded and cancellable | Wait past the bound | `waits::the_server_takes_its_bound_its_profile_and_structured_with_their_defaults`, `waits::a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout`, `waits::a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_token`, `waits::a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once`, `waits::a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server`; in `src/tools.rs`, `a_call_waits_within_the_bound_less_the_margin` and `a_call_says_what_it_waits_for`; in `src/main.rs`, `the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results` |
