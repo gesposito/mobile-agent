@@ -1630,13 +1630,14 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
-            return Ok(
-                filled(given, &text, reference, first, check, false).warn(note(Some(unreadable(given))))
-            );
+            return Ok(filled(given, &text, reference, first, check, false)
+                .warn(note(Some(unreadable(given)))));
         }
         ReadBack::Gone => {
-            return Ok(filled(given, &text, reference, first, Check::Skipped, false)
-                .warn(note(Some(gone(entered_by(class, first))))));
+            return Ok(
+                filled(given, &text, reference, first, Check::Skipped, false)
+                    .warn(note(Some(gone(entered_by(class, first))))),
+            );
         }
         ReadBack::Other(value) => value,
     };
@@ -1674,7 +1675,10 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
         }
         ReadBack::Gone => {
             let warning = format!("{}; {}", again(), gone(second_by));
-            Ok(filled(given, &text, reference, second, Check::Skipped, true).warn(note(Some(warning))))
+            Ok(
+                filled(given, &text, reference, second, Check::Skipped, true)
+                    .warn(note(Some(warning))),
+            )
         }
         ReadBack::Other(still) => {
             let tries = if first_by == second_by {

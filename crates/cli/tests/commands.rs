@@ -140,7 +140,10 @@ fn fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order() {
     assert_eq!(data["method"], "direct", "{reply}");
     assert_eq!(data["retried"], true, "{reply}");
     assert_eq!(data["verified"], "text", "{reply}");
-    assert_eq!(data["text"], "nobel", "the text as the request gave it: {reply}");
+    assert_eq!(
+        data["text"], "nobel",
+        "the text as the request gave it: {reply}"
+    );
     assert!(
         data["readBackMs"].as_f64().is_some_and(|ms| ms >= 0.0),
         "{reply}"
