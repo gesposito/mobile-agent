@@ -6,7 +6,10 @@ grammar, ref syntax and JSON envelope, so skills and prompts written for the
 web tool carry over where devices have the same concepts. It links nothing
 of the daemon; each command is one JSON request over the daemon's Unix
 socket, built from the request types of `crates/wire`, and the first
-command starts the daemon.
+command starts the daemon. It is one of the two agent surfaces: the MCP
+server `mobile-agent-mcp` (`crates/mcp/README.md`) serves the same
+actions, refs and replies to a client that calls tools, through this
+crate's library, so the agent guide holds for either.
 
 ```sh
 cargo build --release -p cli -p daemon    # mobile-agent and mobile-agent-daemon, side by side
@@ -576,10 +579,11 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
   and `retried`; agent-browser's `fill` clears the field and types, and its
   documentation checks the result with a snapshot or `diff snapshot`.
 - `wait --change`, `close --keep` and `cancel` are this tool's own: they
-  serve agents that work through the MCP server (the `mcp-server` change,
-  designs D7 to D9), which waits for a change instead of polling
-  snapshots, leaves the app it drove running when it exits and ends a
-  wait its client gave up on.
+  serve agents that work through the MCP server (`crates/mcp/README.md`;
+  the `mcp-server` change, designs D7 to D9), which waits for a change
+  instead of polling snapshots, leaves the app it drove running when it
+  exits and ends a wait its client gave up on; that README's tool table
+  maps each tool to agent-browser's name.
 - The version file names the build as well as the release.
 - A config file cannot set the socket directory, and there is no
   namespace flag; `--socket-dir` covers both uses.

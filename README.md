@@ -1,6 +1,6 @@
 # mobile-agent
 
-mobile-agent drives Android devices, Android emulators, iOS Simulators and physical iPhones for AI agents, and is designed around the latency of each tap-and-observe step. A daemon keeps a live mirror of every attached screen (its windows, accessibility tree and latest frame), updates it from the platform's change events and frame callbacks, and answers snapshots, waits and settle checks from that mirror instead of reading the device and sleeping on every request. On Android, a single-dex agent pushed over adb runs as the shell user under `app_process` and holds the device's UI automation role: no APK is installed and no instrumentation runs. On the iOS Simulator the driver works from the host: input goes through the Simulator's dtuhidd HID service, frames come from the display's IOSurface, and the accessibility tree comes from a Rust reader that the daemon spawns into the Simulator, with no XCTest runner and nothing installed. A physical iPhone's tree can be read only from an XCTest runner, so there a Rust runner built in this repository, started through the phone's test manager and kept for the session, serves the tree and text entry over the same device protocol, while the driver does the rest from the host: input through the developer disk image's dtuhidd, frames from screenshots it polls, and the phone's services over a CoreDevice tunnel it opens in its own process, without root or a helper. The `mobile-agent` CLI follows agent-browser's command grammar, `@eN` refs and JSON envelope, so prompts and skills written for agent-browser carry over where devices have the same concepts.
+mobile-agent drives Android devices, Android emulators, iOS Simulators and physical iPhones for AI agents, and is designed around the latency of each tap-and-observe step. A daemon keeps a live mirror of every attached screen (its windows, accessibility tree and latest frame), updates it from the platform's change events and frame callbacks, and answers snapshots, waits and settle checks from that mirror instead of reading the device and sleeping on every request. On Android, a single-dex agent pushed over adb runs as the shell user under `app_process` and holds the device's UI automation role: no APK is installed and no instrumentation runs. On the iOS Simulator the driver works from the host: input goes through the Simulator's dtuhidd HID service, frames come from the display's IOSurface, and the accessibility tree comes from a Rust reader that the daemon spawns into the Simulator, with no XCTest runner and nothing installed. A physical iPhone's tree can be read only from an XCTest runner, so there a Rust runner built in this repository, started through the phone's test manager and kept for the session, serves the tree and text entry over the same device protocol, while the driver does the rest from the host: input through the developer disk image's dtuhidd, frames from screenshots it polls, and the phone's services over a CoreDevice tunnel it opens in its own process, without root or a helper. The `mobile-agent` CLI follows agent-browser's command grammar, `@eN` refs and JSON envelope, so prompts and skills written for agent-browser carry over where devices have the same concepts, and the `mobile-agent-mcp` server gives an MCP client the same tools, refs and replies (Agent surfaces).
 
 **Status.** Pre-release: nothing is published to crates.io or as a binary yet, so mobile-agent is built from source (Build), and `main` is the version CI builds and tests on macOS and Linux. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
 
@@ -32,7 +32,7 @@ Requirements:
 From the checkout:
 
 ```sh
-cargo build --release                      # target/release/mobile-agent and mobile-agent-daemon
+cargo build --release                      # target/release/mobile-agent, mobile-agent-daemon and mobile-agent-mcp
 export PATH="$PWD/target/release:$PATH"    # the CLI starts the daemon it finds beside itself
 ```
 
@@ -241,6 +241,49 @@ $ mobile-agent --json batch --bail 'get text #settings-wifi' 'click @e99' 'snaps
 
 The full lists are in `crates/daemon/README.md` (Errors) and `crates/cli/README.md` (Output).
 
+## Agent surfaces
+
+Two surfaces drive the same daemon, and a session one of them leaves is where the other finds it.
+
+- **The CLI**, `mobile-agent`, for a shell, a script, a harness and the skills written for agent-browser: it follows that tool's grammar, `@eN` refs and JSON envelope, one process per command at about 5 ms (Agent guide; `crates/cli/README.md`).
+- **The MCP server**, `mobile-agent-mcp`, for a client that calls tools over the Model Context Protocol, Claude Code, Claude Desktop, Codex or Cursor: a stdio server the client starts, with one tool per action an agent drives, 17 with `help`, under agent-browser's names where the concepts match (`snapshot`, `click`, `fill`, `type`, `press`, `swipe`, `scroll`, `screenshot`, `wait`, `get`, `open`, `close`) and the daemon's elsewhere (`devices`, `status`, `doctor`, `diff_snapshot`), input schemas from the request types, results as the CLI prints them, the same refs, codes and sessions, and the agent guide behind its `help` tool. It starts the daemon beside itself on the first call, as the CLI does, acts in a session of its own and releases its target with the app running when it exits (`crates/mcp/README.md`).
+
+Take the CLI where the agent runs commands, the server where the client speaks MCP and would otherwise wrap the CLI in a shell tool. Both come out of `cargo build --release`, and the server takes the CLI's environment (`MOBILE_AGENT_SOCKET_DIR`, `MOBILE_AGENT_DRIVERS` for a phone, the settings file) from the entry that starts it.
+
+**Claude Code.** `claude mcp add --transport stdio mobile-agent -- /path/to/target/release/mobile-agent-mcp`, with `--scope project` for a `.mcp.json` the repository shares, or the entry in a JSON file passed as `--mcp-config`, the form the acceptance used:
+
+```json
+{"mcpServers": {"mobile-agent": {"command": "/path/to/target/release/mobile-agent-mcp", "env": {"MOBILE_AGENT_DRIVERS": "simulator"}}}}
+```
+
+The permission rule for every tool of the server is `mcp__mobile-agent__*`, which print mode (`claude -p --allowedTools`) needs, since it cannot ask.
+
+**Claude Desktop.** The same entry under `mcpServers` in `claude_desktop_config.json` (Settings, Developer, Edit Config), with the binary's full path, since the app does not read a shell's `PATH`:
+
+```json
+{"mcpServers": {"mobile-agent": {"command": "/path/to/target/release/mobile-agent-mcp", "args": [], "env": {}}}}
+```
+
+**Codex.** In `~/.codex/config.toml`; the approval mode is what the acceptance found `codex exec` needs, since it runs with approvals off and otherwise fails every call to a tool not annotated read-only with "MCP tool call requires approval, but approval policy is never", while `snapshot`, `get`, `wait` and the other read-only tools run:
+
+```toml
+[mcp_servers.mobile-agent]
+command = "/path/to/target/release/mobile-agent-mcp"
+default_tools_approval_mode = "approve"   # "writes" asks before each acting tool in the interactive client
+```
+
+Codex gives a call 60 s, which the server's bound of 55 s stays under, and shows the model a result's `structuredContent` alone when there is one, so leave `--structured` off there (`docs/research/agent-surfaces.md`, How the clients consume servers).
+
+**Cursor.** The same JSON as Claude Code's in the project's `.cursor/mcp.json` or in `~/.cursor/mcp.json`.
+
+The server's flags, each in `crates/mcp/README.md`:
+
+- `--tools read-only` serves `devices`, `status`, `doctor`, `snapshot`, `diff_snapshot`, `get`, `wait`, `screenshot` and `help` alone, for a client that may only look; it also passes Codex's `writes` approval mode without a prompt.
+- `--call-timeout <seconds>` bounds every call, 55 by default: a waiting tool gets it less 2 s as its timeout, progress goes to the client every 5 s, and a call past the bound is cancelled in the daemon.
+- `--structured` adds an `outputSchema` to each tool and a `structuredContent` to each result, for a client that reads JSON rather than the text.
+
+**Acceptance.** A fresh Claude Code session given only the server's card and `help` opened the SwiftUI fixture on the Simulator, signed in, waited for the change, scrolled to a row, opened its detail and took a screenshot in 21 turns and 19 tool calls with none failed, $1.03 and 89 s; Codex did the same in 1 turn and 16 calls in 37 s (`reports/12.1-mcp-acceptance.md`).
+
 ## Measured
 
 The harness judges each gate at p95, and "under" is strict (`crates/bench/README.md`, Gates).
@@ -425,6 +468,7 @@ What CI does not measure: the gates, whose limits stay with the measured hosts a
 - React Native: `reports/10.4-rn-smoke.md` compared 17 logged-out React Native screens on the Simulator (Bluesky, Ignite's demo app, the Expo fixture), where no XCTest read reported a sparse root, then Bluesky's signed-in feeds, threads, profiles, notifications, search, chat and settings on the Simulator and the emulator. Signed in, agent-device's XCTest tree came back `sparse` or timed out on the search screen with the keyboard up and on a 711-node thread, and mobile-agent's snapshots of those screens were whole and not degraded. The same run found that with the keyboard up on the Simulator every element counts as 0% in view, so `click` warns wrongly and `scroll --until`, which stops by the same measure, cannot find its element in view (task 10.21).
 - React Native apps on the Simulator, after seven rounds of production-app runs, which checked the fixes of `openspec/changes/archive/2026-10-15-rn-app-fixes/` on a production React Native app (its sign-in, consent, switcher, feed, creation and members screens, with the Simulator's hardware keyboard connected and disconnected): no wrong tap in the last round and the sign-in flow in 18.4 to 20.9 s typed or filled; what stays open: typed keys on React Native fields are dropped at times under host load (5 of 11 fills in one round), which `fill`'s read-back repairs with a paste in all but the rare lost paste, which fails `text_mismatch`; a control the app places under the status bar strip reads as in view and its tap is accepted without effect; a refusal behind a dialog names "the modal view", not the dialog's title; texts a button covers whole are absent from the full listing while `get` finds them; elements wholly under the software keyboard carry no `visible=0%` mark in the full listing.
 - The drivers use private Apple Simulator frameworks, the developer services of Apple's disk image and private XCTest calls on an iPhone, and hidden Android APIs. This is development tooling; nothing of it ships inside an app.
-- Not built: an MCP server, a CDP-subset endpoint and Android video streaming.
-- The OpenSpec change in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks; the `microbenchmarks` change, archived in `openspec/changes/archive/2026-10-08-microbenchmarks/`, adds the host microbenchmarks, design D13 to D17, and the `physical-ios` change under `openspec/changes/` the physical iPhone, design D18 to D26.
-- `docs/overview.md` answers, with sources, how the design differs from Maestro, agent-device and Appium, where it is and is not faster, what it leaves out, which platforms and versions it supports, which protocol it speaks and what an MCP edge would take.
+- The MCP server has run once per client, Claude Code and Codex, on the Simulator with the SwiftUI fixture, with no failed call; Claude Desktop and Cursor are configured above and have not run. Two results, `fill`'s and `scroll --until`'s, say `✓ Done` alone on both surfaces, so a model takes a snapshot to see what they did (`reports/12.1-mcp-acceptance.md`, findings 2 and 3; tasks 6.4 and 6.5 of `openspec/changes/mcp-server/tasks.md`).
+- Not built: a CDP-subset endpoint and Android video streaming.
+- The OpenSpec change in `openspec/changes/archive/2026-10-07-mobile-automation-foundation/` (proposal, design, specs, tasks) is the source of truth for the design, its decisions and the remaining tasks; the `microbenchmarks` change, archived in `openspec/changes/archive/2026-10-08-microbenchmarks/`, adds the host microbenchmarks, design D13 to D17, the `physical-ios` change, archived in `openspec/changes/archive/2026-10-14-physical-ios/`, the physical iPhone, design D18 to D26, and the `mcp-server` change under `openspec/changes/` the MCP server and the shared request and reply types, design D1 to D12 of its own.
+- `docs/overview.md` answers, with sources, how the design differs from Maestro, agent-device and Appium, where it is and is not faster, what it leaves out, which platforms and versions it supports, which protocol it speaks and how the two agent surfaces, the CLI and the MCP server, sit on the daemon.
