@@ -392,12 +392,15 @@ fn scroll_answers_with_its_strokes_and_where_until_s_element_ended() {
     assert!(
         brought.starts_with("✓ Done (")
             && brought.contains(" strokes; \"Row 57\" is ")
-            && brought.ends_with("% in view"),
+            && brought.ends_with("% in view)"),
         "{brought}"
     );
     // Already in view: no stroke, in the line the CLI prints.
     let again = ok(&client.call("scroll", json!({"direction": "down", "until": "#row-57"})));
-    assert!(again.starts_with("✓ Done (0 strokes; \"Row 57\" is "), "{again}");
+    assert!(
+        again.starts_with("✓ Done (0 strokes; \"Row 57\" is "),
+        "{again}"
+    );
     let session = client.session();
     let (printed, _) = env.cli(&[
         "--session",
