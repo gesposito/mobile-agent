@@ -1424,14 +1424,16 @@ enum Check {
     Skipped,
 }
 
-/// A fill's reply: the field as `given`, its ref, null for a node without
-/// one, the method the text the field holds went in by, what the read-back
-/// concluded and how long after the entry, and whether `fill` entered the
-/// text again. `verified` is how the field showed the text, `false` when it
-/// showed nothing to read back (`reason` says so), and null when it was not
-/// read back; `readFrom` is where the read-back took it from.
+/// A fill's reply: the field as `given`, the `text` as the request gave it,
+/// the field's ref, null for a node without one, the method the text the
+/// field holds went in by, what the read-back concluded and how long after
+/// the entry, and whether `fill` entered the text again. `verified` is how
+/// the field showed the text, `false` when it showed nothing to read back
+/// (`reason` says so), and null when it was not read back; `readFrom` is
+/// where the read-back took it from.
 fn filled(
     given: &str,
+    text: &str,
     reference: Option<Ref>,
     method: Option<TextMethod>,
     check: Check,
@@ -1454,6 +1456,7 @@ fn filled(
     };
     Success::new(json!({
         "filled": given,
+        "text": text,
         "ref": reference_json(reference),
         "method": method_name(method),
         "verified": verified,
@@ -1616,23 +1619,23 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     let first = enter(target, keys_into, &text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
-        return Ok(filled(given, reference, first, Check::Skipped, false).warn(note(None)));
+        return Ok(filled(given, &text, reference, first, Check::Skipped, false).warn(note(None)));
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
     let value = match read_back(target, &field, &text, (entered, first), before)? {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
-            return Ok(filled(given, reference, first, check, false).warn(note(None)));
+            return Ok(filled(given, &text, reference, first, check, false).warn(note(None)));
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
             return Ok(
-                filled(given, reference, first, check, false).warn(note(Some(unreadable(given))))
+                filled(given, &text, reference, first, check, false).warn(note(Some(unreadable(given))))
             );
         }
         ReadBack::Gone => {
-            return Ok(filled(given, reference, first, Check::Skipped, false)
+            return Ok(filled(given, &text, reference, first, Check::Skipped, false)
                 .warn(note(Some(gone(entered_by(class, first))))));
         }
         ReadBack::Other(value) => value,
@@ -1662,16 +1665,16 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     match read {
         ReadBack::Shown { shown, from, after } => {
             let check = Check::Verified { shown, from, after };
-            Ok(filled(given, reference, second, check, true).warn(note(Some(again()))))
+            Ok(filled(given, &text, reference, second, check, true).warn(note(Some(again()))))
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
             let warning = format!("{}; {}", again(), unreadable(given));
-            Ok(filled(given, reference, second, check, true).warn(note(Some(warning))))
+            Ok(filled(given, &text, reference, second, check, true).warn(note(Some(warning))))
         }
         ReadBack::Gone => {
             let warning = format!("{}; {}", again(), gone(second_by));
-            Ok(filled(given, reference, second, Check::Skipped, true).warn(note(Some(warning))))
+            Ok(filled(given, &text, reference, second, Check::Skipped, true).warn(note(Some(warning))))
         }
         ReadBack::Other(still) => {
             let tries = if first_by == second_by {

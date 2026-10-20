@@ -520,6 +520,8 @@ pub struct Click {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Fill {
     pub filled: String,
+    /// The text as the request gave it.
+    pub text: String,
     /// The field's ref; null for a node holding no field.
     #[serde(rename = "ref")]
     pub reference: Option<String>,
