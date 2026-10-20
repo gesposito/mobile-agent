@@ -355,7 +355,15 @@ fn fill_and_get_answer_with_the_lines_the_cli_prints() {
         "fill",
         json!({"selector": "#login-username", "text": "agent"}),
     ));
-    assert_eq!(filled, "✓ Done");
+    assert_eq!(filled, "✓ Done (read back \"agent\", entered in one piece)");
+    let masked = ok(&client.call(
+        "fill",
+        json!({"selector": "#login-password", "text": "hunter2"}),
+    ));
+    assert_eq!(
+        masked,
+        "✓ Done (read back 7 masked characters, entered in one piece)"
+    );
     let got = ok(&client.call(
         "get",
         json!({"what": "text", "selector": "#login-username"}),
@@ -366,6 +374,40 @@ fn fill_and_get_answer_with_the_lines_the_cli_prints() {
     let (printed, _) = env.cli(&["--session", &session, "get", "box", "#login-submit"]);
     assert_eq!(format!("{boxed}\n"), printed, "the CLI's lines");
     assert_eq!(boxed.lines().count(), 4, "{boxed}");
+    client.close();
+}
+
+/// Task 6.5 of the `mcp-server` change: scroll answers with the CLI's
+/// line, its strokes and, with `until`, how much of the element is in
+/// view, so a model need not take a snapshot to see where the row ended.
+#[test]
+fn scroll_answers_with_its_strokes_and_where_until_s_element_ended() {
+    let env = TestEnv::start("android");
+    let mut client = Raw::spawn(&env);
+    ok(&client.call("open", json!({"app": APP})));
+    ok(&client.call("click", json!({"selector": "#tab-list"})));
+    let moved = ok(&client.call("scroll", json!({"direction": "down", "amount": 98})));
+    assert_eq!(moved, "✓ Done (1 stroke)");
+    let brought = ok(&client.call("scroll", json!({"direction": "down", "until": "#row-57"})));
+    assert!(
+        brought.starts_with("✓ Done (")
+            && brought.contains(" strokes; \"Row 57\" is ")
+            && brought.ends_with("% in view"),
+        "{brought}"
+    );
+    // Already in view: no stroke, in the line the CLI prints.
+    let again = ok(&client.call("scroll", json!({"direction": "down", "until": "#row-57"})));
+    assert!(again.starts_with("✓ Done (0 strokes; \"Row 57\" is "), "{again}");
+    let session = client.session();
+    let (printed, _) = env.cli(&[
+        "--session",
+        &session,
+        "scroll",
+        "down",
+        "--until",
+        "#row-57",
+    ]);
+    assert_eq!(format!("{again}\n"), printed, "the CLI's line");
     client.close();
 }
 
