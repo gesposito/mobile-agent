@@ -133,6 +133,8 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
         "wait" if str_of(data, "waited") == "settle" => settle(data, out),
         "wait" if str_of(data, "waited") == "change" => change(data, out),
         "click" => click(data, out),
+        "fill" => fill(data, out),
+        "scroll" => scroll(data, out),
         "shutdown" => {
             let _ = writeln!(out, "✓ Daemon stopped");
         }
@@ -140,6 +142,58 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             let _ = writeln!(out, "✓ Done");
         }
     }
+}
+
+/// A fill's read-back and entry: `✓ Done (read back "agent", typed)`; the
+/// count of characters where the field showed as many mask characters, a
+/// secure field's; `nothing to read back` beside the reply's warning for a
+/// field that showed nothing, and `not read back` for one the fill did not
+/// read back. `typed` is text that went in as keys and `entered in one
+/// piece` a paste or a set, `direct` as the reply names it; `retried` says
+/// the text went in again.
+fn fill(data: &Value, out: &mut String) {
+    let text = str_of(data, "text");
+    let read = match &data["verified"] {
+        Value::String(shown) if shown == "text" => format!("read back {text:?}"),
+        Value::String(shown) if shown == "length" => {
+            let count = text.chars().count();
+            let plural = if count == 1 { "" } else { "s" };
+            format!("read back {count} masked character{plural}")
+        }
+        Value::Bool(false) => "nothing to read back".to_owned(),
+        _ => "not read back".to_owned(),
+    };
+    let mut parts = vec![read];
+    match str_of(data, "method") {
+        "keys" => parts.push("typed".to_owned()),
+        "direct" => parts.push("entered in one piece".to_owned()),
+        "" => {}
+        other => parts.push(other.to_owned()),
+    }
+    if data["retried"] == Value::Bool(true) {
+        parts.push("retried".to_owned());
+    }
+    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+}
+
+/// A scroll's strokes, `✓ Done (2 strokes)`, and with `until` how much of
+/// the element is in view, `✓ Done (3 strokes; "Row 57" is 100% in view)`,
+/// the element named as the listing names it, or by the selector when it
+/// has no name, and its share rounded as the daemon's messages round it.
+fn scroll(data: &Value, out: &mut String) {
+    let strokes = data["strokes"].as_u64().unwrap_or(0);
+    let count = if strokes == 1 { "stroke" } else { "strokes" };
+    let place = match (data["element"].as_object(), data["visible"].as_f64()) {
+        (Some(element), Some(visible)) => {
+            let named = match element.get("name").and_then(Value::as_str) {
+                Some(name) if !name.is_empty() => format!("{name:?}"),
+                _ => str_of(data, "until").to_owned(),
+            };
+            format!("; {named} is {}% in view", (visible * 100.0).round())
+        }
+        _ => String::new(),
+    };
+    let _ = writeln!(out, "✓ Done ({strokes} {count}{place})");
 }
 
 /// A click's spans: `✓ Done (dispatch 0.2 ms, first frame change 121.3 ms,
