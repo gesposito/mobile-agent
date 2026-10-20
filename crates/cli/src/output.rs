@@ -547,4 +547,91 @@ mod tests {
             (String::new(), "✗ gone\n".to_owned())
         );
     }
+
+    /// Task 6.4 of the mcp-server change: fill's line says what the
+    /// read-back found, the text or a masked field's count of characters,
+    /// how the text went in, and that it went in again when it did.
+    #[test]
+    fn fill_says_what_it_read_back_and_how_the_text_went_in() {
+        let filled = |text: &str, verified: Value, method: Value, retried: bool| {
+            let from = verified.is_string().then_some("value");
+            let reason = (verified == Value::Bool(false)).then_some("no_value_to_read");
+            ok(json!({
+                "filled": "#login-username", "ref": "@e2", "text": text, "method": method,
+                "verified": verified, "readFrom": from, "reason": reason,
+                "readBackMs": 12.5, "retried": retried,
+            }))
+        };
+        let line = |reply: &Reply| human("fill", reply).0;
+        assert_eq!(
+            line(&filled("agent", json!("text"), json!("keys"), false)),
+            "✓ Done (read back \"agent\", typed)\n"
+        );
+        assert_eq!(
+            line(&filled("hunter2", json!("length"), json!("direct"), false)),
+            "✓ Done (read back 7 masked characters, entered in one piece)\n"
+        );
+        assert_eq!(
+            line(&filled("x", json!("length"), json!("keys"), false)),
+            "✓ Done (read back 1 masked character, typed)\n"
+        );
+        assert_eq!(
+            line(&filled("nobel", json!("text"), json!("direct"), true)),
+            "✓ Done (read back \"nobel\", entered in one piece, retried)\n"
+        );
+        // A target that names no method leaves the line to the read-back.
+        assert_eq!(
+            line(&filled("agent", json!("text"), Value::Null, false)),
+            "✓ Done (read back \"agent\")\n"
+        );
+        // A field with nothing to read back: the line says so beside the
+        // warning the reply carries. Null is a field not read back at all.
+        let mut unread = filled("agent", json!(false), json!("keys"), false);
+        let warning = "#login-username shows neither a value nor anything below it, so fill could not read its text back; a screenshot shows what it holds";
+        unread.warning = Some(warning.to_owned());
+        assert_eq!(
+            human("fill", &unread),
+            (
+                "✓ Done (nothing to read back, typed)\n".to_owned(),
+                format!("⚠ {warning}\n")
+            )
+        );
+        assert_eq!(
+            line(&filled("", Value::Null, json!("direct"), false)),
+            "✓ Done (not read back, entered in one piece)\n"
+        );
+    }
+
+    /// Task 6.5: scroll's line counts its strokes and, with until, says how
+    /// much of the element is in view, the element named as the listing
+    /// names it, or by the selector when it has no name.
+    #[test]
+    fn scroll_counts_its_strokes_and_says_where_until_s_element_ended() {
+        let moved = |strokes: u32| {
+            ok(json!({
+                "scrolled": strokes > 0, "direction": "down", "amount": 480.0,
+                "strokes": strokes, "from": [200.0, 700.0], "to": [200.0, 220.0],
+            }))
+        };
+        assert_eq!(human("scroll", &moved(2)).0, "✓ Done (2 strokes)\n");
+        assert_eq!(human("scroll", &moved(1)).0, "✓ Done (1 stroke)\n");
+        let brought = |strokes: u32, name: &str, visible: f64| {
+            ok(json!({
+                "scrolled": strokes > 0, "direction": "down", "amount": 600.0,
+                "strokes": strokes, "until": "#row-57", "visible": visible,
+                "element": {"ref": "@e57", "role": "button", "name": name, "id": "row-57",
+                            "value": null, "enabled": true,
+                            "bounds": [0.0, 512.0, 400.0, 560.0]},
+                "from": [200.0, 700.0], "to": [200.0, 100.0],
+            }))
+        };
+        assert_eq!(
+            human("scroll", &brought(3, "Row 57", 1.0)).0,
+            "✓ Done (3 strokes; \"Row 57\" is 100% in view)\n"
+        );
+        assert_eq!(
+            human("scroll", &brought(0, "", 0.834)).0,
+            "✓ Done (0 strokes; #row-57 is 83% in view)\n"
+        );
+    }
 }

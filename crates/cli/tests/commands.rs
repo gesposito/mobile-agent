@@ -105,7 +105,11 @@ fn fill_replaces_a_field_and_type_appends_to_it() {
     env.cli(&["open", APP]).ok();
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     let username = ref_of(&listing, "login-username");
-    env.cli(&["fill", &username, "agent"]).ok();
+    let filled = env.cli(&["fill", &username, "agent"]).ok();
+    assert_eq!(
+        filled.stdout,
+        "✓ Done (read back \"agent\", entered in one piece)\n"
+    );
     env.cli(&["type", &username, "007"]).ok();
     assert_eq!(
         env.cli(&["get", "text", &username]).ok().stdout,
@@ -136,6 +140,7 @@ fn fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order() {
     assert_eq!(data["method"], "direct", "{reply}");
     assert_eq!(data["retried"], true, "{reply}");
     assert_eq!(data["verified"], "text", "{reply}");
+    assert_eq!(data["text"], "nobel", "the text as the request gave it: {reply}");
     assert!(
         data["readBackMs"].as_f64().is_some_and(|ms| ms >= 0.0),
         "{reply}"
@@ -157,6 +162,19 @@ fn fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order() {
     );
     assert_eq!(reply["data"]["retried"], false, "{reply}");
     assert!(reply.get("warning").is_none(), "{reply}");
+    // The human line says what the read-back found and that the text went
+    // in again: the field holds "nob", so the refill empties it first, the
+    // keys land out of order again and the paste follows.
+    let refilled = env.cli(&["fill", "#login-username", "nobel"]).ok();
+    assert_eq!(
+        refilled.stdout,
+        "✓ Done (read back \"nobel\", entered in one piece, retried)\n"
+    );
+    assert!(
+        refilled.stderr.starts_with("⚠ ") && refilled.stderr.contains("so fill pasted it instead"),
+        "{}",
+        refilled.stderr
+    );
 }
 
 #[test]
@@ -164,7 +182,11 @@ fn press_enter_submits_the_login_form() {
     let env = TestEnv::start("android");
     env.cli(&["open", APP]).ok();
     env.cli(&["fill", "#login-username", "agent"]).ok();
-    env.cli(&["fill", "#login-password", "hunter2"]).ok();
+    let masked = env.cli(&["fill", "#login-password", "hunter2"]).ok();
+    assert_eq!(
+        masked.stdout,
+        "✓ Done (read back 7 masked characters, entered in one piece)\n"
+    );
     let reply = env.cli(&["--json", "press", "Enter"]).ok().json();
     assert_eq!(reply["data"]["pressed"], "Enter", "{reply}");
     assert_eq!(
@@ -185,7 +207,18 @@ fn scroll_and_swipe_move_the_list() {
         "{top}"
     );
 
-    env.cli(&["scroll", "down", "480"]).ok();
+    let moved = env.cli(&["scroll", "down", "480"]).ok().stdout;
+    let strokes = moved
+        .strip_prefix("✓ Done (")
+        .and_then(|rest| {
+            rest.strip_suffix(" strokes)\n")
+                .or_else(|| rest.strip_suffix(" stroke)\n"))
+        })
+        .and_then(|count| count.parse::<u32>().ok());
+    assert!(
+        strokes.is_some_and(|count| count >= 1),
+        "the line counts the strokes: {moved}"
+    );
     let scrolled = env.cli(&["snapshot", "-i"]).ok().stdout;
     assert!(!scrolled.contains("id=row-1,"), "{scrolled}");
     assert!(scrolled.contains("id=row-11,"), "{scrolled}");
@@ -472,12 +505,17 @@ fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     assert!(listing.contains("id=row-150,"), "{listing}");
 
-    // Already on screen: no stroke.
-    let still = env
-        .cli(&["--json", "scroll", "down", "--until", "#row-150"])
-        .ok()
-        .json();
-    assert_eq!(still["data"]["strokes"], 0, "{still}");
+    // Already on screen: no stroke, and the line says how much of the row
+    // is in view, as the reply's visible says it.
+    let visible = data["visible"].as_f64().unwrap_or_default();
+    let still = env.cli(&["scroll", "down", "--until", "#row-150"]).ok();
+    assert_eq!(
+        still.stdout,
+        format!(
+            "✓ Done (0 strokes; \"Row 150\" is {}% in view)\n",
+            (visible * 100.0).round()
+        )
+    );
 
     let started = std::time::Instant::now();
     let end = env
@@ -501,7 +539,13 @@ fn scroll_until_moves_the_content_until_the_element_is_on_screen() {
         "it gives up at the end of the list, not at the timeout"
     );
     let human = env.cli(&["scroll", "up", "--until", "#row-3"]).ok();
-    assert!(human.stdout.starts_with("✓ "), "{}", human.stdout);
+    assert!(
+        human.stdout.starts_with("✓ Done (")
+            && human.stdout.contains(" strokes; \"Row 3\" is ")
+            && human.stdout.ends_with("% in view)\n"),
+        "{}",
+        human.stdout
+    );
 }
 
 /// The bounds of the element a reply's data carries.
