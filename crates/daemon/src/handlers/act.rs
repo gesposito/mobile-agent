@@ -2408,6 +2408,7 @@ mod tests {
         assert_eq!(success.data["method"], "direct", "{}", success.data);
         assert_eq!(success.data["retried"], true, "{}", success.data);
         assert_eq!(success.data["verified"], "text", "{}", success.data);
+        assert_eq!(success.data["text"], "nobel", "{}", success.data);
         let warning = success.warning.unwrap_or_default();
         assert!(
             warning.contains("\"noelb\"") && warning.contains("pasted"),
@@ -2529,6 +2530,7 @@ mod tests {
                 assert_eq!(data["method"], "direct", "{platform} {field}: {data}");
                 assert_eq!(data["verified"], shown, "{platform} {field}: {data}");
                 assert_eq!(data["retried"], false, "{platform} {field}: {data}");
+                assert_eq!(data["text"], text, "{platform} {field}: {data}");
                 assert!(
                     data["readBackMs"].as_f64().is_some_and(|ms| ms < 100.0),
                     "{platform} {field}: {data}"
