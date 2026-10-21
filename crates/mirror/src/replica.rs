@@ -90,6 +90,8 @@ pub(crate) struct Win {
     pub layer: i32,
     pub package: Option<String>,
     pub title: Option<String>,
+    /// As the read gave them; for a keyboard's window, what the keyboard
+    /// covers of them ([`keyboard_bounds`]).
     pub bounds: Bounds,
     pub flags: WindowFlags,
     pub emits_events: bool,
@@ -815,13 +817,18 @@ impl Replica {
         let owner = wire.owner.map_or(Owner::Target, |i| {
             Owner::System(strings.get(i as usize).cloned().unwrap_or_default())
         });
+        let bounds = if wire.kind == WindowType::INPUT_METHOD {
+            keyboard_bounds(wire.bounds, &nodes)
+        } else {
+            wire.bounds
+        };
         Win {
             id: wire.id,
             kind: wire.kind,
             layer: wire.layer,
             package: wire.package.and_then(|i| strings.get(i as usize)).cloned(),
             title: wire.title.clone(),
-            bounds: wire.bounds,
+            bounds,
             flags: wire.flags,
             emits_events,
             owner,
@@ -929,6 +936,48 @@ impl Replica {
         }
         out
     }
+}
+
+/// What a keyboard's window covers of `bounds`, the bounds the read gave it,
+/// `nodes` being the window's (real-app-fixes, task 5.6): the bounds, less a
+/// band across their top that the keyboard's host keeps for the input
+/// accessory view of the field in focus. The Simulator's reader bounds a
+/// keyboard's window by its host, the outermost node in it that does not
+/// span the screen (rn-app-fixes, design D52), and the host reaches above
+/// what the keyboard draws by the accessory view's place: a child of the
+/// host that holds nothing, no children, name or value, across the host
+/// from its top, while the app draws the accessory view in its own window.
+/// With a browser's address bar in focus on an iPhone 17 the host reached
+/// from 498 points down, that child from 498 to 566, the keyboard's
+/// backdrop from 566 and its keys from 583, and the address field, from 510
+/// to 558, read as under the keyboard; with a text field in focus the host
+/// starts at the prediction bar and holds no such child. The bounds stay as
+/// the read gave them when no node of the window has them, or when the host
+/// keeps no such place.
+fn keyboard_bounds(bounds: Bounds, nodes: &[RNode]) -> Bounds {
+    if bounds.right <= bounds.left || bounds.bottom <= bounds.top {
+        return bounds;
+    }
+    let Some(host) = nodes.iter().find(|node| node.bounds == bounds) else {
+        return bounds;
+    };
+    let says = |text: &Option<String>| text.as_deref().is_some_and(|text| !text.is_empty());
+    host.children
+        .iter()
+        .map(|&child| &nodes[child])
+        .find(|child| {
+            child.children.is_empty()
+                && !says(&child.text)
+                && !says(&child.desc)
+                && child.bounds.left <= bounds.left
+                && child.bounds.right >= bounds.right
+                && child.bounds.top == bounds.top
+                && child.bounds.bottom < bounds.bottom
+        })
+        .map_or(bounds, |place| Bounds {
+            top: place.bounds.bottom,
+            ..bounds
+        })
 }
 
 /// Matches `new` against `previous`, the same window's last read: matched

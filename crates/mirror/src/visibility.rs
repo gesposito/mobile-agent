@@ -495,7 +495,9 @@ pub(crate) fn listed<'a>(replica: &'a Replica, view: &View) -> Reaches<'a> {
 }
 
 /// The bounds of the keyboard windows above window `w`, which are what the
-/// drivers say a keyboard draws (tasks 10.21, 10.25).
+/// drivers say a keyboard draws (tasks 10.21, 10.25), less the place a
+/// keyboard's host keeps for an input accessory view, which the app draws
+/// (real-app-fixes, task 5.6).
 pub(crate) fn keyboards_above(replica: &Replica, w: usize) -> Vec<Rect> {
     replica.windows[..w]
         .iter()
