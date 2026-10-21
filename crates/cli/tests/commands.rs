@@ -307,11 +307,14 @@ fn wait_returns_when_an_element_or_text_appears_and_when_the_screen_settles() {
         .json();
     assert_eq!(reply["data"]["waited"], "text", "{reply}");
     assert_eq!(reply["data"]["element"]["id"], "login-status");
-    // Design D5 of real-app-fixes: the line names the element found.
+    // Design D5 of real-app-fixes: the line names the element found, by
+    // its ref when it bears one, as a button does and a plain text does not.
     let found = env.cli(&["wait", "--text", "Welcome, agent"]).ok().stdout;
+    assert_eq!(found, "✓ Found text \"Welcome, agent\"\n");
+    let button = env.cli(&["wait", "--text", "Sign in"]).ok().stdout;
     assert!(
-        found.starts_with("✓ Found text \"Welcome, agent\" @e"),
-        "{found}"
+        button.starts_with("✓ Found button \"Sign in\" @e"),
+        "{button}"
     );
 
     let settled = env.cli(&["--json", "wait", "--settle"]).ok().json();
