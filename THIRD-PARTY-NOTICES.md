@@ -508,7 +508,7 @@ software or this license, under any kind of legal claim.***
 
 ### Community Data License Agreement Permissive 2.0
 
-Used by [webpki-roots 1.0.9](https://crates.io/crates/webpki-roots).
+Used by [webpki-roots 1.0.10](https://crates.io/crates/webpki-roots).
 
 ```text
 # Community Data License Agreement - Permissive - Version 2.0
@@ -644,7 +644,7 @@ Used by [untrusted 0.9.0](https://crates.io/crates/untrusted).
 
 ### ISC License
 
-Used by [rustls-webpki 0.103.15](https://crates.io/crates/rustls-webpki).
+Used by [rustls-webpki 0.103.16](https://crates.io/crates/rustls-webpki).
 
 ```text
 Except as otherwise noted, this project is licensed under the following
