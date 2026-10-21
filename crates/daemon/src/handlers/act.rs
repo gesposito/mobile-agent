@@ -4774,4 +4774,105 @@ mod tests {
         assert_eq!(success.data["method"], "direct", "{}", success.data);
         assert_eq!(success.data["retried"], false, "{}", success.data);
     }
+
+    /// `type` of `text` into the field `field` names, or without one into
+    /// the focused field.
+    fn type_into(target: &mut Attached, field: Option<&str>, text: &str) -> Outcome {
+        let mut line = json!({"action": "type", "text": text});
+        if let Some(field) = field {
+            line["target"] = field.into();
+        }
+        super::super::run_on(target, "default", &request(&line.to_string()))
+    }
+
+    /// Design D3 of real-app-fixes: on the demo pass `type example.com`
+    /// into Safari's address bar answered `✓ Done` alone. `type` reads back
+    /// the field it typed into, the focused one when no target names it, as
+    /// `fill` does, holding typed text 200 ms: the reply carries what the
+    /// field holds, verified as the text added to what it held, and where
+    /// the read-back took it from; a secure field reads back by its masked
+    /// characters.
+    #[test]
+    fn type_reads_back_the_field_it_typed_into_the_focused_one_without_a_target() {
+        let mut target = login(Typing::Keys);
+        click_on(&mut target, "#login-username").unwrap();
+        let success = type_into(&mut target, None, "example.com").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", success.warning);
+        assert_eq!(data["text"], "example.com", "{data}");
+        assert_eq!(data["typed"], "example.com", "{data}");
+        assert_eq!(data["readFrom"], "value", "{data}");
+        assert_eq!(data["reason"], Value::Null, "{data}");
+        assert!(
+            data["readBackMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= millis(READ_BACK_HOLD)),
+            "typed text is held as fill holds it: {data}"
+        );
+        assert_eq!(success.warning, None, "{data}");
+
+        let more = type_into(&mut target, Some("#login-username"), "/path").unwrap();
+        assert_eq!(more.data["verified"], "text", "{}", more.data);
+        assert_eq!(more.data["text"], "example.com/path", "{}", more.data);
+        let secret = type_into(&mut target, Some("#login-password"), "hunter2").unwrap();
+        assert_eq!(secret.data["verified"], "length", "{}", secret.data);
+        assert_eq!(secret.data["text"], "\u{2022}".repeat(7), "{}", secret.data);
+    }
+
+    /// Design D3: Safari's address bar took the demo pass's `type
+    /// example.com` as "exampl", and Safari searched for it. A field that
+    /// drops keys holds less than `type` typed: the reply says what it
+    /// holds, unverified, and a warning names it and advises `fill`; the
+    /// text is typed once, since `type` adds to what a field holds and
+    /// typing it again would double it.
+    #[test]
+    fn type_into_a_field_that_drops_keys_warns_naming_what_it_holds_and_types_once() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_typing(Typing::Max(6));
+        let (mut target, sent) = recorded(&driver, FIXTURE, &[]);
+        click_on(&mut target, "#login-username").unwrap();
+        sent.lock().unwrap().clear();
+        let success = type_into(&mut target, None, "example.com").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], false, "{data}");
+        assert_eq!(data["reason"], "text_mismatch", "{data}");
+        assert_eq!(data["text"], "exampl", "{data}");
+        assert_eq!(data["readFrom"], "value", "{data}");
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("\"exampl\"")
+                && warning.contains("\"example.com\"")
+                && warning.contains("fill"),
+            "{warning}"
+        );
+        assert_eq!(
+            texts(&sent),
+            [("example.com".to_owned(), None)],
+            "typed once"
+        );
+        assert_eq!(held(&mut target, "#login-username"), "exampl");
+    }
+
+    /// Design D3: with no field in the tree holding the focus, as on the
+    /// code step whose input lies outside the tree, the keys go where the
+    /// focus is and nothing tells what they did: the reply says the text
+    /// was not read back, and a warning says no field shows the focus.
+    #[test]
+    fn type_with_no_focused_field_in_the_tree_says_it_did_not_read_its_text_back() {
+        let (mut target, sent) = typed_board("code-bare", Typing::Keys);
+        click_on(&mut target, "#placeholder-id-3").unwrap();
+        sent.lock().unwrap().clear();
+        let success = type_into(&mut target, None, "42").unwrap();
+        let data = &success.data;
+        assert_eq!(data["verified"], Value::Null, "{data}");
+        assert_eq!(data["text"], Value::Null, "{data}");
+        assert_eq!(data["reason"], "no_focused_field", "{data}");
+        let warning = success.warning.unwrap_or_default();
+        assert!(
+            warning.contains("no field") && warning.contains("focus"),
+            "{warning}"
+        );
+        assert_eq!(texts(&sent), [("42".to_owned(), None)]);
+    }
 }

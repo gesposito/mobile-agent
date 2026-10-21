@@ -110,14 +110,18 @@ fn fill_replaces_a_field_and_type_appends_to_it() {
         filled.stdout,
         "✓ Done (read back \"agent\", entered in one piece)\n"
     );
-    env.cli(&["type", &username, "007"]).ok();
+    // Design D3 of real-app-fixes: type reads the field back and says what
+    // it holds.
+    let typed = env.cli(&["type", &username, "007"]).ok();
+    assert_eq!(typed.stdout, "✓ Done (read back \"agent007\", typed)\n");
     assert_eq!(
         env.cli(&["get", "text", &username]).ok().stdout,
         "agent007\n"
     );
     env.cli(&["fill", &username, "bond"]).ok();
     assert_eq!(env.cli(&["get", "text", &username]).ok().stdout, "bond\n");
-    env.cli(&["type", "!"]).ok();
+    let focused = env.cli(&["type", "!"]).ok();
+    assert_eq!(focused.stdout, "✓ Done (read back \"bond!\", typed)\n");
     let reply = env.cli(&["--json", "get", "value", &username]).ok().json();
     assert_eq!(
         reply["data"]["value"], "bond!",

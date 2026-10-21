@@ -656,6 +656,48 @@ mod tests {
         );
     }
 
+    /// Design D3 of real-app-fixes: type's line says what the read-back
+    /// found in the field, as fill's does, and how the text went in: what
+    /// the field holds, also when it differs from the text typed, which the
+    /// reply's warning names; a secure field's count of masked characters;
+    /// and that nothing was read back, for a field that showed nothing or
+    /// none that had the focus.
+    #[test]
+    fn type_says_what_it_read_back_from_the_field() {
+        let typed = |text: Value, verified: Value, reason: Value| {
+            ok(json!({
+                "typed": "example.com", "ref": null, "method": "keys", "text": text,
+                "verified": verified, "readFrom": "value", "reason": reason,
+                "readBackMs": 201.5,
+            }))
+        };
+        let line = |reply: &Reply| human("type", reply).0;
+        assert_eq!(
+            line(&typed(json!("example.com"), json!("text"), Value::Null)),
+            "✓ Done (read back \"example.com\", typed)\n"
+        );
+        assert_eq!(
+            line(&typed(
+                json!("exampl"),
+                json!(false),
+                json!("text_mismatch")
+            )),
+            "✓ Done (read back \"exampl\", typed)\n"
+        );
+        assert_eq!(
+            line(&typed(json!("•••••••"), json!("length"), Value::Null)),
+            "✓ Done (read back 7 masked characters, typed)\n"
+        );
+        assert_eq!(
+            line(&typed(Value::Null, json!(false), json!("no_value_to_read"))),
+            "✓ Done (nothing to read back, typed)\n"
+        );
+        assert_eq!(
+            line(&typed(Value::Null, Value::Null, json!("no_focused_field"))),
+            "✓ Done (not read back, typed)\n"
+        );
+    }
+
     /// Task 6.5: scroll's line counts its strokes and, with until, says how
     /// much of the element is in view, the element named as the listing
     /// names it, or by the selector when it has no name.
