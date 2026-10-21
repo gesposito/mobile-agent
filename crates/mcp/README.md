@@ -198,7 +198,8 @@ and the bound:
   a shell's `set timeout` sets for a session a call names, else 10 s
   (`crates/cli/README.md`, Timeouts). A `wait` for a change, a text or an
   element, and a selector's search for its element, end there with
-  `wait_timeout` or `element_not_found` and the screen's summary, so a
+  `wait_timeout` or `element_not_found` and the screen's summary, whose
+  refs are the session's to act on (real-app-fixes, design D4), so a
   `click` on a selector that matches nothing fails at 10 s; a `wait` with
   `settle` waits at most 3 s, and an `open` up to 10 s for the app's first
   tree and at most 3 s for its screen to settle. A call passes `timeout`
