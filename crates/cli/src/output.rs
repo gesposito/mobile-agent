@@ -134,6 +134,7 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
         "wait" if str_of(data, "waited") == "change" => change(data, out),
         "click" => click(data, out),
         "fill" => fill(data, out),
+        "type" => typed(data, out),
         "scroll" => scroll(data, out),
         "shutdown" => {
             let _ = writeln!(out, "✓ Daemon stopped");
@@ -155,25 +156,54 @@ fn fill(data: &Value, out: &mut String) {
     let text = str_of(data, "text");
     let read = match &data["verified"] {
         Value::String(shown) if shown == "text" => format!("read back {text:?}"),
-        Value::String(shown) if shown == "length" => {
-            let count = text.chars().count();
-            let plural = if count == 1 { "" } else { "s" };
-            format!("read back {count} masked character{plural}")
-        }
+        Value::String(shown) if shown == "length" => masked(text),
         Value::Bool(false) => "nothing to read back".to_owned(),
         _ => "not read back".to_owned(),
     };
     let mut parts = vec![read];
+    entry(data, &mut parts);
+    if data["retried"] == Value::Bool(true) {
+        parts.push("retried".to_owned());
+    }
+    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+}
+
+/// A type's read-back and entry, as fill's line says them (real-app-fixes,
+/// design D3): `✓ Done (read back "example.com", typed)` with what the field
+/// holds once the keys went in, also when it differs from the text typed,
+/// which the reply's warning names; the count of a secure field's masked
+/// characters; `nothing to read back` for a field that showed nothing, and
+/// `not read back` for one the read-back did not read, as when no field had
+/// the focus.
+fn typed(data: &Value, out: &mut String) {
+    let read = match (&data["verified"], data["text"].as_str()) {
+        (Value::String(shown), Some(held)) if shown == "length" => masked(held),
+        (_, Some(held)) => format!("read back {held:?}"),
+        (Value::Bool(false), None) => "nothing to read back".to_owned(),
+        _ => "not read back".to_owned(),
+    };
+    let mut parts = vec![read];
+    entry(data, &mut parts);
+    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+}
+
+/// A read-back of `shown`, a secure field's text, by its count of masked
+/// characters.
+fn masked(shown: &str) -> String {
+    let count = shown.chars().count();
+    let plural = if count == 1 { "" } else { "s" };
+    format!("read back {count} masked character{plural}")
+}
+
+/// How the text of a fill or a type went in, after the read-back in its
+/// line: `typed` for keys, `entered in one piece` for `direct`.
+fn entry(data: &Value, parts: &mut Vec<String>) {
     match str_of(data, "method") {
         "keys" => parts.push("typed".to_owned()),
         "direct" => parts.push("entered in one piece".to_owned()),
         "" => {}
         other => parts.push(other.to_owned()),
     }
-    if data["retried"] == Value::Bool(true) {
-        parts.push("retried".to_owned());
-    }
-    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
 }
 
 /// A scroll's strokes, `✓ Done (2 strokes)`, and with `until` how much of

@@ -551,16 +551,32 @@ pub enum Verified {
     NotShown(bool),
 }
 
-/// `type`: the text typed.
+/// `type`: the text typed and what the read-back of the field found.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TypeText {
+    /// The text as the request gave it.
     pub typed: String,
     /// The field's ref; null for the focused field.
     #[serde(rename = "ref")]
     pub reference: Option<String>,
+    /// `keys` or `direct`.
     pub method: Option<String>,
+    /// What the field holds once the keys went in, as the read-back read
+    /// it; null when it showed nothing or was not read back.
+    pub text: Option<String>,
+    /// `text` or `length` for how the field showed the text added to what it
+    /// held, `false` when it showed other text or nothing, null when it was
+    /// not read back.
+    pub verified: Option<Verified>,
+    /// Where the read-back took what the field holds from: `value`,
+    /// `descendants` or `name`.
+    pub read_from: Option<String>,
+    /// `text_mismatch` or `no_value_to_read` when `verified` is false;
+    /// `no_focused_field` when no field in the tree had the focus.
+    pub reason: Option<String>,
+    pub read_back_ms: Option<f64>,
 }
 
 /// `press`: the key pressed, in the platform's codes.

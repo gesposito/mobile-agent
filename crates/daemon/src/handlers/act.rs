@@ -642,6 +642,50 @@ fn compare(value: Option<&str>, name: &str, text: &str) -> Option<Shown> {
     masked.then_some(Shown::Length)
 }
 
+/// Where an entry puts its text in a field: in place of what the field
+/// holds, as `fill` enters it, or where the caret is, after what it holds
+/// unless the field selected it, as `type` enters keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Placed {
+    Over,
+    After,
+}
+
+/// How a field whose element is named `name`, which showed `before` before
+/// `type` entered `text`, shows it once it shows `value` (real-app-fixes,
+/// design D3): as the text after what it held, or as the text alone, which
+/// replaced what the field selected or a placeholder, as [`compare`] takes
+/// it; as as many mask characters as it held and the text has, a secure
+/// field's, some perhaps showing their own; or as the words the entry
+/// changed, which spell the text, as [`compare_name`] compares a name, for
+/// keys that went in between words. `None` is other text.
+fn compare_typed(
+    value: Option<&str>,
+    before: Option<&str>,
+    name: &str,
+    text: &str,
+) -> Option<Shown> {
+    let (shown, held) = (value.unwrap_or_default(), before.unwrap_or_default());
+    if shown == format!("{held}{text}") {
+        return Some(Shown::Text);
+    }
+    if let Some(compared) = compare(value, name, text) {
+        return Some(compared);
+    }
+    let mask = |c: char| MASKS.contains(&c);
+    let whole: Vec<char> = held.chars().chain(text.chars()).collect();
+    let masked = shown.chars().count() == whole.len()
+        && shown.chars().any(mask)
+        && shown
+            .chars()
+            .zip(whole)
+            .all(|(shown, entered)| shown == entered || mask(shown));
+    if masked {
+        return Some(Shown::Length);
+    }
+    compare_name(shown, held, text)
+}
+
 /// Where a read-back took what a field shows from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
@@ -872,15 +916,21 @@ fn shown_below(elements: &[Element], id: ElementId) -> String {
 /// What a read-back found in the field.
 #[derive(Debug, PartialEq)]
 enum ReadBack {
-    /// It shows the text, read from `from`, which the read-back took `after`
-    /// the entry.
+    /// It shows the text as `held`, read from `from`, which the read-back
+    /// took `after` the entry.
     Shown {
         shown: Shown,
         from: Source,
         after: Duration,
+        held: Option<String>,
     },
-    /// It showed other text, `None` for none, until the read-back's bound.
-    Other(Option<String>),
+    /// It showed other text, `held`, `None` for none, read from `from`, until
+    /// the read-back's bound, `after` the entry.
+    Other {
+        held: Option<String>,
+        from: Source,
+        after: Duration,
+    },
     /// It showed nothing to read back, neither a value nor anything below
     /// it, and the read-back stopped looking `after` the entry.
     Unreadable { after: Duration },
@@ -954,12 +1004,15 @@ impl Field {
 /// the screen has held still since a settle's quiet window after the entry
 /// ([`READ_BACK_HOLD`]) is unreadable. `before` is the field's name and
 /// value in the reading compared with, as the emptying left them or before
-/// `fill` entered the text (see [`reading`]).
+/// the entry (see [`reading`]); its value, for keys `type` placed after what
+/// the field held, is what the text adds to ([`compare_typed`]). What the
+/// field holds is its value, what lies below it, or the part of its name the
+/// entry changed.
 fn read_back(
     target: &mut Attached,
     field: &Field,
     text: &str,
-    (entered, method): (Instant, Option<TextMethod>),
+    (entered, method, placed): (Instant, Option<TextMethod>, Placed),
     before: (&str, Option<&str>),
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
@@ -974,31 +1027,45 @@ fn read_back(
         let after = now.saturating_duration_since(entered);
         let rereads = target.mirror.next_wakeup().is_some();
         let stamps = target.mirror.timestamps();
-        let (shown, from) = match &reading {
+        let (shown, from, held_now) = match &reading {
             Reading::Own(value) => (
-                compare(value.as_deref(), &element.name, text),
+                match placed {
+                    Placed::Over => compare(value.as_deref(), &element.name, text),
+                    Placed::After => compare_typed(value.as_deref(), before.1, &element.name, text),
+                },
                 Source::Value,
+                value.clone(),
             ),
             Reading::Below(below) => (
                 compare(Some(below), &element.name, text),
                 Source::Descendants,
+                Some(below.clone()),
             ),
-            Reading::Name(name) => (compare_name(name, before.0, text), Source::Name),
-            Reading::Nothing => (None, Source::Value),
+            Reading::Name(name) => (
+                compare_name(name, before.0, text),
+                Source::Name,
+                Some(held_in_name(name, before.0)),
+            ),
+            Reading::Nothing => (None, Source::Value, None),
         };
         match (shown, reading) {
             (Some(shown), _) if now >= deadline || held(&stamps, hold, now, rereads) => {
-                return Ok(ReadBack::Shown { shown, from, after });
+                return Ok(ReadBack::Shown {
+                    shown,
+                    from,
+                    after,
+                    held: held_now,
+                });
             }
             (None, Reading::Nothing) if now >= deadline || held(&stamps, quiet, now, rereads) => {
                 return Ok(ReadBack::Unreadable { after });
             }
-            (None, Reading::Own(value)) if now >= deadline => return Ok(ReadBack::Other(value)),
-            (None, Reading::Below(below)) if now >= deadline => {
-                return Ok(ReadBack::Other(Some(below)));
-            }
-            (None, Reading::Name(name)) if now >= deadline => {
-                return Ok(ReadBack::Other(Some(held_in_name(&name, before.0))));
+            (None, _) if now >= deadline => {
+                return Ok(ReadBack::Other {
+                    held: held_now,
+                    from,
+                    after,
+                });
             }
             _ => {}
         }
@@ -1282,18 +1349,24 @@ fn raise_keyboard(
             KEYBOARD_WAIT.as_millis()
         )));
     }
-    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
-    if let Some(focused) = listing
-        .elements
-        .iter()
-        .find(|element| element.focused && matches!(element.role, Role::Textbox | Role::Searchbox))
-    {
+    if let Some(focused) = focused_field(target)? {
         return Err(refused(format!(
             "and after a tap on it the keyboard serves the {} {:?}, which has the focus",
             focused.role, focused.name
         )));
     }
     Ok(())
+}
+
+/// The field the tree shows with the focus, from the full listing: a text
+/// or search field marked focused, which the keyboard serves; `None` when
+/// the tree shows none, as for an input outside it.
+fn focused_field(target: &mut Attached) -> Result<Option<Element>, Failure> {
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+    Ok(listing
+        .elements
+        .into_iter()
+        .find(|element| element.focused && matches!(element.role, Role::Textbox | Role::Searchbox)))
 }
 
 /// How long `fill` waits, once it has tapped to close iOS's edit menu, for
@@ -1510,10 +1583,11 @@ fn held_field(given: &str, field: &Element) -> String {
     )
 }
 
-/// The warning of a fill whose field `given` showed nothing to read back.
-fn unreadable(given: &str) -> String {
+/// The warning of `action`, `fill` or `type`, whose field `given` showed
+/// nothing to read back.
+fn unreadable(given: &str, action: &str) -> String {
     format!(
-        "{given} shows neither a value nor anything below it, so fill could not read its text back; a screenshot shows what it holds"
+        "{given} shows neither a value nor anything below it, so {action} could not read its text back; a screenshot shows what it holds"
     )
 }
 
@@ -1623,15 +1697,24 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let value = match read_back(target, &field, &text, (entered, first), before)? {
-        ReadBack::Shown { shown, from, after } => {
+    let read = read_back(
+        target,
+        &field,
+        &text,
+        (entered, first, Placed::Over),
+        before,
+    )?;
+    let value = match read {
+        ReadBack::Shown {
+            shown, from, after, ..
+        } => {
             let check = Check::Verified { shown, from, after };
             return Ok(filled(given, &text, reference, first, check, false).warn(note(None)));
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
             return Ok(filled(given, &text, reference, first, check, false)
-                .warn(note(Some(unreadable(given)))));
+                .warn(note(Some(unreadable(given, "fill")))));
         }
         ReadBack::Gone => {
             return Ok(
@@ -1639,7 +1722,7 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
                     .warn(note(Some(gone(entered_by(class, first))))),
             );
         }
-        ReadBack::Other(value) => value,
+        ReadBack::Other { held, .. } => held,
     };
     let first_by = entered_by(class, first);
     let second = match enter(target, into, &text, TextMethod::DIRECT) {
@@ -1661,16 +1744,24 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
             described(value.as_deref())
         )
     };
-    let read = read_back(target, &field, &text, (entered, second), before)?;
+    let read = read_back(
+        target,
+        &field,
+        &text,
+        (entered, second, Placed::Over),
+        before,
+    )?;
     close_edit_menu(target, &field)?;
     match read {
-        ReadBack::Shown { shown, from, after } => {
+        ReadBack::Shown {
+            shown, from, after, ..
+        } => {
             let check = Check::Verified { shown, from, after };
             Ok(filled(given, &text, reference, second, check, true).warn(note(Some(again()))))
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
-            let warning = format!("{}; {}", again(), unreadable(given));
+            let warning = format!("{}; {}", again(), unreadable(given, "fill"));
             Ok(filled(given, &text, reference, second, check, true).warn(note(Some(warning))))
         }
         ReadBack::Gone => {
@@ -1680,7 +1771,7 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
                     .warn(note(Some(warning))),
             )
         }
-        ReadBack::Other(still) => {
+        ReadBack::Other { held: still, .. } => {
             let tries = if first_by == second_by {
                 format!("{first_by} twice")
             } else {
@@ -1694,10 +1785,84 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     }
 }
 
+/// Why `type` did not read its text back, as its reply's `reason` says: no
+/// field in the tree has the focus (real-app-fixes, design D3).
+const NO_FOCUSED_FIELD: &str = "no_focused_field";
+
+/// A type's reply (real-app-fixes, design D3): the text as the request gave
+/// it, under `typed`; the field's ref, null for the focused field and for a
+/// node holding none; the method the keys went in by; and what the
+/// read-back of the field found, as `fill`'s reply has it: `text`, what the
+/// field holds; `verified`, how it showed the text added to what it held,
+/// `false` when it showed other text or nothing (`reason`: `text_mismatch`,
+/// `no_value_to_read`), and null when it was not read back (`reason`:
+/// `no_focused_field` when no field in the tree had the focus); `readFrom`;
+/// `readBackMs`.
+fn typed(
+    text: &str,
+    reference: Option<Ref>,
+    method: Option<TextMethod>,
+    read: Option<&ReadBack>,
+    unread: Option<&str>,
+) -> Success {
+    let (held, verified, from, reason, after) = match read {
+        Some(ReadBack::Shown {
+            shown,
+            from,
+            after,
+            held,
+        }) => (
+            held.clone(),
+            Value::from(shown.name()),
+            Value::from(from.name()),
+            Value::Null,
+            Some(*after),
+        ),
+        Some(ReadBack::Other { held, from, after }) => (
+            held.clone(),
+            Value::Bool(false),
+            Value::from(from.name()),
+            Value::from(TEXT_MISMATCH),
+            Some(*after),
+        ),
+        Some(ReadBack::Unreadable { after }) => (
+            None,
+            Value::Bool(false),
+            Value::Null,
+            Value::from(NO_VALUE_TO_READ),
+            Some(*after),
+        ),
+        Some(ReadBack::Gone) | None => (None, Value::Null, Value::Null, unread.into(), None),
+    };
+    Success::new(json!({
+        "typed": text,
+        "ref": reference_json(reference),
+        "method": method_name(method),
+        "text": held,
+        "verified": verified,
+        "readFrom": from,
+        "reason": reason,
+        "readBackMs": after.map(millis),
+    }))
+}
+
+/// Types the request's text as keys into the field it names, or into the
+/// focused one, and reads that field back as `fill` does (real-app-fixes,
+/// design D3): the field the keys went into, or without a target the field
+/// the tree shows with the focus, holding typed text [`READ_BACK_HOLD`],
+/// the text verified once the field shows it added to what it held. A field
+/// that shows other text, as one that dropped keys, is named in a warning
+/// that advises `fill`: `type` adds to what a field holds, so typing the
+/// text again would double it. With no field in the tree holding the focus
+/// the text goes where the focus is and is not read back, a warning saying
+/// so; nor is an empty text. An identifier takes the field inside a view,
+/// or the keyboard a view brings up, as `fill`'s does.
 pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeText) -> Outcome {
     let session = call.session.as_str();
     let text = text_param("type", args.text.as_deref())?;
-    let (into, named, warning) = match args.target.as_deref() {
+    // The field the keys go into, as the request names it, and the one the
+    // read-back reads, with how warnings name it.
+    let (into, named, read, warning) = match args.target.as_deref() {
         Some(given) => {
             let aim = Aim::parse(given)?;
             let wait = timeout(&args.timeout, call)?;
@@ -1705,33 +1870,95 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
                 TextTarget::Within(reference, holder) => {
                     let field = target.mirror.resolve(reference)?;
                     let into = ready_held(target, (&field, &holder), given, "type")?;
-                    (into, Some(reference), Some(held_field(given, &field)))
+                    let read = (Field::Ref(reference), given.to_owned());
+                    (
+                        into,
+                        Some(reference),
+                        Some(read),
+                        Some(held_field(given, &field)),
+                    )
                 }
-                TextTarget::Field(reference) => (Some(reference), Some(reference), None),
+                TextTarget::Field(reference) => {
+                    let read = (Field::Ref(reference), given.to_owned());
+                    (Some(reference), Some(reference), Some(read), None)
+                }
                 TextTarget::Raising(node, selector) => {
                     raise_keyboard(target, (&node, &selector), given, "type")?;
-                    (None, None, Some(raised(given, &node)))
+                    let warning = raised(given, &node);
+                    (
+                        None,
+                        None,
+                        Some((Field::Node(selector), given.to_owned())),
+                        Some(warning),
+                    )
                 }
             }
         }
-        None => (None, None, None),
+        None => {
+            target.catch_up()?;
+            let read = focused_field(target)?.and_then(|field| {
+                let named = if field.name.is_empty() {
+                    format!("the focused {}", field.role)
+                } else {
+                    format!("the focused {} {:?}", field.role, field.name)
+                };
+                field
+                    .reference
+                    .map(|reference| (Field::Ref(reference), named))
+            });
+            (None, None, read, None)
+        }
+    };
+    let before: (String, Option<String>) = match &read {
+        Some((field, _)) => field
+            .element(target)?
+            .map(|element| (element.name, element.value))
+            .unwrap_or_default(),
+        None => Default::default(),
     };
     let outcome = target.mirror.act(&Action::Text {
         text: text.clone(),
         into,
         method: TextMethod::KEYS,
     })?;
+    let entered = Instant::now();
     if !outcome.accepted {
         return Err(rejected(
             "text; type takes a text field or the focused field",
         ));
     }
-    Ok(Success::new(json!({
-        "typed": text,
-        "ref": reference_json(named),
-        "method": method_name(outcome.method),
-    }))
-    .warn(warning))
+    let note = |read_back: Option<String>| match (warning.clone(), read_back) {
+        (Some(warning), Some(read_back)) => Some(format!("{warning}; {read_back}")),
+        (warning, read_back) => warning.or(read_back),
+    };
+    let method = outcome.method;
+    let Some((field, given)) = read.filter(|_| !text.is_empty()) else {
+        let unread = (!text.is_empty()).then_some(NO_FOCUSED_FIELD);
+        let warning = unread.map(|_| {
+            "no field in the tree has the focus, so type could not read back where its text went; take a snapshot or a screenshot to see it".to_owned()
+        });
+        return Ok(typed(&text, named, method, None, unread).warn(note(warning)));
+    };
+    let before = (before.0.as_str(), before.1.as_deref());
+    let read = read_back(
+        target,
+        &field,
+        &text,
+        (entered, method, Placed::After),
+        before,
+    )?;
+    let warning = match &read {
+        ReadBack::Shown { .. } => None,
+        ReadBack::Other { held, .. } => Some(format!(
+            "{given} holds {} where type typed {text:?}: a key was lost, or the field limits or formats its text; type adds to what a field holds, so it does not type again: fill the field to replace what it holds",
+            described(held.as_deref())
+        )),
+        ReadBack::Unreadable { .. } => Some(unreadable(&given, "type")),
+        ReadBack::Gone => Some(format!(
+            "{given} left the screen after type typed the text, so it could not be read back"
+        )),
+    };
+    Ok(typed(&text, named, method, Some(&read), None).warn(note(warning)))
 }
 
 pub(super) fn press(target: &mut Attached, _call: &Call, args: &::wire::Press) -> Outcome {
