@@ -5454,4 +5454,45 @@ mod tests {
             read_back(typed, "standup", platform);
         }
     }
+
+    /// Task 5.6 of real-app-fixes, on the Simulator in the second pass on
+    /// real apps: with a browser's address bar in focus the interactive
+    /// listing counted the field under the keyboard, and a click on it, the
+    /// field at (20, 510) 274x48, failed `element_offscreen`, the keyboard
+    /// said to cover all of it. The reader bounds the keyboard's window by
+    /// its host, which reached from 498 points down: its first 68 points the
+    /// place the host keeps for the field's input accessory view, a node
+    /// holding nothing, which the app draws in its own window, while the
+    /// keyboard draws from 566. On the placeholder app's accessory board,
+    /// its field in focus, the interactive listing lists the field and the
+    /// button beside it while the button under the keys still counts under
+    /// the keyboard, and a click on the field taps its centre.
+    #[test]
+    fn a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let screen = ["PLACEHOLDER_SCREEN=accessory"];
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &screen);
+        click_on(&mut target, "#placeholder-id-1").unwrap();
+        let line = json!({"action": "snapshot", "interactive": true}).to_string();
+        let listing = super::super::run_on(&mut target, "default", &request(&line))
+            .unwrap()
+            .data["snapshot"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        for listed in [
+            "textbox \"placeholder-textbox-1\"",
+            "button \"placeholder-button-2\"",
+        ] {
+            assert!(listing.contains(listed), "{listed} in:\n{listing}");
+        }
+        assert!(!listing.contains("placeholder-button-3"), "{listing}");
+        assert!(
+            listing.contains("(1 more actionable item under the keyboard"),
+            "{listing}"
+        );
+        sent.lock().unwrap().clear();
+        click_on(&mut target, "#placeholder-id-1").unwrap();
+        assert_eq!(taps(&sent), [Point::new(157.0, 534.0)]);
+    }
 }

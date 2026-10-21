@@ -109,6 +109,12 @@ const ALERT_WINDOW: u32 = 1 << 30;
 /// the window of its keyboard.
 const KEYBOARD_WINDOW: u32 = 1 << 31;
 
+/// How far the keyboard's host reaches above what the keyboard draws while
+/// the field in focus has an input accessory view, in points: the place a
+/// browser's address bar took on an iPhone 17, from 498 to 566 points
+/// (real-app-fixes, task 5.6).
+const ACCESSORY: f64 = 68.0;
+
 /// An application's window id on a fake device.
 const APP_WINDOW: u32 = 1;
 
@@ -738,6 +744,41 @@ impl Kit {
                 }
             }
         }
+    }
+
+    /// The keyboard's window over `app` on iOS while the field in focus
+    /// has an input accessory view, as the Simulator's reader gave it with
+    /// a browser's address bar in focus on an iPhone 17 (real-app-fixes,
+    /// task 5.6): bounded by the keyboard's host, from 498 points down,
+    /// which reaches [`ACCESSORY`] points above what the keyboard draws, its
+    /// first child a node that holds nothing across it there, the place of
+    /// the accessory view, which the app draws in its own window; below
+    /// that the keyboard's backdrop from 566 points and its keys from 583.
+    /// Taps reach the keyboard only on what it draws
+    /// ([`Kit::drawn_under_accessory`]).
+    pub fn accessory_keyboard(self, app: &str) -> Win {
+        let mut window = self.keyboard(app);
+        let (width, height) = (self.width(), self.height());
+        let drawn = self.drawn_under_accessory();
+        let host = [0.0, drawn[1] - ACCESSORY, width, height];
+        let keys = [0.0, drawn[1] + 17.0, width, height - 58.0];
+        window.rect = host;
+        window.root = El::new("XCUIElementTypeWindow", [0.0, 0.0, width, height]).child(
+            El::new("XCUIElementTypeOther", host).children([
+                El::new("XCUIElementTypeOther", [0.0, host[1], width, drawn[1]]),
+                El::new("XCUIElementTypeOther", drawn)
+                    .child(El::new("XCUIElementTypeKeyboard", keys)),
+            ]),
+        );
+        window
+    }
+
+    /// What the keyboard draws on iOS while the field in focus has an input
+    /// accessory view, in points, which takes the taps that land on it: from
+    /// its backdrop down, below the place its host keeps for the accessory
+    /// view, from 566 points on an iPhone 17 (real-app-fixes, task 5.6).
+    pub fn drawn_under_accessory(self) -> [f64; 4] {
+        [0.0, 566.0, self.width(), self.height()]
     }
 
     /// The keyboard's window over `app` on iOS while a hardware keyboard

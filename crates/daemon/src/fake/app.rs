@@ -264,6 +264,8 @@ enum FormField {
     Name,
     /// One of the rebuilt board's two fields, by its place.
     Rebuilt(usize),
+    /// The accessory board's field, drawn above the keyboard.
+    Accessory,
 }
 
 impl FormField {
@@ -284,6 +286,7 @@ impl FormField {
             ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
             (Board::Dialog, NAME_FIELD) => Some(FormField::Name),
+            (Board::Accessory, ACCESSORY_FIELD) => Some(FormField::Accessory),
             (Board::Rebuilt, id) => REBUILT_FIELDS
                 .iter()
                 .position(|field| *field == id)
@@ -379,6 +382,14 @@ enum Board {
     /// its text goes in, at the same place, as the Simulator's reader gave
     /// a sheet's title field during a fill.
     Rebuilt,
+    /// A field drawn above the keyboard, in the place the keyboard's host
+    /// keeps for the field's input accessory view, as the Simulator's
+    /// reader gave a browser's address bar in focus (real-app-fixes, task
+    /// 5.6): the field and a button beside it from 510 to 558 points, above
+    /// what the keyboard draws from 566, a button above them and one under
+    /// the keys; the keyboard's window, once the field has the focus,
+    /// reaches from 498 points down.
+    Accessory,
 }
 
 impl Board {
@@ -402,6 +413,7 @@ impl Board {
             "dialog" => Board::Dialog,
             "switches" => Board::Switches,
             "rebuilt" => Board::Rebuilt,
+            "accessory" => Board::Accessory,
             _ => Board::Form,
         }
     }
@@ -426,6 +438,9 @@ const NAME_FIELD: &str = "placeholder-name";
 /// The identifiers the rows of the switches board share with what they
 /// hold.
 const SWITCH_ROWS: [&str; 2] = ["placeholder-id-1", "placeholder-id-2"];
+
+/// The accessory board's field.
+const ACCESSORY_FIELD: &str = "placeholder-id-1";
 
 /// The rebuilt board's fields: the first by its identifier, the second by
 /// the key the fake finds it by, which the app gives no identifier.
@@ -488,6 +503,8 @@ struct Forms {
     switches: [bool; 2],
     /// What each of the rebuilt board's fields holds.
     rebuilt: [String; 2],
+    /// What the accessory board's field holds.
+    accessory: String,
 }
 
 impl Forms {
@@ -511,6 +528,7 @@ impl Forms {
             offset: 0.0,
             switches: [false; 2],
             rebuilt: Default::default(),
+            accessory: String::new(),
         }
     }
 
@@ -548,6 +566,7 @@ impl Forms {
             FormField::Title => &mut self.title,
             FormField::Name => &mut self.name,
             FormField::Rebuilt(k) => &mut self.rebuilt[k],
+            FormField::Accessory => &mut self.accessory,
         }
     }
 
@@ -700,14 +719,32 @@ impl Device {
             Foreground::Placeholder if self.keys == Keys::Up => PLACEHOLDER,
             _ => return None,
         };
-        Some(self.kit.keyboard(app).rect)
+        Some(if self.accessory() {
+            self.kit.drawn_under_accessory()
+        } else {
+            self.kit.keyboard(app).rect
+        })
+    }
+
+    /// Whether the field in focus has an input accessory view on iOS: the
+    /// placeholder app's accessory board's.
+    fn accessory(&self) -> bool {
+        self.kit.platform == Platform::Ios
+            && self.foreground == Foreground::Placeholder
+            && self
+                .placeholder
+                .as_ref()
+                .is_some_and(|forms| forms.board == Board::Accessory)
     }
 
     /// The keyboard's window over `app`, the app in front: the keyboard
-    /// while it shows, or, on iOS, a window that draws nothing while its
-    /// keys are hidden.
+    /// while it shows, its host reaching above it for the input accessory
+    /// view of a field that has one, or, on iOS, a window that draws nothing
+    /// while its keys are hidden.
     fn keyboard_window(&self, app: &str) -> Option<Win> {
-        if self.keyboard().is_some() {
+        if self.keyboard().is_some() && self.accessory() {
+            Some(self.kit.accessory_keyboard(app))
+        } else if self.keyboard().is_some() {
             Some(self.kit.keyboard(app))
         } else if self.keys == Keys::Hidden && self.kit.platform == Platform::Ios {
             Some(self.kit.hidden_keyboard(app))
@@ -1510,6 +1547,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Dialog => dialog_content(kit, forms),
         Board::Switches => switches_content(kit, forms),
         Board::Rebuilt => rebuilt_content(kit, forms),
+        Board::Accessory => accessory_content(kit, forms),
     }
 }
 
@@ -2199,6 +2237,47 @@ fn rebuilt_content(kit: Kit, forms: &Forms) -> Vec<El> {
         ),
         field(0, 140.0),
         field(1, 220.0),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
+/// The accessory board (real-app-fixes, task 5.6): a heading, a button, the
+/// field with a button beside it from 510 to 558 points, a button from 700
+/// points, under the keyboard's keys once they are up, and the status line.
+fn accessory_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        kit.button(
+            "placeholder-id-4",
+            "placeholder-button-4",
+            [20.0, 400.0, 382.0, 448.0],
+        ),
+        kit.field(
+            ACCESSORY_FIELD,
+            "placeholder-textbox-1",
+            &forms.accessory,
+            false,
+            forms.focus == Some(FormField::Accessory),
+            [20.0, 510.0, 294.0, 558.0],
+        ),
+        kit.button(
+            "placeholder-id-2",
+            "placeholder-button-2",
+            [346.0, 510.0, 394.0, 558.0],
+        ),
+        kit.button(
+            "placeholder-id-3",
+            "placeholder-button-3",
+            [20.0, 700.0, 382.0, 748.0],
+        ),
         kit.label(
             Some("placeholder-status"),
             &forms.status,
