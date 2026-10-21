@@ -1019,21 +1019,67 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
     now >= hold && !changed
 }
 
-/// What a fill reads back: the field a ref names, or the node an identifier
-/// names that takes no text itself, whose tap gave the focus to an input
-/// outside the tree (design D44).
+/// What a fill reads back: the field a ref names, with what identifies it
+/// should the app put a new node in its place ([`Identity`]), or the node
+/// an identifier names that takes no text itself, whose tap gave the focus
+/// to an input outside the tree (design D44).
 enum Field {
-    Ref(Ref),
+    Ref(Ref, Identity),
     Node(Selector),
 }
 
+/// What identifies a field once the app has put a new node in its place,
+/// which leaves the ref that named it stale: its identifier and role, else
+/// its bounds and role (real-app-fixes, task 5.5). On the second pass on
+/// real apps a sheet's title field took a new node with the same
+/// identifier, role and bounds while `fill` entered its text, every element
+/// of the sheet taking a new ref, and the read-back, which followed the
+/// ref, said the field had left the screen.
+struct Identity {
+    identifier: Option<String>,
+    role: Role,
+    bounds: Rect,
+}
+
+impl Identity {
+    fn of(element: &Element) -> Identity {
+        Identity {
+            identifier: element.identifier.clone(),
+            role: element.role,
+            bounds: element.bounds,
+        }
+    }
+
+    /// Whether `element` is the field this identifies.
+    fn names(&self, element: &Element) -> bool {
+        element.role == self.role
+            && match &self.identifier {
+                Some(identifier) => element.identifier.as_ref() == Some(identifier),
+                None => element.bounds == self.bounds,
+            }
+    }
+}
+
 impl Field {
-    /// The element as the replica shows it now; `None` once it is gone.
+    /// The field `element` is, which `reference` names.
+    fn named(reference: Ref, element: &Element) -> Field {
+        Field::Ref(reference, Identity::of(element))
+    }
+
+    /// The element as the replica shows it now: the one the ref names, or
+    /// once the ref is stale the first of the full listing that the field's
+    /// identity names; `None` once it is gone.
     fn element(&self, target: &mut Attached) -> Result<Option<Element>, Failure> {
         match self {
-            Field::Ref(reference) => match target.mirror.resolve(*reference) {
+            Field::Ref(reference, identity) => match target.mirror.resolve(*reference) {
                 Ok(element) => Ok(Some(element)),
-                Err(MirrorError::StaleRef { .. }) => Ok(None),
+                Err(MirrorError::StaleRef { .. }) => {
+                    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+                    Ok(listing
+                        .elements
+                        .into_iter()
+                        .find(|element| identity.names(element)))
+                }
                 Err(error) => Err(error.into()),
             },
             Field::Node(selector) => {
@@ -1052,7 +1098,7 @@ impl Field {
     /// The ref replies name the field by, if it has one.
     fn reference(&self) -> Option<Ref> {
         match self {
-            Field::Ref(reference) => Some(*reference),
+            Field::Ref(reference, _) => Some(*reference),
             Field::Node(_) => None,
         }
     }
@@ -1720,13 +1766,18 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
         TextTarget::Within(reference, holder) => {
             let field = target.mirror.resolve(reference)?;
             let into = ready_held(target, (&field, &holder), given, "fill")?;
-            (Field::Ref(reference), into, Some(held_field(given, &field)))
+            (
+                Field::named(reference, &field),
+                into,
+                Some(held_field(given, &field)),
+            )
         }
         TextTarget::Field(reference) => {
+            let field = Field::named(reference, &target.mirror.resolve(reference)?);
             if platform == Platform::Ios {
                 ready_keyboard(target, reference, given)?;
             }
-            (Field::Ref(reference), Some(reference), None)
+            (field, Some(reference), None)
         }
         TextTarget::Raising(node, selector) => {
             raise_keyboard(target, (&node, &selector), given, "fill")?;
@@ -1934,7 +1985,7 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
                 TextTarget::Within(reference, holder) => {
                     let field = target.mirror.resolve(reference)?;
                     let into = ready_held(target, (&field, &holder), given, "type")?;
-                    let read = (Field::Ref(reference), given.to_owned());
+                    let read = (Field::named(reference, &field), given.to_owned());
                     (
                         into,
                         Some(reference),
@@ -1943,7 +1994,8 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
                     )
                 }
                 TextTarget::Field(reference) => {
-                    let read = (Field::Ref(reference), given.to_owned());
+                    let field = Field::named(reference, &target.mirror.resolve(reference)?);
+                    let read = (field, given.to_owned());
                     (Some(reference), Some(reference), Some(read), None)
                 }
                 TextTarget::Raising(node, selector) => {
@@ -1968,7 +2020,7 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
                 };
                 field
                     .reference
-                    .map(|reference| (Field::Ref(reference), named))
+                    .map(|reference| (Field::named(reference, &field), named))
             });
             (None, None, read, None)
         }
