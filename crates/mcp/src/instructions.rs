@@ -21,7 +21,7 @@ Waiting: click waits for the tap's first effect, so a snapshot right after it se
 
 Sessions: this server acts in a session of its own, which holds the target it drives; name session on a call to resume another session's refs. close stops the app and releases the target; close with keep: true releases the target and leaves the app running, which this server also does for its own session when it exits, so the next session finds the app as it was.
 
-Screenshots: screenshot answers with the JPEG inline, its long edge at most 1000 px; with ifChanged: true it answers unchanged since the last screenshot instead of a second image of a still screen; with path it writes the file and answers the path alone. A screenshot right after a click can show the transition the tap set off, since click answers at its first effect: wait with settle: true before one.";
+Screenshots: screenshot answers with the JPEG inline, its long edge at most 1000 px; with ifChanged: true it answers unchanged since the last screenshot instead of a second image of a still screen; with path it writes the file and answers the path and the sizes. A screenshot right after a click can show the transition the tap set off, since click answers at its first effect: wait with settle: true before one.";
 
 /// The table before the guide: each command the guide uses, and the tool
 /// call it is through this server.
