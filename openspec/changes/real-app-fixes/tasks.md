@@ -8,7 +8,7 @@ Rules that bind every task below (the archived foundation design's Delivery proc
 
 ## 2. The mirror
 
-- [ ] 2.1 The fake screen or mirror fixture with the spike's geometry and a failing listing test (D2); then the computation's fix (or the gated reading of D1's no-go); verify red-then-green and, on the Simulator, Settings' root rows, Calendar's event block and Maps' search field listed and clickable
+- [x] 2.1 The fake screen or mirror fixture with the spike's geometry and a failing listing test (D2); then the computation's fix (or the gated reading of D1's no-go); verify red-then-green and, on the Simulator, Settings' root rows, Calendar's event block and Maps' search field listed and clickable (2026-10-21: the mirror's fixtures `floating-toolbar-ios` and `search-sheet-ios` with two listing tests, red on the frame rule and green on the host rule of D2's As built, the workspace's 1,728 tests green with clippy and fmt clean; on this session's own Simulator, Settings' root lists every row with its ref, General and Accessibility among them, Screen Time at visible=84% and Passcode counted under the toolbar, and `click text=General` pushed the General screen; Maps at launch lists the search field "Apple Maps" with the profile button, the list's cells and the map's buttons, and `click text=Apple Maps` gave the field the focus with the keyboard up; Calendar's day view lists the event block with its ref, and a tap on that ref opened the event; the microbenchmark numbers in D2)
 
 ## 3. The daemon and the CLI
 
