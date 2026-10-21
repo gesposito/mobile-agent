@@ -257,6 +257,81 @@ pub(crate) fn in_view(target: &Attached, element: &Element) -> bool {
         .is_some_and(|seen| seen.fraction > 0.0)
 }
 
+/// The switch an element stands for, as the full listing holds it
+/// (real-app-fixes, design D6): `click` presses its control
+/// ([`Switch::control`]), and `get value` and `get text` read it.
+pub(crate) struct Switch {
+    listing: Vec<Element>,
+    at: usize,
+}
+
+impl Switch {
+    /// The switch itself.
+    pub(crate) fn element(&self) -> &Element {
+        &self.listing[self.at]
+    }
+
+    /// The control the switch draws: the first switch the listing lists
+    /// below it, as the Simulator's reader gives UIKit's switch cells and
+    /// SwiftUI's toggles, or the switch itself.
+    pub(crate) fn control(&self) -> &Element {
+        let control = below(&self.listing, self.at)
+            .find(|&k| self.listing[k].role == Role::Switch)
+            .unwrap_or(self.at);
+        &self.listing[control]
+    }
+}
+
+/// The places of the elements `elements` lists below the one at `at`.
+fn below(elements: &[Element], at: usize) -> impl Iterator<Item = usize> + '_ {
+    let depth = elements[at].depth;
+    (at + 1..elements.len()).take_while(move |&k| elements[k].depth > depth)
+}
+
+/// The switch `element` stands for, from the full listing (real-app-fixes,
+/// design D6): `element` itself when it is a switch, else the first switch
+/// below it that shares its identifier, as the table cell around Settings'
+/// Bold Text switch, else the nearest switch above it that shares it, as
+/// the label inside that switch. `None` when `element` is no switch and no
+/// switch shares its identifier so, or the listing does not hold it. In
+/// task 3.3 the identifier the switch shares named the table cell around
+/// it, whose centre, on the label, flipped it 0 times in 10; in the second
+/// pass on real apps `get value` by that identifier read the cell, which
+/// holds no state, while the switch was on.
+pub(crate) fn switch_of(
+    target: &mut Attached,
+    element: &Element,
+) -> Result<Option<Switch>, Failure> {
+    if element.role != Role::Switch && element.identifier.is_none() {
+        return Ok(None);
+    }
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?.elements;
+    let Some(at) = listing.iter().position(|listed| listed.id == element.id) else {
+        return Ok(None);
+    };
+    let shares = |k: &usize| {
+        listing[*k].role == Role::Switch && listing[*k].identifier == element.identifier
+    };
+    let switch = if element.role == Role::Switch {
+        Some(at)
+    } else {
+        below(&listing, at).find(shares).or_else(|| {
+            let mut depth = listing[at].depth;
+            (0..at)
+                .rev()
+                .filter(|&k| {
+                    let above = listing[k].depth < depth;
+                    if above {
+                        depth = listing[k].depth;
+                    }
+                    above
+                })
+                .find(shares)
+        })
+    };
+    Ok(switch.map(|at| Switch { listing, at }))
+}
+
 /// The element an argument names, as the replica shows it now.
 pub(crate) fn element(
     target: &mut Attached,

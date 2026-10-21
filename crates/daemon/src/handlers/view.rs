@@ -186,6 +186,18 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
         "text" | "value" | "box" => {
             // Any element the replica holds, in view or not (design D51).
             let element = aim::held(target, &call.session, &aim, timeout(&args.timeout, call)?)?;
+            // An element that holds a switch sharing its identifier, or that
+            // such a switch holds, reads as that switch, the one a click on
+            // it presses: on the second pass on real apps `get value` by the
+            // identifier Settings' Bold Text switch shares with the table
+            // cell around it read the cell, `no value` with the switch on,
+            // and `get text` its empty name (real-app-fixes, task 5.4). Its
+            // box stays the element's own.
+            let element = match what {
+                "box" => element,
+                _ => aim::switch_of(target, &element)?
+                    .map_or(element, |switch| switch.element().clone()),
+            };
             let in_view = aim::in_view(target, &element);
             let b = element.bounds;
             match what {

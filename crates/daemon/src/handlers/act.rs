@@ -464,59 +464,16 @@ fn offscreen(
 /// both 10 times in 10; 40 ms is the shortest measured.
 const SWITCH_HOLD: Duration = Duration::from_millis(40);
 
-/// The control a click on `element` presses on a Simulator, from the full
-/// listing (real-app-fixes, design D6): that of the switch `element` is, or
-/// else of the first switch below it that shares its identifier, as the
-/// table cell around Settings' Bold Text switch, or else of the nearest
-/// switch above it that shares it, as the label inside that switch; a
-/// switch's control is the first switch the listing lists below it, as
-/// the Simulator's reader gives UIKit's switch cells and SwiftUI's toggles,
-/// or the switch itself. `None` when `element` is no switch and no switch
-/// shares its identifier so. In spike S14 taps at the centre of Settings'
-/// labelled Bold Text switch, 330 points wide, landed on its label and
-/// flipped it 0 times in 40 at any hold, while the 63-point control inside
-/// it flipped 30 times in 30 with a hold; in task 3.3 the identifier the
-/// switch shares named the table cell around it, whose centre, on the
-/// label, flipped it 0 times in 10.
+/// The control a click on `element` presses on a Simulator
+/// (real-app-fixes, design D6): that of the switch `element` stands for
+/// ([`aim::switch_of`]), the first switch the full listing lists below it,
+/// or the switch itself. `None` when `element` stands for no switch. In
+/// spike S14 taps at the centre of Settings' labelled Bold Text switch, 330
+/// points wide, landed on its label and flipped it 0 times in 40 at any
+/// hold, while the 63-point control inside it flipped 30 times in 30 with a
+/// hold.
 fn switch_control(target: &mut Attached, element: &Element) -> Result<Option<Element>, Failure> {
-    if element.role != Role::Switch && element.identifier.is_none() {
-        return Ok(None);
-    }
-    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
-    let elements = &listing.elements;
-    let Some(at) = elements.iter().position(|listed| listed.id == element.id) else {
-        return Ok(None);
-    };
-    let below = |at: usize| {
-        let depth = elements[at].depth;
-        (at + 1..elements.len()).take_while(move |&k| elements[k].depth > depth)
-    };
-    let shares = |k: &usize| {
-        elements[*k].role == Role::Switch && elements[*k].identifier == element.identifier
-    };
-    let switch = if element.role == Role::Switch {
-        Some(at)
-    } else {
-        below(at).find(shares).or_else(|| {
-            let mut depth = elements[at].depth;
-            (0..at)
-                .rev()
-                .filter(|&k| {
-                    let above = elements[k].depth < depth;
-                    if above {
-                        depth = elements[k].depth;
-                    }
-                    above
-                })
-                .find(shares)
-        })
-    };
-    Ok(switch.map(|switch| {
-        let control = below(switch)
-            .find(|&k| elements[k].role == Role::Switch)
-            .unwrap_or(switch);
-        elements[control].clone()
-    }))
+    Ok(aim::switch_of(target, element)?.map(|switch| switch.control().clone()))
 }
 
 /// Taps the element the request names, or a point, and watches what the tap
