@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use crate::tools::Profile;
+use crate::tools::{MARGIN, Profile};
 
 /// The card's first paragraph, which stands alone.
 const HEAD: &str = "Drives Android devices, emulators, iOS Simulators and iPhones through the mobile-agent daemon. Call snapshot for the screen's elements, each with a ref such as @e3, then act by ref or selector with click, fill, type, press, swipe and scroll: every reply verifies what the action did, and a failure names its code and what to do next. The help tool holds the full guide.";
@@ -17,7 +17,7 @@ const HEAD: &str = "Drives Android devices, emulators, iOS Simulators and iPhone
 /// The card's paragraphs after the first.
 const BODY: &str = "Selectors and refs: a ref names one element while it stays on screen and fails with stale_ref once it is gone, so snapshot again before acting on older refs; a selector is an id (#login), text=Name or text==Exact name, or role=switch, and waits up to the call's timeout for a match. snapshot lists the interactive elements as a delta by default: a session's first call is the whole listing, later ones what changed, or unchanged (revision N); full: true gives the whole listing again, interactive: false every element with the texts and system bars. A plain text, such as a status line, has no ref and is in neither the interactive listing nor a change wait's delta taken in it: read it with get {what: \"text\", selector: \"#status\"}, wait for it with text, or list it with interactive: false.
 
-Waiting: click waits for the tap's first effect, so a snapshot right after it sees the change. wait with change: true answers once the listing changed from your last snapshot, with the delta (frames: true ends it at a frame change too, for a canvas or a map); settle: true once nothing changed for 200 ms, at most 3 s; text: \"Welcome\" once an element shows the text; selector with state (visible, hidden, enabled, attached, detached) once the element reaches it; ms for a fixed pause.
+Waiting: click waits for the tap's first effect, so a snapshot right after it sees the change; a click that reports no change may precede the app's reaction, which wait with change: true then collects. wait with change: true answers once the listing changed from your last snapshot, with the delta (frames: true ends it at a frame change too, for a canvas or a map); settle: true once nothing changed for 200 ms, at most 3 s; text: \"Welcome\" once an element shows the text; selector with state (visible, hidden, enabled, attached, detached) once the element reaches it; ms for a fixed pause. Waits for a change, a text or an element, and a selector's search for its element, end at 10 s with wait_timeout or element_not_found and the screen's summary: pass timeout, in ms, to wait longer.
 
 Sessions: this server acts in a session of its own, which holds the target it drives; name session on a call to resume another session's refs. close stops the app and releases the target; close with keep: true releases the target and leaves the app running, which this server also does for its own session when it exits, so the next session finds the app as it was.
 
@@ -45,7 +45,7 @@ const TABLE: &str = "The guide below is the mobile-agent CLI's; through this ser
   wait --text Welcome              wait {text: \"Welcome\"}
   wait '#spinner' --state hidden   wait {selector: \"#spinner\", state: \"hidden\"}
   wait 500                         wait {ms: 500}
-  --timeout MS                     timeout: MS on any waiting call, at most this server's bound
+  --timeout MS                     timeout: MS on any waiting call, 10000 without it; at most this server's bound less 2 s
   get text @e5 | get value | box   get {what: \"text\", selector: \"@e5\"}; what: \"value\" or \"box\"
   diff snapshot                    diff_snapshot
   screenshot shot.jpg              screenshot {path: \"shot.jpg\"}; without path the image comes inline, and {ifChanged: true} skips a still screen
@@ -59,16 +59,16 @@ const TABLE: &str = "The guide below is the mobile-agent CLI's; through this ser
   help agent                       help (this text)";
 
 /// The instructions card for a server that serves `profile`'s tools with
-/// calls bounded at `bound`.
+/// calls bounded at `bound`, a timeout capped at the bound less the
+/// margin.
 pub fn card(profile: Profile, bound: Duration) -> String {
+    let (bound, cap) = (bound.as_secs(), bound.saturating_sub(MARGIN).as_secs());
     let tools = match profile {
         Profile::All => format!(
-            "Tools: every tool is served; a call ends within {} s, a wait that names no timeout with wait_timeout and the screen's summary, and a call the client abandons is cancelled.",
-            bound.as_secs()
+            "Tools: every tool is served; a call ends within {bound} s, a timeout above {cap} s is capped to {cap} s, and a call the client abandons is cancelled."
         ),
         Profile::ReadOnly => format!(
-            "Tools: this server runs with --tools read-only, serving devices, status, doctor, snapshot, diff_snapshot, get, wait, screenshot and help alone: it observes the device and acts on nothing; a call ends within {} s.",
-            bound.as_secs()
+            "Tools: this server runs with --tools read-only, serving devices, status, doctor, snapshot, diff_snapshot, get, wait, screenshot and help alone: it observes the device and acts on nothing; a call ends within {bound} s, and a timeout above {cap} s is capped to {cap} s."
         ),
     };
     format!("{HEAD}\n\n{BODY}\n\n{tools}")

@@ -25,11 +25,11 @@
 //! one with its own code and message.
 //!
 //! The server's bound of a call (design D7) reaches the line the same way
-//! for every tool: a request that takes `timeout` and names none gets the
-//! bound less [`MARGIN`], so the daemon's own wait ends first, unless the
-//! call sets `settle`, whose own maximum is under the bound; a `timeout` or
-//! `ms` above it is capped to it, which the call records for the result's
-//! text.
+//! for every tool, as a cap (design D7 of `real-app-fixes`): a `timeout` or
+//! `ms` above the bound less [`MARGIN`] is capped to it, so the daemon's
+//! own wait ends first, which the call records for the result's text; a
+//! call that names no `timeout` sends none, so the daemon's own default
+//! applies: the session's, else 10 s, and 3 s for a settle.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -46,7 +46,8 @@ const TARGET: &str = "target";
 /// The element argument as the tools name it, agent-browser's name.
 const SELECTOR: &str = "selector";
 
-/// How long before the server's bound a waiting command's timeout ends.
+/// How far under the server's bound a call's timeout is capped, so that
+/// the daemon's own wait ends first.
 pub const MARGIN: Duration = Duration::from_secs(2);
 
 /// The duration arguments the bound caps.
@@ -281,7 +282,7 @@ pub const TOOLS: [Tool; 17] = [
     Tool {
         name: "wait",
         action: "wait",
-        description: "Wait some milliseconds (`ms`), for the screen to settle (`settle`) or to change from the last snapshot (`change`), or for an element (`selector`) or a text (`text`) to reach a `state`.",
+        description: "Wait some milliseconds (`ms`), for the screen to settle (`settle`) or to change from the last snapshot (`change`), or for an element (`selector`) or a text (`text`) to reach a `state`; pass `timeout` for a wait past the default of 10 s.",
         effect: Effect::Reads,
         parameters: schema::<wire::Wait>,
         reply: Some(reply_schema::<wire::reply::Wait>),
@@ -466,10 +467,10 @@ impl Tool {
     }
 
     /// The request a call with `arguments` sends, in `session` unless the
-    /// call names another, with relative paths taken from `cwd` and its
-    /// waits within `bound`. Only the parameters `definition` lists go out,
-    /// mapped back through the table's changes, each value as the call gave
-    /// it; null is a parameter not given.
+    /// call names another, with relative paths taken from `cwd` and the
+    /// durations it names capped by `bound`. Only the parameters
+    /// `definition` lists go out, mapped back through the table's changes,
+    /// each value as the call gave it; null is a parameter not given.
     pub fn call(
         &self,
         definition: &rmcp::model::Tool,
@@ -528,8 +529,8 @@ impl Tool {
         {
             *path = cwd.join(path.as_str()).to_string_lossy().into_owned();
         }
-        // The bound: a waiting command's timeout when the call names none,
-        // and the cap of the durations it names.
+        // The bound caps the durations the call names; a timeout the call
+        // does not name stays the daemon's.
         let limit = u64::try_from(bound.saturating_sub(MARGIN).as_millis()).unwrap_or(u64::MAX);
         let mut capped = Vec::new();
         for key in DURATIONS {
@@ -543,12 +544,6 @@ impl Tool {
                     MARGIN.as_secs()
                 ));
             }
-        }
-        if takes("timeout")
-            && !line.contains_key("timeout")
-            && line.get("settle") != Some(&Value::Bool(true))
-        {
-            line.insert("timeout".to_owned(), limit.into());
         }
         let device = line
             .get("device")

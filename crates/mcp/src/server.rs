@@ -49,9 +49,10 @@ const GRACE: Duration = Duration::from_secs(5);
 /// What the command line set.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// The bound of a call (design D7): a waiting command's timeout when the
-    /// call names none, less a margin, and the point past which a call the
-    /// daemon has not answered is cancelled.
+    /// The bound of a call (design D7): less a margin, the cap of a timeout
+    /// the call names, a call that names none sending none (design D7 of
+    /// `real-app-fixes`); and the point past which a call the daemon has
+    /// not answered is cancelled.
     pub bound: Duration,
     /// The tools served (design D10).
     pub profile: Profile,

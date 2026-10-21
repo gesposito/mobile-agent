@@ -46,7 +46,7 @@ const RELEASE: Duration = Duration::from_secs(5);
     disable_help_subcommand = true
 )]
 struct Args {
-    /// The bound of a tool call, in seconds: a waiting command gets it less 2 s as its timeout, and a call the daemon has not answered 5 s past it is cancelled
+    /// The bound of a tool call, in seconds: a timeout a call names is capped at it less 2 s, one that names none keeps the daemon's default, and a call the daemon has not answered 5 s past it is cancelled
     #[arg(long, value_name = "SECONDS", default_value_t = 55, value_parser = clap::value_parser!(u64).range(3..))]
     call_timeout: u64,
 
