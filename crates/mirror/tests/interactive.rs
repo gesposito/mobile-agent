@@ -1339,6 +1339,119 @@ fn a_row_under_a_footer_react_native_lists_holding_nothing_is_left_out_and_refus
     assert!(target.inputs().is_empty());
 }
 
+/// Real-app-fixes D2 (task 2.1; the first shape of spike S14): iOS 26 hosts
+/// a navigation controller's floating bottom toolbar in a plain container
+/// that XCTest lists after the content and gives the window's frame, while
+/// it draws only the toolbar, 86 points at the screen's bottom. The rows on
+/// screen above the toolbar are listed with their refs and wholly in view,
+/// the one the toolbar's top crosses with the share of it that shows, and
+/// the toolbar's search field with them; a tap on a row lands at its
+/// centre; and the list's hint counts the row the toolbar and the screen's
+/// edge leave nothing of, under the toolbar, and nothing under an overlay.
+/// The spike's listings of both screens held their bars alone, every row
+/// read out of view, and the cover was named an overlay.
+#[test]
+fn a_container_spanning_the_window_that_draws_only_its_toolbar_hides_no_row_on_ios() {
+    let (target, mut mirror) = mirror_on("floating-toolbar-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for n in 1..=8 {
+        let id = format!("placeholder-row-{n}");
+        let row = listing
+            .by_identifier(&id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert!(row.reference.is_some(), "{id}:\n{}", listing.text);
+        assert_eq!(
+            row.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+    }
+    for line in [
+        "- button \"Placeholder account\" [id=placeholder-account, ref=",
+        "- button \"Placeholder row 9\" [visible=84%, id=placeholder-row-9, ref=",
+        "(1 more actionable item below, 1 of them under the toolbar \"Placeholder toolbar\", scroll down to reveal)",
+        "- searchbox \"Placeholder search\" [ref=",
+    ] {
+        assert!(listing.text.contains(line), "{line}:\n{}", listing.text);
+    }
+    assert!(!listing.text.contains("overlay"), "{}", listing.text);
+    let [hint] = &listing.hints[..] else {
+        panic!("one hint: {:?}\n{}", listing.hints, listing.text);
+    };
+    assert_eq!((hint.direction, hint.count), (Direction::Below, Some(1)));
+
+    let row = listing.by_identifier("placeholder-row-1").unwrap();
+    let seen = mirror
+        .visibility(row.id)
+        .expect("the replica holds the row");
+    assert_eq!(seen.fraction, 1.0, "{seen:?}");
+    assert_eq!(mirror.covered_by(row.id), None);
+    let at = tap_on(&mut mirror, row.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - 201.0).abs() < 0.01 && (at.y - (293.33 + 345.33) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Real-app-fixes D2 (task 2.1; the second shape of spike S14): a sheet's
+/// content view lists its search bar's view, then a plain view holding a
+/// named list of the content view's frame, which XCTest gives the list
+/// while its first cell starts 73 points lower, as a content inset under
+/// the search bar leaves it. The search field and the profile button beside
+/// it are listed, and a tap on the field lands at its centre; the list's
+/// cells are listed, a tap on one still reaching it, and its hint counts
+/// the cell below the screen alone; and the map's buttons above the sheet,
+/// whose transition view spans the window as the map's does, are listed
+/// too. The spike's listing left the search field out under the list,
+/// refused a click on it naming the list, and counted the map's buttons
+/// under an overlay.
+#[test]
+fn a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios() {
+    let (target, mut mirror) = mirror_on("search-sheet-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in [
+        "placeholder-weather",
+        "placeholder-modes",
+        "placeholder-tracking",
+        "placeholder-search-field",
+        "placeholder-profile",
+        "placeholder-section-1",
+        "placeholder-tile-1",
+        "placeholder-section-2",
+        "placeholder-place",
+    ] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    assert!(
+        listing
+            .text
+            .contains("(1 more actionable item below, scroll down to reveal)"),
+        "{}",
+        listing.text
+    );
+
+    let field = listing.by_identifier("placeholder-search-field").unwrap();
+    assert_eq!(mirror.covered_by(field.id), None);
+    let at = tap_on(&mut mirror, field.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - 176.0).abs() < 0.01 && (at.y - (503.67 + 546.0) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    let section = listing.by_identifier("placeholder-section-1").unwrap();
+    let at = tap_on(&mut mirror, section.reference.unwrap()).unwrap();
+    assert!((at.x - 65.0).abs() < 0.01 && at.y == 582.5, "{at}");
+    assert_eq!(target.inputs().len(), 2);
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins

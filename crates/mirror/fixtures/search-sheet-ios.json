@@ -1,0 +1,107 @@
+{
+  "description": "A map screen of a UIKit app on iOS 26 with its sheet at half height, synthetic, in the shape spike S14 recorded on the Simulator's iOS 26.5 runtime (real-app-fixes, design D2): in the window a transition view holds the map and the plain overlay spanning it that holds the map's buttons, and a second transition view, listed after it and spanning the window too, holds the sheet: a dimming view without a name, then the sheet's frame, 8,488.33 386 by 377.67 points, holding the grabber, the sheet's content view and a background without a name. The content view lists, in order, a plain view 73 points tall holding the search bar, its search field and a profile button, and a plain view of the content view's frame holding a named list of that frame, which scrolls down: XCTest gives the list its whole frame, while its first cell starts 73 points lower, under the search bar's band, as a content inset leaves it; then come a list header's cell, the pinned tiles' cell, a decoration, the recent places, a last cell whose button lies below the screen, and the list's two scroll bars, each listed twice with one frame. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "XCUIElementTypeMap", "desc": "Placeholder map", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "XCUIElementTypeStaticText", "id": "placeholder-feature", "desc": "Placeholder feature", "bounds": [186, 439.33, 216, 469.33]}
+              ]},
+              {"class": "XCUIElementTypeOther", "id": "placeholder-overlay", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "XCUIElementTypeButton", "id": "placeholder-weather", "desc": "Placeholder weather", "bounds": [16, 110, 73.67, 141.67], "flags": ["clickable"]},
+                {"class": "XCUIElementTypeOther", "bounds": [16, 110, 386, 478.33], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [338, 382.33, 386, 478.33], "children": [
+                    {"class": "XCUIElementTypeButton", "id": "placeholder-modes", "desc": "Placeholder modes", "bounds": [338, 382.33, 386, 430.33], "flags": ["clickable"]},
+                    {"class": "XCUIElementTypeButton", "id": "placeholder-tracking", "desc": "Placeholder tracking", "bounds": [338, 430.33, 386, 478.33], "flags": ["clickable"]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]},
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeOther", "bounds": [-402, -874, 804, 1748]},
+            {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+              {"class": "XCUIElementTypeButton", "id": "placeholder-grabber", "desc": "Placeholder grabber", "bounds": [155, 483.67, 247, 507.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 561.33], "children": [
+                    {"class": "XCUIElementTypeOther", "id": "placeholder-search-bar", "bounds": [8, 488.33, 394, 561.33], "children": [
+                      {"class": "XCUIElementTypeImage", "bounds": [8, 488.33, 394, 561.33]},
+                      {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 561.33], "children": [
+                        {"class": "XCUIElementTypeSearchField", "id": "placeholder-search-field", "desc": "Placeholder search", "bounds": [23.33, 503.67, 328.67, 546], "flags": ["focusable", "editable"], "children": [
+                          {"class": "XCUIElementTypeButton", "id": "placeholder-dictate", "desc": "Placeholder dictate", "bounds": [296.67, 514.33, 313.33, 535.33], "flags": ["clickable"]},
+                          {"class": "XCUIElementTypeImage", "id": "placeholder-glass", "desc": "Placeholder glass", "bounds": [35, 515.33, 54.67, 533.67]}
+                        ]}
+                      ]}
+                    ]},
+                    {"class": "XCUIElementTypeButton", "id": "placeholder-profile", "desc": "Placeholder profile", "bounds": [336.33, 503.67, 378.67, 546], "flags": ["clickable"]}
+                  ]},
+                  {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                    {"class": "XCUIElementTypeOther", "id": "placeholder-home", "bounds": [8, 488.33, 394, 866], "children": [
+                      {"class": "XCUIElementTypeCollectionView", "desc": "Placeholder list", "bounds": [8, 488.33, 394, 866], "flags": ["scrollable"],
+                       "scroll": {"axis": "vertical", "forward": true}, "children": [
+                        {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 608]}
+                        ]},
+                        {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866]},
+                        {"class": "XCUIElementTypeCell", "bounds": [27.33, 561.33, 374.67, 603.67], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": "fill"},
+                          {"class": "XCUIElementTypeOther", "bounds": "fill", "children": [
+                            {"class": "XCUIElementTypeButton", "id": "placeholder-section-1", "desc": "Placeholder section 1", "bounds": [27.33, 571, 102.67, 594], "flags": ["clickable"]}
+                          ]}
+                        ]},
+                        {"class": "XCUIElementTypeCell", "id": "placeholder-pinned", "bounds": [8, 603.67, 394, 724.67], "flags": ["clickable"], "children": [
+                          {"class": "XCUIElementTypeButton", "id": "placeholder-tile-1", "desc": "Placeholder tile 1", "bounds": [23.33, 603.67, 106.67, 724.33], "flags": ["clickable"]},
+                          {"class": "XCUIElementTypeButton", "id": "placeholder-tile-2", "desc": "Placeholder tile 2", "bounds": [114.33, 603.67, 197, 724.33], "flags": ["clickable"]},
+                          {"class": "XCUIElementTypeButton", "id": "placeholder-tile-3", "desc": "Placeholder tile 3", "bounds": [205, 603.67, 288, 709.33], "flags": ["clickable"]}
+                        ]},
+                        {"class": "XCUIElementTypeOther", "bounds": [8, 724.67, 394, 851.67]},
+                        {"class": "XCUIElementTypeCell", "bounds": [27.33, 724.67, 374.67, 786], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": "fill"},
+                          {"class": "XCUIElementTypeOther", "bounds": "fill", "children": [
+                            {"class": "XCUIElementTypeButton", "id": "placeholder-section-2", "desc": "Placeholder section 2", "bounds": [27.33, 753.33, 116.33, 776.33], "flags": ["clickable"]}
+                          ]}
+                        ]},
+                        {"class": "XCUIElementTypeCell", "id": "placeholder-recents", "bounds": [8, 786, 394, 851.67], "flags": ["clickable"], "children": [
+                          {"class": "XCUIElementTypeButton", "id": "placeholder-place", "desc": "Placeholder place", "bounds": [23.33, 786, 378.67, 851.67], "flags": ["clickable"]}
+                        ]},
+                        {"class": "XCUIElementTypeOther", "bounds": [8, 851.67, 394, 963]},
+                        {"class": "XCUIElementTypeCell", "bounds": [27.33, 851.67, 374.67, 913], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": "fill"},
+                          {"class": "XCUIElementTypeOther", "bounds": "fill", "children": [
+                            {"class": "XCUIElementTypeButton", "id": "placeholder-section-3", "desc": "Placeholder section 3", "bounds": [27.33, 880.33, 150.67, 903.33], "flags": ["clickable"], "off": ["visible"]}
+                          ]}
+                        ]},
+                        {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "text": "0%", "bounds": [362.33, 561.33, 391, 813.33], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": [388.33, 856.33, 391, 863]}
+                        ]},
+                        {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [60.67, 834.33, 341.33, 863], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": [384.33, 860.33, 391, 863]}
+                        ]},
+                        {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "text": "0%", "bounds": [362.33, 561.33, 391, 813.33], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": [388.33, 856.33, 391, 863]}
+                        ]},
+                        {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [60.67, 834.33, 341.33, 863], "children": [
+                          {"class": "XCUIElementTypeOther", "bounds": [384.33, 860.33, 391, 863]}
+                        ]}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]},
+              {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

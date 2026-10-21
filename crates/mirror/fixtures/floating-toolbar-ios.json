@@ -1,0 +1,53 @@
+{
+  "description": "A list screen of a UIKit app on iOS 26, synthetic, in the shape spike S14 recorded on the Simulator's iOS 26.5 runtime (real-app-fixes, design D2): in the window a layout container lists, in order, a navigation bar, a transition view holding a collection view that spans the window and scrolls down, its rows 370 by 52 points from 293.33 points down, each a cell holding a button with an identifier, and a plain container spanning the window, as the one iOS 26 hosts a navigation controller's floating bottom toolbar in, holding a plain host of the same frame holding the toolbar, 86 points at the bottom of the screen, with a search field in it. XCTest lists the container after the transition view and gives it its whole frame, while it draws only its toolbar. The collection view's scroll bar is listed twice with one frame, as XCTest lists it. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeNavigationBar", "id": "placeholder-title-bar", "bounds": [0, 62, 402, 168], "children": [
+              {"class": "XCUIElementTypeHeading", "desc": "Placeholder title", "bounds": [16, 119.67, 149, 160.33]}
+            ]},
+            {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "XCUIElementTypeCollectionView", "bounds": [0, 0, 402, 874], "flags": ["scrollable"],
+               "scroll": {"axis": "vertical", "forward": true, "range": ["percent", 0, 100], "position": [0, 56]}, "children": [
+                {"class": "XCUIElementTypeCell", "bounds": [16, 168, 386, 258.33], "children": [
+                  {"class": "XCUIElementTypeButton", "id": "placeholder-account", "desc": "Placeholder account", "bounds": "fill", "flags": ["clickable"]}
+                ]},
+                {"repeat": [1, 8], "layout": {"rows": {"left": 16, "top": 293.33, "right": 386, "height": 52}},
+                 "node": {"class": "XCUIElementTypeCell", "children": [
+                   {"class": "XCUIElementTypeButton", "id": "placeholder-row-{n}", "desc": "Placeholder row {n}", "bounds": "fill", "flags": ["clickable"]}
+                 ]}},
+                {"class": "XCUIElementTypeCell", "bounds": [16, 744.33, 386, 796.33], "children": [
+                  {"class": "XCUIElementTypeButton", "id": "placeholder-row-9", "desc": "Placeholder row 9", "bounds": "fill", "flags": ["clickable"]}
+                ]},
+                {"class": "XCUIElementTypeCell", "bounds": [16, 831.33, 386, 883.33], "children": [
+                  {"class": "XCUIElementTypeButton", "id": "placeholder-row-10", "desc": "Placeholder row 10", "bounds": "fill", "flags": ["clickable"]}
+                ]},
+                {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "bounds": [369, 116, 399, 788], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [396, 119, 399, 548.67]}
+                ]},
+                {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 2 pages", "bounds": [369, 116, 399, 788], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [396, 119, 399, 548.67]}
+                ]}
+              ]}
+            ]},
+            {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+                {"class": "XCUIElementTypeToolbar", "id": "placeholder-toolbar", "desc": "Placeholder toolbar", "bounds": [0, 788, 402, 874], "children": [
+                  {"class": "XCUIElementTypeSearchField", "desc": "Placeholder search", "bounds": [33, 803, 369, 841], "flags": ["focusable", "editable"], "children": [
+                    {"class": "XCUIElementTypeButton", "id": "placeholder-dictate", "desc": "Placeholder dictate", "bounds": [335.67, 811, 353, 833], "flags": ["clickable"]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
