@@ -475,7 +475,7 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     let first = first_tree(target, &app, fresh, started + first_wait)?;
     let shown = match first {
         FirstTree::Shown(at) => Some(at),
-        FirstTree::Splash | FirstTree::NotShown => None,
+        FirstTree::Splash | FirstTree::Alert(_) | FirstTree::NotShown => None,
     };
     // The first frame is no change, so the first click would report no
     // frame change if its effects came before the frame stream's first
@@ -506,6 +506,14 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         None => started + SESSION_WAIT,
     };
     input_active(target, session_deadline)?;
+    // The dialog in front of the app: the one the wait for its screen met,
+    // or one that came in front while the screen settled, as a permission
+    // alert does once the app asks.
+    let dialog = match &first {
+        FirstTree::Alert(dialog) => Some(dialog.clone()),
+        FirstTree::Shown(_) => target.mirror.system_dialog(),
+        FirstTree::Splash | FirstTree::NotShown => None,
+    };
     let mut warnings = Vec::new();
     match (&first, settled) {
         (FirstTree::NotShown, _) => warnings.push(format!(
@@ -516,10 +524,15 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
             "{app} showed only its launch splash for {} ms; wait for one of its elements before you act",
             first_wait.as_millis()
         )),
-        (FirstTree::Shown(_), false) => warnings.push(format!(
+        (FirstTree::Shown(_), false) if dialog.is_none() => warnings.push(format!(
             "{app} showed its screen, which did not settle; wait --settle before you act on it"
         )),
-        (FirstTree::Shown(_), true) => {}
+        (FirstTree::Alert(_) | FirstTree::Shown(_), _) => {}
+    }
+    if let Some(dialog) = &dialog {
+        warnings.push(format!(
+            "{dialog} stands in front of {app}; answer it before you act on the app: a snapshot lists its buttons"
+        ));
     }
     if !primed {
         warnings.push(format!(
@@ -528,14 +541,17 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         ));
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
-    Ok(Success::new(json!({
+    let mut data = json!({
         "opened": app,
         "target": target.info.id,
         "settled": settled,
         "elapsedMs": millis(started.elapsed()),
         "firstTreeMs": shown.map(|at| millis(at.saturating_duration_since(started))),
-    }))
-    .warn(warning))
+    });
+    if let Some(dialog) = dialog {
+        data["alert"] = dialog.into();
+    }
+    Ok(Success::new(data).warn(warning))
 }
 
 /// How often `open` looks for the launched app's screen; the mirror keeps
@@ -597,13 +613,20 @@ enum FirstTree {
     Shown(Instant),
     /// Only its launch splash showed within the budget.
     Splash,
+    /// A dialog of system UI stood in front of it, named so (real-app-fixes,
+    /// design D5).
+    Alert(String),
     /// It did not show.
     NotShown,
 }
 
 /// Waits until `deadline` for the replica to show `app` in front with more
 /// than its root and more than a launch splash, read after `fresh` when
-/// given; says when it did.
+/// given; says when it did. A dialog of system UI in front of the screen,
+/// as a permission alert the app's launch brings up, ends the wait at once
+/// (`Mirror::system_dialog`): on the demo pass `open` waited out the call's
+/// bound behind the location alert in front of the app, while the next
+/// action was the model's, on the alert.
 fn first_tree(
     target: &mut Attached,
     app: &str,
@@ -634,6 +657,9 @@ fn first_tree(
                 return Ok(FirstTree::Shown(Instant::now()));
             }
             splash = true;
+        }
+        if read_after && let Some(dialog) = target.mirror.system_dialog() {
+            return Ok(FirstTree::Alert(dialog));
         }
         let now = Instant::now();
         if now >= deadline {

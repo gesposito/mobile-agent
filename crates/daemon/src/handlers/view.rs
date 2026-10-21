@@ -115,7 +115,7 @@ fn delta_of(
 
 /// Keeps `snapshot` as the session's last, with the latest frame change it
 /// saw, and its refs as the session's.
-fn remember(target: &mut Attached, session: &str, snapshot: Snapshot) {
+pub(super) fn remember(target: &mut Attached, session: &str, snapshot: Snapshot) {
     let frames = target.mirror.timestamps().last_frame_change;
     let entry = target.session(session);
     entry.seen.extend(snapshot.refs());
@@ -193,7 +193,16 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
                     "text": element.value.clone().filter(|v| !v.is_empty()).unwrap_or(element.name),
                     "inView": in_view,
                 }),
-                "value" => json!({"value": element.value, "inView": in_view}),
+                // A switch's state, or a checkbox's, as the listing has it:
+                // on the demo pass `get value` on a switch returned nothing
+                // (real-app-fixes, design D5).
+                "value" => {
+                    let mut data = json!({"value": element.value, "inView": in_view});
+                    if let Some(checked) = element.checked {
+                        data["checked"] = checked.into();
+                    }
+                    data
+                }
                 _ => json!({
                     "x": b.left, "y": b.top, "width": b.width(), "height": b.height(),
                     "inView": in_view,
@@ -273,28 +282,58 @@ pub(super) fn wait(target: &mut Attached, call: &Call, args: &::wire::Wait) -> O
     target.catch_up()?;
     let held = matches!(condition, Condition::Attached | Condition::Detached);
     let outcome = match &aimed {
-        Aim::Exact(text) if held => target.mirror.wait(&aim::exact(text), condition, timeout)?,
-        Aim::Exact(text) => aim::wait_exact(target, text, condition, timeout)?,
-        Aim::Select(selector) => target.mirror.wait(selector, condition, timeout)?,
-        Aim::Ref(reference) => {
-            target
-                .mirror
-                .wait(&Selector::reference(*reference), condition, timeout)?
+        Aim::Exact(text) if held => {
+            aim::wait(target, session, (&aim::exact(text), condition), timeout)?
         }
+        Aim::Exact(text) => aim::wait_exact(target, session, (text, condition), timeout)?,
+        Aim::Select(selector) => aim::wait(target, session, (selector, condition), timeout)?,
+        Aim::Ref(reference) => aim::wait(
+            target,
+            session,
+            (&Selector::reference(*reference), condition),
+            timeout,
+        )?,
     };
-    if let Some(reference) = outcome.element.as_ref().and_then(|e| e.reference) {
+    let element = outcome
+        .element
+        .map(|element| with_ref(target, element))
+        .transpose()?;
+    if let Some(reference) = element.as_ref().and_then(|e| e.reference) {
         target.session(session).seen.insert(reference);
     }
     let mut data = json!({
         "waited": kind,
         "elapsedMs": millis(outcome.elapsed),
-        "element": outcome.element.as_ref().map(element_json),
+        "element": element.as_ref().map(element_json),
     });
-    if let Some(element) = &outcome.element {
+    if let Some(element) = &element {
         data["inView"] = aim::in_view(target, element).into();
     }
     data[kind] = given.into();
     Ok(Success::new(data))
+}
+
+/// `element`, which a wait found, with the ref the full listing gives it
+/// when no snapshot has issued it one yet, so that the wait names it by a
+/// ref the session can act on, as `✓ Found button "Sign in" @e4`
+/// (real-app-fixes, design D5): an actionable element, or content with a
+/// name, gets one. Any other element, as a plain text, is left without one,
+/// and without the listing.
+fn with_ref(target: &mut Attached, element: Element) -> Result<Element, Failure> {
+    let bears = element.actionable || (element.role.is_content() && !element.name.is_empty());
+    if element.reference.is_some() || !bears {
+        return Ok(element);
+    }
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+    let reference = listing
+        .elements
+        .iter()
+        .find(|listed| listed.id == element.id)
+        .and_then(|listed| listed.reference);
+    Ok(Element {
+        reference,
+        ..element
+    })
 }
 
 fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
@@ -548,11 +587,16 @@ pub(super) fn screenshot(
             )
         })?;
     }
+    // The screen's size in points beside the image's pixels: on the demo
+    // pass a model took a 460x1000 screenshot's pixels for the 402x874
+    // points a click takes (real-app-fixes, design D5).
+    let points = target.display.size()?;
     let mut data = json!({
         "path": path.as_ref().map(|path| path.to_string_lossy()),
         "format": shot.format,
         "width": shot.width,
         "height": shot.height,
+        "points": {"width": points.width, "height": points.height},
         "quality": shot.quality,
         "seq": shot.seq,
         "ageMs": millis(shot.age),

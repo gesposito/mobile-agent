@@ -42,32 +42,37 @@ fn failure(reply: &Reply, printed: &str) -> String {
 pub const UNCHANGED: &str = "unchanged since the last screenshot";
 
 /// The result of a screenshot (design D6): the image the daemon returned
-/// inline, as image content; the path alone when the call named one, the
-/// daemon having written the file; [`UNCHANGED`] instead of either when
-/// `unchanged`. A warning follows, marked as the CLI marks it.
+/// inline, as image content, with the text of its pixels beside the
+/// screen's points, as the CLI's line says them, `460x1000 of a
+/// 402x874-point screen`, since a click takes points (real-app-fixes,
+/// design D5); the path, and the sizes on the next line, when the call
+/// named one, the daemon having written the file; [`UNCHANGED`] instead of
+/// either when `unchanged`. A warning follows, marked as the CLI marks it.
 pub fn screenshot(reply: &Reply, unchanged: bool) -> CallToolResult {
     let warning = reply
         .warning
         .as_deref()
         .map(|warning| format!("⚠ {warning}"));
     let data = &reply.data;
+    let sizes = output::sizes(data);
+    let joined = |said: Vec<String>| said.join("\n");
     let said = if unchanged {
-        UNCHANGED
+        vec![UNCHANGED.to_owned()]
     } else if let Some(path) = data["path"].as_str() {
-        path
+        std::iter::once(path.to_owned()).chain(sizes).collect()
     } else {
         let (Some(image), Some(mime)) = (data["image"].as_str(), data["mimeType"].as_str()) else {
             return of("screenshot", reply);
         };
         let mut content = vec![ContentBlock::image(image, mime)];
-        content.extend(warning.map(ContentBlock::text));
+        let text: Vec<String> = sizes.into_iter().chain(warning).collect();
+        if !text.is_empty() {
+            content.push(ContentBlock::text(joined(text)));
+        }
         return CallToolResult::success(content);
     };
-    let text = match warning {
-        Some(warning) => format!("{said}\n{warning}"),
-        None => said.to_owned(),
-    };
-    CallToolResult::success(vec![ContentBlock::text(text)])
+    let text: Vec<String> = said.into_iter().chain(warning).collect();
+    CallToolResult::success(vec![ContentBlock::text(joined(text))])
 }
 
 /// `text` without the newline that ends the CLI's last line.

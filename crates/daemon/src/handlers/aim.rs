@@ -5,7 +5,9 @@
 //! `role=<role>`.
 //!
 //! A session acts only on refs its own snapshots listed on the target,
-//! which keeps refs isolated between sessions. A selector an action or a
+//! which keeps refs isolated between sessions; the listing of the screen a
+//! timeout prints, a `wait_timeout`'s or an `element_not_found`'s, is one
+//! of them (real-app-fixes, design D4). A selector an action or a
 //! query names resolves any element the replica holds, the first on screen
 //! and not covered before the rest, and waits up to the command's timeout
 //! only for one the tree does not hold yet (rn-app-fixes, designs D51 and
@@ -145,33 +147,67 @@ pub(crate) fn check_seen(
 }
 
 /// The first element on screen that `selector` matches, waiting up to
-/// `timeout`; a timeout becomes `element_not_found` with the screen seen.
-fn find(target: &mut Attached, selector: &Selector, timeout: Duration) -> Result<Element, Failure> {
-    find_in(target, selector, Condition::Appear, timeout)
+/// `timeout`; a timeout becomes `element_not_found` with the screen seen,
+/// whose refs go to `session`.
+fn find(
+    target: &mut Attached,
+    session: &str,
+    selector: &Selector,
+    timeout: Duration,
+) -> Result<Element, Failure> {
+    find_in(target, session, (selector, Condition::Appear), timeout)
 }
 
 /// The first element that `selector` matches as `condition` looks for it,
 /// waiting up to `timeout`; a timeout becomes `element_not_found` with the
-/// screen seen.
+/// screen seen, whose refs go to `session` ([`summary`]).
 fn find_in(
     target: &mut Attached,
-    selector: &Selector,
-    condition: Condition,
+    session: &str,
+    (selector, condition): (&Selector, Condition),
     timeout: Duration,
 ) -> Result<Element, Failure> {
     match target.mirror.wait(selector, condition, timeout) {
         Ok(outcome) => outcome
             .element
             .ok_or_else(|| Failure::internal("a wait for an element returned none")),
-        Err(MirrorError::WaitTimeout {
-            waited, summary, ..
-        }) => Err(Failure::new(
-            ELEMENT_NOT_FOUND,
-            format!(
-                "no element matches {selector} after {} ms; the screen shows {summary}",
-                waited.as_millis()
-            ),
-        )),
+        Err(MirrorError::WaitTimeout { waited, .. }) => {
+            let summary = summary(target, session)?;
+            Err(Failure::new(
+                ELEMENT_NOT_FOUND,
+                format!(
+                    "no element matches {selector} after {} ms; the screen shows {summary}",
+                    waited.as_millis()
+                ),
+            ))
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Waits until an element matching `selector` meets `condition`, as the
+/// mirror's wait does, up to `timeout`; its timeout fails with
+/// `wait_timeout` and the screen seen, whose refs go to `session`
+/// ([`summary`]).
+pub(crate) fn wait(
+    target: &mut Attached,
+    session: &str,
+    (selector, condition): (&Selector, Condition),
+    timeout: Duration,
+) -> Result<WaitOutcome, Failure> {
+    match target.mirror.wait(selector, condition, timeout) {
+        Ok(outcome) => Ok(outcome),
+        Err(MirrorError::WaitTimeout { waited, .. }) => {
+            let summary = summary(target, session)?;
+            Err(Failure::new(
+                mirror::code::WAIT_TIMEOUT,
+                format!(
+                    "waited {} ms for {selector} to {}; the screen now shows {summary}",
+                    waited.as_millis(),
+                    condition.name()
+                ),
+            ))
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -195,10 +231,10 @@ pub(crate) fn held(
             check_seen(target, session, *reference)?;
             Ok(target.mirror.resolve(*reference)?)
         }
-        Aim::Select(selector) => find_in(target, selector, Condition::Attached, timeout),
+        Aim::Select(selector) => find_in(target, session, (selector, Condition::Attached), timeout),
         Aim::Exact(text) => {
             let selector = exact(text);
-            find_in(target, &selector, Condition::Attached, timeout)
+            find_in(target, session, (&selector, Condition::Attached), timeout)
         }
     }
 }
@@ -234,8 +270,8 @@ pub(crate) fn element(
             check_seen(target, session, *reference)?;
             Ok(target.mirror.resolve(*reference)?)
         }
-        Aim::Select(selector) => find(target, selector, timeout),
-        Aim::Exact(text) => find_exact(target, text, timeout),
+        Aim::Select(selector) => find(target, session, selector, timeout),
+        Aim::Exact(text) => find_exact(target, session, text, timeout),
     }
 }
 
@@ -255,8 +291,8 @@ pub(crate) fn action_target(
             check_seen(target, session, *reference)?;
             Ok((Target::Ref(*reference), Some(*reference), None))
         }
-        Aim::Select(selector) => Ok(aimed_at(find_held(target, selector, timeout)?)),
-        Aim::Exact(text) => Ok(aimed_at(find_held(target, &exact(text), timeout)?)),
+        Aim::Select(selector) => Ok(aimed_at(find_held(target, session, selector, timeout)?)),
+        Aim::Exact(text) => Ok(aimed_at(find_held(target, session, &exact(text), timeout)?)),
     }
 }
 
@@ -273,10 +309,11 @@ pub(crate) fn action_target(
 /// in 51 to 93 ms.
 fn find_held(
     target: &mut Attached,
+    session: &str,
     selector: &Selector,
     timeout: Duration,
 ) -> Result<Element, Failure> {
-    find_in(target, selector, Condition::Attached, timeout)
+    find_in(target, session, (selector, Condition::Attached), timeout)
 }
 
 /// Where an action on a found element lands: its ref, which the mirror
@@ -328,7 +365,7 @@ pub(crate) fn text_ref(
             Ok(TextTarget::Field(*reference))
         }
         Aim::Select(selector) => {
-            let element = find_held(target, selector, timeout)?;
+            let element = find_held(target, session, selector, timeout)?;
             super::act::within_reach(target, action, &element, given)?;
             let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
             if selector.identifier.is_none() || takes_text {
@@ -352,7 +389,7 @@ pub(crate) fn text_ref(
             }
         }
         Aim::Exact(text) => {
-            let element = find_held(target, &exact(text), timeout)?;
+            let element = find_held(target, session, &exact(text), timeout)?;
             super::act::within_reach(target, action, &element, given)?;
             let reference = listed_ref(target, &element, &format!("exact text {text:?}"))?;
             Ok(TextTarget::Field(reference))
@@ -402,11 +439,11 @@ fn exact_on_screen(
 /// Waits until an element whose name or value is exactly `text` meets
 /// `condition`, looking again every [`EXACT_SLICE`]; fails at `timeout`
 /// with `wait_timeout` and a summary of the screen, as the mirror's waits
-/// do.
+/// do, whose refs go to `session` ([`summary`]).
 pub(crate) fn wait_exact(
     target: &mut Attached,
-    text: &str,
-    condition: Condition,
+    session: &str,
+    (text, condition): (&str, Condition),
     timeout: Duration,
 ) -> Result<WaitOutcome, Failure> {
     let started = Instant::now();
@@ -425,7 +462,7 @@ pub(crate) fn wait_exact(
         }
         let now = Instant::now();
         if now >= deadline {
-            let summary = summary(target)?;
+            let summary = summary(target, session)?;
             return Err(Failure::new(
                 mirror::code::WAIT_TIMEOUT,
                 format!(
@@ -442,8 +479,13 @@ pub(crate) fn wait_exact(
 /// The first element on screen whose name or value is exactly `text`,
 /// waiting up to `timeout`; a timeout becomes `element_not_found` with the
 /// screen seen.
-fn find_exact(target: &mut Attached, text: &str, timeout: Duration) -> Result<Element, Failure> {
-    match wait_exact(target, text, Condition::Appear, timeout) {
+fn find_exact(
+    target: &mut Attached,
+    session: &str,
+    text: &str,
+    timeout: Duration,
+) -> Result<Element, Failure> {
+    match wait_exact(target, session, (text, Condition::Appear), timeout) {
         Ok(outcome) => outcome
             .element
             .ok_or_else(|| Failure::internal("a wait for an element returned none")),
@@ -459,10 +501,12 @@ fn find_exact(target: &mut Attached, text: &str, timeout: Duration) -> Result<El
     }
 }
 
-/// The screen as a wait's timeout shows it: the replica's revision, its
-/// windows, the elements with refs and the first lines of the interactive
-/// listing.
-fn summary(target: &mut Attached) -> Result<SnapshotSummary, Failure> {
+/// The screen as a timeout shows it: the replica's revision, its windows,
+/// the elements with refs and the first lines of the interactive listing,
+/// whose refs go to `session`, the listing becoming its last snapshot as a
+/// snapshot does, so that a ref the timeout prints is one the session can
+/// act on (real-app-fixes, design D4).
+fn summary(target: &mut Attached, session: &str) -> Result<SnapshotSummary, Failure> {
     let snapshot: Snapshot = target.mirror.snapshot(&SnapshotOptions::interactive())?;
     let lines: Vec<String> = snapshot.text.lines().map(str::to_owned).collect();
     let age = snapshot
@@ -471,15 +515,17 @@ fn summary(target: &mut Attached) -> Result<SnapshotSummary, Failure> {
         .map(|window| window.source.age)
         .min()
         .unwrap_or_default();
-    Ok(SnapshotSummary {
+    let summary = SnapshotSummary {
         revision: snapshot.revision,
         age,
         windows: snapshot.windows.len(),
         elements: snapshot.refs().len(),
         omitted: lines.len().saturating_sub(SUMMARY_LINES),
         lines: lines.into_iter().take(SUMMARY_LINES).collect(),
-        verdict: snapshot.verdict,
-    })
+        verdict: snapshot.verdict.clone(),
+    };
+    super::view::remember(target, session, snapshot);
+    Ok(summary)
 }
 
 /// The element `aim` names if it is on screen now, not covered and not

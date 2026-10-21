@@ -228,6 +228,11 @@ pub struct Open {
     pub elapsed_ms: f64,
     /// Until the replica showed the app; null when it did not.
     pub first_tree_ms: Option<f64>,
+    /// A dialog of system UI in front of the app, as a permission alert,
+    /// named as an action refused under it names it, such as `alert "Allow
+    /// …"`; absent when none stands in front.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert: Option<String>,
 }
 
 /// `snapshot`: the listing, or its delta, and what reading it cost.
@@ -405,6 +410,10 @@ pub struct Get {
     /// For `value`, the field's value, null when it has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    /// For `value`, a switch's or a checkbox's state, as the listing's
+    /// `checked` has it; absent for an element that is neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
     /// For `box`, the bounds in device points.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x: Option<f64>,
@@ -473,8 +482,12 @@ pub struct Screenshot {
     pub path: Option<String>,
     /// `jpeg` or `png`.
     pub format: String,
+    /// The image's size in pixels.
     pub width: u32,
     pub height: u32,
+    /// The screen's size in points, which a click takes, as the image shows
+    /// it scaled to `width` by `height` pixels.
+    pub points: Points,
     pub quality: u8,
     /// The frame's number, for the mirror's latest frame.
     pub seq: Option<u64>,
@@ -488,6 +501,15 @@ pub struct Screenshot {
     /// With `inline`, the image's type: `image/jpeg` or `image/png`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+}
+
+/// A size in points.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
+#[serde(deny_unknown_fields)]
+pub struct Points {
+    pub width: f64,
+    pub height: f64,
 }
 
 /// `click`: where the tap went and what it set off, from its dispatch.

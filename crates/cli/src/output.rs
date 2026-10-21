@@ -110,7 +110,7 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             if let Some(text) = data.get("text").and_then(Value::as_str) {
                 let _ = writeln!(out, "{text}");
             } else if data.get("value").is_some() {
-                let _ = writeln!(out, "{}", str_of(data, "value"));
+                let _ = writeln!(out, "{}", value(data));
             } else {
                 for (label, key) in [
                     ("x:     ", "x"),
@@ -128,10 +128,19 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             }
         }
         "screenshot" => {
-            let _ = writeln!(out, "✓ Screenshot saved to {}", str_of(data, "path"));
+            let path = str_of(data, "path");
+            match sizes(data) {
+                Some(sizes) => {
+                    let _ = writeln!(out, "✓ Screenshot saved to {path} ({sizes})");
+                }
+                None => {
+                    let _ = writeln!(out, "✓ Screenshot saved to {path}");
+                }
+            }
         }
         "wait" if str_of(data, "waited") == "settle" => settle(data, out),
         "wait" if str_of(data, "waited") == "change" => change(data, out),
+        "wait" if data["element"].is_object() => found(data, out),
         "click" => click(data, out),
         "fill" => fill(data, out),
         "type" => typed(data, out),
@@ -142,6 +151,54 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
         _ => {
             let _ = writeln!(out, "✓ Done");
         }
+    }
+}
+
+/// What `get value` prints (real-app-fixes, design D5): the value, else a
+/// switch's or a checkbox's state, `on` or `off` as the listing's `checked`
+/// has it, else `no value`.
+fn value(data: &Value) -> &str {
+    match (data["value"].as_str(), &data["checked"]) {
+        (Some(value), _) if !value.is_empty() => value,
+        (_, Value::Bool(true)) => "on",
+        (_, Value::Bool(false)) => "off",
+        _ => "no value",
+    }
+}
+
+/// A screenshot's image size beside the screen's, which a click takes
+/// points of (real-app-fixes, design D5): `460x1000 of a 402x874-point
+/// screen`, the points to a tenth; `None` for a reply without them.
+pub fn sizes(data: &Value) -> Option<String> {
+    let points = |key: &str| {
+        data["points"][key]
+            .as_f64()
+            .map(|value| (value * 10.0).round() / 10.0)
+    };
+    let (width, height) = (data["width"].as_u64()?, data["height"].as_u64()?);
+    let (across, down) = (points("width")?, points("height")?);
+    Some(format!(
+        "{width}x{height} of a {across}x{down}-point screen"
+    ))
+}
+
+/// A wait that found its element, or an element with its text, named as
+/// the listing names it, by its role, name and ref (real-app-fixes, design
+/// D5): `✓ Found text "Welcome, agent" @e12`, followed by get's line for an
+/// element out of view.
+fn found(data: &Value, out: &mut String) {
+    let element = &data["element"];
+    let mut line = format!("✓ Found {}", str_of(element, "role"));
+    let name = str_of(element, "name");
+    if !name.is_empty() {
+        let _ = write!(line, " {name:?}");
+    }
+    if let Some(reference) = element["ref"].as_str() {
+        let _ = write!(line, " {reference}");
+    }
+    let _ = writeln!(out, "{line}");
+    if data["inView"] == Value::Bool(false) {
+        let _ = writeln!(out, "out of view: scroll it into view before acting on it");
     }
 }
 

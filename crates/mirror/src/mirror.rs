@@ -777,6 +777,19 @@ impl Mirror {
             .map(|cover| cover.by)
     }
 
+    /// The dialog system UI holds in front of the screen, as the replica has
+    /// it now, without reading the target: the top-most modal that cuts what
+    /// lies outside it, a modal window or an alert or dialog node, when a
+    /// window system UI owns holds it, as a permission alert's does, named as
+    /// an action refused under it names it (`dialog "Permission"`, `alert
+    /// "Allow …"`); `None` when no such dialog cuts the screen
+    /// (real-app-fixes, design D5).
+    pub fn system_dialog(&self) -> Option<String> {
+        let view = View::build(&self.replica);
+        let (w, name) = view.front_modal(&self.replica)?;
+        matches!(self.replica.windows[w].owner, Owner::System(_)).then_some(name.by)
+    }
+
     /// The visible bounds of the scroll container that a stroke along the
     /// vertical axis, or the horizontal one, through `at` moves, as the
     /// replica has it now, without reading the target: the innermost node on

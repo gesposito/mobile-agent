@@ -192,6 +192,17 @@ impl View {
         })
     }
 
+    /// The top-most modal that cuts the screen, a modal window or an alert
+    /// or dialog node, with the index of the window that holds it and how
+    /// errors name it over a node it covers; `None` when none cuts it.
+    pub fn front_modal(&self, replica: &Replica) -> Option<(usize, CoverName)> {
+        let cover = self.modal?;
+        let w = match cover {
+            Cover::Window(w) | Cover::Node { w, .. } | Cover::DrawnOver { w, .. } => w,
+        };
+        Some((w, self.name(replica, cover, Point::new(0.0, 0.0))))
+    }
+
     /// What covers all of node `i` of window `w`, when a view marked modal or
     /// a view drawn over it does; `None` under the top-most modal alone or
     /// nothing.

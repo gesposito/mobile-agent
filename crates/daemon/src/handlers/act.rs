@@ -461,12 +461,11 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     let session = call.session.as_str();
     let hold = arg("hold", &args.hold)?.map(Duration::from_millis);
     let (mut aimed, reference, clicked, found) = match (arg("x", &args.x)?, arg("y", &args.y)?) {
-        (Some(x), Some(y)) => (
-            Target::Point(Point::new(x, y)),
-            None,
-            format!("{x} {y}"),
-            None,
-        ),
+        (Some(x), Some(y)) => {
+            let point = Point::new(x, y);
+            on_the_screen(target, point)?;
+            (Target::Point(point), None, format!("{x} {y}"), None)
+        }
         _ => {
             let given = needed(
                 "click",
@@ -547,6 +546,29 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
     Ok(Success::new(Value::Object(data)).warn(warning))
+}
+
+/// Refuses `point` when it lies off the screen, in points as a click takes
+/// them, with a message that gives the screen's size in points and says a
+/// screenshot's pixels are scaled: on the demo pass a model took a 460x1000
+/// screenshot's pixels for the 402x874 points of the screen
+/// (real-app-fixes, design D5).
+fn on_the_screen(target: &mut Attached, point: Point) -> Result<(), Failure> {
+    let screen = screen(target)?;
+    let inside = |value: f64, limit: f64| (0.0..=limit).contains(&value);
+    if inside(point.x, screen.width()) && inside(point.y, screen.height()) {
+        return Ok(());
+    }
+    Err(Failure::new(
+        code::INVALID_ARGUMENT,
+        format!(
+            "({}, {}) lies off the screen, {}x{} points: click takes points, not a screenshot's pixels, which are scaled; a screenshot's reply gives its pixels beside the screen's points",
+            points(point.x),
+            points(point.y),
+            points(screen.width()),
+            points(screen.height())
+        ),
+    ))
 }
 
 /// The text `action` enters, which may be empty.
