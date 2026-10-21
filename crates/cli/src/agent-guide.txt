@@ -57,9 +57,9 @@ Acting
   its cover, named as hints name it, a dialog, a button, disabled or not, a
   bar or the keyboard; act on a dialog first, else scroll it out from under
   the view. element_offscreen: none of it in view; close the keyboard or scroll.
-  fill's reply says what it read back: verified: text, or length for a masked
-  field, from the field's value, a code field's value counting
-  only when the text changed it; readFrom: descendants from its boxes,
+  fill's and type's replies say what they read back: verified: text, or
+  length for a masked field, from the field's value, a code field's value
+  counting only when the text changed it; readFrom: descendants from its boxes,
   readFrom: name from the part of its name the text changed; verified: false
   and reason: no_value_to_read when the field shows nothing to read: look at
   a screenshot. An id on a field's wrapper fills the field inside it; on a
