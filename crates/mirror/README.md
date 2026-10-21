@@ -18,8 +18,8 @@ src/
                 scroll_container_in, uncovered, keys_hidden, edit_menu, field_within, fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
-  view.rs       roles, names, visibility, what modals, views drawn over others, bars and pinned
-                headers cover, tabs by their row, scroll hints
+  view.rs       roles, names, visibility, what modals, views drawn over others, hosts, bars and
+                pinned headers cover, tabs by their row, scroll hints
   visibility.rs how much of an element is in view: its visible bounds, the part a tap reaches,
                 its share and cut edge; the visible bounds of the scroll container under a
                 point, or of the one showing the most of an area; what of an area the system
@@ -361,8 +361,10 @@ also counts).
   screen's footer over the heading scrolled inside its Accept and continue
   button, a create screen's floating button over a list's last row, a
   feed's sticky header over the post scrolled under it; and Bluesky's
-  typeahead, listed after the Explore page it is drawn over, which the
-  order covers without its modal flag. A node reported disabled counts as
+  typeahead, listed after the Explore page it is drawn over, which its
+  modal flag covers, the order alone covering the page where the
+  typeahead's rows lie, since the typeahead holds the whole page as a host
+  does (below). A node reported disabled counts as
   showing something, since UIKit hit-tests a disabled control as an enabled
   one and the touch goes nowhere (rn-app-fixes, design D38): in the
   production-app run a control mostly under a disabled button was tapped on the
@@ -401,15 +403,38 @@ also counts).
   and for the same reason an indicator (`_UIScrollViewScrollIndicator`)
   covers nothing but that copy: over part of the alert's OK button its
   frame left a tap 61% of it, which the interactive listing would mark, as
-  it would every row along a list's edge (rn-app-fixes task 4.3). The risk
-  is 10.28's: a later sibling transparent where it spans an earlier one
-  hides it as if drawn, and nothing in the tree tells; the production-app
-  smoke test's screens and Bluesky's showed none, the alert's indicators aside, and a screen
-  that shows another is recorded here and the rule gated further. The text
-  effects window, listed after the application's window, covers what lies
-  under iOS's edit menu as such a later sibling, its node bounded by the
-  menu's list (design D55): with the window's frame across the screen the
-  sixth production-app run's listing held the menu's cells alone.
+  it would every row along a list's edge (rn-app-fixes task 4.3). A node
+  listed after a sibling that its frame holds whole, that shows nothing
+  itself and is no bar, is a host (real-app-fixes, design D2): it cuts what
+  the sibling holds within the bounds of what shows in it, not within its
+  frame, each bar by its frame, each scroll container by its children that
+  show something, its cells, and each node that shows something itself by
+  its bounds, a scroll indicator and a node that shows nothing drawing
+  nothing, and a refusal or a hint names the part that lies over the
+  element. XCTest gives such a node its whole frame while it draws only what
+  it holds: spike S14 found, on the Simulator's iOS 26.5 runtime, the
+  container iOS 26 keeps a navigation controller's floating bottom toolbar
+  in spanning the window, listed after the content, while it draws only the
+  toolbar, 86 points at the screen's bottom, which hid every row of a
+  system app's list, and a sheet's list, in a view of the sheet's content
+  frame listed after the search bar's view, with that frame while its first
+  cell starts 73 points lower, under the search bar, which hid the search
+  field (`floating-toolbar-ios`, `search-sheet-ios`). A node listed after a
+  sibling it overlaps only in part, a footer, a header or a floating button
+  laid out over one edge of what it is drawn over, covers its frame, as the
+  archived shapes need: the consent screen's footer, the feed's header listed
+  after its list, the creation tab's footer, whose band above its tab bar
+  covers the strip of the controls under it, the controls behind a header,
+  and the edit menu's window as the reader bounds it. The risk is 10.28's,
+  in two forms nothing in the tree tells apart: such a node transparent
+  where it overlaps its sibling hides that part as if drawn, and a host
+  whose background is drawn, which the tree does not show, leaves listed
+  what that background hides. The text effects window, listed after the
+  application's window, covers what lies under iOS's edit menu as such a
+  later sibling, its node bounded by the menu's list (design D55): with the
+  window's frame across the screen the sixth production-app run's listing
+  held the menu's cells alone. A window across the screen is a host, and
+  covers what its menu draws.
   A view that covers part of an element leaves it listed, and a tap on it
   goes to the part a tap reaches (`visibility`, below). On either platform,
   acting on what a view drawn over it covers, all of it or so much that no
@@ -905,6 +930,7 @@ cargo test -p mirror
 | | Hardware keyboard connected | `interactive::a_keyboard_window_that_draws_nothing_covers_nothing_and_counts_as_no_keyboard`, and in the Simulator's reader `elements::tests::a_keyboard_window_whose_keys_lie_below_the_screen_covers_nothing`, `elements::tests::a_keyboard_window_under_a_hardware_keyboard_covers_the_strip_it_keeps_for_a_toolbar`; the waits in the daemon, `handlers::act::tests::a_fill_on_ios_with_a_hardware_keyboard_types_once_the_field_has_the_focus`, `handlers::act::tests::fill_by_the_identifier_of_a_node_that_brings_up_a_keyboard_drawing_nothing_types_at_once` (rn-app-fixes 6.1, design D52) |
 | | Counts agree by construction | `interactive::hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_what_the_listing_drops`, `interactive::the_card_above_the_feed_is_counted_behind_the_header`, `interactive::on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out` (rn-app-fixes 6.3, design D54); a control a view covers whole kept in the full listing at `visible=0%`, its hints counting only what it leaves out, `interactive::a_control_a_view_covers_whole_stays_in_the_full_listing_at_visible_0`, and a refusal naming a cover as the hint does, `interactive::a_refusal_names_a_cover_as_the_hint_counting_the_element_does` (rn-app-fixes 7.3, design D57) |
 | | Edit menu up | `interactive::the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed`, `interactive::a_control_wholly_under_the_edit_menu_is_left_out_and_refused_naming_the_menu`, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header`, and in the Simulator's reader `elements::tests::the_edit_menus_window_covers_the_strip_its_cells_draw_on`, `elements::tests::a_system_window_that_draws_nothing_covers_nothing`; `fill` closing the menu in the daemon, `handlers::act::tests::a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up` (rn-app-fixes 7.1, design D55) |
+| In-view marking follows the screen | A collection view's rows | `interactive::a_container_spanning_the_window_that_draws_only_its_toolbar_hides_no_row_on_ios`; a sheet's search field above its list's inset, `interactive::a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios`; a window across the screen as a host, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header` (real-app-fixes 2.1, design D2) |
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
