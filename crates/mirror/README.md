@@ -148,7 +148,19 @@ Conventions a driver follows:
   the keyboard's window, which spans the screen (task 10.21): none for a
   window that draws nothing, as while a hardware keyboard serves the field
   in focus and iOS keeps the keyboard's keys below the screen, or the strip
-  it keeps for a keyboard toolbar (rn-app-fixes, design D52). The text
+  it keeps for a keyboard toolbar (rn-app-fixes, design D52). The reader
+  bounds the keyboard's window by its host, which also holds the place of
+  the input accessory view of the field in focus, and the app draws that
+  view in its own window, as a browser draws its address bar above the
+  keyboard: the mirror takes from a keyboard window's bounds the band
+  across their top that a child of the host, the node whose bounds the
+  window's are, holds while it holds nothing, no children, name or value,
+  across the host from its top (real-app-fixes, task 5.6). With the
+  address bar in focus on an iPhone 17 the host reached from 498 points
+  down and the place it kept from 498 to 566, the keyboard drawing from
+  566, so the field, from 510 to 558, read as under the keyboard; with a
+  text field in focus the host starts at the prediction bar, 539 points
+  down, and holds no such place. The text
   effects window, which holds iOS's edit menu and spans the screen too,
   stays in the application's tree after the application's window, and the
   Simulator's reader gives its node's bounds as what it draws, the menu's
@@ -931,6 +943,7 @@ cargo test -p mirror
 | | Counts agree by construction | `interactive::hints_call_a_view_listed_before_the_list_across_its_top_the_header_and_count_what_the_listing_drops`, `interactive::the_card_above_the_feed_is_counted_behind_the_header`, `interactive::on_every_fixture_the_hints_count_what_the_interactive_listing_leaves_out` (rn-app-fixes 6.3, design D54); a control a view covers whole kept in the full listing at `visible=0%`, its hints counting only what it leaves out, `interactive::a_control_a_view_covers_whole_stays_in_the_full_listing_at_visible_0`, and a refusal naming a cover as the hint does, `interactive::a_refusal_names_a_cover_as_the_hint_counting_the_element_does` (rn-app-fixes 7.3, design D57) |
 | | Edit menu up | `interactive::the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed`, `interactive::a_control_wholly_under_the_edit_menu_is_left_out_and_refused_naming_the_menu`, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header`, and in the Simulator's reader `elements::tests::the_edit_menus_window_covers_the_strip_its_cells_draw_on`, `elements::tests::a_system_window_that_draws_nothing_covers_nothing`; `fill` closing the menu in the daemon, `handlers::act::tests::a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up` (rn-app-fixes 7.1, design D55) |
 | In-view marking follows the screen | A collection view's rows | `interactive::a_container_spanning_the_window_that_draws_only_its_toolbar_hides_no_row_on_ios`; a sheet's search field above its list's inset, `interactive::a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios`; a window across the screen as a host, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header` (real-app-fixes 2.1, design D2) |
+| | (real-app-fixes 5.6: a field drawn in the place the keyboard's host keeps for its input accessory view) | in the daemon, `handlers::act::tests::a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked`, on its fake's accessory board |
 | Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |

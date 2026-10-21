@@ -1082,7 +1082,14 @@ settle windows take real time, and a device model:
   one class while it is empty and of another once it holds text, so that
   the field's node is a new one at the same place, as a sheet's title
   field took a new node while `fill` entered its text (real-app-fixes,
-  task 5.5); and by default the form with the shapes a React Native app showed in the smoke
+  task 5.5); `accessory`, a field and a button beside it drawn above the
+  keyboard from 510 to 558 points, in the place the keyboard's host keeps
+  for the field's input accessory view, a button above them and one under
+  the keys, the field in focus bringing up the keyboard's window as the
+  reader gave it with a browser's address bar in focus, bounded by the host
+  from 498 points down, its first 68 points a node that holds nothing, the
+  keyboard drawing from 566, and taking taps only there (real-app-fixes,
+  task 5.6); and by default the form with the shapes a React Native app showed in the smoke
   test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
   `placeholder-secret`, a field the tree shows as a labelled node without
@@ -1383,6 +1390,7 @@ Worked around here without changing `crates/mirror`:
 | (real-app-fixes task 3.3, design D6: the switch press on the Simulator) | (a held press on the control a labelled switch holds, and on the control of a switch that shares its identifier with the element clicked, the cell around it or the label in it; a plain tap off the Simulator) | `handlers::act::tests::a_click_on_a_simulator_s_switch_holds_40_ms_on_the_control_inside_it`, `handlers::act::tests::a_click_on_an_element_holding_a_switch_that_shares_its_identifier_presses_its_control`, `handlers::act::tests::a_click_on_a_switch_off_the_simulator_taps_its_centre_plainly` |
 | (real-app-fixes task 5.4, designs D5 and D6: `get` on an element that stands for a switch) | (`get value` and `get text` on the cell around a switch that shares its identifier, on the label in it and on a named cell, reading the switch) | `handlers::act::tests::get_value_and_text_of_an_element_holding_a_switch_that_shares_its_identifier_read_it` |
 | (real-app-fixes task 5.5, design D3: a field whose node the app replaces) | (`fill` by the ref of a field without an identifier and by an identifier, and `type` into the field in focus, each field taking a new node as its text goes in, read back) | `handlers::act::tests::fill_and_type_read_back_a_field_whose_node_the_app_replaces_as_the_text_goes_in` |
+| (real-app-fixes task 5.6: a field drawn in the place the keyboard's host keeps for its input accessory view) | (the interactive listing lists the field and the button beside it, the button under the keys counted under the keyboard, and a click on the field taps its centre; the rule in `crates/mirror/README.md`) | `handlers::act::tests::a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
 
