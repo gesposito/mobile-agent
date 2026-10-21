@@ -158,14 +158,16 @@ fn settle_after(env: &TestEnv, action: &str) -> Value {
     results[1]["result"].clone()
 }
 
-/// The edit is a `type`, which replies once its keys went in: `fill` replies
-/// only once the field has held its text for the quiet window (task 10.23),
-/// so a settle after it finds the screen quiet already.
+/// The edit is a key pressed into the field in focus, which replies once
+/// the key went in: `fill` and `type` reply only once the field has held
+/// their text for the quiet window (task 10.23; real-app-fixes, design D3),
+/// so a settle after either finds the screen quiet already.
 #[test]
 fn a_settle_after_an_edit_ended_on_both_signals() {
     let env = TestEnv::start("android");
     env.cli(&["open", APP]).ok();
-    let data = settle_after(&env, "type #login-username agent");
+    env.cli(&["fill", "#login-username", "agen"]).ok();
+    let data = settle_after(&env, "press t");
     assert_eq!(data["settled"], true, "{data}");
     assert_eq!(
         data["endedBy"], "both",
