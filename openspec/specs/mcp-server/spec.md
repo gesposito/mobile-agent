@@ -31,11 +31,15 @@ The screenshot tool SHALL return the image as image content by default, bounded 
 - **THEN** the first result carries the image and the second a text saying the screen is unchanged
 
 ### Requirement: Long waits bounded and cancellable
-A tool that waits SHALL send progress notifications while it waits, SHALL end at a per-call bound of 55 s by default (configurable), and a cancelled call SHALL cancel the command in flight in the daemon so the target is free for the next call.
+A tool that waits SHALL send progress notifications while it waits, SHALL end at a per-call bound of 55 s by default (configurable), SHALL pass the bound to the daemon only as a cap on a command's timeout and never as a default above the daemon's own, and a cancelled call SHALL cancel the command in flight in the daemon so the target is free for the next call.
 
 #### Scenario: Wait past the bound
-- **WHEN** a client waits for text that never appears with the default bound
-- **THEN** progress arrives while it waits, the call ends at 55 s with `wait_timeout` and the screen's summary, and the next call runs at once
+- **WHEN** a client waits for text that never appears with a `timeout` above the bound
+- **THEN** progress arrives while it waits, the call ends at the bound with `wait_timeout` and the screen's summary, and the next call runs at once
+
+#### Scenario: A click on a missing element
+- **WHEN** a client clicks a selector that matches nothing and gives no `timeout`
+- **THEN** the call fails with `element_not_found` at the daemon's default timeout, not at the bound
 
 ### Requirement: Profiles and instructions
 The server SHALL offer a `--tools` option with a read-only profile (devices, status, doctor, snapshot, diff_snapshot, get, wait, screenshot, help) and the full set, SHALL give the client an instructions card whose first 512 characters stand alone and whose whole stays under 4,096, and SHALL serve the agent guide through a `help` tool.
