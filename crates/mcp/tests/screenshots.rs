@@ -1,8 +1,9 @@
 //! Screenshots (task 5.3 of the `mcp-server` change, design D6): the
 //! screenshot tool answers with image content, the JPEG the daemon returns
-//! inline, its long edge at most 1000 px; with `ifChanged`, a line instead
-//! when the image is the session's last; with `path`, the path alone, the
-//! daemon having written the file.
+//! inline, its long edge at most 1000 px, and the text of its pixels beside
+//! the screen's points; with `ifChanged`, a line instead when the image is
+//! the session's last; with `path`, the path and the sizes, the daemon
+//! having written the file.
 
 mod support;
 
@@ -52,6 +53,9 @@ fn a_screenshot_is_the_daemon_s_image_within_the_long_edge_bound() {
         let result = client.call("screenshot", json!({}));
         let (mime, bytes) = image(&result);
         assert_eq!(mime, "image/jpeg", "{era}");
+        // Design D5 of real-app-fixes: the text says the image's pixels
+        // beside the screen's points, which a click takes.
+        assert_eq!(text(&result), "447x1000 of a 408x912-point screen", "{era}");
         let (width, height) = size(&bytes);
         assert!(
             width.max(height) <= 1000 && width.max(height) > 0,
@@ -89,8 +93,17 @@ fn if_changed_answers_a_still_screen_with_a_line_and_a_changed_one_with_the_imag
     client.close();
 }
 
+/// The path a screenshot's answer names, on its first line, with the sizes
+/// on the second (design D5 of real-app-fixes).
+#[track_caller]
+fn path_and_sizes(answer: &str) -> &str {
+    let (path, sizes) = answer.split_once('\n').expect("two lines");
+    assert_eq!(sizes, "447x1000 of a 408x912-point screen", "{answer}");
+    path
+}
+
 #[test]
-fn a_screenshot_with_a_path_answers_with_the_path_alone() {
+fn a_screenshot_with_a_path_answers_with_the_path_and_the_sizes() {
     let env = TestEnv::start("android");
     let mut client = Raw::spawn(&env);
     ok(&client.call("open", json!({"app": APP})));
@@ -99,17 +112,21 @@ fn a_screenshot_with_a_path_answers_with_the_path_alone() {
     let result = client.call("screenshot", json!({"path": "shot.jpg"}));
     let answer = ok(&result);
     let content = result["content"].as_array().expect("content");
-    assert_eq!(content.len(), 1, "the path alone: {result}");
+    assert_eq!(content.len(), 1, "one text, no image: {result}");
     let written = env.path().join("shot.jpg");
     assert!(written.is_file(), "the daemon wrote {}", written.display());
     assert_eq!(
-        Path::new(&answer).canonicalize().ok(),
+        Path::new(path_and_sizes(&answer)).canonicalize().ok(),
         written.canonicalize().ok(),
         "{answer}"
     );
     let absolute = env.path().join("absolute.jpg");
     let named = ok(&client.call("screenshot", json!({"path": absolute.to_string_lossy()})));
-    assert_eq!(named, absolute.to_string_lossy(), "{named}");
+    assert_eq!(
+        path_and_sizes(&named),
+        absolute.to_string_lossy(),
+        "{named}"
+    );
     assert!(absolute.is_file());
     assert_eq!(
         text(&client.call(

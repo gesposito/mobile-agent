@@ -240,6 +240,35 @@ fn scroll_and_swipe_move_the_list() {
     assert!(back.contains("id=row-1,"), "{back}");
 }
 
+/// Design D5 of real-app-fixes: the human lines name what the screen
+/// holds: `get value` a switch's state, `no value` for an element without
+/// one, a screenshot the image's pixels and the screen's points, and an
+/// `open` that a system alert stands in front of the alert, in its warning.
+#[test]
+fn the_lines_name_what_the_screen_holds() {
+    let env = TestEnv::start("android");
+    env.cli(&["click", "#launcher-settings"]).ok();
+    let state = env.cli(&["get", "value", "#settings-wifi"]).ok();
+    assert_eq!(state.stdout, "on\n");
+    let none = env.cli(&["get", "value", "#settings-title"]).ok();
+    assert_eq!(none.stdout, "no value\n");
+    let shot = env.cli(&["screenshot", "shot.jpg"]).ok().stdout;
+    assert!(
+        shot.ends_with(" (447x1000 of a 408x912-point screen)\n"),
+        "{shot}"
+    );
+    env.cli(&["open", APP, "--env", "initial_tab=system"]).ok();
+    env.cli(&["click", "#system-permission"]).ok();
+    env.cli(&["press", "Home"]).ok();
+    let opened = env.cli(&["open", APP]).ok();
+    assert_eq!(opened.stdout, format!("✓ Opened {APP} on emulator-5554\n"));
+    assert!(
+        opened.stderr.starts_with("⚠ dialog \"Permission\" "),
+        "{}",
+        opened.stderr
+    );
+}
+
 #[test]
 fn screenshot_saves_the_latest_frame() {
     let env = TestEnv::start("android");
@@ -278,6 +307,12 @@ fn wait_returns_when_an_element_or_text_appears_and_when_the_screen_settles() {
         .json();
     assert_eq!(reply["data"]["waited"], "text", "{reply}");
     assert_eq!(reply["data"]["element"]["id"], "login-status");
+    // Design D5 of real-app-fixes: the line names the element found.
+    let found = env.cli(&["wait", "--text", "Welcome, agent"]).ok().stdout;
+    assert!(
+        found.starts_with("✓ Found text \"Welcome, agent\" @e"),
+        "{found}"
+    );
 
     let settled = env.cli(&["--json", "wait", "--settle"]).ok().json();
     assert_eq!(settled["data"]["settled"], true, "{settled}");

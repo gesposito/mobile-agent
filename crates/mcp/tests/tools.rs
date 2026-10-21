@@ -369,6 +369,9 @@ fn fill_and_get_answer_with_the_lines_the_cli_prints() {
         json!({"what": "text", "selector": "#login-username"}),
     ));
     assert_eq!(got, "agent");
+    // Design D5 of real-app-fixes: an element without a value says so.
+    let none = ok(&client.call("get", json!({"what": "value", "selector": "#login-title"})));
+    assert_eq!(none, "no value");
     let session = client.session();
     let boxed = ok(&client.call("get", json!({"what": "box", "selector": "#login-submit"})));
     let (printed, _) = env.cli(&["--session", &session, "get", "box", "#login-submit"]);

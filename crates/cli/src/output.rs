@@ -728,6 +728,71 @@ mod tests {
         );
     }
 
+    /// Design D5 of real-app-fixes: get value prints a switch's state, `on`
+    /// or `off` as the listing's `checked` has it, the value where the
+    /// element has one, and `no value` for an element without either.
+    #[test]
+    fn get_value_prints_a_switch_s_state_and_says_when_there_is_no_value() {
+        let got = |data: Value| human("get", &ok(data)).0;
+        assert_eq!(
+            got(json!({"value": null, "checked": true, "inView": true})),
+            "on\n"
+        );
+        assert_eq!(
+            got(json!({"value": null, "checked": false, "inView": true})),
+            "off\n"
+        );
+        assert_eq!(got(json!({"value": "agent", "inView": true})), "agent\n");
+        assert_eq!(got(json!({"value": null, "inView": true})), "no value\n");
+        assert_eq!(
+            got(json!({"value": null, "inView": false})),
+            "no value\nout of view: scroll it into view before acting on it\n"
+        );
+    }
+
+    /// Design D5: a wait for a text or an element names what it found, its
+    /// role, name and ref, where it answered `✓ Done` alone; a wait for an
+    /// element to go keeps that.
+    #[test]
+    fn a_wait_names_the_element_it_found() {
+        let found = |waited: &str, element: Value| {
+            let mut data = json!({"waited": waited, "elapsedMs": 12.5, "element": element,
+                                  "inView": true});
+            data[waited] = "Welcome".into();
+            human("wait", &ok(data)).0
+        };
+        let status = json!({"ref": "@e12", "role": "text", "name": "Welcome, agent",
+                            "id": "login-status", "value": null, "enabled": true,
+                            "bounds": [16.0, 342.0, 386.0, 366.0]});
+        assert_eq!(
+            found("text", status.clone()),
+            "✓ Found text \"Welcome, agent\" @e12\n"
+        );
+        assert_eq!(
+            found("selector", status),
+            "✓ Found text \"Welcome, agent\" @e12\n"
+        );
+        let unnamed = json!({"ref": null, "role": "image", "name": "", "id": "logo",
+                             "value": null, "enabled": true, "bounds": [0.0, 0.0, 8.0, 8.0]});
+        assert_eq!(found("selector", unnamed), "✓ Found image\n");
+        assert_eq!(found("selector", Value::Null), "✓ Done\n");
+    }
+
+    /// Design D5: a screenshot's line says the image's pixels beside the
+    /// screen's points, which a click takes.
+    #[test]
+    fn a_screenshot_says_its_pixels_and_the_screen_s_points() {
+        let shot = ok(json!({
+            "path": "/tmp/shot.jpg", "format": "jpeg", "width": 460, "height": 1000,
+            "quality": 80, "seq": 7, "ageMs": 3.5, "source": "frame",
+            "points": {"width": 402.0, "height": 874.0},
+        }));
+        assert_eq!(
+            human("screenshot", &shot).0,
+            "✓ Screenshot saved to /tmp/shot.jpg (460x1000 of a 402x874-point screen)\n"
+        );
+    }
+
     /// Task 6.5: scroll's line counts its strokes and, with until, says how
     /// much of the element is in view, the element named as the listing
     /// names it, or by the selector when it has no name.
