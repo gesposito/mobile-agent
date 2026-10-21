@@ -100,6 +100,10 @@ mod tests {
                 "{profile:?}:\n{card}"
             );
             assert!(card.contains("55 s"), "{profile:?}: the bound:\n{card}");
+            assert!(
+                card.contains("53 s"),
+                "{profile:?}: the cap, the bound less 2 s:\n{card}"
+            );
         }
     }
 

@@ -593,11 +593,9 @@ mod tests {
         call
     }
 
-    /// The line of [`call`], its bound's timeout left out.
+    /// The line of [`call`].
     fn line(tool: &str, value: Value) -> Map<String, Value> {
-        let mut line = call(tool, value).line;
-        line.remove("timeout");
-        line
+        call(tool, value).line
     }
 
     #[test]
@@ -679,19 +677,45 @@ mod tests {
         }
     }
 
+    /// Design D7 of real-app-fixes: the bound caps a timeout a call names
+    /// and gives none to a call that names none, so that the daemon's own
+    /// default rules, the session's, else 10 s.
     #[test]
-    fn a_call_waits_within_the_bound_less_the_margin() {
-        let waiting = call("wait", json!({"text": "Welcome"}));
-        assert_eq!(
-            waiting.line["timeout"], 10_000,
-            "the bound of 12 s less 2 s"
-        );
-        assert!(waiting.capped.is_empty());
+    fn the_bound_caps_a_call_s_timeout_and_gives_none_to_a_call_without_one() {
+        for (tool, arguments) in [
+            ("wait", json!({"text": "Welcome"})),
+            ("wait", json!({"selector": "#spinner", "state": "hidden"})),
+            ("wait", json!({"change": true})),
+            ("wait", json!({"settle": true})),
+            ("click", json!({"selector": "#submit"})),
+            ("fill", json!({"selector": "#name", "text": "agent"})),
+            ("type", json!({"text": "agent"})),
+            ("get", json!({"what": "text", "selector": "#name"})),
+            ("open", json!({"app": "com.example"})),
+            ("scroll", json!({"until": "#row-150"})),
+            ("snapshot", json!({})),
+            ("screenshot", json!({})),
+            ("press", json!({"key": "Enter"})),
+        ] {
+            let sent = call(tool, arguments);
+            assert!(
+                !sent.line.contains_key("timeout") && sent.capped.is_empty(),
+                "{tool} sends the daemon no timeout: {:?}",
+                sent.line
+            );
+        }
         let given = call("wait", json!({"text": "Welcome", "timeout": 5000}));
         assert_eq!(
             given.line["timeout"], 5000,
             "a timeout under the bound as given"
         );
+        assert!(given.capped.is_empty());
+        let at = call("click", json!({"selector": "#submit", "timeout": 10_000}));
+        assert_eq!(
+            at.line["timeout"], 10_000,
+            "the bound of 12 s less 2 s, as given"
+        );
+        assert!(at.capped.is_empty());
         let above = call("wait", json!({"text": "Welcome", "timeout": 60_000}));
         assert_eq!(above.line["timeout"], 10_000);
         assert_eq!(
@@ -700,42 +724,18 @@ mod tests {
                 "timeout 60000 ms was capped to 10000 ms, the server's bound of 12 s less its margin of 2 s"
             ]
         );
+        let click = call("click", json!({"selector": "#submit", "timeout": 30_000}));
+        assert_eq!(click.line["timeout"], 10_000, "a click's timeout is capped");
+        assert_eq!(click.capped.len(), 1);
         let time = call("wait", json!({"ms": 30_000}));
         assert_eq!(time.line["ms"], 10_000, "a time wait is capped too");
+        assert!(!time.line.contains_key("timeout"), "{:?}", time.line);
         assert_eq!(time.capped.len(), 1);
-        let settle = call("wait", json!({"settle": true}));
-        assert!(
-            !settle.line.contains_key("timeout"),
-            "a settle keeps its own maximum: {:?}",
-            settle.line
-        );
         let settle = call("wait", json!({"settle": true, "timeout": 20_000}));
         assert_eq!(
             settle.line["timeout"], 10_000,
             "a settle's timeout is capped"
         );
-        for (tool, arguments) in [
-            ("click", json!({"selector": "#submit"})),
-            ("fill", json!({"selector": "#name", "text": "agent"})),
-            ("open", json!({"app": "com.example"})),
-            ("scroll", json!({"until": "#row-150"})),
-        ] {
-            assert_eq!(
-                call(tool, arguments).line["timeout"],
-                10_000,
-                "{tool} takes the bound"
-            );
-        }
-        for (tool, arguments) in [
-            ("snapshot", json!({})),
-            ("screenshot", json!({})),
-            ("press", json!({"key": "Enter"})),
-        ] {
-            assert!(
-                !call(tool, arguments).line.contains_key("timeout"),
-                "{tool} takes no timeout"
-            );
-        }
     }
 
     #[test]

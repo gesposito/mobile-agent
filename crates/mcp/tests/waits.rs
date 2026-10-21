@@ -1,12 +1,15 @@
-//! Waits (task 5.4 of the `mcp-server` change, design D7): every call is
-//! bounded by `--call-timeout`, 55 s by default, which the server passes to
-//! the daemon as the command's timeout less a margin, so the daemon's own
-//! wait ends first with its `wait_timeout`; a timeout above the bound is
-//! capped the same way and the text says so; while a call runs, a client
-//! whose request carries a progress token gets a progress notification
-//! every 5 s; a client's cancellation sends the daemon the session's
-//! `cancel`, so the next call runs at once; and a call the daemon has not
-//! answered 5 s past the bound is cancelled by the server itself.
+//! Waits (task 5.4 of the `mcp-server` change, design D7, and design D7 of
+//! `real-app-fixes`): every call is bounded by `--call-timeout`, 55 s by
+//! default, which caps a timeout the call names at the bound less a margin,
+//! so the daemon's own wait ends first with its `wait_timeout`, the text
+//! saying so, and gives no timeout to a call that names none, which keeps
+//! the daemon's default of 10 s: a wait, or a click on a selector that
+//! matches nothing, ends there, and `wait`'s description says to pass
+//! `timeout` for longer; while a call runs, a client whose request carries
+//! a progress token gets a progress notification every 5 s; a client's
+//! cancellation sends the daemon the session's `cancel`, so the next call
+//! runs at once; and a call the daemon has not answered 5 s past the bound
+//! is cancelled by the server itself.
 
 mod support;
 
@@ -18,6 +21,10 @@ use support::{Raw, TestEnv, is_error, ok, text};
 
 /// A text no fake screen shows, so a wait for it runs to its timeout.
 const ABSENT: &str = "Welcome aboard";
+
+/// A selector no element of a fake screen matches, so a click on it waits
+/// its timeout for the element.
+const MISSING: &str = "#placeholder-nothing";
 
 /// Whether `elapsed` lies between `from` and `to` seconds.
 fn within(elapsed: Duration, from: f64, to: f64) -> bool {
@@ -54,6 +61,8 @@ fn the_server_takes_its_bound_its_profile_and_structured_with_their_defaults() {
     assert!(!refused.status.success(), "a bound of 2 s is refused");
 }
 
+/// A wait whose timeout lies past the bound, capped to the bound less the
+/// margin, as the spec's scenario Wait past the bound has it.
 #[test]
 fn a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout() {
     let env = TestEnv::start("android");
@@ -63,7 +72,7 @@ fn a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_tim
         "tools/call",
         json!({
             "name": "wait",
-            "arguments": {"text": ABSENT},
+            "arguments": {"text": ABSENT, "timeout": 60000},
             "_meta": {"progressToken": "p1"},
         }),
     );
@@ -134,6 +143,79 @@ fn a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_t
         .map(|notification| &notification.message)
         .collect();
     assert!(came.is_empty(), "no token, no progress: {came:?}");
+    client.close();
+}
+
+/// Design D7 of real-app-fixes, scenario A click on a missing element: a
+/// call that names no timeout sends none, so a click on a selector that
+/// matches nothing fails with `element_not_found` at the daemon's default
+/// of 10 s, not at the bound, 30 s here, less the margin.
+#[test]
+fn a_click_on_a_missing_element_without_a_timeout_fails_at_the_daemon_s_default() {
+    let env = TestEnv::start("android");
+    let mut client = Raw::spawn_with(&env, &["--call-timeout", "30"]);
+    let started = Instant::now();
+    let result = client.call("click", json!({"selector": MISSING}));
+    let elapsed = started.elapsed();
+    assert!(is_error(&result), "{result}");
+    let message = text(&result);
+    assert!(
+        message
+            .starts_with("✗ element_not_found: no element matches id placeholder-nothing after ")
+            && message.contains("the screen shows"),
+        "the daemon's own failure: {message}"
+    );
+    assert!(!message.contains("capped"), "nothing was capped: {message}");
+    assert!(
+        within(elapsed, 9.5, 12.5),
+        "the click failed at {elapsed:?}: the daemon's default of 10 s, not the bound of 30 s less 2 s"
+    );
+    client.close();
+}
+
+/// Design D7 of real-app-fixes: a wait that names no timeout ends at the
+/// daemon's default of 10 s with `wait_timeout` and the screen's summary,
+/// not at the bound, 30 s here, less the margin.
+#[test]
+fn a_wait_without_a_timeout_ends_at_the_daemon_s_default() {
+    let env = TestEnv::start("android");
+    let mut client = Raw::spawn_with(&env, &["--call-timeout", "30"]);
+    let started = Instant::now();
+    let result = client.call("wait", json!({"text": ABSENT}));
+    let elapsed = started.elapsed();
+    assert!(is_error(&result), "{result}");
+    let message = text(&result);
+    assert!(
+        message.starts_with("✗ wait_timeout: waited ")
+            && message.contains(ABSENT)
+            && message.contains("the screen now shows"),
+        "the daemon's own timeout: {message}"
+    );
+    assert!(!message.contains("capped"), "nothing was capped: {message}");
+    assert!(
+        within(elapsed, 9.5, 12.5),
+        "the wait ended at {elapsed:?}: the daemon's default of 10 s, not the bound of 30 s less 2 s"
+    );
+    client.close();
+}
+
+/// Design D7 of real-app-fixes: `wait`'s description says to pass
+/// `timeout` for a wait past the daemon's default of 10 s, which a call
+/// without one keeps.
+#[test]
+fn wait_s_description_says_to_pass_timeout_for_a_wait_past_the_default() {
+    let env = TestEnv::start("android");
+    let mut client = Raw::spawn(&env);
+    let tools = client.list_tools();
+    let wait = tools
+        .iter()
+        .find(|tool| tool["name"] == "wait")
+        .unwrap_or_else(|| panic!("no wait tool: {tools:?}"));
+    let description = wait["description"].as_str().unwrap_or_default();
+    assert!(
+        description.contains("pass `timeout`") && description.contains("10 s"),
+        "{description}"
+    );
     client.close();
 }
 

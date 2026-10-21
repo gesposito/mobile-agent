@@ -3,9 +3,11 @@
 //! device alone and refuses the others naming the profile; the
 //! instructions card, which `initialize` and `server/discover` carry, has a
 //! first paragraph that stands alone under 512 characters and a whole under
-//! 4,096, and says when the profile is read-only; and the `help` tool
-//! answers with the CLI's agent guide, preceded by a table that maps the
-//! guide's commands to the tools and their arguments.
+//! 4,096, says when the profile is read-only, and says that a click which
+//! reports no change may precede the app's reaction and when a wait needs a
+//! `timeout` (design D7 of `real-app-fixes`); and the `help` tool answers
+//! with the CLI's agent guide, preceded by a table that maps the guide's
+//! commands to the tools and their arguments.
 
 mod support;
 
@@ -111,6 +113,45 @@ fn the_instructions_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_c
         );
         client.close();
     }
+}
+
+/// Design D7 of real-app-fixes: the card says that a click which reports
+/// no change may precede the app's reaction, which a wait with `change`
+/// collects, as a push 428 ms after a tap that reported none did in the
+/// first pass on real apps; that a wait ends at the daemon's default of
+/// 10 s unless the call passes `timeout`; and the cap, the bound less 2 s.
+#[test]
+fn the_card_says_a_click_without_a_change_may_precede_the_reaction_and_when_to_pass_timeout() {
+    let env = TestEnv::start("android");
+    let client = Raw::spawn_with(&env, &["--call-timeout", "30"]);
+    let card = client.discovered["instructions"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no instructions in {}", client.discovered))
+        .to_owned();
+    let sentences: Vec<&str> = card
+        .split("\n\n")
+        .flat_map(|paragraph| paragraph.split(". "))
+        .collect();
+    let reaction = sentences
+        .iter()
+        .find(|sentence| sentence.contains("no change"))
+        .unwrap_or_else(|| panic!("no sentence on a click that reports no change:\n{card}"));
+    for needle in ["click", "reaction", "change: true"] {
+        assert!(
+            reaction.contains(needle),
+            "the sentence lacks {needle:?}: {reaction}"
+        );
+    }
+    let default = sentences
+        .iter()
+        .find(|sentence| sentence.contains("10 s"))
+        .unwrap_or_else(|| panic!("no sentence on the default of 10 s:\n{card}"));
+    assert!(default.contains("pass timeout"), "{default}");
+    assert!(
+        card.contains("30 s") && card.contains("28 s"),
+        "the bound and the cap, the bound less 2 s:\n{card}"
+    );
+    client.close();
 }
 
 #[test]
