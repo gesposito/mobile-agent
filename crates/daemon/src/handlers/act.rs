@@ -457,6 +457,44 @@ fn offscreen(
     .with_data(json!({"ref": reference_json(element.reference), "visible": 0.0}))
 }
 
+/// How long a click holds a switch on a Simulator (real-app-fixes, design
+/// D6): in spike S14 a plain tap, its up within 0.1 ms of its down, flipped
+/// neither UIKit's Bold Text switch nor SwiftUI's Animate toggle, a UISwitch
+/// underneath, 0 times in 10 each, while holds of 40, 80 and 150 ms flipped
+/// both 10 times in 10; 40 ms is the shortest measured.
+const SWITCH_HOLD: Duration = Duration::from_millis(40);
+
+/// The control that `switch`, a switch, draws, when it is a labelled one
+/// holding it: the first switch the full listing lists below it, as the
+/// Simulator's reader gives UIKit's switch cells and SwiftUI's toggles;
+/// `None` when it lists none, the switch being the control (real-app-fixes,
+/// design D6). In spike S14 taps at the centre of Settings' labelled Bold
+/// Text switch, 330 points wide, landed on its label and flipped it 0 times
+/// in 40 at any hold, while the 63-point control inside it flipped 30 times
+/// in 30 with a hold.
+fn control_within(target: &mut Attached, switch: &Element) -> Result<Option<Element>, Failure> {
+    let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
+    let Some(at) = listing
+        .elements
+        .iter()
+        .position(|element| element.id == switch.id)
+    else {
+        return Ok(None);
+    };
+    let depth = listing.elements[at].depth;
+    Ok(listing.elements[at + 1..]
+        .iter()
+        .take_while(|element| element.depth > depth)
+        .find(|element| element.role == Role::Switch)
+        .cloned())
+}
+
+/// Taps the element the request names, or a point, and watches what the tap
+/// sets off. A switch on a Simulator takes a press held [`SWITCH_HOLD`] on
+/// the control a labelled one holds ([`control_within`]), unless the
+/// request names its own hold; elsewhere a switch takes a tap, as Android's
+/// flip on one (real-app-fixes, design D6). A point off the screen is
+/// refused ([`on_the_screen`]).
 pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) -> Outcome {
     let session = call.session.as_str();
     let hold = arg("hold", &args.hold)?.map(Duration::from_millis);
@@ -485,6 +523,21 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     // mirror cannot resolve fails the tap below.
     let element =
         found.or_else(|| reference.and_then(|reference| target.mirror.resolve(reference).ok()));
+    // A switch on a Simulator takes a press held on the control it draws
+    // (real-app-fixes, design D6).
+    let simulator = target.info.class == TargetClass::Simulator;
+    let (element, hold) = match element {
+        Some(switch) if simulator && switch.role == Role::Switch => {
+            let control = control_within(target, &switch)?;
+            if let Some(control) = &control {
+                aimed = control
+                    .reference
+                    .map_or(Target::Point(control.bounds.center()), Target::Ref);
+            }
+            (Some(control.unwrap_or(switch)), hold.or(Some(SWITCH_HOLD)))
+        }
+        other => (other, hold),
+    };
     let seen = match &element {
         Some(element) => sight(target, "click", element, &clicked, &mut aimed)?,
         None => None,
