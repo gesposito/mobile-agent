@@ -262,6 +262,8 @@ enum FormField {
     Title,
     /// The dialog board's name field, under the dialog.
     Name,
+    /// One of the rebuilt board's two fields, by its place.
+    Rebuilt(usize),
 }
 
 impl FormField {
@@ -282,6 +284,10 @@ impl FormField {
             ) => Some(FormField::Pin),
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
             (Board::Dialog, NAME_FIELD) => Some(FormField::Name),
+            (Board::Rebuilt, id) => REBUILT_FIELDS
+                .iter()
+                .position(|field| *field == id)
+                .map(FormField::Rebuilt),
             _ => None,
         }
     }
@@ -366,6 +372,13 @@ enum Board {
     /// one, as On/Off Labels' row. A tap flips a row's switch only on its
     /// control, as UIKit's does.
     Switches,
+    /// Two fields the app lays out again once they hold text (real-app-fixes,
+    /// task 5.5): the first with an identifier, the second without one,
+    /// each in a view of one class while it is empty and of another once
+    /// it holds text, so that the tree holds a new node for the field as
+    /// its text goes in, at the same place, as the Simulator's reader gave
+    /// a sheet's title field during a fill.
+    Rebuilt,
 }
 
 impl Board {
@@ -388,6 +401,7 @@ impl Board {
             "sheet" => Board::Sheet,
             "dialog" => Board::Dialog,
             "switches" => Board::Switches,
+            "rebuilt" => Board::Rebuilt,
             _ => Board::Form,
         }
     }
@@ -412,6 +426,10 @@ const NAME_FIELD: &str = "placeholder-name";
 /// The identifiers the rows of the switches board share with what they
 /// hold.
 const SWITCH_ROWS: [&str; 2] = ["placeholder-id-1", "placeholder-id-2"];
+
+/// The rebuilt board's fields: the first by its identifier, the second by
+/// the key the fake finds it by, which the app gives no identifier.
+const REBUILT_FIELDS: [&str; 2] = ["placeholder-id-1", "placeholder-field-2"];
 
 /// Where the switches board's rows lie, in points, as their cells.
 const SWITCH_CELLS: [[f64; 4]; 2] = [[20.0, 134.0, 382.0, 187.0], [20.0, 293.0, 382.0, 345.0]];
@@ -468,6 +486,8 @@ struct Forms {
     offset: f64,
     /// Whether each of the switches board's switches is on.
     switches: [bool; 2],
+    /// What each of the rebuilt board's fields holds.
+    rebuilt: [String; 2],
 }
 
 impl Forms {
@@ -490,6 +510,7 @@ impl Forms {
             footer: false,
             offset: 0.0,
             switches: [false; 2],
+            rebuilt: Default::default(),
         }
     }
 
@@ -526,6 +547,7 @@ impl Forms {
             FormField::Pin => &mut self.pin,
             FormField::Title => &mut self.title,
             FormField::Name => &mut self.name,
+            FormField::Rebuilt(k) => &mut self.rebuilt[k],
         }
     }
 
@@ -1487,6 +1509,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Sheet => sheet_content(kit, forms),
         Board::Dialog => dialog_content(kit, forms),
         Board::Switches => switches_content(kit, forms),
+        Board::Rebuilt => rebuilt_content(kit, forms),
     }
 }
 
@@ -2129,6 +2152,53 @@ fn switches_content(kit: Kit, forms: &Forms) -> Vec<El> {
     vec![
         labelled,
         named,
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
+/// The rebuilt board (real-app-fixes, task 5.5): a heading, then the two
+/// fields, each in a view without a name of one class while the field is
+/// empty and of another once it holds text, a plain view and a cell on iOS,
+/// so that the field's node is a new one at the same place; and the status
+/// line.
+fn rebuilt_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let ios = kit.platform == Platform::Ios;
+    let field = |k: usize, top: f64| {
+        let rect = [20.0, top, 382.0, top + 48.0];
+        let focused = forms.focus == Some(FormField::Rebuilt(k));
+        let field = kit.field(
+            REBUILT_FIELDS[k],
+            &format!("placeholder-textbox-{}", k + 1),
+            &forms.rebuilt[k],
+            false,
+            focused,
+            rect,
+        );
+        let field = if k == 0 {
+            field
+        } else {
+            field.key(REBUILT_FIELDS[k])
+        };
+        let view = match (forms.rebuilt[k].is_empty(), ios) {
+            (true, true) => "XCUIElementTypeOther",
+            (false, true) => "XCUIElementTypeCell",
+            (true, false) => "android.view.ViewGroup",
+            (false, false) => "android.widget.FrameLayout",
+        };
+        El::new(view, rect).child(field)
+    };
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        field(0, 140.0),
+        field(1, 220.0),
         kit.label(
             Some("placeholder-status"),
             &forms.status,

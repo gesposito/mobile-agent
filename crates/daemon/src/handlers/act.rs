@@ -5351,4 +5351,55 @@ mod tests {
             }
         }
     }
+
+    /// Task 5.5 of real-app-fixes, on the Simulator in the second pass on
+    /// real apps: a New Event sheet's title field was `@e94` before `fill`
+    /// typed into it and `@e114` after, with the same identifier, role and
+    /// bounds and a clear button inside, the app having laid the sheet out
+    /// again while the text went in, and the fill answered `✓ Done (not
+    /// read back, typed)` with "left the screen", by its ref and by its
+    /// identifier. The read-back finds the field again by what identified it
+    /// before the entry, its identifier and role, else its bounds and role,
+    /// in the replica as it is: on the placeholder app's rebuilt board,
+    /// whose fields the app lays out again once they hold text, a fill by
+    /// the ref of the field without an identifier and one by the other's
+    /// identifier read their text back, and so does a type into the field
+    /// in focus.
+    #[test]
+    fn fill_and_type_read_back_a_field_whose_node_the_app_replaces_as_the_text_goes_in() {
+        let rebuilt = ["PLACEHOLDER_SCREEN=rebuilt"];
+        let read_back = |outcome: Outcome, held: &str, platform: &str| {
+            let success = outcome.unwrap_or_else(|failure| panic!("{platform}: {failure:?}"));
+            let data = &success.data;
+            assert_eq!(
+                data["verified"], "text",
+                "{platform}: {data}: {:?}",
+                success.warning
+            );
+            assert_eq!(data["readFrom"], "value", "{platform}: {data}");
+            assert_eq!(success.warning, None, "{platform}: {data}");
+            if data.get("typed").is_some() {
+                assert_eq!(data["text"], held, "{platform}: {data}");
+            }
+        };
+        for platform in ["ios", "android"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &rebuilt);
+            let plain = ref_named(&mut target, "placeholder-textbox-2");
+            read_back(fill_in(&mut target, &plain, "later"), "later", platform);
+            let filled = fill_in(&mut target, "#placeholder-id-1", "standup");
+            read_back(filled, "standup", platform);
+            assert_eq!(
+                held(&mut target, "#placeholder-id-1"),
+                "standup",
+                "{platform}"
+            );
+
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &rebuilt);
+            click_on(&mut target, "#placeholder-id-1").unwrap();
+            let typed = type_into(&mut target, None, "standup");
+            read_back(typed, "standup", platform);
+        }
+    }
 }
