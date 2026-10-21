@@ -421,12 +421,26 @@ impl Kit {
         if shown.is_empty() { el } else { el.text(shown) }
     }
 
+    /// A switch named `label`: on Android the widget; on iOS a labelled
+    /// switch holding the control it draws, an unnamed switch 63x28 points
+    /// at its right end, as the Simulator's reader gives UIKit's switch
+    /// cells and SwiftUI's toggles (spike S14: Settings' Bold Text switch,
+    /// 330 points wide, around its 63-point control), a tap anywhere on it
+    /// flipping it.
     pub fn switch(self, id: &str, label: &str, on: bool, rect: [f64; 4]) -> El {
         match self.platform {
             Platform::Android => El::new("android.widget.Switch", rect)
                 .text(label)
                 .with(TAPPABLE),
-            Platform::Ios => El::new("XCUIElementTypeSwitch", rect).desc(label),
+            Platform::Ios => {
+                let middle = (rect[1] + rect[3]) / 2.0;
+                let control = [rect[2] - 63.0, middle - 14.0, rect[2], middle + 14.0];
+                El::new("XCUIElementTypeSwitch", rect).desc(label).child(
+                    El::new("XCUIElementTypeSwitch", control)
+                        .with(NodeFlags::CHECKABLE)
+                        .set(NodeFlags::CHECKED, on),
+                )
+            }
         }
         .id(id)
         .with(NodeFlags::CHECKABLE)

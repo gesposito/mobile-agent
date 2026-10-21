@@ -5124,4 +5124,77 @@ mod tests {
         );
         assert_eq!(texts(&sent), [("42".to_owned(), None)]);
     }
+
+    /// The taps among `sent`: where each went and how long it held.
+    fn presses(sent: &Sent) -> Vec<(Point, Option<Duration>)> {
+        sent.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, input)| match input {
+                Input::Tap { at, hold } => Some((*at, *hold)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The settings app on the first target the fake `platform` lists, and
+    /// the inputs it is sent.
+    fn settings_on(platform: &str) -> (Attached, Sent) {
+        let driver = FakeDriver::parse(platform).unwrap();
+        let app = match platform {
+            "android" => "com.android.settings",
+            _ => "com.apple.Preferences",
+        };
+        recorded(&driver, app, &[])
+    }
+
+    /// Design D6 of real-app-fixes, spike S14: on the Simulator a plain
+    /// tap, its up within 0.1 ms of its down, flipped neither Settings' Bold
+    /// Text switch nor the fixture's Animate toggle, 0 of 10 each, where a
+    /// 40 ms hold flipped both 10 of 10; and a tap at the centre of
+    /// Settings' labelled switch, on its label, flipped it at no hold, where
+    /// one on the control inside it did. A click on a switch there holds 40
+    /// ms on the control inside a labelled one, whether the switch's
+    /// identifier, its ref or the control's ref names it, and a hold the
+    /// click names stands.
+    #[test]
+    fn a_click_on_a_simulator_s_switch_holds_40_ms_on_the_control_inside_it() {
+        let (mut target, sent) = settings_on("ios");
+        // The Wi-Fi switch spans 16 to 386 points across, from 134 to 182
+        // down, its control the 63 points at its right end.
+        let control = Point::new(354.5, 158.0);
+        let held = Some(Duration::from_millis(40));
+        click_on(&mut target, "#settings-wifi").unwrap();
+        assert_eq!(presses(&sent), [(control, held)]);
+        let switch = ref_named(&mut target, "Wi-Fi");
+        // The control is the only element without a name.
+        let inside = ref_named(&mut target, "");
+        for aimed in [switch, inside] {
+            sent.lock().unwrap().clear();
+            click_on(&mut target, &aimed).unwrap();
+            assert_eq!(presses(&sent), [(control, held)], "{aimed}");
+        }
+        sent.lock().unwrap().clear();
+        let longer = json!({"action": "click", "target": "#settings-wifi", "hold": 300});
+        super::super::run_on(&mut target, "default", &request(&longer.to_string())).unwrap();
+        assert_eq!(
+            presses(&sent),
+            [(control, Some(Duration::from_millis(300)))]
+        );
+    }
+
+    /// Design D6: the hold and the aim are the Simulator's: Android's
+    /// switches flip on a tap, and a physical iPhone's were not measured, so
+    /// a click on a switch there taps its centre plainly.
+    #[test]
+    fn a_click_on_a_switch_off_the_simulator_taps_its_centre_plainly() {
+        for (platform, centre) in [
+            ("android", Point::new(204.0, 120.0)),
+            ("ios-device", Point::new(201.0, 158.0)),
+        ] {
+            let (mut target, sent) = settings_on(platform);
+            click_on(&mut target, "#settings-wifi").unwrap();
+            assert_eq!(presses(&sent), [(centre, None)], "{platform}");
+        }
+    }
 }
