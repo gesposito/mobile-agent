@@ -5338,4 +5338,60 @@ mod tests {
         assert_eq!(presses(&sent), [(second, held)], "the named cell");
         assert!(on(&mut target, "placeholder-switch-2"));
     }
+
+    /// Task 5.4 of real-app-fixes, on the Simulator's Settings in the second
+    /// pass on real apps: `get value #ENHANCE_TEXT_LEGIBILITY` read the table
+    /// cell around Bold Text's labelled switch, which the identifier names
+    /// first, and answered `no value` with the switch on, while `click` by
+    /// the same identifier presses the switch's control (design D6); `get
+    /// text` there read the cell's empty name, and both reads of On/Off
+    /// Labels' named cell its value, its switch's state as a raw 0. `get
+    /// value` and `get text` on an element that holds a switch sharing its
+    /// identifier, or that such a switch holds, read that switch, the one a
+    /// click on the element finds: the cell by its identifier, the label
+    /// inside the labelled switch by its ref, and the named cell by its
+    /// identifier; a switch's state and name are no platform's, so on
+    /// Android too.
+    #[test]
+    fn get_value_and_text_of_an_element_holding_a_switch_that_shares_its_identifier_read_it() {
+        for platform in ["ios", "android"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=switches"]);
+            let label = listed(&mut target, true, "button \"placeholder-switch-1\"");
+            let start = label.find("ref=e").expect("the label's ref") + 4;
+            let digits: String = label[start + 1..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            let label = format!("@e{digits}");
+            let get = |target: &mut Attached, what: &str, aimed: &str| {
+                let get = json!({"action": "get", "what": what, "target": aimed});
+                super::super::run_on(target, "default", &request(&get.to_string()))
+                    .unwrap()
+                    .data
+            };
+            let rows = [
+                ("#placeholder-id-1", "placeholder-switch-1"),
+                (label.as_str(), "placeholder-switch-1"),
+                ("#placeholder-id-2", "placeholder-switch-2"),
+            ];
+            for (aimed, name) in rows {
+                let read = get(&mut target, "value", aimed);
+                let state = (read["value"].clone(), read["checked"].clone());
+                assert_eq!(state, (Value::Null, json!(false)), "{platform}: {aimed}");
+                let text = get(&mut target, "text", aimed);
+                assert_eq!(text["text"], name, "{platform}: {aimed}");
+            }
+            // Each row's control takes the tap that flips its switch.
+            for (x, y) in [(336.5, 160.0), (330.5, 319.0)] {
+                let tap = json!({"action": "click", "x": x, "y": y}).to_string();
+                super::super::run_on(&mut target, "default", &request(&tap)).unwrap();
+            }
+            for (aimed, _) in rows {
+                let read = get(&mut target, "value", aimed);
+                let state = (read["value"].clone(), read["checked"].clone());
+                assert_eq!(state, (Value::Null, json!(true)), "{platform}: {aimed}");
+            }
+        }
+    }
 }
