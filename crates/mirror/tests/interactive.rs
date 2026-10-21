@@ -2006,9 +2006,14 @@ fn the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed(
 /// footer, whatever its bounds: one of the sixth production-app run's listings
 /// with the edit menu up counted the screen's elements "(4 more actionable
 /// items behind the header)", the window spanning the screen as the reader
-/// gave it before task 7.1. The hint names what a tap at an element's
-/// centre would land on, the menu's cell over the password field, else the
-/// window, as a plain view.
+/// gave it before task 7.1. A window over the screen is a shape the reader
+/// stopped giving at that task, which bounds the window by what it draws,
+/// and the test keeps its point, no header or footer named, under the host
+/// rule (real-app-fixes, design D2): the window holds the application's own
+/// within its frame and shows nothing itself, so it covers what its menu
+/// draws, the cells and the Back and Forward buttons beside them, and the
+/// screen's elements stay listed, the password field with the share of it
+/// the menu leaves, none left out for a cover.
 #[test]
 fn a_hint_never_calls_a_window_over_the_screen_a_header() {
     let spanning = edit_menu_with_window_at(json!([0, 0, 402, 874]));
@@ -2020,14 +2025,14 @@ fn a_hint_never_calls_a_window_over_the_screen_a_header() {
         "{}",
         listing.text
     );
-    assert_eq!(counted_left_out(&listing), 3, "{}", listing.text);
-    assert!(
-        listing
-            .text
-            .contains("(2 more actionable items under the overlay)"),
-        "{}",
-        listing.text
-    );
+    assert_eq!(counted_left_out(&listing), 0, "{}", listing.text);
+    for line in [
+        "- textbox \"Username\" [focused, id=login-username, ref=e1]: agent",
+        "- textbox \"Password\" [visible=2%, id=login-password, ref=e2]",
+        "- button \"Sign in\" [id=login-submit, ref=e3]",
+    ] {
+        assert!(listing.text.contains(line), "{line}:\n{}", listing.text);
+    }
 }
 
 /// Rn-app-fixes D55 (task 7.1): a control wholly under the edit menu's

@@ -43,10 +43,13 @@
 //!     node listed after a sibling it overlaps cuts what that sibling holds
 //!     within its bounds when it shows something, as `on_top` does
 //!     (rn-app-fixes, design D31), but for an alert's text, over which
-//!     UIKit draws nothing (physical-ios, design D26); and a bar, or a
-//!     header the app pins across the top of a scrolling sibling, cuts
-//!     what its later siblings hold within its bounds, whatever the order
-//!     (rn-app-fixes, design D38).
+//!     UIKit draws nothing (physical-ios, design D26), and a host, a node
+//!     that holds the whole sibling within its frame, shows nothing itself
+//!     and is no bar, cuts it within the bounds of what shows in it
+//!     (real-app-fixes, design D2); and a bar, or a header the app pins
+//!     across the top of a scrolling sibling, cuts what its later siblings
+//!     hold within its bounds, whatever the order (rn-app-fixes, design
+//!     D38).
 //!
 //! A disabled control shows something wherever showing decides a cover:
 //! UIKit hit-tests it as an enabled one, and the touch goes nowhere
@@ -969,16 +972,32 @@ fn drawn_in_order(replica: &Replica) -> bool {
 /// list's lower part shows nothing in the tree while a tap on it lands on it
 /// (rn-app-fixes, design D48).
 ///
-/// The covers are taken top-most first, parents before their children and
-/// later siblings before earlier ones, so a node two views cover is
-/// recorded under the one drawn last. Overlapping siblings are found by
-/// [`overlapping`]. A header the app pins across a scrolling sibling's top
-/// ([`pinned_over`]) is drawn over that sibling whatever the order, and the
-/// sibling covers none of it.
+/// A view listed after a sibling that its frame holds whole, that shows
+/// nothing itself and is no bar, is a host: it covers what shows in it
+/// ([`drawn_parts`]), each part recorded as the view over what it covers,
+/// not its frame, which XCTest gives it whole while it draws only what it
+/// holds (real-app-fixes, design D2). On iOS 26 the container a navigation
+/// controller's floating bottom toolbar lives in spans the window, listed
+/// after the content, and draws only the toolbar, 86 points at the
+/// screen's bottom; a sheet's list, in a view of the sheet's content frame
+/// listed after the search bar's view, has that frame while its first cell
+/// starts 73 points lower, under the search bar (spike S14). A view listed
+/// after a sibling it overlaps only in part is a bar or a float, a footer,
+/// a header or a floating button laid out over one edge of what it is
+/// drawn over, and covers its frame.
+///
+/// The covers are taken top-most first, parents before their children,
+/// later siblings before earlier ones and a host's parts the last drawn
+/// first, so a node two views cover is recorded under the one drawn last.
+/// Overlapping siblings are found by [`overlapping`]. A header the app pins
+/// across a scrolling sibling's top ([`pinned_over`]) is drawn over that
+/// sibling whatever the order, and the sibling covers none of it.
 fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     let mut sweep = Sweep::default();
     let mut stack = Vec::new();
+    // What the host met last draws ([`drawn_parts`]).
+    let mut parts = Vec::new();
     for (w, window) in replica.windows.iter().enumerate() {
         if window.kind == WindowType::INPUT_METHOD {
             continue;
@@ -988,6 +1007,7 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
         let mut shows: Option<Vec<bool>> = None;
         let mut alerted: Option<Vec<bool>> = None;
         let mut lists: Option<Vec<usize>> = None;
+        let mut hosted: Option<usize> = None;
         for parent in 0..window.nodes.len() {
             let children = &window.nodes[parent].children;
             if children.len() < 2 {
@@ -1014,26 +1034,81 @@ fn cover_by_later_siblings(replica: &Replica, facts: &mut [Vec<Facts>], covers: 
                 {
                     continue;
                 }
-                stack.clear();
-                stack.push(e);
+                let node = &window.nodes[s];
+                let host = shows[s]
+                    && !shows_itself(node, f)
+                    && !BAR_CLASSES.contains(&&*node.class)
+                    && within(&facts[w][e].rect, &f.rect, slack);
+                if host && hosted != Some(s) {
+                    parts.clear();
+                    drawn_parts(window, &facts[w], shows, s, &mut parts);
+                    hosted = Some(s);
+                }
+                let covering: &[usize] = if host {
+                    &parts
+                } else {
+                    std::slice::from_ref(&s)
+                };
                 let indicator = |n: usize| &*window.nodes[n].class == SCROLL_INDICATOR;
                 let spared = |d: usize, f: &Facts| {
                     matches!(f.role, Role::Tablist | Role::Toolbar)
                         || (alerted[d] && &*window.nodes[d].class == roles::XCUI_STATIC_TEXT)
                         || (indicator(s) && !indicator(d))
                 };
-                hide_under(
-                    window,
-                    &mut facts[w],
-                    s,
-                    &mut stack,
-                    slack,
-                    spared,
-                    |d, whole| {
-                        record(covers, whole, (w, d, Cover::DrawnOver { w, s }));
-                    },
-                );
+                for &c in covering.iter().rev() {
+                    let cover = &facts[w][c];
+                    if !cover.visible || cover.hidden != Hidden::No {
+                        continue;
+                    }
+                    stack.clear();
+                    stack.push(e);
+                    hide_under(
+                        window,
+                        &mut facts[w],
+                        c,
+                        &mut stack,
+                        slack,
+                        spared,
+                        |d, whole| {
+                            record(covers, whole, (w, d, Cover::DrawnOver { w, s: c }));
+                        },
+                    );
+                }
             }
+        }
+    }
+}
+
+/// What node `s` of `window`, a host ([`cover_by_later_siblings`]), draws,
+/// as far as the tree tells, `shows` saying what shows something
+/// ([`showing`]): the nodes below it, in pre-order, that draw, each over
+/// its bounds: a bar ([`BAR_CLASSES`]), the children of a scroll container
+/// that show something, its cells, rather than the container, whose frame
+/// takes in the insets it lays its content out under, and a node that
+/// shows something itself ([`shows_itself`]); a scroll indicator, which
+/// covers nothing but its own copy, and a node that shows nothing draw
+/// nothing (real-app-fixes, design D2).
+fn drawn_parts(window: &Win, facts: &[Facts], shows: &[bool], s: usize, parts: &mut Vec<usize>) {
+    let indicator = |n: usize| &*window.nodes[n].class == SCROLL_INDICATOR;
+    let mut stack = vec![s];
+    while let Some(n) = stack.pop() {
+        let node = &window.nodes[n];
+        if !shows[n] || indicator(n) {
+            continue;
+        }
+        if n != s && BAR_CLASSES.contains(&&*node.class) {
+            parts.push(n);
+        } else if scrolls(node, &facts[n]) {
+            parts.extend(
+                node.children
+                    .iter()
+                    .copied()
+                    .filter(|&c| shows[c] && !indicator(c)),
+            );
+        } else if n != s && shows_itself(node, &facts[n]) {
+            parts.push(n);
+        } else {
+            stack.extend(node.children.iter().rev().copied());
         }
     }
 }
