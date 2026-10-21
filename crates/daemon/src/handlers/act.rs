@@ -5250,4 +5250,60 @@ mod tests {
             assert_eq!(presses(&sent), [(centre, None)], "{platform}");
         }
     }
+
+    /// The listing line that starts `- <prefix>`, its leading spaces aside,
+    /// in the listing `options` give.
+    fn listed(target: &mut Attached, interactive: bool, prefix: &str) -> String {
+        let line = json!({"action": "snapshot", "interactive": interactive}).to_string();
+        let listing = super::super::run_on(target, "default", &request(&line))
+            .unwrap()
+            .data["snapshot"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        listing
+            .lines()
+            .map(str::trim_start)
+            .find(|line| line.starts_with(&format!("- {prefix}")))
+            .unwrap_or_else(|| panic!("no line {prefix} in:\n{listing}"))
+            .to_owned()
+    }
+
+    /// Design D6 of real-app-fixes, task 3.3 on the Simulator's Settings:
+    /// `#ENHANCE_TEXT_LEGIBILITY` named the table cell around Bold Text's
+    /// labelled switch, which shares the identifier with the switch and the
+    /// label inside it and comes first in the tree, so the click was a
+    /// plain tap at the cell's centre, on the label, and flipped nothing in
+    /// 10; On/Off Labels' named cell shares its identifier with its label
+    /// and its control. A click on an element that holds a switch sharing
+    /// its identifier, or that such a switch holds, presses that switch's
+    /// control held 40 ms, whichever selector named the element, and the
+    /// switch flips.
+    #[test]
+    fn a_click_on_an_element_holding_a_switch_that_shares_its_identifier_presses_its_control() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let (mut target, sent) = recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=switches"]);
+        let held = Some(Duration::from_millis(40));
+        let (first, second) = (Point::new(336.5, 160.0), Point::new(330.5, 319.0));
+        let on = |target: &mut Attached, name: &str| {
+            listed(target, false, &format!("switch \"{name}\"")).contains("checked=true")
+        };
+        click_on(&mut target, "#placeholder-id-1").unwrap();
+        assert_eq!(presses(&sent), [(first, held)], "the cell");
+        assert!(on(&mut target, "placeholder-switch-1"));
+        let label = listed(&mut target, true, "button \"placeholder-switch-1\"");
+        let start = label.find("ref=e").expect("the label's ref") + 4;
+        let digits: String = label[start + 1..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        sent.lock().unwrap().clear();
+        click_on(&mut target, &format!("@e{digits}")).unwrap();
+        assert_eq!(presses(&sent), [(first, held)], "the label: {label}");
+        assert!(!on(&mut target, "placeholder-switch-1"));
+        sent.lock().unwrap().clear();
+        click_on(&mut target, "#placeholder-id-2").unwrap();
+        assert_eq!(presses(&sent), [(second, held)], "the named cell");
+        assert!(on(&mut target, "placeholder-switch-2"));
+    }
 }

@@ -358,6 +358,14 @@ enum Board {
     /// A dialog the app marks modal over a field (task 5.6, N12): the name
     /// field under the dialog, which asks to stay or leave.
     Dialog,
+    /// The two shapes of a switch row the Simulator's reader gave Settings'
+    /// Display & Text Size (real-app-fixes, task 3.3): a table cell around a
+    /// labelled switch that holds its label and its control, the cell, the
+    /// switch and the label sharing one identifier, as Bold Text's row; and
+    /// a named cell around its label and its control, the three sharing
+    /// one, as On/Off Labels' row. A tap flips a row's switch only on its
+    /// control, as UIKit's does.
+    Switches,
 }
 
 impl Board {
@@ -379,6 +387,7 @@ impl Board {
             "code-valued" => Board::CodeValued,
             "sheet" => Board::Sheet,
             "dialog" => Board::Dialog,
+            "switches" => Board::Switches,
             _ => Board::Form,
         }
     }
@@ -399,6 +408,17 @@ const TITLE_FIELD: &str = "placeholder-title";
 
 /// The dialog board's name field.
 const NAME_FIELD: &str = "placeholder-name";
+
+/// The identifiers the rows of the switches board share with what they
+/// hold.
+const SWITCH_ROWS: [&str; 2] = ["placeholder-id-1", "placeholder-id-2"];
+
+/// Where the switches board's rows lie, in points, as their cells.
+const SWITCH_CELLS: [[f64; 4]; 2] = [[20.0, 134.0, 382.0, 187.0], [20.0, 293.0, 382.0, 345.0]];
+
+/// Where the switches board's controls lie, in points: the 63x28 switch
+/// UIKit draws at a row's right end.
+const SWITCH_CONTROLS: [[f64; 4]; 2] = [[305.0, 146.0, 368.0, 174.0], [299.0, 305.0, 362.0, 333.0]];
 
 /// The creation tab's list, in points: down to the bottom of the screen,
 /// under the footer.
@@ -446,6 +466,8 @@ struct Forms {
     footer: bool,
     /// How far the creation tab's list is scrolled, in points.
     offset: f64,
+    /// Whether each of the switches board's switches is on.
+    switches: [bool; 2],
 }
 
 impl Forms {
@@ -467,6 +489,7 @@ impl Forms {
             lifted: false,
             footer: false,
             offset: 0.0,
+            switches: [false; 2],
         }
     }
 
@@ -506,12 +529,20 @@ impl Forms {
         }
     }
 
-    /// A tap that landed on `hit`, or on the keyboard when `on_keyboard`
-    /// says so: a key of the number pad, entered into the field in focus.
-    /// A field takes the focus. On the screens of the production-app run the
-    /// status names what else the tap landed on, but for the creation tab's
-    /// disabled button, which does nothing.
-    fn tap(&mut self, hit: Option<&str>, on_keyboard: bool) {
+    /// A tap at `at`, in points, that landed on `hit`, or on the keyboard
+    /// when `on_keyboard` says so: a key of the number pad, entered into the
+    /// field in focus. A field takes the focus. On the screens of the
+    /// production-app run the status names what else the tap landed on, but
+    /// for the creation tab's disabled button, which does nothing; on the
+    /// switches board a tap on a control flips its switch.
+    fn tap(&mut self, hit: Option<&str>, at: (f64, f64), on_keyboard: bool) {
+        if self.board == Board::Switches {
+            for (on, control) in self.switches.iter_mut().zip(SWITCH_CONTROLS) {
+                if tree::contains(control, at.0, at.1) {
+                    *on = !*on;
+                }
+            }
+        }
         if on_keyboard {
             if let Some(field) = self.focus {
                 self.field(field).push(PAD_KEY);
@@ -942,7 +973,7 @@ impl Device {
             }
             Foreground::Placeholder => {
                 if let Some(forms) = self.placeholder.as_mut() {
-                    forms.tap(hit, on_keyboard);
+                    forms.tap(hit, at, on_keyboard);
                 }
             }
             Foreground::Fixture(_) => {
@@ -1455,6 +1486,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         | Board::CodeValued => code_content(kit, forms),
         Board::Sheet => sheet_content(kit, forms),
         Board::Dialog => dialog_content(kit, forms),
+        Board::Switches => switches_content(kit, forms),
     }
 }
 
@@ -2039,6 +2071,72 @@ fn dialog_content(kit: Kit, forms: &Forms) -> Vec<El> {
 /// a count; the list, its first card at 41 points, 116 tall, 81 of them
 /// above the list's top, where the header is; and the status line below
 /// the list. The header carries no identifier the tree reports.
+/// The switches board (real-app-fixes, task 3.3): Bold Text's row, a table
+/// cell without a name around a labelled switch, which holds its label, a
+/// button, and its control, an unnamed switch, the cell, the switch and the
+/// label sharing an identifier; then On/Off Labels' row, a named cell whose
+/// value is its switch's state around its label, a text, and its control, a
+/// switch, the three sharing one; and the status line. Classes are the
+/// Simulator reader's, and their Android counterparts there.
+fn switches_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let ios = kit.platform == Platform::Ios;
+    let class = |ios_class: &'static str, android_class: &'static str| {
+        if ios { ios_class } else { android_class }
+    };
+    let switch = |k: usize, rect: [f64; 4]| {
+        El::new(
+            class("XCUIElementTypeSwitch", "android.widget.Switch"),
+            rect,
+        )
+        .with(protocol::snapshot::NodeFlags::CHECKABLE)
+        .set(protocol::snapshot::NodeFlags::CHECKED, forms.switches[k])
+    };
+    let cell = |k: usize| {
+        El::new(
+            class("XCUIElementTypeCell", "android.view.ViewGroup"),
+            SWITCH_CELLS[k],
+        )
+        .id(SWITCH_ROWS[k])
+    };
+    let labelled = cell(0).child(
+        switch(0, [36.0, 146.0, 366.0, 174.0])
+            .id(SWITCH_ROWS[0])
+            .desc("placeholder-switch-1")
+            .children([
+                El::new(
+                    class("XCUIElementTypeButton", "android.widget.Button"),
+                    [36.0, 150.0, 107.0, 170.0],
+                )
+                .id(SWITCH_ROWS[0])
+                .desc("placeholder-switch-1"),
+                switch(0, SWITCH_CONTROLS[0]),
+            ]),
+    );
+    let named = cell(1)
+        .desc("placeholder-switch-2")
+        .text(if forms.switches[1] { "1" } else { "0" })
+        .children([
+            El::new(
+                class("XCUIElementTypeStaticText", "android.widget.TextView"),
+                [36.0, 309.0, 150.0, 329.0],
+            )
+            .id(SWITCH_ROWS[1])
+            .desc("placeholder-switch-2"),
+            switch(1, SWITCH_CONTROLS[1])
+                .id(SWITCH_ROWS[1])
+                .desc("placeholder-switch-2"),
+        ]);
+    vec![
+        labelled,
+        named,
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
 fn feed_content(kit: Kit, forms: &Forms) -> Vec<El> {
     let width = kit.width();
     vec![
