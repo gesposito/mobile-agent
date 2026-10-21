@@ -464,34 +464,65 @@ fn offscreen(
 /// both 10 times in 10; 40 ms is the shortest measured.
 const SWITCH_HOLD: Duration = Duration::from_millis(40);
 
-/// The control that `switch`, a switch, draws, when it is a labelled one
-/// holding it: the first switch the full listing lists below it, as the
-/// Simulator's reader gives UIKit's switch cells and SwiftUI's toggles;
-/// `None` when it lists none, the switch being the control (real-app-fixes,
-/// design D6). In spike S14 taps at the centre of Settings' labelled Bold
-/// Text switch, 330 points wide, landed on its label and flipped it 0 times
-/// in 40 at any hold, while the 63-point control inside it flipped 30 times
-/// in 30 with a hold.
-fn control_within(target: &mut Attached, switch: &Element) -> Result<Option<Element>, Failure> {
+/// The control a click on `element` presses on a Simulator, from the full
+/// listing (real-app-fixes, design D6): that of the switch `element` is, or
+/// else of the first switch below it that shares its identifier, as the
+/// table cell around Settings' Bold Text switch, or else of the nearest
+/// switch above it that shares it, as the label inside that switch; a
+/// switch's control is the first switch the listing lists below it, as
+/// the Simulator's reader gives UIKit's switch cells and SwiftUI's toggles,
+/// or the switch itself. `None` when `element` is no switch and no switch
+/// shares its identifier so. In spike S14 taps at the centre of Settings'
+/// labelled Bold Text switch, 330 points wide, landed on its label and
+/// flipped it 0 times in 40 at any hold, while the 63-point control inside
+/// it flipped 30 times in 30 with a hold; in task 3.3 the identifier the
+/// switch shares named the table cell around it, whose centre, on the
+/// label, flipped it 0 times in 10.
+fn switch_control(target: &mut Attached, element: &Element) -> Result<Option<Element>, Failure> {
+    if element.role != Role::Switch && element.identifier.is_none() {
+        return Ok(None);
+    }
     let listing = target.mirror.snapshot(&SnapshotOptions::full())?;
-    let Some(at) = listing
-        .elements
-        .iter()
-        .position(|element| element.id == switch.id)
-    else {
+    let elements = &listing.elements;
+    let Some(at) = elements.iter().position(|listed| listed.id == element.id) else {
         return Ok(None);
     };
-    let depth = listing.elements[at].depth;
-    Ok(listing.elements[at + 1..]
-        .iter()
-        .take_while(|element| element.depth > depth)
-        .find(|element| element.role == Role::Switch)
-        .cloned())
+    let below = |at: usize| {
+        let depth = elements[at].depth;
+        (at + 1..elements.len()).take_while(move |&k| elements[k].depth > depth)
+    };
+    let shares = |k: &usize| {
+        elements[*k].role == Role::Switch && elements[*k].identifier == element.identifier
+    };
+    let switch = if element.role == Role::Switch {
+        Some(at)
+    } else {
+        below(at).find(shares).or_else(|| {
+            let mut depth = elements[at].depth;
+            (0..at)
+                .rev()
+                .filter(|&k| {
+                    let above = elements[k].depth < depth;
+                    if above {
+                        depth = elements[k].depth;
+                    }
+                    above
+                })
+                .find(shares)
+        })
+    };
+    Ok(switch.map(|switch| {
+        let control = below(switch)
+            .find(|&k| elements[k].role == Role::Switch)
+            .unwrap_or(switch);
+        elements[control].clone()
+    }))
 }
 
 /// Taps the element the request names, or a point, and watches what the tap
-/// sets off. A switch on a Simulator takes a press held [`SWITCH_HOLD`] on
-/// the control a labelled one holds ([`control_within`]), unless the
+/// sets off. On a Simulator a switch, or an element that holds a switch
+/// sharing its identifier or that such a switch holds, takes a press held
+/// [`SWITCH_HOLD`] on that switch's control ([`switch_control`]), unless the
 /// request names its own hold; elsewhere a switch takes a tap, as Android's
 /// flip on one (real-app-fixes, design D6). A point off the screen is
 /// refused ([`on_the_screen`]).
@@ -526,17 +557,18 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     // A switch on a Simulator takes a press held on the control it draws
     // (real-app-fixes, design D6).
     let simulator = target.info.class == TargetClass::Simulator;
-    let (element, hold) = match element {
-        Some(switch) if simulator && switch.role == Role::Switch => {
-            let control = control_within(target, &switch)?;
-            if let Some(control) = &control {
-                aimed = control
-                    .reference
-                    .map_or(Target::Point(control.bounds.center()), Target::Ref);
-            }
-            (Some(control.unwrap_or(switch)), hold.or(Some(SWITCH_HOLD)))
+    let control = match &element {
+        Some(element) if simulator => switch_control(target, element)?,
+        _ => None,
+    };
+    let (element, hold) = match control {
+        Some(control) => {
+            aimed = control
+                .reference
+                .map_or(Target::Point(control.bounds.center()), Target::Ref);
+            (Some(control), hold.or(Some(SWITCH_HOLD)))
         }
-        other => (other, hold),
+        None => (element, hold),
     };
     let seen = match &element {
         Some(element) => sight(target, "click", element, &clicked, &mut aimed)?,
