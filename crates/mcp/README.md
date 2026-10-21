@@ -41,8 +41,10 @@ tests/
                 fill, get, devices and status, failures among them
   sessions.rs   the minted session, a call's session, and the release on each way out
   screenshots.rs  image content, ifChanged and path
-  waits.rs      the flags, the bound and its cap, progress, a client's cancellation, the backstop
-  profiles.rs   the read-only profile, the card's sizes, help
+  waits.rs      the flags, the bound and its cap, the daemon's default for a call that names no
+                timeout, wait's description, progress, a client's cancellation, the backstop
+  profiles.rs   the read-only profile, the card's sizes, its sentences on a click that reports no
+                change and on timeout, help
   structured.rs  outputSchema and structuredContent with the flag, neither without
 ```
 
@@ -189,16 +191,23 @@ with one mechanism for every tool, in `src/server.rs`'s loop, which
 selects the blocking call against a tick, the request's cancellation token
 and the bound:
 
-- A request that takes `timeout` (`click`, `fill`, `type`, `get`,
-  `scroll`, `open` and `wait`) and whose call names none gets the bound
-  less a margin of 2 s as its `timeout`, so the daemon's own wait ends
-  first, with its `wait_timeout` and the screen's summary; a `wait` with
-  `settle` keeps its own maximum of 3 s. A `timeout` or `ms` above the
-  bound less the margin is capped to it, and the result's warning line
-  says so: `⚠ timeout 60000 ms was capped to 53000 ms, the server's bound
-  of 55 s less its margin of 2 s`. An `open` whose app keeps animating
-  settles until the bound rather than 3 s, since its `timeout` bounds its
-  settle; pass `timeout` to shorten it.
+- The bound caps a call's timeout and never gives one (real-app-fixes,
+  design D7). A request that takes `timeout` (`click`, `fill`, `type`,
+  `get`, `scroll`, `open` and `wait`) and whose call names none goes out
+  without one, so the daemon's own default applies: the session's, which
+  a shell's `set timeout` sets for a session a call names, else 10 s
+  (`crates/cli/README.md`, Timeouts). A `wait` for a change, a text or an
+  element, and a selector's search for its element, end there with
+  `wait_timeout` or `element_not_found` and the screen's summary, so a
+  `click` on a selector that matches nothing fails at 10 s; a `wait` with
+  `settle` waits at most 3 s, and an `open` up to 10 s for the app's first
+  tree and at most 3 s for its screen to settle. A call passes `timeout`
+  to wait longer, as `wait`'s description and the card say. A `timeout` or
+  `ms` above the bound less a margin of 2 s is capped to it, so the
+  daemon's own wait ends first, and the result's warning line says so:
+  `⚠ timeout 60000 ms was capped to 53000 ms, the server's bound of 55 s
+  less its margin of 2 s`. A session's default above the bound, which the
+  server does not know, runs into the backstop below.
 - While a call runs, every 5 s, a request that carries a progress token in
   its `_meta` gets `notifications/progress` through the request's peer:
   `progress` is the seconds elapsed, with no total, and the message names
@@ -282,14 +291,19 @@ do next, and that `help` holds the guide; then selectors and refs, with
 where a plain text such as a status line is read, since it has no ref and
 is in neither the interactive listing nor a change wait's delta taken in
 it (`get`, `wait` with `text`, or `interactive: false`), the waits
-(`change`, `settle`, `text`), sessions and `close` with `keep`,
-screenshots with `ifChanged` and that one right after a click can show
-the transition the tap set off, so `settle` comes first, and the tools
-served, which says so when the profile is read-only: 2,594 characters in
-all, 2,635 when read-only, under the 4,096 Claude Code keeps. The two
-sentences on the plain text and the transition are what the acceptance's
-models worked around (`reports/12.1-mcp-acceptance.md`, findings 1 and
-4).
+(`change`, `settle`, `text`), saying that a click which reports no change
+may precede the app's reaction, which `wait` with `change` collects, and
+that a wait or a selector's search ends at 10 s unless the call passes
+`timeout`, sessions and `close` with `keep`, screenshots with `ifChanged`
+and that one right after a click can show the transition the tap set off,
+so `settle` comes first, and the tools served, with the bound and the cap
+of a timeout, which says so when the profile is read-only: 2,865
+characters in all, 2,983 when read-only, under the 4,096 Claude Code
+keeps. The two sentences on the plain text and the transition are what the
+acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
+findings 1 and 4), and the one on a click that reports no change is what
+the first pass on real apps met in Photos, a push 428 ms after a tap that
+reported none (real-app-fixes, design D7).
 
 `help`, a read-only tool with no arguments of its own, answers with the
 CLI's agent guide (`mobile-agent help agent`, the CLI library's
@@ -325,5 +339,5 @@ text.
 | Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::scroll_answers_with_its_strokes_and_where_until_s_element_ended`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
 | Sessions and claims | Server exits | `sessions::a_server_mints_its_session_and_a_call_may_name_another`, `sessions::a_server_whose_input_ends_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_signalled_to_stop_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_releases_a_claim_no_reply_named`, `sessions::a_server_that_was_only_discovered_exits_when_its_input_ends`; in `src/sessions.rs`, `a_reply_that_names_its_target_holds_it_and_close_releases_it` |
 | Screenshots inline | Unchanged screen | `screenshots::a_screenshot_is_the_daemon_s_image_within_the_long_edge_bound`, `screenshots::if_changed_answers_a_still_screen_with_a_line_and_a_changed_one_with_the_image`, `screenshots::a_screenshot_with_a_path_answers_with_the_path_and_the_sizes`; in `src/sessions.rs`, `a_screenshot_is_the_last_one_s_when_its_image_is_on_the_same_session_and_device` |
-| Long waits bounded and cancellable | Wait past the bound | `waits::the_server_takes_its_bound_its_profile_and_structured_with_their_defaults`, `waits::a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout`, `waits::a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_token`, `waits::a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once`, `waits::a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server`; in `src/tools.rs`, `a_call_waits_within_the_bound_less_the_margin` and `a_call_says_what_it_waits_for`; in `src/main.rs`, `the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results` |
-| Profiles and instructions | Read-only profile | `profiles::the_read_only_profile_lists_the_read_only_tools_alone_and_refuses_the_rest`, `profiles::the_instructions_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients`, `profiles::help_answers_with_the_agent_guide_after_a_table_mapping_its_commands_to_the_tools`; in `src/instructions.rs`, `the_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients` and `help_is_the_table_then_the_guide` |
+| Long waits bounded and cancellable | Wait past the bound; A click on a missing element | `waits::the_server_takes_its_bound_its_profile_and_structured_with_their_defaults`, `waits::a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout`, `waits::a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_token`, `waits::a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once`, `waits::a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server`; the cap (real-app-fixes, design D7): `waits::a_click_on_a_missing_element_without_a_timeout_fails_at_the_daemon_s_default`, `waits::a_wait_without_a_timeout_ends_at_the_daemon_s_default`, `waits::wait_s_description_says_to_pass_timeout_for_a_wait_past_the_default`; in `src/tools.rs`, `the_bound_caps_a_call_s_timeout_and_gives_none_to_a_call_without_one` and `a_call_says_what_it_waits_for`; in `src/main.rs`, `the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results` |
+| Profiles and instructions | Read-only profile | `profiles::the_read_only_profile_lists_the_read_only_tools_alone_and_refuses_the_rest`, `profiles::the_instructions_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients`, `profiles::help_answers_with_the_agent_guide_after_a_table_mapping_its_commands_to_the_tools`; the card's sentences on a click that reports no change and on timeout (real-app-fixes, design D7): `profiles::the_card_says_a_click_without_a_change_may_precede_the_reaction_and_when_to_pass_timeout`; in `src/instructions.rs`, `the_card_s_first_paragraph_stands_alone_and_the_whole_fits_the_clients` and `help_is_the_table_then_the_guide` |

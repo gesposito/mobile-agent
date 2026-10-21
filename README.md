@@ -279,7 +279,7 @@ Codex gives a call 60 s, which the server's bound of 55 s stays under, and shows
 The server's flags, each in `crates/mcp/README.md`:
 
 - `--tools read-only` serves `devices`, `status`, `doctor`, `snapshot`, `diff_snapshot`, `get`, `wait`, `screenshot` and `help` alone, for a client that may only look; it also passes Codex's `writes` approval mode without a prompt.
-- `--call-timeout <seconds>` bounds every call, 55 by default: a waiting tool gets it less 2 s as its timeout, progress goes to the client every 5 s, and a call past the bound is cancelled in the daemon.
+- `--call-timeout <seconds>` bounds every call, 55 by default: a waiting tool's `timeout` is capped at it less 2 s, a call that names none keeps the daemon's default of 10 s, progress goes to the client every 5 s, and a call past the bound is cancelled in the daemon.
 - `--structured` adds an `outputSchema` to each tool and a `structuredContent` to each result, for a client that reads JSON rather than the text.
 
 **Acceptance.** A fresh Claude Code session given only the server's card and `help` opened the SwiftUI fixture on the Simulator, signed in, waited for the change, scrolled to a row, opened its detail and took a screenshot in 21 turns and 19 tool calls with none failed, $1.03 and 89 s; Codex did the same in 1 turn and 16 calls in 37 s (`reports/12.1-mcp-acceptance.md`).
