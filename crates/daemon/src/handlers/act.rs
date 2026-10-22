@@ -11,7 +11,7 @@ use mirror::{
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
 
-use super::aim::{self, Aim, TextTarget};
+use super::aim::{self, Aim, Resolved, TextTarget};
 use super::view::element_json;
 use super::{Call, millis, timeout};
 use crate::driver::{Platform, TargetClass};
@@ -1163,6 +1163,45 @@ impl Field {
             Field::Node(_) => None,
         }
     }
+
+    /// Follows the field to its twin once its ref is stale, the field the
+    /// app rebuilt in its place (`Mirror::twin`, design D3 of
+    /// action-verdicts), whose ref `session`'s refs gain; says which ref it
+    /// left, `None` while the ref names the field, when it has no twin, and
+    /// for a node.
+    fn follow(&mut self, target: &mut Attached, session: &str) -> Option<Ref> {
+        let Field::Ref(stale, _) = *self else {
+            return None;
+        };
+        if !matches!(
+            target.mirror.resolve(stale),
+            Err(MirrorError::StaleRef { .. })
+        ) {
+            return None;
+        }
+        let twin = target.mirror.twin(stale)?;
+        let reference = twin.reference?;
+        target.session(session).seen.insert(reference);
+        *self = Field::named(reference, &twin);
+        Some(stale)
+    }
+}
+
+/// Follows `field` to its twin once its ref is stale ([`Field::follow`]),
+/// which `resolved` then names beside `named`, the ref the request named
+/// the field by, when it named one.
+fn follow_field(
+    target: &mut Attached,
+    session: &str,
+    field: &mut Field,
+    (named, resolved): (Option<Ref>, &mut Option<Resolved>),
+) {
+    if field.follow(target, session).is_none() {
+        return;
+    }
+    if let (Some(stale), Some(twin)) = (named, field.reference()) {
+        *resolved = Some(Resolved { stale, twin });
+    }
 }
 
 /// Reads back `field` after an entry by `method` that ended at `entered`,
@@ -1817,20 +1856,37 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     let text = text_param("fill", args.text.as_deref())?;
     let given = needed("fill", "target", &args.target)?;
     let aim = Aim::parse(given)?;
-    let (aimed, resolved) = aim::text_ref(
+    let (aimed, mut resolved) = aim::text_ref(
         target,
         session,
         (&aim, given, "fill"),
         timeout(&args.timeout, call)?,
     )?;
-    fill_into(target, (given, &text), aimed).map(|filled| aim::with_resolved(filled, resolved))
+    let named = match aim {
+        Aim::Ref(reference) => Some(reference),
+        Aim::Select(_) | Aim::Exact(_) => None,
+    };
+    let filled = fill_into(
+        target,
+        (session, given, &text),
+        aimed,
+        (named, &mut resolved),
+    );
+    filled.map(|filled| aim::with_resolved(filled, resolved))
 }
 
 /// Fills the field `aimed` stands for, which `given` named, with `text`,
-/// as [`fill`] does.
-fn fill_into(target: &mut Attached, (given, text): (&str, &str), aimed: TextTarget) -> Outcome {
+/// as [`fill`] does, in `session`; `resolved` names the twin the field's
+/// ref stood for, beside `named`, the ref the request gave, when it gave
+/// one.
+fn fill_into(
+    target: &mut Attached,
+    (session, given, text): (&str, &str, &str),
+    aimed: TextTarget,
+    (named, resolved): (Option<Ref>, &mut Option<Resolved>),
+) -> Outcome {
     let (platform, class) = (target.info.platform, target.info.class);
-    let (field, into, held) = match aimed {
+    let (mut field, into, held) = match aimed {
         TextTarget::Within(reference, holder) => {
             let field = target.mirror.resolve(reference)?;
             let into = ready_held(target, (&field, &holder), given, "fill")?;
@@ -1852,7 +1908,13 @@ fn fill_into(target: &mut Attached, (given, text): (&str, &str), aimed: TextTarg
             (Field::Node(selector), None, Some(raised(given, &node)))
         }
     };
-    let reference = field.reference();
+    // The tap that readied the field can have put it in a new node, as a
+    // map app's search field took one once that tap raised its card: the
+    // text goes into its twin (design D3 of action-verdicts).
+    let follows = into.is_some();
+    follow_field(target, session, &mut field, (named, &mut *resolved));
+    let into = if follows { field.reference() } else { None };
+    let mut reference = field.reference();
     // The reading a read-back compares a changed name and value with
     // (designs D39 and D56).
     let mut before: (String, Option<String>) = field
@@ -1900,6 +1962,9 @@ fn fill_into(target: &mut Attached, (given, text): (&str, &str), aimed: TextTarg
         ReadBack::Other { held, .. } => held,
     };
     let first_by = entered_by(class, first);
+    follow_field(target, session, &mut field, (named, &mut *resolved));
+    let into = if follows { field.reference() } else { None };
+    reference = field.reference();
     let second = match enter(target, into, text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
