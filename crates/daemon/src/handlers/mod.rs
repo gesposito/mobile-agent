@@ -530,27 +530,24 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         None => started + FIRST_FRAME_WAIT,
     };
     let primed = first_frame(target, frame_deadline)?;
-    // The settle waits for the launch's first effect as one after an input
-    // does (design D2 of action-verdicts), within a second of the launch: a
-    // replica that showed the app before the launch, as when the app was in
-    // front, shows its screen at once, before the target has shown what the
-    // launch did.
     let settled = match shown {
-        Some(_) => {
-            let max = match explicit {
-                Some(total) => (started + total).saturating_duration_since(Instant::now()),
-                None => mirror::DEFAULT_SETTLE_MAX,
-            };
-            let options = mirror::SettleOptions {
-                max,
-                ..mirror::SettleOptions::default()
-            };
-            let by = explicit.map(|total| started + total);
-            view::settle_after(target, Some(launching), (&options, by))?
-                .0
-                .settled
-        }
+        Some(_) => settle_launch(target, launching, (started, explicit))?,
         None => false,
+    };
+    // The app whose screen showed is in front once that screen settled,
+    // unless a dialog of system UI stands in front of it (design D4 of
+    // action-verdicts); an app that showed no screen yet, the launcher still
+    // in front of a slow one, is named in a warning below.
+    let showed = matches!(first, FirstTree::Shown(_)) && target.mirror.system_dialog().is_none();
+    let (first, shown, settled) = if showed {
+        in_front(
+            target,
+            (&app, &launch),
+            (first, shown, settled),
+            (started, explicit),
+        )?
+    } else {
+        (first, shown, settled)
     };
     let session_deadline = match explicit {
         Some(total) => started + total.min(SESSION_WAIT),
@@ -603,6 +600,109 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         data["alert"] = dialog.into();
     }
     Ok(Success::new(data).warn(warning))
+}
+
+/// Settles the screen after the launch made at `launching` as `open` does,
+/// waiting for the launch's first effect as a settle after an input waits
+/// for one (design D2 of action-verdicts): a replica that showed the app
+/// before the launch, as when the app was in front, shows its screen at
+/// once, before the target has shown what the launch did. The explicit
+/// timeout from `started` bounds the wait when one is given, else the
+/// settle's maximum does; says whether the screen settled.
+fn settle_launch(
+    target: &mut Attached,
+    launching: Instant,
+    (started, explicit): (Instant, Option<Duration>),
+) -> Result<bool, Failure> {
+    let max = match explicit {
+        Some(total) => (started + total).saturating_duration_since(Instant::now()),
+        None => mirror::DEFAULT_SETTLE_MAX,
+    };
+    let options = mirror::SettleOptions {
+        max,
+        ..mirror::SettleOptions::default()
+    };
+    let by = explicit.map(|total| started + total);
+    Ok(view::settle_after(target, Some(launching), (&options, by))?
+        .0
+        .settled)
+}
+
+/// How long after the launch that brings a running app to the front `open`
+/// waits for the app's screen: on this session's Simulator a second launch
+/// of a running app showed its screen 166 to 177 ms after it
+/// (action-verdicts, task 2.4).
+const ACTIVATE_WAIT: Duration = Duration::from_secs(2);
+
+/// The app in front as the replica has it now, as a snapshot's `origin`
+/// names it.
+fn front_of(target: &mut Attached) -> Result<String, Failure> {
+    let probe = SnapshotOptions {
+        interactive: true,
+        max_depth: Some(1),
+    };
+    Ok(origin(&target.mirror.snapshot(&probe)?))
+}
+
+/// Leaves `app`, which `launch` launched and whose screen showed, in front
+/// once that screen settled (design D4 of action-verdicts), as the
+/// replica's foreground owner tells:
+/// on this session's Simulator `open` right after `press home` launched
+/// Settings during the home screen's go-home animation, its screen showed,
+/// and the home screen took the front back as the animation ended, three
+/// times in three, while a second launch of the running app brought it to
+/// the front three times in three. So an app another holds the front from
+/// is launched again, which brings a running app to the front on every
+/// driver, and the wait for its screen, at most [`ACTIVATE_WAIT`] within the
+/// explicit timeout from `started` when one is given, and the settle after
+/// it run again; an app still not in front fails with `not_in_front`,
+/// naming it and what is in front. Gives the first tree, when the app's
+/// screen showed and whether it settled, those after the second launch
+/// when one was made.
+fn in_front(
+    target: &mut Attached,
+    (app, launch): (&str, &Launch),
+    (first, shown, settled): (FirstTree, Option<Instant>, bool),
+    (started, explicit): (Instant, Option<Duration>),
+) -> Result<(FirstTree, Option<Instant>, bool), Failure> {
+    if front_of(target)? == app {
+        return Ok((first, shown, settled));
+    }
+    target.mirror.note_window_change();
+    let launching = Instant::now();
+    let again = Launch {
+        relaunch: false,
+        env: launch.env.clone(),
+    };
+    target.apps.launch(app, &again)?;
+    let deadline = match explicit {
+        Some(total) => (started + total).min(launching + ACTIVATE_WAIT),
+        None => launching + ACTIVATE_WAIT,
+    };
+    let first = first_tree(target, app, None, deadline)?;
+    let shown = match first {
+        FirstTree::Shown(at) => Some(at),
+        FirstTree::Splash | FirstTree::Alert(_) | FirstTree::NotShown => None,
+    };
+    let settled = match shown {
+        Some(_) => settle_launch(target, launching, (started, explicit))?,
+        None => false,
+    };
+    let front = front_of(target)?;
+    if front == app || matches!(first, FirstTree::Alert(_)) {
+        return Ok((first, shown, settled));
+    }
+    let front = if front.is_empty() {
+        "no app".to_owned()
+    } else {
+        front
+    };
+    Err(Failure::new(
+        code::NOT_IN_FRONT,
+        format!(
+            "{app} did not come to the front: {front} stays in front of it after its launch and a second one; take a snapshot to see what is on the screen"
+        ),
+    ))
 }
 
 /// How often `open` looks for the launched app's screen; the mirror keeps
