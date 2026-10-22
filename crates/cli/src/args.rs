@@ -137,7 +137,8 @@ Examples:
     /// Launch an app and claim its target for this session
     #[command(after_help = "\
 Waits for the launched app's first tree, up to the session's default timeout
-(10000 ms), then up to 3000 ms for its screen to settle; --timeout bounds both.
+(10000 ms), for the launch's first effect within a second of the launch, then
+up to 3000 ms for its screen to settle; --timeout bounds them all.
 
 Examples:
   mobile-agent open dev.mobileagent.fixture.expo
@@ -292,9 +293,12 @@ Examples:
 Element, text and change waits end at --timeout: the session's default
 (set timeout), else MOBILE_AGENT_DEFAULT_TIMEOUT or the config's
 defaultTimeout, else 10000 ms. wait --settle ends once neither the tree nor
-the frames change for the quiet window, or at --timeout, default 3000 ms.
-endedBy says which signal changed last (tree, frame, both or none) or
-timeout, and stillChanging what kept changing. wait --change ends once the
+the frames change for the quiet window, or at --timeout, default 3000 ms;
+within a second of this session's last click, fill, type, press, swipe or
+scroll it first waits for that action's first effect, until a second after
+the action, and input names the action. endedBy says which signal changed
+last (tree, frame, both or none, after an action nothing within 1 s of it)
+or timeout, and stillChanging what kept changing. wait --change ends once the
 listing in the options of this session's last snapshot changed from what
 that snapshot showed, at once for a change that came before it, and prints
 what moved (endedBy: tree, frame or both) and the delta snapshot --delta

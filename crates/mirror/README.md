@@ -14,7 +14,7 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, cancel_on, visibility, covered_by, hit, holds, twin,
+                timestamps, changes, note_window_change, cancel_on, visibility, covered_by, hit, holds, twin,
                 scroll_viewport, scroll_container_in, uncovered, keys_hidden, edit_menu, field_within,
                 fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
@@ -550,7 +550,11 @@ the reasons in this order, each with advice:
   maximum with `settled: false` and the signals that kept changing. Frame
   callbacks without pixel changes do not count (spike S2). Without a frame
   source, windows without events are re-read every minimum re-read interval
-  while waiting. `Signals::TreeOnly` ignores frames, for video.
+  while waiting. `Signals::TreeOnly` ignores frames, for video. `changes`
+  gives the counts of tree changes and frame changes the mirror has taken
+  in, as a settle counts them, so that the daemon, which waits for an
+  input's first effect before it settles (action-verdicts, design D2),
+  counts the changes of both waits.
 - On a target whose frames come slowly (`slow_frames`, design D23 of
   physical-ios), the quiet window is at least two capture intervals,
   whatever shorter one the wait is given: a change can take a capture

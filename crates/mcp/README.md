@@ -209,8 +209,11 @@ and the bound:
   `wait_timeout` or `element_not_found` and the screen's summary, whose
   refs are the session's to act on (real-app-fixes, design D4), so a
   `click` on a selector that matches nothing fails at 10 s; a `wait` with
-  `settle` waits at most 3 s, and an `open` up to 10 s for the app's first
-  tree and at most 3 s for its screen to settle. A call passes `timeout`
+  `settle` waits at most 3 s, after it waited, within a second of the
+  session's last action, until a second after the action at most for its
+  first effect (action-verdicts, design D2), and an `open` up to 10 s for
+  the app's first tree, for the launch's first effect within a second of
+  it, and at most 3 s for its screen to settle. A call passes `timeout`
   to wait longer, as `wait`'s description and the card say. A `timeout` or
   `ms` above the bound less a margin of 2 s is capped to it, so the
   daemon's own wait ends first, and the result's warning line says so:
@@ -296,18 +299,21 @@ instructions card (`src/instructions.rs`), built at start for the profile
 and the bound: a first paragraph of 369 characters that stands alone
 within the 512 Codex keeps, what the server drives, that refs come from
 `snapshot`, that replies verify and a failure names its code and what to
-do next, and that `help` holds the guide; then selectors and refs, with
-where a plain text such as a status line is read, since it has no ref and
+do next, and that `help` holds the guide; then selectors and refs, a ref
+standing for the twin an app rebuilt in its place (action-verdicts, design
+D3), with where a plain text such as a status line is read, since it has no ref and
 is in neither the interactive listing nor a change wait's delta taken in
 it (`get`, `wait` with `text`, or `interactive: false`), the waits
 (`change`, `settle`, `text`), saying that a click which reports no change
-may precede the app's reaction, which `wait` with `change` collects, and
+may precede the app's reaction, which `wait` with `change` collects, that a
+settle right after an action waits for its first effect or says nothing
+changed within 1 s of it, and
 that a wait or a selector's search ends at 10 s unless the call passes
 `timeout`, sessions and `close` with `keep`, screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 2,865
-characters in all, 2,983 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,060
+characters in all, 3,178 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
 findings 1 and 4), and the one on a click that reports no change is what

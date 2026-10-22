@@ -88,7 +88,9 @@ text or as the mirror's delta object (`reply::DeltaSnapshot`). `type`'s
 data carries its read-back as `fill`'s does, what the field holds under
 `text` beside the text typed under `typed`, and `screenshot`'s the
 screen's size in points (`reply::Points`) beside the image's pixels.
-`click`'s `hit` (`reply::Hit`) names the element its tap landed on by its
+`wait`'s `input`, for a settle within a second of the session's last
+input, names that input's action, whose first effect the settle waited
+for. `click`'s `hit` (`reply::Hit`) names the element its tap landed on by its
 role and name, with the ref the session's snapshots listed it under or
 null, and is null when no element with a ref lay under the point.
 `click`'s, `fill`'s, `type`'s, `get`'s and `scroll`'s `resolved`
