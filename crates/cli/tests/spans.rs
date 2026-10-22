@@ -313,8 +313,8 @@ fn a_settle_after_a_click_that_changes_nothing_says_nothing_changed_within_1_s_o
 }
 
 /// Design D2 of action-verdicts: a settle with no input of the session in
-/// the last second ends at once on a quiet screen, naming no input, as
-/// before.
+/// the last second counts its quiet window alone, ending at once on a quiet
+/// screen and naming no input.
 #[test]
 fn a_settle_with_no_input_in_the_last_second_ends_at_once_on_a_quiet_screen() {
     let env = late("android");
@@ -329,9 +329,9 @@ fn a_settle_with_no_input_in_the_last_second_ends_at_once_on_a_quiet_screen() {
 }
 
 /// Design D2 of action-verdicts: `open`'s own settle waits the same way for
-/// its launch's first effect. An app already in front, which the fake shows
-/// again 300 ms after the launch, settles after it does, where the settle
-/// ended 200 ms after the launch on the screen the replica held before.
+/// its launch's first effect. An app already in front, whose screen the
+/// replica holds from before the launch and which the fake shows again 300
+/// ms after it, settles after it does, not a quiet window after the launch.
 #[test]
 fn open_s_settle_waits_for_its_launch_s_first_effect() {
     let env = late("android");

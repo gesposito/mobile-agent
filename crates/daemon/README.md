@@ -582,7 +582,7 @@ CLI prints as `nothing changed within 1 s of the click`. On the second demo
 pass a settle right after the Enter that loads a page settled after 0.01
 ms with nothing changed, and one after the tap that opened a menu ended
 before the menu's tree came. A settle with no input of the session in the
-last second is as it was. `open`'s own settle waits the same way for its
+last second counts its quiet window alone. `open`'s own settle waits the same way for its
 launch's first effect, the launch's window change noted before the launch
 and the wait within the explicit timeout when one is given, so that a
 replica that showed the app already, as when the app was in front, settles
