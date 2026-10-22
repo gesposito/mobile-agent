@@ -135,7 +135,9 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         ask(json!({"action": "click", "target": "#tab-list"})),
         reply::Click
     );
-    success!(ask(json!({"action": "wait", "settle": true})), reply::Wait);
+    // A settle right after an input names it (design D2 of action-verdicts).
+    let settled = success!(ask(json!({"action": "wait", "settle": true})), reply::Wait);
+    assert_eq!(settled["data"]["input"], "click", "{settled}");
     // The list came in since the session's last snapshot: a change wait
     // answers at once with the delta, and then waits out its bound.
     let changed = success!(ask(json!({"action": "wait", "change": true})), reply::Wait);

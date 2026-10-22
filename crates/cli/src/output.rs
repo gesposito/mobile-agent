@@ -1079,6 +1079,43 @@ mod tests {
         );
     }
 
+    /// Design D2 of action-verdicts: a settle that waited for an input's
+    /// first effect says when none came within a second of the input, naming
+    /// it, and otherwise what changed last, as any settle does.
+    #[test]
+    fn a_settle_after_an_input_says_when_nothing_changed_within_1_s_of_it() {
+        let settled = |input: Option<&str>, ended: &str| {
+            let mut data = json!({
+                "waited": "settle", "settled": true, "endedBy": ended, "elapsedMs": 795.25,
+                "stillChanging": [], "treeChanges": 0, "frameChanges": 0,
+            });
+            if let Some(input) = input {
+                data["input"] = input.into();
+            }
+            human("wait", &ok(data)).0
+        };
+        assert_eq!(
+            settled(Some("click"), "none"),
+            "✓ Settled after 795.25 ms: nothing changed within 1 s of the click\n"
+        );
+        assert_eq!(
+            settled(Some("press"), "none"),
+            "✓ Settled after 795.25 ms: nothing changed within 1 s of the press\n"
+        );
+        assert_eq!(
+            settled(Some("type"), "none"),
+            "✓ Settled after 795.25 ms: nothing changed within 1 s of the typing\n"
+        );
+        assert_eq!(
+            settled(Some("click"), "tree"),
+            "✓ Settled after 795.25 ms: the tree changed last\n"
+        );
+        assert_eq!(
+            settled(None, "none"),
+            "✓ Settled after 795.25 ms: nothing changed\n"
+        );
+    }
+
     /// Design D5 of action-verdicts: `--json` keeps a delta object as the
     /// mirror writes it, byte for byte.
     #[test]

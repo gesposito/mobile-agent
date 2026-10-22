@@ -253,3 +253,90 @@ fn a_settle_prints_the_signal_it_ended_on() {
         timeout.stdout
     );
 }
+
+/// How long the fake targets of the settles after an input take to show a
+/// change: longer than a click's watch waits for its first effect, so that
+/// the click replies before its effect comes.
+const LATE: &str = "300";
+
+fn late(fake: &str) -> TestEnv {
+    TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_LATENCY_MS", LATE)])
+}
+
+/// A tap at a point of the fixture's Login tab where no element lies, which
+/// changes nothing.
+const BARE: &str = "click 200 84";
+
+/// Design D2 of action-verdicts, scenario "A settle right after a press":
+/// on the second demo pass `wait --settle` right after the Enter that loads
+/// a page settled "after 0.01 ms: nothing changed", before the page came. A
+/// settle right after a click whose effect comes 300 ms after it, once the
+/// click's watch has given up on it, waits for that effect, then for the
+/// quiet window, and names what changed last, the reply naming the click it
+/// waited for.
+#[test]
+fn a_settle_right_after_a_click_waits_for_its_effect_and_names_what_changed_last() {
+    let env = late("android");
+    env.cli(&["open", APP]).ok();
+    let data = settle_after(&env, "click #tab-list");
+    assert_eq!(data["settled"], true, "{data}");
+    assert_eq!(data["input"], "click", "{data}");
+    assert_eq!(
+        data["endedBy"], "frame",
+        "the transition's frames outlast the tree change: {data}"
+    );
+    assert!(ms(&data, "elapsedMs") >= 150.0, "{data}");
+}
+
+/// Design D2 of action-verdicts, scenario "A settle right after a press":
+/// a settle right after a click that changed nothing waits for its effect
+/// until a second after the click, and says that nothing changed within it.
+#[test]
+fn a_settle_after_a_click_that_changes_nothing_says_nothing_changed_within_1_s_of_it() {
+    let env = late("android");
+    env.cli(&["open", APP]).ok();
+    let data = settle_after(&env, BARE);
+    assert_eq!(data["settled"], true, "{data}");
+    assert_eq!(data["endedBy"], "none", "{data}");
+    assert_eq!(data["input"], "click", "{data}");
+    assert!(
+        ms(&data, "elapsedMs") >= 500.0,
+        "the wait lasted until a second after the click: {data}"
+    );
+    let run = env.cli(&["batch", BARE, "wait --settle"]).ok();
+    assert!(
+        run.stdout
+            .contains(": nothing changed within 1 s of the click"),
+        "{}",
+        run.stdout
+    );
+}
+
+/// Design D2 of action-verdicts: a settle with no input of the session in
+/// the last second ends at once on a quiet screen, naming no input, as
+/// before.
+#[test]
+fn a_settle_with_no_input_in_the_last_second_ends_at_once_on_a_quiet_screen() {
+    let env = late("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["click", "200", "84"]).ok();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let data = env.cli(&["--json", "wait", "--settle"]).ok().json()["data"].clone();
+    assert_eq!(data["settled"], true, "{data}");
+    assert_eq!(data["endedBy"], "none", "{data}");
+    assert!(data.get("input").is_none(), "{data}");
+    assert!(ms(&data, "elapsedMs") < 100.0, "{data}");
+}
+
+/// Design D2 of action-verdicts: `open`'s own settle waits the same way for
+/// its launch's first effect. An app already in front, which the fake shows
+/// again 300 ms after the launch, settles after it does, where the settle
+/// ended 200 ms after the launch on the screen the replica held before.
+#[test]
+fn open_s_settle_waits_for_its_launch_s_first_effect() {
+    let env = late("android");
+    env.cli(&["open", APP]).ok();
+    let data = env.cli(&["--json", "open", APP]).ok().json()["data"].clone();
+    assert_eq!(data["settled"], true, "{data}");
+    assert!(ms(&data, "elapsedMs") >= 450.0, "{data}");
+}
