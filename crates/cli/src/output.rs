@@ -1011,6 +1011,52 @@ mod tests {
         );
     }
 
+    /// Design D3 of action-verdicts: an action on a stale ref that the
+    /// daemon resolved to its twin says which ref it took first in its line,
+    /// `(@e5 now @e9, ...)`, and a get on a line of its own after what it
+    /// read.
+    #[test]
+    fn an_action_on_a_stale_ref_resolved_to_its_twin_names_both_refs() {
+        let resolved = json!({"stale": "@e5", "ref": "@e9"});
+        let clicked = ok(json!({
+            "clicked": "@e5", "ref": "@e9", "resolved": resolved, "x": 201.0, "y": 164.0,
+            "hit": {"role": "textbox", "name": "Title", "ref": "@e9"}, "accepted": true,
+            "dispatchMs": 0.214, "watchedMs": 201.3,
+        }));
+        assert_eq!(
+            human("click", &clicked).0,
+            "✓ Done (@e5 now @e9, hit textbox \"Title\", dispatch 0.2 ms, no change in 201 ms)\n"
+        );
+        let filled = ok(json!({
+            "filled": "@e5", "text": "standup", "ref": "@e9", "resolved": resolved,
+            "method": "keys", "verified": "text", "readFrom": "value", "reason": null,
+            "readBackMs": 210.0, "retried": false,
+        }));
+        assert_eq!(
+            human("fill", &filled).0,
+            "✓ Done (@e5 now @e9, read back \"standup\", typed)\n"
+        );
+        let typed = ok(json!({
+            "typed": "up", "ref": "@e9", "resolved": resolved, "method": "keys",
+            "text": "standup", "verified": "text", "readFrom": "value", "reason": null,
+            "readBackMs": 210.0,
+        }));
+        assert_eq!(
+            human("type", &typed).0,
+            "✓ Done (@e5 now @e9, read back \"standup\", typed)\n"
+        );
+        let got = ok(json!({"value": "standup", "inView": true, "resolved": resolved}));
+        assert_eq!(human("get", &got).0, "standup\n(@e5 now @e9)\n");
+        let scrolled = ok(json!({
+            "scrolled": true, "direction": "down", "amount": 300.0, "strokes": 1,
+            "from": [201.0, 600.0], "to": [201.0, 300.0], "resolved": resolved,
+        }));
+        assert_eq!(
+            human("scroll", &scrolled).0,
+            "✓ Done (@e5 now @e9, 1 stroke)\n"
+        );
+    }
+
     /// Design D5 of action-verdicts: `--json` keeps a delta object as the
     /// mirror writes it, byte for byte.
     #[test]

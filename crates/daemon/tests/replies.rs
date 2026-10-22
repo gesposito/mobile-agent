@@ -224,6 +224,66 @@ fn a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types() {
     assert!(ended["data"].is_null(), "{ended}");
 }
 
+/// The replies of a get, a click, a fill, a type and a scroll on a stale
+/// ref that the daemon resolved to its twin (design D3 of action-verdicts),
+/// a field of the placeholder app's rebuilt board that its text put in a
+/// new node, with the stale ref and the twin's in `resolved`.
+#[test]
+fn replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types() {
+    let daemon = Daemon::start("ios");
+    let ask = |request: Value| daemon.request(request);
+    success!(
+        ask(
+            json!({"action": "open", "app": "dev.mobileagent.placeholder",
+                   "env": ["PLACEHOLDER_SCREEN=rebuilt"]})
+        ),
+        reply::Open
+    );
+    let listing = success!(
+        ask(json!({"action": "snapshot", "interactive": true})),
+        reply::Snapshot
+    );
+    let field = listing["data"]["refs"]
+        .as_object()
+        .and_then(|refs| {
+            refs.iter()
+                .find(|(_, entry)| entry["name"] == "placeholder-textbox-1")
+                .map(|(reference, _)| format!("@{reference}"))
+        })
+        .unwrap_or_else(|| panic!("no field in {listing}"));
+    success!(
+        ask(json!({"action": "fill", "target": "#placeholder-id-1", "text": "standup"})),
+        reply::Fill
+    );
+    let resolved = |reply: &Value| {
+        assert_eq!(
+            reply["data"]["resolved"]["stale"],
+            field.as_str(),
+            "{reply}"
+        );
+    };
+    resolved(&success!(
+        ask(json!({"action": "get", "what": "value", "target": field})),
+        reply::Get
+    ));
+    resolved(&success!(
+        ask(json!({"action": "click", "target": field})),
+        reply::Click
+    ));
+    resolved(&success!(
+        ask(json!({"action": "fill", "target": field, "text": "again"})),
+        reply::Fill
+    ));
+    resolved(&success!(
+        ask(json!({"action": "type", "target": field, "text": "s"})),
+        reply::TypeText
+    ));
+    resolved(&success!(
+        ask(json!({"action": "scroll", "direction": "down", "amount": 100, "target": field})),
+        reply::Scroll
+    ));
+}
+
 #[test]
 fn several_targets_give_the_candidates_and_a_short_typing_target_a_mismatch() {
     let several = Daemon::start("android,ios");

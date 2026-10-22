@@ -4,7 +4,7 @@
 mod support;
 
 use serde_json::Value;
-use support::{APP, TestEnv};
+use support::{APP, TestEnv, ref_of};
 
 fn is_snake_case(code: &str) -> bool {
     !code.is_empty()
@@ -57,6 +57,40 @@ fn clicking_a_ref_from_before_navigation_fails_with_a_stale_ref_error_and_guidan
     assert_eq!(reply["code"], "stale_ref", "{reply}");
     let message = reply["error"].as_str().unwrap_or_default();
     assert!(message.contains("Take a new snapshot"), "{message}");
+}
+
+/// Design D3 of action-verdicts: a ref whose field the app has put in a
+/// new node, as the placeholder app's rebuilt board does once the field
+/// holds text, acts on its twin, and the line names the ref it took, as
+/// `--json`'s `resolved` does.
+#[test]
+fn a_ref_whose_field_the_app_rebuilt_acts_on_its_twin_and_names_it() {
+    let env = TestEnv::start("ios");
+    let screen = "PLACEHOLDER_SCREEN=rebuilt";
+    env.cli(&["open", "dev.mobileagent.placeholder", "--env", screen])
+        .ok();
+    let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+    let field = ref_of(&listing, "placeholder-id-1");
+    env.cli(&["fill", "#placeholder-id-1", "standup"]).ok();
+    let clicked = env.cli(&["click", &field]).ok().stdout;
+    assert!(
+        clicked.starts_with(&format!("✓ Done ({field} now @e")),
+        "{clicked}"
+    );
+    let reply = env.cli(&["--json", "get", "value", &field]).ok().json();
+    assert_eq!(reply["data"]["value"], "standup", "{reply}");
+    assert_eq!(
+        reply["data"]["resolved"]["stale"],
+        field.as_str(),
+        "{reply}"
+    );
+    let twin = reply["data"]["resolved"]["ref"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        clicked.contains(&format!("{field} now {twin}")),
+        "{clicked}"
+    );
 }
 
 #[test]

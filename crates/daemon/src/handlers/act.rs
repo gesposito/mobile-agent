@@ -5679,4 +5679,120 @@ mod tests {
             assert!(again.warning.is_none(), "{platform}: {:?}", again.warning);
         }
     }
+
+    /// `get value` of what `aimed` names.
+    fn value_of(target: &mut Attached, aimed: &str) -> Outcome {
+        let get = json!({"action": "get", "what": "value", "target": aimed}).to_string();
+        super::super::run_on(target, "default", &request(&get))
+    }
+
+    /// The stale ref and the twin's ref a reply's `resolved` names.
+    fn resolved(success: &Success) -> (String, String) {
+        let resolved = &success.data["resolved"];
+        let named = |key: &str| resolved[key].as_str().unwrap_or_default().to_owned();
+        (named("stale"), named("ref"))
+    }
+
+    /// Design D3 of action-verdicts, scenario "A rebuilt field": on the
+    /// second demo pass a map app's search box was stale on the call right
+    /// after the snapshot `open` took, the app having laid its card out
+    /// again with nothing in between, and the fill on its ref failed
+    /// `stale_ref` while the replica held the box again. On the placeholder
+    /// app's rebuilt board, whose fields the app lays out again once they
+    /// hold text, each in a new node at the same place, a get, a click and a
+    /// fill on the ref a field had before act on its twin: the field with an
+    /// identifier by its identifier and role, the other by its name, role
+    /// and bounds. Each reply's `resolved` names the stale ref and the
+    /// twin's, which the click and the fill name as their `ref` and the
+    /// click's hit as the session's; the session acts on the twin's ref from
+    /// then on.
+    #[test]
+    fn a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds() {
+        for platform in ["ios", "android"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let rebuilt = ["PLACEHOLDER_SCREEN=rebuilt"];
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &rebuilt);
+            let first = ref_named(&mut target, "placeholder-textbox-1");
+            let second = ref_named(&mut target, "placeholder-textbox-2");
+            // The text puts each field in a new node, its ref left stale.
+            fill_in(&mut target, "#placeholder-id-1", "standup").unwrap();
+            fill_in(&mut target, &second, "later").unwrap();
+            for (stale, held) in [(&first, "standup"), (&second, "later")] {
+                let read = value_of(&mut target, stale)
+                    .unwrap_or_else(|failure| panic!("{platform}: get {stale}: {failure:?}"));
+                assert_eq!(read.data["value"], held, "{platform}: {}", read.data);
+                let (named, twin) = resolved(&read);
+                assert_eq!(&named, stale, "{platform}: {}", read.data);
+                assert!(
+                    twin.starts_with("@e") && &twin != stale,
+                    "{platform}: {}",
+                    read.data
+                );
+                let clicked = click_on(&mut target, stale)
+                    .unwrap_or_else(|failure| panic!("{platform}: click {stale}: {failure:?}"));
+                let data = &clicked.data;
+                assert_eq!(
+                    resolved(&clicked),
+                    (stale.clone(), twin.clone()),
+                    "{platform}: {data}"
+                );
+                assert_eq!(data["ref"], twin.as_str(), "{platform}: {data}");
+                assert_eq!(data["hit"]["ref"], twin.as_str(), "{platform}: {data}");
+                assert!(
+                    clicked.warning.is_none(),
+                    "{platform}: {:?}",
+                    clicked.warning
+                );
+                let filled = fill_in(&mut target, stale, "again")
+                    .unwrap_or_else(|failure| panic!("{platform}: fill {stale}: {failure:?}"));
+                let data = &filled.data;
+                assert_eq!(
+                    resolved(&filled),
+                    (stale.clone(), twin.clone()),
+                    "{platform}: {data}"
+                );
+                assert_eq!(data["ref"], twin.as_str(), "{platform}: {data}");
+                assert_eq!(data["verified"], "text", "{platform}: {data}");
+                let again = value_of(&mut target, &twin)
+                    .unwrap_or_else(|failure| panic!("{platform}: get {twin}: {failure:?}"));
+                assert_eq!(again.data["value"], "again", "{platform}: {}", again.data);
+                assert!(
+                    again.data.get("resolved").is_none(),
+                    "{platform}: {}",
+                    again.data
+                );
+            }
+        }
+    }
+
+    /// Design D3 of action-verdicts: a ref whose element is gone without a
+    /// twin in the replica, no element of its role and identifier nor of its
+    /// role, name and bounds, fails `stale_ref` with its advice, as the
+    /// rebuilt board's fields do once the placeholder app was relaunched on
+    /// its form.
+    #[test]
+    fn a_stale_ref_without_a_twin_fails_stale_ref() {
+        for platform in ["ios", "android"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let rebuilt = ["PLACEHOLDER_SCREEN=rebuilt"];
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &rebuilt);
+            let first = ref_named(&mut target, "placeholder-textbox-1");
+            let second = ref_named(&mut target, "placeholder-textbox-2");
+            let open = json!({"action": "open", "app": PLACEHOLDER, "relaunch": true}).to_string();
+            super::super::run_on(&mut target, "default", &request(&open)).unwrap();
+            for failed in [
+                click_on(&mut target, &first),
+                fill_in(&mut target, &second, "later"),
+                value_of(&mut target, &first),
+            ] {
+                let failure = failed.unwrap_err();
+                assert_eq!(failure.code, "stale_ref", "{platform}: {}", failure.message);
+                assert!(
+                    failure.message.contains("Take a new snapshot"),
+                    "{platform}: {}",
+                    failure.message
+                );
+            }
+        }
+    }
 }
