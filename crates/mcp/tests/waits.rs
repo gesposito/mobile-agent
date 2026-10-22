@@ -267,7 +267,7 @@ fn a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server(
     let elapsed = started.elapsed();
     let answer = ok(&result);
     assert!(
-        answer.starts_with("✓ Done (dispatch 9") && !answer.contains('\n'),
+        answer.starts_with("✓ Done (hit button \"Fixture\", dispatch 9") && !answer.contains('\n'),
         "the daemon's reply: {answer}"
     );
     assert!(within(elapsed, 8.5, 12.5), "the call ended at {elapsed:?}");

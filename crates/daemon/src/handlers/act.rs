@@ -5495,4 +5495,131 @@ mod tests {
         click_on(&mut target, "#placeholder-id-1").unwrap();
         assert_eq!(taps(&sent), [Point::new(157.0, 534.0)]);
     }
+
+    /// `click` at the point `x`, `y`.
+    fn click_at(target: &mut Attached, x: f64, y: f64) -> Outcome {
+        let click = json!({"action": "click", "x": x, "y": y}).to_string();
+        super::super::run_on(target, "default", &request(&click))
+    }
+
+    /// Design D1 of action-verdicts: a click's reply names the element its
+    /// tap landed on as the replica held it at dispatch, by its role and
+    /// name and by the ref the session's snapshots listed it under, null for
+    /// a session whose snapshots did not, and warns of nothing when that is
+    /// the element the click named.
+    #[test]
+    fn a_click_names_the_element_its_tap_landed_on_and_the_session_s_ref_for_it() {
+        for platform in ["android", "ios"] {
+            let mut target = login_on(platform, Typing::Whole, Duration::ZERO);
+            let submit = ref_named(&mut target, "Sign in");
+            let success = click_on(&mut target, &submit).unwrap();
+            assert_eq!(
+                success.data["hit"],
+                json!({"role": "button", "name": "Sign in", "ref": submit}),
+                "{platform}: {}",
+                success.data
+            );
+            assert!(
+                success.warning.is_none(),
+                "{platform}: {:?}",
+                success.warning
+            );
+            let click = json!({"action": "click", "target": "#login-submit"}).to_string();
+            let other = super::super::run_on(&mut target, "other", &request(&click)).unwrap();
+            assert_eq!(
+                other.data["hit"],
+                json!({"role": "button", "name": "Sign in", "ref": null}),
+                "{platform}: a session whose snapshots never listed the button: {}",
+                other.data
+            );
+            assert!(other.warning.is_none(), "{platform}: {:?}", other.warning);
+        }
+    }
+
+    /// Design D1 of action-verdicts: a click by coordinates names what its
+    /// tap landed on as a click on an element does: the element under the
+    /// point, nothing where no element with a ref lies, and the keyboard
+    /// where it draws, as the full listing names it.
+    #[test]
+    fn a_click_by_coordinates_names_the_element_under_the_point() {
+        let mut target = login_on("android", Typing::Whole, Duration::ZERO);
+        let submit = ref_named(&mut target, "Sign in");
+        let on = click_at(&mut target, 200.0, 256.0).unwrap();
+        assert_eq!(
+            on.data["hit"],
+            json!({"role": "button", "name": "Sign in", "ref": submit}),
+            "{}",
+            on.data
+        );
+        assert!(on.warning.is_none(), "{:?}", on.warning);
+        let between = click_at(&mut target, 200.0, 84.0).unwrap();
+        assert_eq!(between.data["hit"], Value::Null, "{}", between.data);
+        click_on(&mut target, "#login-username").unwrap();
+        let keys = click_at(&mut target, 200.0, 700.0).unwrap();
+        assert_eq!(
+            keys.data["hit"],
+            json!({"role": "keyboard", "name": "", "ref": null}),
+            "{}",
+            keys.data
+        );
+    }
+
+    /// Design D1 of action-verdicts, scenario "A tap that lands elsewhere":
+    /// after the snapshot that listed a button, a banner of system UI's comes
+    /// down over it in a window of its own, inset from the screen's sides, so
+    /// that it cuts nothing of what a tap reaches of the button, and the
+    /// click on the button's ref taps its centre, where the banner takes the
+    /// tap. The reply names the banner's button as the element hit, without a
+    /// ref, since no snapshot of the session listed it, and warns naming it
+    /// and the button; the tap went in, as the status says. Once a snapshot
+    /// listed the banner, a click by coordinates there names it by its ref.
+    #[test]
+    fn a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns() {
+        for platform in ["android", "ios"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let screen = ["PLACEHOLDER_SCREEN=banner"];
+            let (mut target, sent) = recorded(&driver, PLACEHOLDER, &screen);
+            let under = ref_named(&mut target, "placeholder-button-1");
+            let call = ref_named(&mut target, "placeholder-button-2");
+            let called = click_on(&mut target, &call).unwrap();
+            assert_eq!(
+                called.data["hit"],
+                json!({"role": "button", "name": "placeholder-button-2", "ref": call}),
+                "{platform}: {}",
+                called.data
+            );
+            assert!(called.warning.is_none(), "{platform}: {:?}", called.warning);
+            let landed = click_on(&mut target, &under).unwrap();
+            let coordinate = |axis: &str| landed.data[axis].as_f64().unwrap_or_default();
+            let point = Point::new(coordinate("x"), coordinate("y"));
+            assert_eq!(
+                taps(&sent).last(),
+                Some(&point),
+                "{platform}: the button's centre"
+            );
+            assert_eq!(
+                landed.data["hit"],
+                json!({"role": "button", "name": "placeholder-button-5", "ref": null}),
+                "{platform}: {}",
+                landed.data
+            );
+            let warning = landed.warning.clone().unwrap_or_default();
+            assert!(
+                warning.contains(&format!(
+                    "the tap at {point} landed on button \"placeholder-button-5\""
+                )) && warning
+                    .contains(&format!("not on {under} (button \"placeholder-button-1\")")),
+                "{platform}: {warning}"
+            );
+            assert_eq!(
+                text_of(&mut target, "#placeholder-status"),
+                "Tapped placeholder-id-5",
+                "{platform}: the banner took the tap"
+            );
+            let banner = ref_named(&mut target, "placeholder-button-5");
+            let again = click_at(&mut target, 201.0, 164.0).unwrap();
+            assert_eq!(again.data["hit"]["ref"], banner.as_str(), "{platform}");
+            assert!(again.warning.is_none(), "{platform}: {:?}", again.warning);
+        }
+    }
 }

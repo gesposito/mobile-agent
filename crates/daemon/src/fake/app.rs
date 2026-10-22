@@ -390,6 +390,13 @@ enum Board {
     /// the keys; the keyboard's window, once the field has the focus,
     /// reaches from 498 points down.
     Accessory,
+    /// A banner system UI brings up over the app (action-verdicts, task
+    /// 2.1): a heading, a button high on the screen, and a button lower down
+    /// whose tap brings up, in a window of system UI's above the app's, a
+    /// banner holding a button, over the first button's centre and inset 8
+    /// points from the screen's sides, as a notification comes down over an
+    /// app between a snapshot and a tap.
+    Banner,
 }
 
 impl Board {
@@ -414,6 +421,7 @@ impl Board {
             "switches" => Board::Switches,
             "rebuilt" => Board::Rebuilt,
             "accessory" => Board::Accessory,
+            "banner" => Board::Banner,
             _ => Board::Form,
         }
     }
@@ -445,6 +453,9 @@ const ACCESSORY_FIELD: &str = "placeholder-id-1";
 /// The rebuilt board's fields: the first by its identifier, the second by
 /// the key the fake finds it by, which the app gives no identifier.
 const REBUILT_FIELDS: [&str; 2] = ["placeholder-id-1", "placeholder-field-2"];
+
+/// The banner board's button whose tap brings the banner up.
+const BANNER_CALL: &str = "placeholder-id-2";
 
 /// Where the switches board's rows lie, in points, as their cells.
 const SWITCH_CELLS: [[f64; 4]; 2] = [[20.0, 134.0, 382.0, 187.0], [20.0, 293.0, 382.0, 345.0]];
@@ -505,6 +516,8 @@ struct Forms {
     rebuilt: [String; 2],
     /// What the accessory board's field holds.
     accessory: String,
+    /// Whether the banner board's banner shows.
+    banner: bool,
 }
 
 impl Forms {
@@ -529,6 +542,7 @@ impl Forms {
             switches: [false; 2],
             rebuilt: Default::default(),
             accessory: String::new(),
+            banner: false,
         }
     }
 
@@ -593,6 +607,9 @@ impl Forms {
         if let Some(field) = hit.and_then(|id| FormField::on(self.board, id)) {
             self.focus = Some(field);
             return;
+        }
+        if self.board == Board::Banner && hit == Some(BANNER_CALL) {
+            self.banner = true;
         }
         if self.board != Board::Form {
             if hit != Some(CREATION_DISABLED) {
@@ -1211,6 +1228,9 @@ impl Device {
                     let content = placeholder_content(kit, forms);
                     windows.push(kit.app_window(PLACEHOLDER, "Placeholder", content));
                     windows.extend(self.keyboard_window(PLACEHOLDER));
+                    if forms.banner {
+                        windows.push(banner(kit));
+                    }
                 }
             }
         }
@@ -1548,6 +1568,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Switches => switches_content(kit, forms),
         Board::Rebuilt => rebuilt_content(kit, forms),
         Board::Accessory => accessory_content(kit, forms),
+        Board::Banner => banner_content(kit, forms),
     }
 }
 
@@ -2284,6 +2305,48 @@ fn accessory_content(kit: Kit, forms: &Forms) -> Vec<El> {
             [20.0, 764.0, 382.0, 784.0],
         ),
     ]
+}
+
+/// The banner board (action-verdicts, task 2.1): a heading, a button from
+/// 140 to 188 points, under the banner's place, the button whose tap brings
+/// the banner up, and the status line.
+fn banner_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        kit.button(
+            "placeholder-id-1",
+            "placeholder-button-1",
+            [20.0, 140.0, 382.0, 188.0],
+        ),
+        kit.button(
+            BANNER_CALL,
+            "placeholder-button-2",
+            [20.0, 400.0, 382.0, 448.0],
+        ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
+/// The banner board's banner, in system UI's window over the app: from 128
+/// to 200 points and inset 8 points from the screen's sides, so that it
+/// spans neither side of the button under it, holding a button of its own
+/// across it.
+fn banner(kit: Kit) -> Win {
+    let width = kit.width();
+    let button = kit.button(
+        "placeholder-id-5",
+        "placeholder-button-5",
+        [16.0, 136.0, width - 16.0, 192.0],
+    );
+    kit.banner([8.0, 128.0, width - 8.0, 200.0], vec![button])
 }
 
 fn feed_content(kit: Kit, forms: &Forms) -> Vec<El> {

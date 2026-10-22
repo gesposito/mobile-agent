@@ -170,6 +170,19 @@ mod tests {
             text(&result),
             "✓ Done (dispatch 0.3 ms, no change in 202 ms)\n⚠ #row-20 was not mostly in view"
         );
+        // The element the tap hit leads the line (design D1 of
+        // action-verdicts).
+        let hit = reply(
+            true,
+            json!({"hit": {"role": "tab", "name": "List", "ref": "@e8"},
+                   "dispatchMs": 0.31, "watchedMs": 202.4}),
+            None,
+            None,
+        );
+        assert_eq!(
+            text(&of("click", &hit)),
+            "✓ Done (hit tab \"List\", dispatch 0.3 ms, no change in 202 ms)"
+        );
     }
 
     #[test]

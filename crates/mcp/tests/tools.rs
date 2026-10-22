@@ -367,7 +367,7 @@ fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
         assert_eq!(opened, format!("✓ Opened {APP} on emulator-5554"), "{era}");
         let clicked = ok(&client.call("click", json!({"selector": "#tab-list"})));
         assert!(
-            clicked.starts_with("✓ Done (dispatch ") && !clicked.contains('\n'),
+            clicked.starts_with("✓ Done (hit tab \"List\", dispatch ") && !clicked.contains('\n'),
             "{era}: {clicked}"
         );
         ok(&client.call("scroll", json!({"direction": "down", "amount": 98})));
@@ -375,7 +375,10 @@ fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
         let answer = ok(&result);
         let lines: Vec<&str> = answer.lines().collect();
         assert_eq!(lines.len(), 2, "{era}: the line and the warning: {answer}");
-        assert!(lines[0].starts_with("✓ Done ("), "{era}: {answer}");
+        assert!(
+            lines[0].starts_with("✓ Done (hit button \"Row 20\", dispatch "),
+            "{era}: {answer}"
+        );
         assert!(
             lines[1].starts_with("⚠ ")
                 && lines[1].contains("#row-20 was not mostly in view")

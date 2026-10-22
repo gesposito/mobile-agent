@@ -95,12 +95,18 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         "element_offscreen"
     );
     success!(ask(json!({"action": "press", "key": "Back"})), reply::Press);
-    for request in [
-        json!({"action": "click", "target": "#login-submit"}),
-        json!({"action": "click", "x": 200, "y": 50, "hold": 300}),
-    ] {
-        success!(ask(request), reply::Click);
-    }
+    // A click names the element its tap landed on, by a selector or at a
+    // point (design D1 of action-verdicts).
+    let clicked = success!(
+        ask(json!({"action": "click", "target": "#login-submit"})),
+        reply::Click
+    );
+    assert_eq!(clicked["data"]["hit"]["name"], "Sign in", "{clicked}");
+    let pressed = success!(
+        ask(json!({"action": "click", "x": 200, "y": 50, "hold": 300})),
+        reply::Click
+    );
+    assert_eq!(pressed["data"]["hit"]["role"], "heading", "{pressed}");
     for request in [
         json!({"action": "wait", "ms": 10}),
         json!({"action": "wait", "settle": true}),

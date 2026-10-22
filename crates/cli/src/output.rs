@@ -970,6 +970,36 @@ mod tests {
         );
     }
 
+    /// Design D1 of action-verdicts: a click's line names what its tap hit
+    /// before its spans, by its role and its name, which an element without
+    /// one leaves out, and is as it was for a reply that names nothing.
+    #[test]
+    fn a_click_names_what_its_tap_hit_before_its_spans() {
+        let clicked = |hit: Value| {
+            ok(json!({
+                "clicked": "@e4", "ref": "@e4", "x": 201.0, "y": 164.0, "accepted": true,
+                "hit": hit, "dispatchMs": 0.214, "treeDeltaMs": 351.04, "watchedMs": 551.3,
+            }))
+        };
+        let line = |reply: &Reply| human("click", reply).0;
+        assert_eq!(
+            line(&clicked(
+                json!({"role": "button", "name": "Sign in", "ref": "@e4"})
+            )),
+            "✓ Done (hit button \"Sign in\", dispatch 0.2 ms, first tree delta 351.0 ms)\n"
+        );
+        assert_eq!(
+            line(&clicked(
+                json!({"role": "keyboard", "name": "", "ref": null})
+            )),
+            "✓ Done (hit keyboard, dispatch 0.2 ms, first tree delta 351.0 ms)\n"
+        );
+        assert_eq!(
+            line(&clicked(Value::Null)),
+            "✓ Done (dispatch 0.2 ms, first tree delta 351.0 ms)\n"
+        );
+    }
+
     /// Design D5 of action-verdicts: `--json` keeps a delta object as the
     /// mirror writes it, byte for byte.
     #[test]

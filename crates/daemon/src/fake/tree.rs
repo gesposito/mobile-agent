@@ -118,6 +118,9 @@ const ACCESSORY: f64 = 68.0;
 /// An application's window id on a fake device.
 const APP_WINDOW: u32 = 1;
 
+/// The window id of a banner system UI shows over an app.
+const BANNER_WINDOW: u32 = 7;
+
 /// One window.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Win {
@@ -691,6 +694,40 @@ impl Kit {
             root: El::new("android.widget.FrameLayout", rect)
                 .child(El::new("android.widget.TextView", [16.0, 0.0, 56.0, 24.0]).text("12:30")),
         })
+    }
+
+    /// A banner system UI shows over the app in a window of its own, as a
+    /// notification comes down over an app (action-verdicts, task 2.1): at
+    /// `rect`, holding `content`, owned by system UI, above the app's window,
+    /// and taking the taps that land on it.
+    pub fn banner(self, rect: [f64; 4], content: Vec<El>) -> Win {
+        let (package, owner, class, events) = match self.platform {
+            Platform::Android => (
+                "com.android.systemui",
+                "com.android.systemui",
+                "android.widget.FrameLayout",
+                Some(true),
+            ),
+            Platform::Ios => (
+                "com.apple.springboard",
+                "SpringBoard",
+                "XCUIElementTypeWindow",
+                Some(false),
+            ),
+        };
+        Win {
+            id: BANNER_WINDOW,
+            kind: WindowType::SYSTEM,
+            layer: 3,
+            package: Some(package.to_owned()),
+            title: Some("Banner".to_owned()),
+            rect,
+            flags: WindowFlags::EMPTY,
+            events,
+            owner: Owner::System(owner.to_owned()),
+            modal: false,
+            root: El::new(class, rect).children(content),
+        }
     }
 
     /// Where the keyboard's window starts, in points from the top: the fake
