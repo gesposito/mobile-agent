@@ -14,8 +14,9 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, cancel_on, visibility, covered_by, scroll_viewport,
-                scroll_container_in, uncovered, keys_hidden, edit_menu, field_within, fields_within
+                timestamps, note_window_change, cancel_on, visibility, covered_by, hit, holds,
+                scroll_viewport, scroll_container_in, uncovered, keys_hidden, edit_menu, field_within,
+                fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
   replica.rs    windows and node trees, identity matching between reads, deltas, sequence numbers, resync
   view.rs       roles, names, visibility, what modals, views drawn over others, hosts, bars and
@@ -651,6 +652,16 @@ the reasons in this order, each with advice:
   daemon reads the windows again before it refuses a tap for it, since the
   keyboard moves a layout without an event. A covered element has no part
   a tap reaches.
+- `hit` tells, the same way, what a tap at a point lands on (action-verdicts,
+  design D1): the top-most element with a ref that a tap reaches there, as
+  `visibility` judges what a tap reaches of an element, inside its visible
+  bounds before the views drawn over part of it and under none of them, the
+  last of the top-most window that holds one, the innermost or the one
+  drawn over the others, or the keyboard where it draws, with the ref the
+  mirror issued it while that ref names it; `holds` tells whether one
+  element is another or holds it. The daemon names in a click's reply what
+  its tap landed on, and warns when that is neither the element the click
+  named, nor part of it, nor what holds it.
 - `scroll_viewport` tells, the same way, the visible bounds of the scroll
   container a stroke through a point moves (task 10.16): the innermost
   node on screen and not covered that scrolls along the stroke's axis, or

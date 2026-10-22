@@ -1,12 +1,13 @@
 //! A reply as a tool's result (design D5 of the `mcp-server` change): the
 //! text the CLI prints for it without `--json`, which the CLI's `output.rs`
 //! writes, so that a model reads what the CLI's user reads. A snapshot is
-//! its listing, without the refs map that repeats it; an action is the
-//! CLI's line, such as `✓ Done (dispatch 0.3 ms, no change in 202 ms)` for
-//! a click; a warning follows on its own line, marked `⚠` as the CLI marks
-//! it. A failure is an execution error (`isError`), the CLI's `✗` line
-//! with the daemon's code named after the mark, whose message says what to
-//! do next.
+//! its listing, without the refs map that repeats it, and a delta its lines
+//! under a header naming the lines they replace; an action is the CLI's
+//! line, such as `✓ Done (hit button "Sign in", dispatch 0.3 ms, no change
+//! in 202 ms)` for a click; a warning follows on its own line, marked `⚠` as
+//! the CLI marks it. A failure is an execution error (`isError`), the
+//! CLI's `✗` line with the daemon's code named after the mark, whose
+//! message says what to do next.
 
 use std::time::Duration;
 

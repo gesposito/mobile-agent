@@ -198,7 +198,13 @@ setting.
 
 Human mode prints the listing or a short confirmation (`✓ Done`, as
 agent-browser does) on stdout and errors (`✗`) and warnings (`⚠`) on
-stderr. A click follows its confirmation with its spans; `fill` with what
+stderr. A click follows its confirmation with the element its tap landed
+on, as the replica held it at dispatch and the listing names it, then its
+spans, `✓ Done (hit button "Sign in", dispatch 0.3 ms, first tree delta
+120.7 ms)`, naming none where no element with a ref lies under the point,
+and with a warning naming both when the element hit is neither the one
+the click named, nor part of it, nor what holds it, as when a view of
+system UI comes down over it (action-verdicts, design D1); `fill` with what
 the read-back found and how the text went in, `✓ Done (read back "agent",
 typed)`, `✓ Done (read back 7 masked characters, entered in one piece)`
 for a secure field, `entered in one piece` being `direct` as the JSON
@@ -254,20 +260,44 @@ The other kinds are `{"baseRevision", "kind": "unchanged", "revision"}` and
 "kind": "delta", "revision", "treeChange": {"deleteCount", "lines",
 "startLine"}}`. `crates/daemon/README.md` lists every action's data.
 
+In human mode `snapshot --delta` prints a `full` delta's listing,
+`unchanged (revision N)` for `unchanged`, and for `delta` a header naming
+the lines of the last delta snapshot's listing it replaces, counted from 1
+where `startLine` counts from 0, then the lines that take their place as
+the listing prints them, and the refs it removed, `removed refs: @e5, @e6`,
+in the form of a snapshot's `removedRefs`, which the full snapshot's human
+output does not print (action-verdicts, design D5); the refs it added or
+renamed show in its lines. A fill and a Back on the fixture's Login tab:
+
+```
+$ mobile-agent snapshot -i --delta > /dev/null
+$ mobile-agent fill '#login-username' agent
+✓ Done (read back "agent", entered in one piece)
+$ mobile-agent press Back
+✓ Done
+$ mobile-agent snapshot -i --delta
+delta (revision 2 from 1): line 2 replaced by
+- textbox "Username" [id=login-username, ref=e2]: agent
+```
+
+The header says `lines 2 to 4 replaced by` for several lines, `inserted
+after line 4`, or `before line 1`, for lines that replace none, and `lines
+3 to 4 removed` for lines left without a replacement.
+
 `wait --change` prints what moved and after how long, then the delta as
 `snapshot --delta` prints it; frames that move alone, as an animation's,
 leave it waiting, and with `--frames` end it with the listing `unchanged`:
 
 ```
 $ mobile-agent click '#tab-list'
-✓ Done (dispatch 0.9 ms, first frame change 0.1 ms, first tree delta 0.9 ms)
+✓ Done (hit button "List", dispatch 0.9 ms, first frame change 0.1 ms, first tree delta 1.0 ms)
 $ mobile-agent wait --change
 ✓ The tree and frames changed after 0.02 ms
 - button "Row 1" [id=row-1, ref=e10]
 - button "Row 2" [id=row-2, ref=e11]
 …
 $ mobile-agent click '#tab-anim'
-✓ Done (dispatch 2.8 ms, first frame change 2.6 ms, first tree delta 2.9 ms)
+✓ Done (hit button "Anim", dispatch 3.2 ms, first frame change 2.9 ms, first tree delta 4.7 ms)
 $ mobile-agent snapshot -i --delta > /dev/null
 $ mobile-agent wait --change --frames
 ✓ Frames changed after 0.04 ms
@@ -338,9 +368,9 @@ With a fake target that shows every change 120 ms late
 (`MOBILE_AGENT_FAKE_LATENCY_MS=120`, see `crates/daemon/README.md`):
 
 ```json
-{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.314,"frameChangeMs":120.078,"ref":"@e2","treeDeltaMs":120.688,"watchedMs":123.28,"x":204.0,"y":120.0},"error":null}
-{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.303,"ref":"@e2","treeDeltaMs":121.268,"watchedMs":123.903,"x":204.0,"y":120.0},"error":null}
-{"success":true,"data":{"accepted":true,"clicked":"204 600","dispatchMs":0.026,"ref":null,"watchedMs":304.642,"x":204.0,"y":600.0},"error":null}
+{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.133,"frameChangeMs":120.026,"hit":{"name":"Fixture","ref":"@e2","role":"button"},"ref":"@e2","treeDeltaMs":122.274,"watchedMs":122.495,"x":204.0,"y":120.0},"error":null}
+{"success":true,"data":{"accepted":true,"clicked":"@e2","dispatchMs":0.201,"hit":{"name":"Fixture","ref":"@e2","role":"button"},"ref":"@e2","treeDeltaMs":120.413,"watchedMs":123.332,"x":204.0,"y":120.0},"error":null}
+{"success":true,"data":{"accepted":true,"clicked":"204 600","dispatchMs":0.013,"hit":null,"ref":null,"watchedMs":323.171,"x":204.0,"y":600.0},"error":null}
 {"success":true,"data":{"elapsedMs":297.58,"endedBy":"frame","frameChanges":6,"settled":true,"stillChanging":[],"treeChanges":0,"waited":"settle"},"error":null}
 ```
 
@@ -350,8 +380,8 @@ attach's own delayed change arrived during it), and a settle after a move
 to another screen, whose 96 ms transition ended it. In human mode:
 
 ```
-✓ Done (dispatch 0.3 ms, first frame change 120.1 ms, first tree delta 120.7 ms)
-✓ Done (dispatch 0.0 ms, no change in 305 ms)
+✓ Done (hit button "Fixture", dispatch 0.1 ms, first frame change 120.0 ms, first tree delta 122.3 ms)
+✓ Done (dispatch 0.0 ms, no change in 323 ms)
 ✓ Settled after 297.58 ms: frames changed last
 ✓ Stopped waiting after 3000.36 ms: frames kept changing
 ```
@@ -640,6 +670,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Queries reach elements out of view | Box of a row scrolled above | the daemon's `handlers::act::tests::get_and_a_wait_for_presence_resolve_a_row_scrolled_above_at_once_and_say_it_is_out_of_view` and `handlers::act::tests::only_an_element_the_tree_does_not_hold_is_not_found_and_a_wait_for_one_in_view_still_waits` (rn-app-fixes, design D51); end to end, `commands::get_reads_an_element_out_of_view_and_says_so` |
 | Typed text is read back (real-app-fixes, design D3) | Keys dropped | `output::tests::type_says_what_it_read_back_from_the_field`, `commands::fill_replaces_a_field_and_type_appends_to_it` (the line end to end, the focused field's too); the daemon's `handlers::act::tests::type_reads_back_the_field_it_typed_into_the_focused_one_without_a_target`, `handlers::act::tests::type_into_a_field_that_drops_keys_warns_naming_what_it_holds_and_types_once` and `handlers::act::tests::type_with_no_focused_field_in_the_tree_says_it_did_not_read_its_text_back` |
 | Replies name what the screen holds (real-app-fixes, design D5) | An alert in front of the opened app; Pixels taken for points (a timeout's refs, a switch's value, the element a wait found) | `commands::the_lines_name_what_the_screen_holds`, `commands::wait_returns_when_an_element_or_text_appears_and_when_the_screen_settles`, `output::tests::get_value_prints_a_switch_s_state_and_says_when_there_is_no_value`, `output::tests::a_wait_names_the_element_it_found`, `output::tests::a_screenshot_says_its_pixels_and_the_screen_s_points`; the daemon's `screen::*` |
+| Replies verify the action (action-verdicts, designs D1 and D5) | A tap that lands elsewhere (the line naming the element hit); (a delta's changes as listing lines) | `output::tests::a_click_names_what_its_tap_hit_before_its_spans`, `commands::a_click_reports_where_it_landed_and_its_dispatch_time`, `spans::a_click_prints_its_spans`; `output::tests::a_delta_prints_a_header_its_lines_and_the_refs_it_removed`, `output::tests::the_json_line_keeps_a_delta_object_byte_for_byte`, `snapshot::a_delta_snapshot_prints_the_lines_that_changed_under_a_header_naming_them`; the daemon's `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns` and the server's `tools::a_snapshot_after_a_change_answers_with_the_lines_that_changed` |
 
 The timing spans (task 8.9) serve the benchmark harness rather than a
 spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree_delta`,

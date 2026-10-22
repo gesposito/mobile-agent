@@ -87,8 +87,12 @@ front of the app, `scroll`'s with `until`, and a snapshot's listing as
 text or as the mirror's delta object (`reply::DeltaSnapshot`). `type`'s
 data carries its read-back as `fill`'s does, what the field holds under
 `text` beside the text typed under `typed`, and `screenshot`'s the
-screen's size in points (`reply::Points`) beside the image's pixels. `cancel`'s data (`reply::Cancel`) says whether a
-command of the session was in flight and names its action and target.
+screen's size in points (`reply::Points`) beside the image's pixels.
+`click`'s `hit` (`reply::Hit`) names the element its tap landed on by its
+role and name, with the ref the session's snapshots listed it under or
+null, and is null when no element with a ref lay under the point.
+`cancel`'s data (`reply::Cancel`) says whether a command of the session
+was in flight and names its action and target.
 `status`'s per-target `driver` report and `doctor`'s `iosRunner` are the
 drivers' own objects, kept as JSON.
 
