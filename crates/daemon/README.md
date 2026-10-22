@@ -153,7 +153,7 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 |---|---|---|
 | `status` | | `daemon {pid, version, socket, uptimeMs, idleTimeoutMs, drivers, emulatorController}`, `targets [{id, platform, class, name, state, attached, attaches, frameSource, app, claimedBy, driver}]` (`attaches` how many times the daemon attached the target; `frameSource` whether the attached target has a frame source, null before it is attached; `driver` while attached: see Drivers), `sessions [{name, targets, defaultTimeoutMs}]` |
 | `devices` | `platform` | `devices [{id, platform, class, name, state, model, os, advice, claimedBy}]` (`advice` only for a target its state keeps from automation) |
-| `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` (from the launch request until the screen settled, after the launch's first effect when it came within a second, as a settle after an input waits for one; action-verdicts, design D2), `firstTreeMs` (until the replica showed the app, null when it did not), `alert` (a dialog of system UI in front of the app, as a permission alert, named as an action refused under it names it, `alert "Allow …"` or `dialog "Permission"`; absent when none stands there). The wait for the app's screen ends at once when such a dialog stands in front of it, unsettled and with a warning naming the dialog, as does one that came in front while the screen settled (`Mirror::system_dialog`; real-app-fixes, design D5) |
+| `open` | `app`, `relaunch`, `env ["K=V"]`, `timeout` | `opened`, `target`, `settled`, `elapsedMs` (from the launch request until the screen settled, after the launch's first effect when it came within a second, as a settle after an input waits for one; action-verdicts, design D2), `firstTreeMs` (until the replica showed the app, null when it did not; after a second launch, until it showed the app again), `alert` (a dialog of system UI in front of the app, as a permission alert, named as an action refused under it names it, `alert "Allow …"` or `dialog "Permission"`; absent when none stands there). The wait for the app's screen ends at once when such a dialog stands in front of it, unsettled and with a warning naming the dialog, as does one that came in front while the screen settled (`Mirror::system_dialog`; real-app-fixes, design D5). Once the app's screen showed and settled, with no such dialog, `open` checks that the replica's foreground owner, the snapshot's `origin`, is the app; when another holds the front, as the home screen took it back from a running app launched while it went home, it launches the app again, which brings a running app to the front, waits at most 2 s for its screen and settles again, and fails with `not_in_front`, naming the app and what is in front, when the app still is not (action-verdicts, design D4). An app that showed no screen within the wait keeps its warning |
 | `close` | `keep` | `closed`, `app`, `target`; the claim is released. With `keep`, `kept`: the session forgets its app without stopping it, so the app keeps running, `status` still names it, and the session's next `close` stops nothing (design D9 of mcp-server) |
 | `cancel` | | `cancelled` (whether a command of the session was in flight on a target it holds), `action` and `target` (that command's, null when none was). It ends that command and replies once it is over (see Sessions and claims) |
 | `snapshot` | `interactive`, `maxDepth`, `delta`, `full` | `snapshot` (text, or with `delta` agent-browser's delta object), `refs`, `removedRefs` (without `delta`), `origin`, `readMs` (the target's worker's time to answer, device reads included), `servedFromReplica` (answered without reading the device), `replicaRevision`, `target`, `verdict {backend, fallback, degraded, reasons [{code, advice}]}` |
@@ -876,7 +876,15 @@ traits:
 - apps: launched with the launch environment (`--env K=V` reaches the app
   as `K`, as `SIMCTL_CHILD_K` does through `simctl`), a running app brought
   to the front unless `--relaunch`; `app_not_found` when `simctl` finds no
-  container for the bundle.
+  container for the bundle. A launch of a running app made while the home
+  screen's go-home animation runs brings the app's screen forward, and the
+  home screen takes the front back as the animation ends: on a Simulator
+  `open` of a running app right after `press home` showed its screen in 70
+  to 177 ms and left the home screen in front three times in three, while
+  a second launch, through the driver or `simctl launch`, brought the
+  running app to the front three times in three each. `open` checks the
+  front once the app's screen settled and launches the app again (see
+  Protocol, `open`).
 - status: the input transport and why, its activation time and
   connections, or the host's plan before the first input; the tree backend
   and the reader with its pid, path, state and readiness time; the frames
@@ -1234,8 +1242,14 @@ another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
 on the screen's final frame. A relaunch takes the running app off the
 screen at once and shows the new one after the latency, as a relaunched
-app's stopped process leaves before the new one draws. Frames are produced
-as the backend is called, not on a timer. With `--fake-frame-delay` the
+app's stopped process leaves before the new one draws. A launch of an app
+that runs, from the launcher, brings it to the front;
+`FakeDriver::with_home_returns(n)` has the launcher take the front back
+150 ms after each of the first `n` such launches, as a Simulator's home
+screen took it back from a running app launched while its go-home
+animation ran (action-verdicts, task 2.4; the span is a model, shorter than
+the settle after the launch, not a measurement). Frames are produced as
+the backend is called, not on a timer. With `--fake-frame-delay` the
 frame stream starts that long after the attach, as an emulator's does once
 its gRPC subscription is up: frames captured before it are never delivered,
 and its first frame shows the screen as it is then. With `--fake-splash` a
@@ -1290,6 +1304,7 @@ source and reports the agent's paths, as a real emulator does.
 | `unknown_key` | the platform has no code for the key |
 | `io_error` | a file could not be written |
 | `daemon_stopping` | the daemon is shutting down, and a target command reached it after it stopped its targets; run the command again to start a new daemon |
+| `not_in_front` | `open` showed the app's screen, then found another app or system UI holding the front once that screen settled, and a second launch of the app left it there; the message names the app and what is in front |
 | `cancelled` | the session's `cancel` ended the command at its next wait; the message names the command's action |
 | `internal` | a command failed unexpectedly; the worker detaches the target |
 
@@ -1454,6 +1469,7 @@ Worked around here without changing `crates/mirror`:
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.1, design D1) | A tap that lands elsewhere (on the fake's banner board, on both platforms; with the element a click by ref, selector or point hit, the ref only for the session whose snapshots listed it, nothing on an empty point and the keyboard where it draws) | `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns`, `handlers::act::tests::a_click_names_the_element_its_tap_landed_on_and_the_session_s_ref_for_it`, `handlers::act::tests::a_click_by_coordinates_names_the_element_under_the_point`; the reply's type in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.2, design D3) | A rebuilt field (on the fake's rebuilt board, on both platforms: a get, a click and a fill on the ref of a field whose node the app replaced act on its twin, by identifier and role, else by name, role and bounds, the reply's `resolved` naming both refs and the session acting on the twin's ref from then on; a ref without a twin, after a relaunch on the form, failing `stale_ref`) | `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds`, `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`, `handlers::act::tests::a_fill_whose_focus_tap_puts_the_field_in_a_new_node_enters_the_text_into_its_twin` (the fake's raised board); the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was` and `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`; the replies' types in `replies::replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.3, design D2) | A settle right after a press (on fake targets at a 300 ms latency, through the CLI: a settle right after a click waits for its effect and names what changed last, after a click that changed nothing says so within 1 s of it, with no input in the last second ends at once; `open`'s settle waits for its launch's first effect) | the CLI's `spans::a_settle_right_after_a_click_waits_for_its_effect_and_names_what_changed_last`, `spans::a_settle_after_a_click_that_changes_nothing_says_nothing_changed_within_1_s_of_it`, `spans::a_settle_with_no_input_in_the_last_second_ends_at_once_on_a_quiet_screen` and `spans::open_s_settle_waits_for_its_launch_s_first_effect`; the reply's `input` in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
+| Replies verify the action, spec `agent-cli` (action-verdicts task 2.4, design D4) | Open behind the home screen (on fakes whose launcher takes the front back from a launch of a running app, on both platforms: launched again and in front, or failing `not_in_front` naming the launcher when it takes the front back from the second launch too) | `handlers::act::tests::open_launches_again_a_running_app_the_home_screen_took_the_front_back_from`, `handlers::act::tests::open_of_an_app_the_home_screen_keeps_behind_fails_not_in_front_naming_what_is`; an app that showed no screen keeps its warning in the CLI's `commands::open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
 

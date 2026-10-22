@@ -39,7 +39,10 @@
 //! moves as far as the finger. A typing mode (`MOBILE_AGENT_FAKE_TYPING`)
 //! says how the fixture's fields take text whose method the target may
 //! choose, as `fill` sends it, which they otherwise take whole, as the
-//! Android agent sets it (see [`Typing`]).
+//! Android agent sets it (see [`Typing`]). With
+//! [`FakeDriver::with_home_returns`] the launcher takes the front back from
+//! the first launches of a running app made from it, as a Simulator's home
+//! screen did from an app launched during its go-home animation.
 //!
 //! A fake shows its keyboard while a field has focus, and with
 //! [`FakeDriver::with_keyboard`] over every fixture screen, so a list can

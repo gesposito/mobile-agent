@@ -629,8 +629,8 @@ fn settle_launch(
 }
 
 /// How long after the launch that brings a running app to the front `open`
-/// waits for the app's screen: on this session's Simulator a second launch
-/// of a running app showed its screen 166 to 177 ms after it
+/// waits for the app's screen: on a Simulator a launch of a running app
+/// behind the home screen showed its screen 163 to 177 ms after it
 /// (action-verdicts, task 2.4).
 const ACTIVATE_WAIT: Duration = Duration::from_secs(2);
 
@@ -646,19 +646,18 @@ fn front_of(target: &mut Attached) -> Result<String, Failure> {
 
 /// Leaves `app`, which `launch` launched and whose screen showed, in front
 /// once that screen settled (design D4 of action-verdicts), as the
-/// replica's foreground owner tells:
-/// on this session's Simulator `open` right after `press home` launched
-/// Settings during the home screen's go-home animation, its screen showed,
-/// and the home screen took the front back as the animation ended, three
-/// times in three, while a second launch of the running app brought it to
-/// the front three times in three. So an app another holds the front from
-/// is launched again, which brings a running app to the front on every
-/// driver, and the wait for its screen, at most [`ACTIVATE_WAIT`] within the
-/// explicit timeout from `started` when one is given, and the settle after
-/// it run again; an app still not in front fails with `not_in_front`,
-/// naming it and what is in front. Gives the first tree, when the app's
-/// screen showed and whether it settled, those after the second launch
-/// when one was made.
+/// replica's foreground owner tells: on a Simulator `open` right after
+/// `press home` launched a running app while the home screen's go-home
+/// animation ran, the app's screen showed, and the home screen took the
+/// front back as the animation ended, three times in three, while a second
+/// launch of the running app brought it to the front three times in three.
+/// So an app another holds the front from is launched again, which brings a
+/// running app to the front on every driver, and the wait for its screen,
+/// at most [`ACTIVATE_WAIT`] within the explicit timeout from `started`
+/// when one is given, and the settle after it run again; an app still not
+/// in front fails with `not_in_front`, naming it and what is in front.
+/// Gives the first tree, when the app's screen showed and whether it
+/// settled, those after the second launch when one was made.
 fn in_front(
     target: &mut Attached,
     (app, launch): (&str, &Launch),

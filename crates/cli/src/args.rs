@@ -138,7 +138,10 @@ Examples:
     #[command(after_help = "\
 Waits for the launched app's first tree, up to the session's default timeout
 (10000 ms), for the launch's first effect within a second of the launch, then
-up to 3000 ms for its screen to settle; --timeout bounds them all.
+up to 3000 ms for its screen to settle; --timeout bounds them all. Once the
+app's screen showed and settled, an app another holds the front from, as the
+home screen, is launched again; one still not in front fails with
+not_in_front, naming what is in front.
 
 Examples:
   mobile-agent open dev.mobileagent.fixture.expo
