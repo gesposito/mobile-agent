@@ -182,10 +182,12 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
     let what = needed("get", "what", &args.what)?;
     let given = needed("get", "target", &args.target)?;
     let aim = Aim::parse(given)?;
-    let data = match what {
+    let (data, resolved) = match what {
         "text" | "value" | "box" => {
-            // Any element the replica holds, in view or not (design D51).
-            let element = aim::held(target, &call.session, &aim, timeout(&args.timeout, call)?)?;
+            // Any element the replica holds, in view or not (design D51),
+            // a stale ref's twin for it (action-verdicts, design D3).
+            let (element, resolved) =
+                aim::held(target, &call.session, &aim, timeout(&args.timeout, call)?)?;
             // An element that holds a switch sharing its identifier, or that
             // such a switch holds, reads as that switch, the one a click on
             // it presses: on the second pass on real apps `get value` by the
@@ -200,7 +202,7 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
             };
             let in_view = aim::in_view(target, &element);
             let b = element.bounds;
-            match what {
+            let data = match what {
                 "text" => json!({
                     "text": element.value.clone().filter(|v| !v.is_empty()).unwrap_or(element.name),
                     "inView": in_view,
@@ -219,7 +221,8 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
                     "x": b.left, "y": b.top, "width": b.width(), "height": b.height(),
                     "inView": in_view,
                 }),
-            }
+            };
+            (data, resolved)
         }
         other => {
             return Err(Failure::new(
@@ -228,7 +231,7 @@ pub(super) fn get(target: &mut Attached, call: &Call, args: &::wire::Get) -> Out
             ));
         }
     };
-    Ok(Success::new(data))
+    Ok(aim::with_resolved(Success::new(data), resolved))
 }
 
 /// A signal as replies name it, with the names `endedBy` uses.

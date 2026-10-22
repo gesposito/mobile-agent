@@ -126,6 +126,9 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             if data["inView"] == Value::Bool(false) {
                 let _ = writeln!(out, "out of view: scroll it into view before acting on it");
             }
+            if let Some(resolved) = resolution(data) {
+                let _ = writeln!(out, "({resolved})");
+            }
         }
         "screenshot" => {
             let path = str_of(data, "path");
@@ -164,6 +167,15 @@ fn value(data: &Value) -> &str {
         (_, Value::Bool(false)) => "off",
         _ => "no value",
     }
+}
+
+/// The twin a stale ref stood for (design D3 of action-verdicts), as an
+/// action's line names it: `@e221 now @e240`; `None` for a reply without
+/// one.
+fn resolution(data: &Value) -> Option<String> {
+    let resolved = data.get("resolved")?;
+    let (stale, twin) = (resolved["stale"].as_str()?, resolved["ref"].as_str()?);
+    Some(format!("{stale} now {twin}"))
 }
 
 /// A screenshot's image size beside the screen's, which a click takes
@@ -208,7 +220,8 @@ fn found(data: &Value, out: &mut String) {
 /// field that showed nothing, and `not read back` for one the fill did not
 /// read back. `typed` is text that went in as keys and `entered in one
 /// piece` a paste or a set, `direct` as the reply names it; `retried` says
-/// the text went in again.
+/// the text went in again. The twin a stale ref stood for comes first
+/// ([`resolution`]).
 fn fill(data: &Value, out: &mut String) {
     let text = str_of(data, "text");
     let read = match &data["verified"] {
@@ -217,7 +230,7 @@ fn fill(data: &Value, out: &mut String) {
         Value::Bool(false) => "nothing to read back".to_owned(),
         _ => "not read back".to_owned(),
     };
-    let mut parts = vec![read];
+    let mut parts: Vec<String> = resolution(data).into_iter().chain([read]).collect();
     entry(data, &mut parts);
     if data["retried"] == Value::Bool(true) {
         parts.push("retried".to_owned());
@@ -231,7 +244,7 @@ fn fill(data: &Value, out: &mut String) {
 /// which the reply's warning names; the count of a secure field's masked
 /// characters; `nothing to read back` for a field that showed nothing, and
 /// `not read back` for one the read-back did not read, as when no field had
-/// the focus.
+/// the focus; the twin a stale ref stood for first, as fill's line has it.
 fn typed(data: &Value, out: &mut String) {
     let read = match (&data["verified"], data["text"].as_str()) {
         (Value::String(shown), Some(held)) if shown == "length" => masked(held),
@@ -239,7 +252,7 @@ fn typed(data: &Value, out: &mut String) {
         (Value::Bool(false), None) => "nothing to read back".to_owned(),
         _ => "not read back".to_owned(),
     };
-    let mut parts = vec![read];
+    let mut parts: Vec<String> = resolution(data).into_iter().chain([read]).collect();
     entry(data, &mut parts);
     let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
 }
@@ -266,7 +279,8 @@ fn entry(data: &Value, parts: &mut Vec<String>) {
 /// A scroll's strokes, `✓ Done (2 strokes)`, and with `until` how much of
 /// the element is in view, `✓ Done (3 strokes; "Row 57" is 100% in view)`,
 /// the element named as the listing names it, or by the selector when it
-/// has no name, and its share rounded as the daemon's messages round it.
+/// has no name, and its share rounded as the daemon's messages round it;
+/// the twin a stale ref stood for first, as fill's line has it.
 fn scroll(data: &Value, out: &mut String) {
     let strokes = data["strokes"].as_u64().unwrap_or(0);
     let count = if strokes == 1 { "stroke" } else { "strokes" };
@@ -280,17 +294,25 @@ fn scroll(data: &Value, out: &mut String) {
         }
         _ => String::new(),
     };
-    let _ = writeln!(out, "✓ Done ({strokes} {count}{place})");
+    match resolution(data) {
+        Some(resolved) => {
+            let _ = writeln!(out, "✓ Done ({resolved}, {strokes} {count}{place})");
+        }
+        None => {
+            let _ = writeln!(out, "✓ Done ({strokes} {count}{place})");
+        }
+    }
 }
 
 /// A click's spans: `✓ Done (dispatch 0.2 ms, first frame change 121.3 ms,
 /// first tree delta 121.9 ms)`, leaving out the spans that never came,
 /// after what the tap landed on as the listing names it, by its role and
 /// any name, `hit button "Sign in"`, when the reply names it (design D1 of
-/// action-verdicts).
+/// action-verdicts), and first the twin a stale ref stood for, `@e221 now
+/// @e240` ([`resolution`], design D3).
 fn click(data: &Value, out: &mut String) {
     let span = |key: &str| data[key].as_f64().map(|ms| format!("{ms:.1} ms"));
-    let mut parts = Vec::new();
+    let mut parts: Vec<String> = resolution(data).into_iter().collect();
     if data["hit"].is_object() {
         let hit = &data["hit"];
         let role = str_of(hit, "role");

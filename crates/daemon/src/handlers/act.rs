@@ -483,28 +483,29 @@ fn switch_control(target: &mut Attached, element: &Element) -> Result<Option<Ele
 /// request names its own hold; elsewhere a switch takes a tap, as Android's
 /// flip on one (real-app-fixes, design D6). A point off the screen is
 /// refused ([`on_the_screen`]). The reply names what the tap landed on
-/// ([`landed`]).
+/// ([`landed`]), and the twin a stale ref stood for (`aim::Resolved`).
 pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) -> Outcome {
     let session = call.session.as_str();
     let hold = arg("hold", &args.hold)?.map(Duration::from_millis);
-    let (mut aimed, reference, clicked, found) = match (arg("x", &args.x)?, arg("y", &args.y)?) {
-        (Some(x), Some(y)) => {
-            let point = Point::new(x, y);
-            on_the_screen(target, point)?;
-            (Target::Point(point), None, format!("{x} {y}"), None)
-        }
-        _ => {
-            let given = needed(
-                "click",
-                "target",
-                args.target.as_deref().unwrap_or_default(),
-            )?;
-            let aim = Aim::parse(given)?;
-            let (aimed, reference, found) =
-                aim::action_target(target, session, &aim, timeout(&args.timeout, call)?)?;
-            (aimed, reference, given.to_owned(), found)
-        }
-    };
+    let (mut aimed, reference, clicked, found, resolved) =
+        match (arg("x", &args.x)?, arg("y", &args.y)?) {
+            (Some(x), Some(y)) => {
+                let point = Point::new(x, y);
+                on_the_screen(target, point)?;
+                (Target::Point(point), None, format!("{x} {y}"), None, None)
+            }
+            _ => {
+                let given = needed(
+                    "click",
+                    "target",
+                    args.target.as_deref().unwrap_or_default(),
+                )?;
+                let aim = Aim::parse(given)?;
+                let (aimed, reference, found, resolved) =
+                    aim::action_target(target, session, &aim, timeout(&args.timeout, call)?)?;
+                (aimed, reference, given.to_owned(), found, resolved)
+            }
+        };
     // The replica first takes in what arrived before the tap, so nothing
     // the tap did not cause is counted as its effect.
     target.mirror.pump()?;
@@ -591,7 +592,10 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
         None => {}
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
-    Ok(Success::new(Value::Object(data)).warn(warning))
+    Ok(aim::with_resolved(
+        Success::new(Value::Object(data)).warn(warning),
+        resolved,
+    ))
 }
 
 /// What a tap at `point` landed on as the replica held it at dispatch, as a
@@ -1806,18 +1810,25 @@ fn mismatch(
 /// fill unverified, with a warning, and gets the text once. On Android an
 /// empty field reads as its hint, so an empty fill there is not read back.
 /// On iOS a field without the focus is focused first and gets its text once
-/// the keyboard is up (see [`ready_keyboard`]).
+/// the keyboard is up (see [`ready_keyboard`]). A stale ref fills the twin
+/// it stands for, which the reply names (`aim::Resolved`).
 pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> Outcome {
     let session = call.session.as_str();
     let text = text_param("fill", args.text.as_deref())?;
     let given = needed("fill", "target", &args.target)?;
     let aim = Aim::parse(given)?;
-    let aimed = aim::text_ref(
+    let (aimed, resolved) = aim::text_ref(
         target,
         session,
         (&aim, given, "fill"),
         timeout(&args.timeout, call)?,
     )?;
+    fill_into(target, (given, &text), aimed).map(|filled| aim::with_resolved(filled, resolved))
+}
+
+/// Fills the field `aimed` stands for, which `given` named, with `text`,
+/// as [`fill`] does.
+fn fill_into(target: &mut Attached, (given, text): (&str, &str), aimed: TextTarget) -> Outcome {
     let (platform, class) = (target.info.platform, target.info.class);
     let (field, into, held) = match aimed {
         TextTarget::Within(reference, holder) => {
@@ -1856,55 +1867,47 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     // and the read-back compares with the field as the emptying left it
     // (design D49).
     let mut keys_into = into;
-    if let Some(source) = held_text(target, &field, &text)? {
+    if let Some(source) = held_text(target, &field, text)? {
         enter(target, into, "", TextMethod::AUTO)?;
-        before = emptied(target, &field, (Instant::now(), source), (&before.0, &text))?;
+        before = emptied(target, &field, (Instant::now(), source), (&before.0, text))?;
         keys_into = None;
     }
     let before = (before.0.as_str(), before.1.as_deref());
-    let first = enter(target, keys_into, &text, TextMethod::AUTO)?;
+    let first = enter(target, keys_into, text, TextMethod::AUTO)?;
     let entered = Instant::now();
     if text.is_empty() && platform == Platform::Android {
-        return Ok(filled(given, &text, reference, first, Check::Skipped, false).warn(note(None)));
+        return Ok(filled(given, text, reference, first, Check::Skipped, false).warn(note(None)));
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let read = read_back(
-        target,
-        &field,
-        &text,
-        (entered, first, Placed::Over),
-        before,
-    )?;
+    let read = read_back(target, &field, text, (entered, first, Placed::Over), before)?;
     let value = match read {
         ReadBack::Shown {
             shown, from, after, ..
         } => {
             let check = Check::Verified { shown, from, after };
-            return Ok(filled(given, &text, reference, first, check, false).warn(note(None)));
+            return Ok(filled(given, text, reference, first, check, false).warn(note(None)));
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
-            return Ok(filled(given, &text, reference, first, check, false)
+            return Ok(filled(given, text, reference, first, check, false)
                 .warn(note(Some(unreadable(given, "fill")))));
         }
         ReadBack::Gone => {
-            return Ok(
-                filled(given, &text, reference, first, Check::Skipped, false)
-                    .warn(note(Some(gone(entered_by(class, first))))),
-            );
+            return Ok(filled(given, text, reference, first, Check::Skipped, false)
+                .warn(note(Some(gone(entered_by(class, first))))));
         }
         ReadBack::Other { held, .. } => held,
     };
     let first_by = entered_by(class, first);
-    let second = match enter(target, into, &text, TextMethod::DIRECT) {
+    let second = match enter(target, into, text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
             let tries = format!(
                 "{first_by}, and entering it again in one piece failed: {}",
                 failure.message
             );
-            return Err(mismatch(given, reference, &text, value.as_deref(), &tries));
+            return Err(mismatch(given, reference, text, value.as_deref(), &tries));
         }
     };
     let entered = Instant::now();
@@ -1919,7 +1922,7 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
     let read = read_back(
         target,
         &field,
-        &text,
+        text,
         (entered, second, Placed::Over),
         before,
     )?;
@@ -1929,19 +1932,17 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
             shown, from, after, ..
         } => {
             let check = Check::Verified { shown, from, after };
-            Ok(filled(given, &text, reference, second, check, true).warn(note(Some(again()))))
+            Ok(filled(given, text, reference, second, check, true).warn(note(Some(again()))))
         }
         ReadBack::Unreadable { after } => {
             let check = Check::Unverified { after };
             let warning = format!("{}; {}", again(), unreadable(given, "fill"));
-            Ok(filled(given, &text, reference, second, check, true).warn(note(Some(warning))))
+            Ok(filled(given, text, reference, second, check, true).warn(note(Some(warning))))
         }
         ReadBack::Gone => {
             let warning = format!("{}; {}", again(), gone(second_by));
-            Ok(
-                filled(given, &text, reference, second, Check::Skipped, true)
-                    .warn(note(Some(warning))),
-            )
+            Ok(filled(given, text, reference, second, Check::Skipped, true)
+                .warn(note(Some(warning))))
         }
         ReadBack::Other { held: still, .. } => {
             let tries = if first_by == second_by {
@@ -1952,7 +1953,7 @@ pub(super) fn fill(target: &mut Attached, call: &Call, args: &::wire::Fill) -> O
                     second_by.replacen("the text", "it", 1)
                 )
             };
-            Err(mismatch(given, reference, &text, still.as_deref(), &tries))
+            Err(mismatch(given, reference, text, still.as_deref(), &tries))
         }
     }
 }
@@ -2028,17 +2029,21 @@ fn typed(
 /// text again would double it. With no field in the tree holding the focus
 /// the text goes where the focus is and is not read back, a warning saying
 /// so; nor is an empty text. An identifier takes the field inside a view,
-/// or the keyboard a view brings up, as `fill`'s does.
+/// or the keyboard a view brings up, and a stale ref the twin it stands
+/// for, as `fill`'s do.
 pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeText) -> Outcome {
     let session = call.session.as_str();
     let text = text_param("type", args.text.as_deref())?;
     // The field the keys go into, as the request names it, and the one the
     // read-back reads, with how warnings name it.
+    let mut resolved = None;
     let (into, named, read, warning) = match args.target.as_deref() {
         Some(given) => {
             let aim = Aim::parse(given)?;
             let wait = timeout(&args.timeout, call)?;
-            match aim::text_ref(target, session, (&aim, given, "type"), wait)? {
+            let (aimed, resolution) = aim::text_ref(target, session, (&aim, given, "type"), wait)?;
+            resolved = resolution;
+            match aimed {
                 TextTarget::Within(reference, holder) => {
                     let field = target.mirror.resolve(reference)?;
                     let into = ready_held(target, (&field, &holder), given, "type")?;
@@ -2110,7 +2115,8 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
         let warning = unread.map(|_| {
             "no field in the tree has the focus, so type could not read back where its text went; take a snapshot or a screenshot to see it".to_owned()
         });
-        return Ok(typed(&text, named, method, None, unread).warn(note(warning)));
+        let success = typed(&text, named, method, None, unread).warn(note(warning));
+        return Ok(aim::with_resolved(success, resolved));
     };
     let before = (before.0.as_str(), before.1.as_deref());
     let read = read_back(
@@ -2131,7 +2137,8 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
             "{given} left the screen after type typed the text, so it could not be read back"
         )),
     };
-    Ok(typed(&text, named, method, Some(&read), None).warn(note(warning)))
+    let success = typed(&text, named, method, Some(&read), None).warn(note(warning));
+    Ok(aim::with_resolved(success, resolved))
 }
 
 pub(super) fn press(target: &mut Attached, _call: &Call, args: &::wire::Press) -> Outcome {
@@ -2352,10 +2359,13 @@ pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) 
     let session = call.session.as_str();
     let direction = Direction::parse(&args.direction)?;
     let amount = arg("amount", &args.amount)?;
+    let mut resolved = None;
     let scrolled = match args.target.as_deref() {
         Some(given) => {
             let aim = Aim::parse(given)?;
-            let element = aim::element(target, session, &aim, timeout(&args.timeout, call)?)?;
+            let (element, resolution) =
+                aim::element(target, session, &aim, timeout(&args.timeout, call)?)?;
+            resolved = resolution;
             Scrolled {
                 bounds: element.bounds,
                 element: Some(element.id),
@@ -2389,7 +2399,8 @@ pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) 
             &args.timeout,
             (&scrolled, direction, amount),
             until,
-        );
+        )
+        .map(|success| aim::with_resolved(success, resolved));
     }
     let (count, step) = split(amount.max(0.0), longest);
     check_stroke(platform, step, amount, longest)?;
@@ -2407,14 +2418,15 @@ pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) 
         }
         strokes += 1;
     }
-    Ok(Success::new(json!({
+    let success = Success::new(json!({
         "scrolled": true,
         "direction": direction.name(),
         "amount": amount,
         "strokes": strokes,
         "from": at(from),
         "to": at(to),
-    })))
+    }));
+    Ok(aim::with_resolved(success, resolved))
 }
 
 /// A rectangle's start and end along the vertical axis, or the horizontal
@@ -5705,7 +5717,8 @@ mod tests {
     /// and bounds. Each reply's `resolved` names the stale ref and the
     /// twin's, which the click and the fill name as their `ref` and the
     /// click's hit as the session's; the session acts on the twin's ref from
-    /// then on.
+    /// then on, and on the stale one, which stands for the field's latest
+    /// node once the fill has emptied and filled it.
     #[test]
     fn a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds() {
         for platform in ["ios", "android"] {
@@ -5743,6 +5756,14 @@ mod tests {
                     "{platform}: {:?}",
                     clicked.warning
                 );
+                let held_by_twin = value_of(&mut target, &twin)
+                    .unwrap_or_else(|failure| panic!("{platform}: get {twin}: {failure:?}"));
+                assert_eq!(held_by_twin.data["value"], held, "{platform}");
+                assert!(
+                    held_by_twin.data.get("resolved").is_none(),
+                    "{platform}: {}",
+                    held_by_twin.data
+                );
                 let filled = fill_in(&mut target, stale, "again")
                     .unwrap_or_else(|failure| panic!("{platform}: fill {stale}: {failure:?}"));
                 let data = &filled.data;
@@ -5753,14 +5774,11 @@ mod tests {
                 );
                 assert_eq!(data["ref"], twin.as_str(), "{platform}: {data}");
                 assert_eq!(data["verified"], "text", "{platform}: {data}");
-                let again = value_of(&mut target, &twin)
-                    .unwrap_or_else(|failure| panic!("{platform}: get {twin}: {failure:?}"));
+                // Emptied first, then filled, the field took new nodes again.
+                let again = value_of(&mut target, stale)
+                    .unwrap_or_else(|failure| panic!("{platform}: get {stale}: {failure:?}"));
                 assert_eq!(again.data["value"], "again", "{platform}: {}", again.data);
-                assert!(
-                    again.data.get("resolved").is_none(),
-                    "{platform}: {}",
-                    again.data
-                );
+                assert_eq!(&resolved(&again).0, stale, "{platform}: {}", again.data);
             }
         }
     }

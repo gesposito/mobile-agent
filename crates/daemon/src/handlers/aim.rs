@@ -7,14 +7,18 @@
 //! A session acts only on refs its own snapshots listed on the target,
 //! which keeps refs isolated between sessions; the listing of the screen a
 //! timeout prints, a `wait_timeout`'s or an `element_not_found`'s, is one
-//! of them (real-app-fixes, design D4). A selector an action or a
-//! query names resolves any element the replica holds, the first on screen
-//! and not covered before the rest, and waits up to the command's timeout
-//! only for one the tree does not hold yet (rn-app-fixes, designs D51 and
-//! D53): an action on a covered element, or one out of view, then takes the
-//! path an action on its ref takes and is refused naming the cover. Either
-//! first brings the replica up to the display (`Attached::catch_up`), so an
-//! element is aimed at where it is.
+//! of them (real-app-fixes, design D4). A ref whose element is gone, which
+//! an action or a query names, stands for its twin when the replica holds
+//! one (`Mirror::twin`), the element the app rebuilt in its place, whose
+//! ref the session's refs gain and the reply names in `resolved`
+//! (action-verdicts, design D3); without one it fails `stale_ref`. A
+//! selector an action or a query names resolves any element the replica
+//! holds, the first on screen and not covered before the rest, and waits up
+//! to the command's timeout only for one the tree does not hold yet
+//! (rn-app-fixes, designs D51 and D53): an action on a covered element, or
+//! one out of view, then takes the path an action on its ref takes and is
+//! refused naming the cover. Either first brings the replica up to the
+//! display (`Attached::catch_up`), so an element is aimed at where it is.
 //!
 //! A wait for an exact text on screen, and the look of `scroll --until`,
 //! go through the full listing, where every element on screen and not
@@ -27,9 +31,10 @@ use mirror::{
     Condition, Element, MirrorError, Ref, Role, Selector, Snapshot, SnapshotOptions,
     SnapshotSummary, Target, WaitOutcome,
 };
+use serde_json::{Value, json};
 
-use crate::wire::Failure;
 use crate::wire::code::{self, ELEMENT_NOT_FOUND};
+use crate::wire::{Failure, Success};
 use crate::worker::Attached;
 
 /// An element argument.
@@ -128,6 +133,59 @@ impl Aim {
     }
 }
 
+/// A stale ref that stood for its twin (design D3 of action-verdicts): the
+/// ref the request named and the twin's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Resolved {
+    pub stale: Ref,
+    pub twin: Ref,
+}
+
+/// `success` with the twin its request's stale ref stood for, when it
+/// stood for one: `resolved`, `{"stale": "@e221", "ref": "@e240"}`.
+pub(crate) fn with_resolved(mut success: Success, resolved: Option<Resolved>) -> Success {
+    if let (Some(resolved), Value::Object(data)) = (resolved, &mut success.data) {
+        data.insert(
+            "resolved".into(),
+            json!({"stale": format!("@{}", resolved.stale), "ref": format!("@{}", resolved.twin)}),
+        );
+    }
+    success
+}
+
+/// The ref an action or a query on `reference`, which `session`'s
+/// snapshots must have listed, goes to: `reference` while it names its
+/// element, else, once it is stale, its twin's ([`mirror::Mirror::twin`]),
+/// which the session's refs gain, with the resolution. A stale ref without
+/// a twin fails `stale_ref`, as the mirror words it; any other failure to
+/// resolve the ref is left to the command, which meets it where it acts.
+fn current(
+    target: &mut Attached,
+    session: &str,
+    reference: Ref,
+) -> Result<(Ref, Option<Resolved>), Failure> {
+    check_seen(target, session, reference)?;
+    let stale = match target.mirror.resolve(reference) {
+        Err(stale @ MirrorError::StaleRef { .. }) => stale,
+        _ => return Ok((reference, None)),
+    };
+    let Some(twin) = target
+        .mirror
+        .twin(reference)
+        .and_then(|twin| twin.reference)
+    else {
+        return Err(stale.into());
+    };
+    target.session(session).seen.insert(twin);
+    Ok((
+        twin,
+        Some(Resolved {
+            stale: reference,
+            twin,
+        }),
+    ))
+}
+
 /// Fails unless `session`'s snapshots of the target listed `reference`.
 pub(crate) fn check_seen(
     target: &mut Attached,
@@ -213,9 +271,10 @@ pub(crate) fn wait(
 }
 
 /// The element an argument names as the replica holds it, in view or not,
-/// as a query reads it (rn-app-fixes, design D51): a ref's element, or the
-/// first the replica holds that a selector matches, waiting up to `timeout`
-/// for one; a timeout becomes `element_not_found` with the screen seen. On
+/// as a query reads it (rn-app-fixes, design D51): a ref's element, or its
+/// twin's for a stale ref ([`current`]), with the resolution, or the first
+/// the replica holds that a selector matches, waiting up to `timeout` for
+/// one; a timeout becomes `element_not_found` with the screen seen. On
 /// the fourth production-app run's feed scrolled to its end, `get box` on rows
 /// scrolled above, which the tree held, waited out its 10 s for a match on
 /// screen.
@@ -224,17 +283,19 @@ pub(crate) fn held(
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<Element, Failure> {
+) -> Result<(Element, Option<Resolved>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
-            check_seen(target, session, *reference)?;
-            Ok(target.mirror.resolve(*reference)?)
+            let (reference, resolved) = current(target, session, *reference)?;
+            Ok((target.mirror.resolve(reference)?, resolved))
         }
-        Aim::Select(selector) => find_in(target, session, (selector, Condition::Attached), timeout),
+        Aim::Select(selector) => {
+            find_in(target, session, (selector, Condition::Attached), timeout).map(|e| (e, None))
+        }
         Aim::Exact(text) => {
             let selector = exact(text);
-            find_in(target, session, (&selector, Condition::Attached), timeout)
+            find_in(target, session, (&selector, Condition::Attached), timeout).map(|e| (e, None))
         }
     }
 }
@@ -332,43 +393,51 @@ pub(crate) fn switch_of(
     Ok(switch.map(|at| Switch { listing, at }))
 }
 
-/// The element an argument names, as the replica shows it now.
+/// The element an argument names, as the replica shows it now: for a stale
+/// ref its twin's ([`current`]), with the resolution.
 pub(crate) fn element(
     target: &mut Attached,
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<Element, Failure> {
+) -> Result<(Element, Option<Resolved>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
-            check_seen(target, session, *reference)?;
-            Ok(target.mirror.resolve(*reference)?)
+            let (reference, resolved) = current(target, session, *reference)?;
+            Ok((target.mirror.resolve(reference)?, resolved))
         }
-        Aim::Select(selector) => find(target, session, selector, timeout),
-        Aim::Exact(text) => find_exact(target, session, text, timeout),
+        Aim::Select(selector) => find(target, session, selector, timeout).map(|e| (e, None)),
+        Aim::Exact(text) => find_exact(target, session, text, timeout).map(|e| (e, None)),
     }
 }
 
+/// Where an action lands, as [`action_target`] gives it: where the tap
+/// goes, the ref it names, the element a selector matched and the twin a
+/// stale ref stood for.
+pub(crate) type Landing = (Target, Option<Ref>, Option<Element>, Option<Resolved>);
+
 /// Where an action on an argument lands: a ref, which the mirror checks
-/// for being stale, covered or scrolled away, or for a selector the center
-/// of the element it matched among those the replica holds, on screen or
-/// not ([`find_held`]); with the element a selector matched.
+/// for being stale, covered or scrolled away, the twin's for a stale ref
+/// ([`current`]), with the resolution, or for a selector the center of the
+/// element it matched among those the replica holds, on screen or not
+/// ([`find_held`]); with the element a selector matched.
 pub(crate) fn action_target(
     target: &mut Attached,
     session: &str,
     aim: &Aim,
     timeout: Duration,
-) -> Result<(Target, Option<Ref>, Option<Element>), Failure> {
+) -> Result<Landing, Failure> {
     target.catch_up()?;
-    match aim {
+    let (aimed, reference, found) = match aim {
         Aim::Ref(reference) => {
-            check_seen(target, session, *reference)?;
-            Ok((Target::Ref(*reference), Some(*reference), None))
+            let (reference, resolved) = current(target, session, *reference)?;
+            return Ok((Target::Ref(reference), Some(reference), None, resolved));
         }
-        Aim::Select(selector) => Ok(aimed_at(find_held(target, session, selector, timeout)?)),
-        Aim::Exact(text) => Ok(aimed_at(find_held(target, session, &exact(text), timeout)?)),
-    }
+        Aim::Select(selector) => aimed_at(find_held(target, session, selector, timeout)?),
+        Aim::Exact(text) => aimed_at(find_held(target, session, &exact(text), timeout)?),
+    };
+    Ok((aimed, reference, found, None))
 }
 
 /// The element an action's selector names, as the replica holds it
@@ -426,49 +495,62 @@ pub(crate) enum TextTarget {
 /// field without an area. One that names such a node holding no field and
 /// without a ref gives the node, for the input a tap on it focuses (design
 /// D44): on the third production-app run's second visit the code input's view
-/// held nothing, the app's input not in the tree.
+/// held nothing, the app's input not in the tree. A stale ref gives its
+/// twin's ([`current`]), with the resolution.
 pub(crate) fn text_ref(
     target: &mut Attached,
     session: &str,
     (aim, given, action): (&Aim, &str, &str),
     timeout: Duration,
-) -> Result<TextTarget, Failure> {
+) -> Result<(TextTarget, Option<Resolved>), Failure> {
     target.catch_up()?;
     match aim {
         Aim::Ref(reference) => {
-            check_seen(target, session, *reference)?;
-            Ok(TextTarget::Field(*reference))
+            let (reference, resolved) = current(target, session, *reference)?;
+            Ok((TextTarget::Field(reference), resolved))
         }
         Aim::Select(selector) => {
-            let element = find_held(target, session, selector, timeout)?;
-            super::act::within_reach(target, action, &element, given)?;
-            let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
-            if selector.identifier.is_none() || takes_text {
-                return Ok(TextTarget::Field(listed_ref(
-                    target,
-                    &element,
-                    &selector.to_string(),
-                )?));
-            }
-            if let Some(field) = target.mirror.field_within(element.id)
-                && let Some(reference) = field.reference
-            {
-                return Ok(TextTarget::Within(reference, element));
-            }
-            match listed_ref(target, &element, &selector.to_string()) {
-                Ok(reference) => Ok(TextTarget::Field(reference)),
-                Err(_) if target.mirror.fields_within(element.id) == Some(0) => {
-                    Ok(TextTarget::Raising(element, selector.clone()))
-                }
-                Err(failure) => Err(failure),
-            }
+            selected_text_ref(target, session, (selector, given, action), timeout)
+                .map(|aimed| (aimed, None))
         }
         Aim::Exact(text) => {
             let element = find_held(target, session, &exact(text), timeout)?;
             super::act::within_reach(target, action, &element, given)?;
             let reference = listed_ref(target, &element, &format!("exact text {text:?}"))?;
-            Ok(TextTarget::Field(reference))
+            Ok((TextTarget::Field(reference), None))
         }
+    }
+}
+
+/// Where text for the element `selector` names goes, as [`text_ref`] has
+/// it.
+fn selected_text_ref(
+    target: &mut Attached,
+    session: &str,
+    (selector, given, action): (&Selector, &str, &str),
+    timeout: Duration,
+) -> Result<TextTarget, Failure> {
+    let element = find_held(target, session, selector, timeout)?;
+    super::act::within_reach(target, action, &element, given)?;
+    let takes_text = matches!(element.role, Role::Textbox | Role::Searchbox);
+    if selector.identifier.is_none() || takes_text {
+        return Ok(TextTarget::Field(listed_ref(
+            target,
+            &element,
+            &selector.to_string(),
+        )?));
+    }
+    if let Some(field) = target.mirror.field_within(element.id)
+        && let Some(reference) = field.reference
+    {
+        return Ok(TextTarget::Within(reference, element));
+    }
+    match listed_ref(target, &element, &selector.to_string()) {
+        Ok(reference) => Ok(TextTarget::Field(reference)),
+        Err(_) if target.mirror.fields_within(element.id) == Some(0) => {
+            Ok(TextTarget::Raising(element, selector.clone()))
+        }
+        Err(failure) => Err(failure),
     }
 }
 

@@ -425,6 +425,24 @@ pub struct Get {
     pub height: Option<f64>,
     /// Whether a tap reaches part of it.
     pub in_view: bool,
+    /// The twin a stale ref the request named stood for; absent when the
+    /// request named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
+}
+
+/// A stale ref that stood for its twin, the element an app rebuilt in its
+/// place: by its role and identifier, else by its role, name and bounds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
+#[serde(deny_unknown_fields)]
+pub struct Resolved {
+    /// The ref the request named, such as `@e221`, whose element is gone.
+    pub stale: String,
+    /// The twin's ref, such as `@e240`, which the session acts on from then
+    /// on.
+    #[serde(rename = "ref")]
+    pub reference: String,
 }
 
 /// `wait`: what was waited for and how it ended, by the kind of wait.
@@ -537,6 +555,10 @@ pub struct Click {
     pub tree_delta_ms: Option<f64>,
     /// How long the effects were watched.
     pub watched_ms: f64,
+    /// The twin a stale ref the request named stood for; absent when the
+    /// request named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
 }
 
 /// The element a click's tap landed on: the top-most with a ref that a tap
@@ -577,6 +599,10 @@ pub struct Fill {
     pub read_back_ms: Option<f64>,
     /// Whether the text went in again in one piece.
     pub retried: bool,
+    /// The twin a stale ref the request named stood for; absent when the
+    /// request named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
 }
 
 /// How a fill's read-back found the text.
@@ -616,6 +642,10 @@ pub struct TypeText {
     /// `no_focused_field` when no field in the tree had the focus.
     pub reason: Option<String>,
     pub read_back_ms: Option<f64>,
+    /// The twin a stale ref the request named stood for; absent when the
+    /// request named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
 }
 
 /// `press`: the key pressed, in the platform's codes.
@@ -670,6 +700,10 @@ pub struct Scroll {
     pub visible: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<Element>,
+    /// The twin a stale ref the request named stood for; absent when the
+    /// request named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
 }
 
 /// `shutdown`: the daemon stopped.
