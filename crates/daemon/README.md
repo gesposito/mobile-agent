@@ -182,7 +182,12 @@ twin, the session's refs gain its ref, and the reply carries `resolved`,
 `{"stale": "@e221", "ref": "@e240"}`, the ref the request named and the
 twin's, which `ref` gives where the reply has one; a stale ref without a
 twin, or with two candidates alike, fails with `stale_ref` as the mirror
-words it. A wait on a ref waits on the ref's own element.
+words it. `fill` follows its field to the twin once the field's ref is
+stale, before its text goes in and before it enters the text again in one
+piece: on a Simulator the tap that readies a field on iOS raised a map
+app's search card and put the field in a new node before its text, which
+went to the stale ref and failed. A wait on a ref waits on the
+ref's own element.
 
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
@@ -1117,7 +1122,12 @@ settle windows take real time, and a device model:
   points inset 8 points from the screen's sides, a banner holding a button
   of its own, which takes the taps that land on it while it cuts nothing of
   what a tap reaches of the button under it, as a notification comes down
-  over an app between a snapshot and a tap (action-verdicts, task 2.1); and
+  over an app between a snapshot and a tap (action-verdicts, task 2.1);
+  `raised`, a field from 580 to 628 points in a plain view that the tap
+  giving it the focus raises to 120 points, in a view of another class, so
+  that the field is a new node at another place once it has the focus, as
+  a map app's search field took one when the tap that readied it for
+  `fill` raised its card (action-verdicts, task 2.2); and
   by default the form with the shapes a React Native app showed in the smoke
   test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
@@ -1422,7 +1432,7 @@ Worked around here without changing `crates/mirror`:
 | (real-app-fixes task 5.5, design D3: a field whose node the app replaces) | (`fill` by the ref of a field without an identifier and by an identifier, and `type` into the field in focus, each field taking a new node as its text goes in, read back) | `handlers::act::tests::fill_and_type_read_back_a_field_whose_node_the_app_replaces_as_the_text_goes_in` |
 | (real-app-fixes task 5.6: a field drawn in the place the keyboard's host keeps for its input accessory view) | (the interactive listing lists the field and the button beside it, the button under the keys counted under the keyboard, and a click on the field taps its centre; the rule in `crates/mirror/README.md`) | `handlers::act::tests::a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.1, design D1) | A tap that lands elsewhere (on the fake's banner board, on both platforms; with the element a click by ref, selector or point hit, the ref only for the session whose snapshots listed it, nothing on an empty point and the keyboard where it draws) | `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns`, `handlers::act::tests::a_click_names_the_element_its_tap_landed_on_and_the_session_s_ref_for_it`, `handlers::act::tests::a_click_by_coordinates_names_the_element_under_the_point`; the reply's type in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
-| Replies verify the action, spec `agent-cli` (action-verdicts task 2.2, design D3) | A rebuilt field (on the fake's rebuilt board, on both platforms: a get, a click and a fill on the ref of a field whose node the app replaced act on its twin, by identifier and role, else by name, role and bounds, the reply's `resolved` naming both refs and the session acting on the twin's ref from then on; a ref without a twin, after a relaunch on the form, failing `stale_ref`) | `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds`, `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`; the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was` and `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`; the replies' types in `replies::replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types` |
+| Replies verify the action, spec `agent-cli` (action-verdicts task 2.2, design D3) | A rebuilt field (on the fake's rebuilt board, on both platforms: a get, a click and a fill on the ref of a field whose node the app replaced act on its twin, by identifier and role, else by name, role and bounds, the reply's `resolved` naming both refs and the session acting on the twin's ref from then on; a ref without a twin, after a relaunch on the form, failing `stale_ref`) | `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds`, `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`, `handlers::act::tests::a_fill_whose_focus_tap_puts_the_field_in_a_new_node_enters_the_text_into_its_twin` (the fake's raised board); the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was` and `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`; the replies' types in `replies::replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
 
