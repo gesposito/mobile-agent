@@ -266,6 +266,8 @@ enum FormField {
     Rebuilt(usize),
     /// The accessory board's field, drawn above the keyboard.
     Accessory,
+    /// The raised board's field, whose focus raises its card.
+    Raised,
 }
 
 impl FormField {
@@ -287,6 +289,7 @@ impl FormField {
             (Board::Sheet, TITLE_FIELD) => Some(FormField::Title),
             (Board::Dialog, NAME_FIELD) => Some(FormField::Name),
             (Board::Accessory, ACCESSORY_FIELD) => Some(FormField::Accessory),
+            (Board::Raised, RAISED_FIELD) => Some(FormField::Raised),
             (Board::Rebuilt, id) => REBUILT_FIELDS
                 .iter()
                 .position(|field| *field == id)
@@ -397,6 +400,12 @@ enum Board {
     /// points from the screen's sides, as a notification comes down over an
     /// app between a snapshot and a tap.
     Banner,
+    /// A field in a card low on the screen, which the tap that gives the
+    /// field the focus raises to the screen's top (action-verdicts, task
+    /// 2.2): the field takes a new node there, in a view of another class,
+    /// as a map app's search field did on the second demo pass between the
+    /// tap that focused it and the text `fill` entered.
+    Raised,
 }
 
 impl Board {
@@ -422,6 +431,7 @@ impl Board {
             "rebuilt" => Board::Rebuilt,
             "accessory" => Board::Accessory,
             "banner" => Board::Banner,
+            "raised" => Board::Raised,
             _ => Board::Form,
         }
     }
@@ -456,6 +466,9 @@ const REBUILT_FIELDS: [&str; 2] = ["placeholder-id-1", "placeholder-field-2"];
 
 /// The banner board's button whose tap brings the banner up.
 const BANNER_CALL: &str = "placeholder-id-2";
+
+/// The raised board's field.
+const RAISED_FIELD: &str = "placeholder-id-1";
 
 /// Where the switches board's rows lie, in points, as their cells.
 const SWITCH_CELLS: [[f64; 4]; 2] = [[20.0, 134.0, 382.0, 187.0], [20.0, 293.0, 382.0, 345.0]];
@@ -518,6 +531,8 @@ struct Forms {
     accessory: String,
     /// Whether the banner board's banner shows.
     banner: bool,
+    /// What the raised board's field holds.
+    raised: String,
 }
 
 impl Forms {
@@ -543,6 +558,7 @@ impl Forms {
             rebuilt: Default::default(),
             accessory: String::new(),
             banner: false,
+            raised: String::new(),
         }
     }
 
@@ -581,6 +597,7 @@ impl Forms {
             FormField::Name => &mut self.name,
             FormField::Rebuilt(k) => &mut self.rebuilt[k],
             FormField::Accessory => &mut self.accessory,
+            FormField::Raised => &mut self.raised,
         }
     }
 
@@ -1569,6 +1586,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Rebuilt => rebuilt_content(kit, forms),
         Board::Accessory => accessory_content(kit, forms),
         Board::Banner => banner_content(kit, forms),
+        Board::Raised => raised_content(kit, forms),
     }
 }
 
@@ -2327,6 +2345,43 @@ fn banner_content(kit: Kit, forms: &Forms) -> Vec<El> {
             "placeholder-button-2",
             [20.0, 400.0, 382.0, 448.0],
         ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
+/// The raised board (action-verdicts, task 2.2): a heading, the field, from
+/// 580 to 628 points in a plain view while it has no focus and, once it
+/// has, from 120 to 168 in a cell on iOS and a frame layout on Android, a
+/// new node at another place, and the status line.
+fn raised_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let raised = forms.focus == Some(FormField::Raised);
+    let top = if raised { 120.0 } else { 580.0 };
+    let rect = [20.0, top, 382.0, top + 48.0];
+    let field = kit.field(
+        RAISED_FIELD,
+        "placeholder-textbox-1",
+        &forms.raised,
+        false,
+        raised,
+        rect,
+    );
+    let view = match (raised, kit.platform) {
+        (false, Platform::Ios) => "XCUIElementTypeOther",
+        (true, Platform::Ios) => "XCUIElementTypeCell",
+        (false, Platform::Android) => "android.view.ViewGroup",
+        (true, Platform::Android) => "android.widget.FrameLayout",
+    };
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        El::new(view, rect).child(field),
         kit.label(
             Some("placeholder-status"),
             &forms.status,

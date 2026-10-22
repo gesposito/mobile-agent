@@ -5813,4 +5813,57 @@ mod tests {
             }
         }
     }
+
+    /// Design D3 of action-verdicts, scenario "A rebuilt field", as the
+    /// Simulator showed it: a fill on a map app's search field, by the ref
+    /// the snapshot right after `open` gave it, failed `stale_ref`, the tap
+    /// that gave the field the focus having raised its card and put the
+    /// field in a new node before the text went in. On the placeholder
+    /// app's raised board a fill by the field's ref, and one by its
+    /// identifier, enter the text into the field where the raised card
+    /// holds it and read it back. On iOS, where the fill taps the field
+    /// before its text, the text goes into the field's twin, by identifier
+    /// and role, whose ref the reply gives, and the fill by the ref names
+    /// both refs in `resolved`; on Android the text goes in with the focus,
+    /// before the field moves.
+    #[test]
+    fn a_fill_whose_focus_tap_puts_the_field_in_a_new_node_enters_the_text_into_its_twin() {
+        let raised = ["PLACEHOLDER_SCREEN=raised"];
+        for platform in ["ios", "android"] {
+            for by_ref in [true, false] {
+                let driver = FakeDriver::parse(platform).unwrap();
+                let (mut target, _) = recorded(&driver, PLACEHOLDER, &raised);
+                let field = ref_named(&mut target, "placeholder-textbox-1");
+                let aimed = if by_ref {
+                    field.clone()
+                } else {
+                    "#placeholder-id-1".to_owned()
+                };
+                let filled = fill_in(&mut target, &aimed, "coffee")
+                    .unwrap_or_else(|failure| panic!("{platform}: fill {aimed}: {failure:?}"));
+                let data = &filled.data;
+                assert_eq!(data["verified"], "text", "{platform} {aimed}: {data}");
+                assert_eq!(
+                    held(&mut target, "#placeholder-id-1"),
+                    "coffee",
+                    "{platform} {aimed}"
+                );
+                if platform == "android" {
+                    assert!(data.get("resolved").is_none(), "{platform}: {data}");
+                    continue;
+                }
+                let twin = ref_named(&mut target, "placeholder-textbox-1");
+                assert_ne!(twin, field, "{platform}: the field took a new node");
+                assert_eq!(data["ref"], twin.as_str(), "{platform} {aimed}: {data}");
+                match by_ref {
+                    true => assert_eq!(
+                        resolved(&filled),
+                        (field.clone(), twin.clone()),
+                        "{platform}: {data}"
+                    ),
+                    false => assert!(data.get("resolved").is_none(), "{platform}: {data}"),
+                }
+            }
+        }
+    }
 }
