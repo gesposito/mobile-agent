@@ -211,6 +211,46 @@ pub(crate) fn reach(
     Sight::new(replica, view).reach(w, i)
 }
 
+/// Where a tap lands as the replica has it (design D1 of action-verdicts):
+/// on the keyboard of window `w`, or on node `i` of window `w`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Landing {
+    Keyboard(usize),
+    Node(usize, usize),
+}
+
+/// What a tap at `at` lands on (design D1 of action-verdicts): the top-most
+/// element with a ref that a tap reaches there, as the listings judge what
+/// a tap reaches of an element ([`Sight::reaches`]): of the windows, top-most
+/// first, the first that holds one, and in it the last its tree lists, the
+/// innermost or the one drawn over the others, among the elements on screen
+/// that no other folds in; or a keyboard window that holds `at` before such a
+/// window, which takes the tap where it draws. `None` when no such element
+/// lies under `at`.
+pub(crate) fn landing(replica: &Replica, view: &View, at: Point) -> Option<Landing> {
+    let mut sight = Sight::new(replica, view);
+    for (w, window) in replica.windows.iter().enumerate() {
+        if !Rect::from_pixels(window.bounds, replica.scale).contains(at) {
+            continue;
+        }
+        if window.kind == WindowType::INPUT_METHOD {
+            if window.nodes.is_empty() {
+                continue;
+            }
+            return Some(Landing::Keyboard(w));
+        }
+        let facts = &view.windows[w];
+        let found = (0..window.nodes.len()).rev().find(|&i| {
+            let f = &facts[i];
+            f.visible && f.bears_ref && !f.absorbed && sight.reaches(w, i, at)
+        });
+        if let Some(i) = found {
+            return Some(Landing::Node(w, i));
+        }
+    }
+    None
+}
+
 /// What the views and bars of a replica leave of its elements, keeping what
 /// it works out on the way for the next element: the visible bounds of
 /// each scroll container met.
@@ -399,6 +439,23 @@ impl<'a> Sight<'a> {
             reachable,
         };
         (seen, covered)
+    }
+
+    /// Whether a tap at `at` reaches node `i` of window `w`, as
+    /// [`Sight::reach`] has what a tap reaches of it (design D1 of
+    /// action-verdicts): `at` lies in its bounds inside its visible bounds
+    /// before the views drawn over part of it, under none of those views,
+    /// and no view covers all of it.
+    pub(crate) fn reaches(&mut self, w: usize, i: usize, at: Point) -> bool {
+        let (replica, view) = (self.replica, self.view);
+        let (window, facts) = (&replica.windows[w], &view.windows[w]);
+        if facts[i].hidden != Hidden::No || !facts[i].rect.contains(at) {
+            return false;
+        }
+        let containers = scrolling(window, facts, window.nodes[i].parent);
+        let (_, before) = inside(replica, view, (w, i), containers.clone(), self.bars_of(w));
+        let shown = containers.fold(before, |shown, c| shown.intersect(&self.shows(w, c)));
+        shown.contains(at) && !view.over_part(w, i).any(|(_, cover)| cover.contains(at))
     }
 }
 

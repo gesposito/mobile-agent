@@ -367,7 +367,8 @@ fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
         assert_eq!(opened, format!("✓ Opened {APP} on emulator-5554"), "{era}");
         let clicked = ok(&client.call("click", json!({"selector": "#tab-list"})));
         assert!(
-            clicked.starts_with("✓ Done (hit tab \"List\", dispatch ") && !clicked.contains('\n'),
+            clicked.starts_with("✓ Done (hit button \"List\", dispatch ")
+                && !clicked.contains('\n'),
             "{era}: {clicked}"
         );
         ok(&client.call("scroll", json!({"direction": "down", "amount": 98})));

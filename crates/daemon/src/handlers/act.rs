@@ -482,7 +482,8 @@ fn switch_control(target: &mut Attached, element: &Element) -> Result<Option<Ele
 /// [`SWITCH_HOLD`] on that switch's control ([`switch_control`]), unless the
 /// request names its own hold; elsewhere a switch takes a tap, as Android's
 /// flip on one (real-app-fixes, design D6). A point off the screen is
-/// refused ([`on_the_screen`]).
+/// refused ([`on_the_screen`]). The reply names what the tap landed on
+/// ([`landed`]).
 pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) -> Outcome {
     let session = call.session.as_str();
     let hold = arg("hold", &args.hold)?.map(Duration::from_millis);
@@ -541,16 +542,19 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     if !outcome.accepted {
         return Err(rejected("tap"));
     }
+    let point = outcome.at.unwrap_or_default();
+    // What the tap landed on, taken before the watch takes in what it changed.
+    let (hit, missed) = landed(target, session, point, element.as_ref(), &clicked);
     let fresh = target
         .input_notes
         .as_ref()
         .and_then(|notes| notes.activation_wait())
         .is_some();
     let spans = watch(target, started, revision, dispatch, fresh);
-    let point = outcome.at.unwrap_or_default();
     let mut data = Map::new();
     data.insert("clicked".into(), clicked.as_str().into());
     data.insert("ref".into(), reference_json(reference));
+    data.insert("hit".into(), hit);
     data.insert("x".into(), point.x.into());
     data.insert("y".into(), point.y.into());
     data.insert("accepted".into(), outcome.accepted.into());
@@ -563,7 +567,7 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
         data.insert("treeDeltaMs".into(), millis(tree).into());
     }
     data.insert("watchedMs".into(), millis(spans.watched).into());
-    let mut warnings = Vec::new();
+    let mut warnings: Vec<String> = missed.into_iter().collect();
     if let Some(seen) = seen {
         // A cut edge names the axis; otherwise lists scroll up and down.
         let vertical = !cut_along(&seen, false);
@@ -588,6 +592,59 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join("; "));
     Ok(Success::new(Value::Object(data)).warn(warning))
+}
+
+/// What a tap at `point` landed on as the replica held it at dispatch, as a
+/// click's reply gives it (design D1 of action-verdicts): the element
+/// ([`mirror::Mirror::hit`]) by its role, its name and the ref `session`'s
+/// snapshots listed it under, null when they did not, or null for no element
+/// with a ref under the point; and, when the click named `aimed`, which
+/// `clicked` gives, and the tap landed on an element that is neither it,
+/// nor part of it, nor what holds it, the warning that names both. The
+/// daemon checked what a tap reaches of `aimed` before the tap, so such a
+/// tap met a layout that moved under the point after `aimed` was found, or
+/// a view over it that cuts nothing of what a tap reaches of it, as a banner
+/// system UI draws in a window of its own, inset from the screen's sides;
+/// the tap went in all the same, since the replica can lag the app.
+fn landed(
+    target: &mut Attached,
+    session: &str,
+    point: Point,
+    aimed: Option<&Element>,
+    clicked: &str,
+) -> (Value, Option<String>) {
+    let Some(hit) = target.mirror.hit(point) else {
+        return (Value::Null, None);
+    };
+    let held = hit
+        .reference
+        .filter(|reference| target.session(session).seen.contains(reference));
+    let missed = aimed
+        .filter(|aimed| {
+            !target.mirror.holds(aimed.id, hit.id) && !target.mirror.holds(hit.id, aimed.id)
+        })
+        .map(|aimed| {
+            let named = match held {
+                Some(reference) => format!("@{reference} ({})", listed_as(&hit)),
+                None => listed_as(&hit),
+            };
+            format!(
+                "the tap at {point} landed on {named}, not on {clicked} ({}): the layout moved under the point or a view lies over it; take a snapshot to see what the tap did",
+                listed_as(aimed)
+            )
+        });
+    let json = json!({"role": hit.role.as_str(), "name": hit.name, "ref": reference_json(held)});
+    (json, missed)
+}
+
+/// An element as the listing names it: by its role and, when it has one,
+/// its name, as `button "Sign in"` or `keyboard`.
+fn listed_as(element: &Element) -> String {
+    if element.name.is_empty() {
+        element.role.to_string()
+    } else {
+        format!("{} {:?}", element.role, element.name)
+    }
 }
 
 /// Refuses `point` when it lies off the screen, in points as a click takes

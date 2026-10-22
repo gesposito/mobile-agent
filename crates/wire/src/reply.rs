@@ -521,6 +521,9 @@ pub struct Click {
     pub clicked: String,
     #[serde(rename = "ref")]
     pub reference: Option<String>,
+    /// What the tap landed on as the replica held it at dispatch; null when
+    /// no element with a ref lay under the point.
+    pub hit: Option<Hit>,
     pub x: f64,
     pub y: f64,
     pub accepted: bool,
@@ -534,6 +537,20 @@ pub struct Click {
     pub tree_delta_ms: Option<f64>,
     /// How long the effects were watched.
     pub watched_ms: f64,
+}
+
+/// The element a click's tap landed on: the top-most with a ref that a tap
+/// reaches at the point, or the keyboard where it draws.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
+#[serde(deny_unknown_fields)]
+pub struct Hit {
+    pub role: String,
+    pub name: String,
+    /// The ref the session's snapshots listed it under, such as `@e3`; null
+    /// when they did not.
+    #[serde(rename = "ref")]
+    pub reference: Option<String>,
 }
 
 /// `fill`: how the text went in and what the read-back found.

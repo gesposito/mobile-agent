@@ -28,7 +28,7 @@ use crate::snapshot::{
 use crate::timestamps::Timestamps;
 use crate::verdict::{Degradation, Verdict};
 use crate::view::{self, Facts, Hidden, View};
-use crate::visibility::{self, Uncovered, Visibility};
+use crate::visibility::{self, Landing, Uncovered, Visibility};
 use crate::wait::{Condition, Selector, SnapshotSummary, WaitOutcome};
 
 /// The UIKit class of the list iOS's edit menu draws its cells in, as the
@@ -775,6 +775,47 @@ impl Mirror {
         visibility::reach(&self.replica, &view, w, i)
             .1
             .map(|cover| cover.by)
+    }
+
+    /// What a tap at `at`, in device points, lands on as the replica has it
+    /// now, without reading the target (design D1 of action-verdicts): the
+    /// top-most element with a ref that a tap reaches there, as the listings
+    /// judge what a tap reaches of an element ([`Mirror::visibility`]), the
+    /// last the top-most window that holds one lists, the innermost or the
+    /// one drawn over the others; or the keyboard where it draws, as the full
+    /// listing lists it. The element carries the ref the mirror issued it
+    /// while that ref still names it, whichever session's snapshot listed
+    /// it. `None` when no such element lies under `at`.
+    pub fn hit(&self, at: Point) -> Option<Element> {
+        let view = View::build(&self.replica);
+        let window = |w: usize| &self.replica.windows[w];
+        match visibility::landing(&self.replica, &view, at)? {
+            Landing::Keyboard(w) => Some(keyboard(window(w), self.replica.scale)),
+            Landing::Node(w, i) => {
+                let (node, facts) = (&window(w).nodes[i], &view.windows[w][i]);
+                let reference = self.refs.of(
+                    node.element,
+                    (facts.role, &facts.name, place(node)),
+                    node.identifier.is_some(),
+                );
+                Some(element(window(w), node, facts, reference))
+            }
+        }
+    }
+
+    /// Whether `outer` is `inner` or holds it as the replica has them now:
+    /// the same element, or one of its ancestors in its window.
+    pub fn holds(&self, outer: ElementId, inner: ElementId) -> bool {
+        if outer == inner {
+            return true;
+        }
+        match (self.replica.locate(outer), self.replica.locate(inner)) {
+            (Some((w, o)), Some((within, i))) if w == within => {
+                let nodes = &self.replica.windows[w].nodes;
+                std::iter::successors(Some(i), |&n| nodes[n].parent).any(|n| n == o)
+            }
+            _ => false,
+        }
     }
 
     /// The dialog system UI holds in front of the screen, as the replica has

@@ -85,7 +85,10 @@ fn a_click_reports_where_it_landed_and_its_dispatch_time() {
         .cli(&["click", &ref_of(&listing, "launcher-settings")])
         .ok()
         .stdout;
-    assert!(human.starts_with("✓ Done (dispatch "), "{human}");
+    assert!(
+        human.starts_with("✓ Done (hit button \"Settings\", dispatch "),
+        "{human}"
+    );
     env.cli(&["press", "Back"]).ok();
     let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
     let settings = ref_of(&listing, "launcher-settings");

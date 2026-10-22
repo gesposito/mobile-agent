@@ -284,10 +284,21 @@ fn scroll(data: &Value, out: &mut String) {
 }
 
 /// A click's spans: `✓ Done (dispatch 0.2 ms, first frame change 121.3 ms,
-/// first tree delta 121.9 ms)`, leaving out the spans that never came.
+/// first tree delta 121.9 ms)`, leaving out the spans that never came,
+/// after what the tap landed on as the listing names it, by its role and
+/// any name, `hit button "Sign in"`, when the reply names it (design D1 of
+/// action-verdicts).
 fn click(data: &Value, out: &mut String) {
     let span = |key: &str| data[key].as_f64().map(|ms| format!("{ms:.1} ms"));
     let mut parts = Vec::new();
+    if data["hit"].is_object() {
+        let hit = &data["hit"];
+        let role = str_of(hit, "role");
+        match str_of(hit, "name") {
+            "" => parts.push(format!("hit {role}")),
+            name => parts.push(format!("hit {role} {name:?}")),
+        }
+    }
     if let Some(dispatch) = span("dispatchMs") {
         parts.push(format!("dispatch {dispatch}"));
     }

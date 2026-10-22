@@ -140,7 +140,10 @@ fn a_click_prints_its_spans() {
         .cli(&["click", &ref_of(&listing, "launcher-fixture")])
         .ok();
     let line = run.stdout.trim_end();
-    assert!(line.starts_with("✓ Done (dispatch "), "{line}");
+    assert!(
+        line.starts_with("✓ Done (hit button \"Fixture\", dispatch "),
+        "{line}"
+    );
     assert!(line.contains(" ms, first frame change "), "{line}");
     assert!(line.contains(" ms, first tree delta "), "{line}");
     assert!(line.ends_with(" ms)"), "{line}");

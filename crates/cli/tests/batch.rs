@@ -119,7 +119,10 @@ fn a_human_batch_prints_each_result_with_a_blank_line_between() {
         listing,
         "- heading \"Home\" [id=launcher-title, ref=e1]\n- button \"Fixture\" [id=launcher-fixture, ref=e2]\n- button \"Settings\" [id=launcher-settings, ref=e3]"
     );
-    assert!(click.starts_with("✓ Done (dispatch "), "{click}");
+    assert!(
+        click.starts_with("✓ Done (hit button \"Fixture\", dispatch "),
+        "{click}"
+    );
     assert_eq!(click.lines().count(), 1, "{click}");
     let failed = env
         .cli(&["batch", "--bail", "click @e2", "snapshot -i"])
