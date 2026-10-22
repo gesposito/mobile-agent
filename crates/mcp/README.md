@@ -168,10 +168,14 @@ surfaces:
   dialog of system UI in front of the app, `✓ Released <target>; <app>
   keeps running` for `close` with `keep`, `✓ Settled after 111 ms: the
   tree changed last`, `✓ The tree changed after 300 ms` and the delta, or
-  `✓ Found button "Sign in" @e4` for a wait;
+  `✓ Found button "Sign in" @e4` for a wait; an action on a stale ref
+  that stood for its twin, the element the app rebuilt in its place, names
+  both refs first, `✓ Done (@e3 now @e4, read back "again", entered in one
+  piece)` (design D3);
 - `get`, `devices`, `status` and `diff_snapshot` are the CLI's lines, a
   switch's `get value` `on` or `off` and an element without a value `no
-  value`;
+  value`, and a `get` on a stale ref names both refs on a line after what
+  it read, `(@e3 now @e5)`;
 - `doctor` is the CLI's report, one line per check and the Xcode
   compatibility table;
 - a warning follows on its own line, marked `⚠` as the CLI marks it.

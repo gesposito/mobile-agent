@@ -171,6 +171,19 @@ when set; `data` carries details on some failures (`holder`, `candidates`).
 | `doctor` | | `pid`, `version`, `drivers`, `emulatorController`, `compatibility {rows [{subject, feature, status, note}], note}` |
 | `shutdown` | | `stopped`; `notStopped` when a target had not stopped within 5 s. The reply comes once the daemon has stopped its targets and removed its files (see Shutdown), and the daemon exits after it |
 
+A ref the session's snapshots listed whose element is gone stands for its
+twin when the replica holds one (`Mirror::twin`; action-verdicts, design
+D3): the element an app rebuilt in its place, which the replica cannot pair
+with the old node, the one element bearing a ref of the role and
+identifier the ref was issued for, else the one of its role and name whose
+bounds lie, edge by edge, within a physical pixel of those a listing last
+gave it. `click`, `fill`, `type`, `get` and `scroll`'s `target` act on the
+twin, the session's refs gain its ref, and the reply carries `resolved`,
+`{"stale": "@e221", "ref": "@e240"}`, the ref the request named and the
+twin's, which `ref` gives where the reply has one; a stale ref without a
+twin, or with two candidates alike, fails with `stale_ref` as the mirror
+words it. A wait on a ref waits on the ref's own element.
+
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
 sink took to accept the tap, the span of the benchmark's `tap-dispatch`.
@@ -1255,7 +1268,8 @@ give, detaches its target too, after the reply (see Drivers).
 
 The mirror's codes pass through: `stale_ref`, `unknown_ref`,
 `element_covered`, `element_offscreen`, `wait_timeout`, `no_frame`,
-`disconnected`, and drivers' own codes. `click` also fails with
+`disconnected`, and drivers' own codes; `stale_ref` only for a ref without
+a twin (see Protocol). `click` also fails with
 `element_offscreen` itself, for an element nothing of which a tap reaches
 is in view after its window was read again (see Tap spans and settle signals). The Simulator driver's keep its
 names (`unsupported_xcode`, `target_unavailable`, `no_foreground`,
@@ -1408,6 +1422,7 @@ Worked around here without changing `crates/mirror`:
 | (real-app-fixes task 5.5, design D3: a field whose node the app replaces) | (`fill` by the ref of a field without an identifier and by an identifier, and `type` into the field in focus, each field taking a new node as its text goes in, read back) | `handlers::act::tests::fill_and_type_read_back_a_field_whose_node_the_app_replaces_as_the_text_goes_in` |
 | (real-app-fixes task 5.6: a field drawn in the place the keyboard's host keeps for its input accessory view) | (the interactive listing lists the field and the button beside it, the button under the keys counted under the keyboard, and a click on the field taps its centre; the rule in `crates/mirror/README.md`) | `handlers::act::tests::a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.1, design D1) | A tap that lands elsewhere (on the fake's banner board, on both platforms; with the element a click by ref, selector or point hit, the ref only for the session whose snapshots listed it, nothing on an empty point and the keyboard where it draws) | `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns`, `handlers::act::tests::a_click_names_the_element_its_tap_landed_on_and_the_session_s_ref_for_it`, `handlers::act::tests::a_click_by_coordinates_names_the_element_under_the_point`; the reply's type in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
+| Replies verify the action, spec `agent-cli` (action-verdicts task 2.2, design D3) | A rebuilt field (on the fake's rebuilt board, on both platforms: a get, a click and a fill on the ref of a field whose node the app replaced act on its twin, by identifier and role, else by name, role and bounds, the reply's `resolved` naming both refs and the session acting on the twin's ref from then on; a ref without a twin, after a relaunch on the form, failing `stale_ref`) | `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds`, `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`; the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was` and `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`; the replies' types in `replies::replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
 

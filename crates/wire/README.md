@@ -91,6 +91,10 @@ screen's size in points (`reply::Points`) beside the image's pixels.
 `click`'s `hit` (`reply::Hit`) names the element its tap landed on by its
 role and name, with the ref the session's snapshots listed it under or
 null, and is null when no element with a ref lay under the point.
+`click`'s, `fill`'s, `type`'s, `get`'s and `scroll`'s `resolved`
+(`reply::Resolved`) names a stale ref the request named, under `stale`, and
+the ref of its twin, the element the app rebuilt in its place, which the
+action took, under `ref`; it is absent when the request named no stale ref.
 `cancel`'s data (`reply::Cancel`) says whether a command of the session
 was in flight and names its action and target.
 `status`'s per-target `driver` report and `doctor`'s `iosRunner` are the

@@ -14,7 +14,7 @@ the tests, and later the daemon's tests, drive with a fake clock.
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
   mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, note_window_change, cancel_on, visibility, covered_by, hit, holds,
+                timestamps, note_window_change, cancel_on, visibility, covered_by, hit, holds, twin,
                 scroll_viewport, scroll_container_in, uncovered, keys_hidden, edit_menu, field_within,
                 fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
@@ -662,6 +662,18 @@ the reasons in this order, each with advice:
   element is another or holds it. The daemon names in a click's reply what
   its tap landed on, and warns when that is neither the element the click
   named, nor part of it, nor what holds it.
+- `twin` tells, the same way, what stands for the element a stale ref
+  named (action-verdicts, design D3): an app that rebuilds a control puts
+  a new node in its place, which the replica cannot pair with the old one,
+  so the ref is stale while the control is back. The twin is the one
+  element bearing a ref, outside a keyboard, of the role and identifier
+  the ref was issued for, which the ref table keeps beside its role, name,
+  place and bounds in pixels as a listing last gave them, else the one of
+  its role and name whose bounds lie, edge by edge, within a physical pixel
+  of those, as the reach computation takes an edge within a pixel of
+  another to end there; none when no element or more than one matches so.
+  It carries a ref of its own, issued then if it had none; the stale ref
+  stays stale. The daemon acts on the twin and names both refs.
 - `scroll_viewport` tells, the same way, the visible bounds of the scroll
   container a stroke through a point moves (task 10.16): the innermost
   node on screen and not covered that scrolls along the stroke's axis, or
@@ -933,7 +945,7 @@ cargo test -p mirror
 | | Ref across a label change | `controls::a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place`, `controls::a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android`; the fill by that ref in the daemon, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (rn-app-fixes 3.3, design D39) |
 | | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
 | Stable refs | Element survives between snapshots | `refs::a_surviving_button_keeps_its_ref_when_the_screen_changes_elsewhere`, `refs::typing_into_a_field_keeps_its_ref`, `refs::refs_only_increase_and_are_never_reused`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
-| | Stale ref is refused | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
+| | Stale ref is refused (and its twin, action-verdicts design D3: `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was`, `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`) | `refs::acting_on_a_removed_element_fails_with_a_stale_ref_error_and_guidance`, `refs::a_stale_ref_never_resolves_to_another_element`, `interactive::a_stale_ref_names_the_element_it_was_issued_for`, `refs::a_ref_that_was_never_issued_is_unknown`, `refs::refs_parse_in_every_form_agent_browser_accepts`, `interactive::acting_on_an_element_an_alert_covers_fails_with_its_code`, `interactive::acting_on_a_row_scrolled_out_of_view_fails_with_its_code` |
 | | (task 7.12: a ref names one control) | `controls::a_stale_ref_to_a_control_a_transition_renamed_is_refused_on_ios`, `controls::the_control_that_took_its_place_gets_a_fresh_ref_and_the_old_one_stays_stale`, `controls::a_wait_on_the_old_ref_sees_the_renamed_control_gone`, `controls::an_identified_control_keeps_its_ref_when_its_name_changes`, `controls::typing_into_a_field_without_an_identifier_keeps_its_ref` |
 | Single coordinate contract | Tapping reported bounds hits the element | `refs::tapping_the_center_of_reported_bounds_hits_the_element`, `replica::bounds_are_in_device_points_with_the_scale_factor_beside_them`, `refs::text_into_a_ref_names_the_node_of_the_latest_read` |
 | | Card partly under a sticky header | `interactive::a_tap_on_a_card_partly_under_a_sticky_header_lands_on_the_part_in_view`, `visibility::visibility_gives_the_part_of_an_element_a_tap_reaches_beside_what_covers_it`; the click's warning in the daemon, `handlers::act::tests::a_click_on_a_card_partly_above_its_list_taps_the_part_in_view_with_a_warning` (rn-app-fixes 3.1, design D37) |

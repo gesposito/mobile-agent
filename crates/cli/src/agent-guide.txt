@@ -27,9 +27,9 @@ Snapshots
   snapshot --delta   only what changed since your last delta snapshot
 
 Refs
-  Write a ref as @e4; ref=e4 and e4 work too. A ref names one element while
-  it stays on screen, and a number is never reused. When the element is gone
-  the command fails with code stale_ref: snapshot again and use the new refs.
+  Write a ref as @e4; ref=e4 and e4 work too, and a number is never reused. A
+  ref names one element while it stays on screen, or its twin the app rebuilt
+  in its place, as (@e4 now @e9) says; else stale_ref: snapshot again.
 
 Selectors
   Where a ref goes, a selector works too: #login-submit (test id),

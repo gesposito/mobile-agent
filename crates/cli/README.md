@@ -226,7 +226,15 @@ screen's points, `✓ Screenshot saved to /tmp/shot.jpg (460x1000 of a
 the warning names a dialog of system UI in front of the app, `⚠ alert
 "Allow “FixtureSwiftUI” to use your location?" stands in front of
 dev.mobileagent.fixture.swiftui; answer it before you act on the app: a
-snapshot lists its buttons`.
+snapshot lists its buttons`. An action or a `get` on a ref whose element is
+gone acts on its twin when the replica holds one, the element the app
+rebuilt in its place, of the ref's role and identifier, else of its role,
+name and bounds, and its line names both refs first, `✓ Done (@e2 now @e4,
+hit textbox "placeholder-textbox-1", dispatch 0.1 ms, no change in 204
+ms)` on the fake placeholder app's rebuilt board, a `get`'s on a line after
+what it read, `(@e3 now @e5)`, as the reply's `resolved`, `{"stale": "@e3",
+"ref": "@e5"}`, does; the session acts on the twin's ref from then on, and
+a ref without a twin fails with `stale_ref` (action-verdicts, design D3).
 `--json` prints one line in
 agent-browser's envelope, fields in its order, `code` and `warning` only
 when set:
@@ -670,7 +678,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Queries reach elements out of view | Box of a row scrolled above | the daemon's `handlers::act::tests::get_and_a_wait_for_presence_resolve_a_row_scrolled_above_at_once_and_say_it_is_out_of_view` and `handlers::act::tests::only_an_element_the_tree_does_not_hold_is_not_found_and_a_wait_for_one_in_view_still_waits` (rn-app-fixes, design D51); end to end, `commands::get_reads_an_element_out_of_view_and_says_so` |
 | Typed text is read back (real-app-fixes, design D3) | Keys dropped | `output::tests::type_says_what_it_read_back_from_the_field`, `commands::fill_replaces_a_field_and_type_appends_to_it` (the line end to end, the focused field's too); the daemon's `handlers::act::tests::type_reads_back_the_field_it_typed_into_the_focused_one_without_a_target`, `handlers::act::tests::type_into_a_field_that_drops_keys_warns_naming_what_it_holds_and_types_once` and `handlers::act::tests::type_with_no_focused_field_in_the_tree_says_it_did_not_read_its_text_back` |
 | Replies name what the screen holds (real-app-fixes, design D5) | An alert in front of the opened app; Pixels taken for points (a timeout's refs, a switch's value, the element a wait found) | `commands::the_lines_name_what_the_screen_holds`, `commands::wait_returns_when_an_element_or_text_appears_and_when_the_screen_settles`, `output::tests::get_value_prints_a_switch_s_state_and_says_when_there_is_no_value`, `output::tests::a_wait_names_the_element_it_found`, `output::tests::a_screenshot_says_its_pixels_and_the_screen_s_points`; the daemon's `screen::*` |
-| Replies verify the action (action-verdicts, designs D1 and D5) | A tap that lands elsewhere (the line naming the element hit); (a delta's changes as listing lines) | `output::tests::a_click_names_what_its_tap_hit_before_its_spans`, `commands::a_click_reports_where_it_landed_and_its_dispatch_time`, `spans::a_click_prints_its_spans`; `output::tests::a_delta_prints_a_header_its_lines_and_the_refs_it_removed`, `output::tests::the_json_line_keeps_a_delta_object_byte_for_byte`, `snapshot::a_delta_snapshot_prints_the_lines_that_changed_under_a_header_naming_them`; the daemon's `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns` and the server's `tools::a_snapshot_after_a_change_answers_with_the_lines_that_changed` |
+| Replies verify the action (action-verdicts, designs D1, D3 and D5) | A tap that lands elsewhere (the line naming the element hit); A rebuilt field (the line naming both refs); (a delta's changes as listing lines) | `output::tests::a_click_names_what_its_tap_hit_before_its_spans`, `commands::a_click_reports_where_it_landed_and_its_dispatch_time`, `spans::a_click_prints_its_spans`; `output::tests::an_action_on_a_stale_ref_resolved_to_its_twin_names_both_refs`, `errors::a_ref_whose_field_the_app_rebuilt_acts_on_its_twin_and_names_it`, `errors::clicking_a_ref_from_before_navigation_fails_with_a_stale_ref_error_and_guidance` (no twin); `output::tests::a_delta_prints_a_header_its_lines_and_the_refs_it_removed`, `output::tests::the_json_line_keeps_a_delta_object_byte_for_byte`, `snapshot::a_delta_snapshot_prints_the_lines_that_changed_under_a_header_naming_them`; the daemon's `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns`, `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds` and `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`, the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, and the server's `tools::a_snapshot_after_a_change_answers_with_the_lines_that_changed` |
 
 The timing spans (task 8.9) serve the benchmark harness rather than a
 spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree_delta`,
