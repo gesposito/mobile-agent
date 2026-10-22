@@ -468,6 +468,12 @@ pub struct Wait {
     /// For `settle`, what kept changing: `tree`, `frame`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub still_changing: Option<Vec<String>>,
+    /// For `settle` within a second of the session's last input, that
+    /// input's action, `click`, `fill`, `type`, `press`, `swipe` or
+    /// `scroll`, whose first effect the settle waited for; `endedBy` is
+    /// then `none` when nothing changed within a second of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree_changes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -361,7 +361,10 @@ fn change(data: &Value, out: &mut String) {
     snapshot(data, out);
 }
 
-/// A settle wait and the signal it ended on.
+/// A settle wait and the signal it ended on; after an input whose first
+/// effect it waited for, `nothing changed within 1 s of the click`, the
+/// input named as a noun, when nothing changed since it (design D2 of
+/// action-verdicts).
 fn settle(data: &Value, out: &mut String) {
     let elapsed = number(&data["elapsedMs"]);
     if data["settled"] != Value::Bool(true) {
@@ -378,12 +381,14 @@ fn settle(data: &Value, out: &mut String) {
         let _ = writeln!(out, "✓ Stopped waiting after {elapsed} ms: {what}");
         return;
     }
-    let ended = match str_of(data, "endedBy") {
-        "tree" => ": the tree changed last",
-        "frame" => ": frames changed last",
-        "both" => ": the tree and frames changed last",
-        "none" => ": nothing changed",
-        _ => "",
+    let ended = match (str_of(data, "endedBy"), data["input"].as_str()) {
+        ("tree", _) => ": the tree changed last".to_owned(),
+        ("frame", _) => ": frames changed last".to_owned(),
+        ("both", _) => ": the tree and frames changed last".to_owned(),
+        ("none", Some("type")) => ": nothing changed within 1 s of the typing".to_owned(),
+        ("none", Some(input)) => format!(": nothing changed within 1 s of the {input}"),
+        ("none", None) => ": nothing changed".to_owned(),
+        _ => String::new(),
     };
     let _ = writeln!(out, "✓ Settled after {elapsed} ms{ended}");
 }

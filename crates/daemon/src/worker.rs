@@ -153,6 +153,18 @@ pub(crate) struct SessionOnTarget {
     pub seen: HashSet<Ref>,
     /// The app the session's `open` launched, which `close` stops.
     pub app: Option<String>,
+    /// The session's last input on the target, whose first effect a settle
+    /// right after it waits for (design D2 of action-verdicts).
+    pub input: Option<LastInput>,
+}
+
+/// The input a session's command injected last: the command's action, a
+/// click, a fill, a type, a press, a swipe or a scroll, and when the mirror
+/// injected the command's last input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LastInput {
+    pub action: &'static str,
+    pub at: Instant,
 }
 
 /// An attached target, as commands see it.

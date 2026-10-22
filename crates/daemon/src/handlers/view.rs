@@ -6,8 +6,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use mirror::{
-    Condition, Diff, Element, FrameRequest, Selector, SettleOptions, Signal, Signals, Snapshot,
-    SnapshotOptions,
+    Condition, Diff, Element, FrameRequest, Selector, Settle, SettleOptions, Signal, Signals,
+    Snapshot, SnapshotOptions,
 };
 use serde_json::{Map, Value, json};
 
@@ -251,7 +251,7 @@ pub(super) fn wait(target: &mut Attached, call: &Call, args: &::wire::Wait) -> O
         return Ok(Success::new(json!({"waited": "time", "ms": ms})));
     }
     if args.settle {
-        return settle(target, args);
+        return settle(target, call, args);
     }
     if args.change {
         return change(target, call, args);
@@ -351,7 +351,83 @@ fn with_ref(target: &mut Attached, element: Element) -> Result<Element, Failure>
     })
 }
 
-fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
+/// How long after an input a settle waits for the input's first effect, a
+/// change of the tree or of the frames since it, before it counts the
+/// quiet window (design D2 of action-verdicts): on the second demo pass a
+/// settle right after the Enter that loads a page settled at once, nothing
+/// having changed yet, and one after the tap that opened a menu ended
+/// before the menu's tree came.
+pub(super) const EFFECT_WAIT: Duration = Duration::from_secs(1);
+
+/// How often the wait for an input's first effect looks at what arrived;
+/// the mirror keeps the replica current in between.
+const EFFECT_SLICE: Duration = Duration::from_millis(5);
+
+/// Waits until the tree, or the frames when `frames` says so, changed after
+/// `since`, at most until `deadline`, a change that came before the wait
+/// ending it at once; says whether one came.
+fn first_change(
+    target: &mut Attached,
+    since: Instant,
+    frames: bool,
+    deadline: Instant,
+) -> Result<bool, Failure> {
+    loop {
+        target.mirror.drain();
+        let stamps = target.mirror.timestamps();
+        let after = |at: Option<Instant>| at.is_some_and(|at| at > since);
+        if after(stamps.last_tree_change) || (frames && after(stamps.last_frame_change)) {
+            return Ok(true);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(false);
+        }
+        target
+            .mirror
+            .run_until((now + EFFECT_SLICE).min(deadline))?;
+    }
+}
+
+/// Settles as `options` say after an input that went in at `input` (design
+/// D2 of action-verdicts): within [`EFFECT_WAIT`] of it, the wait first
+/// waits for the input's first effect, a change of the tree, or of the
+/// frames unless `options` watch the tree alone, since the input, until
+/// `EFFECT_WAIT` after it at most, or until `by` when that comes first;
+/// then the mirror's settle counts the quiet window as it does after any
+/// change, its predicate unchanged. The settle's elapsed time and counts of
+/// changes cover both waits. Says when the input went in, if the settle
+/// waited for its effect.
+pub(super) fn settle_after(
+    target: &mut Attached,
+    input: Option<Instant>,
+    (options, by): (&SettleOptions, Option<Instant>),
+) -> Result<(Settle, Option<Instant>), Failure> {
+    let began = Instant::now();
+    let (tree, frames) = target.mirror.changes();
+    let input = input.filter(|&at| began.saturating_duration_since(at) < EFFECT_WAIT);
+    if let Some(at) = input {
+        let deadline = by.map_or(at + EFFECT_WAIT, |by| by.min(at + EFFECT_WAIT));
+        let watched = options.signals != Signals::TreeOnly;
+        first_change(target, at, watched, deadline)?;
+    }
+    let waited = began.elapsed();
+    let mut settled = target.mirror.settle(options)?;
+    let (tree_now, frames_now) = target.mirror.changes();
+    settled.elapsed += waited;
+    settled.tree_changes = tree_now - tree;
+    settled.frame_changes = frames_now - frames;
+    Ok((settled, input))
+}
+
+/// `wait` with `settle`, after the session's last input when it came less
+/// than [`EFFECT_WAIT`] ago, whose first effect the wait waits for
+/// ([`settle_after`]): the reply names the input's action in `input`, and
+/// in `endedBy` the signal that changed last since the input, `none` when
+/// nothing changed within a second of it (design D2 of action-verdicts);
+/// without such an input, the signal the settle ended on, as the quiet
+/// window counted it.
+fn settle(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
     let max = settle_max(&args.timeout)?;
     let quiet = Duration::from_millis(arg("quiet", &args.quiet)?);
     let signals = if args.tree_only {
@@ -360,17 +436,20 @@ fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
         Signals::TreeAndFrames
     };
     let began = Instant::now();
-    let settled = target.mirror.settle(&SettleOptions {
+    let input = target.session(&call.session).input;
+    let options = SettleOptions {
         quiet,
         max,
         signals,
-    })?;
+    };
+    let (settled, after) = settle_after(target, input.map(|input| input.at), (&options, None))?;
+    let input = input.filter(|_| after.is_some());
     // The changes as the settle predicate counted them.
     let last = LastChanges::of(
         &target.mirror.timestamps(),
         target.frames && signals != Signals::TreeOnly,
     );
-    let ended = ended_by(settled.settled, last, began, quiet);
+    let ended = ended_by(settled.settled, last, after.unwrap_or(began), quiet);
     let warning = (!settled.settled).then(|| {
         format!(
             "the screen did not settle within {} ms: {} kept arriving",
@@ -378,7 +457,7 @@ fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
             settled.reason().unwrap_or_else(|| "changes".to_owned())
         )
     });
-    Ok(Success::new(json!({
+    let mut data = json!({
         "waited": "settle",
         "settled": settled.settled,
         "endedBy": ended.name(),
@@ -386,8 +465,11 @@ fn settle(target: &mut Attached, args: &::wire::Wait) -> Outcome {
         "stillChanging": settled.still_changing.iter().map(signal_name).collect::<Vec<_>>(),
         "treeChanges": settled.tree_changes,
         "frameChanges": settled.frame_changes,
-    }))
-    .warn(warning))
+    });
+    if let Some(input) = input {
+        data["input"] = input.action.into();
+    }
+    Ok(Success::new(data).warn(warning))
 }
 
 /// How often a change wait looks whether the replica's revision or the

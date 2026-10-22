@@ -17,7 +17,7 @@ use crate::driver::{AttachOptions, Launch, Platform, TargetInfo, TargetReport};
 use crate::registry::Selection;
 use crate::server::Daemon;
 use crate::wire::{Command, Failure, Param, Request, Success, arg, code, needed};
-use crate::worker::{Attached, InFlight, Label, Outcome};
+use crate::worker::{Attached, InFlight, Label, LastInput, Outcome};
 
 /// How long waiting commands wait when neither they, their session nor
 /// the client name a timeout.
@@ -77,22 +77,61 @@ pub(crate) fn run_on(target: &mut Attached, session: &str, request: &Request) ->
         session: session.to_owned(),
         default_timeout: request.default_timeout.clone(),
     };
-    match &request.command {
-        Command::Close(args) => close_app(target, &call, args.keep),
-        Command::Open(args) => open(target, &call, args),
-        Command::Snapshot(args) => view::snapshot(target, &call, args),
-        Command::DiffSnapshot(args) => view::diff_snapshot(target, &call, args),
-        Command::Get(args) => view::get(target, &call, args),
-        Command::Wait(args) => view::wait(target, &call, args),
-        Command::Screenshot(args) => view::screenshot(target, &call, args),
-        Command::Click(args) => act::click(target, &call, args),
-        Command::Fill(args) => act::fill(target, &call, args),
-        Command::Type(args) => act::type_text(target, &call, args),
-        Command::Press(args) => act::press(target, &call, args),
-        Command::Swipe(args) => act::swipe(target, &call, args),
-        Command::Scroll(args) => act::scroll(target, &call, args),
-        other => panic!("{} runs on no target", other.action()),
+    let input = input_of(&request.command);
+    noting_input(target, &call, input, |target, call| {
+        match &request.command {
+            Command::Close(args) => close_app(target, call, args.keep),
+            Command::Open(args) => open(target, call, args),
+            Command::Snapshot(args) => view::snapshot(target, call, args),
+            Command::DiffSnapshot(args) => view::diff_snapshot(target, call, args),
+            Command::Get(args) => view::get(target, call, args),
+            Command::Wait(args) => view::wait(target, call, args),
+            Command::Screenshot(args) => view::screenshot(target, call, args),
+            Command::Click(args) => act::click(target, call, args),
+            Command::Fill(args) => act::fill(target, call, args),
+            Command::Type(args) => act::type_text(target, call, args),
+            Command::Press(args) => act::press(target, call, args),
+            Command::Swipe(args) => act::swipe(target, call, args),
+            Command::Scroll(args) => act::scroll(target, call, args),
+            other => panic!("{} runs on no target", other.action()),
+        }
+    })
+}
+
+/// The action of `command` when its input is one whose first effect a
+/// settle right after it waits for (design D2 of action-verdicts): a click,
+/// a fill, a type, a press, a swipe or a scroll.
+fn input_of(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Click(_)
+        | Command::Fill(_)
+        | Command::Type(_)
+        | Command::Press(_)
+        | Command::Swipe(_)
+        | Command::Scroll(_) => Some(command.action()),
+        _ => None,
     }
+}
+
+/// Runs `command` for `call`'s session on `target` and, when `input` names
+/// its action, keeps for the session when the last input it injected went
+/// in, as the mirror timed it, also when the command failed after it went
+/// in (design D2 of action-verdicts).
+fn noting_input(
+    target: &mut Attached,
+    call: &Call,
+    input: Option<&'static str>,
+    command: impl FnOnce(&mut Attached, &Call) -> Outcome,
+) -> Outcome {
+    let before = target.mirror.timestamps().last_action;
+    let outcome = command(target, call);
+    let last = target.mirror.timestamps().last_action;
+    if let (Some(action), Some(at)) = (input, last)
+        && last != before
+    {
+        target.session(&call.session).input = Some(LastInput { action, at });
+    }
+    outcome
 }
 
 /// Runs `command` with `args` on the request's target.
@@ -103,8 +142,11 @@ fn run<A: Clone + Send + 'static>(
     command: OnTarget<A>,
 ) -> Outcome {
     let args = args.clone();
+    let input = input_of(&request.command);
     on_target(daemon, request, move |attached, call| {
-        command(attached, call, &args)
+        noting_input(attached, call, input, |attached, call| {
+            command(attached, call, &args)
+        })
     })
     .map(|(success, _)| success)
 }
@@ -461,11 +503,14 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     if let Some(input) = target.input_session.as_mut() {
         let _ = input.start();
     }
-    target.apps.launch(&app, &launch)?;
-    // Whatever the driver, the window in front changed: every window is
-    // read again when the tree is next needed, and the settle below counts
-    // the launch as a tree change, so it waits for an app that draws late.
+    // Whatever the driver, the launch changes the window in front: every
+    // window is read again when the tree is next needed, and the settle
+    // below counts the launch as a tree change, so it waits for an app that
+    // draws late. The change is noted before the launch, so that what the
+    // target shows from the launch on is the launch's own effect.
     target.mirror.note_window_change();
+    let launching = Instant::now();
+    target.apps.launch(&app, &launch)?;
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
@@ -485,18 +530,24 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         None => started + FIRST_FRAME_WAIT,
     };
     let primed = first_frame(target, frame_deadline)?;
+    // The settle waits for the launch's first effect as one after an input
+    // does (design D2 of action-verdicts), within a second of the launch: a
+    // replica that showed the app before the launch, as when the app was in
+    // front, shows its screen at once, before the target has shown what the
+    // launch did.
     let settled = match shown {
         Some(_) => {
             let max = match explicit {
                 Some(total) => (started + total).saturating_duration_since(Instant::now()),
                 None => mirror::DEFAULT_SETTLE_MAX,
             };
-            target
-                .mirror
-                .settle(&mirror::SettleOptions {
-                    max,
-                    ..mirror::SettleOptions::default()
-                })?
+            let options = mirror::SettleOptions {
+                max,
+                ..mirror::SettleOptions::default()
+            };
+            let by = explicit.map(|total| started + total);
+            view::settle_after(target, Some(launching), (&options, by))?
+                .0
                 .settled
         }
         None => false,

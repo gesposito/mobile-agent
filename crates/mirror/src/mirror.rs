@@ -442,6 +442,15 @@ impl Mirror {
         }
     }
 
+    /// How many tree changes and frame changes the mirror has taken in, in
+    /// that order, as a settle counts them ([`Settle`]): change events,
+    /// window changes noted to it, moves its probes found and reads that
+    /// found a delta; frame hash changes. Items still queued in the event
+    /// stream count once drained.
+    pub fn changes(&self) -> (u64, u64) {
+        (self.replica.tree_changes, self.replica.frame_changes)
+    }
+
     /// The capture times of the frame changes at or after `since`, oldest
     /// first, among the latest 1024 the mirror keeps.
     pub fn frame_changes_since(&self, since: Instant) -> Vec<Instant> {
