@@ -10,10 +10,14 @@
 //! while a field whose label changes in place keeps its ref (rn-app-fixes,
 //! design D39). Numbers only grow and are never reused, so a ref whose
 //! control is gone can only be refused as stale, never resolve to another
-//! control.
+//! control. A control an app rebuilt in a new node, which the replica cannot
+//! pair with the old one, takes a ref of its own, which `Mirror::twin` finds
+//! for the stale ref from what the table keeps of the control it named.
 
 use core::fmt;
 use std::collections::HashMap;
+
+use protocol::snapshot::Bounds;
 
 use crate::snapshot::{ElementId, Role};
 
@@ -61,6 +65,11 @@ pub(crate) struct Issued {
     /// The element's position among its parent's children when the ref last
     /// named it; its parent stays the same element while it survives.
     pub place: u32,
+    /// The element's identifier, which it keeps while it survives: the
+    /// replica pairs nodes of the same identifier only.
+    pub identifier: Option<String>,
+    /// The element's bounds, in physical pixels, when the ref last named it.
+    pub bounds: Bounds,
     /// The replica generation the ref was issued in.
     pub generation: u64,
     /// The element, having no identifier, was renamed and given a fresh
@@ -101,23 +110,29 @@ impl RefTable {
     }
 
     /// The element's ref, issuing the next number when it has none, or when
-    /// it has no identifier (`identified` false) and its ref was issued under
-    /// another name in another role or place, which retires that ref.
+    /// it has no identifier and its ref was issued under another name in
+    /// another role or place, which retires that ref; the ref keeps the
+    /// element's identifier and its bounds in pixels as they are now.
     pub fn assign(
         &mut self,
         element: ElementId,
         (role, name, place): (Role, &str, u32),
-        identified: bool,
+        (identifier, bounds): (Option<&str>, Bounds),
         generation: u64,
     ) -> Ref {
+        let identified = identifier.is_some();
         if let Some(&reference) = self.by_element.get(&element)
             && let Some(issued) = self.issued.get_mut(&reference)
         {
             if names(issued, role, name, place, identified) {
                 issued.role = role;
                 issued.place = place;
+                issued.bounds = bounds;
                 if issued.name != name {
                     issued.name = name.to_owned();
+                }
+                if issued.identifier.as_deref() != identifier {
+                    issued.identifier = identifier.map(str::to_owned);
                 }
                 return reference;
             }
@@ -133,6 +148,8 @@ impl RefTable {
                 role,
                 name: name.to_owned(),
                 place,
+                identifier: identifier.map(str::to_owned),
+                bounds,
                 generation,
                 retired: false,
             },

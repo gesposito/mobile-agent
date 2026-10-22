@@ -17,7 +17,7 @@ use crate::diff::Diff;
 use crate::error::{MirrorError, ResyncCause, StaleCause};
 use crate::frame::{self, FrameImage, FrameRequest, TreeSkew};
 use crate::geometry::{Point, Rect};
-use crate::refs::{self, Lookup, Ref, RefTable};
+use crate::refs::{self, Issued, Lookup, Ref, RefTable};
 use crate::render::{self, Line};
 use crate::replica::{RNode, Replica, Win};
 use crate::settle::{Settle, SettleOptions, Signal};
@@ -592,7 +592,7 @@ impl Mirror {
                         self.refs.assign(
                             node.element,
                             (facts.role, &facts.name, place(node)),
-                            node.identifier.is_some(),
+                            (node.identifier.as_deref(), node.bounds),
                             generation,
                         )
                     });
@@ -730,7 +730,7 @@ impl Mirror {
         let reference = self.refs.assign(
             node.element,
             (facts.role, &facts.name, place(node)),
-            node.identifier.is_some(),
+            (node.identifier.as_deref(), node.bounds),
             self.replica.generation,
         );
         Some(element(window, node, facts, Some(reference)))
@@ -801,6 +801,39 @@ impl Mirror {
                 Some(element(window(w), node, facts, reference))
             }
         }
+    }
+
+    /// The element that stands for the one `reference` named once the ref
+    /// is stale, as the replica has it now, without reading the target
+    /// (design D3 of action-verdicts): an app that rebuilds a control puts
+    /// a new node in its place, which the replica cannot pair with the old
+    /// one, as a map's search box took one right after its app's launch on
+    /// the second demo pass, and a sheet's title field while `fill` entered
+    /// its text on the second pass on real apps. The twin is the one
+    /// element that bears a ref, outside a keyboard, of the role and
+    /// identifier the ref was issued for, else the one of its role and name
+    /// whose bounds lie, edge by edge, within a physical pixel of those a
+    /// listing last gave it, as the reach computation takes an edge within
+    /// a pixel of another to end there: the name keeps a list's rows apart,
+    /// a row that scrolled into another's place having another name. It
+    /// carries a ref of its own, issued now if it had none. `None` when no
+    /// element matches so, or more than one does, or the table forgot the
+    /// ref.
+    pub fn twin(&mut self, reference: Ref) -> Option<Element> {
+        let view = View::build(&self.replica);
+        let Lookup::Issued(issued) = self.refs.lookup(reference) else {
+            return None;
+        };
+        let (w, i) = twin_in(&self.replica, &view, issued)?;
+        let window = &self.replica.windows[w];
+        let (node, facts) = (&window.nodes[i], &view.windows[w][i]);
+        let twin = self.refs.assign(
+            node.element,
+            (facts.role, &facts.name, place(node)),
+            (node.identifier.as_deref(), node.bounds),
+            self.replica.generation,
+        );
+        Some(element(window, node, facts, Some(twin)))
     }
 
     /// Whether `outer` is `inner` or holds it as the replica has them now:
@@ -1582,6 +1615,60 @@ impl Mirror {
     pub fn dump(&self) -> String {
         self.replica.dump()
     }
+}
+
+/// Where the twin of the element `issued` was issued for lies in `replica`,
+/// by window and node index, `view` being the replica's (see
+/// [`Mirror::twin`]).
+fn twin_in(replica: &Replica, view: &View, issued: &Issued) -> Option<(usize, usize)> {
+    let bearing = || {
+        replica
+            .windows
+            .iter()
+            .enumerate()
+            .flat_map(move |(w, window)| {
+                window
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(i, node)| {
+                        let facts = &view.windows[w][i];
+                        let bears = facts.bears_ref
+                            && !facts.absorbed
+                            && facts.hidden != Hidden::Keyboard
+                            && facts.role == issued.role;
+                        bears.then_some((w, i, node, facts))
+                    })
+            })
+    };
+    let by_identifier = issued.identifier.as_deref().and_then(|identifier| {
+        only(bearing().filter(|(_, _, node, _)| node.identifier.as_deref() == Some(identifier)))
+    });
+    by_identifier.or_else(|| {
+        only(bearing().filter(|(_, _, node, facts)| {
+            facts.name == issued.name && within_a_pixel(node.bounds, issued.bounds)
+        }))
+    })
+}
+
+/// The place of the one node `nodes` holds; `None` for none or several.
+fn only<'a>(
+    mut nodes: impl Iterator<Item = (usize, usize, &'a RNode, &'a Facts)>,
+) -> Option<(usize, usize)> {
+    let (w, i, _, _) = nodes.next()?;
+    nodes.next().is_none().then_some((w, i))
+}
+
+/// Whether each edge of `a` lies within a physical pixel of `b`'s.
+fn within_a_pixel(a: Bounds, b: Bounds) -> bool {
+    [
+        (a.left, b.left),
+        (a.top, b.top),
+        (a.right, b.right),
+        (a.bottom, b.bottom),
+    ]
+    .into_iter()
+    .all(|(x, y)| x.abs_diff(y) <= 1)
 }
 
 /// Where `node` sits, for the refs: its position among its parent's

@@ -369,3 +369,135 @@ fn find_id(node: &protocol::snapshot::Node, id: &str) -> Option<u32> {
     }
     node.children.iter().find_map(|c| find_id(c, id))
 }
+
+/// A form of two fields, each in a view of class `view`: the search field
+/// with its identifier, from 100 to 144 points down, and the title field
+/// without one, from `title` down; then `more` after them. A field the app
+/// lays out again in a view of another class is a new node, which the
+/// replica cannot pair with the old one, so its ref goes stale (design D3
+/// of action-verdicts).
+fn form(view: &str, title: f64, more: &[Value]) -> Screen {
+    let flags = json!(["clickable", "focusable", "editable"]);
+    let field = |id: Option<&str>, name: &str, top: f64| {
+        let mut field = json!({"class": "android.widget.EditText", "desc": name,
+                               "bounds": [16.0, top, 386.0, top + 44.0], "flags": flags});
+        if let Some(id) = id {
+            field["id"] = id.into();
+        }
+        json!({"class": view, "bounds": [16.0, top, 386.0, top + 44.0], "children": [field]})
+    };
+    let mut fields = vec![
+        field(Some("search"), "Search", 100.0),
+        field(None, "Title", title),
+    ];
+    fields.extend(more.iter().map(|more| {
+        let top = more["top"].as_f64().unwrap_or_default();
+        field(
+            more["id"].as_str(),
+            more["name"].as_str().unwrap_or_default(),
+            top,
+        )
+    }));
+    Screen::from_json(json!({
+        "backend": {"name": "android-agent"},
+        "scale": 3,
+        "windows": [{
+            "id": 1, "kind": "application", "layer": 1, "bounds": [0, 0, 402, 874], "flags": ["active"],
+            "root": {"class": "android.widget.FrameLayout", "bounds": [0, 0, 402, 874], "children": fields}
+        }]
+    }))
+}
+
+/// A mirror over `before`, which a snapshot lists, then `after`; with the
+/// refs the snapshot gave the search and the title fields, both stale once
+/// `after` shows.
+fn stale_after(before: &Screen, after: &Screen) -> (Mirror, Ref, Ref) {
+    let target = FakeTarget::new(before.read());
+    target.at(ms(100), Step::Show(after.read()));
+    target.at(ms(100), content_changed());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listed = mirror.snapshot(&full()).unwrap();
+    let named = |name: &str| {
+        listed
+            .elements
+            .iter()
+            .find(|element| element.name == name)
+            .and_then(|element| element.reference)
+            .unwrap_or_else(|| panic!("no ref for {name}: {}", listed.text))
+    };
+    let (search, title) = (named("Search"), named("Title"));
+    target.advance(ms(150));
+    for reference in [search, title] {
+        assert!(
+            matches!(mirror.resolve(reference), Err(MirrorError::StaleRef { .. })),
+            "{reference}"
+        );
+    }
+    (mirror, search, title)
+}
+
+/// Design D3 of action-verdicts: the twin of a stale ref is the one element
+/// of the role and identifier it was issued for, else the one of its role,
+/// name and bounds, with a ref of its own that names it; asked again, the
+/// same twin under the same ref.
+#[test]
+fn a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds() {
+    let before = form("android.view.ViewGroup", 160.0, &[]);
+    let after = form("android.widget.FrameLayout", 160.0, &[]);
+    let (mut mirror, search, title) = stale_after(&before, &after);
+    for (stale, name, identifier) in [(search, "Search", Some("search")), (title, "Title", None)] {
+        let twin = mirror
+            .twin(stale)
+            .unwrap_or_else(|| panic!("no twin for {stale}"));
+        assert_eq!(
+            (twin.name.as_str(), twin.identifier.as_deref()),
+            (name, identifier)
+        );
+        let reference = twin.reference.expect("the twin's ref");
+        assert_ne!(reference, stale);
+        assert_eq!(mirror.resolve(reference).unwrap().id, twin.id);
+        assert_eq!(
+            mirror.twin(stale).and_then(|again| again.reference),
+            Some(reference)
+        );
+    }
+}
+
+/// Design D3 of action-verdicts: an element without an identifier stands
+/// for a stale ref's only where a listing last had that one, each edge
+/// within a physical pixel of it, a third of a point at a scale of 3: one
+/// laid out a pixel lower is its twin, one 10 points lower is none.
+#[test]
+fn a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was() {
+    let before = form("android.view.ViewGroup", 160.0, &[]);
+    let pixel_lower = form("android.widget.FrameLayout", 160.0 + 1.0 / 3.0, &[]);
+    let (mut mirror, _, title) = stale_after(&before, &pixel_lower);
+    assert_eq!(
+        mirror.twin(title).map(|twin| twin.name),
+        Some("Title".to_owned())
+    );
+    let lower = form("android.widget.FrameLayout", 170.0, &[]);
+    let (mut mirror, _, title) = stale_after(&before, &lower);
+    assert_eq!(mirror.twin(title), None);
+}
+
+/// Design D3 of action-verdicts: two elements that match a stale ref alike
+/// make no twin, while two of its role and identifier leave the one of its
+/// name and bounds: a second title field where the first was, and a second
+/// search field lower down.
+#[test]
+fn no_twin_stands_for_a_stale_ref_that_two_elements_match_alike() {
+    let before = form("android.view.ViewGroup", 160.0, &[]);
+    let after = form(
+        "android.widget.FrameLayout",
+        160.0,
+        &[
+            json!({"name": "Title", "top": 160.0}),
+            json!({"id": "search", "name": "Search", "top": 400.0}),
+        ],
+    );
+    let (mut mirror, search, title) = stale_after(&before, &after);
+    assert_eq!(mirror.twin(title), None);
+    let twin = mirror.twin(search).expect("the search field where it was");
+    assert_eq!(twin.bounds.top, 100.0);
+}
