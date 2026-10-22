@@ -71,6 +71,14 @@ const APP_WINDOW: u32 = 1;
 /// the Simulator driver's `TextMethod::Auto` does; longer text is pasted.
 const KEYBOARD_LIMIT: usize = 32;
 
+/// How long after a launch that brought a running app forward from the
+/// launcher the launcher takes the front back, when the device's home
+/// returns say it does: a model of a Simulator's go-home animation ending
+/// after a launch that came while it ran, which left the home screen in
+/// front (action-verdicts, task 2.4), not a measured span; shorter than the
+/// settle after the launch, which so sees the launcher come back.
+pub(crate) const HOME_RETURN: Duration = Duration::from_millis(150);
+
 /// How long after the keyboard came up the placeholder app's layout moves
 /// its submit button above it, as React Native moves a view out of the
 /// keyboard's way once the keyboard has shown. The move shows in no frame
@@ -142,6 +150,9 @@ struct Shared {
     /// When the placeholder app's layout moves its submit button above the
     /// keyboard, once the keyboard is up.
     lift_due: Mutex<Option<Instant>>,
+    /// When the launcher takes the front back from an app a launch brought
+    /// forward from it.
+    home_due: Mutex<Option<Instant>>,
     /// Frames the event stream delivered.
     delivered: AtomicU64,
     /// For a fake iPhone, its screenshots: when the captures started and
@@ -322,6 +333,7 @@ impl Shared {
         self.animate(now);
         self.raise(now);
         self.lift(now);
+        self.return_home(now);
         now
     }
 
@@ -336,6 +348,21 @@ impl Shared {
         let mut device = lock(&self.device);
         if device.raise_keyboard() {
             self.show_after(&device, Change::Content, Duration::ZERO);
+            self.follow(&device, Duration::ZERO);
+        }
+    }
+
+    /// Puts the launcher back in front once its return is due, showing it as
+    /// a move to another screen.
+    fn return_home(&self, now: Instant) {
+        let due = *lock(&self.home_due);
+        if due.is_none_or(|due| now < due) {
+            return;
+        }
+        *lock(&self.home_due) = None;
+        let mut device = lock(&self.device);
+        if device.return_home() {
+            self.show_after(&device, Change::Screen, Duration::ZERO);
             self.follow(&device, Duration::ZERO);
         }
     }
@@ -356,10 +383,18 @@ impl Shared {
 
     /// Schedules what follows a change shown `delay` from now: a keyboard
     /// that is coming up comes up as long after the focus as its slide says,
-    /// and the placeholder app's layout moves its submit button [`LIFT`]
-    /// after the keyboard came up.
+    /// the placeholder app's layout moves its submit button [`LIFT`] after
+    /// the keyboard came up, and the launcher takes the front back
+    /// [`HOME_RETURN`] after a launch it returns from.
     fn follow(&self, device: &Device, delay: Duration) {
         let now = self.target.clock().now();
+        let mut home = lock(&self.home_due);
+        *home = if device.return_pending() {
+            home.or(Some(now + delay + HOME_RETURN))
+        } else {
+            None
+        };
+        drop(home);
         let mut keyboard = lock(&self.keyboard_due);
         *keyboard = device
             .keyboard_coming()
@@ -659,10 +694,12 @@ pub(crate) fn attach(
         activation,
         stop,
         slide,
+        home_returns,
     } = timing;
     let device = Device::new(platform)
         .with_keyboard(keyboard)
-        .with_slide(slide);
+        .with_slide(slide)
+        .with_home_returns(home_returns);
     let kit = device.kit;
     let pixels = |points: f64| (points * kit.scale()).round() as u32;
     let target = FakeTarget::new(read(&device.windows(), &device));
@@ -686,6 +723,7 @@ pub(crate) fn attach(
         typing,
         keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
+        home_due: Mutex::new(None),
         delivered: AtomicU64::new(0),
         captures: subscribed.map(|subscribed| Captures {
             from: target.clock().now(),

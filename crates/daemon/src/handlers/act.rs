@@ -5931,4 +5931,80 @@ mod tests {
             }
         }
     }
+
+    /// A fake target of `platform` whose launcher takes the front back from
+    /// the first `returns` launches of a running app made while it is in
+    /// front, the fixture app opened, then sent home and settled.
+    fn sent_home(platform: &str, returns: u32) -> Attached {
+        let driver = FakeDriver::parse(platform)
+            .unwrap()
+            .with_home_returns(returns);
+        let info = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        for line in [
+            json!({"action": "open", "app": FIXTURE}),
+            json!({"action": "press", "key": "Home"}),
+            json!({"action": "wait", "settle": true}),
+        ] {
+            super::super::run_on(&mut target, "default", &request(&line.to_string())).unwrap();
+        }
+        target
+    }
+
+    /// The app in front, as a snapshot's `origin` names it.
+    fn front(target: &mut Attached) -> Value {
+        let line = json!({"action": "snapshot", "interactive": true}).to_string();
+        super::super::run_on(target, "default", &request(&line))
+            .unwrap()
+            .data["origin"]
+            .clone()
+    }
+
+    /// Design D4 of action-verdicts, scenario "Open behind the home screen":
+    /// on this session's Simulator `open` of a running app right after
+    /// `press home` answered opened and settled while the home screen took
+    /// the front back as its animation ended, three times in three, and a
+    /// second launch of the app brought it to the front. On a fake whose
+    /// launcher takes the front back from the first launch of a running app,
+    /// `open` launches the app again once the screen settled with the
+    /// launcher in front, and answers with the app in front, on both
+    /// platforms.
+    #[test]
+    fn open_launches_again_a_running_app_the_home_screen_took_the_front_back_from() {
+        for platform in ["ios", "android"] {
+            let mut target = sent_home(platform, 1);
+            assert_ne!(front(&mut target), FIXTURE, "{platform}: the launcher");
+            let line = json!({"action": "open", "app": FIXTURE}).to_string();
+            let opened = super::super::run_on(&mut target, "default", &request(&line))
+                .unwrap_or_else(|failure| panic!("{platform}: {failure:?}"));
+            assert_eq!(opened.data["opened"], FIXTURE, "{platform}");
+            assert_eq!(front(&mut target), FIXTURE, "{platform}: {}", opened.data);
+        }
+    }
+
+    /// Design D4 of action-verdicts: a running app that stays behind the
+    /// home screen after its second launch too fails `open` with
+    /// `not_in_front`, naming the app and what is in front, SpringBoard on
+    /// iOS and the launcher's package on Android, rather than answering
+    /// opened.
+    #[test]
+    fn open_of_an_app_the_home_screen_keeps_behind_fails_not_in_front_naming_what_is() {
+        for (platform, home) in [("ios", "SpringBoard"), ("android", "com.android.launcher3")] {
+            let mut target = sent_home(platform, 2);
+            let line = json!({"action": "open", "app": FIXTURE}).to_string();
+            let failure = super::super::run_on(&mut target, "default", &request(&line))
+                .expect_err("open of an app left behind");
+            assert_eq!(
+                failure.code, "not_in_front",
+                "{platform}: {}",
+                failure.message
+            );
+            assert!(
+                failure.message.contains(home) && failure.message.contains(FIXTURE),
+                "{platform}: {}",
+                failure.message
+            );
+        }
+    }
 }

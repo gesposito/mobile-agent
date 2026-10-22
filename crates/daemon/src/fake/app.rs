@@ -714,6 +714,12 @@ pub(crate) struct Device {
     slide: Slide,
     /// Where it is in coming up.
     keys: Keys,
+    /// How many more launches of a running app, made while the launcher is
+    /// in front, the launcher takes the front back from.
+    home_returns: u32,
+    /// Whether the launcher takes the front back from the app a launch
+    /// brought forward.
+    returning: bool,
 }
 
 impl Device {
@@ -727,7 +733,35 @@ impl Device {
             keyboard_up: false,
             slide: Slide::AtOnce,
             keys: Keys::Down,
+            home_returns: 0,
+            returning: false,
         }
+    }
+
+    /// This device, its launcher taking the front back from the first
+    /// `launches` launches of a running app made while it is in front.
+    pub fn with_home_returns(mut self, launches: u32) -> Device {
+        self.home_returns = launches;
+        self
+    }
+
+    /// Whether the launcher takes the front back from the app a launch
+    /// brought forward ([`Device::return_home`]).
+    pub fn return_pending(&self) -> bool {
+        self.returning
+    }
+
+    /// Puts the launcher back in front of the app a launch brought forward,
+    /// as a Simulator's home screen took the front back once its go-home
+    /// animation, during which the launch came, ended; whether it did.
+    pub fn return_home(&mut self) -> bool {
+        if !std::mem::take(&mut self.returning) {
+            return false;
+        }
+        let was = self.focused();
+        self.foreground = Foreground::Launcher;
+        self.update_keyboard(was);
+        true
     }
 
     /// This device, its keyboard up over every screen of the fixture apps
@@ -918,6 +952,16 @@ impl Device {
     }
 
     fn launch_app(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+        // A running app launched from the launcher comes forward, and the
+        // launcher takes the front back as long as it has returns left.
+        if self.home_returns > 0
+            && self.foreground == Foreground::Launcher
+            && !launch.relaunch
+            && self.runs(app)
+        {
+            self.home_returns -= 1;
+            self.returning = true;
+        }
         if app == self.settings_id() {
             self.foreground = Foreground::Settings;
             return Ok(());

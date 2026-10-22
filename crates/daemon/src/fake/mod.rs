@@ -90,6 +90,9 @@ pub(crate) struct Timing {
     pub stop: Duration,
     /// How the keyboard comes up once a field takes the focus.
     pub slide: Slide,
+    /// How many launches of a running app, made while the home screen is
+    /// in front, the home screen takes the front back from.
+    pub home_returns: u32,
 }
 
 /// How a fake's keyboard comes up once a field takes the focus.
@@ -444,6 +447,16 @@ impl FakeDriver {
     /// takes the focus.
     pub fn with_slide(mut self, slide: Slide) -> FakeDriver {
         self.timing.slide = slide;
+        self
+    }
+
+    /// These targets, their home screen taking the front back from the first
+    /// `launches` launches of a running app made while it is in front,
+    /// [`realtime::HOME_RETURN`] after each, as a Simulator's home screen took
+    /// it back from an app launched while its go-home animation ran
+    /// (action-verdicts, task 2.4).
+    pub fn with_home_returns(mut self, launches: u32) -> FakeDriver {
+        self.timing.home_returns = launches;
         self
     }
 
