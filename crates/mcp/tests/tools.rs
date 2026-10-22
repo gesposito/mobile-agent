@@ -318,6 +318,46 @@ fn a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default() {
     }
 }
 
+/// Design D5 of action-verdicts: the snapshot after a change answers with
+/// the lines that changed under a header naming the lines of the session's
+/// last listing they replace, as the CLI prints a delta, where it answered
+/// with the delta object as JSON.
+#[test]
+fn a_snapshot_after_a_change_answers_with_the_lines_that_changed() {
+    for era in ERAS {
+        let env = TestEnv::start("android");
+        let mut client = Client::spawn(&env, era);
+        ok(&client.call("open", json!({"app": APP})));
+        let listing = ok(&client.call("snapshot", json!({})));
+        let line = listing
+            .lines()
+            .position(|line| line.contains("id=login-username"))
+            .unwrap_or_else(|| panic!("{era}: no username field in {listing}"))
+            + 1;
+        ok(&client.call(
+            "fill",
+            json!({"selector": "#login-username", "text": "agent"}),
+        ));
+        ok(&client.call("press", json!({"key": "Back"})));
+        let delta = ok(&client.call("snapshot", json!({})));
+        let lines: Vec<&str> = delta.lines().collect();
+        assert!(
+            lines
+                .first()
+                .is_some_and(|header| header.starts_with("delta (revision ")
+                    && header.ends_with(&format!("): line {line} replaced by"))),
+            "{era}: {delta}"
+        );
+        assert_eq!(lines.len(), 2, "{era}: {delta}");
+        assert!(
+            lines[1].starts_with("- textbox \"Username\" [") && lines[1].ends_with(": agent"),
+            "{era}: {delta}"
+        );
+        assert!(!delta.contains('{'), "{era}: no delta object: {delta}");
+        client.close();
+    }
+}
+
 #[test]
 fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
     for era in ERAS {

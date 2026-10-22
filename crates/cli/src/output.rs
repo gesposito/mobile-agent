@@ -850,6 +850,83 @@ mod tests {
         );
     }
 
+    /// Design D5 of action-verdicts: a delta whose kind is `delta` prints a
+    /// header naming its revision and the one it was taken against, and the
+    /// lines of that one's listing it replaces, from its start line counted
+    /// from 1, as many as its count; then the lines that take their place,
+    /// as the listing prints them, and the refs it removed, as `removedRefs`
+    /// names them. A change wait prints its delta the same way.
+    #[test]
+    fn a_delta_prints_a_header_its_lines_and_the_refs_it_removed() {
+        let delta = |start: u64, count: u64, lines: &[&str], changes: Value| {
+            json!({
+                "baseRevision": 2, "changes": changes, "kind": "delta", "revision": 3,
+                "treeChange": {"deleteCount": count, "lines": lines, "startLine": start},
+            })
+        };
+        let printed = |delta: Value| human("snapshot", &ok(json!({"snapshot": delta}))).0;
+        let rows = [
+            "- button \"Row 9\" [id=row-9, ref=e9]",
+            "  - text \"Ninth\"",
+        ];
+        let changes = json!([
+            {"op": "remove", "ref": "@e5"},
+            {"op": "remove", "ref": "@e6"},
+            {"field": "name", "op": "replace", "ref": "@e7", "value": "Row 7"},
+            {"node": {"name": "Row 9", "role": "button"}, "op": "add", "ref": "@e9"},
+        ]);
+        assert_eq!(
+            printed(delta(1, 3, &rows, changes)),
+            "delta (revision 3 from 2): lines 2 to 4 replaced by\n\
+             - button \"Row 9\" [id=row-9, ref=e9]\n  - text \"Ninth\"\n\
+             removed refs: @e5, @e6\n"
+        );
+        let field = ["- textbox \"Username\" [id=login-username, ref=e5]: agent"];
+        assert_eq!(
+            printed(delta(1, 1, &field, json!([]))),
+            "delta (revision 3 from 2): line 2 replaced by\n\
+             - textbox \"Username\" [id=login-username, ref=e5]: agent\n"
+        );
+        let added =
+            json!([{"node": {"name": "Row 9", "role": "button"}, "op": "add", "ref": "@e9"}]);
+        assert_eq!(
+            printed(delta(4, 0, &rows[..1], added.clone())),
+            "delta (revision 3 from 2): inserted after line 4\n\
+             - button \"Row 9\" [id=row-9, ref=e9]\n"
+        );
+        assert_eq!(
+            printed(delta(0, 0, &rows[..1], added)),
+            "delta (revision 3 from 2): inserted before line 1\n\
+             - button \"Row 9\" [id=row-9, ref=e9]\n"
+        );
+        assert_eq!(
+            printed(delta(2, 2, &[], json!([{"op": "remove", "ref": "@e5"}]))),
+            "delta (revision 3 from 2): lines 3 to 4 removed\nremoved refs: @e5\n"
+        );
+        let waited = ok(json!({
+            "waited": "change", "endedBy": "tree", "elapsedMs": 12.5,
+            "snapshot": delta(1, 1, &field, json!([])),
+        }));
+        assert_eq!(
+            human("wait", &waited).0,
+            "✓ The tree changed after 12.5 ms\n\
+             delta (revision 3 from 2): line 2 replaced by\n\
+             - textbox \"Username\" [id=login-username, ref=e5]: agent\n"
+        );
+    }
+
+    /// Design D5 of action-verdicts: `--json` keeps a delta object as the
+    /// mirror writes it, byte for byte.
+    #[test]
+    fn the_json_line_keeps_a_delta_object_byte_for_byte() {
+        let object = r#"{"baseRevision":2,"changes":[{"op":"remove","ref":"@e5"},{"node":{"name":"Row 9","role":"button"},"op":"add","ref":"@e9"}],"kind":"delta","revision":3,"treeChange":{"deleteCount":3,"lines":["- button \"Row 9\" [id=row-9, ref=e9]"],"startLine":1}}"#;
+        let delta: Value = serde_json::from_str(object).expect("the delta object is JSON");
+        assert_eq!(
+            json_line(&ok(json!({"snapshot": delta}))),
+            format!(r#"{{"success":true,"data":{{"snapshot":{object}}},"error":null}}"#)
+        );
+    }
+
     /// Task 6.5: scroll's line counts its strokes and, with until, says how
     /// much of the element is in view, the element named as the listing
     /// names it, or by the selector when it has no name.

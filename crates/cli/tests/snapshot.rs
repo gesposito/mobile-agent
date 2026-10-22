@@ -144,6 +144,46 @@ fn delta_snapshots_start_full_then_report_unchanged_and_changes() {
     assert_eq!(forced["data"]["snapshot"]["revision"], 4);
 }
 
+/// Design D5 of action-verdicts: a delta snapshot whose kind is `delta`
+/// prints a header naming the lines of the last delta snapshot's listing
+/// it replaces, then the lines that take their place as the listing prints
+/// them, where it printed the delta object as JSON; `--json` keeps the
+/// object.
+#[test]
+fn a_delta_snapshot_prints_the_lines_that_changed_under_a_header_naming_them() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    let first = env.cli(&["snapshot", "-i", "--delta"]).ok().stdout;
+    let line = first
+        .lines()
+        .position(|line| line.contains("id=login-username"))
+        .unwrap_or_else(|| panic!("no username field in {first}"))
+        + 1;
+    env.cli(&["fill", "#login-username", "agent"]).ok();
+    env.cli(&["press", "Back"]).ok();
+    let run = env.cli(&["snapshot", "-i", "--delta"]).ok();
+    let lines: Vec<&str> = run.stdout.lines().collect();
+    let header = format!("delta (revision 2 from 1): line {line} replaced by");
+    assert_eq!(lines.first(), Some(&header.as_str()), "{}", run.stdout);
+    assert_eq!(lines.len(), 2, "{}", run.stdout);
+    assert!(
+        lines[1].starts_with("- textbox \"Username\" [") && lines[1].ends_with(": agent"),
+        "{}",
+        run.stdout
+    );
+    env.cli(&["fill", "#login-username", "agents"]).ok();
+    env.cli(&["press", "Back"]).ok();
+    let reply = env
+        .cli(&["--json", "snapshot", "-i", "--delta"])
+        .ok()
+        .json();
+    let delta = &reply["data"]["snapshot"];
+    assert_eq!(delta["kind"], "delta", "{reply}");
+    assert_eq!(delta["baseRevision"], 2, "{reply}");
+    assert_eq!(delta["treeChange"]["startLine"], line - 1, "{reply}");
+    assert_eq!(delta["treeChange"]["deleteCount"], 1, "{reply}");
+}
+
 #[test]
 fn an_ios_target_lists_the_same_launcher() {
     let env = TestEnv::start("ios");
