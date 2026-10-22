@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::client::Reply;
 
@@ -375,6 +375,7 @@ fn snapshot(data: &Value, out: &mut String) {
                 let revision = delta.get("revision").and_then(Value::as_u64).unwrap_or(0);
                 let _ = writeln!(out, "unchanged (revision {revision})");
             }
+            Some("delta") => changed_lines(delta, out),
             _ => {
                 let pretty = serde_json::to_string_pretty(delta).unwrap_or_default();
                 let _ = writeln!(out, "{pretty}");
@@ -383,6 +384,60 @@ fn snapshot(data: &Value, out: &mut String) {
         other => {
             let _ = writeln!(out, "{other}");
         }
+    }
+}
+
+/// A delta whose kind is `delta` (design D5 of action-verdicts): a header
+/// naming the delta's revision, the revision it was taken against and the
+/// lines of that revision's listing it replaces, counted from 1 where
+/// `startLine` counts from 0, as many as `deleteCount`, `delta (revision 3
+/// from 2): lines 2 to 4 replaced by`; then `treeChange`'s lines as the
+/// listing prints them, and the refs the delta removed, `removed refs: @e5,
+/// @e6`, in the form of a snapshot's `removedRefs`. A delta that replaces
+/// no line says where its lines go in, `inserted after line 4`, and one
+/// that brings no line which lines it removed, `lines 3 to 4 removed`.
+fn changed_lines(delta: &Map<String, Value>, out: &mut String) {
+    let count = |value: &Value| value.as_u64().unwrap_or(0);
+    let splice = delta.get("treeChange").unwrap_or(&Value::Null);
+    let (start, deleted) = (count(&splice["startLine"]), count(&splice["deleteCount"]));
+    let lines: Vec<&str> = splice["lines"]
+        .as_array()
+        .map(|lines| lines.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let replaced = match deleted {
+        0 => None,
+        1 => Some(format!("line {}", start + 1)),
+        _ => Some(format!("lines {} to {}", start + 1, start + deleted)),
+    };
+    let what = match replaced {
+        Some(replaced) if lines.is_empty() => format!("{replaced} removed"),
+        Some(replaced) => format!("{replaced} replaced by"),
+        None if start == 0 => "inserted before line 1".to_owned(),
+        None => format!("inserted after line {start}"),
+    };
+    let revision = |key: &str| delta.get(key).map_or(0, count);
+    let _ = writeln!(
+        out,
+        "delta (revision {} from {}): {what}",
+        revision("revision"),
+        revision("baseRevision")
+    );
+    for line in lines {
+        let _ = writeln!(out, "{line}");
+    }
+    let removed: Vec<&str> = delta
+        .get("changes")
+        .and_then(Value::as_array)
+        .map(|changes| {
+            changes
+                .iter()
+                .filter(|change| change["op"] == "remove")
+                .filter_map(|change| change["ref"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    if !removed.is_empty() {
+        let _ = writeln!(out, "removed refs: {}", removed.join(", "));
     }
 }
 
