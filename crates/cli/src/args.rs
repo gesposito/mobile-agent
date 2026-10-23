@@ -304,9 +304,12 @@ defaultTimeout, else 10000 ms. wait --settle ends once neither the tree nor
 the frames change for the quiet window, or at --timeout, default 3000 ms;
 within a second of this session's last click, fill, type, press, swipe or
 scroll it first waits for that action's first effect, until a second after
-the action, and input names the action. endedBy says which signal changed
-last (tree, frame, both or none, after an action nothing within 1 s of it)
-or timeout, and stillChanging what kept changing. wait --change ends once the
+the action, and input names the action. On a Simulator, once quiet, it reads
+the tree the frames changed and settles again when that read finds it
+changed, so a menu whose items come after a pause in its frames is listed
+whole right after it. endedBy says which signal changed last (tree, frame,
+both or none, after an action nothing within 1 s of it) or timeout, and
+stillChanging what kept changing. wait --change ends once the
 listing in the options of this session's last snapshot changed from what
 that snapshot showed, at once for a change that came before it, and prints
 what moved (endedBy: tree, frame or both) and the delta snapshot --delta

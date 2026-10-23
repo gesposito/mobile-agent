@@ -600,7 +600,23 @@ CLI prints as `nothing changed within 1 s of the click`. On the second demo
 pass a settle right after the Enter that loads a page settled after 0.01
 ms with nothing changed, and one after the tap that opened a menu ended
 before the menu's tree came. A settle with no input of the session in the
-last second counts its quiet window alone. `open`'s own settle waits the same way for its
+last second counts its quiet window alone. On a target whose frames come as
+a stream and whose windows send no change events, a Simulator's, the
+settle, once quiet, reads the windows whose frames changed since their last
+read began, as the listing after it would (`Attached::catch_up`), and a
+read that finds the tree changed is a change it counts from, so it settles
+again, within the same maximum (action-verdicts, task 3.5): while it
+watches frames it reads no tree, so an animation that paused longer than
+the quiet window ended it with the tree the frames had changed unread, as
+Safari's More menu, which took its items with its last frame 273 ms after
+the frame before, left the listing right after a settle without them two
+times in 15 opens on this session's Simulator, where with the read the
+listing held them 22 times in 22. A pause longer than the quiet window, the
+read and a second window, about 430 ms, still ends a settle early: the
+menu's closing paused 358 to 560 ms, and its settle ended after its last
+frame 20 times in 24 with the read, against none in 17 without it. A
+physical iPhone, whose frames come slowly and whose read takes about half
+a second, keeps its settle. `open`'s own settle waits the same way for its
 launch's first effect, the launch's window change noted before the launch
 and the wait within the explicit timeout when one is given, so that a
 replica that showed the app already, as when the app was in front, settles
@@ -1173,7 +1189,13 @@ settle windows take real time, and a device model:
   giving it the focus raises to 120 points, in a view of another class, so
   that the field is a new node at another place once it has the focus, as
   a map app's search field took one when the tap that readied it for
-  `fill` raised its card (action-verdicts, task 2.2); and
+  `fill` raised its card (action-verdicts, task 2.2); `menu`, a button
+  from 140 to 188 points whose tap shows a menu's frame at once, a view
+  from 600 to 640 points holding nothing, that frame from 300 points 100 ms
+  later and its three buttons 300 ms after that, longer than a settle's
+  quiet window, each step with a frame, as Safari's More menu took its
+  items with its last frame, 273 ms after the frame before, on this
+  session's Simulator (action-verdicts, task 3.5); and
   by default the form with the shapes a React Native app showed in the smoke
   test of 2026-10-09: a heading; `placeholder-code`, a code field built of
   six boxes, a labelled node without traits holding a text per character;
@@ -1494,6 +1516,7 @@ Worked around here without changing `crates/mirror`:
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.1, design D1) | A tap that lands elsewhere (on the fake's banner board, on both platforms; with the element a click by ref, selector or point hit, the ref only for the session whose snapshots listed it, nothing on an empty point and the keyboard where it draws) | `handlers::act::tests::a_click_whose_tap_lands_on_a_view_over_its_target_names_it_and_warns`, `handlers::act::tests::a_click_names_the_element_its_tap_landed_on_and_the_session_s_ref_for_it`, `handlers::act::tests::a_click_by_coordinates_names_the_element_under_the_point`; the reply's type in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.2, design D3) | A rebuilt field (on the fake's rebuilt board, on both platforms: a get, a click and a fill on the ref of a field whose node the app replaced act on its twin, by identifier and role, else by name, role and bounds, the reply's `resolved` naming both refs and the session acting on the twin's ref from then on; a ref without a twin, after a relaunch on the form, failing `stale_ref`) | `handlers::act::tests::a_stale_ref_acts_on_its_twin_by_identifier_and_role_else_by_name_role_and_bounds`, `handlers::act::tests::a_stale_ref_without_a_twin_fails_stale_ref`, `handlers::act::tests::a_fill_whose_focus_tap_puts_the_field_in_a_new_node_enters_the_text_into_its_twin` (the fake's raised board); the mirror's `refs::a_stale_ref_s_twin_is_the_element_of_its_role_and_identifier_else_of_its_name_and_bounds`, `refs::a_twin_without_an_identifier_lies_within_a_pixel_of_where_the_ref_s_element_was` and `refs::no_twin_stands_for_a_stale_ref_that_two_elements_match_alike`; the replies' types in `replies::replies_on_a_stale_ref_resolved_to_its_twin_parse_into_their_types` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.3, design D2) | A settle right after a press (on fake targets at a 300 ms latency, through the CLI: a settle right after a click waits for its effect and names what changed last, after a click that changed nothing says so within 1 s of it, with no input in the last second ends at once; `open`'s settle waits for its launch's first effect) | the CLI's `spans::a_settle_right_after_a_click_waits_for_its_effect_and_names_what_changed_last`, `spans::a_settle_after_a_click_that_changes_nothing_says_nothing_changed_within_1_s_of_it`, `spans::a_settle_with_no_input_in_the_last_second_ends_at_once_on_a_quiet_screen` and `spans::open_s_settle_waits_for_its_launch_s_first_effect`; the reply's `input` in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
+| Replies verify the action, spec `agent-cli` (action-verdicts task 3.5, design D2) | A menu's items after a pause (on a fake Simulator's menu board, whose menu takes its items 300 ms after its frame took its full size: a settle right after the tap reads the tree its frames changed and settles again from the change, so the listing right after names the items) | `handlers::act::tests::a_settle_right_after_a_tap_ends_once_the_tree_holds_what_its_frames_showed`; through the CLI, `spans::a_listing_right_after_a_settle_names_the_items_a_menu_took_after_a_pause` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 3.4, design D6) | A click right after a scroll (on fakes whose lists glide as long as their platform's fling lasts and stop at a tap, on both platforms: a plain scroll answers once the list has come to rest, saying so and how long it moved on, and a click right after on a row the listing then shows opens it; a list that moves as far as the finger answers one quiet window after the stroke, having moved on for no time) | `handlers::act::tests::a_plain_scroll_answers_once_a_gliding_list_came_to_rest_so_a_click_right_after_opens_a_row`, `handlers::act::tests::a_plain_scroll_without_a_glide_answers_one_quiet_window_after_its_stroke`; the fake's glide in `fake::app::tests::a_glide_lasts_as_long_as_its_platform_flings_and_slows_evenly`; the reply's `settled` and `movedOnMs` in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.4, design D4) | Open behind the home screen (on fakes whose launcher takes the front back from a launch of a running app, on both platforms: launched again and in front, or failing `not_in_front` naming the launcher when it takes the front back from the second launch too) | `handlers::act::tests::open_launches_again_a_running_app_the_home_screen_took_the_front_back_from`, `handlers::act::tests::open_of_an_app_the_home_screen_keeps_behind_fails_not_in_front_naming_what_is`; an app that showed no screen keeps its warning in the CLI's `commands::open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
