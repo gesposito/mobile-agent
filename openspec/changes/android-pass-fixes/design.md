@@ -2,12 +2,12 @@
 
 ## Context
 
-The third pass's Android failures (notes kept privately): `open com.android.chrome` answered `✗ adb_failed: shell,v2,raw:am start -W … Resource temporarily unavailable (os error 35)`; the next `snapshot` answered `deadline_exceeded` at 10 s; a full snapshot and a screenshot then took 11 and 12 s. The emulator (`pixel_api36`, 2 GB of RAM in its configuration, 4 cores) had 2.39 of 2.53 GB in use and 697 MB of swap. Through the CLI, Settings' cold `open` took 14.65 s with `firstTreeMs` 14,438 while `am start -W` alone reported 6.3 to 6.9 s; warm, 0.72 s. The driver's socket to adb is non-blocking in places (the fake agent and the daemon's server already read again on `WouldBlock`), and the shell path does not. `Mirror::hit` returns the element a tap reaches at a point through `visibility::landing`, and the click reports it when the session holds its ref. A stale ref's twin (`Mirror::twin`) took 2.38 and 2.62 s end to end in the pass's two cases.
+The third pass's Android failures (notes kept privately): `open com.android.chrome` answered `✗ adb_failed: shell,v2,raw:am start -W … Resource temporarily unavailable (os error 35)`; the next `snapshot` answered `deadline_exceeded` at 10 s; a full snapshot and a screenshot then took 11 and 12 s. The emulator (`pixel_api36`, 2 GB of RAM in its configuration, 4 cores) had 2.39 of 2.53 GB in use and 697 MB of swap. Through the CLI, Settings' cold `open` took 14.65 s with `firstTreeMs` 14,438 while `am start -W` alone reported 6.3 to 6.9 s; warm, 0.72 s. The driver's shell path to adb is blocking, each read and write under the client's 10 s timeout (D1). `Mirror::hit` returns the element a tap reaches at a point through `visibility::landing`, and the click reports it when the session holds its ref. A stale ref's twin (`Mirror::twin`) took 2.38 and 2.62 s end to end in the pass's two cases.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- No command fails on a would-block the transport can wait out.
+- No launch fails on a timeout shorter than the command's own.
 - Every click names what it hit.
 - A twin costs what a lookup costs.
 - The first-tree wait on Android understood, with numbers, and cut where it is the daemon's.
@@ -18,8 +18,8 @@ The third pass's Android failures (notes kept privately): `open com.android.chro
 
 ## Decisions
 
-### D1. Would-block on the adb socket is read again
-The Android driver's shell transport reads and writes again on `ErrorKind::WouldBlock` (and `Interrupted`), as the fake agent and the daemon's server do, bounded by the command's own deadline, so `am start` and the other shell commands do not fail on a socket that is not ready; a would-block that outlasts the deadline is the timeout it always was, with its message. Measured by a test that injects the error on a shell command's stream.
+### D1. A launch takes the command's deadline
+The Android driver's shell transport is blocking: each connection to the adb server reads and writes under the client's 10 s timeout (`SO_RCVTIMEO`, `SO_SNDTIMEO`), and nothing in the shell path is non-blocking; the fake agent and the daemon's server, which read again on `WouldBlock`, poll a listener set non-blocking or read under a 5 ms timeout, and retry no error. macOS reports an expired read timeout as `EAGAIN`, "Resource temporarily unavailable (os error 35)", which Rust gives as `ErrorKind::WouldBlock`: a 15-line program reading a silent loopback socket under a 300 ms read timeout got that kind and that code after 301 ms. So the pass's `adb_failed` on Chrome's `open` was `am start -W`, which prints its `Starting:` line and then nothing until the app's first frame, outlasting the 10 s read timeout on the starved emulator, where Settings' `am start -W` alone took 6.3 to 6.9 s; a read again on `WouldBlock` bounded by that timeout would end where the timeout ends and change nothing. The fix is the deadline, not a retry: `AppControl::launch` takes the command's own deadline, `open`'s start plus its timeout, the waiting commands' default (10 s) when it names none, and the Android driver reads `am start -W`'s output with the time left to that deadline instead of the fixed 10 s, so a slow cold start completes within what `open` was given and a longer `timeout` gives it more; a launch that outlasts the deadline fails with `deadline_exceeded`, naming the launch and the deadline, never with the socket's error. The second launch that brings a running app to the front (D4 of action-verdicts) takes the explicit timeout's deadline, else as long again from its own start. The other shell commands keep the fixed 10 s, none having that shape: none waits on the device for longer than it bounds itself, the agent's start already reads under its own deadline, and the stop path's poll for the agent's exit, silent until it ends, is bounded by its own 2 or 3 s. Measured by tests on the adb client and the driver against a fake adb server whose answer to `am start -W` comes after the client's read timeout.
 
 ### D2. A hit is named without a ref
 `Mirror::hit` returns the element a tap reaches at the point whether or not the session holds a ref for it: `hit` carries `role`, `name` and `ref` null, the line `hit text "Address" (no ref)`, so a tap by coordinates or on a plain text says what it landed on; the mismatch warning compares elements, not refs. A keyboard hit stays as it is.
@@ -34,6 +34,6 @@ On a cold-booted emulator, quiet host, twice: at the AVD's 2 GB and with `-memor
 
 ## Risks / Trade-offs
 
-- [Retrying a would-block hides a wedged adb] → bounded by the deadline; the timeout names the command.
+- [A long deadline hides a wedged adb] → only the launch takes it, bounded by the command's timeout; the timeout names the launch and the deadline.
 - [A hit without a ref names a node the model cannot act on] → the line says `(no ref)`; the next listing gives it one if it is actionable.
 - [The twin's cost is a wait the correctness needs] → the measurement says which; the design records it rather than cutting it.
