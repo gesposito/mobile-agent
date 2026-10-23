@@ -740,6 +740,40 @@ fn scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim() {
     }
 }
 
+/// Design D6 of action-verdicts (task 3.4): on this session's Simulator a
+/// click right after a plain scroll met the list still gliding, which took
+/// the tap as a stop and opened nothing, three times in three. With
+/// `MOBILE_AGENT_FAKE_FLING` the fakes' lists glide on after a stroke whose
+/// finger lifts moving, 555 ms on Android and 2.3 s on iOS after `scroll
+/// down 300`, and a tap on a list while it glides stops it: `scroll`
+/// answers once the list has come to rest, its line saying when, and a
+/// click right after on a row the listing then shows opens the row.
+#[test]
+fn a_click_right_after_a_scroll_opens_a_row_of_the_list_at_rest() {
+    for fake in ["android", "ios"] {
+        let env = TestEnv::start_with(fake, &[("MOBILE_AGENT_FAKE_FLING", "1")]);
+        env.cli(&["open", APP]).ok();
+        env.cli(&["click", "#tab-list"]).ok();
+        let scrolled = env.cli(&["scroll", "down", "300"]).ok().stdout;
+        assert!(
+            scrolled.starts_with("✓ Done (1 stroke, at rest ")
+                && scrolled.ends_with(" ms after it)\n"),
+            "{fake}: {scrolled}"
+        );
+        let listing = env.cli(&["snapshot", "-i"]).ok().stdout;
+        let rows: Vec<String> = listing
+            .lines()
+            .filter_map(|line| line.split("id=row-").nth(1))
+            .map(|rest| rest.chars().take_while(char::is_ascii_digit).collect())
+            .collect();
+        let n = &rows[rows.len() / 2];
+        env.cli(&["click", &ref_of(&listing, &format!("row-{n}"))])
+            .ok();
+        env.cli(&["wait", &format!("text==Detail {n}"), "--timeout", "1000"])
+            .ok();
+    }
+}
+
 /// Task 10.15 and design D37 of rn-app-fixes: a click on an element mostly
 /// out of view taps the part of it in view, not the centre of its bounds,
 /// which may lie on something else: on the iOS fake, row 20 twenty points

@@ -146,12 +146,19 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         ask(json!({"action": "wait", "change": true, "timeout": 300})),
         "wait_timeout"
     );
-    for request in [
-        json!({"action": "scroll", "direction": "down", "amount": 300}),
-        json!({"action": "scroll", "direction": "up", "amount": 600, "until": "#row-2"}),
-    ] {
-        success!(ask(request), reply::Scroll);
-    }
+    // A plain scroll answers once the screen has come to rest after its
+    // strokes, saying how long the content moved on (design D6 of
+    // action-verdicts).
+    let scrolled = success!(
+        ask(json!({"action": "scroll", "direction": "down", "amount": 300})),
+        reply::Scroll
+    );
+    assert_eq!(scrolled["data"]["settled"], true, "{scrolled}");
+    assert!(scrolled["data"]["movedOnMs"].is_number(), "{scrolled}");
+    success!(
+        ask(json!({"action": "scroll", "direction": "up", "amount": 600, "until": "#row-2"})),
+        reply::Scroll
+    );
     let stopped = failure!(
         ask(json!({"action": "scroll", "amount": 300, "until": "#row-none", "timeout": 1500})),
         "element_not_found"

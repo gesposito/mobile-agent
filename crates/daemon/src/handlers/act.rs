@@ -6007,4 +6007,99 @@ mod tests {
             );
         }
     }
+
+    /// The rows an interactive snapshot lists, by number, with their refs.
+    fn listed_rows(target: &mut Attached) -> Vec<(u32, String)> {
+        let listing = super::super::run_on(
+            target,
+            "default",
+            &request(r#"{"action": "snapshot", "interactive": true}"#),
+        )
+        .unwrap()
+        .data;
+        let mut rows: Vec<(u32, String)> = listing["refs"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(reference, entry)| {
+                let n = entry["name"].as_str()?.strip_prefix("Row ")?.parse().ok()?;
+                Some((n, format!("@{reference}")))
+            })
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    /// Design D6 of action-verdicts (task 3.4): on this session's Simulator
+    /// a plain scroll's strokes lifted moving, so the list glided on after
+    /// the reply, 0.7 to 1.0 s where it met its end and 2.3 to 2.5 s on a
+    /// list of 85 rows, and a tap during the glide stopped the list and
+    /// opened nothing, three times in three. On a fake whose list glides on
+    /// as far and as long as its platform's fling carries it, 555 ms on
+    /// Android and 2.3 s on iOS after a stroke of 300 points over 300 ms,
+    /// `scroll` answers once the list has come to rest, saying so and how
+    /// long it moved on after the stroke, and a click right after on a row
+    /// the listing then shows opens the row, on both platforms.
+    #[test]
+    fn a_plain_scroll_answers_once_a_gliding_list_came_to_rest_so_a_click_right_after_opens_a_row()
+    {
+        for (platform, glide) in [("android", 555.2), ("ios", 2300.3)] {
+            let driver = FakeDriver::parse(platform).unwrap().with_fling(true);
+            let (mut target, _) = recorded(&driver, FIXTURE, &[]);
+            click_on(&mut target, "#tab-list").unwrap();
+            let scrolled =
+                scroll_with(&mut target, json!({"direction": "down", "amount": 300})).unwrap();
+            let data = &scrolled.data;
+            assert_eq!(data["settled"], true, "{platform}: {data}");
+            let moved_on = data["movedOnMs"].as_f64().unwrap_or(-1.0);
+            assert!(
+                (glide - 20.0..glide + 250.0).contains(&moved_on),
+                "{platform}: the list glided on for about {glide} ms after the stroke: {data}"
+            );
+            assert!(
+                scrolled.warning.is_none(),
+                "{platform}: {:?}",
+                scrolled.warning
+            );
+            let rows = listed_rows(&mut target);
+            let (n, row) = rows[rows.len() / 2].clone();
+            click_on(&mut target, &row).unwrap();
+            let opened = query(
+                &mut target,
+                "wait",
+                "visible",
+                &format!("#detail-{n}"),
+                1000,
+            );
+            assert!(
+                opened.is_ok(),
+                "{platform}: row {n} opened, from rows {rows:?}: {opened:?}"
+            );
+        }
+    }
+
+    /// Design D6 of action-verdicts: a plain scroll whose list moves as far
+    /// as the finger and no farther comes to rest as the stroke shows, so
+    /// it answers one quiet window after its last stroke, saying the
+    /// content moved on for no time after it; with the change showing
+    /// 300 ms after the stroke, as a slow app shows it, it says so.
+    #[test]
+    fn a_plain_scroll_without_a_glide_answers_once_its_stroke_shows_and_the_screen_held_still() {
+        for (latency, moved) in [(0, 0.0..20.0), (300, 290.0..400.0)] {
+            let mut target = login_on("ios", Typing::Whole, Duration::from_millis(latency));
+            click_on(&mut target, "#tab-list").unwrap();
+            let started = Instant::now();
+            let scrolled =
+                scroll_with(&mut target, json!({"direction": "down", "amount": 300})).unwrap();
+            let data = &scrolled.data;
+            assert_eq!(data["settled"], true, "{latency} ms: {data}");
+            let moved_on = data["movedOnMs"].as_f64().unwrap_or(-1.0);
+            assert!(moved.contains(&moved_on), "{latency} ms: {data}");
+            assert!(
+                started.elapsed() >= Duration::from_millis(latency) + DEFAULT_QUIET_WINDOW,
+                "{latency} ms: the stroke showing and a quiet window after it, not {:?}",
+                started.elapsed()
+            );
+        }
+    }
 }

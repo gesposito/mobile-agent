@@ -34,12 +34,13 @@
 //! stop (`MOBILE_AGENT_FAKE_STOP_MS`) makes detaching a target take that
 //! long, as stopping the Android agent does. A fling
 //! (`MOBILE_AGENT_FAKE_FLING`) makes the fixture's list glide on after a
-//! stroke whose finger lifts moving, as far as the platform's fling carries
-//! it; without it, and after a stroke whose finger comes to rest, the list
-//! moves as far as the finger. A typing mode (`MOBILE_AGENT_FAKE_TYPING`)
-//! says how the fixture's fields take text whose method the target may
-//! choose, as `fill` sends it, which they otherwise take whole, as the
-//! Android agent sets it (see [`Typing`]). With
+//! stroke whose finger lifts moving, as far and as long as the platform's
+//! fling carries it, a tap on the list while it glides stopping it and
+//! reaching nothing under it; without it, and after a stroke whose finger
+//! comes to rest, the list moves as far as the finger. A typing mode
+//! (`MOBILE_AGENT_FAKE_TYPING`) says how the fixture's fields take text
+//! whose method the target may choose, as `fill` sends it, which they
+//! otherwise take whole, as the Android agent sets it (see [`Typing`]). With
 //! [`FakeDriver::with_home_returns`] the launcher takes the front back from
 //! the first launches of a running app made from it, as a Simulator's home
 //! screen did from an app launched during its go-home animation.
@@ -425,8 +426,9 @@ impl FakeDriver {
     }
 
     /// These targets, their fixture's list gliding on after a stroke whose
-    /// finger lifts moving when `fling` is set, as far as the platform's
-    /// fling carries it.
+    /// finger lifts moving when `fling` is set, as far and as long as the
+    /// platform's fling carries it, a tap on the list while it glides
+    /// stopping it.
     pub fn with_fling(mut self, fling: bool) -> FakeDriver {
         self.fling = fling;
         self

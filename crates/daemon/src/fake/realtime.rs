@@ -15,8 +15,10 @@
 //! input can wait for an input session that activates some time after it
 //! starts, as a Simulator's does, and detaching can take time, as stopping
 //! the Android agent does: the last part dropped waits it out. The fixture's
-//! list can glide on after a stroke whose finger lifts moving, as far as the
-//! platform's fling carries it, the finger's speed its release velocity.
+//! list can glide on after a stroke whose finger lifts moving, as far and as
+//! long as the platform's fling carries it, the finger's speed its release
+//! velocity, a frame and the tree showing each move; a tap on the list while
+//! it glides stops it there and reaches nothing under it.
 //! Text whose method the target may choose goes in whole, unless the typing
 //! mode types it key by key as a Simulator does. A keyboard can come up some
 //! time after a field took the focus, shown then with a frame, and the
@@ -85,6 +87,24 @@ pub(crate) const HOME_RETURN: Duration = Duration::from_millis(150);
 /// (see [`Change::Layout`]).
 const LIFT: Duration = Duration::from_millis(50);
 
+/// A list gliding on after a stroke whose finger lifted moving.
+#[derive(Clone, Copy, Debug)]
+struct Glide {
+    /// Where the stroke came down, on the list the glide moves.
+    at: (f64, f64),
+    /// When the glide starts: as the stroke shows, after the latency.
+    from: Instant,
+    /// How far it carries the list, in points, positive the way a finger
+    /// moving up carries the content.
+    distance: f64,
+    /// How long it lasts.
+    time: Duration,
+    /// How far it has carried the list so far.
+    done: f64,
+    /// When it last moved the list.
+    moved: Option<Instant>,
+}
+
 /// How a fake target's frames come.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Frames {
@@ -143,6 +163,8 @@ struct Shared {
     stop: Duration,
     /// Whether a stroke that lifts moving glides the list on.
     fling: bool,
+    /// The glide under way, if any.
+    glide: Mutex<Option<Glide>>,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
     /// When the keyboard that is coming up comes up.
@@ -334,7 +356,42 @@ impl Shared {
         self.raise(now);
         self.lift(now);
         self.return_home(now);
+        self.glide_on(now);
         now
+    }
+
+    /// Moves a gliding list on to where its glide has carried it by now, a
+    /// frame interval at least after its last move, showing it as any
+    /// change within the screen shows, with a frame; the glide ends at its
+    /// time, or once the list goes no further, at an end or off the screen.
+    fn glide_on(&self, now: Instant) {
+        let mut slot = lock(&self.glide);
+        let Some(glide) = slot.as_mut() else {
+            return;
+        };
+        if now < glide.from
+            || glide
+                .moved
+                .is_some_and(|moved| now < moved + FRAME_INTERVAL)
+        {
+            return;
+        }
+        let elapsed = now - glide.from;
+        let reached = glide.distance * app::glided(elapsed, glide.time);
+        let by = reached - glide.done;
+        glide.done = reached;
+        glide.moved = Some(now);
+        let at = glide.at;
+        if elapsed >= glide.time {
+            *slot = None;
+        }
+        drop(slot);
+        let mut device = lock(&self.device);
+        if device.glide(at, by) {
+            self.show_after(&device, Change::Content, Duration::ZERO);
+        } else if by != 0.0 {
+            *lock(&self.glide) = None;
+        }
     }
 
     /// Brings up the keyboard that was coming once it is due, showing it as
@@ -720,6 +777,7 @@ pub(crate) fn attach(
         session: Mutex::new(Session::default()),
         stop,
         fling,
+        glide: Mutex::new(None),
         typing,
         keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
@@ -823,7 +881,7 @@ impl InputSink for Part {
         if let Some(wait) = self.shared.enter_session() {
             std::thread::sleep(wait);
         }
-        self.shared.sync();
+        let now = self.shared.sync();
         if let Some(lost) = self.shared.lost() {
             return Err(lost);
         }
@@ -838,8 +896,17 @@ impl InputSink for Part {
         let before = device.screen();
         let changed = match input {
             Input::Tap { at, .. } => {
-                let hit = tree::hit(&device.windows(), at.x, at.y);
-                device.tap(hit.as_deref(), (at.x, at.y))
+                // A tap on a list still gliding stops it where it is and
+                // reaches nothing under it, as the platforms' scroll views
+                // take a touch on content in motion.
+                let gliding = lock(&self.shared.glide).is_some();
+                if gliding && device.on_list((at.x, at.y)) {
+                    *lock(&self.shared.glide) = None;
+                    false
+                } else {
+                    let hit = tree::hit(&device.windows(), at.x, at.y);
+                    device.tap(hit.as_deref(), (at.x, at.y))
+                }
             }
             Input::Swipe {
                 from,
@@ -847,15 +914,27 @@ impl InputSink for Part {
                 duration,
                 release,
             } => {
+                // A stroke catches a list still gliding.
+                *lock(&self.shared.glide) = None;
                 // The list scrolls up and down, so the finger's speed along
-                // that axis is its release velocity.
-                let glide = if self.shared.fling && *release == Release::Moving {
+                // that axis is its release velocity; the glide follows the
+                // stroke as it shows, after the latency.
+                if self.shared.fling && *release == Release::Moving {
                     let speed = (from.y - to.y).abs() / duration.as_secs_f64();
-                    app::glide(device.kit.platform, speed)
-                } else {
-                    0.0
-                };
-                device.swipe((from.x, from.y), (to.x, to.y), glide)
+                    let platform = device.kit.platform;
+                    let distance = app::glide(platform, speed) * (from.y - to.y).signum();
+                    if distance != 0.0 {
+                        *lock(&self.shared.glide) = Some(Glide {
+                            at: (from.x, from.y),
+                            from: now + self.shared.latency,
+                            distance,
+                            time: app::glide_time(platform, speed),
+                            done: 0.0,
+                            moved: None,
+                        });
+                    }
+                }
+                device.swipe((from.x, from.y), (to.x, to.y), 0.0)
             }
             Input::Key { code, meta } => device.key(*code, *meta),
             Input::Text { text, node, method } => {

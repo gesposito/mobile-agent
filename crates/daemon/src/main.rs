@@ -49,8 +49,9 @@ Options:
                           stopping the Android agent takes
                           (or MOBILE_AGENT_FAKE_STOP_MS; default 0)
   --fake-fling            Let fake targets' lists glide on after a stroke
-                          whose finger lifts moving, as far as the
-                          platform's fling carries them
+                          whose finger lifts moving, as far and as long as
+                          the platform's fling carries them, a tap on a
+                          list while it glides stopping it
                           (or MOBILE_AGENT_FAKE_FLING=1; default off)
   --fake-typing <mode>    How fake targets' fields take text whose method
                           the target may choose: whole; keys, typed key by

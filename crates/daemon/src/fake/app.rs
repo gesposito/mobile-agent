@@ -562,26 +562,28 @@ impl Forms {
         }
     }
 
-    /// A stroke from `from` to `to`, gliding on `glide` points the way the
-    /// finger went: the creation tab's list moves by them, as far as it
-    /// scrolls, when the stroke comes down on it, and on the board in React
-    /// Native's shape not on a view drawn over it, the primary button or the
-    /// footer, which takes the touch; whether it moved.
-    fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
+    /// Whether a touch at `at` comes down on the creation tab's list, and on
+    /// the board in React Native's shape not on a view drawn over it, the
+    /// primary button or the footer, which takes the touch.
+    fn on_list(&self, at: (f64, f64)) -> bool {
         let drawn_over = matches!(self.board, Board::CreationRn | Board::CreationHeld)
-            && (tree::contains(CREATION_PRIMARY, from.0, from.1)
-                || tree::contains(creation_footer(self.board), from.0, from.1));
-        if !matches!(
+            && (tree::contains(CREATION_PRIMARY, at.0, at.1)
+                || tree::contains(creation_footer(self.board), at.0, at.1));
+        matches!(
             self.board,
             Board::Creation | Board::CreationOpen | Board::CreationRn | Board::CreationHeld
-        ) || !tree::contains(CREATION_LIST, from.0, from.1)
-            || drawn_over
-        {
+        ) && tree::contains(CREATION_LIST, at.0, at.1)
+            && !drawn_over
+    }
+
+    /// The creation tab's list moved `by` points, positive the way a finger
+    /// moving up carries the content, as far as it scrolls, by a stroke that
+    /// came down at `from` on it; whether it moved.
+    fn glide(&mut self, from: (f64, f64), by: f64) -> bool {
+        if !self.on_list(from) {
             return false;
         }
-        let moved = from.1 - to.1;
-        let way = if moved == 0.0 { 0.0 } else { moved.signum() };
-        let offset = (self.offset + moved + glide * way).clamp(0.0, CREATION_MAX);
+        let offset = (self.offset + by).clamp(0.0, CREATION_MAX);
         let changed = offset != self.offset;
         self.offset = offset;
         changed
@@ -1234,35 +1236,86 @@ impl Device {
     /// goes to the keyboard, whose glide typing enters [`GLIDE_WORD`] into
     /// the field in focus, if any, and moves nothing.
     pub fn swipe(&mut self, from: (f64, f64), to: (f64, f64), glide: f64) -> bool {
-        let before = self.clone();
-        let max = max_offset(self.kit);
         let on_keyboard = self
             .keyboard()
             .is_some_and(|keyboard| tree::contains(keyboard, from.0, from.1));
-        if self.foreground == Foreground::Placeholder {
-            return !on_keyboard
-                && self
-                    .placeholder
-                    .as_mut()
-                    .is_some_and(|forms| forms.swipe(from, to, glide));
-        }
-        let Some(fixture) = self.front_fixture() else {
-            return false;
-        };
-        if on_keyboard {
-            if let Some(field) = fixture.focus {
-                let value = fixture.field(field);
-                if !value.is_empty() {
-                    value.push(' ');
-                }
-                value.push_str(GLIDE_WORD);
-            }
-        } else if fixture.tab == Tab::List && fixture.detail.is_none() && !fixture.modal() {
+        if !on_keyboard {
             let moved = from.1 - to.1;
             let way = if moved == 0.0 { 0.0 } else { moved.signum() };
-            fixture.offset = (fixture.offset + moved + glide * way).clamp(0.0, max);
+            return self.glide(from, moved + glide * way);
+        }
+        if self.foreground == Foreground::Placeholder {
+            return false;
+        }
+        let before = self.clone();
+        if let Some(fixture) = self.front_fixture()
+            && let Some(field) = fixture.focus
+        {
+            let value = fixture.field(field);
+            if !value.is_empty() {
+                value.push(' ');
+            }
+            value.push_str(GLIDE_WORD);
         }
         *self != before
+    }
+
+    /// The list a stroke that came down at `from` moves, moved `by` points,
+    /// positive the way a finger moving up carries the content, as far as it
+    /// scrolls: the fixture's on its List tab, the placeholder app's on its
+    /// creation tab (see [`Forms::glide`]); nothing for a stroke that came
+    /// down on the keyboard. Whether the screen changed.
+    pub fn glide(&mut self, from: (f64, f64), by: f64) -> bool {
+        let before = self.clone();
+        let max = max_offset(self.kit);
+        if self
+            .keyboard()
+            .is_some_and(|keyboard| tree::contains(keyboard, from.0, from.1))
+        {
+            return false;
+        }
+        if self.foreground == Foreground::Placeholder {
+            return self
+                .placeholder
+                .as_mut()
+                .is_some_and(|forms| forms.glide(from, by));
+        }
+        if let Some(fixture) = self.front_fixture()
+            && fixture.tab == Tab::List
+            && fixture.detail.is_none()
+            && !fixture.modal()
+        {
+            fixture.offset = (fixture.offset + by).clamp(0.0, max);
+        }
+        *self != before
+    }
+
+    /// Whether a touch at `at` comes down on a list a stroke moves: the
+    /// fixture's list between its header and its tab bar on its List tab,
+    /// or the placeholder app's creation list (see [`Forms::on_list`]), and
+    /// not on the keyboard.
+    pub fn on_list(&self, at: (f64, f64)) -> bool {
+        if self
+            .keyboard()
+            .is_some_and(|keyboard| tree::contains(keyboard, at.0, at.1))
+        {
+            return false;
+        }
+        match &self.foreground {
+            Foreground::Placeholder => self
+                .placeholder
+                .as_ref()
+                .is_some_and(|forms| forms.on_list(at)),
+            Foreground::Fixture(app) => {
+                let fixture = &self.fixtures[app];
+                let (top, bottom) = self.kit.content();
+                fixture.tab == Tab::List
+                    && fixture.detail.is_none()
+                    && !fixture.modal()
+                    && (top..bottom).contains(&at.1)
+            }
+            _ => false,
+        }
     }
 
     /// The windows the device shows, top-most first.
@@ -2682,6 +2735,33 @@ const MIN_FLING: f64 = 50.0;
 /// 8000 dp a second); UIKit's lists are held to it too.
 const MAX_FLING: f64 = 8000.0;
 
+/// `ViewConfiguration`'s scroll friction, which Android's `OverScroller`
+/// flings with.
+const FRICTION: f64 = 0.015;
+
+/// UIKit's normal deceleration rate: the speed a list glides at, kept 0.998
+/// of each millisecond.
+const RATE: f64 = 0.998;
+
+/// The slowest a UIKit list glides, in points a second, before it stops:
+/// from a finger that lifts at 1,000 points a second, [`RATE`] slows it to
+/// this in 2.3 s, about the 2.3 to 2.5 s a list of 85 rows moved on for on
+/// the Simulator after a 300-point stroke over 300 ms (action-verdicts,
+/// task 3.4).
+const IOS_GLIDE_STOP: f64 = 10.0;
+
+/// Android's `OverScroller` spline at a fling of `speed` points a second
+/// (`SplineOverScroller.getSplineDeceleration`), its physical coefficient,
+/// gravity times inches a metre times dots an inch at 160 dpi times 0.84,
+/// and its deceleration exponent.
+fn spline(speed: f64) -> (f64, f64, f64) {
+    const INFLEXION: f64 = 0.35;
+    let physical = 9.80665 * 39.37 * 160.0 * 0.84;
+    let deceleration = 0.78f64.ln() / 0.9f64.ln();
+    let spline = (INFLEXION * speed / (FRICTION * physical)).ln();
+    (spline, physical, deceleration)
+}
+
 /// How far `platform`'s lists glide on after a finger lifts moving at
 /// `speed` points a second, as the platforms' scroll views fling them:
 /// Android's `OverScroller` spline with `ViewConfiguration`'s scroll
@@ -2694,20 +2774,42 @@ pub(crate) fn glide(platform: Platform, speed: f64) -> f64 {
             if speed < MIN_FLING {
                 return 0.0;
             }
-            // SplineOverScroller.getSplineFlingDistance: gravity times inches
-            // a metre times dots an inch at 160 dpi times 0.84.
-            const FRICTION: f64 = 0.015;
-            const INFLEXION: f64 = 0.35;
-            let physical = 9.80665 * 39.37 * 160.0 * 0.84;
-            let deceleration = 0.78f64.ln() / 0.9f64.ln();
-            let spline = (INFLEXION * speed / (FRICTION * physical)).ln();
+            // SplineOverScroller.getSplineFlingDistance.
+            let (spline, physical, deceleration) = spline(speed);
             FRICTION * physical * (deceleration / (deceleration - 1.0) * spline).exp()
         }
-        Platform::Ios => {
-            const RATE: f64 = 0.998;
-            speed * RATE / (1.0 - RATE) / 1000.0
-        }
+        Platform::Ios => speed * RATE / (1.0 - RATE) / 1000.0,
     }
+}
+
+/// How long `platform`'s lists glide on after a finger lifts moving at
+/// `speed` points a second: Android's `OverScroller` spline duration, 555 ms
+/// at 1,000 points a second; UIKit's deceleration until the speed falls to
+/// [`IOS_GLIDE_STOP`], 2.3 s at 1,000 points a second.
+pub(crate) fn glide_time(platform: Platform, speed: f64) -> Duration {
+    let speed = speed.min(MAX_FLING);
+    let ms = match platform {
+        Platform::Android if speed < MIN_FLING => 0.0,
+        Platform::Android => {
+            // SplineOverScroller.getSplineFlingDuration.
+            let (spline, _, deceleration) = spline(speed);
+            1000.0 * (spline / (deceleration - 1.0)).exp()
+        }
+        Platform::Ios if speed <= IOS_GLIDE_STOP => 0.0,
+        Platform::Ios => (speed / IOS_GLIDE_STOP).ln() / -RATE.ln(),
+    };
+    Duration::from_secs_f64(ms / 1000.0)
+}
+
+/// The share of its distance a glide that lasts `time` has carried a list
+/// `elapsed` after it began, slowing evenly to a stop: 0 at its start, 1
+/// from its end on.
+pub(crate) fn glided(elapsed: Duration, time: Duration) -> f64 {
+    if elapsed >= time || time.is_zero() {
+        return 1.0;
+    }
+    let left = 1.0 - elapsed.as_secs_f64() / time.as_secs_f64();
+    1.0 - left * left
 }
 
 /// How far the fixture's list scrolls, in points.
@@ -2782,6 +2884,26 @@ mod tests {
             glide(Platform::Android, 8000.0),
             "the platform's fastest fling"
         );
+    }
+
+    /// Task 3.4 of action-verdicts: a glide lasts as long as its platform's
+    /// fling does, Android's spline 555 ms at 1,000 points a second and
+    /// 925 ms at 2,000, UIKit's deceleration to 10 points a second 2.3 s at
+    /// 1,000, about what a list of 85 rows moved on for on the Simulator;
+    /// and it slows evenly to a stop.
+    #[test]
+    fn a_glide_lasts_as_long_as_its_platform_flings_and_slows_evenly() {
+        let ms = |platform, speed| glide_time(platform, speed).as_secs_f64() * 1000.0;
+        let close = |actual: f64, expected: f64| (actual - expected).abs() < 1.0;
+        assert!(close(ms(Platform::Android, 1000.0), 555.2));
+        assert!(close(ms(Platform::Android, 2000.0), 924.9));
+        assert_eq!(ms(Platform::Android, 49.0), 0.0);
+        assert!(close(ms(Platform::Ios, 1000.0), 2300.3));
+        assert_eq!(ms(Platform::Ios, 10.0), 0.0);
+        let time = Duration::from_millis(1000);
+        assert_eq!(glided(Duration::ZERO, time), 0.0);
+        assert_eq!(glided(Duration::from_millis(500), time), 0.75);
+        assert_eq!(glided(time, time), 1.0);
     }
 
     /// Task 10.23: a field that takes keys out of order lands each from the

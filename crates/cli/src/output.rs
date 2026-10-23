@@ -1165,4 +1165,31 @@ mod tests {
             "✓ Done (0 strokes; #row-57 is 83% in view)\n"
         );
     }
+
+    /// Design D6 of action-verdicts: a plain scroll's line says when the
+    /// content came to rest after its last stroke, or that the screen was
+    /// still changing when the scroll stopped waiting for it.
+    #[test]
+    fn a_plain_scroll_says_when_the_content_came_to_rest_after_its_strokes() {
+        let rested = |strokes: u32, settled: bool, moved_on: f64| {
+            let data = ok(json!({
+                "scrolled": true, "direction": "down", "amount": 600.0, "strokes": strokes,
+                "from": [201.0, 612.0], "to": [201.0, 262.0], "settled": settled,
+                "movedOnMs": moved_on,
+            }));
+            human("scroll", &data).0
+        };
+        assert_eq!(
+            rested(2, true, 2341.27),
+            "✓ Done (2 strokes, at rest 2341.3 ms after the last)\n"
+        );
+        assert_eq!(
+            rested(1, true, 0.0),
+            "✓ Done (1 stroke, at rest 0.0 ms after it)\n"
+        );
+        assert_eq!(
+            rested(2, false, 2987.5),
+            "✓ Done (2 strokes, still moving 2987.5 ms after the last)\n"
+        );
+    }
 }
