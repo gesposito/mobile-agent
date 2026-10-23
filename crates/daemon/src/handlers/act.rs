@@ -5945,6 +5945,110 @@ mod tests {
         }
     }
 
+    /// How long a call on `target` took, with what it answered.
+    fn timed(
+        target: &mut Attached,
+        call: impl FnOnce(&mut Attached) -> Outcome,
+    ) -> (Duration, Success) {
+        let started = Instant::now();
+        let outcome = call(target);
+        let took = started.elapsed();
+        (
+            took,
+            outcome.unwrap_or_else(|failure| panic!("{failure:?}")),
+        )
+    }
+
+    /// Puts the rebuilt board's field named `name` in new nodes: empties it
+    /// and fills it again, each of which the app lays out anew, leaving
+    /// every ref it had stale.
+    fn rebuild(target: &mut Attached, name: &str) {
+        let field = ref_named(target, name);
+        fill_in(target, &field, "").unwrap();
+        let field = ref_named(target, name);
+        fill_in(target, &field, "standup").unwrap();
+    }
+
+    /// How long each read of the fake's tree takes where a call on a stale
+    /// ref is timed against the same call on its twin's ref: a read more
+    /// takes longer than the margin.
+    const TWIN_READ_COST: Duration = Duration::from_millis(80);
+
+    /// How much longer than the same call on its twin's ref a call on a
+    /// stale ref may take (design D3 of android-pass-fixes).
+    const TWIN_MARGIN: Duration = Duration::from_millis(50);
+
+    /// Design D3 of android-pass-fixes: a twin costs what its lookup costs.
+    /// On the third demo pass a click and a fill on a stale ref took 2.38
+    /// and 2.62 s end to end; on this session's Simulator the stale check
+    /// and the lookup took 0.1 to 0.2 ms of a fill of a map app's search
+    /// box, the rest of its 1.6 to 2.5 s being the fill's own read after
+    /// the tap that focused the box, its keys and its read-back, which the
+    /// same fill on a ref that needed no twin took as well. On the
+    /// placeholder app's rebuilt board, each read of its tree taking 80 ms
+    /// so that a read or a wait before the lookup would show, a click and a
+    /// fill on the ref a field had before it took a new node take at most
+    /// 50 ms longer than the same call on the twin's ref, the quickest of
+    /// three of each compared, on both platforms, for the field with an
+    /// identifier and the one without, each call made on the field holding
+    /// text and in focus.
+    #[test]
+    fn a_call_on_a_stale_ref_takes_what_the_same_call_on_its_twin_takes() {
+        let rebuilt = ["PLACEHOLDER_SCREEN=rebuilt"];
+        for platform in ["ios", "android"] {
+            for name in ["placeholder-textbox-1", "placeholder-textbox-2"] {
+                let driver = FakeDriver::parse(platform)
+                    .unwrap()
+                    .with_read_cost(TWIN_READ_COST);
+                let (mut target, _) = recorded(&driver, PLACEHOLDER, &rebuilt);
+                let mut stale = ref_named(&mut target, name);
+                rebuild(&mut target, name);
+                let (mut clicks, mut fills) = (Vec::new(), Vec::new());
+                for _ in 0..3 {
+                    let twin = ref_named(&mut target, name);
+                    let (plain, on_twin) = timed(&mut target, |target| click_on(target, &twin));
+                    assert!(on_twin.data.get("resolved").is_none(), "{platform}");
+                    let (stood_for, on_stale) =
+                        timed(&mut target, |target| click_on(target, &stale));
+                    assert_eq!(
+                        resolved(&on_stale),
+                        (stale.clone(), twin.clone()),
+                        "{platform}: {}",
+                        on_stale.data
+                    );
+                    clicks.push((plain, stood_for));
+                    let (plain, on_twin) =
+                        timed(&mut target, |target| fill_in(target, &twin, "plain"));
+                    assert!(on_twin.data.get("resolved").is_none(), "{platform}");
+                    rebuild(&mut target, name);
+                    let newest = ref_named(&mut target, name);
+                    let (stood_for, on_stale) =
+                        timed(&mut target, |target| fill_in(target, &twin, "twin"));
+                    assert_eq!(
+                        resolved(&on_stale),
+                        (twin.clone(), newest.clone()),
+                        "{platform}: {}",
+                        on_stale.data
+                    );
+                    assert_eq!(on_stale.data["verified"], "text", "{platform}");
+                    fills.push((plain, stood_for));
+                    rebuild(&mut target, name);
+                    stale = newest;
+                }
+                for (call, timed) in [("click", &clicks), ("fill", &fills)] {
+                    let quickest = |pick: fn(&(Duration, Duration)) -> Duration| {
+                        timed.iter().map(pick).min().unwrap_or_default()
+                    };
+                    let (plain, stood_for) = (quickest(|t| t.0), quickest(|t| t.1));
+                    assert!(
+                        stood_for <= plain + TWIN_MARGIN,
+                        "{platform} {name}: a {call} on a stale ref took {stood_for:?}, on its twin's ref {plain:?}: {timed:?}"
+                    );
+                }
+            }
+        }
+    }
+
     /// Design D3 of action-verdicts: a ref whose element is gone without a
     /// twin in the replica, no element of its role and identifier nor of its
     /// role, name and bounds, fails `stale_ref` with its advice, as the

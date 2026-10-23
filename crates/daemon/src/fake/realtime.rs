@@ -163,6 +163,8 @@ struct Shared {
     session: Mutex<Session>,
     /// How long detaching takes.
     stop: Duration,
+    /// How long each read of the tree takes.
+    read_cost: Duration,
     /// Whether a stroke that lifts moving glides the list on.
     fling: bool,
     /// The glide under way, if any.
@@ -778,6 +780,7 @@ pub(crate) fn attach(
         stop,
         slide,
         home_returns,
+        read_cost,
     } = timing;
     let device = Device::new(platform)
         .with_keyboard(keyboard)
@@ -802,6 +805,7 @@ pub(crate) fn attach(
         activation,
         session: Mutex::new(Session::default()),
         stop,
+        read_cost,
         fling,
         glide: Mutex::new(None),
         typing,
@@ -859,6 +863,9 @@ struct Part {
 
 impl TreeSource for Part {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
+        if !self.shared.read_cost.is_zero() {
+            std::thread::sleep(self.shared.read_cost);
+        }
         self.shared.sync();
         if let Some(lost) = self.shared.lost().or_else(|| self.shared.stalled()) {
             return Err(lost);

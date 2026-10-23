@@ -27,6 +27,9 @@
 //! so that the time from a tap to its effects can be measured, and a frame
 //! delay (`MOBILE_AGENT_FAKE_FRAME_DELAY_MS`) starts the frame stream after
 //! the attach, as an emulator's starts once its subscription is up. A
+//! read cost ([`FakeDriver::with_read_cost`]) makes each read of the tree
+//! take that long, as a Simulator's reader and the Android agent take to
+//! answer, so that a read a command makes shows in its time. A
 //! splash (`MOBILE_AGENT_FAKE_SPLASH_MS`) shows a fixture app's launch
 //! splash for that long when its process starts, an activation
 //! (`MOBILE_AGENT_FAKE_ACTIVATION_MS`) holds input until the input session
@@ -97,6 +100,8 @@ pub(crate) struct Timing {
     /// How many launches of a running app, made while the home screen is
     /// in front, the home screen takes the front back from.
     pub home_returns: u32,
+    /// How long each read of the tree takes.
+    pub read_cost: Duration,
 }
 
 /// How a fake's keyboard comes up once a field takes the focus.
@@ -462,6 +467,12 @@ impl FakeDriver {
     /// (action-verdicts, task 2.4).
     pub fn with_home_returns(mut self, launches: u32) -> FakeDriver {
         self.timing.home_returns = launches;
+        self
+    }
+
+    /// These targets, each read of their tree taking `cost`, in real time.
+    pub fn with_read_cost(mut self, cost: Duration) -> FakeDriver {
+        self.timing.read_cost = cost;
         self
     }
 
