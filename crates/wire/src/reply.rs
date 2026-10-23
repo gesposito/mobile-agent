@@ -691,8 +691,9 @@ pub enum Swiped {
 pub struct Scroll {
     pub scrolled: bool,
     pub direction: String,
-    /// How far the content moved; with `until`, the length of the strokes
-    /// that look for the element.
+    /// How far the strokes carried the content, which a glide carries on
+    /// past after a plain scroll (`movedOnMs`); with `until`, the length of
+    /// the strokes that look for the element.
     pub amount: f64,
     pub strokes: u32,
     /// Where the last stroke came down, null when there was none.

@@ -83,7 +83,9 @@ with a switch's or a checkbox's `checked`, or bounds, `wait`'s by what it
 waited for, a change wait's delta object in `snapshot`, `screenshot`'s
 image with `inline`, base64-encoded beside its `mimeType`, `close`'s
 `kept` with `keep`, `open`'s `alert` when a dialog of system UI stands in
-front of the app, `scroll`'s with `until`, and a snapshot's listing as
+front of the app, `scroll`'s with `until` and without it, the latter's
+`settled` and `movedOnMs` saying whether the screen came to rest after its
+last stroke and how long the content moved on, and a snapshot's listing as
 text or as the mirror's delta object (`reply::DeltaSnapshot`). `type`'s
 data carries its read-back as `fill`'s does, what the field holds under
 `text` beside the text typed under `typed`, and `screenshot`'s the

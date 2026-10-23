@@ -44,7 +44,8 @@ Acting
   type @e2 ' smith'           add key events; without a ref, the focused field
   press Enter | Back | Home   keys; join modifiers with +, as Control+a
   scroll down 600             move the content; -s @e7 scrolls inside @e7;
-                              strokes keep off the keyboard and system bars
+                              strokes keep off the keyboard and system bars;
+                              it answers once the content rests, or after 3 s
   scroll down --until '#row-150'   scroll until the element is mostly in view;
                               no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
@@ -52,10 +53,9 @@ Acting
                               not_in_front; close stops it and frees the target
   A tap goes to the part of an element you can see, and warns when that is not
   most of it. Its reply names what it hit, as hit button "Sign in", warning when
-  that is not what you named; settle after a scroll, as a list still gliding
-  takes a tap as a stop. element_covered: less than 8 points of it show from
-  under its cover, named as hints name it, a dialog, a button, disabled or not,
-  a bar or the keyboard; act on a dialog first, else scroll it out from under
+  that is not what you named. element_covered: less than 8 points of it show
+  from under its cover, named as hints name it, a dialog, a button, disabled or
+  not, a bar or the keyboard; act on a dialog first, or scroll it out from under
   the view. element_offscreen: none of it in view; close the keyboard or scroll.
   fill's and type's replies say what they read back: verified: text, or
   length for a masked field, from the field's value, a code field's value

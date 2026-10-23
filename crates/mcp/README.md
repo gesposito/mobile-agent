@@ -163,8 +163,9 @@ surfaces:
   the count of masked characters for a secure field, `entered in one
   piece` for text pasted or set, `retried` when it went in again and
   `nothing to read back` beside the warning for a field that shows
-  nothing to read, `✓ Done (2 strokes)` for `scroll` and `✓ Done (3
-  strokes; "Row 57" is 100% in view)` with `until`, `✓ Done (read back
+  nothing to read, `✓ Done (2 strokes, at rest 2341.3 ms after the last)`
+  for `scroll`, once the content it set gliding has come to rest, and `✓
+  Done (3 strokes; "Row 57" is 100% in view)` with `until`, `✓ Done (read back
   "example.com", typed)` for `type`, what the field holds once the keys
   went in, `✓ Opened <app> on <target>` for `open`, its warning naming a
   dialog of system UI in front of the app, `✓ Released <target>; <app>
@@ -311,24 +312,26 @@ delta taken in it (`get`, `wait` with `text`, or `interactive: false`);
 the waits (`change`, `settle`, `text`), saying that a click names the
 element its tap hit and warns when that is not the element named (design
 D1), that a click which reports no change may precede the app's reaction,
-which `wait` with `change` collects, that `scroll` answers while the list
-may still glide, which takes a tap as a stop, so a settle comes between a
-scroll and a click, that a settle right after an action waits for its
-first effect or says nothing changed within 1 s of it (design D2), and
-that a wait or a selector's search ends at 10 s unless the call passes
-`timeout`; sessions and `close` with `keep`, screenshots with `ifChanged`
+which `wait` with `change` collects, that `scroll` answers once the
+content it set gliding has come to rest, at most 3 s after its last
+stroke, so a click can follow it at once (design D6), that a settle right
+after an action waits for its first effect or says nothing changed within
+1 s of it (design D2), and that a wait or a selector's search ends at 10 s
+unless the call passes `timeout`; sessions and `close` with `keep`,
+screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 3,298
-characters in all, 3,416 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,302
+characters in all, 3,420 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
 findings 1 and 4); the one on a click that reports no change is what the
 first pass on real apps met in Photos, a push 428 ms after a tap that
 reported none (real-app-fixes, design D7); and the one on a scroll is what
 a later pass met in Photos, a click right after a scroll that opened
-nothing, whose replay named the row the tap hit while the gliding list
-took the tap (`reports/12.3-action-verdicts.md`, finding 1).
+nothing, whose replay named the row the tap hit while the list, still
+gliding, took the tap as a stop (`reports/12.3-action-verdicts.md`,
+finding 1).
 
 `help`, a read-only tool with no arguments of its own, answers with the
 CLI's agent guide (`mobile-agent help agent`, the CLI library's
