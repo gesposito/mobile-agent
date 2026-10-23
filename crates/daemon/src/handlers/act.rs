@@ -5761,6 +5761,38 @@ mod tests {
         );
     }
 
+    /// Design D2 of android-pass-fixes, scenario "A tap on a plain text": a
+    /// click by coordinates on a text that the interactive listing gives no
+    /// ref, the login screen's status, names the text with its ref null, as
+    /// on the third demo pass a tap on Safari's address field and one by
+    /// coordinates named nothing; a click by coordinates on the button
+    /// beside it names the button by the ref the session's snapshot gave it.
+    #[test]
+    fn a_click_by_coordinates_on_a_plain_text_names_it_without_a_ref() {
+        // The status's centre and the submit button's, below the content's
+        // top: 24 points on Android, 62 on iOS.
+        for (platform, status, submit) in [("android", 316.0, 256.0), ("ios", 354.0, 294.0)] {
+            let mut target = login_on(platform, Typing::Whole, Duration::ZERO);
+            let button = ref_named(&mut target, "Sign in");
+            let text = click_at(&mut target, 200.0, status).unwrap();
+            assert_eq!(
+                text.data["hit"],
+                json!({"role": "text", "name": "Signed out", "ref": null}),
+                "{platform}: {}",
+                text.data
+            );
+            assert!(text.warning.is_none(), "{platform}: {:?}", text.warning);
+            let on = click_at(&mut target, 200.0, submit).unwrap();
+            assert_eq!(
+                on.data["hit"],
+                json!({"role": "button", "name": "Sign in", "ref": button}),
+                "{platform}: {}",
+                on.data
+            );
+            assert!(on.warning.is_none(), "{platform}: {:?}", on.warning);
+        }
+    }
+
     /// Design D1 of action-verdicts, scenario "A tap that lands elsewhere":
     /// after the snapshot that listed a button, a banner of system UI's comes
     /// down over it in a window of its own, inset from the screen's sides, so

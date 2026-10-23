@@ -1048,6 +1048,43 @@ mod tests {
         );
     }
 
+    /// Design D2 of android-pass-fixes: a click whose tap landed on an
+    /// element the session holds no ref for, as a plain text, says so after
+    /// its name, while one on an element with a ref and one on the keyboard
+    /// name them as before.
+    #[test]
+    fn a_click_whose_hit_has_no_ref_says_so() {
+        let clicked = |hit: Value| {
+            ok(json!({
+                "clicked": "201 112", "ref": null, "x": 201.0, "y": 112.0, "accepted": true,
+                "hit": hit, "dispatchMs": 0.214, "watchedMs": 201.3,
+            }))
+        };
+        let line = |reply: &Reply| human("click", reply).0;
+        assert_eq!(
+            line(&clicked(
+                json!({"role": "text", "name": "Address", "ref": null})
+            )),
+            "✓ Done (hit text \"Address\" (no ref), dispatch 0.2 ms, no change in 201 ms)\n"
+        );
+        assert_eq!(
+            line(&clicked(json!({"role": "image", "name": "", "ref": null}))),
+            "✓ Done (hit image (no ref), dispatch 0.2 ms, no change in 201 ms)\n"
+        );
+        assert_eq!(
+            line(&clicked(
+                json!({"role": "textbox", "name": "Address", "ref": "@e7"})
+            )),
+            "✓ Done (hit textbox \"Address\", dispatch 0.2 ms, no change in 201 ms)\n"
+        );
+        assert_eq!(
+            line(&clicked(
+                json!({"role": "keyboard", "name": "", "ref": null})
+            )),
+            "✓ Done (hit keyboard, dispatch 0.2 ms, no change in 201 ms)\n"
+        );
+    }
+
     /// Design D3 of action-verdicts: an action on a stale ref that the
     /// daemon resolved to its twin says which ref it took first in its line,
     /// `(@e5 now @e9, ...)`, and a get on a line of its own after what it
