@@ -1,15 +1,13 @@
 mobile-agent: a guide for agents
 
 mobile-agent drives Android devices and emulators, iOS Simulators and iPhones.
-A daemon keeps a live mirror of each screen, so snapshots answer from memory.
-The grammar, refs and JSON output follow agent-browser.
+A daemon mirrors each screen; the grammar, refs and JSON follow agent-browser.
 
 The loop
   1. mobile-agent snapshot -i       list actionable elements with their refs
   2. mobile-agent click @e3         act on a ref from that snapshot
   3. mobile-agent wait --settle     let the screen settle after the action
   4. mobile-agent snapshot -i       snapshot again before the next action
-  Act only on refs from your latest snapshot.
 
 Snapshots
   - button "Sign in" [id=login-submit, ref=e4]
@@ -50,11 +48,14 @@ Acting
   scroll down --until '#row-150'   scroll until the element is mostly in view;
                               no stroke carries it past unseen
   swipe up | swipe X1 Y1 X2 Y2   move the finger
-  open com.example.app        launch an app; close stops it and frees the target
-  A tap goes to the part of an element you can see, and warns when that is
-  not most of it. element_covered: less than 8 points of it show from under
-  its cover, named as hints name it, a dialog, a button, disabled or not, a
-  bar or the keyboard; act on a dialog first, else scroll it out from under
+  open com.example.app        launch an app and leave it in front, else fail
+                              not_in_front; close stops it and frees the target
+  A tap goes to the part of an element you can see, and warns when that is not
+  most of it. Its reply names what it hit, as hit button "Sign in", warning when
+  that is not what you named; settle after a scroll, as a list still gliding
+  takes a tap as a stop. element_covered: less than 8 points of it show from
+  under its cover, named as hints name it, a dialog, a button, disabled or not,
+  a bar or the keyboard; act on a dialog first, else scroll it out from under
   the view. element_offscreen: none of it in view; close the keyboard or scroll.
   fill's and type's replies say what they read back: verified: text, or
   length for a masked field, from the field's value, a code field's value
@@ -111,8 +112,7 @@ iPhones
   no_signing_identity or automation_not_enabled (approve Enable UI Automation);
   devices and doctor name the step. It is slower: a tree read of a 500-cell
   screen takes about 0.5 s and frames come 19 a second, so settle and waits take
-  longer. Text goes in through the runner: method: keys means typed, direct the
-  field's value set, not a paste, so the pasteboard is left alone.
+  longer. Text goes in through the runner, typed or set, not a paste.
 
 Batch
   batch --bail 'open com.example.app' 'snapshot -i' runs commands in order,

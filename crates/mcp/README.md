@@ -156,8 +156,10 @@ surfaces:
   by`, the lines that take their place and the refs removed, `removed refs:
   @e5, @e6` (action-verdicts, design D5);
 - an action is the CLI's line: `✓ Done (hit button "Sign in", dispatch 0.3
-  ms, no change in 202 ms)` for a click, naming what its tap landed on
-  (design D1), `✓ Done (read back "agent", typed)` for `fill`,
+  ms, no change in 202 ms)` for a click, naming what its tap landed on as
+  the replica held it at dispatch, with a warning naming both when that is
+  not the element the call named (design D1), `✓ Done (read back "agent",
+  typed)` for `fill`,
   the count of masked characters for a secure field, `entered in one
   piece` for text pasted or set, `retried` when it went in again and
   `nothing to read back` beside the warning for a field that shows
@@ -167,7 +169,9 @@ surfaces:
   went in, `✓ Opened <app> on <target>` for `open`, its warning naming a
   dialog of system UI in front of the app, `✓ Released <target>; <app>
   keeps running` for `close` with `keep`, `✓ Settled after 111 ms: the
-  tree changed last`, `✓ The tree changed after 300 ms` and the delta, or
+  tree changed last`, or `✓ Settled after 793.41 ms: nothing changed
+  within 1 s of the click` right after an action that changed nothing
+  (design D2), `✓ The tree changed after 300 ms` and the delta, or
   `✓ Found button "Sign in" @e4` for a wait; an action on a stale ref
   that stood for its twin, the element the app rebuilt in its place, names
   both refs first, `✓ Done (@e3 now @e4, read back "again", entered in one
@@ -301,24 +305,30 @@ within the 512 Codex keeps, what the server drives, that refs come from
 `snapshot`, that replies verify and a failure names its code and what to
 do next, and that `help` holds the guide; then selectors and refs, a ref
 standing for the twin an app rebuilt in its place (action-verdicts, design
-D3), with where a plain text such as a status line is read, since it has no ref and
-is in neither the interactive listing nor a change wait's delta taken in
-it (`get`, `wait` with `text`, or `interactive: false`), the waits
-(`change`, `settle`, `text`), saying that a click which reports no change
-may precede the app's reaction, which `wait` with `change` collects, that a
-settle right after an action waits for its first effect or says nothing
-changed within 1 s of it, and
+D3), with where a plain text such as a status line is read, since it has
+no ref and is in neither the interactive listing nor a change wait's
+delta taken in it (`get`, `wait` with `text`, or `interactive: false`);
+the waits (`change`, `settle`, `text`), saying that a click names the
+element its tap hit and warns when that is not the element named (design
+D1), that a click which reports no change may precede the app's reaction,
+which `wait` with `change` collects, that `scroll` answers while the list
+may still glide, which takes a tap as a stop, so a settle comes between a
+scroll and a click, that a settle right after an action waits for its
+first effect or says nothing changed within 1 s of it (design D2), and
 that a wait or a selector's search ends at 10 s unless the call passes
-`timeout`, sessions and `close` with `keep`, screenshots with `ifChanged`
+`timeout`; sessions and `close` with `keep`, screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 3,060
-characters in all, 3,178 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,298
+characters in all, 3,416 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
-findings 1 and 4), and the one on a click that reports no change is what
-the first pass on real apps met in Photos, a push 428 ms after a tap that
-reported none (real-app-fixes, design D7).
+findings 1 and 4); the one on a click that reports no change is what the
+first pass on real apps met in Photos, a push 428 ms after a tap that
+reported none (real-app-fixes, design D7); and the one on a scroll is what
+a later pass met in Photos, a click right after a scroll that opened
+nothing, whose replay named the row the tap hit while the gliding list
+took the tap (`reports/12.3-action-verdicts.md`, finding 1).
 
 `help`, a read-only tool with no arguments of its own, answers with the
 CLI's agent guide (`mobile-agent help agent`, the CLI library's
