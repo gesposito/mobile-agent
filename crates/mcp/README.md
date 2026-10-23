@@ -157,9 +157,11 @@ surfaces:
   @e5, @e6` (action-verdicts, design D5);
 - an action is the CLI's line: `✓ Done (hit button "Sign in", dispatch 0.3
   ms, no change in 202 ms)` for a click, naming what its tap landed on as
-  the replica held it at dispatch, with a warning naming both when that is
-  not the element the call named (design D1), `✓ Done (read back "agent",
-  typed)` for `fill`,
+  the replica held it at dispatch, `(no ref)` after an element the session
+  holds no ref for, as a plain text or one a click by selector reached
+  before a snapshot listed it (android-pass-fixes, design D2), with a
+  warning naming both when that is not the element the call named (design
+  D1), `✓ Done (read back "agent", typed)` for `fill`,
   the count of masked characters for a secure field, `entered in one
   piece` for text pasted or set, `retried` when it went in again and
   `nothing to read back` beside the warning for a field that shows
@@ -310,11 +312,12 @@ D3), with where a plain text such as a status line is read, since it has
 no ref and is in neither the interactive listing nor a change wait's
 delta taken in it (`get`, `wait` with `text`, or `interactive: false`);
 the waits (`change`, `settle`, `text`), saying that a click names the
-element its tap hit and warns when that is not the element named (design
-D1), that a click which reports no change may precede the app's reaction,
-which `wait` with `change` collects, that `scroll` answers once the
-content it set gliding has come to rest, at most 3 s after its last
-stroke, so a click can follow it at once (design D6), that a settle right
+element its tap hit, `(no ref)` after one the session holds no ref for
+(android-pass-fixes, design D2), and warns when that is not the element
+named (design D1), that a click which reports no change may precede the
+app's reaction, which `wait` with `change` collects, that `scroll` answers
+once the content it set gliding has come to rest, at most 3 s after its
+last stroke, so a click can follow it at once (design D6), that a settle right
 after an action waits for its first effect or says nothing changed within
 1 s of it (design D2), and that a wait or a selector's search ends at 10 s
 unless the call passes `timeout`; sessions and `close` with `keep`,

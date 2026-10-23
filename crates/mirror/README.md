@@ -661,8 +661,11 @@ the reasons in this order, each with advice:
   `visibility` judges what a tap reaches of an element, inside its visible
   bounds before the views drawn over part of it and under none of them, the
   last of the top-most window that holds one, the innermost or the one
-  drawn over the others, or the keyboard where it draws, with the ref the
-  mirror issued it while that ref names it; `holds` tells whether one
+  drawn over the others, or the keyboard where it draws; where no element
+  with a ref lies under the point, the top-most element the full listing
+  lists without one, as a plain text, chosen the same way (android-pass-fixes,
+  design D2); with the ref the mirror issued it while that ref names it,
+  none for an element no listing gave one; `holds` tells whether one
   element is another or holds it. The daemon names in a click's reply what
   its tap landed on, and warns when that is neither the element the click
   named, nor part of it, nor what holds it.

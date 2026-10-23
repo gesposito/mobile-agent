@@ -94,7 +94,9 @@ screen's size in points (`reply::Points`) beside the image's pixels.
 input, names that input's action, whose first effect the settle waited
 for. `click`'s `hit` (`reply::Hit`) names the element its tap landed on by its
 role and name, with the ref the session's snapshots listed it under or
-null, and is null when no element with a ref lay under the point.
+null, as for a plain text that no listing gives a ref (android-pass-fixes,
+design D2), and is null when no element a listing lists lay under the
+point.
 `click`'s, `fill`'s, `type`'s, `get`'s and `scroll`'s `resolved`
 (`reply::Resolved`) names a stale ref the request named, under `stale`, and
 the ref of its twin, the element the app rebuilt in its place, which the
