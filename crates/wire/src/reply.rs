@@ -546,7 +546,7 @@ pub struct Click {
     #[serde(rename = "ref")]
     pub reference: Option<String>,
     /// What the tap landed on as the replica held it at dispatch; null when
-    /// no element with a ref lay under the point.
+    /// no element a listing lists lay under the point.
     pub hit: Option<Hit>,
     pub x: f64,
     pub y: f64,
@@ -568,7 +568,8 @@ pub struct Click {
 }
 
 /// The element a click's tap landed on: the top-most with a ref that a tap
-/// reaches at the point, or the keyboard where it draws.
+/// reaches at the point, or the keyboard where it draws; else the top-most
+/// that the full listing lists without a ref, as a plain text.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(transform = crate::param::soft_wraps))]
 #[serde(deny_unknown_fields)]
@@ -576,7 +577,7 @@ pub struct Hit {
     pub role: String,
     pub name: String,
     /// The ref the session's snapshots listed it under, such as `@e3`; null
-    /// when they did not.
+    /// when they did not, as for an element that no listing gives a ref.
     #[serde(rename = "ref")]
     pub reference: Option<String>,
 }

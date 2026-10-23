@@ -365,9 +365,11 @@ fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
         let mut client = Client::spawn(&env, era);
         let opened = ok(&client.call("open", json!({"app": APP})));
         assert_eq!(opened, format!("✓ Opened {APP} on emulator-5554"), "{era}");
+        // No snapshot of the session listed the tab, so the line says it has
+        // no ref for it (design D2 of android-pass-fixes).
         let clicked = ok(&client.call("click", json!({"selector": "#tab-list"})));
         assert!(
-            clicked.starts_with("✓ Done (hit button \"List\", dispatch ")
+            clicked.starts_with("✓ Done (hit button \"List\" (no ref), dispatch ")
                 && !clicked.contains('\n'),
             "{era}: {clicked}"
         );
@@ -377,7 +379,7 @@ fn a_click_answers_with_the_cli_line_and_keeps_its_warning() {
         let lines: Vec<&str> = answer.lines().collect();
         assert_eq!(lines.len(), 2, "{era}: the line and the warning: {answer}");
         assert!(
-            lines[0].starts_with("✓ Done (hit button \"Row 20\", dispatch "),
+            lines[0].starts_with("✓ Done (hit button \"Row 20\" (no ref), dispatch "),
             "{era}: {answer}"
         );
         assert!(

@@ -792,9 +792,12 @@ impl Mirror {
     /// judge what a tap reaches of an element ([`Mirror::visibility`]), the
     /// last the top-most window that holds one lists, the innermost or the
     /// one drawn over the others; or the keyboard where it draws, as the full
-    /// listing lists it. The element carries the ref the mirror issued it
-    /// while that ref still names it, whichever session's snapshot listed
-    /// it. `None` when no such element lies under `at`.
+    /// listing lists it; or, where no element with a ref lies under `at`, the
+    /// element the full listing lists without one that a tap reaches there,
+    /// chosen so, as a plain text (design D2 of android-pass-fixes). The
+    /// element carries the ref the mirror issued it while that ref still
+    /// names it, whichever session's snapshot listed it, and none when no
+    /// snapshot gave it one. `None` when no such element lies under `at`.
     pub fn hit(&self, at: Point) -> Option<Element> {
         let view = View::build(&self.replica);
         let window = |w: usize| &self.replica.windows[w];

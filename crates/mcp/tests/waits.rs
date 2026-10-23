@@ -255,9 +255,10 @@ fn a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once() {
 /// The fake holds a tap in its device call for 9 s, which no cancel
 /// interrupts: the server sends the session's cancel 5 s past the bound of
 /// 3 s, saying so on its standard error, and the daemon's reply, within
-/// 5 s more, is the call's answer. The click's watch, whose time is counted
-/// from the tap's dispatch, has none left after the hold, so the reply
-/// carries no warning of the cancel.
+/// 5 s more, is the call's answer, naming the button without a ref, since
+/// no snapshot of the session listed it. The click's watch, whose time is
+/// counted from the tap's dispatch, has none left after the hold, so the
+/// reply carries no warning of the cancel.
 #[test]
 fn a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server() {
     let env = TestEnv::start_with("android", &[("MOBILE_AGENT_FAKE_ACTIVATION_MS", "9000")]);
@@ -267,7 +268,8 @@ fn a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server(
     let elapsed = started.elapsed();
     let answer = ok(&result);
     assert!(
-        answer.starts_with("✓ Done (hit button \"Fixture\", dispatch 9") && !answer.contains('\n'),
+        answer.starts_with("✓ Done (hit button \"Fixture\" (no ref), dispatch 9")
+            && !answer.contains('\n'),
         "the daemon's reply: {answer}"
     );
     assert!(within(elapsed, 8.5, 12.5), "the call ended at {elapsed:?}");

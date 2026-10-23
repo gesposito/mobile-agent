@@ -38,6 +38,7 @@
 use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowFlags, WindowType};
 
 use crate::geometry::{Point, Rect};
+use crate::render;
 use crate::replica::{Replica, Win};
 use crate::snapshot::{Direction, Role};
 use crate::view::{self, Cover, CoverName, Facts, Hidden, View};
@@ -225,12 +226,16 @@ pub(crate) enum Landing {
 /// first, the first that holds one, and in it the last its tree lists, the
 /// innermost or the one drawn over the others, among the elements on screen
 /// that no other folds in; or a keyboard window that holds `at` before such a
-/// window, which takes the tap where it draws. `None` when no such element
-/// lies under `at`.
+/// window, which takes the tap where it draws. Where no element with a ref
+/// lies under `at`, the top-most element the full listing lists without a
+/// ref that a tap reaches there, chosen among the windows and within one as
+/// those with a ref are, as a plain text or a named image (design D2 of
+/// android-pass-fixes). `None` when neither lies under `at`.
 pub(crate) fn landing(replica: &Replica, view: &View, at: Point) -> Option<Landing> {
     let mut sight = Sight::new(replica, view);
+    let holds = |w: usize| Rect::from_pixels(replica.windows[w].bounds, replica.scale).contains(at);
     for (w, window) in replica.windows.iter().enumerate() {
-        if !Rect::from_pixels(window.bounds, replica.scale).contains(at) {
+        if !holds(w) {
             continue;
         }
         if window.kind == WindowType::INPUT_METHOD {
@@ -243,6 +248,22 @@ pub(crate) fn landing(replica: &Replica, view: &View, at: Point) -> Option<Landi
         let found = (0..window.nodes.len()).rev().find(|&i| {
             let f = &facts[i];
             f.visible && f.bears_ref && !f.absorbed && sight.reaches(w, i, at)
+        });
+        if let Some(i) = found {
+            return Some(Landing::Node(w, i));
+        }
+    }
+    for (w, window) in replica.windows.iter().enumerate() {
+        if window.kind == WindowType::INPUT_METHOD || !holds(w) {
+            continue;
+        }
+        let facts = &view.windows[w];
+        let found = (0..window.nodes.len()).rev().find(|&i| {
+            let f = &facts[i];
+            f.visible
+                && !f.absorbed
+                && render::listed_in_full(f, &window.nodes[i])
+                && sight.reaches(w, i, at)
         });
         if let Some(i) = found {
             return Some(Landing::Node(w, i));

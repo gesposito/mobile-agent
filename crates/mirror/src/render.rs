@@ -73,7 +73,7 @@ fn window_order(replica: &Replica) -> Vec<usize> {
 }
 
 /// Whether a full listing shows a node that has no ref.
-fn listed_in_full(facts: &Facts, node: &RNode) -> bool {
+pub(crate) fn listed_in_full(facts: &Facts, node: &RNode) -> bool {
     if facts.bears_ref {
         return true;
     }

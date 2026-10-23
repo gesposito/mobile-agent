@@ -613,15 +613,17 @@ pub(super) fn click(target: &mut Attached, call: &Call, args: &::wire::Click) ->
 /// What a tap at `point` landed on as the replica held it at dispatch, as a
 /// click's reply gives it (design D1 of action-verdicts): the element
 /// ([`mirror::Mirror::hit`]) by its role, its name and the ref `session`'s
-/// snapshots listed it under, null when they did not, or null for no element
-/// with a ref under the point; and, when the click named `aimed`, which
-/// `clicked` gives, and the tap landed on an element that is neither it,
-/// nor part of it, nor what holds it, the warning that names both. The
-/// daemon checked what a tap reaches of `aimed` before the tap, so such a
-/// tap met a layout that moved under the point after `aimed` was found, or
-/// a view over it that cuts nothing of what a tap reaches of it, as a banner
-/// system UI draws in a window of its own, inset from the screen's sides;
-/// the tap went in all the same, since the replica can lag the app.
+/// snapshots listed it under, null when they did not, as for a plain text
+/// that no listing gives a ref (design D2 of android-pass-fixes), or null for
+/// no element a listing lists under the point; and, when the click named
+/// `aimed`, which `clicked` gives, and the tap landed on an element that is
+/// neither it, nor part of it, nor what holds it, the warning that names
+/// both, the elements compared, not their refs. The daemon checked what a
+/// tap reaches of `aimed` before the tap, so such a tap met a layout that
+/// moved under the point after `aimed` was found, or a view over it that
+/// cuts nothing of what a tap reaches of it, as a banner system UI draws in
+/// a window of its own, inset from the screen's sides; the tap went in all
+/// the same, since the replica can lag the app.
 fn landed(
     target: &mut Attached,
     session: &str,
@@ -5735,7 +5737,7 @@ mod tests {
 
     /// Design D1 of action-verdicts: a click by coordinates names what its
     /// tap landed on as a click on an element does: the element under the
-    /// point, nothing where no element with a ref lies, and the keyboard
+    /// point, nothing where no element a listing lists lies, and the keyboard
     /// where it draws, as the full listing names it.
     #[test]
     fn a_click_by_coordinates_names_the_element_under_the_point() {

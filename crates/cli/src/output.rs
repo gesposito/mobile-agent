@@ -318,18 +318,25 @@ fn scroll(data: &Value, out: &mut String) {
 /// first tree delta 121.9 ms)`, leaving out the spans that never came,
 /// after what the tap landed on as the listing names it, by its role and
 /// any name, `hit button "Sign in"`, when the reply names it (design D1 of
-/// action-verdicts), and first the twin a stale ref stood for, `@e221 now
-/// @e240` ([`resolution`], design D3).
+/// action-verdicts), followed by `(no ref)` for an element other than the
+/// keyboard that the session holds no ref for, `hit text "Address" (no
+/// ref)` (design D2 of android-pass-fixes), and first the twin a stale ref
+/// stood for, `@e221 now @e240` ([`resolution`], design D3).
 fn click(data: &Value, out: &mut String) {
     let span = |key: &str| data[key].as_f64().map(|ms| format!("{ms:.1} ms"));
     let mut parts: Vec<String> = resolution(data).into_iter().collect();
     if data["hit"].is_object() {
         let hit = &data["hit"];
         let role = str_of(hit, "role");
-        match str_of(hit, "name") {
-            "" => parts.push(format!("hit {role}")),
-            name => parts.push(format!("hit {role} {name:?}")),
-        }
+        let named = match str_of(hit, "name") {
+            "" => format!("hit {role}"),
+            name => format!("hit {role} {name:?}"),
+        };
+        parts.push(if hit["ref"].is_null() && role != "keyboard" {
+            format!("{named} (no ref)")
+        } else {
+            named
+        });
     }
     if let Some(dispatch) = span("dispatchMs") {
         parts.push(format!("dispatch {dispatch}"));
