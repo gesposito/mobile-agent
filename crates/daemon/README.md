@@ -187,7 +187,13 @@ stale, before its text goes in and before it enters the text again in one
 piece: on a Simulator the tap that readies a field on iOS raised a map
 app's search card and put the field in a new node before its text, which
 went to the stale ref and failed. A wait on a ref waits on the
-ref's own element.
+ref's own element. The twin costs its lookup, one walk of the replica that
+reads nothing, and nothing waits before it (android-pass-fixes, design
+D3): on this session's Simulator the stale check and the lookup took 0.1
+to 0.2 ms of a fill of Maps' search box by a stale ref, which took 1.6 to
+2.5 s end to end, as the same fill by a ref that needed none did, the rest
+being the fill's own read after the tap that focused the box, about 0.95 s
+while Maps raised its card, its keys and its read-back.
 
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
@@ -1299,10 +1305,14 @@ that runs, from the launcher, brings it to the front;
 150 ms after each of the first `n` such launches, as a Simulator's home
 screen took it back from a running app launched while its go-home
 animation ran (action-verdicts, task 2.4; the span is a model, shorter than
-the settle after the launch, not a measurement). Frames are produced as
-the backend is called, not on a timer. With `--fake-frame-delay` the
-frame stream starts that long after the attach, as an emulator's does once
-its gRPC subscription is up: frames captured before it are never delivered,
+the settle after the launch, not a measurement).
+`FakeDriver::with_read_cost(cost)` makes each read of the tree take that
+long in real time, as a Simulator's reader and the Android agent take to
+answer, so that a read a command makes shows in its time
+(android-pass-fixes, task 2.1). Frames are produced as the backend is
+called, not on a timer. With `--fake-frame-delay` the frame stream starts
+that long after the attach, as an emulator's does once its gRPC
+subscription is up: frames captured before it are never delivered,
 and its first frame shows the screen as it is then. With `--fake-splash` a
 fixture app whose process starts (a first launch or a relaunch) shows its
 launch splash, one image `SplashScreenLegacy` in its window, that long
@@ -1532,6 +1542,7 @@ Worked around here without changing `crates/mirror`:
 | Replies verify the action, spec `agent-cli` (action-verdicts task 3.4, design D6) | A click right after a scroll (on fakes whose lists glide as long as their platform's fling lasts and stop at a tap, on both platforms: a plain scroll answers once the list has come to rest, saying so and how long it moved on, and a click right after on a row the listing then shows opens it; a list that moves as far as the finger answers one quiet window after the stroke, having moved on for no time) | `handlers::act::tests::a_plain_scroll_answers_once_a_gliding_list_came_to_rest_so_a_click_right_after_opens_a_row`, `handlers::act::tests::a_plain_scroll_without_a_glide_answers_one_quiet_window_after_its_stroke`; the fake's glide in `fake::app::tests::a_glide_lasts_as_long_as_its_platform_flings_and_slows_evenly`; the reply's `settled` and `movedOnMs` in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.4, design D4) | Open behind the home screen (on fakes whose launcher takes the front back from a launch of a running app, on both platforms: launched again and in front, or failing `not_in_front` naming the launcher when it takes the front back from the second launch too) | `handlers::act::tests::open_launches_again_a_running_app_the_home_screen_took_the_front_back_from`, `handlers::act::tests::open_of_an_app_the_home_screen_keeps_behind_fails_not_in_front_naming_what_is`; an app that showed no screen keeps its warning in the CLI's `commands::open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts` |
 | A launch takes the command's deadline, spec `android-driver` (android-pass-fixes task 1.1, design D1) | A cold launch slower than the read timeout; A launch past the deadline (against a fake adb server whose read deadline is 200 ms, serving Chrome's cold launch: `am start -W` silent for 600 ms opens within a 3 s deadline, one silent past a 700 ms deadline fails with `deadline_exceeded` naming the launch and the deadline at the deadline; `open` passes its start plus its timeout, and the second launch the explicit timeout's deadline, else the same wait from its own start) | `devices::android::tests::a_cold_launch_silent_past_the_read_timeout_opens_within_the_command_s_deadline`, `devices::android::tests::a_launch_still_silent_at_the_command_s_deadline_fails_naming_the_launch_and_the_deadline`, `handlers::act::tests::open_launches_the_app_within_its_own_deadline`, `handlers::act::tests::a_second_launch_takes_the_explicit_deadline_else_the_wait_again_from_its_start`; the adb client's in `crates/android/README.md` |
+| (android-pass-fixes task 2.1, design D3: a twin costs its lookup) | (on the fake's rebuilt board, each read of its tree taking 80 ms, on both platforms, for the field with an identifier and the one without: a click and a fill on the ref a field had before it took a new node take at most 50 ms longer than the same call on the twin's ref) | `handlers::act::tests::a_call_on_a_stale_ref_takes_what_the_same_call_on_its_twin_takes` |
 | Hits are named without a ref, spec `agent-cli` (android-pass-fixes task 1.2, design D2) | A tap on a plain text (on the fake's login screen, on both platforms: a click by coordinates on its status, a text without a ref, names the text with `ref` null, and one on the submit button beside it names the button by the session's ref) | `handlers::act::tests::a_click_by_coordinates_on_a_plain_text_names_it_without_a_ref`; the line in the CLI's `output::tests::a_click_whose_hit_has_no_ref_says_so` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |
