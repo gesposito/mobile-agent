@@ -395,9 +395,13 @@ fn first_change(
 /// frames unless `options` watch the tree alone, since the input, until
 /// `EFFECT_WAIT` after it at most, or until `by` when that comes first;
 /// then the mirror's settle counts the quiet window as it does after any
-/// change, its predicate unchanged. The settle's elapsed time and counts of
-/// changes cover both waits. Says when the input went in, if the settle
-/// waited for its effect.
+/// change, its predicate unchanged. Once it settled, the windows whose
+/// frames changed since their last read began are read, as the listing
+/// after the settle would read them ([`Attached::catch_up`]), and a read
+/// that finds the tree changed is a change the settle counts from, so it
+/// settles again, within the same maximum ([`reads_the_tree_it_settled`]).
+/// The settle's elapsed time and counts of changes cover every wait. Says
+/// when the input went in, if the settle waited for its effect.
 pub(super) fn settle_after(
     target: &mut Attached,
     input: Option<Instant>,
@@ -411,13 +415,43 @@ pub(super) fn settle_after(
         let watched = options.signals != Signals::TreeOnly;
         first_change(target, at, watched, deadline)?;
     }
-    let waited = began.elapsed();
+    let settling = Instant::now();
     let mut settled = target.mirror.settle(options)?;
+    while settled.settled && reads_the_tree_it_settled(target) {
+        let revision = target.mirror.revision();
+        target.catch_up()?;
+        if target.mirror.revision() == revision {
+            break;
+        }
+        let max = options.max.saturating_sub(settling.elapsed());
+        let again = target.mirror.settle(&SettleOptions { max, ..*options })?;
+        settled.settled = again.settled;
+        settled.still_changing = again.still_changing;
+    }
     let (tree_now, frames_now) = target.mirror.changes();
-    settled.elapsed += waited;
+    settled.elapsed = began.elapsed();
     settled.tree_changes = tree_now - tree;
     settled.frame_changes = frames_now - frames;
     Ok((settled, input))
+}
+
+/// Whether a settle on `target` reads, once it settled, the windows whose
+/// frames changed since their last read began (task 3.5 of
+/// action-verdicts): on a target with a stream of frames, as a Simulator,
+/// whose windows send no change events, a settle that watches the frames
+/// reads no tree while it waits, so the tree the frames changed is unread
+/// when the quiet window ends, and an animation that pauses longer than the
+/// window ends it early. On this session's Simulator Safari's More menu
+/// took its items with its last frame, 273 ms after the frame before, a
+/// settle right after the tap ended in that pause, and the listing right
+/// after held none of the items, two times in 15 opens; with the read and a
+/// settle again from the change it found, the listing held them 22 times in
+/// 22, two of those menus pausing 273 and 275 ms. A target whose frames
+/// come slowly, as a physical iPhone, whose read takes about half a second
+/// and which this was not measured on, keeps its settle; windows that send
+/// change events leave no read to make ([`Attached::catch_up`]).
+fn reads_the_tree_it_settled(target: &Attached) -> bool {
+    target.frames && target.mirror.config().slow_frames.is_none()
 }
 
 /// `wait` with `settle`, after the session's last input when it came less
