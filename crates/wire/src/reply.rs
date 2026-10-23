@@ -710,6 +710,17 @@ pub struct Scroll {
     /// request named none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved: Option<Resolved>,
+    /// Without `until`, whether the screen came to rest within 3 s of the
+    /// last stroke, whose finger lifts moving, so the content glides on
+    /// after it; the reply comes once it did, or at those 3 s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settled: Option<bool>,
+    /// Without `until`, how long the content moved on after the last
+    /// stroke's finger lifted: until the last change of the tree or the
+    /// frames before the screen came to rest, 0 when nothing changed after
+    /// the lift.
+    #[serde(rename = "movedOnMs", default, skip_serializing_if = "Option::is_none")]
+    pub moved_on_ms: Option<f64>,
 }
 
 /// `shutdown`: the daemon stopped.

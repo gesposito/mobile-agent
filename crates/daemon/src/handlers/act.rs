@@ -5,8 +5,9 @@ use std::time::{Duration, Instant};
 
 use mirror::backend::Release;
 use mirror::{
-    Action, Condition, DEFAULT_QUIET_WINDOW, Element, ElementId, MirrorError, Point, Rect, Ref,
-    Role, Selector, SettleOptions, SnapshotOptions, Target, Timestamps, Visibility,
+    Action, Condition, DEFAULT_QUIET_WINDOW, DEFAULT_SETTLE_MAX, Element, ElementId, MirrorError,
+    Point, Rect, Ref, Role, Selector, SettleOptions, SnapshotOptions, Target, Timestamps,
+    Visibility,
 };
 use protocol::message::TextMethod;
 use serde_json::{Map, Value, json};
@@ -133,6 +134,17 @@ const UNTIL_SETTLE: Duration = Duration::from_millis(1500);
 /// Strokes in a row that change nothing before a scroll that looks for an
 /// element gives up: the content has stopped moving.
 const STILL_STROKES: u32 = 2;
+
+/// How long a plain scroll waits at most for the screen to come to rest
+/// after its last stroke: the settle's default maximum. Its strokes lift
+/// moving, as a swipe's do, so the content glides on after them: on this
+/// session's Simulator a list moved on for 0.7 to 1.0 s after the scroll
+/// answered where the glide met the list's end, and for 2.3 to 2.5 s on a
+/// list of 85 rows, while a tap during the glide, 1.5 s after the answer
+/// too, stopped the list rather than reach the row under it (design D6 of
+/// action-verdicts). The 1.5 s a stroke of a scroll that looks for an
+/// element waits ([`UNTIL_SETTLE`]) would answer mid-glide.
+const GLIDE_SETTLE: Duration = DEFAULT_SETTLE_MAX;
 
 /// The least share of an element in view, its centre in view too, at which
 /// a scroll that looks for it stops.
@@ -2483,6 +2495,14 @@ pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) 
         }
         strokes += 1;
     }
+    let rest = come_to_rest(target)?;
+    let warning = (!rest.settled).then(|| {
+        format!(
+            "the screen did not come to rest within {} ms of the last stroke: {} kept arriving, and a list still gliding takes a tap as a stop; wait --settle before a click",
+            GLIDE_SETTLE.as_millis(),
+            rest.still.as_deref().unwrap_or("changes")
+        )
+    });
     let success = Success::new(json!({
         "scrolled": true,
         "direction": direction.name(),
@@ -2490,8 +2510,51 @@ pub(super) fn scroll(target: &mut Attached, call: &Call, args: &::wire::Scroll) 
         "strokes": strokes,
         "from": at(from),
         "to": at(to),
-    }));
+        "settled": rest.settled,
+        "movedOnMs": millis(rest.moved_on),
+    }))
+    .warn(warning);
     Ok(aim::with_resolved(success, resolved))
+}
+
+/// How the screen came to rest after a plain scroll's strokes.
+struct Rest {
+    /// Whether it settled within [`GLIDE_SETTLE`].
+    settled: bool,
+    /// From the last stroke's lift to the last change of the tree or the
+    /// frames the settle saw after it; zero when nothing changed after it.
+    moved_on: Duration,
+    /// When not settled, what kept changing, such as `frame changes`.
+    still: Option<String>,
+}
+
+/// Waits for the screen to come to rest after a plain scroll's strokes,
+/// which lift moving, so the content glides on after them (design D6 of
+/// action-verdicts): the mirror's settle, its quiet window counted from the
+/// last stroke or the last change since, at most [`GLIDE_SETTLE`], then a
+/// read of what the glide left, as a scroll that looks for an element does
+/// after each stroke, so that the next command aims at where the content
+/// came to rest.
+fn come_to_rest(target: &mut Attached) -> Result<Rest, Failure> {
+    let lifted = target.mirror.timestamps().last_action;
+    let settle = target.mirror.settle(&SettleOptions {
+        max: GLIDE_SETTLE,
+        ..SettleOptions::default()
+    })?;
+    let stamps = target.mirror.timestamps();
+    let moved_on = lifted
+        .and_then(|lifted| {
+            let last = stamps.last_frame_change.max(stamps.last_tree_change)?;
+            Some(last.saturating_duration_since(lifted))
+        })
+        .unwrap_or_default();
+    target.catch_up()?;
+    target.mirror.pump()?;
+    Ok(Rest {
+        settled: settle.settled,
+        moved_on,
+        still: settle.reason(),
+    })
 }
 
 /// A rectangle's start and end along the vertical axis, or the horizontal
@@ -6051,9 +6114,11 @@ mod tests {
                 scroll_with(&mut target, json!({"direction": "down", "amount": 300})).unwrap();
             let data = &scrolled.data;
             assert_eq!(data["settled"], true, "{platform}: {data}");
+            // The last moves of a glide that slows to a stop are less than a
+            // pixel, which no frame shows.
             let moved_on = data["movedOnMs"].as_f64().unwrap_or(-1.0);
             assert!(
-                (glide - 20.0..glide + 250.0).contains(&moved_on),
+                (glide - 100.0..glide + 250.0).contains(&moved_on),
                 "{platform}: the list glided on for about {glide} ms after the stroke: {data}"
             );
             assert!(
@@ -6079,25 +6144,26 @@ mod tests {
     }
 
     /// Design D6 of action-verdicts: a plain scroll whose list moves as far
-    /// as the finger and no farther comes to rest as the stroke shows, so
-    /// it answers one quiet window after its last stroke, saying the
-    /// content moved on for no time after it; with the change showing
-    /// 300 ms after the stroke, as a slow app shows it, it says so.
+    /// as the finger and no farther comes to rest as its last stroke ends,
+    /// so it answers one quiet window after that stroke, saying the content
+    /// moved on for no time after it, on both platforms.
     #[test]
-    fn a_plain_scroll_without_a_glide_answers_once_its_stroke_shows_and_the_screen_held_still() {
-        for (latency, moved) in [(0, 0.0..20.0), (300, 290.0..400.0)] {
-            let mut target = login_on("ios", Typing::Whole, Duration::from_millis(latency));
+    fn a_plain_scroll_without_a_glide_answers_one_quiet_window_after_its_stroke() {
+        for platform in ["android", "ios"] {
+            let mut target = login_on(platform, Typing::Whole, Duration::ZERO);
             click_on(&mut target, "#tab-list").unwrap();
+            let settle = json!({"action": "wait", "settle": true}).to_string();
+            super::super::run_on(&mut target, "default", &request(&settle)).unwrap();
             let started = Instant::now();
             let scrolled =
                 scroll_with(&mut target, json!({"direction": "down", "amount": 300})).unwrap();
             let data = &scrolled.data;
-            assert_eq!(data["settled"], true, "{latency} ms: {data}");
+            assert_eq!(data["settled"], true, "{platform}: {data}");
             let moved_on = data["movedOnMs"].as_f64().unwrap_or(-1.0);
-            assert!(moved.contains(&moved_on), "{latency} ms: {data}");
+            assert!((0.0..20.0).contains(&moved_on), "{platform}: {data}");
             assert!(
-                started.elapsed() >= Duration::from_millis(latency) + DEFAULT_QUIET_WINDOW,
-                "{latency} ms: the stroke showing and a quiet window after it, not {:?}",
+                started.elapsed() >= DEFAULT_QUIET_WINDOW,
+                "{platform}: a quiet window after the stroke, not {:?}",
                 started.elapsed()
             );
         }

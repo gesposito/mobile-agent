@@ -425,7 +425,8 @@ fn fill_and_get_answer_with_the_lines_the_cli_prints() {
 }
 
 /// Task 6.5 of the `mcp-server` change: scroll answers with the CLI's
-/// line, its strokes and, with `until`, how much of the element is in
+/// line, its strokes and when the content came to rest after them (design
+/// D6 of action-verdicts) and, with `until`, how much of the element is in
 /// view, so a model need not take a snapshot to see where the row ended.
 #[test]
 fn scroll_answers_with_its_strokes_and_where_until_s_element_ended() {
@@ -434,7 +435,10 @@ fn scroll_answers_with_its_strokes_and_where_until_s_element_ended() {
     ok(&client.call("open", json!({"app": APP})));
     ok(&client.call("click", json!({"selector": "#tab-list"})));
     let moved = ok(&client.call("scroll", json!({"direction": "down", "amount": 98})));
-    assert_eq!(moved, "✓ Done (1 stroke)");
+    assert!(
+        moved.starts_with("✓ Done (1 stroke, at rest ") && moved.ends_with(" ms after it)"),
+        "{moved}"
+    );
     let brought = ok(&client.call("scroll", json!({"direction": "down", "until": "#row-57"})));
     assert!(
         brought.starts_with("✓ Done (")

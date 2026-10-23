@@ -276,11 +276,14 @@ fn entry(data: &Value, parts: &mut Vec<String>) {
     }
 }
 
-/// A scroll's strokes, `✓ Done (2 strokes)`, and with `until` how much of
-/// the element is in view, `✓ Done (3 strokes; "Row 57" is 100% in view)`,
-/// the element named as the listing names it, or by the selector when it
-/// has no name, and its share rounded as the daemon's messages round it;
-/// the twin a stale ref stood for first, as fill's line has it.
+/// A scroll's strokes, `✓ Done (2 strokes)`; without `until`, when the
+/// content came to rest after the last, `✓ Done (2 strokes, at rest 812.3
+/// ms after the last)`, or that it was `still moving` when the scroll
+/// stopped waiting (design D6 of action-verdicts); with `until`, how much
+/// of the element is in view, `✓ Done (3 strokes; "Row 57" is 100% in
+/// view)`, the element named as the listing names it, or by the selector
+/// when it has no name, and its share rounded as the daemon's messages
+/// round it; the twin a stale ref stood for first, as fill's line has it.
 fn scroll(data: &Value, out: &mut String) {
     let strokes = data["strokes"].as_u64().unwrap_or(0);
     let count = if strokes == 1 { "stroke" } else { "strokes" };
@@ -292,7 +295,14 @@ fn scroll(data: &Value, out: &mut String) {
             };
             format!("; {named} is {}% in view", (visible * 100.0).round())
         }
-        _ => String::new(),
+        _ => match (data["settled"].as_bool(), data["movedOnMs"].as_f64()) {
+            (Some(settled), Some(moved_on)) => {
+                let state = if settled { "at rest" } else { "still moving" };
+                let last = if strokes == 1 { "it" } else { "the last" };
+                format!(", {state} {moved_on:.1} ms after {last}")
+            }
+            _ => String::new(),
+        },
     };
     match resolution(data) {
         Some(resolved) => {

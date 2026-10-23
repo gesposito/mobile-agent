@@ -220,14 +220,12 @@ fn scroll_and_swipe_move_the_list() {
     let moved = env.cli(&["scroll", "down", "480"]).ok().stdout;
     let strokes = moved
         .strip_prefix("✓ Done (")
-        .and_then(|rest| {
-            rest.strip_suffix(" strokes)\n")
-                .or_else(|| rest.strip_suffix(" stroke)\n"))
-        })
-        .and_then(|count| count.parse::<u32>().ok());
+        .and_then(|rest| rest.split_once(' '))
+        .filter(|(_, rest)| rest.starts_with("stroke"))
+        .and_then(|(count, _)| count.parse::<u32>().ok());
     assert!(
-        strokes.is_some_and(|count| count >= 1),
-        "the line counts the strokes: {moved}"
+        strokes.is_some_and(|count| count >= 1) && moved.contains(", at rest "),
+        "the line counts the strokes and says when the list came to rest: {moved}"
     );
     let scrolled = env.cli(&["snapshot", "-i"]).ok().stdout;
     assert!(!scrolled.contains("id=row-1,"), "{scrolled}");
