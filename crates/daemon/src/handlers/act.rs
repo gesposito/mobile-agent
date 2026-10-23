@@ -6143,6 +6143,39 @@ mod tests {
         }
     }
 
+    /// Design D2 of action-verdicts (task 3.5): on this session's Simulator
+    /// Safari's More menu took its items with its last frame, 273 ms after
+    /// the frame before, and a settle right after the tap that opened it
+    /// ended in that pause, the tree its frames had changed unread, so the
+    /// listing right after held none of the items. On a fake Simulator's
+    /// menu board, whose menu takes its frame's full size 100 ms after the
+    /// tap and its items 300 ms after that, a settle right after the tap
+    /// ends only once the items are in, which the listing right after
+    /// names.
+    #[test]
+    fn a_settle_right_after_a_tap_ends_once_the_tree_holds_what_its_frames_showed() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let screen = ["PLACEHOLDER_SCREEN=menu"];
+        let (mut target, _) = recorded(&driver, PLACEHOLDER, &screen);
+        click_on(&mut target, "#placeholder-id-2").unwrap();
+        let settle = json!({"action": "wait", "settle": true}).to_string();
+        let settled = super::super::run_on(&mut target, "default", &request(&settle)).unwrap();
+        assert_eq!(settled.data["settled"], true, "{}", settled.data);
+        let listing = super::super::run_on(
+            &mut target,
+            "default",
+            &request(r#"{"action": "snapshot", "interactive": true}"#),
+        )
+        .unwrap()
+        .data;
+        let text = listing["snapshot"].as_str().unwrap_or_default();
+        assert!(
+            text.contains("placeholder-item-1") && text.contains("placeholder-item-3"),
+            "the menu's items, after the settle {}:\n{text}",
+            settled.data
+        );
+    }
+
     /// Design D6 of action-verdicts: a plain scroll whose list moves as far
     /// as the finger and no farther comes to rest as its last stroke ends,
     /// so it answers one quiet window after that stroke, saying the content

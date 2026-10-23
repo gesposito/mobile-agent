@@ -406,6 +406,13 @@ enum Board {
     /// as a map app's search field did on the second demo pass between the
     /// tap that focused it and the text `fill` entered.
     Raised,
+    /// A menu that opens in steps (action-verdicts, task 3.5): a heading, a
+    /// button whose tap shows the menu's frame at once, holding nothing,
+    /// that frame at its full size 100 ms later, and the menu's three items
+    /// 300 ms after that, longer than a settle's quiet window, each step
+    /// with a frame, as Safari's More menu took its items with its last
+    /// frame on this session's Simulator, 273 ms after the frame before.
+    Menu,
 }
 
 impl Board {
@@ -432,6 +439,7 @@ impl Board {
             "accessory" => Board::Accessory,
             "banner" => Board::Banner,
             "raised" => Board::Raised,
+            "menu" => Board::Menu,
             _ => Board::Form,
         }
     }
@@ -466,6 +474,13 @@ const REBUILT_FIELDS: [&str; 2] = ["placeholder-id-1", "placeholder-field-2"];
 
 /// The banner board's button whose tap brings the banner up.
 const BANNER_CALL: &str = "placeholder-id-2";
+
+/// The menu board's button whose tap opens the menu.
+const MENU_CALL: &str = "placeholder-id-2";
+
+/// How long after each of its steps the menu board's menu takes its next:
+/// its frame's full size, then its items.
+const MENU_STEPS: [Duration; 2] = [Duration::from_millis(100), Duration::from_millis(300)];
 
 /// The raised board's field.
 const RAISED_FIELD: &str = "placeholder-id-1";
@@ -533,6 +548,9 @@ struct Forms {
     banner: bool,
     /// What the raised board's field holds.
     raised: String,
+    /// How far the menu board's menu has opened: 0 closed, 1 its frame, 2
+    /// its frame at full size, 3 its items too.
+    menu: usize,
 }
 
 impl Forms {
@@ -559,6 +577,7 @@ impl Forms {
             accessory: String::new(),
             banner: false,
             raised: String::new(),
+            menu: 0,
         }
     }
 
@@ -629,6 +648,9 @@ impl Forms {
         }
         if self.board == Board::Banner && hit == Some(BANNER_CALL) {
             self.banner = true;
+        }
+        if self.board == Board::Menu && hit == Some(MENU_CALL) && self.menu == 0 {
+            self.menu = 1;
         }
         if self.board != Board::Form {
             if hit != Some(CREATION_DISABLED) {
@@ -903,6 +925,28 @@ impl Device {
         self.foreground == Foreground::Placeholder
             && self.keyboard().is_some()
             && self.placeholder.as_ref().is_some_and(|forms| !forms.lifted)
+    }
+
+    /// How long until the placeholder app's menu takes its next step, from
+    /// the step before, while it opens; `None` once it is open or closed.
+    pub fn menu_coming(&self) -> Option<Duration> {
+        let forms = self.placeholder.as_ref()?;
+        if self.foreground != Foreground::Placeholder || forms.board != Board::Menu {
+            return None;
+        }
+        MENU_STEPS.get(forms.menu.checked_sub(1)?).copied()
+    }
+
+    /// The placeholder app's menu's next step: its frame's full size, then
+    /// its items; whether it took one.
+    pub fn unfold_menu(&mut self) -> bool {
+        if self.menu_coming().is_none() {
+            return false;
+        }
+        if let Some(forms) = self.placeholder.as_mut() {
+            forms.menu += 1;
+        }
+        true
     }
 
     /// Moves the placeholder app's submit button above the keyboard, as its
@@ -1684,6 +1728,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Accessory => accessory_content(kit, forms),
         Board::Banner => banner_content(kit, forms),
         Board::Raised => raised_content(kit, forms),
+        Board::Menu => menu_content(kit, forms),
     }
 }
 
@@ -2485,6 +2530,46 @@ fn raised_content(kit: Kit, forms: &Forms) -> Vec<El> {
             [20.0, 764.0, 382.0, 784.0],
         ),
     ]
+}
+
+/// The menu board (action-verdicts, task 3.5): a heading, the button that
+/// opens the menu, the status line and, once the button was tapped, the
+/// menu: a view from 600 to 640 points holding nothing, then from 300 to
+/// 640, then holding three buttons.
+fn menu_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let mut content = vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        kit.button(
+            MENU_CALL,
+            "placeholder-button-2",
+            [20.0, 140.0, 382.0, 188.0],
+        ),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ];
+    if forms.menu > 0 {
+        let top = if forms.menu == 1 { 600.0 } else { 300.0 };
+        let mut menu = kit.group([40.0, top, 362.0, 640.0]);
+        if forms.menu == 3 {
+            for n in 1..=3u32 {
+                let row = 300.0 + f64::from(n) * 60.0;
+                menu = menu.child(kit.button(
+                    &format!("placeholder-id-1{n}"),
+                    &format!("placeholder-item-{n}"),
+                    [60.0, row, 342.0, row + 48.0],
+                ));
+            }
+        }
+        content.push(menu);
+    }
+    content
 }
 
 /// The banner board's banner, in system UI's window over the app: from 128

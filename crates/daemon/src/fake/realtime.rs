@@ -23,11 +23,13 @@
 //! mode types it key by key as a Simulator does. A keyboard can come up some
 //! time after a field took the focus, shown then with a frame, and the
 //! placeholder app's layout moves its submit button above the keyboard some
-//! time after that, in no frame. A fake iPhone's runner can lose its
-//! connection some time after the attach, its restart failing: its tree
-//! reads and input then fail `disconnected`. It can stall too: the tree read
-//! or text entry that meets the stall fails as the physical driver fails it,
-//! `runner_stalled` at the first stall and `disconnected` from the second.
+//! time after that, in no frame. The placeholder app's menu opens in steps,
+//! each shown with a frame some time after the one before. A fake iPhone's
+//! runner can lose its connection some time after the attach, its restart
+//! failing: its tree reads and input then fail `disconnected`. It can stall
+//! too: the tree read or text entry that meets the stall fails as the
+//! physical driver fails it, `runner_stalled` at the first stall and
+//! `disconnected` from the second.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -175,6 +177,8 @@ struct Shared {
     /// When the launcher takes the front back from an app a launch brought
     /// forward from it.
     home_due: Mutex<Option<Instant>>,
+    /// When the placeholder app's opening menu takes its next step.
+    menu_due: Mutex<Option<Instant>>,
     /// Frames the event stream delivered.
     delivered: AtomicU64,
     /// For a fake iPhone, its screenshots: when the captures started and
@@ -356,8 +360,24 @@ impl Shared {
         self.raise(now);
         self.lift(now);
         self.return_home(now);
+        self.unfold(now);
         self.glide_on(now);
         now
+    }
+
+    /// Takes the placeholder app's opening menu's next step once it is due,
+    /// showing it as any change within the screen shows, with a frame.
+    fn unfold(&self, now: Instant) {
+        let due = *lock(&self.menu_due);
+        if due.is_none_or(|due| now < due) {
+            return;
+        }
+        *lock(&self.menu_due) = None;
+        let mut device = lock(&self.device);
+        if device.unfold_menu() {
+            self.show_after(&device, Change::Content, Duration::ZERO);
+            self.follow(&device, Duration::ZERO);
+        }
     }
 
     /// Moves a gliding list on to where its glide has carried it by now, a
@@ -441,10 +461,16 @@ impl Shared {
     /// Schedules what follows a change shown `delay` from now: a keyboard
     /// that is coming up comes up as long after the focus as its slide says,
     /// the placeholder app's layout moves its submit button [`LIFT`] after
-    /// the keyboard came up, and the launcher takes the front back
-    /// [`HOME_RETURN`] after a launch it returns from.
+    /// the keyboard came up, its opening menu takes its next step as long
+    /// after the step before as the menu says, and the launcher takes the
+    /// front back [`HOME_RETURN`] after a launch it returns from.
     fn follow(&self, device: &Device, delay: Duration) {
         let now = self.target.clock().now();
+        let mut menu = lock(&self.menu_due);
+        *menu = device
+            .menu_coming()
+            .and_then(|after| menu.or(Some(now + delay + after)));
+        drop(menu);
         let mut home = lock(&self.home_due);
         *home = if device.return_pending() {
             home.or(Some(now + delay + HOME_RETURN))
@@ -782,6 +808,7 @@ pub(crate) fn attach(
         keyboard_due: Mutex::new(None),
         lift_due: Mutex::new(None),
         home_due: Mutex::new(None),
+        menu_due: Mutex::new(None),
         delivered: AtomicU64::new(0),
         captures: subscribed.map(|subscribed| Captures {
             from: target.clock().now(),

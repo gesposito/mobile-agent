@@ -312,6 +312,33 @@ fn a_settle_after_a_click_that_changes_nothing_says_nothing_changed_within_1_s_o
     );
 }
 
+/// Design D2 of action-verdicts (task 3.5): on this session's Simulator
+/// Safari's More menu took its items with its last frame, 273 ms after the
+/// frame before, and a settle right after the tap that opened it ended in
+/// that pause, so the listing right after held none of the items. On a fake
+/// Simulator's menu board, whose menu takes its items 300 ms after its
+/// frame took its full size, the listing right after the settle names them.
+#[test]
+fn a_listing_right_after_a_settle_names_the_items_a_menu_took_after_a_pause() {
+    let env = TestEnv::start("ios");
+    let screen = "PLACEHOLDER_SCREEN=menu";
+    env.cli(&["open", "dev.mobileagent.placeholder", "--env", screen])
+        .ok();
+    let run = env
+        .cli(&[
+            "batch",
+            "click #placeholder-id-2",
+            "wait --settle",
+            "snapshot -i",
+        ])
+        .ok();
+    assert!(
+        run.stdout.contains("placeholder-item-1") && run.stdout.contains("placeholder-item-3"),
+        "{}",
+        run.stdout
+    );
+}
+
 /// Design D2 of action-verdicts: a settle with no input of the session in
 /// the last second counts its quiet window alone, ending at once on a quiet
 /// screen and naming no input.
