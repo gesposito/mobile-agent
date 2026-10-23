@@ -235,7 +235,7 @@ $ mobile-agent --json batch --bail 'get text #settings-wifi' 'click @e99' 'snaps
 | `no_target`, `ambiguous_target`, `target_not_found`, `target_claimed` | target selection and session claims |
 | `app_not_found`, `input_rejected`, `no_frame`, `disconnected` | no such app; the target refused the input; no frame source or no frame yet; the target is gone |
 | `not_in_front` | `open` showed the app's screen, but another app or system UI holds the front after a second launch of it; the message names what is in front |
-| `automation_conflict`, `target_not_ready`, `agent_failed`, `adb_failed` | Android: another holder of UI automation; the device is not in the `device` state; the agent did not start; adb failed |
+| `automation_conflict`, `target_not_ready`, `agent_failed`, `adb_failed`, `deadline_exceeded` | Android: another holder of UI automation; the device is not in the `device` state; the agent did not start; adb failed; `open`'s launch had not finished by its deadline, which `open --timeout` extends |
 | `unsupported_xcode`, `target_unavailable`, `no_input_transport` | Simulator: Xcode outside the range; a private framework call failed; no input transport works |
 | `device_locked`, `developer_mode_off`, `not_trusted`, `disk_image_unmounted`, `no_signing_identity`, `automation_not_enabled`, `unsupported_ios`, `runner_stalled` | iPhone: the phone is not ready, the message naming the step (unlock it, approve Enable UI Automation on it); the runner stalled and is starting again, so repeat the command |
 | `daemon_unavailable`, `daemon_timeout`, `invalid_argument` | the CLI could not reach the daemon or had no reply in time; bad usage, as a point off the screen, whose message names the screen's size in points |

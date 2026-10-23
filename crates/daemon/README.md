@@ -1073,7 +1073,18 @@ reports the natural orientation's, the fallback).
   `--env K=V` a string extra `--es K V` of the same name, so `--env
   initial_tab=big` opens the fixture on its Big tab; `--relaunch` adds
   `-S`. `app_not_found` for a package that is not installed or has no
-  launcher activity. `close` force-stops it.
+  launcher activity. `close` force-stops it. `am start -W` prints its
+  `Starting:` line and then nothing until the app's first frame, so its
+  result is read with the time left to `open`'s deadline, its start plus
+  its timeout, the waiting commands' default when it names none, rather
+  than under the adb client's 10 s read deadline, which Chrome's cold
+  launch outlasted on the third demo pass's emulator short of memory, as
+  `adb_failed` with "Resource temporarily unavailable (os error 35)", the
+  way macOS reports an expired read timeout; a launch still running at the
+  deadline fails with `deadline_exceeded`, `am start -W had not finished
+  launching <app> by open's deadline, <ms> ms after the launch began`, and
+  `open` with a longer `timeout` gives it more. The other shell commands
+  keep the 10 s (android-pass-fixes, design D1).
 - screenshots come from the agent, upright in every display orientation.
 - status: the session's report, the agent and the path of each kind of
   input and output, and where the jar came from (`agentJar`: `embedded`, or
@@ -1392,6 +1403,7 @@ Android adapter's are:
 | `agent_mismatch` | the jar reports another version than this daemon deploys; rebuild it |
 | `adb_failed` | the adb server or the device failed a request |
 | `launch_failed` | `am start` could not open the app |
+| `deadline_exceeded` | `am start -W` had not finished launching the app by `open`'s deadline, its start plus its timeout; the message names the launch and the time to the deadline, and a longer `timeout` gives the launch more |
 
 ## Interpretations of the spec
 
@@ -1519,6 +1531,7 @@ Worked around here without changing `crates/mirror`:
 | Replies verify the action, spec `agent-cli` (action-verdicts task 3.5, design D2) | A menu's items after a pause (on a fake Simulator's menu board, whose menu takes its items 300 ms after its frame took its full size: a settle right after the tap reads the tree its frames changed and settles again from the change, so the listing right after names the items) | `handlers::act::tests::a_settle_right_after_a_tap_ends_once_the_tree_holds_what_its_frames_showed`; through the CLI, `spans::a_listing_right_after_a_settle_names_the_items_a_menu_took_after_a_pause` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 3.4, design D6) | A click right after a scroll (on fakes whose lists glide as long as their platform's fling lasts and stop at a tap, on both platforms: a plain scroll answers once the list has come to rest, saying so and how long it moved on, and a click right after on a row the listing then shows opens it; a list that moves as far as the finger answers one quiet window after the stroke, having moved on for no time) | `handlers::act::tests::a_plain_scroll_answers_once_a_gliding_list_came_to_rest_so_a_click_right_after_opens_a_row`, `handlers::act::tests::a_plain_scroll_without_a_glide_answers_one_quiet_window_after_its_stroke`; the fake's glide in `fake::app::tests::a_glide_lasts_as_long_as_its_platform_flings_and_slows_evenly`; the reply's `settled` and `movedOnMs` in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` |
 | Replies verify the action, spec `agent-cli` (action-verdicts task 2.4, design D4) | Open behind the home screen (on fakes whose launcher takes the front back from a launch of a running app, on both platforms: launched again and in front, or failing `not_in_front` naming the launcher when it takes the front back from the second launch too) | `handlers::act::tests::open_launches_again_a_running_app_the_home_screen_took_the_front_back_from`, `handlers::act::tests::open_of_an_app_the_home_screen_keeps_behind_fails_not_in_front_naming_what_is`; an app that showed no screen keeps its warning in the CLI's `commands::open_gives_a_slow_app_its_first_tree_before_the_settle_budget_starts` |
+| A launch takes the command's deadline, spec `android-driver` (android-pass-fixes task 1.1, design D1) | A cold launch slower than the read timeout; A launch past the deadline (against a fake adb server whose read deadline is 200 ms, serving Chrome's cold launch: `am start -W` silent for 600 ms opens within a 3 s deadline, one silent past a 700 ms deadline fails with `deadline_exceeded` naming the launch and the deadline at the deadline; `open` passes its start plus its timeout, and the second launch the explicit timeout's deadline, else the same wait from its own start) | `devices::android::tests::a_cold_launch_silent_past_the_read_timeout_opens_within_the_command_s_deadline`, `devices::android::tests::a_launch_still_silent_at_the_command_s_deadline_fails_naming_the_launch_and_the_deadline`, `handlers::act::tests::open_launches_the_app_within_its_own_deadline`, `handlers::act::tests::a_second_launch_takes_the_explicit_deadline_else_the_wait_again_from_its_start`; the adb client's in `crates/android/README.md` |
 | Hits are named without a ref, spec `agent-cli` (android-pass-fixes task 1.2, design D2) | A tap on a plain text (on the fake's login screen, on both platforms: a click by coordinates on its status, a text without a ref, names the text with `ref` null, and one on the submit button beside it names the button by the session's ref) | `handlers::act::tests::a_click_by_coordinates_on_a_plain_text_names_it_without_a_ref`; the line in the CLI's `output::tests::a_click_whose_hit_has_no_ref_says_so` |
 | Host microbenchmarks (spec `benchmark-harness`) | (the input of `benches/daemon.rs`: a warm interactive snapshot of the fixture's Big tab lists its 500 cells and five tabs, each with a ref, and is served from the replica) | `bench_inputs::a_warm_snapshot_of_the_big_tab_lists_its_500_cells_and_five_tabs_with_refs` |
 | Change waits, claim release and cancel: requests and replies from the shared types (`mcp-server` tasks 3.1 and 3.2, design D3) | (a request line read into `crates/wire`'s types, refused with the codes and messages the reads by name gave, each where its command reads it; every action's reply read into its type with unknown fields refused) | `arguments::*`, `replies::*`, `wire::tests::*` |

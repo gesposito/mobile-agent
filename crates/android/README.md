@@ -23,12 +23,19 @@ Host-side Android driver (design D11). So far it holds:
 `ANDROID_ADB_SERVER_PORT`) with one connection per request. It never spawns the
 `adb` binary. Each connection has a 2 s connect deadline and a 10 s read and
 write deadline, which `AdbServer::with_io_timeout` changes. The client is
-blocking, so async callers run it on a blocking thread.
+blocking, so async callers run it on a blocking thread. macOS reports a read
+that passes its deadline as `EAGAIN`, "Resource temporarily unavailable (os
+error 35)", a would-block, which `Error::is_timeout` counts as a timeout.
+`Device::shell_until` reads a command's output with the time left to a
+deadline of the caller's instead, for a command silent for longer than the
+read deadline, as `am start -W` while the app it launches starts: the
+daemon's launch takes `open`'s deadline so (android-pass-fixes, design D1).
 
 | Operation | Protocol |
 |---|---|
 | `devices`, `targets` | `host:devices-l`, keeping every state; `targets` adds `getprop` facts for online targets and advice for the others |
 | `Device::shell`, `shell_stream`, `shell_stream_with` | `shell,v2,raw:` with exit status and separate stderr, or `shell,v2,pty:` for a pseudo-terminal; `shell` closes stdin at once |
+| `Device::shell_until` | as `shell`, the output read with the time left to the caller's deadline rather than under the read deadline; a command not ended by then, or a deadline already past, which runs nothing, fails with a timeout whose message names the deadline |
 | `Device::push`, `push_bytes` | sync `SEND` in 64 KiB chunks, each header written with its data, then `DONE` and adbd's status |
 | `Device::forward`, `forward_tcp`, `remove_forward`, `forwards` | `host-serial:<serial>:forward:...`, reading the second status and the port bound for `tcp:0` |
 | `Device::reverse`, `remove_reverse`, `reverses` | `reverse:forward:...` on the device transport, reading adbd's own status |
@@ -542,6 +549,14 @@ Requirement **Emulator fast path** (android-driver spec):
 | Keys and text go through the agent unless the emulator declares a keyboard | keys and text always go through the agent: `session::paths::tests::the_agent_paths_send_everything_to_the_agent`, `session::paths::tests::the_status_names_the_fast_path_and_the_keyboard` (the keyboard reported), `emulator::hardware::tests::keys_go_through_the_controller_only_with_a_declared_keyboard`, integration `the_display_size_and_keyboard_match_the_avd` |
 | The driver reports which path is active | both path tests above; `session::paths::tests::the_status_names_the_agent_its_version_and_whether_it_was_reused`, `session::paths::tests::a_controller_failure_and_a_lost_agent_are_reported` |
 | A device, or an emulator with the controller turned off, uses the agent without a warning | `session::paths::tests::a_device_uses_the_agent_without_a_warning`, `session::paths::tests::an_emulator_whose_controller_is_turned_off_uses_the_agent_without_a_warning` |
+
+Requirement **A launch takes the command's deadline** (android-pass-fixes,
+design D1):
+
+| Scenario or clause | Tests |
+|---|---|
+| Scenario "A cold launch slower than the read timeout" | `adb::tests::a_shell_command_silent_past_the_read_timeout_completes_within_its_deadline` (scripted adb server, a 200 ms read deadline); the daemon's `devices::android::tests::a_cold_launch_silent_past_the_read_timeout_opens_within_the_command_s_deadline` (a fake adb server serving Chrome's cold launch), `handlers::act::tests::open_launches_the_app_within_its_own_deadline` and `handlers::act::tests::a_second_launch_takes_the_explicit_deadline_else_the_wait_again_from_its_start` |
+| Scenario "A launch past the deadline" | `adb::tests::a_shell_command_still_silent_at_its_deadline_fails_with_a_timeout_at_the_deadline`; the daemon's `devices::android::tests::a_launch_still_silent_at_the_command_s_deadline_fails_naming_the_launch_and_the_deadline` (`deadline_exceeded`, never os error 35) |
 
 Task 5.4's own checks:
 

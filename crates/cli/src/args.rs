@@ -403,7 +403,7 @@ pub struct OpenArgs {
     /// A launch environment variable, repeatable; an intent string extra on Android
     #[arg(long = "env", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
-    /// Longest wait for the app's first tree and its settling, in ms [default: the session's timeout for the tree, then 3000 to settle]
+    /// Longest wait for the app's launch and first tree, then its settling, in ms [default: the session's timeout for the launch and the tree, then 3000 to settle]
     #[arg(long, value_name = "MS")]
     pub timeout: Option<u64>,
 }

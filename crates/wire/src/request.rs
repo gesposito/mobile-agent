@@ -244,9 +244,9 @@ pub struct Open {
     )]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub env: Param<Vec<String>>,
-    /// The longest wait for the app's first tree and its settling, in
-    /// milliseconds; without it, the session's timeout for the tree, then
-    /// 3000 to settle.
+    /// The longest wait for the app's launch and first tree, then its
+    /// settling, in milliseconds; without it, the session's timeout for the
+    /// launch and the tree, then 3000 to settle.
     #[serde(default, skip_serializing_if = "Param::is_none")]
     #[cfg_attr(feature = "schema", schemars(!skip_serializing_if))]
     pub timeout: Param<Option<u64>>,
