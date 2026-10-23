@@ -5,7 +5,7 @@ Rules that bind every task below (the archived foundation design's Delivery proc
 ## 1. The driver and the hit
 
 - [ ] 1.1 Would-block retried (D1): failing test on the Android driver's shell transport with an injected `WouldBlock` on `am start` and on a read, that the command completes and that one outlasting the deadline is the timeout; then implement; verify red-then-green
-- [ ] 1.2 A hit without a ref (D2): failing tests on the fake that a tap by coordinates on a plain text names it with `ref` null and the line says `(no ref)`, and that a click on a ref'd element keeps its ref; then implement; verify red-then-green and on this session's own Simulator a tap on Safari's address bar naming the field
+- [x] 1.2 A hit without a ref (D2): failing tests on the fake that a tap by coordinates on a plain text names it with `ref` null and the line says `(no ref)`, and that a click on a ref'd element keeps its ref; then implement; verify red-then-green and on this session's own Simulator a tap on Safari's address bar naming the field (done on 2026-10-23: where no element with a ref lies under the point, the hit is the top-most element the full listing lists without one, `ref` null, the line `hit text "Signed out" (no ref)`, any hit with a ref and the keyboard's as they were, `(no ref)` also after a click by selector before a snapshot; red on the fake's login status with `"hit":null`, then green; on the Simulator `click 201 816` on Safari's address bar answered `hit text "Address" (no ref)` and focused the field; the workspace's 1,783 tests green with clippy and fmt clean)
 
 ## 2. The costs
 
