@@ -6117,6 +6117,50 @@ mod tests {
         }
     }
 
+    /// Design D1 of android-pass-fixes: the second launch that brings a
+    /// running app to the front (design D4 of action-verdicts) takes the
+    /// explicit timeout's deadline, the first launch's, and without one the
+    /// first launch's wait again from its own start.
+    #[test]
+    fn a_second_launch_takes_the_explicit_deadline_else_the_wait_again_from_its_start() {
+        for timeout in [Some(30_000), None] {
+            let driver = FakeDriver::parse("android").unwrap().with_home_returns(1);
+            let info = driver.discover().unwrap().remove(0);
+            let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+            let deadlines = Arc::new(Mutex::new(Vec::new()));
+            attachment.apps = Box::new(Deadlined {
+                inner: attachment.apps,
+                deadlines: Arc::clone(&deadlines),
+            });
+            let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+            for line in [
+                json!({"action": "open", "app": FIXTURE}),
+                json!({"action": "press", "key": "Home"}),
+                json!({"action": "wait", "settle": true}),
+            ] {
+                super::super::run_on(&mut target, "default", &request(&line.to_string())).unwrap();
+            }
+            deadlines.lock().unwrap().clear();
+            let mut open = json!({"action": "open", "app": FIXTURE});
+            if let Some(ms) = timeout {
+                open["timeout"] = ms.into();
+            }
+            let before = Instant::now();
+            super::super::run_on(&mut target, "default", &request(&open.to_string())).unwrap();
+            let took = before.elapsed();
+            let deadlines = deadlines.lock().unwrap();
+            assert_eq!(deadlines.len(), 2, "{timeout:?}: a launch and a second one");
+            let later = deadlines[1].saturating_duration_since(deadlines[0]);
+            match timeout {
+                Some(_) => assert_eq!(deadlines[1], deadlines[0], "{timeout:?}"),
+                None => assert!(
+                    deadlines[1] > deadlines[0] && later < took,
+                    "{timeout:?}: the second deadline {later:?} after the first, the open taking {took:?}"
+                ),
+            }
+        }
+    }
+
     /// Design D4 of action-verdicts, scenario "Open behind the home screen":
     /// on this session's Simulator `open` of a running app right after
     /// `press home` answered opened and settled while the home screen took

@@ -30,6 +30,7 @@ use android::session::{
     ControllerChoice, Session, SessionError, SessionOptions, Status, select_paths,
 };
 use mirror::MirrorConfig;
+use protocol::code::DEADLINE_EXCEEDED;
 use protocol::message::{ImageFormat, ScreenshotParams};
 use serde_json::{Map, Value, json};
 
@@ -326,13 +327,21 @@ impl Drop for StopAgent {
 }
 
 /// Launches `app` on `device` through its launcher activity, as
-/// [`AppControl::launch`] does, within `deadline`.
+/// [`AppControl::launch`] does: `am start -W`, which waits for the app's
+/// first frame and prints nothing meanwhile, reads its result with the time
+/// left to `deadline`, the launching command's own, instead of the adb
+/// client's 10 s read timeout, which Chrome's cold launch outlasted on the
+/// third demo pass's emulator short of memory, and fails with
+/// `deadline_exceeded` naming the launch and the deadline once it passes
+/// (android-pass-fixes, design D1). Resolving the launcher activity keeps
+/// the client's timeout.
 pub(crate) fn launch_on(
     device: &Device,
     app: &str,
     launch: &Launch,
-    _deadline: Instant,
+    deadline: Instant,
 ) -> Result<(), DriverError> {
+    let begun = Instant::now();
     let resolved = device
         .shell(&format!(
             "cmd package resolve-activity --brief -a android.intent.action.MAIN \
@@ -358,8 +367,20 @@ pub(crate) fn launch_on(
         ));
     };
     let started = device
-        .shell(&start_command(&component, launch))
-        .map_err(adb_error)?;
+        .shell_until(&start_command(&component, launch), deadline)
+        .map_err(|failure| {
+            if failure.is_timeout() && Instant::now() >= deadline {
+                DriverError::new(
+                    DEADLINE_EXCEEDED,
+                    format!(
+                        "am start -W had not finished launching {app} by open's deadline, {} ms after the launch began; the app may still be starting: open it again with a longer timeout, or take a snapshot to see what is in front",
+                        deadline.saturating_duration_since(begun).as_millis()
+                    ),
+                )
+            } else {
+                adb_error(failure)
+            }
+        })?;
     let output = format!("{}{}", started.stdout_text(), started.stderr_text());
     match start_failure(&output) {
         Some(failure) => Err(DriverError::new(

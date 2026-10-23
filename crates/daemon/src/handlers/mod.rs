@@ -509,10 +509,11 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     // draws late. The change is noted before the launch, so that what the
     // target shows from the launch on is the launch's own effect.
     target.mirror.note_window_change();
+    // The launch takes the open's own deadline, as Android's `am start -W`,
+    // which waits for the app's first frame, needs on an emulator short of
+    // memory (android-pass-fixes, design D1).
     let launching = Instant::now();
-    target
-        .apps
-        .launch(&app, &launch, launching + DEFAULT_TIMEOUT)?;
+    target.apps.launch(&app, &launch, started + first_wait)?;
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
@@ -544,7 +545,7 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     let (first, shown, settled) = if showed {
         in_front(
             target,
-            (&app, &launch),
+            (&app, &launch, first_wait),
             (first, shown, settled),
             (started, explicit),
         )?
@@ -654,15 +655,17 @@ fn front_of(target: &mut Attached) -> Result<String, Failure> {
 /// front back as the animation ended, three times in three, while a second
 /// launch of the running app brought it to the front three times in three.
 /// So an app another holds the front from is launched again, which brings a
-/// running app to the front on every driver, and the wait for its screen,
-/// at most [`ACTIVATE_WAIT`] within the explicit timeout from `started`
-/// when one is given, and the settle after it run again; an app still not
-/// in front fails with `not_in_front`, naming it and what is in front.
-/// Gives the first tree, when the app's screen showed and whether it
-/// settled, those after the second launch when one was made.
+/// running app to the front on every driver, within the explicit timeout's
+/// deadline when one is given, else `wait`, the first launch's, from its own
+/// start, and the wait for its screen, at most [`ACTIVATE_WAIT`] within the
+/// explicit timeout from `started` when one is given, and the settle after
+/// it run again; an app still not in front fails with `not_in_front`, naming
+/// it and what is in front. Gives the first tree, when the app's screen
+/// showed and whether it settled, those after the second launch when one
+/// was made.
 fn in_front(
     target: &mut Attached,
-    (app, launch): (&str, &Launch),
+    (app, launch, wait): (&str, &Launch, Duration),
     (first, shown, settled): (FirstTree, Option<Instant>, bool),
     (started, explicit): (Instant, Option<Duration>),
 ) -> Result<(FirstTree, Option<Instant>, bool), Failure> {
@@ -675,9 +678,11 @@ fn in_front(
         relaunch: false,
         env: launch.env.clone(),
     };
-    target
-        .apps
-        .launch(app, &again, launching + DEFAULT_TIMEOUT)?;
+    let launch_deadline = match explicit {
+        Some(total) => started + total,
+        None => launching + wait,
+    };
+    target.apps.launch(app, &again, launch_deadline)?;
     let deadline = match explicit {
         Some(total) => (started + total).min(launching + ACTIVATE_WAIT),
         None => launching + ACTIVATE_WAIT,

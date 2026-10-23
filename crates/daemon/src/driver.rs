@@ -202,7 +202,10 @@ pub trait InputNotes: Send + Sync {
 pub trait AppControl: Send {
     /// Launches `app`, or brings it to the front if it runs; restarts it
     /// first when `launch.relaunch` is set. `deadline` is the launching
-    /// command's own.
+    /// command's own, until which a launch that waits for the app, as
+    /// Android's `am start -W` waits for its first frame, waits at most,
+    /// failing with `deadline_exceeded` past it (android-pass-fixes, design
+    /// D1).
     fn launch(&mut self, app: &str, launch: &Launch, deadline: Instant) -> Result<(), DriverError>;
 
     /// Stops `app`.

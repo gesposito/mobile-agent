@@ -269,9 +269,56 @@ impl Device {
         stream.finish()
     }
 
-    /// Runs `command` as [`Self::shell`] does, within `deadline`.
-    pub fn shell_until(&self, command: &str, _deadline: Instant) -> Result<ShellOutput> {
-        self.shell(command)
+    /// Runs `command` as [`Self::shell`] does, bounded by `deadline` rather
+    /// than by the server's timeout for each read: the output is read with
+    /// the time left to `deadline`, so that a command that prints nothing
+    /// for longer than that timeout, as `am start -W` while it waits for the
+    /// app's first frame, completes within it (design D1 of
+    /// android-pass-fixes). A command that has not ended by `deadline`, or a
+    /// deadline already past, which runs nothing, fails with a timeout
+    /// ([`Error::is_timeout`]) whose message names the deadline; opening the
+    /// stream keeps the server's timeout.
+    pub fn shell_until(&self, command: &str, deadline: Instant) -> Result<ShellOutput> {
+        let begun = Instant::now();
+        let request = format!("shell,v2,raw:{command}");
+        let past = |request: String| Error::Io {
+            request,
+            source: io::Error::new(
+                ErrorKind::TimedOut,
+                format!(
+                    "the command had not ended by its deadline, {} ms after it began",
+                    deadline.saturating_duration_since(begun).as_millis()
+                ),
+            ),
+        };
+        if deadline <= begun {
+            return Err(past(request));
+        }
+        let mut stream = self.shell_stream(command)?;
+        // A command that already exited may have closed the stream; its output
+        // is still readable, so a failed close is not an error.
+        let _ = stream.close_stdin();
+        let mut output = ShellOutput::default();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(past(request));
+            }
+            stream.set_read_timeout(Some(left))?;
+            match stream.read_packet() {
+                Ok(Some(ShellPacket::Stdout(data))) => output.stdout.extend_from_slice(&data),
+                Ok(Some(ShellPacket::Stderr(data))) => output.stderr.extend_from_slice(&data),
+                Ok(Some(ShellPacket::Exit(status))) => {
+                    output.exit = Some(status);
+                    return Ok(output);
+                }
+                Ok(None) => return Ok(output),
+                // The read waited for all the time left, perhaps within a
+                // packet, so the stream is read no further.
+                Err(error) if error.is_timeout() => return Err(past(request)),
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     /// Starts `command` with shell protocol v2 and hands back the stream, for
