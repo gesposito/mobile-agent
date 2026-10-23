@@ -2896,7 +2896,7 @@ mod tests {
     use mirror::backend::{BackendError, Input, InputAck, InputSink};
 
     use super::*;
-    use crate::driver::{AttachOptions, Driver, DriverError, Screen, Size};
+    use crate::driver::{AppControl, AttachOptions, Driver, DriverError, Launch, Screen, Size};
     use crate::fake::{FakeDriver, Slide, Typing};
     use crate::wire::Request;
 
@@ -6056,6 +6056,65 @@ mod tests {
             .unwrap()
             .data["origin"]
             .clone()
+    }
+
+    /// The apps of a target, recording the deadline of each launch.
+    struct Deadlined {
+        inner: Box<dyn AppControl>,
+        deadlines: Arc<Mutex<Vec<Instant>>>,
+    }
+
+    impl AppControl for Deadlined {
+        fn launch(
+            &mut self,
+            app: &str,
+            launch: &Launch,
+            deadline: Instant,
+        ) -> Result<(), DriverError> {
+            self.deadlines.lock().unwrap().push(deadline);
+            self.inner.launch(app, launch, deadline)
+        }
+
+        fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
+            self.inner.terminate(app)
+        }
+    }
+
+    /// Design D1 of android-pass-fixes: `open` launches the app within its
+    /// own deadline, its start plus its timeout, the waiting commands'
+    /// default when it names none, so that an Android launch slower than the
+    /// adb client's read timeout completes within what `open` was given.
+    #[test]
+    fn open_launches_the_app_within_its_own_deadline() {
+        for (timeout, budget) in [
+            (Some(30_000), Duration::from_secs(30)),
+            (Some(3_000), Duration::from_secs(3)),
+            (None, super::super::DEFAULT_TIMEOUT),
+        ] {
+            let driver = FakeDriver::parse("android").unwrap();
+            let info = driver.discover().unwrap().remove(0);
+            let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+            let deadlines = Arc::new(Mutex::new(Vec::new()));
+            attachment.apps = Box::new(Deadlined {
+                inner: attachment.apps,
+                deadlines: Arc::clone(&deadlines),
+            });
+            let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+            let mut open = json!({"action": "open", "app": FIXTURE});
+            if let Some(ms) = timeout {
+                open["timeout"] = ms.into();
+            }
+            let before = Instant::now();
+            super::super::run_on(&mut target, "default", &request(&open.to_string())).unwrap();
+            let after = Instant::now();
+            let deadlines = deadlines.lock().unwrap();
+            assert_eq!(deadlines.len(), 1, "{timeout:?}: one launch");
+            assert!(
+                deadlines[0] >= before + budget && deadlines[0] <= after + budget,
+                "{timeout:?}: the launch's deadline came {:?} after the open began, its budget {budget:?}",
+                deadlines[0].saturating_duration_since(before)
+            );
+        }
     }
 
     /// Design D4 of action-verdicts, scenario "Open behind the home screen":

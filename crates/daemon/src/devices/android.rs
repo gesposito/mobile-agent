@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use android::adb::{self, AdbServer, Device};
 use android::agent::Attached;
@@ -325,51 +325,59 @@ impl Drop for StopAgent {
     }
 }
 
+/// Launches `app` on `device` through its launcher activity, as
+/// [`AppControl::launch`] does, within `deadline`.
+pub(crate) fn launch_on(
+    device: &Device,
+    app: &str,
+    launch: &Launch,
+    _deadline: Instant,
+) -> Result<(), DriverError> {
+    let resolved = device
+        .shell(&format!(
+            "cmd package resolve-activity --brief -a android.intent.action.MAIN \
+             -c android.intent.category.LAUNCHER {}",
+            quote(app)
+        ))
+        .map_err(adb_error)?;
+    let Some(component) = launcher_activity(&resolved.stdout_text()) else {
+        let installed = device
+            .shell(&format!("pm path {}", quote(app)))
+            .map_err(adb_error)?
+            .success();
+        let serial = device.serial();
+        return Err(DriverError::new(
+            APP_NOT_FOUND,
+            if installed {
+                format!("{app} has no launcher activity on {serial} to open")
+            } else {
+                format!(
+                    "{app} is not installed on {serial}; list the packages with adb shell pm list packages"
+                )
+            },
+        ));
+    };
+    let started = device
+        .shell(&start_command(&component, launch))
+        .map_err(adb_error)?;
+    let output = format!("{}{}", started.stdout_text(), started.stderr_text());
+    match start_failure(&output) {
+        Some(failure) => Err(DriverError::new(
+            LAUNCH_FAILED,
+            format!("am start could not open {app}: {failure}"),
+        )),
+        None => Ok(()),
+    }
+}
+
 struct Apps {
     device: Device,
     _stop: StopAgent,
 }
 
 impl AppControl for Apps {
-    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
-        let resolved = self
-            .device
-            .shell(&format!(
-                "cmd package resolve-activity --brief -a android.intent.action.MAIN \
-                 -c android.intent.category.LAUNCHER {}",
-                quote(app)
-            ))
-            .map_err(adb_error)?;
-        let Some(component) = launcher_activity(&resolved.stdout_text()) else {
-            let installed = self
-                .device
-                .shell(&format!("pm path {}", quote(app)))
-                .map_err(adb_error)?
-                .success();
-            let serial = self.device.serial();
-            return Err(DriverError::new(
-                APP_NOT_FOUND,
-                if installed {
-                    format!("{app} has no launcher activity on {serial} to open")
-                } else {
-                    format!(
-                        "{app} is not installed on {serial}; list the packages with adb shell pm list packages"
-                    )
-                },
-            ));
-        };
-        let started = self
-            .device
-            .shell(&start_command(&component, launch))
-            .map_err(adb_error)?;
-        let output = format!("{}{}", started.stdout_text(), started.stderr_text());
-        match start_failure(&output) {
-            Some(failure) => Err(DriverError::new(
-                LAUNCH_FAILED,
-                format!("am start could not open {app}: {failure}"),
-            )),
-            None => Ok(()),
-        }
+    fn launch(&mut self, app: &str, launch: &Launch, deadline: Instant) -> Result<(), DriverError> {
+        launch_on(&self.device, app, launch, deadline)
     }
 
     fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
@@ -661,8 +669,146 @@ mod tests {
     use android::agent::Conflict;
     use android::session::{Path, Paths};
     use serde_json::Value;
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, TcpListener, TcpStream};
+    use std::thread::{self, JoinHandle};
 
     use crate::driver::{Platform, TargetClass};
+
+    /// One connection's exchange with a fake adb server.
+    type Exchange = Box<dyn FnOnce(&mut TcpStream) + Send>;
+
+    /// A fake adb server on a loopback port serving `exchanges`, one per
+    /// connection in order, and the emulator on it, whose reads and writes
+    /// time out after 200 ms, as the client's default 10 s would.
+    fn fake_adb(exchanges: Vec<Exchange>) -> (Device, JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for exchange in exchanges {
+                let (mut s, _) = listener.accept().unwrap();
+                s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                exchange(&mut s);
+            }
+        });
+        let device = AdbServer::new(addr)
+            .with_io_timeout(Duration::from_millis(200))
+            .device("emulator-5554");
+        (device, server)
+    }
+
+    /// Reads a smart-socket request, four hex digits of length and the
+    /// service, checks that it starts with `service` and answers `OKAY`.
+    fn okay(s: &mut TcpStream, service: &str) {
+        let mut len = [0u8; 4];
+        s.read_exact(&mut len).unwrap();
+        let len = usize::from_str_radix(std::str::from_utf8(&len).unwrap(), 16).unwrap();
+        let mut body = vec![0; len];
+        s.read_exact(&mut body).unwrap();
+        let body = String::from_utf8(body).unwrap();
+        assert!(body.starts_with(service), "{body}");
+        s.write_all(b"OKAY").unwrap();
+    }
+
+    /// A shell protocol v2 packet: its id, its length in four little-endian
+    /// bytes and its data.
+    fn packet(id: u8, data: &[u8]) -> Vec<u8> {
+        let mut out = vec![id];
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(data);
+        out
+    }
+
+    /// Opens the shell command `command` starts as adbd does and reads the
+    /// close of its standard input.
+    fn shell_opened(s: &mut TcpStream, command: &str) {
+        okay(s, "host:transport:emulator-5554");
+        okay(s, &format!("shell,v2,raw:{command}"));
+        let mut close = [0u8; 5];
+        s.read_exact(&mut close).unwrap();
+        assert_eq!(close, [4, 0, 0, 0, 0]);
+    }
+
+    /// The exchanges of Chrome's cold launch: its launcher activity, then
+    /// `am start -W`, whose `Starting:` line comes at once and the rest,
+    /// when `answers`, after `silent`.
+    fn chrome_launch(silent: Duration, answers: bool) -> Vec<Exchange> {
+        vec![
+            Box::new(|s| {
+                shell_opened(s, "cmd package resolve-activity --brief");
+                let resolved = b"priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false\n\
+                    com.android.chrome/com.google.android.apps.chrome.Main\n";
+                s.write_all(&packet(1, resolved)).unwrap();
+                s.write_all(&packet(3, &[0])).unwrap();
+            }),
+            Box::new(move |s| {
+                shell_opened(s, "am start -W ");
+                let starting = b"Starting: Intent { cmp=com.android.chrome/com.google.android.apps.chrome.Main }\n";
+                s.write_all(&packet(1, starting)).unwrap();
+                thread::sleep(silent);
+                if answers {
+                    let result = b"Status: ok\nLaunchState: COLD\nActivity: com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity\nTotalTime: 600\nWaitTime: 604\nComplete\n";
+                    let _ = s.write_all(&packet(1, result));
+                    let _ = s.write_all(&packet(3, &[0]));
+                }
+            }),
+        ]
+    }
+
+    /// Design D1 of android-pass-fixes, scenario "A cold launch slower than
+    /// the read timeout": `am start -W` that prints nothing for longer than
+    /// the adb client's read timeout while the app starts, as Chrome's on
+    /// the third demo pass's emulator short of memory, opens the app when it
+    /// answers before the command's deadline.
+    #[test]
+    fn a_cold_launch_silent_past_the_read_timeout_opens_within_the_command_s_deadline() {
+        let (device, server) = fake_adb(chrome_launch(Duration::from_millis(600), true));
+        let launched = launch_on(
+            &device,
+            "com.android.chrome",
+            &Launch::default(),
+            Instant::now() + Duration::from_secs(3),
+        );
+        assert!(launched.is_ok(), "{launched:?}");
+        server.join().unwrap();
+    }
+
+    /// Design D1 of android-pass-fixes, scenario "A launch past the
+    /// deadline": `am start -W` still silent at the command's deadline fails
+    /// the launch then with `deadline_exceeded`, naming the launch and the
+    /// deadline, not with the socket's error, which macOS gives for a read
+    /// timeout as os error 35.
+    #[test]
+    fn a_launch_still_silent_at_the_command_s_deadline_fails_naming_the_launch_and_the_deadline() {
+        let (device, server) = fake_adb(chrome_launch(Duration::from_millis(1500), false));
+        let started = Instant::now();
+        let failure = launch_on(
+            &device,
+            "com.android.chrome",
+            &Launch::default(),
+            started + Duration::from_millis(700),
+        )
+        .unwrap_err();
+        let elapsed = started.elapsed();
+        server.join().unwrap();
+        assert_eq!(
+            failure.code,
+            protocol::code::DEADLINE_EXCEEDED,
+            "{failure:?}"
+        );
+        let message = &failure.message;
+        assert!(
+            message.contains("am start -W")
+                && message.contains("com.android.chrome")
+                && message.contains("deadline")
+                && !message.contains("os error"),
+            "{message}"
+        );
+        assert!(
+            (Duration::from_millis(650)..Duration::from_millis(1200)).contains(&elapsed),
+            "failed after {elapsed:?}: {message}"
+        );
+    }
 
     fn adb_target(serial: &str, state: adb::State, emulator: bool) -> adb::Target {
         let online = state == adb::State::Device;

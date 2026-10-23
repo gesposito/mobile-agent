@@ -30,7 +30,7 @@ use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use wire::{SYNC_MAX_PATH, Status, shell_id};
 
@@ -267,6 +267,11 @@ impl Device {
         // is still readable, so a failed close is not an error.
         let _ = stream.close_stdin();
         stream.finish()
+    }
+
+    /// Runs `command` as [`Self::shell`] does, within `deadline`.
+    pub fn shell_until(&self, command: &str, _deadline: Instant) -> Result<ShellOutput> {
+        self.shell(command)
     }
 
     /// Starts `command` with shell protocol v2 and hands back the stream, for
@@ -530,7 +535,6 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
     use std::thread::{self, JoinHandle};
-    use std::time::Instant;
 
     type Script = Box<dyn FnOnce(&mut TcpStream) + Send>;
 
@@ -745,6 +749,81 @@ mod tests {
         assert_eq!(out.stdout, b"out\n");
         assert_eq!(out.stderr, b"err\n");
         assert_eq!(out.exit, Some(3));
+    }
+
+    /// Serves `am start -W` as adbd does for a cold launch: its `Starting:`
+    /// line at once, then nothing for `silent`, then, when `answers`, the
+    /// launch's result and its exit; writes past the client's end are
+    /// ignored.
+    fn slow_launch(silent: Duration, answers: bool) -> Script {
+        Box::new(move |s| {
+            switch_to(s, "emulator-5554");
+            expect_request(s, "shell,v2,raw:am start -W -n app/.Main");
+            reply(s, b"OKAY");
+            expect_bytes(s, &shell_packet(shell_id::CLOSE_STDIN, b""));
+            reply(
+                s,
+                &shell_packet(shell_id::STDOUT, b"Starting: Intent { cmp=app/.Main }\n"),
+            );
+            thread::sleep(silent);
+            if answers {
+                let result = b"Status: ok\nLaunchState: COLD\nTotalTime: 600\nComplete\n";
+                let _ = s.write_all(&shell_packet(shell_id::STDOUT, result));
+                let _ = s.write_all(&shell_packet(shell_id::EXIT, &[0]));
+            }
+        })
+    }
+
+    /// Design D1 of android-pass-fixes: a command that prints nothing for
+    /// longer than the server's read timeout, as `am start -W` while it
+    /// waits for the app's first frame, completes when it answers within
+    /// its own deadline.
+    #[test]
+    fn a_shell_command_silent_past_the_read_timeout_completes_within_its_deadline() {
+        let fake = FakeServer::start(vec![slow_launch(Duration::from_millis(600), true)]);
+        let device = AdbServer::new(fake.addr)
+            .with_io_timeout(Duration::from_millis(200))
+            .device("emulator-5554");
+        let out = device
+            .shell_until(
+                "am start -W -n app/.Main",
+                Instant::now() + Duration::from_secs(3),
+            )
+            .unwrap();
+        fake.finish();
+        assert!(out.stdout_text().contains("Status: ok"), "{out:?}");
+        assert_eq!(out.exit, Some(0));
+    }
+
+    /// Design D1 of android-pass-fixes: a command still silent at its
+    /// deadline fails then with a timeout that names the deadline, not with
+    /// the socket's error, which macOS gives as os error 35 for a read
+    /// timeout.
+    #[test]
+    fn a_shell_command_still_silent_at_its_deadline_fails_with_a_timeout_at_the_deadline() {
+        let fake = FakeServer::start(vec![slow_launch(Duration::from_millis(1500), false)]);
+        let device = AdbServer::new(fake.addr)
+            .with_io_timeout(Duration::from_millis(200))
+            .device("emulator-5554");
+        let started = Instant::now();
+        let err = device
+            .shell_until(
+                "am start -W -n app/.Main",
+                started + Duration::from_millis(700),
+            )
+            .unwrap_err();
+        let elapsed = started.elapsed();
+        fake.finish();
+        assert!(err.is_timeout(), "{err:?}");
+        assert!(
+            (Duration::from_millis(650)..Duration::from_millis(1200)).contains(&elapsed),
+            "failed after {elapsed:?}: {err}"
+        );
+        let message = err.to_string();
+        assert!(
+            message.contains("deadline") && !message.contains("os error"),
+            "{message}"
+        );
     }
 
     #[test]

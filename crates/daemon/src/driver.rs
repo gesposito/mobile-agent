@@ -10,7 +10,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mirror::MirrorConfig;
 use mirror::backend::Backend;
@@ -201,8 +201,9 @@ pub trait InputNotes: Send + Sync {
 /// Launches and stops apps: what the mirror's backend has no place for.
 pub trait AppControl: Send {
     /// Launches `app`, or brings it to the front if it runs; restarts it
-    /// first when `launch.relaunch` is set.
-    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError>;
+    /// first when `launch.relaunch` is set. `deadline` is the launching
+    /// command's own.
+    fn launch(&mut self, app: &str, launch: &Launch, deadline: Instant) -> Result<(), DriverError>;
 
     /// Stops `app`.
     fn terminate(&mut self, app: &str) -> Result<(), DriverError>;

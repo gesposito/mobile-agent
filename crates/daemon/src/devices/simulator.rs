@@ -696,7 +696,7 @@ struct Apps {
 }
 
 impl AppControl for Apps {
-    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
         let options = LaunchOptions {
             arguments: Vec::new(),
             environment: launch.env.clone(),

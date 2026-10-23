@@ -510,7 +510,9 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     // target shows from the launch on is the launch's own effect.
     target.mirror.note_window_change();
     let launching = Instant::now();
-    target.apps.launch(&app, &launch)?;
+    target
+        .apps
+        .launch(&app, &launch, launching + DEFAULT_TIMEOUT)?;
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
@@ -673,7 +675,9 @@ fn in_front(
         relaunch: false,
         env: launch.env.clone(),
     };
-    target.apps.launch(app, &again)?;
+    target
+        .apps
+        .launch(app, &again, launching + DEFAULT_TIMEOUT)?;
     let deadline = match explicit {
         Some(total) => (started + total).min(launching + ACTIVATE_WAIT),
         None => launching + ACTIVATE_WAIT,

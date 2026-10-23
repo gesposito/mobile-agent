@@ -1001,7 +1001,7 @@ impl Clock for Part {
 }
 
 impl AppControl for Part {
-    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
         self.shared.sync();
         let mut device = lock(&self.shared.device);
         let starts = launch.relaunch || !device.runs(app);
@@ -1115,7 +1115,11 @@ mod tests {
         };
         attachment
             .apps
-            .launch(super::super::app::FIXTURE, &Launch::default())
+            .launch(
+                super::super::app::FIXTURE,
+                &Launch::default(),
+                Instant::now(),
+            )
             .unwrap();
         std::thread::sleep(Duration::from_millis(50));
         let splash = read(&mut attachment);
@@ -1203,7 +1207,10 @@ mod tests {
             phone.config.slow_frames,
             Some(SlowFrames::every(device::CAPTURE_INTERVAL))
         );
-        phone.apps.launch(app::FIXTURE, &anim).unwrap();
+        phone
+            .apps
+            .launch(app::FIXTURE, &anim, Instant::now())
+            .unwrap();
         let frames = frames_within(&mut phone, Duration::from_millis(600));
         assert!(
             (5..=13).contains(&frames.len()),
@@ -1241,7 +1248,10 @@ mod tests {
             None,
         );
         assert_eq!(simulator.config.slow_frames, None);
-        simulator.apps.launch(app::FIXTURE, &anim).unwrap();
+        simulator
+            .apps
+            .launch(app::FIXTURE, &anim, Instant::now())
+            .unwrap();
         let streamed = frames_within(&mut simulator, Duration::from_millis(600));
         assert!(streamed.len() > 20, "{} frames", streamed.len());
     }

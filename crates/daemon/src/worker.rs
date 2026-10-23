@@ -726,7 +726,7 @@ mod tests {
         };
         target
             .apps
-            .launch("dev.mobileagent.fixture.expo", &anim)
+            .launch("dev.mobileagent.fixture.expo", &anim, Instant::now())
             .unwrap();
         target.mirror.note_window_change();
         target

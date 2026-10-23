@@ -635,7 +635,7 @@ impl AppControl for Apps {
     /// Launches `app` with its launch environment through DVT's process
     /// control; a relaunch ends the running instance first, and a running
     /// app keeps its process otherwise.
-    fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
         let options = LaunchOptions {
             arguments: Vec::new(),
             environment: launch.env.clone(),
