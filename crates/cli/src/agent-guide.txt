@@ -52,11 +52,12 @@ Acting
   open com.example.app        launch an app and leave it in front, else fail
                               not_in_front; close stops it and frees the target
   A tap goes to the part of an element you can see, and warns when that is not
-  most of it. Its reply names what it hit, as hit button "Sign in", warning when
-  that is not what you named. element_covered: less than 8 points of it show
-  from under its cover, named as hints name it, a dialog, a button, disabled or
-  not, a bar or the keyboard; act on a dialog first, or scroll it out from under
-  the view. element_offscreen: none of it in view; close the keyboard or scroll.
+  most of it. Its reply names what it hit, hit button "Sign in", or hit text
+  "Address" (no ref) for one without a ref, warning when that is not what you
+  named. element_covered: less than 8 points of it show from under its cover,
+  named as hints name it, a dialog, a button, disabled or not, a bar or the
+  keyboard; act on a dialog first, or scroll it out from under the view.
+  element_offscreen: none of it in view; close the keyboard or scroll.
   fill's and type's replies say what they read back: verified: text, or
   length for a masked field, from the field's value, a code field's value
   counting only when the text changed it; readFrom: descendants from its boxes,
@@ -80,7 +81,8 @@ Waiting
   click waits for its tap's first effect up to 1 s; wait --change gets one that
   may still be arriving or came already; wait --settle within 1 s of an action
   waits for its effect first, else says nothing changed within 1 s of it. Waits
-  take --timeout MS: the session's (set timeout 5000), else 10000 by default.
+  and open take --timeout MS: the session's (set timeout 5000), else 10000;
+  open fails with deadline_exceeded when the launch outlasts it: give it more.
 
 Reading
   get text @e5 | get value @e2 | get box @e4   in view or not, as inView says
@@ -98,12 +100,14 @@ Output and errors
   again. Without --json, errors go to stderr. A warning, such as a degraded
   snapshot, says to check the screen before you trust what is missing from it.
 
-Targets and sessions
+Targets, sessions and batch
   devices lists the targets. With several, pass --device ID or --platform.
   --session NAME keeps target claims and refs apart. A target that another
   session holds is refused with target_claimed, unless you pass --force.
   close --keep frees the target and leaves the app running for the next
   session. cancel ends your session's command in flight, such as a wait.
+  batch --bail 'open com.example.app' 'snapshot -i' runs commands in order,
+  stopping at the first failure; with --json, one array of results.
 
 iPhones
   A phone on USB is a target when MOBILE_AGENT_DRIVERS names ios. A command on
@@ -113,7 +117,3 @@ iPhones
   devices and doctor name the step. It is slower: a tree read of a 500-cell
   screen takes about 0.5 s and frames come 19 a second, so settle and waits take
   longer. Text goes in through the runner, typed or set, not a paste.
-
-Batch
-  batch --bail 'open com.example.app' 'snapshot -i' runs commands in order,
-  stopping at the first failure; with --json, one array of results.

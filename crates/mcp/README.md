@@ -189,7 +189,12 @@ surfaces:
 
 A failure is an execution error (`isError`), the CLI's `✗` line with the
 daemon's code after the mark, whose message says what to do next:
-`✗ stale_ref: e2 is stale: ... Take a new snapshot`. A doctor check that
+`✗ stale_ref: e2 is stale: ... Take a new snapshot`, or, for an Android
+launch still running at `open`'s deadline, `✗ deadline_exceeded: am
+start -W had not finished launching com.android.chrome by open's
+deadline, 9999 ms after the launch began; the app may still be starting:
+open it again with a longer timeout, or take a snapshot to see what is in
+front` (android-pass-fixes, design D1). A doctor check that
 fails makes the report an execution error ending with `✗ doctor_failed:
 checks failed: ...`. A call whose blocking work fails in the server is a
 protocol error.
@@ -218,9 +223,12 @@ and the bound:
   `click` on a selector that matches nothing fails at 10 s; a `wait` with
   `settle` waits at most 3 s, after it waited, within a second of the
   session's last action, until a second after the action at most for its
-  first effect (action-verdicts, design D2), and an `open` up to 10 s for
-  the app's first tree, for the launch's first effect within a second of
-  it, and at most 3 s for its screen to settle. A call passes `timeout`
+  first effect (action-verdicts, design D2), and an `open` up to 10 s from
+  its start for the launch and the app's first tree, an Android launch
+  still running then failing with `deadline_exceeded` that names the
+  launch (android-pass-fixes, design D1), then for the launch's first
+  effect within a second of it and at most 3 s for its screen to settle,
+  where its `timeout` bounds all of them together. A call passes `timeout`
   to wait longer, as `wait`'s description and the card say. A `timeout` or
   `ms` above the bound less a margin of 2 s is capped to it, so the
   daemon's own wait ends first, and the result's warning line says so:
@@ -319,13 +327,14 @@ app's reaction, which `wait` with `change` collects, that `scroll` answers
 once the content it set gliding has come to rest, at most 3 s after its
 last stroke, so a click can follow it at once (design D6), that a settle right
 after an action waits for its first effect or says nothing changed within
-1 s of it (design D2), and that a wait or a selector's search ends at 10 s
-unless the call passes `timeout`; sessions and `close` with `keep`,
+1 s of it (design D2), and that a wait, a selector's search and `open`'s
+launch end at 10 s unless the call passes `timeout` (android-pass-fixes,
+design D1); sessions and `close` with `keep`,
 screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 3,302
-characters in all, 3,420 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,404
+characters in all, 3,522 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
 findings 1 and 4); the one on a click that reports no change is what the
@@ -334,7 +343,10 @@ reported none (real-app-fixes, design D7); and the one on a scroll is what
 a later pass met in Photos, a click right after a scroll that opened
 nothing, whose replay named the row the tap hit while the list, still
 gliding, took the tap as a stop (`reports/12.3-action-verdicts.md`,
-finding 1).
+finding 1); and the clause on `open`'s launch is what the fourth pass on
+real apps met in Chrome, a launch the emulator took 18.9 s over, which failed at the
+default deadline and opened when the model passed a timeout of 40 s
+(`reports/12.4-android-pass.md`).
 
 `help`, a read-only tool with no arguments of its own, answers with the
 CLI's agent guide (`mobile-agent help agent`, the CLI library's

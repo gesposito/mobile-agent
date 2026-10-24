@@ -444,10 +444,12 @@ ms. `wait --settle` waits at most 3000 ms unless given `--timeout`, after
 it waited, within a second of the session's last action, until a second
 after the action at most for its first effect; `scroll` without `--until`
 waits at most 3000 ms after its last stroke for the content to come to
-rest; `open` waits for the
-launched app's first tree up to that default, for the launch's first
-effect within a second of the launch, then at most 3000 ms for its screen
-to settle, and `--timeout` bounds them all. Timeouts
+rest; `open` launches the
+app and waits for its first tree within that default from its start, the
+launch included, so that an Android launch still running then fails with
+`deadline_exceeded` naming it (android-pass-fixes, design D1), for the
+launch's first effect within a second of the launch, then at most 3000 ms
+for its screen to settle, and `--timeout` bounds them all. Timeouts
 are at most 600000 ms. Each command's help states its default.
 
 ## Batch
@@ -581,26 +583,27 @@ Never for long runs`.
 
 ## Help
 
-Every command's help ends with examples and states its defaults;
-`help <command>` prints the same as `<command> --help`, and
-`help get text` reaches a subcommand. `help agent` prints
-`src/agent-guide.txt`, 119 lines for an agent's prompt, under the spec's
-120: the snapshot, act and snapshot-again loop, the listing format and
-what it leaves out, a keyboard covering what it draws, refs, the twin an
-app rebuilt and `stale_ref`, selectors, acting, with `open` leaving the
-app in front or failing `not_in_front`, the element a click's reply says
-its tap hit, `scroll` answering once the content is at rest, what an
-action on an element out of sight fails with and what `fill`
-and `type` read back, waiting, a settle after an action waiting for its
-effect and `wait --change` after an action whose effect may still be
-arriving, with `--frames` for a canvas or a map, reading, with a
-screenshot's pixels beside the screen's points, output and codes, targets
-and sessions with `close --keep` leaving the app running and `cancel`,
-where a physical iPhone differs (the readiness codes a command on it fails
-with and where `devices` and `doctor` name the step, the slower tier, a
-tree read of a 500-cell screen about 0.5 s and frames 19 a second, and
-text through the runner, `direct` the field's value set rather than
-pasted), and batch.
+Every command's help ends with examples and states its defaults; `help
+<command>` prints the same as `<command> --help`, and `help get text`
+reaches a subcommand. `help agent` prints `src/agent-guide.txt`, 119 lines
+for an agent's prompt, under the spec's 120: the snapshot, act and
+snapshot-again loop, the listing format and what it leaves out, a keyboard
+covering what it draws, refs, the twin an app rebuilt and `stale_ref`,
+selectors, acting, with `open` leaving the app in front or failing
+`not_in_front`, the element a click's reply says its tap hit, `(no ref)`
+after one without a ref, `scroll` answering once the content is at rest,
+what an action on an element out of sight fails with and what `fill` and
+`type` read back, waiting, a settle after an action waiting for its effect
+and `wait --change` after an action whose effect may still be arriving,
+with `--frames` for a canvas or a map, the `--timeout` that waits and
+`open` take, `open` failing `deadline_exceeded` when the launch outlasts
+it, reading, with a screenshot's pixels beside the screen's points, output
+and codes, targets, sessions and batch, with `close --keep` leaving the
+app running and `cancel`, and where a physical iPhone differs (the
+readiness codes a command on it fails with and where `devices` and
+`doctor` name the step, the slower tier, a tree read of a 500-cell screen
+about 0.5 s and frames 19 a second, and text through the runner, `direct`
+the field's value set rather than pasted).
 
 ## Process overhead
 
