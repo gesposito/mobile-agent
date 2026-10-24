@@ -303,7 +303,10 @@ fn provenance_is_recorded_in_both_outputs() {
         target_table.cell(emulator_row, "Model"),
         "sdk_gphone64_arm64 (AVD pixel_api36)"
     );
-    assert_eq!(target_table.cell(emulator_row, "Memory"), "3920 MiB");
+    assert_eq!(
+        target_table.cell(emulator_row, "Memory bytes"),
+        "4111278080"
+    );
     let tools = common::table(&md, "Tools");
     let tool_row = tools.rows.iter().find(|r| r[0] == "mobile-agent").unwrap();
     assert_eq!(tools.cell(tool_row, "Version"), "0.1.0");

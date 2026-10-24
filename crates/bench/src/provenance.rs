@@ -158,8 +158,7 @@ pub fn capture_host(probe: &dyn Probe, os: &str) -> Host {
             cpu_cores: parsed(probe, "nproc", &[]),
             memory_bytes: probe
                 .output("grep", &["-m1", "MemTotal", "/proc/meminfo"])
-                .and_then(|line| line.split_whitespace().nth(1)?.parse::<u64>().ok())
-                .map(|kib| kib * 1024),
+                .and_then(|text| mem_total(&text)),
             os: probe.output("uname", &["-sr"]),
             load_average: capture_load(probe, os),
         }
@@ -189,6 +188,16 @@ fn mac_os(probe: &dyn Probe) -> Option<String> {
         Some(build) => format!("{name} {version} ({build})"),
         None => format!("{name} {version}"),
     })
+}
+
+/// The bytes of the `MemTotal` line of `/proc/meminfo`, which gives it in
+/// KiB.
+fn mem_total(meminfo: &str) -> Option<u64> {
+    meminfo
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("MemTotal:"))
+        .and_then(|rest| rest.split_whitespace().next()?.parse::<u64>().ok())
+        .map(|kib| kib * 1024)
 }
 
 /// The first three numbers of `{ 3.85 4.10 5.00 }` or of `/proc/loadavg`.
@@ -227,8 +236,8 @@ pub fn capture_commit(probe: &dyn Probe) -> Option<Commit> {
 }
 
 /// Fills the target fields an adapter left empty: from `adb -s <id> shell
-/// getprop` on Android, from `xcrun simctl list devices --json` on the
-/// Simulator. A physical iPhone's model and iOS version come from the
+/// getprop` on Android, and the memory from the target's `/proc/meminfo`,
+/// from `xcrun simctl list devices --json` on the Simulator. A physical iPhone's model and iOS version come from the
 /// adapter's listing, and the rest from the tool under test.
 pub fn complete_target(probe: &dyn Probe, target: &mut Target) {
     match target.class {
@@ -241,6 +250,11 @@ pub fn complete_target(probe: &dyn Probe, target: &mut Target) {
 }
 
 fn complete_android(probe: &dyn Probe, target: &mut Target) {
+    if target.memory_bytes.is_none() {
+        target.memory_bytes = probe
+            .output("adb", &["-s", &target.id, "shell", "cat", "/proc/meminfo"])
+            .and_then(|text| mem_total(&text));
+    }
     if target.model.is_some() && target.os.is_some() && target.api_level.is_some() {
         return;
     }
@@ -371,6 +385,12 @@ impl Provenance {
                 format!("{name}.api_level"),
                 &target.api_level,
                 &theirs.api_level,
+            );
+            differ(
+                &mut found,
+                format!("{name}.memory_bytes"),
+                &target.memory_bytes,
+                &theirs.memory_bytes,
             );
             differ(
                 &mut found,

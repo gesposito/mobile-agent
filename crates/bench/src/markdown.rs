@@ -154,6 +154,7 @@ fn provenance(out: &mut String, p: &Provenance) {
         "Model",
         "OS",
         "Android API level",
+        "Memory bytes",
         "Emulator controller",
         "Frame source",
     ]);
@@ -164,6 +165,7 @@ fn provenance(out: &mut String, p: &Provenance) {
             or_dash(t.model.as_deref()),
             or_dash(t.os.as_deref()),
             or_dash(t.api_level),
+            or_dash(t.memory_bytes),
             or_dash(t.controller),
             or_dash(
                 t.frame_source
