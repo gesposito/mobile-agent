@@ -2940,7 +2940,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### MIT License
 
-Used by [tokio-stream 0.1.19](https://crates.io/crates/tokio-stream), [tokio-util 0.7.19](https://crates.io/crates/tokio-util), [tokio 1.53.1](https://crates.io/crates/tokio).
+Used by [tokio-stream 0.1.19](https://crates.io/crates/tokio-stream), [tokio-util 0.7.19](https://crates.io/crates/tokio-util), [tokio 1.53.3](https://crates.io/crates/tokio).
 
 ```text
 MIT License
