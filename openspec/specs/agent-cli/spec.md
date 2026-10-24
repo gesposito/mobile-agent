@@ -196,3 +196,10 @@ A click SHALL name the element the tap landed on as the replica held it at dispa
 #### Scenario: Open behind the home screen
 - **WHEN** `open` names an app that runs behind the home screen
 - **THEN** the app comes to the front, or `open` fails naming what is in front
+
+### Requirement: Hits are named without a ref
+A click's reply SHALL name the element the tap landed on whether or not the session holds a ref for it, the ref null and the line saying so when none, so that a tap by coordinates or on a plain text says what it landed on.
+
+#### Scenario: A tap on a plain text
+- **WHEN** a click by coordinates lands on a text the interactive listing does not give a ref
+- **THEN** the reply names the text with `ref` null and the line says `(no ref)`
