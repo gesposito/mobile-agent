@@ -121,6 +121,12 @@ pub struct Target {
     pub os: Option<String>,
     /// Android API level; `None` on the Simulator.
     pub api_level: Option<u32>,
+    /// On Android, the memory its kernel reports, `MemTotal` in
+    /// `/proc/meminfo`, in bytes: on an emulator what its AVD's RAM, or the
+    /// `-memory` flag it was started with, gave it, less what the kernel
+    /// keeps; `None` elsewhere and when it could not be read.
+    #[serde(default)]
+    pub memory_bytes: Option<u64>,
     /// On an Android emulator, whether its gRPC controller answered the tool
     /// under test; `None` on other targets and when the tool did not say.
     #[serde(default)]
@@ -165,6 +171,7 @@ impl Target {
             model: None,
             os: None,
             api_level: None,
+            memory_bytes: None,
             controller: None,
             frame_source: None,
             runner: None,

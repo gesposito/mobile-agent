@@ -266,6 +266,7 @@ fn provenance_is_recorded_in_both_outputs() {
     let emulator = targets.iter().find(|t| t["id"] == "emulator-5554").unwrap();
     assert_eq!(emulator["api_level"], 36);
     assert_eq!(emulator["model"], "sdk_gphone64_arm64 (AVD pixel_api36)");
+    assert_eq!(emulator["memory_bytes"], 4_014_920_u64 * 1024);
     assert_eq!(emulator["os"], "Android 16");
     let sim = targets.iter().find(|t| t["id"] == "SIM-1").unwrap();
     assert_eq!(sim["model"], "iPhone 17");
@@ -302,6 +303,7 @@ fn provenance_is_recorded_in_both_outputs() {
         target_table.cell(emulator_row, "Model"),
         "sdk_gphone64_arm64 (AVD pixel_api36)"
     );
+    assert_eq!(target_table.cell(emulator_row, "Memory"), "3920 MiB");
     let tools = common::table(&md, "Tools");
     let tool_row = tools.rows.iter().find(|r| r[0] == "mobile-agent").unwrap();
     assert_eq!(tools.cell(tool_row, "Version"), "0.1.0");
@@ -342,6 +344,21 @@ fn provenance_tells_whether_two_environments_matched() {
             "targets[emulator-5554].os",
             "targets[emulator-5554].api_level",
         ]
+    );
+    // The same emulator started with the AVD's 2 GB rather than with
+    // `-memory 4096` (android-pass-fixes, task 2.2).
+    let smaller = run_with(
+        script(),
+        common::probe().with(
+            "adb -s emulator-5554 shell cat /proc/meminfo",
+            "MemTotal:        2531868 kB",
+        ),
+    );
+    assert_eq!(
+        first
+            .provenance
+            .environment_differences(&smaller.provenance),
+        ["targets[emulator-5554].memory_bytes"]
     );
 }
 

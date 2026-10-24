@@ -613,6 +613,45 @@ mod tests {
         assert_eq!(target.api_level, Some(36));
     }
 
+    /// android-pass-fixes, task 2.2: the third demo pass's opens took 10 to
+    /// 19 s on an emulator whose memory no record kept, so the report could
+    /// not tell it from one started with more; on a cold boot the AVD's 2 GB
+    /// reported 2,531,868 kB and `-memory 4096` 4,014,920 kB. The memory is
+    /// recorded beside the AVD from the emulator's own `/proc/meminfo`, also
+    /// where the adapter gave the model, the OS and the API level.
+    #[test]
+    fn an_emulator_s_memory_is_recorded_beside_its_avd() {
+        let meminfo = "MemTotal:        2531868 kB\n\
+                       MemFree:          418288 kB\n\
+                       MemAvailable:    1252152 kB";
+        let probe = ScriptedProbe::new()
+            .with(
+                "adb -s emulator-5554 shell getprop",
+                "[ro.boot.qemu.avd_name]: [pixel_api36]\n\
+                 [ro.build.version.release]: [16]\n\
+                 [ro.build.version.sdk]: [36]\n\
+                 [ro.product.model]: [sdk_gphone64_arm64]",
+            )
+            .with("adb -s emulator-5554 shell cat /proc/meminfo", meminfo);
+        let mut target = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        complete_target(&probe, &mut target);
+        assert_eq!(
+            target.model.as_deref(),
+            Some("sdk_gphone64_arm64 (AVD pixel_api36)")
+        );
+        assert_eq!(target.memory_bytes, Some(2_531_868 * 1024));
+        let mut described = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        described.model = Some("sdk_gphone64_arm64".into());
+        described.os = Some("Android 16".into());
+        described.api_level = Some(36);
+        complete_target(&probe, &mut described);
+        assert_eq!(described.memory_bytes, Some(2_531_868 * 1024));
+        let unread = ScriptedProbe::new();
+        let mut target = Target::new("emulator-5554", TargetClass::AndroidEmulator);
+        complete_target(&unread, &mut target);
+        assert_eq!(target.memory_bytes, None);
+    }
+
     #[test]
     fn a_simulator_is_completed_from_simctl() {
         let probe = ScriptedProbe::new().with(

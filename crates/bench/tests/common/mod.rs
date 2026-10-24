@@ -53,6 +53,10 @@ pub fn probe() -> ScriptedProbe {
              [ro.product.model]: [sdk_gphone64_arm64]",
         )
         .with(
+            "adb -s emulator-5554 shell cat /proc/meminfo",
+            "MemTotal:        4014920 kB\nMemFree:          787852 kB",
+        )
+        .with(
             "xcrun simctl list devices --json",
             r#"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-5":[
                 {"udid":"SIM-1","name":"bench","deviceTypeIdentifier":"com.apple.CoreSimulator.SimDeviceType.iPhone-17"}]}}"#,
