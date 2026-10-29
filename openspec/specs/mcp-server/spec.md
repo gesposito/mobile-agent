@@ -6,7 +6,14 @@ The Model Context Protocol surface over the daemon: a stdio server an agent clie
 ## Requirements
 
 ### Requirement: Tools over the daemon
-The server SHALL expose one tool per daemon action an agent drives (every action but `set_timeout`, `shutdown` and `cancel`), under agent-browser's stems where the concepts match, with flat input schemas generated from the shared request types, SHALL send each call as one request on the daemon's socket in the session the server owns, and SHALL return the reply's text (a listing without the refs map, the CLI's lines for the rest, any `warning` kept) as text content and a failure as an execution error carrying the daemon's code and message, so that a model sees what the CLI's user sees.
+The server SHALL expose one tool per daemon action an agent drives (every action but `set_timeout`, `shutdown` and `cancel`), under agent-browser's stems where the concepts match, with flat input schemas generated from the shared request types, and SHALL send each call as one request on the daemon's socket in the session the server owns.
+
+#### Scenario: Tools listed
+- **WHEN** a client lists the server's tools
+- **THEN** it finds one per daemon action an agent drives, none for `set_timeout`, `shutdown` or `cancel`, each under agent-browser's stem where the concepts match and with a flat input schema generated from the shared request types, and a call on one of them reaches the daemon's socket as one request in the session the server owns
+
+### Requirement: Results are what the CLI shows
+The server SHALL return the reply's text (a listing without the refs map, the CLI's lines for the rest, any `warning` kept) as text content and a failure as an execution error carrying the daemon's code and message, so that a model sees what the CLI's user sees.
 
 #### Scenario: Snapshot through the server
 - **WHEN** a client calls the snapshot tool with `interactive` on a target
