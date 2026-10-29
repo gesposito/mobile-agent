@@ -341,6 +341,58 @@ pub fn check_big(reply: &Value) {
     );
 }
 
+/// Brings the only target of `daemon` to the fixture's Anim tab, whose
+/// spinner turns, as an agent would: opens the fixture app, clicks the tab
+/// and takes an interactive snapshot, which issues the tab's refs. On a fake
+/// Simulator, whose windows send no change events, the frames go on
+/// changing after every read of the tree, so a snapshot that comes a frame
+/// interval or more after the read before it finds a frame newer than that
+/// read, as [`check_anim`] checks and the daemon's benchmarks time it.
+pub fn open_anim(daemon: &Daemon) {
+    let opened = daemon.request(json!({"action": "open", "app": APP}));
+    assert_eq!(opened["data"]["settled"], true, "{opened}");
+    let clicked = daemon.request(json!({"action": "click", "target": "#tab-anim"}));
+    assert_eq!(clicked["success"], true, "{clicked}");
+    let first = daemon.request(json!({"action": "snapshot", "interactive": true}));
+    assert_eq!(first["success"], true, "{first}");
+}
+
+/// Checks that `reply` is an interactive snapshot of the Anim tab with its
+/// spinner turning, the reply the daemon's animating benchmark times: it
+/// lists the Animate toggle, on, and the five tabs, each with a ref, retires
+/// no ref, and read the target, whose frames had changed since its latest
+/// read of the tree.
+#[track_caller]
+pub fn check_anim(reply: &Value) {
+    assert_eq!(reply["success"], true, "{reply}");
+    let data = &reply["data"];
+    let listing = data["snapshot"].as_str().unwrap_or_default();
+    let toggle = listing
+        .lines()
+        .find(|line| line.contains("id=anim-toggle"))
+        .unwrap_or_else(|| panic!("the Animate toggle:\n{listing}"));
+    assert!(
+        toggle.contains("checked=true"),
+        "the spinner turns: {toggle}"
+    );
+    let tabs = listing
+        .lines()
+        .filter(|line| line.contains("id=tab-"))
+        .count();
+    assert_eq!(tabs, 5, "the five tabs:\n{listing}");
+    let refs = data["refs"].as_object().map_or(0, Map::len);
+    assert_eq!(
+        refs,
+        listing.lines().count(),
+        "a ref for every element listed:\n{listing}"
+    );
+    assert_eq!(data["removedRefs"], json!([]), "no ref retired");
+    assert_eq!(
+        data["servedFromReplica"], false,
+        "the frames changed since the latest read: {reply}"
+    );
+}
+
 /// The distinct `cell-N` identifiers a listing gives refs to.
 pub fn cells(listing: &str) -> usize {
     let mut ids: Vec<&str> = listing

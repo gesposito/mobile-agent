@@ -2,17 +2,23 @@
 //! socket (design D14), run by `mobile-agent-bench micro`: a warm
 //! interactive snapshot of the fake fixture's Big tab, its 500 cells and five
 //! tabs, through the socket of a daemon on a fake target, one request per
-//! iteration, the host's whole path less the CLI process; `wire::parse` of
-//! the line the CLI sends for it, into the typed request the daemon
-//! dispatches; and `reply_line` of the reply the daemon sends back. The wire benchmarks report their allocations per iteration
-//! beside the time; the socket benchmark's work is mostly in the daemon's
-//! process, which the counting allocator does not see.
+//! iteration, the host's whole path less the CLI process; an interactive
+//! snapshot of the fixture's Anim tab, whose spinner keeps the frames
+//! changing, through the socket of a daemon on a fake Simulator, whose
+//! windows send no change events, so that each request finds the frames
+//! changed since the latest read of the tree (design D3 of `profiling`);
+//! `wire::parse` of the line the CLI sends for `snapshot -i`, into the
+//! typed request the daemon dispatches; and `reply_line` of the daemon's
+//! reply to it on the Big tab. The wire benchmarks report their allocations per iteration beside
+//! the time; the socket benchmarks' work is mostly in the daemon's process,
+//! which the counting allocator does not see.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
 use daemon::wire::{self, Command, Failure, Request, Success};
+use mirror::DEFAULT_MIN_REREAD_INTERVAL;
 use serde_json::{Value, json};
 
 #[path = "../../protocol/benches/support/alloc.rs"]
@@ -35,7 +41,7 @@ fn benches(c: &mut Criterion) {
     // One daemon for the socket benchmark, on a fake Android emulator, whose
     // windows send change events, so a warm snapshot reads nothing from it.
     // Dropping `Daemon` kills it, so a panic leaves no daemon behind.
-    let mut daemon = support::Daemon::builder().fake("android").start();
+    let daemon = support::Daemon::builder().fake("android").start();
     support::open_big(&daemon);
     // The daemon's reply line to the CLI's request, `reply_line`'s input.
     let raw = support::raw_request(&daemon.socket(), support::INTERACTIVE_SNAPSHOT);
@@ -70,14 +76,45 @@ fn benches(c: &mut Criterion) {
             });
         },
     );
-    // Stopped before the wire benchmarks, so its process stays out of them.
-    let stopped = daemon.request(json!({"action": "shutdown"}));
-    assert_eq!(stopped["data"]["stopped"], true, "{stopped}");
-    let status = daemon
-        .wait_exit(Duration::from_secs(5))
-        .expect("the daemon exits after shutdown");
-    assert!(status.success(), "{status}");
-    drop(daemon);
+    // Stopped before the next benchmarks, so its process stays out of them.
+    stop(daemon);
+
+    // A daemon on a fake Simulator on the fixture's Anim tab, whose spinner
+    // keeps the frames changing while the windows send no change events, so
+    // that the mirror re-reads them when frames change, no sooner than its
+    // minimum interval after the read before. Each request goes half that
+    // interval after the reply before it, outside its span, about what a
+    // request that comes at a random time between the re-reads a
+    // Simulator's frames call for has left of the interval (spike S15: 106
+    // ms of a 119 ms listing waited for the re-read). The fake makes its
+    // frames as it is called, so the request finds frames newer than the
+    // latest read, which the previous request made; the request and its
+    // span are the Big tab's above. Each iteration lasts at least the pause,
+    // so each sample holds one iteration or a few (flat sampling), the
+    // benchmark taking 10 to 20 s.
+    let pause = DEFAULT_MIN_REREAD_INTERVAL / 2;
+    let animating = support::Daemon::builder().fake("ios").start();
+    support::open_anim(&animating);
+    group.sampling_mode(SamplingMode::Flat);
+    group.bench_function(
+        BenchmarkId::new("socket", "snapshot-interactive-animating"),
+        |b| {
+            b.iter_custom(|iters| {
+                let mut timed = Duration::ZERO;
+                for _ in 0..iters {
+                    std::thread::sleep(pause);
+                    let request = request.clone();
+                    let started = Instant::now();
+                    let reply = animating.request(request);
+                    timed += started.elapsed();
+                    support::check_anim(&reply);
+                }
+                timed
+            });
+        },
+    );
+    group.sampling_mode(SamplingMode::Auto);
+    stop(animating);
 
     // Each `iter` below drops its routine's output inside the timed region,
     // as spike S8 timed decode: the request's maps and strings, the line.
@@ -128,6 +165,16 @@ fn benches(c: &mut Criterion) {
     );
 
     group.finish();
+}
+
+/// Stops `daemon` with `shutdown` and waits for it to exit.
+fn stop(mut daemon: support::Daemon) {
+    let stopped = daemon.request(json!({"action": "shutdown"}));
+    assert_eq!(stopped["data"]["stopped"], true, "{stopped}");
+    let status = daemon
+        .wait_exit(Duration::from_secs(5))
+        .expect("the daemon exits after shutdown");
+    assert!(status.success(), "{status}");
 }
 
 criterion_group!(daemon, benches);
