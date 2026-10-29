@@ -567,6 +567,101 @@ mod tests {
         assert!(after.text.contains("id=tab-login"), "{}", after.text);
     }
 
+    /// The fixture launched on the Anim tab, its spinner turning, as the
+    /// mirror sees it once the screen showed and the mirror has re-read it
+    /// past its minimum interval.
+    fn on_anim(latency: Duration) -> Attached {
+        let mut target = attached("ios", latency);
+        let anim = Launch {
+            relaunch: false,
+            env: vec![("FIXTURE_INITIAL_TAB".into(), "anim".into())],
+        };
+        target
+            .apps
+            .launch("dev.mobileagent.fixture.expo", &anim, Instant::now())
+            .unwrap();
+        target.mirror.note_window_change();
+        target
+            .mirror
+            .run_until(Instant::now() + latency + DEFAULT_MIN_REREAD_INTERVAL * 2)
+            .unwrap();
+        let listing = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(listing.text.contains("id=anim-toggle"), "{}", listing.text);
+        target
+    }
+
+    /// Profiling, design D3: on a screen whose frames keep changing, the
+    /// re-read a tap calls for runs at once, before the app has changed,
+    /// the display still showing the spinner turning; a tree read right
+    /// after it waits for the re-read the frames call for, as on a still
+    /// screen, so the snapshot shows what the tap did. Here the tap turns
+    /// the Animate toggle off, which shows 120 ms after it.
+    #[test]
+    fn on_an_animating_screen_a_tree_read_right_after_a_tap_waits_for_the_re_read() {
+        let mut target = on_anim(Duration::from_millis(120));
+        tap(&mut target, "anim-toggle");
+        // The tap's re-read, before the app shows the change.
+        target.mirror.pump().unwrap();
+        assert_eq!(
+            target.mirror.timestamps().last_read.map(|read| read.reason),
+            Some(ReadReason::Action)
+        );
+        std::thread::sleep(Duration::from_millis(30));
+        target.catch_up().unwrap();
+        let after = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        let toggle = after.by_identifier("anim-toggle").unwrap();
+        assert_eq!(toggle.checked, Some(false), "{}", after.text);
+    }
+
+    /// Profiling, design D3: frames that start changing on their own right
+    /// after a poll of a still screen, as an app's own transition does, are
+    /// no animation yet: a tree read then waits for the re-read they call
+    /// for. Here the fixture launches with no window change noted to the
+    /// mirror, showing its launch splash at once and its screen 100 ms
+    /// later.
+    #[test]
+    fn a_tree_read_right_after_frames_start_changing_on_a_still_screen_waits_for_the_re_read() {
+        let driver = FakeDriver::parse("ios")
+            .unwrap()
+            .with_splash(Duration::from_millis(100));
+        let info = driver.discover().unwrap().remove(0);
+        let attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        let mut target = Attached::new(&info, attachment, &Arc::default());
+        target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        // The launcher holds still: the mirror polls it a second after the
+        // read.
+        target
+            .mirror
+            .run_until(Instant::now() + DEFAULT_POLL_INTERVAL + Duration::from_millis(10))
+            .unwrap();
+        let polled = target.mirror.timestamps().last_read.unwrap();
+        assert_eq!(polled.reason, ReadReason::Poll);
+        target
+            .apps
+            .launch(
+                "dev.mobileagent.fixture.expo",
+                &Launch::default(),
+                Instant::now(),
+            )
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        target.catch_up().unwrap();
+        let after = target
+            .mirror
+            .snapshot(&SnapshotOptions::interactive())
+            .unwrap();
+        assert!(after.text.contains("id=tab-login"), "{}", after.text);
+    }
+
     #[test]
     fn a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read() {
         let mut target = attached("ios", Duration::ZERO);

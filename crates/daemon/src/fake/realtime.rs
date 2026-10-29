@@ -8,6 +8,7 @@
 //! event on Android and, on targets with frames, a frame. A move to another
 //! screen animates: its frames change every 16 ms for 96 ms before the
 //! final one, as a transition does, while the tree changes at its start.
+//! The Anim tab's spinner turns until the change that stops it shows.
 //! The frame stream can start some time after the attach, as an emulator's
 //! does once its subscription is up: frames captured before are never
 //! delivered, and the first one delivered shows the screen as it is then.
@@ -31,6 +32,7 @@
 //! physical driver fails it, `runner_stalled` at the first stall and
 //! `disconnected` from the second.
 
+use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -264,6 +266,14 @@ struct Visual {
     /// Whether a frame stream that starts after the attach has delivered
     /// its first frame.
     started: bool,
+    /// Whether the screen shown has the Anim tab's spinner turning.
+    spinning: bool,
+    /// Whether the spinner turns on each screen a change is still to show,
+    /// with when it shows, oldest first: the display shows the spinner as
+    /// it was until the change that starts or stops it shows, after the
+    /// latency, as a device's display shows the screen before an input
+    /// until the input's effect comes.
+    spins: VecDeque<(Instant, bool)>,
 }
 
 #[derive(Clone, Copy)]
@@ -527,8 +537,14 @@ impl Shared {
         if !self.frames {
             return;
         }
-        let spinning = lock(&self.device).animating();
         let mut visual = lock(&self.visual);
+        while let Some(&(at, spinning)) = visual.spins.front()
+            && at <= now
+        {
+            visual.spinning = spinning;
+            visual.spins.pop_front();
+        }
+        let spinning = visual.spinning;
         let shown = match self.captures {
             Some(captures) => {
                 let capture = captures.at_or_before(now);
@@ -590,6 +606,10 @@ impl Shared {
     fn show_windows(&self, windows: &[Win], device: &Device, change: Change, delay: Duration) {
         let read = read(windows, device);
         let hash = hash(&read);
+        if self.frames {
+            let at = self.target.clock().now() + delay;
+            lock(&self.visual).spins.push_back((at, device.animating()));
+        }
         self.target.after(delay, Step::Show(read));
         if change == Change::Layout {
             // The final frame shows it, whenever one comes next.
@@ -1261,6 +1281,65 @@ mod tests {
             .unwrap();
         let streamed = frames_within(&mut simulator, Duration::from_millis(600));
         assert!(streamed.len() > 20, "{} frames", streamed.len());
+    }
+
+    /// Profiling, task 2.1: the display shows the Anim tab's spinner
+    /// turning until the change that stops it shows, as a device's display
+    /// shows the screen before an input until the input's effect comes: on
+    /// a fake Simulator whose changes show 120 ms after their cause, the
+    /// frames go on changing after a tap on the Animate toggle until its
+    /// change shows, and hold still after its frame.
+    #[test]
+    fn the_spinner_turns_until_the_change_that_stops_it_shows() {
+        let latency = Duration::from_millis(120);
+        let mut attachment = attach(
+            Platform::Ios,
+            Frames::Stream,
+            Timing {
+                latency,
+                ..Timing::default()
+            },
+            false,
+            Typing::Whole,
+            false,
+            None,
+        );
+        let anim = Launch {
+            relaunch: false,
+            env: vec![("FIXTURE_INITIAL_TAB".into(), "anim".into())],
+        };
+        attachment
+            .apps
+            .launch(app::FIXTURE, &anim, Instant::now())
+            .unwrap();
+        let mut mirror = mirror::Mirror::new(attachment.backend, attachment.config);
+        mirror
+            .run_until(Instant::now() + latency + Duration::from_millis(200))
+            .unwrap();
+        let listing = mirror
+            .snapshot(&mirror::SnapshotOptions::interactive())
+            .unwrap();
+        let toggle = listing
+            .by_identifier("anim-toggle")
+            .and_then(|element| element.reference)
+            .unwrap_or_else(|| panic!("the Animate toggle:\n{}", listing.text));
+        mirror
+            .act(&mirror::Action::Tap {
+                target: mirror::Target::Ref(toggle),
+                hold: None,
+            })
+            .unwrap();
+        let tapped = Instant::now();
+        mirror.run_until(tapped + latency * 3).unwrap();
+        let changes = mirror.frame_changes_since(tapped);
+        let before = changes.iter().filter(|&&at| at < tapped + latency).count();
+        assert!(
+            before >= 3,
+            "the spinner turns until the change shows: {changes:?}"
+        );
+        let shown = tapped + latency + Duration::from_millis(20);
+        let after: Vec<_> = changes.iter().filter(|&&at| at > shown).collect();
+        assert!(after.is_empty(), "still once it showed: {changes:?}");
     }
 
     /// Task 8.13: a frame stream that starts after the attach, as an
