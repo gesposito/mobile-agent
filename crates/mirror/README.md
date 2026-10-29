@@ -194,7 +194,7 @@ Conventions a driver follows:
 | tree event naming a known window | that window | `events` |
 | window event, lifecycle `ready`, tree event for an unknown window, `note_window_change` | every window | `events` |
 | input the mirror injected, for windows without events | those windows, when the tree is next needed; on a target whose frames come slowly (`slow_frames`), once the first frame that changed after the input arrived, at most `first_frame_wait` (500 ms) after the input | `action` |
-| frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop | `frames` |
+| frame hash changed since such a window's last read | it, 200 ms after that read ended at the soonest, and once more after frames stop; at once when the daemon asks (`reread_now`) | `frames` |
 | text the mirror pasted or set into a field of such a window, not typed as keys, until a read shows the field's text changed, the next input, or 1 s after the text | the field's window, as soon as a frame changes after its last read began; without frames, as soon as that read ends (task 10.29) | `frames`; `action` without frames |
 | 1 s since such a window's last read began; on a target whose frames come slowly (`slow_frames`) and that has a frame source, `still_poll_interval` (10 s), since frames that change re-read the window as the row above says | it | `poll` |
 | while settling without frames, bounds probes found anchors held still where the replica does not have them | their windows, cache cleared | `moved` |
@@ -215,7 +215,12 @@ arrived, perform due reads, never wait, but for the re-read after input on
 a target whose frames come slowly, which first waits for the input's first
 changed frame) or `run_until(deadline)`, and
 `next_wakeup` says when the next poll, frame-driven re-read or re-read after
-text falls due.
+text falls due. `reread_now` performs the frame-driven re-read at once, of
+the windows without events whose frames changed since their latest read
+began, rather than the minimum interval after that read, which the daemon
+asks for before a tree read on frames that kept changing past the interval
+(design D3 of profiling); the re-reads the mirror schedules itself keep the
+interval, the next one due the interval after that read.
 `drain` applies what arrived without reading the tree, even when a read is
 due, and returns how many items it applied; the reads those items call for
 happen at the next `pump`, snapshot, wait or ref.
@@ -533,7 +538,7 @@ the reasons in this order, each with advice:
 | `DEFAULT_SETTLE_MAX` | 3 s | design D8 |
 | `DEFAULT_POLL_INTERVAL` | 1 s | chosen here; spike S1 measured cold Compose reads at 21 to 349 ms |
 | `DEFAULT_STILL_POLL_INTERVAL` | 10 s | design D26 of physical-ios: the poll of a window without events on a target whose frames come slowly and that has a frame source, where frames that change call for their own re-read; a physical iPhone's 450 to 650 ms reads on the 1 s poll kept its worker reading when 47 to 60% of idle snapshots arrived, which waited up to 733 ms (`reports/11.1-ios-device.md`, finding 2) |
-| `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval, but for the window of a field text was just pasted or set into (task 10.29) |
+| `DEFAULT_MIN_REREAD_INTERVAL` | 200 ms | design D5: frame-driven re-reads bounded by a minimum interval, but for the window of a field text was just pasted or set into (task 10.29) and the re-read `reread_now` performs when asked (design D3 of profiling) |
 | `DEFAULT_PROBE_INTERVAL` | 50 ms | task 10.11: four probes to a quiet window, so a settle without frames ends at most 50 ms after the quiet window that follows the last move |
 | `DEFAULT_PROBE_ANCHORS` | 4 | task 10.11: nodes per probe, one round trip to the app each |
 | `DEFAULT_OVERSCROLL` | 500 ms | task 10.14: on the API 36 emulator the Expo list pulled against its end drew its stretch for 333 to 383 ms after the finger lifted; 117 ms beyond the longest |
@@ -936,7 +941,7 @@ cargo test -p mirror
 | Replica maintained from device events | Warm snapshot is served locally | `replica::a_warm_snapshot_is_served_without_reading_the_device` |
 | | First snapshot after attach | `replica::the_first_snapshot_after_attach_acquires_the_whole_tree_then_applies_events`, `replica::recorded_event_sequences_replay_to_the_trees_a_cold_read_returns`, `replica::a_window_change_reads_every_window` |
 | Windows without change events | Action on an event-less window | `replica::a_tap_on_an_event_less_window_is_reflected_by_a_full_re_read_with_its_cost`, `replica::window_metadata_that_a_window_sends_no_events_puts_it_on_the_re_read_path`, `replica::window_metadata_that_a_window_sends_events_keeps_it_off_the_re_read_path`, `replica::without_window_metadata_any_androidx_compose_class_puts_a_window_on_the_re_read_path` |
-| | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop` |
+| | Idle event-less window | `replica::an_idle_event_less_window_is_re_read_once_per_poll_without_deltas_when_unchanged`, `replica::an_event_less_window_that_changed_on_its_own_yields_a_delta_at_the_next_poll`, `replica::frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_once_after_they_stop`; the re-read asked for at once (profiling, design D3): `replica::a_re_read_asked_for_now_reads_the_changed_frames_windows_without_waiting_out_the_interval` |
 | | Idle event-less window with still frames (physical-ios task 9.1, design D26) | `replica::with_slow_frames_a_still_screen_is_polled_once_every_still_poll_interval`, `replica::with_slow_frames_a_frame_change_since_the_last_read_brings_the_poll_back`, `replica::without_slow_frames_or_without_a_frame_source_the_poll_stays_at_one_second`; through the daemon's fake iPhone, `worker::tests::an_idle_fake_iphone_with_still_frames_is_not_polled_where_others_are` and `worker::tests::a_fake_iphones_windows_are_re_read_on_frame_changes_and_polled_when_still` |
 | Snapshot content | Interactive snapshot of a scrolling list | `interactive::an_interactive_list_snapshot_lists_visible_rows_and_hints_three_below`, `interactive::scroll_semantics_give_the_hint_when_offscreen_rows_are_absent`, `interactive::scroll_semantics_without_an_item_position_say_which_ways_more_lies`, `interactive::a_modal_window_cuts_the_application_windows_below_it`, `interactive::an_actionable_container_takes_its_name_from_non_actionable_descendants`, `interactive::every_interactive_line_carries_a_ref`, `interactive::the_full_listing_follows_agent_browser_lines`, `interactive::an_empty_listing_says_so_as_agent_browser_does`, `interactive::an_alert_cuts_the_content_it_covers`, `interactive::a_system_alert_reports_system_ui_as_the_foreground`, `interactive::the_keyboard_window_is_listed_as_one_line` |
 | | (task 7.11: fields in labelled containers) | `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_android`, `editables::a_field_in_a_labelled_container_takes_the_containers_label_on_ios`, `editables::a_container_names_only_its_single_unlabelled_field`, `editables::a_labelled_container_whose_field_the_platform_hides_gets_a_ref`, `editables::only_labelled_containers_with_nothing_but_static_text_below_them_get_such_refs`, `editables::fields_below_the_fold_are_hinted_once_each`, `editables::a_named_field_under_an_alert_is_covered_and_its_ref_says_which_field`, `editables::fields_in_identically_labelled_containers_collide` |

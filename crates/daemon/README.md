@@ -48,22 +48,27 @@ src/
   devices/      the device drivers: simulator (Simulator driver), ios (physical iPhones),
                 android (Android driver)
   fake/         the fake driver: target list, device model, real-time adapter, trees
-tests/          arguments, cancel, changes, claims, controller, idle, ios_device, lifecycle,
-                replies and screenshots, over the socket against the binary; bench_inputs, the
-                same for the screen the benches time; devices, the CLI against a real
-                Simulator, emulator and iPhone
+tests/          arguments, cancel, catch_up, changes, claims, controller, idle, ios_device,
+                lifecycle, replies and screenshots, over the socket against the binary;
+                bench_inputs, the same for the screen the benches time; devices, the CLI
+                against a real Simulator, emulator and iPhone
 benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
                 wire::parse of the line the CLI sends for snapshot -i, reply_line of the
                 reply to it on the fake fixture's Big tab (500 cells), with their
                 allocations, and that snapshot through the socket of a daemon on a fake
-                emulator, one request per iteration
+                emulator, one request per iteration; and snapshot -i of the fixture's Anim
+                tab, its spinner turning, through the socket of a daemon on a fake
+                Simulator, each request half the mirror's minimum re-read interval after
+                the reply before it (design D3 of profiling)
 ```
 
 `cargo bench -p daemon -- --noplot [filter]` runs the benchmarks with
 criterion's default settings, about 10 s each, after a setup that starts a
 daemon on a fake target, brings it to the Big tab and stops it once the
-socket benchmark is done. The library and the binary set `bench = false`, so
-their test harnesses never see criterion's flags. A run on a busy host is no
+socket benchmark is done, then another on a fake Simulator, brought to the
+Anim tab, for the animating one, which samples flat, each iteration lasting
+at least its pause, and takes 10 to 20 s. The library and the binary set
+`bench = false`, so their test harnesses never see criterion's flags. A run on a busy host is no
 measurement; numbers for a report come from a quiet one (design D15), which
 `just micro` waits for before it compares every suite with
 `reports/micro/baseline.json`.
@@ -688,10 +693,30 @@ ref or selector argument first bring the replica up to the display
 began, as the mirror's timestamps show once what arrived is drained, they
 wait for that re-read, at most the minimum interval plus 100 ms. Targets
 without frames, and targets whose windows all send change events, never
-wait; a warm snapshot of a still screen is served from the replica. A
-screen that keeps changing its frames, such as a focused field's blinking
-cursor, can make a tree read wait for one re-read, since the worker's own
-pumps keep re-reading such a screen between commands.
+wait; a warm snapshot of a still screen is served from the replica.
+
+Frames that kept changing past the minimum interval, as an animation's, a
+video's or a focused field's blinking cursor's do, are no transition whose
+end a later read would show, so a tree read does not wait for them (design
+D3 of profiling): when the latest read was a poll or a re-read changed
+frames called for, and a frame changed in the minimum interval before it
+began as well as after, the worker asks the mirror for that re-read at once
+(`Mirror::reread_now`), the re-reads the mirror schedules between commands
+keeping the interval. The re-read a tap, events, a window change or the
+attach called for is still followed by the wait, so a snapshot right after
+a tap on a screen that animates shows what the tap did, and so are frames
+that start changing on a screen polled while it held still. Spike S15 found
+a listing of the SwiftUI fixture's Anim tab, its spinner turning, waiting
+106 ms of 119 for the re-read on the iOS 26.5 Simulator, against 0.65 ms
+with the spinner stopped. With the read at once, 20 such listings a second
+apart took 18.0 ms of the worker's time at the median on this session's
+Simulator (17.9 on average, 15 of them reading the tree), against 300 ms
+(233 on average) with the wait on the same Simulator, and each of 10
+listings sent at once after a click on a tab listed the tab the click
+opened. On the fake Simulator's Anim
+tab, a listing half an interval after the read before took 92.7 ms at the
+median through the socket with the wait and 1.19 ms with the read at once
+(`daemon/socket/snapshot-interactive-animating`).
 
 A physical iPhone's frames come slowly, screenshots polled about 19 times a
 second, and its tree read costs about half a second, so its attachment sets
@@ -1297,7 +1322,11 @@ have none, as design D7 has it, so `screenshot` answers them with
 after `--fake-latency`, together with its window event and frame; a move to
 another screen (another app, tab, detail, alert or prompt) animates, its
 frames changing every 16 ms for 96 ms after the tree changed, then settling
-on the screen's final frame. A relaunch takes the running app off the
+on the screen's final frame. The Anim tab's spinner keeps the frames
+changing every 16 ms until the change that stops it shows, so the display
+shows it turning for the latency after a tap on the Animate toggle, as a
+device's display shows the screen before an input until its effect comes.
+A relaunch takes the running app off the
 screen at once and shows the new one after the latency, as a relaunched
 app's stopped process leaves before the new one draws. A launch of an app
 that runs, from the launcher, brings it to the front;
@@ -1459,7 +1488,9 @@ Worked around here without changing `crates/mirror`:
 - The mirror schedules a frame-driven re-read no sooner than its minimum
   interval after the previous read and serves tree reads from the replica
   meanwhile, so the worker waits for that re-read before a tree read
-  (`Attached::catch_up`), timing it with the mirror's timestamps.
+  (`Attached::catch_up`), timing it with the mirror's timestamps, or asks
+  for it at once (`Mirror::reread_now`) on frames that kept changing past
+  the interval.
 - `testing::FakeTarget` runs on a fake clock and its tap reactions are
   fixed per identifier; the fake driver adds a real-time adapter and a
   stateful device model. Its `inputs()` copies the whole history, so the
@@ -1497,6 +1528,7 @@ Worked around here without changing `crates/mirror`:
 | Frames and screenshots from the host; Foreground tree read (windows without events), spec `ios-device-driver` (tasks 5.2 and 9.1 of physical-ios, designs D23 and D26) | Frame change after a tap (settle on slow frames, with and without them; the re-reads of windows without events and their still poll) | `worker::tests::on_a_fake_iphone_a_snapshot_right_after_a_tap_shows_what_the_tap_did`, `worker::tests::a_fake_iphones_windows_are_re_read_on_frame_changes_and_polled_when_still`, `worker::tests::an_idle_fake_iphone_with_still_frames_is_not_polled_where_others_are`, `worker::tests::settle_on_a_fake_iphone_holds_for_the_first_changed_frame_after_a_tap`, `worker::tests::settle_on_a_fake_iphone_without_frames_re_reads_every_minimum_interval`, `fake::realtime::tests::a_fake_iphones_frames_come_at_the_devices_rate`; the mirror's `replica::with_slow_frames_*` and `settle::with_slow_frames_*`; on the phone, `devices::the_swiftui_fixture_is_driven_through_the_cli_on_an_iphone`; a screenshot poller left out or reopened named in `status` (task 9.8): `devices::ios::tests::the_status_names_a_poller_left_out_of_the_frames_beside_the_capture_rate` |
 | (task 5.1, the iPhone driver's registration and adapter) | (`ios` registered only when named, the runner bundle, the input variable, errors, keys) | `driver::tests::the_ios_driver_registers_only_when_named`, `driver::tests::registration_puts_device_drivers_before_the_fake_one`, `devices::ios::tests::the_runner_bundle_is_the_built_one_or_the_one_the_variable_names`, `devices::ios::tests::the_input_variable_takes_auto_dtuhidd_or_runner`, `devices::ios::tests::driver_errors_keep_their_code_and_retryable_flag`, `devices::ios::tests::keyboard_codes_become_keys_and_consumer_codes_buttons`; the driver's screen in `crates/ios`, `macos::driver::tests::the_screen_is_the_devices_pixels_and_scale_from_lockdown` |
 | Replica maintained from device events | (task 8.8: a tree read after frames changed) | `worker::tests::a_tree_read_waits_for_the_re_read_that_changed_frames_call_for`, `worker::tests::a_tree_read_does_not_wait_when_no_frame_changed_since_the_last_read`, `worker::tests::a_target_without_frames_never_waits` |
+| (profiling task 2.1, design D3: a tree read on frames that kept changing past the minimum interval) | (read at once on a screen that animates; the wait kept after a tap's own re-read and on frames that start changing after a poll of a still screen) | `catch_up::a_listing_of_an_animating_screen_reads_the_tree_in_about_a_read_s_time`, `worker::tests::on_an_animating_screen_a_tree_read_right_after_a_tap_waits_for_the_re_read`, `worker::tests::a_tree_read_right_after_frames_start_changing_on_a_still_screen_waits_for_the_re_read`, `fake::realtime::tests::the_spinner_turns_until_the_change_that_stops_it_shows`; the mirror's `replica::a_re_read_asked_for_now_reads_the_changed_frames_windows_without_waiting_out_the_interval` |
 | (task 8.9, harness spans) | (tap spans, settle signals) | `signals::tests::a_wait_that_did_not_settle_timed_out`, `signals::tests::the_signal_that_changed_last_ended_the_wait`, `signals::tests::changes_within_20_ms_of_each_other_ended_it_together`, `signals::tests::a_change_at_the_action_counts_but_older_ones_do_not`, `signals::tests::a_screen_quiet_before_the_wait_began_ended_on_nothing`; end to end in the CLI's `spans::*` |
 | (task 8.13, tap-length strokes and the first frame) | (scroll refusals, `open` priming the frame stream) | the CLI's `commands::scroll_refuses_strokes_the_platform_takes_for_a_tap`, `spans::the_first_click_after_open_reports_its_first_frame_change`; `handlers::act::tests::a_scroll_splits_into_equal_strokes_that_fit`, `handlers::act::tests::strokes_the_platform_takes_for_taps_are_refused`, `fake::realtime::tests::a_late_frame_stream_delivers_nothing_before_it_starts_then_the_screen_shown`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; against the emulator, `devices::the_compose_fixture_is_driven_through_the_cli_on_an_emulator`'s first click |
 | (task 8.15, launch splash and input session) | (`open` waits past a splash, activates the input session) | the CLI's `commands::open_waits_past_a_launch_splash_for_the_app_s_first_screen`, `spans::the_first_click_after_open_does_not_wait_for_the_input_session`; `fake::realtime::tests::a_launch_shows_the_splash_before_the_first_screen`, `fake::realtime::tests::input_waits_for_the_session_to_activate_unless_it_started_ahead`; against the Simulator, `devices::the_expo_fixture_shows_its_screen_not_its_splash_right_after_open` and `devices::the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`'s first click |
