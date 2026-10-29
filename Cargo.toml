@@ -29,3 +29,12 @@ opt-level = 3
 [profile.dev.package.jpeg-encoder]
 opt-level = 3
 overflow-checks = false
+
+# Release code with the debug information a sampling profiler needs to name
+# inlined frames and lines (spike S15, docs/spikes/s15-profiles.md): release
+# builds strip the debug information by default. `cargo build --profile
+# profiling` writes target/profiling/.
+[profile.profiling]
+inherits = "release"
+debug = 1
+strip = false
