@@ -17,7 +17,7 @@ For each attached target the mirror SHALL maintain the current set of windows, t
 - **THEN** the mirror performs a full acquisition, then serves the snapshot and begins applying events
 
 ### Requirement: Windows without change events
-For a window whose toolkit sends no change events to the driver, the mirror SHALL re-read that window in full after every action it injected and on a periodic poll, SHALL derive the window's deltas by diffing consecutive reads, and SHALL report the read's cost and age in the snapshot's metadata so consumers can tell a fresh tree from a polled one. On a target whose frames are a change signal and whose reads cost more than a frame interval, the poll SHALL re-read only once the frames have changed since the read before, or once a long bound has passed, so that an idle target is not kept reading.
+For a window whose toolkit sends no change events to the driver, the mirror SHALL re-read that window in full after every action it injected and on a periodic poll, SHALL derive the window's deltas by diffing consecutive reads, and SHALL report the read's cost and age in the snapshot's metadata so consumers can tell a fresh tree from a polled one.
 
 #### Scenario: Action on an event-less window
 - **WHEN** a client taps a control in a window that emits no change events and then requests a snapshot
@@ -27,40 +27,69 @@ For a window whose toolkit sends no change events to the driver, the mirror SHAL
 - **WHEN** no action has been injected and the poll interval elapses
 - **THEN** the window is re-read once, and an unchanged tree produces no delta events
 
+### Requirement: Polls wait for a frame change where reads are slow
+On a target whose frames are a change signal and whose reads cost more than a frame interval, the poll SHALL re-read only once the frames have changed since the read before, or once a long bound has passed, so that an idle target is not kept reading.
+
 #### Scenario: Idle event-less window with still frames
 - **WHEN** a physical iPhone sits idle for ten seconds with its frames unchanged
 - **THEN** the mirror makes no poll re-read in that time, and a command arriving then is not kept waiting behind a read
 
 ### Requirement: Snapshot content
-A snapshot SHALL list elements with role, accessible name, test identifier when present, value, bounds, enabled, focused and selected state, and a ref. An interactive snapshot SHALL include only actionable elements and SHALL summarize actionable content that is scrolled out of view. On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, as a view the platform lists for the background it draws; a bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order; the keyboard window SHALL cover what lies under it, an element wholly under it left out of the interactive listing with the keyboard named, an element partly under it listed with its visible fraction; a keyboard window that draws no keys, as under a hardware keyboard, SHALL cover nothing beyond what it draws and SHALL count as no keyboard; every other system window presented over the application, the edit menu among them, SHALL cover what it draws and nothing more; a view that covers a control whole SHALL leave it in the full listing at `visible=0%`; an action on a covered element SHALL fail with `element_covered` naming the cover; a tab control SHALL get a ref whether it is selected or not, the tabs told by their row when only the selected one carries the trait; a checkbox SHALL be listed with its role and checked state as a switch is; a text node and a scroll bar SHALL appear once in the full listing and a heading SHALL be nested once; a node SHALL keep its ref across a change of its name when its role, identifier, parent and place among its siblings are unchanged.
+A snapshot SHALL list elements with role, accessible name, test identifier when present, value, bounds, enabled, focused and selected state, and a ref. An interactive snapshot SHALL include only actionable elements and SHALL summarize actionable content that is scrolled out of view.
 
 #### Scenario: Interactive snapshot of a scrolling list
 - **WHEN** an interactive snapshot is requested on a list whose last three buttons are below the fold
 - **THEN** visible actionable elements are listed with refs and a hint states that three actionable items are off-screen below
 
+### Requirement: A node drawn over its sibling covers it
+On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, as a view the platform lists for the background it draws.
+
 #### Scenario: Heading under a fixed footer on iOS
 - **WHEN** a consent screen's heading lies within the bounds of an "Accept and continue" button drawn after it in a fixed footer
 - **THEN** the interactive listing leaves the heading out, `visibility` reports it covered, and a click on its ref fails with `element_covered` naming the button rather than accepting the consent
-
-#### Scenario: Card under a sticky header
-- **WHEN** a list scrolls a card under a header drawn after the list
-- **THEN** the card is listed as covered, not in view
-
-#### Scenario: Selected tab keeps its ref
-- **WHEN** a tab bar holds three tabs and the middle one is selected
-- **THEN** all three are listed with refs and the selected one carries its selected state
 
 #### Scenario: Control under a disabled button
 - **WHEN** a control lies within the bounds of a disabled button drawn after it
 - **THEN** the control is cut from the interactive listing, and an action on it fails with `element_covered` naming the button
 
+### Requirement: Bars, headers and system windows as covers
+A bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order; every other system window presented over the application, the edit menu among them, SHALL cover what it draws and nothing more.
+
+#### Scenario: Card under a sticky header
+- **WHEN** a list scrolls a card under a header drawn after the list
+- **THEN** the card is listed as covered, not in view
+
 #### Scenario: Control behind a header listed first
 - **WHEN** a navigation bar or a pinned header is listed before the content it is drawn over and a control lies within its bounds
 - **THEN** the control is cut from the interactive listing and an action on it fails with `element_covered` naming the bar
 
+### Requirement: The keyboard covers what lies under it
+The keyboard window SHALL cover what lies under it, an element wholly under it left out of the interactive listing with the keyboard named, an element partly under it listed with its visible fraction; a keyboard window that draws no keys, as under a hardware keyboard, SHALL cover nothing beyond what it draws and SHALL count as no keyboard.
+
 #### Scenario: Elements under the keyboard
 - **WHEN** the keyboard window covers a submit button wholly and a field partly
 - **THEN** the button is left out of the interactive listing with the keyboard named in the hint, and the field is listed with its visible fraction
+
+### Requirement: A covered control stays in the full listing
+A view that covers a control whole SHALL leave it in the full listing at `visible=0%`; an action on a covered element SHALL fail with `element_covered` naming the cover.
+
+#### Scenario: A control covered whole
+- **WHEN** a view covers a control whole and a client acts on the control
+- **THEN** the full listing shows the control at `visible=0%`, and the action fails with `element_covered` naming the view
+
+### Requirement: Tabs, checkboxes, text nodes and headings in the listings
+A tab control SHALL get a ref whether it is selected or not, the tabs told by their row when only the selected one carries the trait; a checkbox SHALL be listed with its role and checked state as a switch is; a text node and a scroll bar SHALL appear once in the full listing and a heading SHALL be nested once.
+
+#### Scenario: Selected tab keeps its ref
+- **WHEN** a tab bar holds three tabs and the middle one is selected
+- **THEN** all three are listed with refs and the selected one carries its selected state
+
+#### Scenario: A checkbox, a text and a heading
+- **WHEN** a screen holds a checkbox, a text node, a scroll bar and a heading
+- **THEN** the checkbox is listed with its role and checked state as a switch is, the full listing shows the text node and the scroll bar once each, and the heading is nested once
+
+### Requirement: A ref survives a change of name
+A node SHALL keep its ref across a change of its name when its role, identifier, parent and place among its siblings are unchanged.
 
 #### Scenario: Ref across a label change
 - **WHEN** a field's name changes once it holds text and nothing else about it changes
@@ -78,15 +107,21 @@ A ref SHALL stay attached to the same element across consecutive snapshots while
 - **THEN** the action fails with a stale-ref error and guidance to re-snapshot
 
 ### Requirement: Single coordinate contract
-All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions. An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change. An action on an element SHALL tap the centre of the largest part of it that a tap can reach, its bounds within the viewport minus every cover, and SHALL fail with `element_covered` naming what a tap at the element's centre would hit when no reachable part is at least 8 points on each side; actions by ref, by identifier and by text selector SHALL take the same path, and `scroll --until` SHALL judge arrival by the same reachable part. The reachable part SHALL be clipped by the visible bounds of every scroll container above the element before the covers are taken away; the interactive listing SHALL mark every partly reachable element with its visible fraction and leave out every element with no reachable part, counted in the hint, whatever covers it; and a `scroll` that fails because the content stopped moving SHALL name its stroke's start and end. A scroll container SHALL be told by the platform's element type and scroll traits, never by a class name alone, so that every scrolling view subclass gives its semantics and visible bounds. The full listing SHALL mark partly reachable elements as the interactive listing does, and the interactive listing's hint lines SHALL count what it leaves out for a cover beside what is scrolled away, naming the cover. The interactive listing's count SHALL equal the number of actionable elements the full listing shows at `visible=0%` or leaves out for that cover, the full listing's count what it leaves out alone, a view listed before a container across its top SHALL be named a header whatever it holds, and a refusal SHALL name a cover as the hint names it.
+All bounds and coordinates SHALL be expressed in device points with the scale factor reported alongside, and the same space SHALL be used for element bounds and for coordinate-based actions.
 
-#### Scenario: Strip clipped by the scroll view
-- **WHEN** a button's lower 10 points lie below a floating button but outside its scroll view's visible bounds
-- **THEN** the button has no reachable part, is left out of the interactive listing and a click on it fails with `element_covered` naming the floating button
+#### Scenario: Tapping reported bounds hits the element
+- **WHEN** a client taps the center of an element's reported bounds
+- **THEN** the element receives the tap
 
-#### Scenario: Partly covered elements marked
-- **WHEN** a heading shows 50% below a footer and a card 30% below a sticky header
-- **THEN** the interactive listing marks each with its visible fraction, and a control behind a header is left out and counted in the hint
+### Requirement: An action out of view reads the window again
+An action on an element none of whose bounds are in view SHALL read the element's window again once and, if it is still out of view, fail with `element_offscreen`, never tapping bounds the replica held before a layout change.
+
+#### Scenario: Submit button moved by the keyboard
+- **WHEN** the keyboard's appearance moved a submit button and the replica still holds its old bounds, none of them in view
+- **THEN** the click reads the window again and taps the button where it is, or fails with `element_offscreen` if it is not in view, and never taps the old bounds
+
+### Requirement: An action taps the reachable part
+An action on an element SHALL tap the centre of the largest part of it that a tap can reach, its bounds within the viewport minus every cover, and SHALL fail with `element_covered` naming what a tap at the element's centre would hit when no reachable part is at least 8 points on each side; actions by ref, by identifier and by text selector SHALL take the same path, and `scroll --until` SHALL judge arrival by the same reachable part.
 
 #### Scenario: Card partly under a sticky header
 - **WHEN** a card lies 70% under a sticky header and 30% of it shows below the header
@@ -96,13 +131,40 @@ All bounds and coordinates SHALL be expressed in device points with the scale fa
 - **WHEN** a heading's lower half lies under a fixed footer's button and its upper half shows
 - **THEN** a click taps the upper half when it is at least 8 points tall, and otherwise fails with `element_covered` naming the button
 
-#### Scenario: Tapping reported bounds hits the element
-- **WHEN** a client taps the center of an element's reported bounds
-- **THEN** the element receives the tap
+### Requirement: The reachable part is clipped by the scroll containers
+The reachable part SHALL be clipped by the visible bounds of every scroll container above the element before the covers are taken away.
 
-#### Scenario: Submit button moved by the keyboard
-- **WHEN** the keyboard's appearance moved a submit button and the replica still holds its old bounds, none of them in view
-- **THEN** the click reads the window again and taps the button where it is, or fails with `element_offscreen` if it is not in view, and never taps the old bounds
+#### Scenario: Strip clipped by the scroll view
+- **WHEN** a button's lower 10 points lie below a floating button but outside its scroll view's visible bounds
+- **THEN** the button has no reachable part, is left out of the interactive listing and a click on it fails with `element_covered` naming the floating button
+
+### Requirement: The listings mark the reachable part
+The interactive listing SHALL mark every partly reachable element with its visible fraction and leave out every element with no reachable part, counted in the hint, whatever covers it; the full listing SHALL mark partly reachable elements as the interactive listing does, and the interactive listing's hint lines SHALL count what it leaves out for a cover beside what is scrolled away, naming the cover.
+
+#### Scenario: Partly covered elements marked
+- **WHEN** a heading shows 50% below a footer and a card 30% below a sticky header
+- **THEN** the interactive listing marks each with its visible fraction, and a control behind a header is left out and counted in the hint
+
+### Requirement: The listings' counts and the cover's name agree
+The interactive listing's count SHALL equal the number of actionable elements the full listing shows at `visible=0%` or leaves out for that cover, the full listing's count what it leaves out alone, a view listed before a container across its top SHALL be named a header whatever it holds, and a refusal SHALL name a cover as the hint names it.
+
+#### Scenario: A refusal names the header as the hint does
+- **WHEN** a view listed before a scroll container lies across its top and covers two of its controls, and a click names one of them
+- **THEN** the view is named a header whatever it holds, the interactive listing's hint counts the two controls the full listing shows at `visible=0%`, and the click fails with `element_covered` naming the header as the hint names it
+
+### Requirement: Scroll containers by their type
+A scroll container SHALL be told by the platform's element type and scroll traits, never by a class name alone, so that every scrolling view subclass gives its semantics and visible bounds.
+
+#### Scenario: A subclass of the scrolling view
+- **WHEN** a screen scrolls its content in a subclass of the platform's scrolling view under a class name of its own
+- **THEN** the mirror tells it as a scroll container by its element type and scroll traits, with its semantics and visible bounds
+
+### Requirement: A scroll that stops names its stroke
+A `scroll` that fails because the content stopped moving SHALL name its stroke's start and end.
+
+#### Scenario: Content that stops moving
+- **WHEN** a `scroll` strokes a list that has reached its end, so that the content stops moving and the scroll fails
+- **THEN** the failure names its stroke's start and end
 
 ### Requirement: Settle predicate
 The mirror SHALL provide a settle wait that resolves when no tree deltas and no frame changes have occurred for a configurable quiet window, bounded by a configurable maximum. When the maximum elapses the result SHALL state that the screen is still changing and why, rather than reporting an error.
