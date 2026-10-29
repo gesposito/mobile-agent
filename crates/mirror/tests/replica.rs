@@ -279,6 +279,47 @@ fn frame_changes_re_read_event_less_windows_at_most_every_minimum_interval_and_o
     assert_eq!(mirror.dump(), cold_dump(&welcome.read()));
 }
 
+/// Profiling, design D3: the re-read that frames changed since a window's
+/// latest read began call for, asked for now, reads every window without
+/// change events at once rather than a minimum interval after that read,
+/// and reads nothing while no frame changed since; the mirror's own
+/// frame-driven re-reads keep the interval, the next one due the interval
+/// after the read asked for.
+#[test]
+fn a_re_read_asked_for_now_reads_the_changed_frames_windows_without_waiting_out_the_interval() {
+    let screen = Screen::load("login-ios");
+    let target = FakeTarget::new(screen.read());
+    target.read_cost(ms(10));
+    for k in 0..=5 {
+        target.at(ms(100 + 20 * k), Step::Frame(k));
+    }
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    mirror.pump().unwrap();
+
+    target.advance(ms(150) - target.elapsed());
+    mirror.reread_now().unwrap();
+    target.advance(ms(250) - target.elapsed());
+    mirror.drain();
+    assert_eq!(
+        mirror.next_wakeup(),
+        Some(target.instant(ms(360))),
+        "the mirror's own re-read is due the interval after the one asked for"
+    );
+    mirror.reread_now().unwrap();
+    target.advance(ms(300) - target.elapsed());
+    mirror.reread_now().unwrap();
+    mirror.run_until(target.instant(ms(1_000))).unwrap();
+    assert_eq!(
+        reads_and_reasons(&target),
+        [
+            (ms(0), ReadReason::Attach),
+            (ms(150), ReadReason::Frames),
+            (ms(250), ReadReason::Frames),
+        ],
+        "a read each time frames changed since the last began, none once they stopped"
+    );
+}
+
 /// The Login tab as the Simulator's reader shows it with the keyboard up:
 /// the application's window, 1, and the keyboard's, 9, neither sending
 /// change events.

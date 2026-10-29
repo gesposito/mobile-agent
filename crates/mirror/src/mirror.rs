@@ -558,6 +558,26 @@ impl Mirror {
         }
     }
 
+    /// Performs now the re-read that frames changed since a window's latest
+    /// read began call for, of every window that sends no change events,
+    /// rather than once the minimum re-read interval after that read has
+    /// passed, after applying what arrived and the reads that are due. The
+    /// re-reads the mirror schedules itself keep the interval, the next one
+    /// due the interval after this read. Nothing is read while no frame
+    /// changed since those windows' latest reads began, nor once the target
+    /// is disconnected.
+    pub fn reread_now(&mut self) -> Result<(), MirrorError> {
+        self.pump()?;
+        if self.replica.disconnected.is_some() {
+            return Ok(());
+        }
+        let started = self.now();
+        match self.replica.frames_reread() {
+            Some(request) => self.read(&request, started),
+            None => Ok(()),
+        }
+    }
+
     /// When a read of a window that sends no change events falls due next:
     /// its poll, a re-read after frames changed, or, after text for one of
     /// its fields, the re-read that text calls for.

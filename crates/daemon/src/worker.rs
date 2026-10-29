@@ -14,7 +14,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mirror::{Mirror, MirrorError, Ref, Snapshot};
+use mirror::backend::ReadReason;
+use mirror::{Mirror, MirrorError, ReadSpan, Ref, Snapshot};
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, Driver, InputNotes, InputSession, Report,
@@ -227,9 +228,12 @@ impl Attached {
     /// no sooner than its minimum re-read interval after that read, or at
     /// once for the window of a field it has just pasted or set text into;
     /// this waits for it, so a snapshot right after a tap shows what the
-    /// tap did rather than what the tap's own re-read caught. The mirror
-    /// times both: what arrived counts once drained, without reading the
-    /// tree.
+    /// tap did rather than what the tap's own re-read caught. Frames that
+    /// kept changing past the interval, an animation's or a video's, are no
+    /// transition a later read would see the end of: the re-read they call
+    /// for runs at once instead (design D3 of profiling), the mirror's own
+    /// re-reads keeping the interval. The mirror times both: what arrived
+    /// counts once drained, without reading the tree.
     pub fn catch_up(&mut self) -> Result<(), MirrorError> {
         if !self.frames {
             return Ok(());
@@ -254,9 +258,33 @@ impl Attached {
             if now >= deadline {
                 return Ok(());
             }
+            if due > now && self.kept_changing(stamps.last_read) {
+                return self.mirror.reread_now();
+            }
             let until = due.min(now + CATCH_UP_SLICE).clamp(now, deadline);
             self.mirror.run_until(until)?;
         }
+    }
+
+    /// Whether the frames that changed after `read` began, the latest read,
+    /// kept changing past the mirror's minimum re-read interval: `read` was
+    /// a poll or a re-read changed frames called for, not the re-read that
+    /// input, events, a window change, the attach or a resync called for,
+    /// whose transition may still be running, and a frame changed in the
+    /// interval before it began as well.
+    fn kept_changing(&self, read: Option<ReadSpan>) -> bool {
+        let Some(read) = read else {
+            return false;
+        };
+        if !matches!(read.reason, ReadReason::Poll | ReadReason::Frames) {
+            return false;
+        }
+        let interval = self.mirror.config().min_reread_interval;
+        let since = read.started.checked_sub(interval).unwrap_or(read.started);
+        self.mirror
+            .frame_changes_since(since)
+            .first()
+            .is_some_and(|&at| at <= read.started)
     }
 
     /// What `session` keeps about this target.

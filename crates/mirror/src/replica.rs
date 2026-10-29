@@ -611,6 +611,24 @@ impl Replica {
         })
     }
 
+    /// The re-read that frames changed since a window's latest read began
+    /// call for, of every window that sends no change events whose frames
+    /// changed since then, however soon after that read: what
+    /// [`Replica::due_read`] gives for them once the minimum re-read
+    /// interval has passed.
+    pub fn frames_reread(&self) -> Option<ReadRequest> {
+        let windows: Vec<u32> = self
+            .windows
+            .iter()
+            .filter(|window| window.reread() && self.frames_changed_since(window.read_started))
+            .map(|window| window.id)
+            .collect();
+        (!windows.is_empty()).then_some(ReadRequest {
+            windows: Some(windows),
+            reason: ReadReason::Frames,
+        })
+    }
+
     /// The re-read due at `now` for the windows that send no change events
     /// when they are polled every `every`: after injected input at once,
     /// then once per interval. Used while waiting without frames to watch.
