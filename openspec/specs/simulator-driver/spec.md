@@ -35,19 +35,22 @@ The driver SHALL read the foreground application's accessibility tree with ident
 - **THEN** the snapshot is marked degraded with the reason
 
 ### Requirement: Input transport selection
-The driver SHALL select the input transport from the host's CoreSimulator and Xcode versions, because the host injects the same input service into every booted Simulator, and SHALL NOT probe a transport in a way that disables another for the rest of the boot. The driver SHALL open the input session and wait for the transport's activation reply before the first action, queueing input meanwhile, so that no event is dropped. When no transport works the driver SHALL fail with a diagnostic naming the CoreSimulator, Xcode and runtime versions and the transports tried.
+The driver SHALL select the input transport from the host's CoreSimulator and Xcode versions, because the host injects the same input service into every booted Simulator, and SHALL NOT probe a transport in a way that disables another for the rest of the boot. When no transport works the driver SHALL fail with a diagnostic naming the CoreSimulator, Xcode and runtime versions and the transports tried.
 
 #### Scenario: Two runtimes on one host
 - **WHEN** two Simulators with different runtime versions are booted on one host
 - **THEN** both receive input through the transport selected for that host and each target status names it
 
-#### Scenario: Input before activation
-- **WHEN** a tap is requested immediately after the input session is opened
-- **THEN** the tap is delivered once activation completes and the response reports the activation wait
-
 #### Scenario: Unsupported combination
 - **WHEN** no transport works for the host and runtime
 - **THEN** input commands fail with a diagnostic naming the versions and the transports tried
+
+### Requirement: Input waits for the transport's activation
+The driver SHALL open the input session and wait for the transport's activation reply before the first action, queueing input meanwhile, so that no event is dropped.
+
+#### Scenario: Input before activation
+- **WHEN** a tap is requested immediately after the input session is opened
+- **THEN** the tap is delivered once activation completes and the response reports the activation wait
 
 ### Requirement: Input actions
 The driver SHALL support taps, long presses, swipes with velocity control, multi-finger gestures, hardware buttons including home and lock, key presses and text typing. On a warm session a tap SHALL be dispatched within 20 ms of the request.
@@ -64,23 +67,29 @@ The driver SHALL provide frames from the display surface up to the display refre
 - **THEN** new frames arrive as the display updates and stop arriving when the display is static
 
 ### Requirement: Text entry
-The driver SHALL type text through keyboard events and SHALL support paste-based entry for long strings, reporting which method was used. When the field was focused by the same action, the driver SHALL wait, bounded, until the keyboard window is up before the first key, so that keys sent while the keyboard slides in are not dropped. The cadence of typed keys SHALL be one a field of each app technology takes without a loss, decided by measurement: a React Native field, which takes keys through its JavaScript thread, MAY be typed more slowly than a native one. When `fill` types an entry into a field whose text it selected to replace, it SHALL delete the selection and wait, bounded, for a read that shows the field empty before the first key, since autocorrection rewrites the first word of keys typed over the selection, its capital lost, and a refill of the same text could not otherwise be read back.
-
-#### Scenario: React Native field typed whole
-- **WHEN** `fill` types the 36-character entry into a React Native field twenty times at the cadence chosen for it
-- **THEN** every run reads back whole
+The driver SHALL type text through keyboard events and SHALL support paste-based entry for long strings, reporting which method was used. When the field was focused by the same action, the driver SHALL wait, bounded, until the keyboard window is up before the first key, so that keys sent while the keyboard slides in are not dropped.
 
 #### Scenario: Long string
 - **WHEN** a client enters a 500 character string
 - **THEN** the text appears in the focused field and the response names the method used
 
-#### Scenario: Capital first letter over what the field held
-- **WHEN** `fill` types "Smoke Org" ten times into a field with autocorrection on that capitalizes words, each time over the entry the field held and after the focus was in another field
-- **THEN** every run reads back whole, typed, without the paste retry
-
 #### Scenario: First keystroke lands
 - **WHEN** `fill` focuses a field and types a 20-character string starting with a lower-case letter
 - **THEN** the field reads back the whole string, first letter included, in every one of ten runs
+
+### Requirement: Typing cadence per app technology
+The cadence of typed keys SHALL be one a field of each app technology takes without a loss, decided by measurement: a React Native field, which takes keys through its JavaScript thread, MAY be typed more slowly than a native one.
+
+#### Scenario: React Native field typed whole
+- **WHEN** `fill` types the 36-character entry into a React Native field twenty times at the cadence chosen for it
+- **THEN** every run reads back whole
+
+### Requirement: A fill over a selection waits for the emptied field
+When `fill` types an entry into a field whose text it selected to replace, it SHALL delete the selection and wait, bounded, for a read that shows the field empty before the first key, since autocorrection rewrites the first word of keys typed over the selection, its capital lost, and a refill of the same text could not otherwise be read back.
+
+#### Scenario: Capital first letter over what the field held
+- **WHEN** `fill` types "Smoke Org" ten times into a field with autocorrection on that capitalizes words, each time over the entry the field held and after the focus was in another field
+- **THEN** every run reads back whole, typed, without the paste retry
 
 ### Requirement: Parallel Simulators
 One daemon SHALL drive several Simulators at once with fully isolated sessions.
