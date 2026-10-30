@@ -191,7 +191,12 @@ impl<T: Refusal> Refusal for Option<T> {
 /// A successful reply's payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Success {
+    /// The data, null when it is `written`.
     pub data: Value,
+    /// The data written as JSON text before the reply, which the reply line
+    /// carries as it is: the listing's, whose refs map and text
+    /// [`crate::listing::reply`] writes straight from the mirror's snapshot.
+    pub written: Option<String>,
     pub warning: Option<String>,
 }
 
@@ -199,7 +204,27 @@ impl Success {
     pub fn new(data: Value) -> Success {
         Success {
             data,
+            written: None,
             warning: None,
+        }
+    }
+
+    /// A success whose data is `json`, JSON text the reply line carries as
+    /// it is.
+    pub fn written(json: String) -> Success {
+        Success {
+            data: Value::Null,
+            written: Some(json),
+            warning: None,
+        }
+    }
+
+    /// The data as a value: `data`, or the written text read back.
+    #[cfg(test)]
+    pub(crate) fn into_data(self) -> Value {
+        match self.written {
+            Some(json) => serde_json::from_str(&json).expect("the written data is JSON"),
+            None => self.data,
         }
     }
 
@@ -257,14 +282,23 @@ impl From<protocol::Error> for Failure {
 }
 
 /// The reply line for `result`, newline included: agent-browser's field
-/// order, `code` and `warning` only when set.
+/// order, `code` and `warning` only when set; written data goes in as it
+/// is, into a line sized for it.
 pub fn reply_line(id: &Value, result: &Result<Success, Failure>) -> String {
-    let mut line = String::from("{\"id\":");
+    let written = result
+        .as_ref()
+        .ok()
+        .and_then(|success| success.written.as_deref());
+    let mut line = String::with_capacity(written.map_or(0, str::len) + 128);
+    line.push_str("{\"id\":");
     line.push_str(&id.to_string());
     match result {
         Ok(success) => {
             line.push_str(",\"success\":true,\"data\":");
-            line.push_str(&success.data.to_string());
+            match written {
+                Some(written) => line.push_str(written),
+                None => line.push_str(&success.data.to_string()),
+            }
             line.push_str(",\"error\":null");
             if let Some(warning) = &success.warning {
                 line.push_str(",\"warning\":");
@@ -418,6 +452,11 @@ mod tests {
         assert_eq!(
             ok,
             "{\"id\":\"r1\",\"success\":true,\"data\":{\"a\":1},\"error\":null}\n"
+        );
+        let written = Success::written(r#"{"a":1}"#.to_owned()).warn(Some("w".to_owned()));
+        assert_eq!(
+            reply_line(&json!("r3"), &Ok(written)),
+            "{\"id\":\"r3\",\"success\":true,\"data\":{\"a\":1},\"error\":null,\"warning\":\"w\"}\n"
         );
         let failed = reply_line(&json!("r2"), &Err(Failure::new("stale_ref", "gone \"x\"")));
         assert_eq!(

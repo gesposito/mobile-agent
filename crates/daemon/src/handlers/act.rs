@@ -3299,7 +3299,7 @@ mod tests {
             &request(r#"{"action": "snapshot", "interactive": true}"#),
         )
         .unwrap()
-        .data;
+        .into_data();
         let fixture = listing["refs"]
             .as_object()
             .and_then(|refs| {
@@ -3772,7 +3772,7 @@ mod tests {
             &request(r#"{"action": "snapshot", "interactive": true}"#),
         )
         .unwrap()
-        .data;
+        .into_data();
         listing["refs"]
             .as_object()
             .and_then(|refs| {
@@ -5272,7 +5272,7 @@ mod tests {
             &request(r#"{"action": "snapshot", "interactive": true}"#),
         )
         .unwrap();
-        let text = listing.data["snapshot"]
+        let text = listing.into_data()["snapshot"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
@@ -5497,7 +5497,7 @@ mod tests {
         let line = json!({"action": "snapshot", "interactive": interactive}).to_string();
         let listing = super::super::run_on(target, "default", &request(&line))
             .unwrap()
-            .data["snapshot"]
+            .into_data()["snapshot"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
@@ -5675,7 +5675,7 @@ mod tests {
         let line = json!({"action": "snapshot", "interactive": true}).to_string();
         let listing = super::super::run_on(&mut target, "default", &request(&line))
             .unwrap()
-            .data["snapshot"]
+            .into_data()["snapshot"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
@@ -6158,7 +6158,7 @@ mod tests {
         let line = json!({"action": "snapshot", "interactive": true}).to_string();
         super::super::run_on(target, "default", &request(&line))
             .unwrap()
-            .data["origin"]
+            .into_data()["origin"]
             .clone()
     }
 
@@ -6320,7 +6320,7 @@ mod tests {
             &request(r#"{"action": "snapshot", "interactive": true}"#),
         )
         .unwrap()
-        .data;
+        .into_data();
         let mut rows: Vec<(u32, String)> = listing["refs"]
             .as_object()
             .into_iter()
@@ -6408,7 +6408,7 @@ mod tests {
             &request(r#"{"action": "snapshot", "interactive": true}"#),
         )
         .unwrap()
-        .data;
+        .into_data();
         let text = listing["snapshot"].as_str().unwrap_or_default();
         assert!(
             text.contains("placeholder-item-1") && text.contains("placeholder-item-3"),

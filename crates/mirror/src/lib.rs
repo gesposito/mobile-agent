@@ -19,7 +19,7 @@ mod diff;
 mod error;
 mod frame;
 mod geometry;
-mod json;
+pub mod json;
 mod mirror;
 mod refs;
 mod render;

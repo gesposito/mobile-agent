@@ -1,27 +1,54 @@
 //! JSON text, written the way agent-browser's `serde_json` writes it: compact,
 //! strings escaped for `"`, `\` and control characters only. The mirror
-//! writes agent-browser's shapes itself, so a delta's size is known exactly.
+//! writes agent-browser's shapes itself, so a delta's size is known exactly;
+//! a host writes a reply around a listing's strings with [`push_str`], as
+//! the daemon writes the listing's reply.
 
 use std::fmt::Write as _;
 
-/// Appends `s` as a JSON string literal.
-pub(crate) fn push_str(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            c if u32::from(c) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", u32::from(c));
-            }
-            c => out.push(c),
-        }
+/// What each byte becomes in a JSON string, as `serde_json` escapes it:
+/// itself (0), a backslash and this letter, or for `u` a backslash and
+/// `u00` with the byte in two hexadecimal digits.
+static ESCAPE: [u8; 256] = {
+    let mut escape = [0; 256];
+    let mut byte = 0;
+    while byte < 0x20 {
+        escape[byte] = b'u';
+        byte += 1;
     }
+    escape[0x08] = b'b';
+    escape[0x09] = b't';
+    escape[0x0a] = b'n';
+    escape[0x0c] = b'f';
+    escape[0x0d] = b'r';
+    escape[b'"' as usize] = b'"';
+    escape[b'\\' as usize] = b'\\';
+    escape
+};
+
+/// Appends `s` as a JSON string literal, escaped as `serde_json` escapes
+/// it.
+pub fn push_str(out: &mut String, s: &str) {
+    out.push('"');
+    // The text between escapes goes in a run at a time, looked up a byte at
+    // a time as `serde_json` looks it up: every byte that takes an escape
+    // is ASCII, so each run ends on a character's boundary.
+    let mut run = 0;
+    for (at, &byte) in s.as_bytes().iter().enumerate() {
+        let escape = ESCAPE[usize::from(byte)];
+        if escape == 0 {
+            continue;
+        }
+        out.push_str(&s[run..at]);
+        out.push('\\');
+        if escape == b'u' {
+            let _ = write!(out, "u{byte:04x}");
+        } else {
+            out.push(char::from(escape));
+        }
+        run = at + 1;
+    }
+    out.push_str(&s[run..]);
     out.push('"');
 }
 
