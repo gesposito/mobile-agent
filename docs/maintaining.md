@@ -6,7 +6,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 
 ## Before the repository is made public
 
-- [x] The history rewritten, scanned and force-pushed, the old branches deleted or left unpushed (`openspec/changes/open-sourcing/tasks.md`, task 5.2). (done 2026-10-15; `scripts/check-history.sh --all` clean over 1,334 commits on 2026-10-30)
+- [x] The history rewritten, scanned and force-pushed, the old branches deleted or left unpushed (`openspec/changes/archive/2026-10-30-open-sourcing/tasks.md`, task 5.2). (done 2026-10-15; `scripts/check-history.sh --all` clean over 1,334 commits on 2026-10-30)
 - [x] GitHub Support asked to remove the cached views and the unreachable objects of the old history, with the repository's name, the number of affected pull requests from `.git/filter-repo/changed-refs` and the "First Changed Commit(s)" that `git filter-repo` printed; or, instead, the rewritten history pushed into a new repository under the same name, which holds no old object (`docs/research/open-sourcing.md`, Removing data). Until one of the two is done, old commits stay reachable by their ids. (done: on 2026-10-30 the old history's head answered "No commit found" and the pull requests into it are gone)
 - [x] Dependabot's open pull request into the old history closed; Dependabot opens it again on the new one.
 
