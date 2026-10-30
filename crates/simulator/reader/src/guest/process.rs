@@ -2,7 +2,7 @@
 //! A Simulator's processes run on the host's kernel, so this answers the
 //! same inside the guest and on the host.
 
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::path::{Path, PathBuf};
 
 use objc2::rc::autoreleasepool;
@@ -14,12 +14,30 @@ use crate::elements::{Owner, SPRINGBOARD};
 /// among them; applications live in `/Applications` or the device's data.
 const CORE_SERVICES: &str = "/System/Library/CoreServices/";
 
+/// The size of the buffer `proc_pidpath` fills: libproc's
+/// `PROC_PIDPATHINFO_MAXSIZE`, `4 * MAXPATHLEN` in `sys/proc_info.h`, which
+/// is 4096 bytes. libproc is macOS's, so libc declares the constant for macOS
+/// alone and the iOS SDKs ship no header with it; it is declared here for
+/// the guest and the host alike.
+const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
+
+unsafe extern "C" {
+    /// libproc's call that writes the executable path of process `pid` into
+    /// `buffer`, at most `buffersize` bytes, and returns its length, or 0 or
+    /// less when it fails, with libc's macOS signature. libproc is macOS's,
+    /// so libc declares the call for macOS alone. A Simulator's processes run
+    /// on the host's kernel and the iPhoneSimulator SDK's libSystem exports
+    /// the call, so it is declared here and answers inside the guest as it
+    /// does on the host.
+    fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+}
+
 /// The executable `pid` runs.
 pub fn executable(pid: i32) -> Option<PathBuf> {
-    let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    let mut buffer = vec![0u8; PROC_PIDPATHINFO_MAXSIZE];
     // SAFETY: the buffer holds as many bytes as the call is told.
     let length = unsafe {
-        libc::proc_pidpath(
+        proc_pidpath(
             pid,
             buffer.as_mut_ptr().cast::<c_void>(),
             buffer.len() as u32,
