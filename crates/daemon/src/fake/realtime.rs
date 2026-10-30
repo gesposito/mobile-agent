@@ -35,7 +35,7 @@
 use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -167,6 +167,9 @@ struct Shared {
     stop: Duration,
     /// How long each read of the tree takes.
     read_cost: Duration,
+    /// The reads of the tree the target was asked for, counted with those
+    /// of the other targets of the driver that attached it.
+    reads: Arc<AtomicUsize>,
     /// Whether a stroke that lifts moving glides the list on.
     fling: bool,
     /// The glide under way, if any.
@@ -776,8 +779,8 @@ impl Report for DeviceReport {
 /// activates and how long detaching it takes. With `fling`, a stroke whose
 /// finger lifts moving glides the list on; `typing` says how its fields take
 /// text whose method the target may choose. With `keyboard`, its keyboard
-/// stays up over every screen of the fixture apps. A fake iPhone's `runner`
-/// is the one its attach started.
+/// stays up over every screen of the fixture apps. From `driver` it takes a
+/// fake iPhone's runner and the count each read of its tree adds to.
 pub(crate) fn attach(
     platform: Platform,
     frames: Frames,
@@ -785,7 +788,7 @@ pub(crate) fn attach(
     fling: bool,
     typing: Typing,
     keyboard: bool,
-    runner: Option<FakeRunner>,
+    driver: FromDriver,
 ) -> Attachment {
     let subscribed = match frames {
         Frames::Screenshots { subscribed } => Some(subscribed),
@@ -802,6 +805,7 @@ pub(crate) fn attach(
         home_returns,
         read_cost,
     } = timing;
+    let FromDriver { runner, reads } = driver;
     let device = Device::new(platform)
         .with_keyboard(keyboard)
         .with_slide(slide)
@@ -826,6 +830,7 @@ pub(crate) fn attach(
         session: Mutex::new(Session::default()),
         stop,
         read_cost,
+        reads,
         fling,
         glide: Mutex::new(None),
         typing,
@@ -875,6 +880,15 @@ pub(crate) fn attach(
     }
 }
 
+/// What an attach takes from the driver that makes it.
+#[derive(Default)]
+pub(crate) struct FromDriver {
+    /// For a fake iPhone, the runner the driver started for the attach.
+    pub runner: Option<FakeRunner>,
+    /// The driver's count of the reads of its targets' trees.
+    pub reads: Arc<AtomicUsize>,
+}
+
 /// One of the backend's parts; all share the target and the device.
 struct Part {
     shared: Arc<Shared>,
@@ -883,6 +897,7 @@ struct Part {
 
 impl TreeSource for Part {
     fn read(&mut self, request: &ReadRequest) -> Result<TreeRead, BackendError> {
+        self.shared.reads.fetch_add(1, Ordering::Relaxed);
         if !self.shared.read_cost.is_zero() {
             std::thread::sleep(self.shared.read_cost);
         }
@@ -1118,6 +1133,17 @@ mod tests {
 
     /// Task 8.15: a fixture app whose process starts shows its launch
     /// splash, one image, for the splash's length before its first screen.
+    /// The fake shows the splash from its clock's time at the launch, with
+    /// no latency, and the first screen the splash's length after; that
+    /// time falls between the instant taken before the launch and the one
+    /// taken once it returned, so the clock witnesses what each read shows
+    /// however late the host runs the test's steps: a read that finished
+    /// before the splash's earliest end shows the splash and no login, and
+    /// a read that started after its latest end shows the login and no
+    /// splash. The first read, 50 ms in, is claimed only when it finished
+    /// in time, which a host that oversleeps the 50 ms or stalls the test
+    /// past the splash does not vouch for; the second waits past the latest
+    /// end, so its claim always holds.
     #[test]
     fn a_launch_shows_the_splash_before_the_first_screen() {
         let timing = Timing {
@@ -1131,7 +1157,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         let read = |attachment: &mut Attachment| {
             let request = ReadRequest {
@@ -1140,6 +1166,7 @@ mod tests {
             };
             format!("{:?}", attachment.backend.tree.read(&request).unwrap())
         };
+        let launched = Instant::now();
         attachment
             .apps
             .launch(
@@ -1148,11 +1175,15 @@ mod tests {
                 Instant::now(),
             )
             .unwrap();
+        let returned = Instant::now();
         std::thread::sleep(Duration::from_millis(50));
         let splash = read(&mut attachment);
-        assert!(splash.contains("SplashScreenLegacy"), "{splash}");
-        assert!(!splash.contains("login-submit"), "{splash}");
-        std::thread::sleep(Duration::from_millis(150));
+        if Instant::now() < launched + timing.splash {
+            assert!(splash.contains("SplashScreenLegacy"), "{splash}");
+            assert!(!splash.contains("login-submit"), "{splash}");
+        }
+        let ended = returned + timing.splash;
+        std::thread::sleep(ended.saturating_duration_since(Instant::now()));
         let screen = read(&mut attachment);
         assert!(screen.contains("login-submit"), "{screen}");
         assert!(!screen.contains("SplashScreenLegacy"), "{screen}");
@@ -1177,7 +1208,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         let started = Instant::now();
         cold.backend.input.perform(&tap).unwrap();
@@ -1191,7 +1222,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         let session = warm.input_session.as_mut().unwrap();
         session.start().unwrap();
@@ -1235,7 +1266,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         assert_eq!(
             phone.config.slow_frames,
@@ -1281,7 +1312,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         assert_eq!(simulator.config.slow_frames, None);
         simulator
@@ -1317,7 +1348,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         let anim = Launch {
             relaunch: false,
@@ -1373,7 +1404,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         assert!(frames_within(&mut late, Duration::from_millis(100)).is_empty());
         assert!(late.backend.frames.as_ref().unwrap().latest().is_none());
@@ -1393,7 +1424,7 @@ mod tests {
             false,
             Typing::Whole,
             false,
-            None,
+            FromDriver::default(),
         );
         let at_once = frames_within(&mut prompt, Duration::from_millis(50));
         assert_eq!(at_once.len(), 1, "{at_once:?}");

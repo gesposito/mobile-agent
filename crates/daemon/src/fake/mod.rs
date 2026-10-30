@@ -29,7 +29,9 @@
 //! the attach, as an emulator's starts once its subscription is up. A
 //! read cost ([`FakeDriver::with_read_cost`]) makes each read of the tree
 //! take that long, as a Simulator's reader and the Android agent take to
-//! answer, so that a read a command makes shows in its time. A
+//! answer, so that a read a command makes shows in its time, and
+//! [`FakeDriver::tree_reads`] counts the reads, so that a test can tell how
+//! many a command made. A
 //! splash (`MOBILE_AGENT_FAKE_SPLASH_MS`) shows a fixture app's launch
 //! splash for that long when its process starts, an activation
 //! (`MOBILE_AGENT_FAKE_ACTIVATION_MS`) holds input until the input session
@@ -67,10 +69,11 @@ mod realtime;
 mod tree;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use realtime::Frames;
+use realtime::{Frames, FromDriver};
 use serde_json::{Map, Value};
 
 use crate::devices::android::report_controller;
@@ -239,6 +242,19 @@ impl Runners {
     }
 }
 
+/// The reads of their trees a fake driver's targets were asked for, across
+/// its attaches, shared by the driver's clones.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Reads(Arc<AtomicUsize>);
+
+impl PartialEq for Reads {
+    fn eq(&self, other: &Reads) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Reads {}
+
 /// The runner of one attach of a fake iPhone.
 #[derive(Debug)]
 pub(crate) struct FakeRunner {
@@ -297,6 +313,8 @@ pub struct FakeDriver {
     /// How long after its first attach a fake iPhone's runner loses its
     /// connection, its restart failing, when it does.
     lost_runner: Option<Duration>,
+    /// The reads of their trees the targets were asked for.
+    reads: Reads,
 }
 
 impl FakeDriver {
@@ -387,6 +405,7 @@ impl FakeDriver {
             device_frames: true,
             runners: Runners::default(),
             lost_runner: None,
+            reads: Reads::default(),
         })
     }
 
@@ -515,6 +534,12 @@ impl FakeDriver {
             .or_default() += 1;
     }
 
+    /// How many reads of their trees these targets were asked for, across
+    /// their attaches, since the driver was made.
+    pub fn tree_reads(&self) -> usize {
+        self.reads.0.load(Ordering::Relaxed)
+    }
+
     /// The runner processes on the fake iPhone `id` now, by pid.
     pub fn runners_on(&self, id: &str) -> Vec<u32> {
         self.runners
@@ -605,7 +630,10 @@ impl Driver for FakeDriver {
             self.fling,
             self.typing,
             self.keyboard,
-            runner,
+            FromDriver {
+                runner,
+                reads: Arc::clone(&self.reads.0),
+            },
         );
         if target.class == TargetClass::AndroidEmulator
             && self.controller == EmulatorController::Off
