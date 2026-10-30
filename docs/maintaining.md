@@ -53,7 +53,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 
 - [x] **Settings > General > Danger Zone > Change repository visibility > Change to public**, once everything above is ticked. (public since 2026-10-30)
 - [x] **Insights > Community Standards**: every item ticked but content reports, which only an organization's repositories have. (the API's community profile reads 100%)
-- [x] The first runs of `ci.yml` green on `main`, and a scheduled or dispatched run of `benchmarks.yml` (its first run follows the visibility change, since Actions was blocked by the account's billing). (ci.yml green on main at b673ffe, run 41034872053, once pull request #15 had made two wall-clock tests assert what the fake guarantees, the first run having failed one per macOS job and its rerun the same two; benchmarks.yml dispatched with the micro suite, run 41034955381)
+- [x] The first runs of `ci.yml` green on `main`, and a scheduled or dispatched run of `benchmarks.yml` (its first run follows the visibility change, since Actions was blocked by the account's billing). (ci.yml green on main at b673ffe, run 41034872053, once pull request #15 had made two wall-clock tests assert what the fake guarantees, the first run having failed one per macOS job and its rerun the same two; benchmarks.yml dispatched with the micro suite, run 41034955381, Linux green and macOS failing its A/B of main against itself by the runner's noise, which ci-benchmarks task 2.1 measures)
 
 ## At the first release
 
