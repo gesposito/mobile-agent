@@ -12,8 +12,8 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 
 ## The maintainer's account
 
-- [x] Two-factor authentication with a passkey or a security key, TOTP at the least, no SMS: your account's **Settings > Password and authentication > Two-factor authentication** and **Passkeys**. Astral's post requires nothing weaker than TOTP. (the maintainer's: not readable through the API)
-- [x] Push protection for yourself left on, as it is by default: your account's **Settings > Code security > Push protection for yourself**. (the maintainer's: not readable through the API)
+- [x] Two-factor authentication with a passkey or a security key, TOTP at the least, no SMS: your account's **Settings > Password and authentication > Two-factor authentication** and **Passkeys**. Astral's post requires nothing weaker than TOTP. (the maintainer's, read in the web form on 2026-10-30: enabled, a passkey the preferred method)
+- [x] Push protection for yourself left on, as it is by default: your account's **Settings > Code security > Push protection for yourself**. (the maintainer's, read in the web form on 2026-10-30: on)
 
 ## General
 
@@ -39,7 +39,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
   - `gh api repos/<owner>/mobile-agent/actions/permissions` answers `"sha_pinning_required": true`.
 - [x] **Settings > Actions > General > Workflow permissions**: "Read repository contents and packages permissions", and "Allow GitHub Actions to create and approve pull requests" off. Every workflow also starts with `permissions: {}`.
 - [x] **Settings > Actions > General > Approval for running fork pull request workflows from contributors**: "Require approval for all external contributors", so that no outside pull request runs a workflow before the maintainer has read it. (`approval_policy` `all_external_contributors`, which the API accepts only once the repository is public)
-- [ ] **Settings > Actions > General > Artifact and log retention**: 90 days, which the benchmarks' trend relies on (`docs/research/ci-benchmarks.md`).
+- [x] **Settings > Actions > General > Artifact and log retention**: 90 days, which the benchmarks' trend relies on (`docs/research/ci-benchmarks.md`). (read in the web form on 2026-10-30: 90 days, the maximum)
 
 ## Advanced Security
 
@@ -47,7 +47,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 - [x] **Settings > Advanced Security > Secret Protection**: Enable, free for a public repository; then **Push protection**: Enable.
 - [x] **Settings > Advanced Security > Private vulnerability reporting**: Enable, the channel `SECURITY.md` and `CODE_OF_CONDUCT.md` name.
   - `gh api repos/<owner>/mobile-agent/private-vulnerability-reporting` answers `{"enabled": true}`.
-- [x] Optional: **Settings > Advanced Security > Code scanning > CodeQL analysis > Set up > Default**, for Rust and GitHub Actions, free for a public repository; it is what OpenSSF Scorecard's SAST check counts. (configured for GitHub Actions alone: the API's `languages` has no `rust`, so Rust waits on the web form or on CodeQL's support)
+- [x] Optional: **Settings > Advanced Security > Code scanning > CodeQL analysis > Set up > Default**, for Rust and GitHub Actions, free for a public repository; it is what OpenSSF Scorecard's SAST check counts. (configured for Rust and GitHub Actions: the API's `languages` has no `rust`, so Rust was ticked in the web form on 2026-10-30, which starts a full scan)
 
 ## Publication
 
