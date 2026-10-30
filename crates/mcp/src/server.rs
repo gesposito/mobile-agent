@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use cli::client::{Endpoint, Reply};
+use cli::client::{Data, Endpoint, Reply};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities,
@@ -171,7 +171,7 @@ impl Server {
     async fn send(&self, line: Map<String, Value>) -> Result<Reply, ErrorData> {
         let shared = self.0.clone();
         blocking(move || {
-            cli::client::call_checked(&shared.endpoint, &line, &shared.checked)
+            cli::client::call_checked(&shared.endpoint, &line, &shared.checked, Data::WithoutRefs)
                 .unwrap_or_else(Reply::failed)
         })
         .await

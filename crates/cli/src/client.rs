@@ -86,6 +86,18 @@ impl Failure {
     }
 }
 
+/// How a reply's `data` is read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Data {
+    /// Whole, as the CLI prints it with `--json`.
+    Whole,
+    /// Without the refs map of a listing or a delta, at the top of `data`
+    /// and in its `snapshot` object, for a caller that shows the listing's
+    /// text, which repeats the map's roles and names, as the MCP server
+    /// does; the rest as it is.
+    WithoutRefs,
+}
+
 /// A daemon reply, agent-browser's envelope.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reply {
@@ -97,8 +109,12 @@ pub struct Reply {
 }
 
 impl Reply {
-    fn parse(line: &str) -> Option<Reply> {
-        let Value::Object(mut reply) = serde_json::from_str::<Value>(line).ok()? else {
+    fn parse(line: &str, data: Data) -> Option<Reply> {
+        let parsed = match data {
+            Data::Whole => serde_json::from_str::<Value>(line).ok()?,
+            Data::WithoutRefs => serde_json::from_str::<lean::Lean>(line).ok()?.0,
+        };
+        let Value::Object(mut reply) = parsed else {
             return None;
         };
         let text = |value: Option<Value>| value.and_then(|v| v.as_str().map(str::to_owned));
@@ -173,7 +189,7 @@ enum Attempt {
     Failed(Failure),
 }
 
-fn attempt(socket: &Path, line: &str, timeout: Duration) -> Attempt {
+fn attempt(socket: &Path, line: &str, timeout: Duration, data: Data) -> Attempt {
     let mut stream = match UnixStream::connect(socket) {
         Ok(stream) => stream,
         Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
@@ -190,7 +206,7 @@ fn attempt(socket: &Path, line: &str, timeout: Duration) -> Attempt {
     let mut reply = String::new();
     match BufReader::new(stream).read_line(&mut reply) {
         Ok(0) => Attempt::Transient("the daemon closed the connection without a reply".into()),
-        Ok(_) => match Reply::parse(&reply) {
+        Ok(_) => match Reply::parse(&reply, data) {
             Some(reply) => Attempt::Reply(reply),
             None => Attempt::Failed(Failure::new(
                 DAEMON_UNAVAILABLE,
@@ -244,8 +260,9 @@ impl From<Unsent> for Failure {
     }
 }
 
-/// Sends `request` to the daemon on `socket` and returns its reply.
-fn send(socket: &Path, request: &Map<String, Value>) -> Result<Reply, Unsent> {
+/// Sends `request` to the daemon on `socket` and returns its reply, its
+/// `data` read as `data` says.
+fn send(socket: &Path, request: &Map<String, Value>, data: Data) -> Result<Reply, Unsent> {
     let mut line = Value::Object(request.clone()).to_string();
     line.push('\n');
     let timeout = read_timeout(request);
@@ -254,7 +271,7 @@ fn send(socket: &Path, request: &Map<String, Value>) -> Result<Reply, Unsent> {
         if attempt_number > 0 {
             std::thread::sleep(BACKOFF * attempt_number);
         }
-        match attempt(socket, &line, timeout) {
+        match attempt(socket, &line, timeout, data) {
             Attempt::Reply(reply) => return Ok(reply),
             Attempt::Failed(failure) => return Err(Unsent::Failed(failure)),
             Attempt::Unreachable(reason) => {
@@ -437,10 +454,19 @@ fn stops(request: &Map<String, Value>) -> bool {
 /// of this build serves, and returns the reply. `shutdown` never starts a
 /// daemon.
 pub fn call(endpoint: &Endpoint, request: &Map<String, Value>) -> Result<Reply, Failure> {
+    call_reading(endpoint, request, Data::Whole)
+}
+
+/// [`call`], the reply's `data` read as `data` says.
+fn call_reading(
+    endpoint: &Endpoint,
+    request: &Map<String, Value>,
+    data: Data,
+) -> Result<Reply, Failure> {
     let socket = endpoint.socket();
     check_socket(&socket)?;
     if stops(request) {
-        return match send(&socket, request) {
+        return match send(&socket, request, data) {
             Err(Unsent::Unreachable(_)) => Ok(Reply {
                 success: true,
                 data: serde_json::json!({"stopped": false}),
@@ -456,10 +482,10 @@ pub fn call(endpoint: &Endpoint, request: &Map<String, Value>) -> Result<Reply, 
     if endpoint.version().as_deref() != Some(version.as_str()) {
         start(endpoint, &exe, &version)?;
     }
-    match send(&socket, request) {
+    match send(&socket, request, data) {
         Err(Unsent::Unreachable(_)) => {
             start(endpoint, &exe, &version)?;
-            send(&socket, request).map_err(Failure::from)
+            send(&socket, request, data).map_err(Failure::from)
         }
         other => other.map_err(Failure::from),
     }
@@ -479,23 +505,155 @@ pub struct Checked(AtomicBool);
 /// started meanwhile serves them as it is. The check costs a request the
 /// version file's open, which the host's inspection of file opens can hold
 /// for a millisecond or more (design D3 of `profiling`), and the
-/// executable's lookup.
+/// executable's lookup. The reply's `data` is read as `data` says.
 pub fn call_checked(
     endpoint: &Endpoint,
     request: &Map<String, Value>,
     checked: &Checked,
+    data: Data,
 ) -> Result<Reply, Failure> {
     if checked.0.load(Ordering::Acquire) {
-        match send(&endpoint.socket(), request) {
+        match send(&endpoint.socket(), request, data) {
             Err(Unsent::Unreachable(_)) => checked.0.store(false, Ordering::Release),
             sent => return sent.map_err(Failure::from),
         }
     }
-    let reply = call(endpoint, request)?;
+    let reply = call_reading(endpoint, request, data)?;
     if !stops(request) {
         checked.0.store(true, Ordering::Release);
     }
     Ok(reply)
+}
+
+/// A reply read without the refs map of its listing or delta
+/// ([`Data::WithoutRefs`]): the map's entries are skipped as the parser
+/// meets them, never built into values, the rest read into values as
+/// `serde_json` reads them.
+mod lean {
+    use std::fmt;
+
+    use serde::de::{
+        Deserialize, DeserializeSeed, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor,
+    };
+    use serde_json::{Map, Value};
+
+    /// Where a value lies in the envelope.
+    #[derive(Clone, Copy)]
+    enum Level {
+        Envelope,
+        Data,
+        Snapshot,
+    }
+
+    /// How the value under a key is read.
+    enum Child {
+        Skipped,
+        Whole,
+        Lean(Level),
+    }
+
+    impl Level {
+        fn child(self, key: &str) -> Child {
+            match (self, key) {
+                (Level::Envelope, "data") => Child::Lean(Level::Data),
+                (Level::Data, "snapshot") => Child::Lean(Level::Snapshot),
+                (Level::Data | Level::Snapshot, "refs") => Child::Skipped,
+                _ => Child::Whole,
+            }
+        }
+    }
+
+    /// The envelope read without the refs map.
+    pub struct Lean(pub Value);
+
+    impl<'de> Deserialize<'de> for Lean {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Lean, D::Error> {
+            Read(Level::Envelope).deserialize(deserializer).map(Lean)
+        }
+    }
+
+    /// Reads the value at a level.
+    struct Read(Level);
+
+    impl<'de> DeserializeSeed<'de> for Read {
+        type Value = Value;
+
+        fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
+            deserializer.deserialize_any(self)
+        }
+    }
+
+    impl<'de> Visitor<'de> for Read {
+        type Value = Value;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a JSON value")
+        }
+
+        fn visit_bool<E>(self, value: bool) -> Result<Value, E> {
+            Ok(Value::Bool(value))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Value, E> {
+            Ok(value.into())
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Value, E> {
+            Ok(value.into())
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<Value, E> {
+            Ok(value.into())
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Value, E> {
+            Ok(value.into())
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Value, E> {
+            Ok(value.into())
+        }
+
+        fn visit_unit<E>(self) -> Result<Value, E> {
+            Ok(Value::Null)
+        }
+
+        fn visit_none<E>(self) -> Result<Value, E> {
+            Ok(Value::Null)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
+            Value::deserialize(deserializer)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+            let mut items = Vec::new();
+            while let Some(item) = seq.next_element::<Value>()? {
+                items.push(item);
+            }
+            Ok(Value::Array(items))
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+            let mut object = Map::new();
+            while let Some(key) = map.next_key::<String>()? {
+                match self.0.child(&key) {
+                    Child::Skipped => {
+                        map.next_value::<IgnoredAny>()?;
+                    }
+                    Child::Whole => {
+                        let value = map.next_value::<Value>()?;
+                        object.insert(key, value);
+                    }
+                    Child::Lean(level) => {
+                        let value = map.next_value_seed(Read(level))?;
+                        object.insert(key, value);
+                    }
+                }
+            }
+            Ok(Value::Object(object))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -550,12 +708,14 @@ mod tests {
     fn replies_keep_the_envelope_fields() {
         let reply = Reply::parse(
             r#"{"id":"r1","success":false,"data":null,"error":"gone","code":"stale_ref"}"#,
+            Data::Whole,
         )
         .unwrap();
         assert!(!reply.success);
         assert_eq!(reply.code.as_deref(), Some("stale_ref"));
         assert_eq!(reply.error.as_deref(), Some("gone"));
-        assert!(Reply::parse("[1]").is_none());
+        assert!(Reply::parse("[1]", Data::Whole).is_none());
+        assert!(Reply::parse("[1]", Data::WithoutRefs).is_none());
     }
 
     /// A directory of its own for a test, removed on drop, with a short
@@ -647,7 +807,8 @@ mod tests {
         let request = json!({"action": "status"}).as_object().cloned().unwrap();
         let checked = Checked::default();
 
-        let first = call_checked(&endpoint, &request, &checked).expect("the daemon answers");
+        let first =
+            call_checked(&endpoint, &request, &checked, Data::Whole).expect("the daemon answers");
         assert!(first.success, "{first:?}");
         // Another build's version: a check would start this build's daemon,
         // which cannot run.
@@ -659,18 +820,71 @@ mod tests {
             "a call that checks the version starts the daemon"
         );
         for _ in 0..3 {
-            let reply = call_checked(&endpoint, &request, &checked)
+            let reply = call_checked(&endpoint, &request, &checked, Data::Whole)
                 .expect("the checked daemon answers without a check");
             assert!(reply.success, "{reply:?}");
         }
 
         // No daemon listens: the next call checks again, and starts one.
         daemon.stop();
-        let failure = call_checked(&endpoint, &request, &checked)
+        let failure = call_checked(&endpoint, &request, &checked, Data::Whole)
             .expect_err("no daemon answers and none can start");
         assert!(
             failure.message.starts_with("cannot start the daemon"),
             "{failure:?}"
         );
+    }
+
+    /// Design D3 of `profiling`: a reply read without refs is the whole
+    /// reply less the refs map at the top of `data` and in its `snapshot`
+    /// object, every other field as it is, a `refs` key elsewhere among
+    /// them.
+    #[test]
+    fn a_reply_read_without_refs_is_the_whole_reply_less_the_listing_s_refs_map() {
+        let line = json!({
+            "id": "r1",
+            "success": true,
+            "data": {
+                "snapshot": {"kind": "full", "revision": 3, "tree": "- button \"Sign in\" [ref=e1]",
+                             "refs": {"e1": {"name": "Sign in", "role": "button"}}},
+                "refs": {"e1": {"name": "Sign in", "role": "button"}, "e2": {"name": "Ok", "role": "button"}},
+                "removedRefs": ["e0"],
+                "readMs": 0.25,
+                "replicaRevision": 3,
+                "servedFromReplica": true,
+                "target": "emulator-5554",
+                "element": {"refs": ["kept"], "inView": null},
+                "changes": [{"op": "add", "ref": "e2", "node": {"name": "Ok", "role": "button"}}],
+            },
+            "error": null,
+            "warning": "a warning",
+        })
+        .to_string();
+        let whole = Reply::parse(&line, Data::Whole).expect("an envelope");
+        let lean = Reply::parse(&line, Data::WithoutRefs).expect("an envelope");
+        let mut expected = whole.clone();
+        let data = expected.data.as_object_mut().expect("an object");
+        data.remove("refs");
+        data["snapshot"]
+            .as_object_mut()
+            .expect("a delta object")
+            .remove("refs");
+        assert_eq!(lean, expected);
+        assert_eq!(lean.data["element"]["refs"], json!(["kept"]));
+        // A listing's text, a reply without data and a failure.
+        for line in [
+            r#"{"id":"r2","success":true,"data":{"snapshot":"- button","refs":{"e1":{"name":"a","role":"b"}},"origin":"app"},"error":null}"#,
+            r#"{"id":"r3","success":true,"data":null,"error":null}"#,
+            r#"{"id":"r4","success":false,"data":null,"error":"gone","code":"stale_ref"}"#,
+            r#"{"success":true,"data":{"n":-1,"m":18446744073709551615,"f":1.5,"t":true,"a":[1,"x",null],"o":{}},"error":null}"#,
+        ] {
+            let mut whole = Reply::parse(line, Data::Whole).expect("an envelope");
+            if let Some(data) = whole.data.as_object_mut() {
+                data.remove("refs");
+            }
+            assert_eq!(Reply::parse(line, Data::WithoutRefs), Some(whole), "{line}");
+        }
+        assert!(Reply::parse(r#"{"success":true,"data":{"refs":{}}"#, Data::WithoutRefs).is_none());
+        assert!(Reply::parse(r#"{"success":true} trailing"#, Data::WithoutRefs).is_none());
     }
 }
