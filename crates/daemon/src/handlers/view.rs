@@ -14,6 +14,7 @@ use serde_json::{Map, Value, json};
 use super::aim::{self, Aim};
 use super::{Call, millis, origin, settle_max, timeout, verdict_json, verdict_warning};
 use crate::driver::CaptureRequest;
+use crate::listing::{self, Answer};
 use crate::signals::{LastChanges, ended_by};
 use crate::wire::code::{self, IO_ERROR};
 use crate::wire::{Failure, Param, Success, arg, needed};
@@ -53,32 +54,22 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
     let read_before = target.mirror.timestamps().last_read;
     target.catch_up()?;
     let snapshot = target.mirror.snapshot(&options)?;
-    let mut data = Map::new();
-    if args.delta {
-        let delta = delta_of(target, session, &options, args.full)?;
-        data.insert("snapshot".into(), delta);
-    } else {
-        let refs: Map<String, Value> = snapshot
-            .elements
-            .iter()
-            .filter_map(|element| {
-                element.reference.map(|reference| {
-                    (
-                        reference.to_string(),
-                        json!({"name": element.name, "role": element.role.as_str()}),
-                    )
-                })
-            })
-            .collect();
-        let removed: Vec<String> = snapshot
-            .removed_refs
-            .iter()
-            .map(|r| format!("@{r}"))
-            .collect();
-        data.insert("snapshot".into(), snapshot.text.clone().into());
-        data.insert("refs".into(), Value::Object(refs));
-        data.insert("removedRefs".into(), removed.into());
+    if !args.delta {
+        // How long the target's worker took to answer, device reads
+        // included, and whether it read the device at all.
+        let answer = Answer {
+            read_ms: millis(started.elapsed()),
+            served_from_replica: target.mirror.timestamps().last_read == read_before,
+            target: &target.info.id,
+        };
+        let success = listing::reply(&snapshot, &answer);
+        remember(target, session, snapshot);
+        return Ok(success);
     }
+    // With `delta`, the listing's delta in place of its text and refs.
+    let mut data = Map::new();
+    let delta = delta_of(target, session, &options, args.full)?;
+    data.insert("snapshot".into(), delta);
     data.insert("origin".into(), origin(&snapshot).into());
     // How long the target's worker took to answer, device reads included,
     // and whether it read the device at all.

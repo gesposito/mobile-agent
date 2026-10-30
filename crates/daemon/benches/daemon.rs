@@ -8,17 +8,23 @@
 //! windows send no change events, so that each request finds the frames
 //! changed since the latest read of the tree (design D3 of `profiling`);
 //! `wire::parse` of the line the CLI sends for `snapshot -i`, into the
-//! typed request the daemon dispatches; and `reply_line` of the daemon's
-//! reply to it on the Big tab. The wire benchmarks report their allocations per iteration beside
-//! the time; the socket benchmarks' work is mostly in the daemon's process,
-//! which the counting allocator does not see.
+//! typed request the daemon dispatches; and the reply to it on the Big tab,
+//! built from the mirror's listing as the snapshot handler builds it and
+//! written into the reply line by `reply_line`, on a mirror in this process
+//! over a fake emulator (design D3 of `profiling`). The wire benchmarks
+//! report their allocations per iteration beside the time; the socket
+//! benchmarks' work is mostly in the daemon's process, which the counting
+//! allocator does not see.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
-use daemon::wire::{self, Command, Failure, Request, Success};
-use mirror::DEFAULT_MIN_REREAD_INTERVAL;
+use daemon::driver::{AttachOptions, Driver, Launch};
+use daemon::fake::FakeDriver;
+use daemon::listing::{self, Answer};
+use daemon::wire::{self, Command, Request};
+use mirror::{DEFAULT_MIN_REREAD_INTERVAL, Mirror, Snapshot, SnapshotOptions};
 use serde_json::{Value, json};
 
 #[path = "../../protocol/benches/support/alloc.rs"]
@@ -133,38 +139,94 @@ fn benches(c: &mut Criterion) {
         |b, line| b.iter(|| wire::parse(black_box(line))),
     );
 
-    // `reply_line` of the daemon's data is the daemon's line, byte for byte,
-    // so the benchmark writes what the daemon writes.
+    // The listing's reply to that request built from the mirror's snapshot
+    // as the snapshot handler builds it, the refs map, the text and the
+    // rest of its fields, and written into the reply line, on a mirror in
+    // this process over a fake emulator's Big tab, so that the allocations
+    // the counting allocator sees are the reply's. The snapshot is the
+    // warm listing the socket benchmark's daemon makes; its own making is
+    // the mirror's benchmarks' (`mirror/snapshot/interactive-again-grid`).
+    let (target, snapshot) = big_listing();
     let id = reply["id"].clone();
-    let mut data = reply["data"].clone();
-    let rewritten = wire::reply_line(&id, &Ok(Success::new(data.clone())));
-    assert!(
-        rewritten == raw,
-        "reply_line does not give the daemon's line"
-    );
-    let read_ms = data["readMs"].to_string();
-    assert!(data["readMs"].is_f64(), "readMs is {read_ms}");
-    data["readMs"] = json!(READ_MS);
-    let result: Result<Success, Failure> = Ok(Success::new(data.clone()));
-    let (written, counts) = alloc::counted(|| wire::reply_line(&id, &result));
-    assert_eq!(
-        written.len(),
-        raw.len() - read_ms.len() + json!(READ_MS).to_string().len(),
-        "the daemon's line with readMs {READ_MS}"
-    );
+    let answer = Answer {
+        read_ms: READ_MS,
+        served_from_replica: true,
+        target: &target,
+    };
+    let build = || wire::reply_line(&id, &Ok(listing::reply(&snapshot, &answer)));
+    let (written, counts) = alloc::counted(build);
     let parsed: Value = serde_json::from_str(&written).expect("the line is JSON");
-    assert!(
-        parsed == json!({"id": id, "success": true, "data": data, "error": null}),
-        "the line parses back to another reply"
+    support::check_big(&parsed);
+    assert_eq!(parsed["id"], id, "{written}");
+    assert_eq!(parsed["error"], Value::Null, "{written}");
+    assert_eq!(parsed["data"]["readMs"], json!(READ_MS), "{written}");
+    assert_eq!(parsed["data"]["target"], json!(target), "{written}");
+    // The daemon's reply lists the same screen, the refs' numbers aside:
+    // the daemon's listings before the Big tab issued refs of their own.
+    assert_eq!(
+        unnumbered(&parsed["data"]["snapshot"]),
+        unnumbered(&reply["data"]["snapshot"]),
+        "the mirror here lists what the daemon's lists"
     );
     alloc::report("daemon/wire/reply-snapshot-big", counts);
-    group.bench_with_input(
-        BenchmarkId::new("wire", "reply-snapshot-big"),
-        &(id, result),
-        |b, (id, result)| b.iter(|| wire::reply_line(black_box(id), black_box(result))),
-    );
+    group.bench_function(BenchmarkId::new("wire", "reply-snapshot-big"), |b| {
+        b.iter(|| {
+            wire::reply_line(
+                black_box(&id),
+                &Ok(listing::reply(black_box(&snapshot), black_box(&answer))),
+            )
+        });
+    });
 
     group.finish();
+}
+
+/// The fake emulator's id and the warm interactive listing of its Big tab,
+/// as the daemon's worker lists it for the socket benchmark: a mirror over
+/// the fake driver's attachment, the fixture launched on its Big tab, listed
+/// once to issue the refs and again.
+fn big_listing() -> (String, Snapshot) {
+    let driver = FakeDriver::parse("android").expect("a fake emulator");
+    let info = driver.discover().expect("the fake's targets").remove(0);
+    let mut attachment = driver
+        .attach(&info, &AttachOptions::default())
+        .expect("the fake attaches");
+    let big = Launch {
+        relaunch: false,
+        env: vec![("initial_tab".into(), "big".into())],
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    attachment
+        .apps
+        .launch(support::APP, &big, deadline)
+        .expect("the fixture launches");
+    let mut mirror = Mirror::new(attachment.backend, attachment.config);
+    let options = SnapshotOptions::interactive();
+    loop {
+        mirror
+            .run_until(Instant::now() + Duration::from_millis(10))
+            .expect("the mirror reads the fake");
+        let first = mirror.snapshot(&options).expect("a listing");
+        if first.refs().len() == support::BIG_ELEMENTS {
+            break;
+        }
+        assert!(Instant::now() < deadline, "no Big tab:\n{}", first.text);
+    }
+    let snapshot = mirror.snapshot(&options).expect("the warm listing");
+    (info.id, snapshot)
+}
+
+/// The listing `text` with its refs' numbers left out, `ref=e12` as `ref=e`.
+fn unnumbered(text: &Value) -> String {
+    let mut rest = text.as_str().unwrap_or_default();
+    let mut out = String::with_capacity(rest.len());
+    while let Some(at) = rest.find("ref=e") {
+        let (kept, after) = rest.split_at(at + "ref=e".len());
+        out.push_str(kept);
+        rest = after.trim_start_matches(|c: char| c.is_ascii_digit());
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Stops `daemon` with `shutdown` and waits for it to exit.

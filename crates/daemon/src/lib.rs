@@ -15,6 +15,7 @@ pub mod driver;
 pub mod fake;
 mod handlers;
 mod keys;
+pub mod listing;
 pub mod paths;
 mod registry;
 mod server;
