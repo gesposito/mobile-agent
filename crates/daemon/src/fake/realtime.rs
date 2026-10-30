@@ -1118,6 +1118,17 @@ mod tests {
 
     /// Task 8.15: a fixture app whose process starts shows its launch
     /// splash, one image, for the splash's length before its first screen.
+    /// The fake shows the splash from its clock's time at the launch, with
+    /// no latency, and the first screen the splash's length after; that
+    /// time falls between the instant taken before the launch and the one
+    /// taken once it returned, so the clock witnesses what each read shows
+    /// however late the host runs the test's steps: a read that finished
+    /// before the splash's earliest end shows the splash and no login, and
+    /// a read that started after its latest end shows the login and no
+    /// splash. The first read, 50 ms in, is claimed only when it finished
+    /// in time, which a host that oversleeps the 50 ms or stalls the test
+    /// past the splash does not vouch for; the second waits past the latest
+    /// end, so its claim always holds.
     #[test]
     fn a_launch_shows_the_splash_before_the_first_screen() {
         let timing = Timing {
@@ -1140,6 +1151,7 @@ mod tests {
             };
             format!("{:?}", attachment.backend.tree.read(&request).unwrap())
         };
+        let launched = Instant::now();
         attachment
             .apps
             .launch(
@@ -1148,11 +1160,15 @@ mod tests {
                 Instant::now(),
             )
             .unwrap();
+        let returned = Instant::now();
         std::thread::sleep(Duration::from_millis(50));
         let splash = read(&mut attachment);
-        assert!(splash.contains("SplashScreenLegacy"), "{splash}");
-        assert!(!splash.contains("login-submit"), "{splash}");
-        std::thread::sleep(Duration::from_millis(150));
+        if Instant::now() < launched + timing.splash {
+            assert!(splash.contains("SplashScreenLegacy"), "{splash}");
+            assert!(!splash.contains("login-submit"), "{splash}");
+        }
+        let ended = returned + timing.splash;
+        std::thread::sleep(ended.saturating_duration_since(Instant::now()));
         let screen = read(&mut attachment);
         assert!(screen.contains("login-submit"), "{screen}");
         assert!(!screen.contains("SplashScreenLegacy"), "{screen}");
