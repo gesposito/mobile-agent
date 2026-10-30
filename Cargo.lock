@@ -1131,6 +1131,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "cli",
+ "criterion",
  "rmcp",
  "serde_json",
  "tokio",

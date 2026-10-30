@@ -8,9 +8,11 @@ license.workspace = true
 readme = "README.md"
 publish.workspace = true
 
+# The binary holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [[bin]]
 name = "mobile-agent-mcp"
 path = "src/main.rs"
+bench = false
 
 [lints]
 workspace = true
@@ -25,5 +27,11 @@ wire = { version = "0.1.0", path = "../wire", features = ["schema"] }
 
 [dev-dependencies]
 base64 = "0.22.1"
+criterion = { version = "0.8.2", default-features = false }
 rmcp = { version = "=3.5.1", features = ["client"] }
 tokio = { version = "1.53.1", features = ["rt", "process"] }
+
+# The microbenchmark of a tools/call snapshot through the server over a daemon on a fake target (benches/mcp.rs), run by mobile-agent-bench micro; criterion's own harness is off.
+[[bench]]
+name = "mcp"
+harness = false

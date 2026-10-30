@@ -496,11 +496,11 @@ fn criterion_s_version_comes_from_the_lock_file() {
 fn the_runner_names_every_suite_s_bench_target_and_passes_noplot_and_the_filter() {
     assert_eq!(
         CargoBench::args(None).join(" "),
-        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames -- --noplot"
+        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames --bench mcp -- --noplot"
     );
     assert_eq!(
         CargoBench::args(Some("protocol/decode")).join(" "),
-        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames -- --noplot \
+        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames --bench mcp -- --noplot \
          protocol/decode"
     );
 }
@@ -1516,7 +1516,7 @@ fn micro_runs_the_suites_through_cargo_bench_with_criterion_s_flags_and_exits_0_
     let (args, home, cwd) = tools.cargo_run().expect("the fake cargo ran");
     assert_eq!(
         args,
-        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames -- --noplot \
+        "bench --workspace --bench codec --bench mirror --bench daemon --bench frames --bench mcp -- --noplot \
          protocol/.*/snapshot-500"
     );
     assert_eq!(PathBuf::from(home), out.join("criterion"));

@@ -52,9 +52,9 @@ pub const THRESHOLD_PCT: f64 = 5.0;
 
 /// The `cargo` arguments that run every suite in the bench profile, which
 /// takes the release profile's settings: the bench targets of `protocol`,
-/// `mirror`, `daemon`, `simulator` and `android`, by name, so no library's
-/// or binary's libtest harness runs.
-pub const CARGO_BENCH: [&str; 10] = [
+/// `mirror`, `daemon`, `simulator`, `android` and `mcp`, by name, so no
+/// library's or binary's libtest harness runs.
+pub const CARGO_BENCH: [&str; 12] = [
     "bench",
     "--workspace",
     "--bench",
@@ -65,6 +65,8 @@ pub const CARGO_BENCH: [&str; 10] = [
     "daemon",
     "--bench",
     "frames",
+    "--bench",
+    "mcp",
 ];
 
 /// criterion's flags after `--`: no plots. Its default sample settings

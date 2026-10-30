@@ -699,7 +699,7 @@ fn micro_ab_checks_the_base_out_outside_the_checkout_builds_both_trees_apart_and
         assert_eq!(toolchain, RUSTUP_TOOLCHAIN, "{line:?}");
         assert!(
             args.starts_with(
-                "bench --workspace --bench codec --bench mirror --bench daemon --bench frames"
+                "bench --workspace --bench codec --bench mirror --bench daemon --bench frames --bench mcp"
             ),
             "{line:?}"
         );
