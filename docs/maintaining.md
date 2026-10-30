@@ -19,7 +19,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 
 - [x] A description and topics: the repository's front page, **About** (the gear beside it). The community standards count the description. (set 2026-10-30, ten topics)
 - [x] **Settings > General > Features**: Issues on; Wikis and Projects off, since the documentation lives in the tree.
-- [x] **Settings > General > Pull Requests**: "Automatically delete head branches" on.
+- [x] **Settings > General > Pull Requests**: "Automatically delete head branches" on; "Allow merge commits" off, squash and rebase merging on, so that a pull request lands without a merge commit: one of a single commit squashed, one of several atomic commits rebased (the `main` ruleset allows the same two methods).
 - [x] The labels the issue templates set, `bug` and `device report`: the **Issues** tab, **Labels > New label**.
 
 ## Rules
