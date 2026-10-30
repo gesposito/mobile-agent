@@ -248,8 +248,12 @@ impl ServerHandler for Server {
         let token = context.meta.get_progress_token();
         let work = self.run(tool, call);
         tokio::pin!(work);
-        let mut ticks = tokio::time::interval(PROGRESS);
-        ticks.tick().await;
+        // The first tick is due a period after the call starts, not at
+        // once as an interval's own first tick is: the runtime's timer
+        // rounds a deadline up to its next millisecond, so a tick due at
+        // once still parks the call before its request goes out, 1.3 ms in
+        // spike S15's profiles.
+        let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + PROGRESS, PROGRESS);
         let mut elapsed = 0;
         let deadline = tokio::time::sleep(bound + GRACE);
         tokio::pin!(deadline);
