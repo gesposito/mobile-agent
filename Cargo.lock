@@ -478,7 +478,7 @@ version = "0.1.0"
 dependencies = [
  "agent-ios",
  "android",
- "base64 0.22.1",
+ "base64 0.23.1",
  "criterion",
  "ios",
  "libc",
@@ -1129,7 +1129,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 name = "mcp"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "clap",
  "cli",
  "criterion",
