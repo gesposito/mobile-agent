@@ -444,7 +444,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### Blue Oak Model License 1.0.0
 
-Used by [minicbor-derive 0.19.5](https://crates.io/crates/minicbor-derive), [minicbor 2.3.0](https://crates.io/crates/minicbor).
+Used by [minicbor-derive 0.19.5](https://crates.io/crates/minicbor-derive), [minicbor 2.3.1](https://crates.io/crates/minicbor).
 
 ```text
 # Blue Oak Model License
@@ -2582,7 +2582,7 @@ SOFTWARE.
 
 ### MIT License
 
-Used by [libc 0.2.189](https://crates.io/crates/libc).
+Used by [libc 0.2.191](https://crates.io/crates/libc).
 
 ```text
 Copyright (c) The Rust Project Developers
@@ -3123,7 +3123,7 @@ SOFTWARE.
 
 ### MIT License
 
-Used by [adler2 2.0.1](https://crates.io/crates/adler2), [anyhow 1.0.104](https://crates.io/crates/anyhow), [async-trait 0.1.92](https://crates.io/crates/async-trait), [atomic-waker 1.1.2](https://crates.io/crates/atomic-waker), [dyn-clone 1.0.20](https://crates.io/crates/dyn-clone), [fastrand 2.5.0](https://crates.io/crates/fastrand), [futures-lite 2.6.1](https://crates.io/crates/futures-lite), [itoa 1.0.18](https://crates.io/crates/itoa), [once_cell 1.21.4](https://crates.io/crates/once_cell), [parking 2.2.1](https://crates.io/crates/parking), [pastey 0.2.3](https://crates.io/crates/pastey), [pin-project-internal 1.1.13](https://crates.io/crates/pin-project-internal), [pin-project-lite 0.2.17](https://crates.io/crates/pin-project-lite), [pin-project 1.1.13](https://crates.io/crates/pin-project), [proc-macro2 1.0.107](https://crates.io/crates/proc-macro2), [quote 1.0.47](https://crates.io/crates/quote), [ref-cast-impl 1.0.27](https://crates.io/crates/ref-cast-impl), [ref-cast 1.0.27](https://crates.io/crates/ref-cast), [serde 1.0.229](https://crates.io/crates/serde), [serde_core 1.0.229](https://crates.io/crates/serde_core), [serde_derive 1.0.229](https://crates.io/crates/serde_derive), [serde_derive_internals 0.30.0](https://crates.io/crates/serde_derive_internals), [serde_json 1.0.151](https://crates.io/crates/serde_json), [syn 2.0.119](https://crates.io/crates/syn), [syn 3.0.6](https://crates.io/crates/syn), [thiserror-impl 1.0.69](https://crates.io/crates/thiserror-impl), [thiserror-impl 2.0.21](https://crates.io/crates/thiserror-impl), [thiserror 1.0.69](https://crates.io/crates/thiserror), [thiserror 2.0.21](https://crates.io/crates/thiserror), [unicode-ident 1.0.26](https://crates.io/crates/unicode-ident), [zmij 1.0.23](https://crates.io/crates/zmij).
+Used by [adler2 2.0.1](https://crates.io/crates/adler2), [anyhow 1.0.104](https://crates.io/crates/anyhow), [async-trait 0.1.92](https://crates.io/crates/async-trait), [atomic-waker 1.1.2](https://crates.io/crates/atomic-waker), [dyn-clone 1.0.20](https://crates.io/crates/dyn-clone), [fastrand 2.5.0](https://crates.io/crates/fastrand), [futures-lite 2.6.1](https://crates.io/crates/futures-lite), [itoa 1.0.18](https://crates.io/crates/itoa), [once_cell 1.21.4](https://crates.io/crates/once_cell), [parking 2.2.1](https://crates.io/crates/parking), [pastey 0.2.3](https://crates.io/crates/pastey), [pin-project-internal 1.1.13](https://crates.io/crates/pin-project-internal), [pin-project-lite 0.2.17](https://crates.io/crates/pin-project-lite), [pin-project 1.1.13](https://crates.io/crates/pin-project), [proc-macro2 1.0.107](https://crates.io/crates/proc-macro2), [quote 1.0.47](https://crates.io/crates/quote), [ref-cast-impl 1.0.27](https://crates.io/crates/ref-cast-impl), [ref-cast 1.0.27](https://crates.io/crates/ref-cast), [serde 1.0.229](https://crates.io/crates/serde), [serde_core 1.0.229](https://crates.io/crates/serde_core), [serde_derive 1.0.229](https://crates.io/crates/serde_derive), [serde_derive_internals 0.30.0](https://crates.io/crates/serde_derive_internals), [serde_json 1.0.154](https://crates.io/crates/serde_json), [syn 2.0.119](https://crates.io/crates/syn), [syn 3.0.6](https://crates.io/crates/syn), [thiserror-impl 1.0.69](https://crates.io/crates/thiserror-impl), [thiserror-impl 2.0.21](https://crates.io/crates/thiserror-impl), [thiserror 1.0.69](https://crates.io/crates/thiserror), [thiserror 2.0.21](https://crates.io/crates/thiserror), [unicode-ident 1.0.26](https://crates.io/crates/unicode-ident), [zmij 1.0.23](https://crates.io/crates/zmij).
 
 ```text
 Permission is hereby granted, free of charge, to any
