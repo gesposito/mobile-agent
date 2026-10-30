@@ -1558,9 +1558,47 @@ impl Mirror {
         options: &SnapshotOptions,
         full: bool,
     ) -> Result<DeltaSnapshot, MirrorError> {
+        let Snapshot {
+            text,
+            elements,
+            foreground,
+            ..
+        } = self.snapshot(options)?;
+        Ok(self.delta(options, text, &elements, &foreground, full))
+    }
+
+    /// The listing with `options` and its delta snapshot, as
+    /// [`Mirror::delta_snapshot`] gives it, both from that one listing, for
+    /// a caller that needs the listing's verdict, refs and revision beside
+    /// its delta.
+    pub fn snapshot_with_delta(
+        &mut self,
+        options: &SnapshotOptions,
+        full: bool,
+    ) -> Result<(Snapshot, DeltaSnapshot), MirrorError> {
         let snapshot = self.snapshot(options)?;
-        let mut refs: Vec<RefEntry> = snapshot
-            .elements
+        let delta = self.delta(
+            options,
+            snapshot.text.clone(),
+            &snapshot.elements,
+            &snapshot.foreground,
+            full,
+        );
+        Ok((snapshot, delta))
+    }
+
+    /// The delta snapshot of the listing just taken with `options`, its
+    /// `text`, `elements` and `foreground` owner, which becomes the base the
+    /// next one is compared with.
+    fn delta(
+        &mut self,
+        options: &SnapshotOptions,
+        text: String,
+        elements: &[Element],
+        foreground: &Owner,
+        full: bool,
+    ) -> DeltaSnapshot {
+        let mut refs: Vec<RefEntry> = elements
             .iter()
             .filter_map(|e| {
                 e.reference.map(|reference| RefEntry {
@@ -1574,26 +1612,26 @@ impl Mirror {
         let context = DeltaContext {
             options: *options,
             generation: self.replica.generation,
-            foreground: snapshot.foreground.clone(),
+            foreground: foreground.clone(),
         };
         let revision = self.delta.as_ref().map_or(1, |d| d.revision + 1);
         let result = match &self.delta {
             Some(previous) if !full && previous.context == context => {
-                delta::against(previous, revision, &snapshot.text, &refs)
+                delta::against(previous, revision, &text, &refs)
             }
             _ => DeltaSnapshot::Full {
                 revision,
-                tree: snapshot.text.clone(),
+                tree: text.clone(),
                 refs: refs.clone(),
             },
         };
         self.delta = Some(DeltaState {
             revision,
             context,
-            tree: snapshot.text,
+            tree: text,
             refs,
         });
-        Ok(result)
+        result
     }
 
     /// The latest frame, encoded no larger than the requested long edge,

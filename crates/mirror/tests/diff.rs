@@ -225,6 +225,82 @@ fn delta_snapshots_follow_agent_browser_kinds_and_revisions() {
     assert_eq!(forced.revision(), 4);
 }
 
+/// Profiling, task 3.1: a caller that needs the listing beside its delta,
+/// as the daemon's snapshot handler does, gets both from one listing, the
+/// delta the one `delta_snapshot` gives, both calls numbering one sequence.
+#[test]
+fn a_listing_and_its_delta_come_from_one_listing() {
+    let screen = Screen::load("grid");
+    let done = screen.patched(json!([{"find": "cell-250", "desc": "Cell 250 (done)"}]));
+    let target = FakeTarget::new(screen.read());
+    target.at(ms(500), Step::Show(done.read()));
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let options = SnapshotOptions::interactive();
+
+    let (listed, first) = mirror.snapshot_with_delta(&options, false).unwrap();
+    let DeltaSnapshot::Full {
+        revision: 1,
+        tree,
+        refs,
+    } = &first
+    else {
+        panic!("{first:?}")
+    };
+    assert_eq!(tree, &listed.text, "the delta is the listing's");
+    let named: Vec<(Ref, &str)> = refs
+        .iter()
+        .map(|entry| (entry.reference, entry.name.as_str()))
+        .collect();
+    let elements: Vec<(Ref, &str)> = listed
+        .elements
+        .iter()
+        .filter_map(|e| Some((e.reference?, e.name.as_str())))
+        .collect();
+    assert_eq!(named, elements, "the delta's refs are the listing's");
+
+    let (again, second) = mirror.snapshot_with_delta(&options, false).unwrap();
+    assert_eq!(again.text, listed.text);
+    assert!(again.removed_refs.is_empty());
+    assert_eq!(
+        second,
+        DeltaSnapshot::Unchanged {
+            revision: 2,
+            base_revision: 1
+        }
+    );
+
+    target.advance(Duration::from_secs(1));
+    let (changed, third) = mirror.snapshot_with_delta(&options, false).unwrap();
+    let DeltaSnapshot::Delta {
+        revision: 3,
+        base_revision: 2,
+        tree_change,
+        ..
+    } = &third
+    else {
+        panic!("{third:?}")
+    };
+    let mut rebuilt: Vec<&str> = tree.split('\n').collect();
+    rebuilt.splice(
+        tree_change.start_line..tree_change.start_line + tree_change.delete_count,
+        tree_change.lines.iter().map(String::as_str),
+    );
+    assert_eq!(
+        rebuilt.join("\n"),
+        changed.text,
+        "the splice rebuilds the listing given beside it"
+    );
+
+    assert_eq!(
+        mirror.delta_snapshot(&options, false).unwrap(),
+        DeltaSnapshot::Unchanged {
+            revision: 4,
+            base_revision: 3
+        },
+        "delta_snapshot goes on from the listing given beside its delta"
+    );
+}
+
 #[test]
 fn a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full() {
     let screen = Screen::load("login");

@@ -53,8 +53,8 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
     let started = Instant::now();
     let read_before = target.mirror.timestamps().last_read;
     target.catch_up()?;
-    let snapshot = target.mirror.snapshot(&options)?;
     if !args.delta {
+        let snapshot = target.mirror.snapshot(&options)?;
         // How long the target's worker took to answer, device reads
         // included, and whether it read the device at all.
         let answer = Answer {
@@ -67,8 +67,8 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
         return Ok(success);
     }
     // With `delta`, the listing's delta in place of its text and refs.
+    let (snapshot, delta) = delta_of(target, session, &options, args.full)?;
     let mut data = Map::new();
-    let delta = delta_of(target, session, &options, args.full)?;
     data.insert("snapshot".into(), delta);
     data.insert("origin".into(), origin(&snapshot).into());
     // How long the target's worker took to answer, device reads included,
@@ -87,21 +87,22 @@ pub(super) fn snapshot(target: &mut Attached, call: &Call, args: &::wire::Snapsh
     Ok(Success::new(Value::Object(data)).warn(warning))
 }
 
-/// The listing with `options` as `snapshot` with `delta` gives it: the
-/// delta against the mirror's last delta snapshot, or the whole listing
-/// when `full` or when another session took that snapshot, whose delta
-/// state is no base for this one.
+/// The listing with `options` and, from that one listing, its delta as
+/// `snapshot` with `delta` gives it: the delta against the mirror's last
+/// delta snapshot, or the whole listing when `full` or when another session
+/// took that snapshot, whose delta state is no base for this one.
 fn delta_of(
     target: &mut Attached,
     session: &str,
     options: &SnapshotOptions,
     full: bool,
-) -> Result<Value, Failure> {
+) -> Result<(Snapshot, Value), Failure> {
     let full = full || target.delta_session.as_deref() != Some(session);
-    let delta = target.mirror.delta_snapshot(options, full)?;
+    let (snapshot, delta) = target.mirror.snapshot_with_delta(options, full)?;
     target.delta_session = Some(session.to_owned());
-    serde_json::from_str(&delta.to_json())
-        .map_err(|e| Failure::internal(format!("the delta snapshot is not JSON: {e}")))
+    let delta = serde_json::from_str(&delta.to_json())
+        .map_err(|e| Failure::internal(format!("the delta snapshot is not JSON: {e}")))?;
+    Ok((snapshot, delta))
 }
 
 /// Keeps `snapshot` as the session's last, with the latest frame change it
@@ -613,12 +614,11 @@ fn change(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
     target.catch_up()?;
     target.mirror.pump()?;
     let elapsed = started.elapsed();
-    let snapshot = target.mirror.snapshot(&options)?;
+    let (snapshot, delta) = delta_of(target, session, &options, false)?;
     let moved = Moved {
         listing: listing || listing_moved(target, session, &snapshot),
         frames: seen.as_ref().is_some_and(|seen| seen.frames_moved(target)),
     };
-    let delta = delta_of(target, session, &options, false)?;
     let warning = verdict_warning(&snapshot.verdict);
     remember(target, session, snapshot);
     Ok(Success::new(json!({
