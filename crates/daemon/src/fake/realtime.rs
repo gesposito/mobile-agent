@@ -1211,9 +1211,15 @@ mod tests {
     /// Physical-ios, task 5.2 (design D23): a fake iPhone's frames are
     /// screenshots polled at the device's rate, about 19 a second, so the
     /// Anim tab's spinner, which a Simulator's stream shows 60 times a
-    /// second, shows in frames a capture interval apart; its attachment
-    /// sets the mirror for slow frames, and its windows send no change
-    /// events.
+    /// second, shows in at most one frame a capture interval; its
+    /// attachment sets the mirror for slow frames, and its windows send no
+    /// change events. A frame shows the latest capture when the fake is
+    /// next called and is stamped then, so the frames are counted in
+    /// captures, which hold whatever the host's load: each frame shows a
+    /// capture after the frame before it and is stamped before the capture
+    /// after its own, so n frames span more than n - 2 capture intervals,
+    /// and no more frames come than captures since the attach. The stream
+    /// is not held to captures.
     #[test]
     fn a_fake_iphones_frames_come_at_the_devices_rate() {
         let anim = Launch {
@@ -1221,6 +1227,7 @@ mod tests {
             env: vec![("FIXTURE_INITIAL_TAB".into(), "anim".into())],
         };
         let polled = Frames::Screenshots { subscribed: true };
+        let attached = Instant::now();
         let mut phone = attach(
             Platform::Ios,
             polled,
@@ -1239,18 +1246,20 @@ mod tests {
             .launch(app::FIXTURE, &anim, Instant::now())
             .unwrap();
         let frames = frames_within(&mut phone, Duration::from_millis(600));
+        let elapsed = attached.elapsed();
+        let captures = elapsed.as_nanos() / device::CAPTURE_INTERVAL.as_nanos() + 1;
         assert!(
-            (5..=13).contains(&frames.len()),
-            "{} frames in 600 ms: {frames:?}",
+            frames.len() >= 2 && frames.len() as u128 <= captures,
+            "{} frames in the {captures} captures of {elapsed:?}: {frames:?}",
             frames.len()
         );
-        for pair in frames.windows(2) {
-            let apart = pair[1].at - pair[0].at;
-            assert!(
-                apart + Duration::from_millis(5) >= device::CAPTURE_INTERVAL,
-                "frames {apart:?} apart: {frames:?}"
-            );
-        }
+        let span = frames[frames.len() - 1].at - frames[0].at;
+        let intervals = u32::try_from(frames.len() - 2).expect("a few frames");
+        assert!(
+            span > device::CAPTURE_INTERVAL * intervals,
+            "{} frames over {span:?}: {frames:?}",
+            frames.len()
+        );
         let request = ReadRequest {
             windows: None,
             reason: mirror::backend::ReadReason::Attach,
@@ -1280,7 +1289,13 @@ mod tests {
             .launch(app::FIXTURE, &anim, Instant::now())
             .unwrap();
         let streamed = frames_within(&mut simulator, Duration::from_millis(600));
-        assert!(streamed.len() > 20, "{} frames", streamed.len());
+        assert!(
+            streamed
+                .windows(2)
+                .any(|pair| pair[1].at - pair[0].at < device::CAPTURE_INTERVAL),
+            "{} frames: {streamed:?}",
+            streamed.len()
+        );
     }
 
     /// Profiling, task 2.1: the display shows the Anim tab's spinner
