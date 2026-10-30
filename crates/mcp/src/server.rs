@@ -2,10 +2,13 @@
 //! `mcp-server` change), written against the handler trait rather than
 //! rmcp's tool macros, since every tool's definition comes from the table.
 //! Each call is one request on the daemon's socket through the CLI's client
-//! (`crates/cli/src/client.rs`): a connection of its own, the daemon started
-//! first when none of this build serves, the version check and the retries
+//! (`crates/cli/src/client.rs`): a connection of its own, with the retries
 //! the CLI makes, and the reply awaited on the runtime's blocking pool, so
-//! the runtime's one thread keeps serving the other requests meanwhile.
+//! the runtime's one thread keeps serving the other requests meanwhile. The
+//! daemon's version is checked on the server's first call and again only
+//! after a call that found no daemon listening, which starts one of this
+//! build as the CLI's first command does (`call_checked`, design D3 of
+//! `profiling`).
 //!
 //! While a call waits for the daemon (design D7), the handler watches three
 //! things beside the reply, the same for every tool: a tick every 5 s, on
@@ -69,6 +72,9 @@ pub struct Server(Arc<Shared>);
 
 pub struct Shared {
     pub endpoint: Endpoint,
+    /// Whether a call found the daemon of this build serving, so that the
+    /// calls after it go straight to the socket.
+    checked: cli::client::Checked,
     /// The session the server minted, `mcp-<pid>`, which a call's
     /// `session` overrides, and the targets its calls' sessions hold.
     pub sessions: Sessions,
@@ -91,6 +97,7 @@ impl Server {
             .collect();
         Server(Arc::new(Shared {
             endpoint,
+            checked: cli::client::Checked::default(),
             sessions: Sessions::new(session),
             options,
             cwd,
@@ -162,8 +169,12 @@ impl Server {
     /// Sends one request line to the daemon and waits for its reply, as
     /// the CLI sends a command's. This is where a call waits.
     async fn send(&self, line: Map<String, Value>) -> Result<Reply, ErrorData> {
-        let endpoint = self.0.endpoint.clone();
-        blocking(move || cli::client::call(&endpoint, &line).unwrap_or_else(Reply::failed)).await
+        let shared = self.0.clone();
+        blocking(move || {
+            cli::client::call_checked(&shared.endpoint, &line, &shared.checked)
+                .unwrap_or_else(Reply::failed)
+        })
+        .await
     }
 
     /// Sends the daemon `session`'s `cancel` on a connection of its own,

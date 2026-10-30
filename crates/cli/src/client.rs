@@ -8,7 +8,10 @@
 //! the daemon's version file: when it names another build than the daemon
 //! executable this CLI would start, the CLI starts that executable, which
 //! replaces the running daemon (see the daemon's README). A request that
-//! finds no daemon listening starts one and is sent once more.
+//! finds no daemon listening starts one and is sent once more. A process
+//! that sends many requests, as the MCP server does, checks the version on
+//! its first and again only after one that found no daemon listening
+//! ([`call_checked`]).
 
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
@@ -17,6 +20,7 @@ use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
@@ -424,13 +428,18 @@ fn start(endpoint: &Endpoint, exe: &Path, version: &str) -> Result<(), Failure> 
     }
 }
 
+/// Whether `request` is `shutdown`, which never starts a daemon.
+fn stops(request: &Map<String, Value>) -> bool {
+    request.get("action").and_then(Value::as_str) == Some("shutdown")
+}
+
 /// Sends `request` to the endpoint's daemon, starting one first when none
 /// of this build serves, and returns the reply. `shutdown` never starts a
 /// daemon.
 pub fn call(endpoint: &Endpoint, request: &Map<String, Value>) -> Result<Reply, Failure> {
     let socket = endpoint.socket();
     check_socket(&socket)?;
-    if request.get("action").and_then(Value::as_str) == Some("shutdown") {
+    if stops(request) {
         return match send(&socket, request) {
             Err(Unsent::Unreachable(_)) => Ok(Reply {
                 success: true,
@@ -454,6 +463,39 @@ pub fn call(endpoint: &Endpoint, request: &Map<String, Value>) -> Result<Reply, 
         }
         other => other.map_err(Failure::from),
     }
+}
+
+/// Whether a process that sends the daemon many requests, such as the MCP
+/// server, found a daemon of the build it would start serving the
+/// endpoint, as [`call_checked`] keeps it from one request to the next.
+#[derive(Debug, Default)]
+pub struct Checked(AtomicBool);
+
+/// Sends `request` as [`call`] does, for a process that sends the daemon
+/// many requests, such as the MCP server: the daemon's version is checked
+/// on the first request through `checked` and again only after a request
+/// that found no daemon listening, which starts one as [`call`] does, and
+/// the requests between go straight to the socket. A daemon another build
+/// started meanwhile serves them as it is. The check costs a request the
+/// version file's open, which the host's inspection of file opens can hold
+/// for a millisecond or more (design D3 of `profiling`), and the
+/// executable's lookup.
+pub fn call_checked(
+    endpoint: &Endpoint,
+    request: &Map<String, Value>,
+    checked: &Checked,
+) -> Result<Reply, Failure> {
+    if checked.0.load(Ordering::Acquire) {
+        match send(&endpoint.socket(), request) {
+            Err(Unsent::Unreachable(_)) => checked.0.store(false, Ordering::Release),
+            sent => return sent.map_err(Failure::from),
+        }
+    }
+    let reply = call(endpoint, request)?;
+    if !stops(request) {
+        checked.0.store(true, Ordering::Release);
+    }
+    Ok(reply)
 }
 
 #[cfg(test)]
@@ -514,5 +556,121 @@ mod tests {
         assert_eq!(reply.code.as_deref(), Some("stale_ref"));
         assert_eq!(reply.error.as_deref(), Some("gone"));
         assert!(Reply::parse("[1]").is_none());
+    }
+
+    /// A directory of its own for a test, removed on drop, with a short
+    /// path so that its socket's fits in a Unix socket address.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Scratch {
+            let base = std::env::temp_dir();
+            let base = if base.as_os_str().len() > 60 {
+                PathBuf::from("/tmp")
+            } else {
+                base
+            };
+            let dir = base.join(format!("mac-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("the test directory can be created");
+            Scratch(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A daemon stand-in on `socket` that answers every request line with
+    /// a success, until [`Standin::stop`].
+    struct Standin {
+        socket: PathBuf,
+        stopping: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        thread: std::thread::JoinHandle<()>,
+    }
+
+    impl Standin {
+        fn serve(socket: &Path) -> Standin {
+            let listener =
+                std::os::unix::net::UnixListener::bind(socket).expect("the socket binds");
+            let stopping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = stopping.clone();
+            let thread = std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { break };
+                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                    let mut line = String::new();
+                    if BufReader::new(&stream).read_line(&mut line).is_ok() {
+                        let _ =
+                            stream.write_all(b"{\"success\":true,\"data\":{},\"error\":null}\n");
+                    }
+                }
+            });
+            Standin {
+                socket: socket.to_path_buf(),
+                stopping,
+                thread,
+            }
+        }
+
+        /// Stops answering and removes the socket, as a daemon that stopped.
+        fn stop(self) {
+            self.stopping
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = UnixStream::connect(&self.socket);
+            self.thread.join().expect("the stand-in ends");
+            std::fs::remove_file(&self.socket).expect("the socket is removed");
+        }
+    }
+
+    /// Design D3 of `profiling`: a process that sends many requests checks
+    /// the daemon's version on its first and again only after one that
+    /// found no daemon listening. The daemon executable here cannot run,
+    /// so a check that finds another version fails to start it.
+    #[test]
+    fn a_checked_caller_reads_the_version_once_and_again_after_a_call_finds_no_daemon() {
+        let scratch = Scratch::new("checked");
+        let exe = scratch.0.join("placeholder-daemon");
+        std::fs::write(&exe, "not a program").expect("the stand-in is written");
+        let endpoint = Endpoint {
+            dir: scratch.0.clone(),
+            daemon: Some(exe.clone()),
+            idle_timeout: None,
+            emulator_controller: None,
+        };
+        std::fs::write(scratch.0.join(VERSION_FILE), daemon_version(&exe)).expect("writable");
+        let daemon = Standin::serve(&endpoint.socket());
+        let request = json!({"action": "status"}).as_object().cloned().unwrap();
+        let checked = Checked::default();
+
+        let first = call_checked(&endpoint, &request, &checked).expect("the daemon answers");
+        assert!(first.success, "{first:?}");
+        // Another build's version: a check would start this build's daemon,
+        // which cannot run.
+        std::fs::write(scratch.0.join(VERSION_FILE), "0.0.1+placeholder-other\n")
+            .expect("writable");
+        assert!(
+            call(&endpoint, &request)
+                .is_err_and(|failure| failure.message.starts_with("cannot start the daemon")),
+            "a call that checks the version starts the daemon"
+        );
+        for _ in 0..3 {
+            let reply = call_checked(&endpoint, &request, &checked)
+                .expect("the checked daemon answers without a check");
+            assert!(reply.success, "{reply:?}");
+        }
+
+        // No daemon listens: the next call checks again, and starts one.
+        daemon.stop();
+        let failure = call_checked(&endpoint, &request, &checked)
+            .expect_err("no daemon answers and none can start");
+        assert!(
+            failure.message.starts_with("cannot start the daemon"),
+            "{failure:?}"
+        );
     }
 }
