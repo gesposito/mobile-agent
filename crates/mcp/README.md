@@ -7,7 +7,8 @@ sessions, over the daemon in `crates/daemon`. It is a crate of its own, so
 that the SDK, `rmcp`, and its runtime are its dependencies alone and the
 CLI keeps its size and start time; it builds on the CLI's library for what
 the two surfaces share: `client.rs` (discovery, the daemon's start, the
-version check, retries, the reply wait), `output.rs` (a reply's text),
+version check, retries, the reply wait, a reply read without its refs
+map), `output.rs` (a reply's text),
 `request.rs` (the lines the release sends), `doctor.rs` (the host's checks)
 and `config.rs` (the settings file). Its tools' input schemas are the
 request structs of `crates/wire`, with the `schema` feature on.
@@ -46,6 +47,10 @@ tests/
   profiles.rs   the read-only profile, the card's sizes, its sentences on a click that reports no
                 change and on timeout, help
   structured.rs  outputSchema and structuredContent with the flag, neither without
+  daemon.rs     the daemon's version checked on the first call and after one that finds no daemon
+benches/
+  mcp.rs        a tools/call of snapshot through the server over its stdio, and the same request on
+                the daemon's socket, its floor (`just micro`)
 ```
 
 ## Running
@@ -80,7 +85,13 @@ either opening names the server, its version and the instructions card.
 
 The first call starts the daemon when none of this build serves, as the
 CLI's first command does, with the server's environment, so
-`MOBILE_AGENT_DRIVERS` and the fake targets' variables reach it. A relative
+`MOBILE_AGENT_DRIVERS` and the fake targets' variables reach it. The
+server checks the daemon's version on that first call and again only
+after a call that finds no daemon listening, which starts one the same
+way (`cli::client::call_checked`, design D3 of `profiling`): the calls
+between go straight to the socket, and a daemon another build started
+meanwhile serves them as it is. The cancel and the release at exit check
+the version as the CLI does. A relative
 `path` a call names is taken from the server's working directory, as the
 CLI takes one from its own.
 
@@ -202,7 +213,44 @@ protocol error.
 Each call is one request on the daemon's socket through the CLI's client,
 a connection of its own with the CLI's retries, awaited on the runtime's
 blocking pool: the server runs tokio's current-thread runtime, and the
-calls of a client wait side by side.
+calls of a client wait side by side. The reply's data is read without the
+refs map of its listing or delta, at its top and in its `snapshot`
+object, which neither the text nor the structured content carries
+(`cli::client::Data::WithoutRefs`): the map's entries, about half of a
+500-cell listing's 45 KB reply, are skipped as the parser meets them.
+
+## The call's cost
+
+`benches/mcp.rs` (`just micro --filter mcp/`, `crates/bench/README.md`)
+times a `tools/call` of `snapshot`, interactive and the whole listing,
+through the server over its standard input and output on a fake
+emulator's Big tab, from the request line written to the response line
+read, and beside it the line the server sends the daemon for that call on
+the socket, the floor the call stands on (design D3 of `profiling`). The
+server runs there as a process over pipes, as its clients run it: a
+handler's request context comes only from rmcp's serve loop, and the
+runtime's hand-offs belong to the path. On the development host the call
+takes 0.77 ms at the median against the socket's 0.62, the server's share
+0.14 ms; on a Simulator's 506-line listing, through spike S15's client,
+0.86 ms at the median and 0.20 paired with the same request on the
+socket, against spike S13's throwaway server's 0.32. The path is as it is
+for what spans around its steps measured (design D3's As built):
+
+- The progress interval's first tick is due a period after the call
+  starts (Waits below): a tick due at once still parks the call until the
+  runtime's timer's next millisecond, 1.27 ms before the request went out.
+- The daemon's version is checked once (Running above): the version
+  file's open took 1.7 ms at the median under the host's inspection of
+  file opens, and the executable's lookup 0.05.
+- The reply is read without its refs map: the whole reply's JSON tree took
+  0.15 to 0.57 ms, its refs map's 505 entries the most of it, and the
+  reading without them 0.06 where the whole took 0.12.
+- The hand-off to the blocking pool stays: 0.004 to 0.014 ms each way.
+
+A wait in the call also slows the work after it: on the development host
+the same listing on the daemon's socket takes 0.63 ms back to back and 3.9
+ms with 6 ms of sleep between requests, the host's cores idling between
+them, and 0.64 with 6 ms of busy waiting instead.
 
 ## Waits
 
@@ -235,8 +283,9 @@ and the bound:
   `⚠ timeout 60000 ms was capped to 53000 ms, the server's bound of 55 s
   less its margin of 2 s`. A session's default above the bound, which the
   server does not know, runs into the backstop below.
-- While a call runs, every 5 s, a request that carries a progress token in
-  its `_meta` gets `notifications/progress` through the request's peer:
+- While a call runs, every 5 s from its start, a request that carries a
+  progress token in its `_meta` gets `notifications/progress` through the
+  request's peer:
   `progress` is the seconds elapsed, with no total, and the message names
   the tool, the seconds and what the arguments say the call waits for,
   `wait: 5 s elapsed, waiting for the text "Welcome"`: `until`'s element,
@@ -379,7 +428,7 @@ text.
 
 | Requirement | Scenario | Tests |
 |---|---|---|
-| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_snapshot_after_a_change_answers_with_the_lines_that_changed`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::scroll_answers_with_its_strokes_and_where_until_s_element_ended`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
+| Tools over the daemon | Snapshot through the server; Failure carries the code | `tools::the_tools_list_in_both_eras_as_flat_objects_with_selector_session_and_device`, `tools::every_parameter_of_each_action_reaches_its_tool`, `tools::a_snapshot_answers_with_the_listing_and_no_refs_map_as_a_delta_by_default`, `tools::a_snapshot_after_a_change_answers_with_the_lines_that_changed`, `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning`, `tools::fill_and_get_answer_with_the_lines_the_cli_prints`, `tools::scroll_answers_with_its_strokes_and_where_until_s_element_ended`, `tools::devices_and_status_answer_with_the_lines_the_cli_prints`, `tools::a_failure_is_an_execution_error_naming_its_code_and_what_to_do`; the daemon's version checked once (design D3 of `profiling`): `daemon::the_server_checks_the_daemon_s_version_on_its_first_call_and_after_one_finds_no_daemon`; the structured results (design D5): `structured::with_structured_each_typed_tool_carries_its_reply_s_schema_and_each_result_the_reply_s_data`, `structured::with_structured_a_screenshot_s_image_a_failure_and_the_untyped_tools_keep_their_content`, `structured::without_structured_no_tool_carries_a_schema_and_no_result_structured_content`; in `src/tools.rs`, `the_table_is_sorted_by_name_with_one_tool_per_action`, `a_call_goes_out_as_the_daemon_s_line_through_the_table` and `a_definition_carries_its_reply_s_schema_when_structured`; in `src/results.rs`, `a_success_is_the_cli_s_lines_and_its_warning`, `a_failure_names_its_code_after_the_cli_s_mark` and `structured_content_leaves_the_refs_and_the_image_to_the_content` |
 | Sessions and claims | Server exits | `sessions::a_server_mints_its_session_and_a_call_may_name_another`, `sessions::a_server_whose_input_ends_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_signalled_to_stop_releases_its_claim_and_leaves_the_app_running`, `sessions::a_server_releases_a_claim_no_reply_named`, `sessions::a_server_that_was_only_discovered_exits_when_its_input_ends`; in `src/sessions.rs`, `a_reply_that_names_its_target_holds_it_and_close_releases_it` |
 | Screenshots inline | Unchanged screen | `screenshots::a_screenshot_is_the_daemon_s_image_within_the_long_edge_bound`, `screenshots::if_changed_answers_a_still_screen_with_a_line_and_a_changed_one_with_the_image`, `screenshots::a_screenshot_with_a_path_answers_with_the_path_and_the_sizes`; in `src/sessions.rs`, `a_screenshot_is_the_last_one_s_when_its_image_is_on_the_same_session_and_device` |
 | Long waits bounded and cancellable | Wait past the bound; A click on a missing element | `waits::the_server_takes_its_bound_its_profile_and_structured_with_their_defaults`, `waits::a_wait_past_the_bound_sends_progress_every_5_s_and_ends_with_the_daemon_s_timeout`, `waits::a_timeout_above_the_bound_is_capped_and_said_and_no_progress_goes_without_a_token`, `waits::a_cancelled_call_ends_the_daemon_s_wait_so_the_next_call_runs_at_once`, `waits::a_call_the_daemon_has_not_answered_past_the_bound_is_cancelled_by_the_server`; the cap (real-app-fixes, design D7): `waits::a_click_on_a_missing_element_without_a_timeout_fails_at_the_daemon_s_default`, `waits::a_wait_without_a_timeout_ends_at_the_daemon_s_default`, `waits::wait_s_description_says_to_pass_timeout_for_a_wait_past_the_default`; in `src/tools.rs`, `the_bound_caps_a_call_s_timeout_and_gives_none_to_a_call_without_one` and `a_call_says_what_it_waits_for`; in `src/main.rs`, `the_command_line_defaults_to_a_55_s_bound_all_tools_and_plain_results` |
