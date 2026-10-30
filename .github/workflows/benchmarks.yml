@@ -134,11 +134,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   micro-linux:
-    name: Microbenchmarks, Linux (protocol, mirror, daemon, android)
+    name: Microbenchmarks, Linux (protocol, mirror, daemon, android, mcp)
     needs: resolve
     if: needs.resolve.outputs.suite != 'harness'
     runs-on: ubuntu-latest
-    # About 85 minutes: three rounds of 62 benchmarks per side and two builds.
+    # About 95 minutes: three rounds of 67 benchmarks per side and two builds.
     timeout-minutes: 120
     permissions:
       contents: read
@@ -166,7 +166,7 @@ jobs:
         run: |
           status=0
           target/release/mobile-agent-bench micro --ab "$BASE" --wait 10 \
-            --filter '^(protocol|mirror|daemon|android)/' --out "$OUT" || status=$?
+            --filter '^(protocol|mirror|daemon|android|mcp)/' --out "$OUT" || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
       - name: Write the summary
         if: always()
