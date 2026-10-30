@@ -36,6 +36,7 @@ src/
   paths.rs      the socket directory, its files, the build's version string
   wire.rs       a request line read into the request types of crates/wire, the reads of their
                 parameters, the reply envelope, the error codes
+  listing.rs    the listing's reply, written from the mirror's snapshot straight into JSON text
   registry.rs   discovery, target selection, claims, session settings, workers
   worker.rs     one thread per target owning its mirror; per-session state; the command in
                 flight, which cancel ends
@@ -53,13 +54,14 @@ tests/          arguments, cancel, catch_up, changes, claims, controller, idle, 
                 bench_inputs, the same for the screen the benches time; devices, the CLI
                 against a real Simulator, emulator and iPhone
 benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchmarks change:
-                wire::parse of the line the CLI sends for snapshot -i, reply_line of the
-                reply to it on the fake fixture's Big tab (500 cells), with their
-                allocations, and that snapshot through the socket of a daemon on a fake
-                emulator, one request per iteration; and snapshot -i of the fixture's Anim
-                tab, its spinner turning, through the socket of a daemon on a fake
-                Simulator, each request half the mirror's minimum re-read interval after
-                the reply before it (design D3 of profiling)
+                wire::parse of the line the CLI sends for snapshot -i, the reply to it on
+                the fake fixture's Big tab (500 cells) written from a mirror's listing in
+                the bench's process into its line, with their allocations, and that
+                snapshot through the socket of a daemon on a fake emulator, one request per
+                iteration; and snapshot -i of the fixture's Anim tab, its spinner turning,
+                through the socket of a daemon on a fake Simulator, each request half the
+                mirror's minimum re-read interval after the reply before it (design D3 of
+                profiling)
 ```
 
 `cargo bench -p daemon -- --noplot [filter]` runs the benchmarks with
@@ -203,6 +205,27 @@ while Maps raised its card, its keys and its read-back.
 Every target action but `set_timeout` claims its target. Points are device
 points, as the mirror reports bounds. `dispatchMs` is the time the input
 sink took to accept the tap, the span of the benchmark's `tap-dispatch`.
+
+A reply line is the envelope around the command's data, written by
+`wire::reply_line` with the data as `serde_json` writes a map: compact,
+the keys in their sorted order. The data of every command is built as
+`serde_json` values (design D3 of mcp-server) but the listing's, `snapshot`
+without `delta`, which `listing::reply` writes from the mirror's snapshot
+straight into that text, the refs map and the listing's text included,
+byte for byte the line its values give: the strings escaped by
+`mirror::json::push_str`, through the table `serde_json` escapes by, the
+refs ordered by their text (`e10` before `e2`), `readMs` formatted as
+`serde_json` formats a number and taken once the listing is made. The
+handler hands the text over in `Success::written`, which `reply_line` puts
+in the line as it is. As values, the 505 refs of the fake fixture's Big
+tab cost about six allocations each, and their building and serialization
+was a fifth of a listing's time on the socket (spike S15, design D3 of
+profiling): `daemon/wire/reply-snapshot-big`, the reply built from a
+mirror's listing of that tab and written into its line, took 179.7 µs and
+3,127 allocations as values and takes 36.0 µs and 12 written, and
+`daemon/socket/snapshot-interactive-big` 585 µs against 750 in
+`just micro --ab` against the commit before (the escaper's table also
+speeds the mirror's own listing, which writes its names with it).
 
 Element arguments (`target`, `until`) are a ref (`@e3`, `ref=e3`, `e3`), or
 a selector: `#id` or `id=<id>`, `text=<text>` or bare text for an element
@@ -1514,7 +1537,7 @@ Worked around here without changing `crates/mirror`:
 | Change waits, claim release and cancel (mcp-server, designs D6 to D9) | Wait for the next change; Change before the wait; A change outside the listing; Frames on request; Close and keep; (cancel; inline screenshot) | `changes::a_change_wait_returns_at_the_tree_change_a_tap_s_late_effect_brings`, `changes::on_targets_with_frames_a_tap_s_late_effect_moves_the_tree_and_the_frames`, `changes::a_change_since_the_session_s_last_snapshot_returns_at_once`, `changes::a_change_outside_the_session_s_listing_leaves_the_wait_running_to_its_bound`, `changes::a_change_inside_the_listing_ends_the_wait_after_one_outside_it`, `changes::frames_that_move_alone_leave_a_wait_without_frames_running_to_its_bound`, `changes::with_frames_frames_that_move_alone_end_the_wait_with_the_listing_unchanged`, `changes::with_frames_a_change_outside_the_listing_ends_the_wait_where_frames_show_it`, `changes::a_still_screen_fails_with_wait_timeout_at_the_wait_s_bound`, `changes::a_session_without_a_snapshot_gets_the_whole_listing_at_once`; `claims::close_with_keep_releases_the_claim_and_leaves_the_app_running_for_another_session`; `cancel::a_cancel_ends_the_session_s_wait_with_cancelled_and_the_next_command_runs_at_once`, `cancel::a_cancel_with_nothing_in_flight_says_so_and_changes_nothing`, `cancel::a_cancel_during_a_tap_s_device_call_leaves_the_click_completing`, `cancel::every_kind_of_wait_ends_at_a_cancel`, `worker::tests::a_cancel_raises_the_flag_for_the_session_s_command_alone_until_it_ends`, and the mirror's `cancel::*`; `screenshots::an_inline_screenshot_carries_the_image_and_writes_a_file_only_where_a_path_names_one`; the replies in `replies::every_action_s_reply_on_a_fake_target_parses_into_its_reply_type` and `replies::a_cancel_s_reply_and_the_failure_it_causes_parse_into_their_types` |
 | Daemon lifecycle | (idle exit, configurable) | `idle::the_daemon_exits_after_its_idle_timeout_and_removes_its_files`, `idle::requests_postpone_the_idle_exit`, `idle::an_idle_timeout_of_zero_disables_the_exit`, `idle::the_idle_timeout_defaults_to_one_hour`, `idle::idle_timeouts_take_the_units_agent_browser_takes`, `idle::a_daemon_whose_socket_file_was_removed_still_exits_when_idle` (task 8.14) |
 | Daemon lifecycle | (version file, replacement, socket) | `lifecycle::the_daemon_writes_its_pid_and_version_files`, `lifecycle::a_daemon_of_another_version_is_shut_down_and_replaced`, `lifecycle::a_second_daemon_of_the_same_version_leaves_the_first_serving`, `lifecycle::files_left_by_a_killed_daemon_do_not_block_a_new_one`, `lifecycle::shutdown_stops_the_daemon_and_removes_its_files`, `lifecycle::the_socket_lives_under_the_runtime_directory`, `lifecycle::an_overlong_socket_path_is_refused_with_a_hint`; task 8.14: `lifecycle::shutdown_completes_after_the_socket_file_was_removed_and_leaves_no_lock_directory`, `server::tests::an_exiting_daemon_removes_the_lock_unless_a_startup_holds_it`, `server::tests::a_startup_takes_the_lock_again_after_an_exit_removed_its_file` |
-| Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order` |
+| Output formats | (envelope and codes) | `lifecycle::every_reply_follows_the_agent_browser_envelope`, `lifecycle::malformed_and_http_looking_requests_are_refused_with_a_code`, `wire::tests::replies_follow_agent_browser_field_order`; the listing's reply written as `serde_json` writes its values (profiling, task 2.3): `listing::tests::the_big_tab_s_reply_is_the_line_serde_json_writes_for_its_values`, `listing::tests::strings_numbers_and_refs_go_in_as_serde_json_writes_them`, `listing::tests::refs_order_as_their_text_sorts`, and the mirror's `json::tests::strings_escape_what_serde_json_escapes` |
 | Command grammar | Interactive snapshot output | `lifecycle::a_snapshot_of_the_fake_launcher_lists_a_heading_and_two_buttons`, `lifecycle::devices_lists_every_fake_target_with_its_platform_and_class`, `lifecycle::open_launches_an_installed_app_and_refuses_an_unknown_one` |
 | Command grammar | (keys, element arguments) | `keys::tests::*`, `handlers::aim::tests::arguments_are_refs_identifiers_texts_or_roles` |
 | Command grammar | (task 8.10: CLI gaps the harness found) | the CLI's `commands::an_exact_text_selector_matches_the_whole_name_or_value_only`, `commands::scroll_until_moves_the_content_until_the_element_is_on_screen`, `commands::open_relaunch_reports_settled_only_once_the_relaunched_app_shows_its_screen`, `commands::status_names_whether_each_attached_target_has_a_frame_source`, `snapshot::a_snapshot_says_how_long_the_daemon_took_and_whether_the_replica_served_it`; `handlers::aim::tests::text_double_equals_is_an_exact_text_selector` |

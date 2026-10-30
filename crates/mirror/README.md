@@ -34,7 +34,8 @@ src/
   diff.rs       the structural diff
   delta.rs      agent-browser's delta snapshots and their JSON
   frame.rs      frame size, quality and age policy
-  json.rs       JSON strings escaped as serde_json escapes them
+  json.rs       JSON strings escaped as serde_json escapes them, through a table; public for
+                the daemon's listing reply
   geometry.rs   device points
   testing.rs    FakeTarget: a scripted backend on a fake clock
 fixtures/       synthetic trees in device points with their scale, and event timelines
