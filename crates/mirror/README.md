@@ -13,8 +13,8 @@ the tests, and later the daemon's tests, drive with a fake clock.
 ```
 src/
   backend.rs    the driver-facing traits: tree source, event stream, frame source, input sink, clock
-  mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot, frame,
-                timestamps, changes, note_window_change, cancel_on, visibility, covered_by, hit, holds, twin,
+  mirror.rs     Mirror: pump, drain, run_until, snapshot, act, settle, wait, diff, delta_snapshot,
+                snapshot_with_delta, frame, timestamps, changes, note_window_change, cancel_on, visibility, covered_by, hit, holds, twin,
                 scroll_viewport, scroll_container_in, uncovered, keys_hidden, edit_menu, field_within,
                 fields_within
   timestamps.rs when the latest frame, frame change, tree change, read and input happened
@@ -757,7 +757,13 @@ the reasons in this order, each with advice:
   `role` or `name`) and a line splice; the whole listing again when the
   delta's JSON is 70% of the listing or more, or when the options, the
   replica generation or the foreground owner changed. `to_json` writes the
-  bytes agent-browser's `serde_json` writes.
+  bytes agent-browser's `serde_json` writes. With nothing changed since the
+  delta before, the listing's text compares equal and no diff runs.
+  `snapshot_with_delta` gives the listing and its delta from that one
+  listing, the two calls numbering one sequence, for a caller that needs the
+  listing's verdict and refs beside the delta, as the daemon's
+  `snapshot --delta` and change wait do, so that they list the screen once
+  (design D3 of `profiling`).
 - `frame` fits the latest frame's upright size to the long edge without
   enlarging it and asks the frame source to rotate and encode; it reports
   the capture time, the age and whether the frame is newer or older than the
@@ -980,7 +986,7 @@ cargo test -p mirror
 | | Edit menu up | `interactive::the_edit_menu_covers_the_strip_its_cells_draw_on_and_the_screen_stays_listed`, `interactive::a_control_wholly_under_the_edit_menu_is_left_out_and_refused_naming_the_menu`, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header`, and in the Simulator's reader `elements::tests::the_edit_menus_window_covers_the_strip_its_cells_draw_on`, `elements::tests::a_system_window_that_draws_nothing_covers_nothing`; `fill` closing the menu in the daemon, `handlers::act::tests::a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up` (rn-app-fixes 7.1, design D55) |
 | In-view marking follows the screen | A collection view's rows | `interactive::a_container_spanning_the_window_that_draws_only_its_toolbar_hides_no_row_on_ios`; a sheet's search field above its list's inset, `interactive::a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios`; a window across the screen as a host, `interactive::a_hint_never_calls_a_window_over_the_screen_a_header` (real-app-fixes 2.1, design D2) |
 | | (real-app-fixes 5.6: a field drawn in the place the keyboard's host keeps for its input accessory view) | in the daemon, `handlers::act::tests::a_field_drawn_where_the_keyboard_keeps_its_accessory_view_s_place_is_listed_and_clicked`, on its fake's accessory board |
-| Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing` |
+| Structural diff | Diff after a form submit | `diff::a_form_submit_diff_lists_removed_fields_and_added_confirmation`, `diff::a_diff_against_an_unchanged_screen_is_empty`, `diff::changed_elements_list_the_fields_that_changed`, and for agent-browser's delta snapshots `diff::delta_snapshots_follow_agent_browser_kinds_and_revisions`, `diff::delta_ref_changes_follow_agent_browser_ops`, `diff::a_delta_of_70_percent_or_more_of_the_listing_falls_back_to_full`, `diff::changing_the_listing_options_starts_again_with_the_whole_listing`; the listing and its delta from one listing (profiling, design D3): `diff::a_listing_and_its_delta_come_from_one_listing` |
 | Quality verdict on every snapshot | Degraded read is flagged | `resync::a_root_only_read_of_a_populated_screen_is_degraded_with_advice`, `resync::truncated_reads_are_degraded_naming_the_limit`, `resync::agent_warnings_and_disconnection_reach_the_verdict`, `refs::identical_siblings_are_reported_as_a_degraded_sibling_collision` |
 | Frame access | Scaled frame | `frames::a_scaled_frame_fits_the_requested_long_edge_upright_with_its_timestamp`, `frames::a_rotated_frame_is_encoded_upright`, `frames::small_frames_are_not_enlarged_and_defaults_apply`, `frames::quality_defaults_to_80_and_is_clamped`, `frames::a_frame_older_than_the_last_tree_read_says_so`, `frames::no_frame_is_an_error_with_its_code` |
 | (design D7 of mcp-server, the cancel flag) | (a raised flag ends the waits; one that stays down changes nothing) | `cancel::a_raised_flag_ends_run_until_wait_and_settle_with_cancelled_before_they_block`, `cancel::a_flag_raised_while_a_wait_blocks_ends_it_within_a_slice`, `cancel::a_flag_that_stays_down_changes_nothing_a_wait_does`; the daemon's `cancel::*` end to end |

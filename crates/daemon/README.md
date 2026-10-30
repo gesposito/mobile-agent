@@ -58,9 +58,10 @@ benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchma
                 the fake fixture's Big tab (500 cells) written from a mirror's listing in
                 the bench's process into its line, with their allocations, and that
                 snapshot through the socket of a daemon on a fake emulator, one request per
-                iteration; and snapshot -i of the fixture's Anim tab, its spinner turning,
-                through the socket of a daemon on a fake Simulator, each request half the
-                mirror's minimum re-read interval after the reply before it (design D3 of
+                iteration, and as a delta with nothing changed since the delta before;
+                and snapshot -i of the fixture's Anim tab, its spinner turning, through the
+                socket of a daemon on a fake Simulator, each request half the mirror's
+                minimum re-read interval after the reply before it (both design D3 of
                 profiling)
 ```
 
@@ -226,6 +227,18 @@ mirror's listing of that tab and written into its line, took 179.7 µs and
 `daemon/socket/snapshot-interactive-big` 585 µs against 750 in
 `just micro --ab` against the commit before (the escaper's table also
 speeds the mirror's own listing, which writes its names with it).
+
+With `delta`, `snapshot`'s data is built as values around the delta the
+mirror writes as JSON, and the listing and its delta come from one listing
+(`Mirror::snapshot_with_delta`), the listing giving the reply's `origin`,
+`verdict` and `replicaRevision` and the session's last snapshot and refs, as
+the change wait's answer takes them too. With nothing changed since the
+delta before, the delta compares the listing's text with the last and
+answers `unchanged`, so such a reply costs a listing without the listing's
+reply: `daemon/socket/snapshot-interactive-delta-unchanged-big` takes 412 µs
+against 772 for a listing taken twice, once for the reply and again for the
+delta, in `just micro --ab` against the commit before (design D3 of
+profiling), and the whole listing on the same socket 596.
 
 Element arguments (`target`, `until`) are a ref (`@e3`, `ref=e3`, `e3`), or
 a selector: `#id` or `id=<id>`, `text=<text>` or bare text for an element
@@ -1488,10 +1501,6 @@ Android adapter's are:
 
 Worked around here without changing `crates/mirror`:
 
-- `Mirror::delta_snapshot` returns neither the verdict nor the foreground,
-  so a delta reply's `origin` and `verdict` come from a plain snapshot taken
-  just before it, as a change wait's warning and refs do: one more listing
-  per delta request.
 - Refs are issued only by `Mirror::snapshot`; `Mirror::wait` returns an
   element without a ref when no snapshot listed it, so text entry by
   selector takes an interactive snapshot to obtain one, and a wait that
