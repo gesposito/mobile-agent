@@ -7,6 +7,8 @@
 //! changing, through the socket of a daemon on a fake Simulator, whose
 //! windows send no change events, so that each request finds the frames
 //! changed since the latest read of the tree (design D3 of `profiling`);
+//! `snapshot -i --delta` of the Big tab with nothing changed since the
+//! delta before it, through the same socket;
 //! `wire::parse` of the line the CLI sends for `snapshot -i`, into the
 //! typed request the daemon dispatches; and the reply to it on the Big tab,
 //! built from the mirror's listing as the snapshot handler builds it and
@@ -34,6 +36,11 @@ mod support;
 
 #[global_allocator]
 static ALLOCATOR: alloc::Counting = alloc::Counting;
+
+/// The line the CLI sends for `snapshot -i --delta` in the default session,
+/// its fields in the order serde_json writes a map's.
+const DELTA_SNAPSHOT: &str =
+    r#"{"action":"snapshot","delta":true,"id":"r123456","interactive":true,"session":"default"}"#;
 
 /// The `readMs` of the reply `reply_line` writes. The daemon's reply carries
 /// the worker's time for the request there, the one field that changes from
@@ -77,6 +84,33 @@ fn benches(c: &mut Criterion) {
                     let reply = daemon.request(request);
                     timed += started.elapsed();
                     support::check_big(&reply);
+                }
+                timed
+            });
+        },
+    );
+
+    // The same listing as a delta, `snapshot -i --delta`, with nothing
+    // changed since the delta before it, which the request before the
+    // benchmark takes as the session's first, the whole listing: each reply
+    // says `unchanged`, as a model's turn that lists a screen it already
+    // has gets it (spike S15: 1.08 ms of CPU on a Simulator, more than the
+    // whole listing). The span is the listing's above.
+    let delta: Value = serde_json::from_str(DELTA_SNAPSHOT).expect("the delta request is JSON");
+    let first = daemon.request(delta.clone());
+    assert_eq!(first["data"]["snapshot"]["kind"], "full", "{first}");
+    check_unchanged(&daemon.request(delta.clone()));
+    group.bench_function(
+        BenchmarkId::new("socket", "snapshot-interactive-delta-unchanged-big"),
+        |b| {
+            b.iter_custom(|iters| {
+                let mut timed = Duration::ZERO;
+                for _ in 0..iters {
+                    let request = delta.clone();
+                    let started = Instant::now();
+                    let reply = daemon.request(request);
+                    timed += started.elapsed();
+                    check_unchanged(&reply);
                 }
                 timed
             });
@@ -227,6 +261,19 @@ fn unnumbered(text: &Value) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Checks that `reply` is a delta snapshot of the Big tab that found the
+/// listing unchanged since the delta before it, served from the replica.
+#[track_caller]
+fn check_unchanged(reply: &Value) {
+    assert_eq!(reply["success"], true, "{reply}");
+    let data = &reply["data"];
+    assert_eq!(data["snapshot"]["kind"], "unchanged", "{reply}");
+    assert_eq!(
+        data["servedFromReplica"], true,
+        "an unchanged delta reads nothing from the target: {reply}"
+    );
 }
 
 /// Stops `daemon` with `shutdown` and waits for it to exit.

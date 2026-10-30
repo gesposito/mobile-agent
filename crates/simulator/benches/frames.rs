@@ -2,9 +2,12 @@
 //! `mobile-agent-bench micro`: what the frame thread does with each read of
 //! an iPhone 17 Simulator's display at the default frame options, a
 //! 1206x2622 BGRA frame box-filtered down to 460x1000, its hashes and, on
-//! macOS, its JPEG at quality 80, each alone and in sequence. The frame is
-//! synthetic and built once, before any timing, and every result is
-//! verified outside the timed region.
+//! macOS, its JPEG at quality 80, each alone and in sequence: the sequence
+//! without the JPEG, as the daemon's display subscription runs it for each
+//! frame whose pixels changed, from the full-size frame to the hash the
+//! mirror compares (design D3 of `profiling`), and on macOS with it. The
+//! frame is synthetic and built once, before any timing, and every result
+//! is verified outside the timed region.
 
 use std::hint::black_box;
 
@@ -34,13 +37,6 @@ const QUALITY: u8 = 80;
 /// quality 80 through turbojpeg.
 #[cfg(target_os = "macos")]
 const S2_BIG_TAB_JPEG: usize = 82_219;
-
-/// The sequence's parameter: it ends at the JPEG on macOS and at the hashes
-/// on other hosts, where the crate has no encoder.
-#[cfg(target_os = "macos")]
-const SEQUENCE: &str = "frame-to-jpeg";
-#[cfg(not(target_os = "macos"))]
-const SEQUENCE: &str = "frame-to-hashes";
 
 /// The Expo fixture's Big tab, the frame S2 encoded, in display pixels
 /// (fixtures/expo/src/screens/BigScreen.tsx and TabBar.tsx): 20 columns and
@@ -350,7 +346,13 @@ fn encode_step() -> impl FnMut(&[u8], usize, usize) -> Option<Vec<u8>> {
 
 #[cfg(not(target_os = "macos"))]
 fn encode_step() -> impl FnMut(&[u8], usize, usize) -> Option<Vec<u8>> {
-    |_: &[u8], _: usize, _: usize| None
+    no_jpeg
+}
+
+/// The encode step of a frame thread that only hashes, as the daemon's
+/// display subscription runs it: no JPEG.
+fn no_jpeg(_: &[u8], _: usize, _: usize) -> Option<Vec<u8>> {
+    None
 }
 
 /// What the frame thread delivers of a read.
@@ -498,6 +500,21 @@ fn verify(frame: &[u8], scaled: &[u8]) {
         },
         "the read's size, hashes and JPEG"
     );
+
+    // The read that only hashes delivers the same frame and hashes.
+    let mut buffer = Vec::new();
+    let hashed = read(&view(frame), max_dimension, &mut buffer, &mut no_jpeg);
+    assert_eq!(buffer, scaled, "the hashing read's frame");
+    assert_eq!(
+        hashed,
+        Delivered {
+            size: SCALED,
+            hash: base.pixels,
+            jpeg: None,
+            content_hash: base.content,
+        },
+        "the hashing read's size and hashes"
+    );
 }
 
 fn benches(c: &mut Criterion) {
@@ -508,6 +525,7 @@ fn benches(c: &mut Criterion) {
     scale_bgra(&source, SCALED.0, SCALED.1, &mut scaled);
     verify(&frame, &scaled);
     let output = packed(&scaled);
+    #[cfg(target_os = "macos")]
     let mut encode = encode_step();
     let mut buffer = scaled.clone();
 
@@ -541,7 +559,14 @@ fn benches(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("encode", "460x1000-q80"), |b| {
         b.iter(|| encode(black_box(&scaled), SCALED.0, SCALED.1))
     });
-    group.bench_function(BenchmarkId::new("pipeline", SEQUENCE), |b| {
+    // The frame's hash end to end, which the benchmarks above time apart:
+    // the downscale, the hash of every delivered pixel and the content hash,
+    // a thumbnail's below the status bar, which the mirror compares.
+    group.bench_function(BenchmarkId::new("pipeline", "frame-to-hashes"), |b| {
+        b.iter(|| read(black_box(&source), max_dimension, &mut buffer, &mut no_jpeg))
+    });
+    #[cfg(target_os = "macos")]
+    group.bench_function(BenchmarkId::new("pipeline", "frame-to-jpeg"), |b| {
         b.iter(|| read(black_box(&source), max_dimension, &mut buffer, &mut encode))
     });
     group.finish();

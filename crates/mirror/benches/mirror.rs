@@ -607,10 +607,35 @@ fn views(group: &mut Group<'_>, list: &Fixture) {
     );
 }
 
-/// A delta snapshot and a structural diff after one row's text changed.
-fn changes(group: &mut Group<'_>, list: &Fixture) {
+/// A delta snapshot and a structural diff after one row's text changed, and
+/// an interactive delta snapshot of the SwiftUI 500-cell screen with nothing
+/// changed since the delta before it, which spike S15 found the daemon
+/// paying more for than a whole listing (design D3 of `profiling`).
+fn changes(group: &mut Group<'_>, list: &Fixture, grid: &Fixture) {
     let changed = held_text(&list.screen, "row-5", "Row 5 (done)").read();
     let interactive = SnapshotOptions::interactive();
+    reused(
+        group,
+        "delta_snapshot",
+        "unchanged-grid",
+        || {
+            let (target, mut mirror) = warm(&grid.read, true);
+            let first = mirror
+                .delta_snapshot(&interactive, false)
+                .expect("the first delta snapshot");
+            assert_eq!(first.kind(), "full");
+            (target, mirror)
+        },
+        |(_, mirror)| mirror.delta_snapshot(&interactive, false),
+        |(target, _), delta, _| {
+            let expected = DeltaSnapshot::Unchanged {
+                revision: 2,
+                base_revision: 1,
+            };
+            assert_eq!(delta.expect("the delta snapshot"), expected);
+            assert_eq!(target.reads().len(), 1, "served from the replica");
+        },
+    );
     batched(
         group,
         "delta_snapshot",
@@ -777,7 +802,7 @@ fn benches(c: &mut Criterion) {
     pumps(&mut group, &grid, &list, &grid_rn);
     snapshots(&mut group, [&grid, &list, &bluesky, &grid_rn]);
     views(&mut group, &list);
-    changes(&mut group, &list);
+    changes(&mut group, &list, &grid);
     waits(&mut group, &list);
     settles(&mut group, [&grid, &grid_rn]);
     group.finish();
