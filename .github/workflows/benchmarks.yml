@@ -26,11 +26,11 @@ on:
           - both
         default: micro
       base:
-        description: "The ref head is compared with (default: the commit the previous scheduled run measured, else main)"
+        description: "The ref head is compared with: a branch, a tag or a commit of this repository (default: the commit the previous scheduled run measured, else main)"
         type: string
         required: false
       head:
-        description: "The ref to measure (default: the dispatching ref)"
+        description: "The ref to measure: a branch, a tag or a commit of this repository (default: the dispatching ref)"
         type: string
         required: false
       iterations:
@@ -115,6 +115,18 @@ jobs:
           }
           base_sha=$(commit "$base")
           head_sha=$(commit "$head")
+          # The measuring jobs build head, and the micro jobs base beside it, build scripts
+          # included, in the cache scope of the run's ref, the default branch's on a schedule,
+          # whose caches later runs on main restore. So each has to be code someone with write
+          # access pushed here, a commit that a branch or a tag of this repository reaches, never
+          # a fork's pull request, whose refs the checkout above does not fetch, nor an object in
+          # the clone that no branch or tag reaches.
+          pushed() {
+            [ -n "$(git for-each-ref --contains "$2" --format='%(refname)' refs/remotes/origin refs/tags)" ] \
+              || { echo "::error::$1 must be a commit of a branch or a tag of this repository, not $3" >&2; return 1; }
+          }
+          pushed base "$base_sha" "$base" || exit 1
+          pushed head "$head_sha" "$head" || exit 1
           {
             echo "suite=$suite"
             echo "base=$base_sha"
