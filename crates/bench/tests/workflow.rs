@@ -285,13 +285,16 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
     assert_eq!(workflow.at("env/MOBILE_AGENT_HOST_GATES").text(), "off");
 
     // One job per device, on the runner of the benchmarks' harness job that
-    // provisions the same device, bounded as that job is.
+    // provisions the same device. The Simulator's tests boot devices of their
+    // own, one per test binary that needs a first boot, each taking minutes
+    // on the runner, so its job is bounded at 150 minutes, the emulator's at
+    // 90.
     let benchmarks = outline(".github/workflows/benchmarks.yml");
     let jobs = workflow.get("jobs");
     assert_eq!(jobs.keys(), ["simulator", "emulator"]);
-    for (job, harness) in [
-        ("simulator", "harness-simulator"),
-        ("emulator", "harness-emulator"),
+    for (job, harness, bound) in [
+        ("simulator", "harness-simulator", "150"),
+        ("emulator", "harness-emulator", "90"),
     ] {
         let harness = benchmarks.at(&format!("jobs/{harness}"));
         assert_eq!(
@@ -301,7 +304,7 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
         );
         assert_eq!(
             jobs.at(&format!("{job}/timeout-minutes")).text(),
-            "90",
+            bound,
             "{job}"
         );
     }
