@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Checks the repository's own scripts in a scratch directory, without the
 # network: the reports' scrub (reports/scrub.py), the publish scan
-# (scripts/check-public.sh) and its scan of the history
-# (scripts/check-history.sh).
+# (scripts/check-public.sh), its scan of the history
+# (scripts/check-history.sh) and the tests' summary
+# (scripts/test-summary.sh).
 #
 #   scripts/test.sh
 #
@@ -38,6 +39,14 @@
 #      blob's path, the pattern and the commit, a private term by its line in
 #      the list, a machine path in a commit message, an identifier in a file's
 #      name, and, with gitleaks installed, a credential.
+#   9. The tests' summary counts a workspace's tests per crate, the crate of
+#      each test binary taken from cargo's JSON for the build and that of
+#      each doc-test run from its library's name, through cargo's colors:
+#      the tests that ran, passed, failed and were ignored and the seconds
+#      the binaries took, with a total; then the tests that failed, each with
+#      its crate, and the targets cargo listed as failed, which include a
+#      binary that crashed before its result line; a run without a failure
+#      lists neither.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
 # (a machine's model identifier, a sampler's top field, a device identifier,
@@ -407,6 +416,131 @@ if command -v gitleaks > /dev/null 2>&1; then
   expect "a credential gitleaks knows in an old commit is refused" \
     grep -q 'gitleaks: aws-access-token at creds.md' "$scratch/out.txt"
 fi
+
+# 9. The tests' summary.
+esc=$(printf '\033')
+summary_dir="$scratch/summary"
+mkdir -p "$summary_dir"
+deps=/work/placeholder-repo/target/debug/deps
+{
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/core#0.1.0","target":{"kind":["lib"],"name":"core"},"executable":null}\n'
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/core#0.1.0","target":{"kind":["lib"],"name":"core"},"executable":"%s/core-0123456789abcdef"}\n' "$deps"
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/core#0.1.0","target":{"kind":["test"],"name":"devices"},"executable":"%s/devices-1111111111111111"}\n' "$deps"
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/core/reader#placeholder-reader@0.1.0","target":{"kind":["lib"],"name":"placeholder_reader"},"executable":"%s/placeholder_reader-2222222222222222"}\n' "$deps"
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/cli#0.1.0","target":{"kind":["bin"],"name":"placeholder-cli"},"executable":"%s/placeholder_cli-3333333333333333"}\n' "$deps"
+  printf '{"reason":"compiler-artifact","package_id":"path+file:///work/placeholder-repo/crates/cli#0.1.0","target":{"kind":["test"],"name":"crashed"},"executable":"%s/crashed-4444444444444444"}\n' "$deps"
+  printf '{"reason":"build-finished","success":true}\n'
+} > "$summary_dir/binaries.json"
+cat > "$summary_dir/tests.log" <<EOF
+${esc}[1m${esc}[92m   Compiling${esc}[0m core v0.1.0 (/work/placeholder-repo/crates/core)
+${esc}[1m${esc}[92m    Finished${esc}[0m \`test\` profile [unoptimized + debuginfo] target(s) in 1m 02s
+${esc}[1m${esc}[92m     Running${esc}[0m unittests src/lib.rs (target/debug/deps/core-0123456789abcdef)
+
+running 3 tests
+test model::a_test ... ok
+test model::an_ignored_test ... ignored, a measurement
+test model::another_test ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+${esc}[1m${esc}[92m     Running${esc}[0m tests/devices.rs (target/debug/deps/devices-1111111111111111)
+
+running 3 tests
+test a_test_on_the_device ... ok
+test a_test_that_failed ... FAILED
+test another_test_on_the_device ... ok
+
+failures:
+
+---- a_test_that_failed stdout ----
+
+thread 'a_test_that_failed' panicked at crates/core/tests/devices.rs:10:5:
+the device answered nothing
+
+failures:
+    a_test_that_failed
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 61.50s
+
+${esc}[1m${esc}[91merror${esc}[0m: test failed, to rerun pass \`-p core --test devices\`
+${esc}[1m${esc}[92m     Running${esc}[0m unittests src/lib.rs (target/debug/deps/placeholder_reader-2222222222222222)
+
+running 1 test
+test reads ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+${esc}[1m${esc}[92m     Running${esc}[0m unittests src/main.rs (target/debug/deps/placeholder_cli-3333333333333333)
+
+running 4 tests
+test args::one ... ok
+test args::two ... ok
+test args::three ... ok
+test args::four ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+${esc}[1m${esc}[92m     Running${esc}[0m tests/crashed.rs (target/debug/deps/crashed-4444444444444444)
+
+running 2 tests
+${esc}[1m${esc}[91merror${esc}[0m: test failed, to rerun pass \`-p cli --test crashed\`
+
+Caused by:
+  process didn't exit successfully: \`target/debug/deps/crashed-4444444444444444\` (signal: 6, SIGABRT: process abort signal)
+${esc}[1m${esc}[92m   Doc-tests${esc}[0m core
+
+running 2 tests
+test crates/core/src/lib.rs - model (line 3) ... ok
+test crates/core/src/lib.rs - model::Thing (line 9) ... ignored
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+${esc}[1m${esc}[92m   Doc-tests${esc}[0m placeholder_reader
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+${esc}[1m${esc}[91merror${esc}[0m: 2 targets failed:
+    \`-p core --test devices\`
+    \`-p cli --test crashed\`
+EOF
+status=0
+"$root/scripts/test-summary.sh" "$summary_dir/tests.log" "$summary_dir/binaries.json" \
+  > "$summary_dir/summary.md" 2> "$scratch/out.txt" || status=$?
+expect "the tests' summary of a run with failures succeeds" test "$status" = 0
+expect "the summary counts each crate's tests and seconds, then lists the failed tests and targets" \
+  same "$summary_dir/summary.md" '| Crate | Ran | Passed | Failed | Ignored | Seconds |
+|---|---:|---:|---:|---:|---:|
+| core | 6 | 5 | 1 | 2 | 62.3 |
+| placeholder-reader | 1 | 1 | 0 | 0 | 0.1 |
+| cli | 4 | 4 | 0 | 0 | 0.1 |
+| Total | 11 | 10 | 1 | 2 | 62.5 |
+
+Failed tests:
+
+- core: `a_test_that_failed`
+
+Targets cargo listed as failed, which include any binary that crashed before its result line:
+
+- `-p core --test devices`
+- `-p cli --test crashed`'
+cat > "$summary_dir/green.log" <<EOF
+${esc}[1m${esc}[92m     Running${esc}[0m unittests src/lib.rs (target/debug/deps/core-0123456789abcdef)
+
+running 1 test
+test model::a_test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+EOF
+"$root/scripts/test-summary.sh" "$summary_dir/green.log" "$summary_dir/binaries.json" \
+  > "$summary_dir/green.md" 2> "$scratch/out.txt" || true
+expect "a run without a failure lists no failed test or target" \
+  same "$summary_dir/green.md" '| Crate | Ran | Passed | Failed | Ignored | Seconds |
+|---|---:|---:|---:|---:|---:|
+| core | 1 | 1 | 0 | 0 | 0.3 |
+| Total | 1 | 1 | 0 | 0 | 0.3 |'
 
 if [ "$failures" -gt 0 ]; then
   printf '%s of %s checks failed\n' "$failures" "$checks" >&2
