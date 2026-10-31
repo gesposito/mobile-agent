@@ -461,6 +461,9 @@ jobs:
           api-level: 36
           target: google_apis
           arch: x86_64
+          # The measured AVD's device, whose display, 1080x2400 at 420 dpi, the gates were
+          # measured on; without a profile avdmanager makes a 320x640 display at 160 dpi.
+          profile: pixel_8
           # Software rendering, and the gRPC controller on, as the measured runs had it.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -grpc 8554 -grpc-use-token
           disable-animations: false
