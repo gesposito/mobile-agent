@@ -45,7 +45,10 @@ jobs:
     # (actions/runner-images#14404), with the iOS 27.0 runtime. The image's default
     # Xcode is kept.
     runs-on: xcode-27
-    timeout-minutes: 90
+    # The Simulator driver's tests boot devices of their own, one per test binary that needs a
+    # first boot, each taking minutes on the runner with its install and its deletion: the first
+    # run that created them all did not finish its tests within 90 minutes.
+    timeout-minutes: 150
     permissions:
       contents: read
     env:
