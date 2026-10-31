@@ -194,7 +194,10 @@ fn the_benchmarks_workflow_runs_on_a_schedule_or_a_dispatch_and_never_on_a_push_
     // The harness emulator boots on the measured AVD's device, whose display,
     // 1080x2400 at 420 dpi, the gates were measured on; without a profile
     // avdmanager makes a 320x640 display at 160 dpi.
-    assert!(text.contains("profile: pixel_8\n"), "the harness emulator's AVD profile");
+    assert!(
+        text.contains("profile: pixel_8\n"),
+        "the harness emulator's AVD profile"
+    );
 }
 
 #[test]
