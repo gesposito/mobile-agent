@@ -340,6 +340,40 @@ async fn raw_screenshots_are_full_resolution_and_top_down() {
         cap.stdout.len()
     );
     let rgba = &cap.stdout[cap.stdout.len() - w * h * 4..];
+    if let Some(dir) = std::env::var_os("MOBILE_AGENT_DEBUG_DUMP") {
+        let dir = std::path::PathBuf::from(dir);
+        let header = format!("P6\n{w} {h}\n255\n");
+        let mut grpc = header.clone().into_bytes();
+        grpc.extend_from_slice(shot.pixels());
+        std::fs::write(dir.join("grpc-screenshot.ppm"), grpc).unwrap();
+        let mut cap_rgb = header.into_bytes();
+        for pixel in rgba.chunks_exact(4) {
+            cap_rgb.extend_from_slice(&pixel[..3]);
+        }
+        std::fs::write(dir.join("screencap.ppm"), cap_rgb).unwrap();
+        std::fs::write(
+            dir.join("screencap-header.bin"),
+            &cap.stdout[..cap.stdout.len() - w * h * 4],
+        )
+        .unwrap();
+        let stats = |bytes: &[u8]| {
+            let mut min = 255u8;
+            let mut max = 0u8;
+            let mut sum = 0u64;
+            for b in bytes {
+                min = min.min(*b);
+                max = max.max(*b);
+                sum += u64::from(*b);
+            }
+            (min, max, sum as f64 / bytes.len() as f64)
+        };
+        eprintln!(
+            "debug: grpc pixels (min, max, mean) {:?}; screencap rgba (min, max, mean) {:?}; screencap header {} bytes",
+            stats(shot.pixels()),
+            stats(rgba),
+            cap.stdout.len() - w * h * 4
+        );
+    }
 
     let skip = FrameHasher::default().status_bar_rows(display.height);
     let (mut upright, mut flipped, mut bytes) = (0u64, 0u64, 0u64);

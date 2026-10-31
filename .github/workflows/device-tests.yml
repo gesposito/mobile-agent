@@ -31,39 +31,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # DEBUG (task 1.2 of pass-4-fixes): evidence for the runtime lookup, the Expo fixture on
+  # iOS 27.0 and the gRPC screenshot under swiftshader. Not for merging.
   simulator:
-    name: iOS Simulator (SwiftUI and Expo)
-    # As benchmarks.yml's harness-simulator: the Simulator driver types keys and text
-    # through dtuhidd, which needs Xcode 27's CoreSimulator (crates/simulator/README.md,
-    # Compatibility); Xcode 27 ships only on the xcode-27 preview image
-    # (actions/runner-images#14404), with the iOS 27.0 runtime. The image's default
-    # Xcode is kept.
+    name: iOS Simulator (debug)
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
-      # No Android target here.
       SKIP_AGENT_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        # Its targets include the iOS Simulator's, for the Simulator driver's tree reader.
-        run: rustup toolchain install --no-self-update
-      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
-        # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
-        # TODO: Socket Firewall does not wrap Homebrew.
-        run: brew install jpeg-turbo
+      - name: Runtimes and device types
+        run: |
+          mkdir -p "$RUNNER_TEMP/debug"
+          xcodebuild -version
+          xcrun simctl list runtimes
+          xcrun simctl list runtimes -j > "$RUNNER_TEMP/debug/runtimes.json"
+          jq -r '.runtimes[] | select(.platform == "iOS") | "\(.identifier) available=\(.isAvailable) \(.availabilityError // "") iPhones: \([.supportedDeviceTypes[]?.name | select(startswith("iPhone"))] | join(", "))"' "$RUNNER_TEMP/debug/runtimes.json"
+          xcrun simctl list devicetypes -j > "$RUNNER_TEMP/debug/devicetypes.json"
+          jq '.devicetypes[] | select(.name == "iPhone 17")' "$RUNNER_TEMP/debug/devicetypes.json"
+          if probe=$(xcrun simctl create probe-27-1 "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-27-1 2>&1); then
+            echo "created on 27.1: $probe"; xcrun simctl delete "$probe"
+          else
+            echo "create of an iPhone 17 on 27.1 failed: $probe"
+          fi
       - name: Install Bun for the Expo fixture
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.3"
       - name: Install Socket Firewall
-        # The Expo fixture's build installs its packages through it. As benchmarks.yml's
-        # harness-simulator does: the release asset directly, at a pinned release with its
-        # SHA-256, since the npm launcher's GitHub API lookups are rate limited on shared runners.
         env:
           SFW_VERSION: "1.15.4"
           SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
@@ -74,170 +74,100 @@ jobs:
           echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Build the SwiftUI and Expo fixtures
-        # Their paths are also where the tests that boot a Simulator of their own install them from.
+      - name: Build the Expo fixture
         run: |
-          xcodebuild -version
-          swiftui=$(fixtures/swiftui/build.sh)
           expo=$(fixtures/expo/build.sh)
-          {
-            echo "MOBILE_AGENT_SWIFTUI_APP=$swiftui"
-            echo "MOBILE_AGENT_EXPO_APP=$expo"
-          } >> "$GITHUB_ENV"
-      - name: Boot a Simulator, install the fixtures and open the Expo fixture
-        # As benchmarks.yml's harness-simulator boots its Simulator, with the Expo fixture installed
-        # beside the SwiftUI one and launched on its Login tab, where the Simulator driver's tests
-        # start (crates/simulator/README.md, Tests). Its UDID is the variable that gates the
-        # Simulator tests. MOBILE_AGENT_SIM_FRESH_UDID stays unset: each test binary that needs a
-        # device on its first boot creates one with the fixtures above and deletes it when it exits.
+          echo "MOBILE_AGENT_EXPO_APP=$expo" >> "$GITHUB_ENV"
+          plutil -p "$expo/Info.plist" | grep -E "MinimumOSVersion|DTPlatformVersion|DTSDKName|CFBundleExecutable|DTXcode"
+      - name: The Expo fixture on each iOS runtime that has an iPhone
         run: |
-          udid=$(xcrun simctl create mobile-agent-device-tests "iPhone 17")
-          echo "MOBILE_AGENT_SIM_UDID=$udid" >> "$GITHUB_ENV"
-          MOBILE_AGENT_SIM_UDID=$udid
-          xcrun simctl bootstatus "$MOBILE_AGENT_SIM_UDID" -b
-          xcrun simctl install "$MOBILE_AGENT_SIM_UDID" "$MOBILE_AGENT_SWIFTUI_APP"
-          xcrun simctl install "$MOBILE_AGENT_SIM_UDID" "$MOBILE_AGENT_EXPO_APP"
-          xcrun simctl launch "$MOBILE_AGENT_SIM_UDID" dev.mobileagent.fixture.expo
-          xcrun simctl list devices "$MOBILE_AGENT_SIM_UDID"
-      - name: Run the workspace's tests, the Simulator's among them
-        # The build's messages name each test binary's package for the summary.
-        run: |
-          set -o pipefail
-          cargo test --workspace --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
-          cargo test --workspace --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tests.log"
-      - name: Write the summary
+          set -u
+          out="$RUNNER_TEMP/debug"
+          probe() {
+            runtime=$1 label=$2
+            type=$(jq -r --arg id "$runtime" '.runtimes[] | select(.identifier == $id) | [.supportedDeviceTypes[]?.name | select(startswith("iPhone 17"))] | first // empty' "$out/runtimes.json")
+            if [ -z "$type" ]; then echo "$label: no iPhone 17 model"; return; fi
+            echo "== $label on $type"
+            udid=$(xcrun simctl create "debug-$label" "$type" "$runtime")
+            xcrun simctl bootstatus "$udid" -b > /dev/null
+            xcrun simctl install "$udid" "$MOBILE_AGENT_EXPO_APP"
+            started=$(date -u +"%Y-%m-%d %H:%M:%S")
+            xcrun simctl launch "$udid" dev.mobileagent.fixture.expo
+            for wait in 2 3 5 10 20; do
+              sleep "$wait"
+              echo "-- after +$wait s:"
+              xcrun simctl spawn "$udid" launchctl list | grep -i "fixture.expo" || echo "(no fixture process in launchctl)"
+              xcrun simctl io "$udid" screenshot "$out/$label-after-$wait.png" > /dev/null 2>&1 || true
+            done
+            xcrun simctl spawn "$udid" log show --start "$started" --style compact \
+              --predicate 'process == "FixtureExpo" OR eventMessage CONTAINS "dev.mobileagent.fixture.expo" OR eventMessage CONTAINS "FixtureExpo"' \
+              > "$out/$label-log.txt" 2>&1 || true
+            wc -l "$out/$label-log.txt"
+            grep -iE "terminat|crash|exception|signal|abort|fatal|jetsam|exit" "$out/$label-log.txt" | head -60 || true
+            cp -R "$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Logs" "$out/$label-device-logs" 2>/dev/null || true
+            xcrun simctl shutdown "$udid" || true
+            xcrun simctl delete "$udid" || true
+          }
+          probe com.apple.CoreSimulator.SimRuntime.iOS-27-0 ios-27-0
+          probe com.apple.CoreSimulator.SimRuntime.iOS-27-1 ios-27-1
+          ls -la "$HOME/Library/Logs/DiagnosticReports" || true
+          mkdir -p "$out/DiagnosticReports"
+          find "$HOME/Library/Logs/DiagnosticReports" -name '*Fixture*' -exec cp {} "$out/DiagnosticReports/" \; || true
+          for report in "$out"/DiagnosticReports/*; do [ -f "$report" ] && head -c 6000 "$report"; done || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
-        run: |
-          {
-            echo "## Device tests: iOS Simulator"
-            echo
-            if [ -f "$RUNNER_TEMP/tests.log" ]; then
-              scripts/test-summary.sh "$RUNNER_TEMP/tests.log" "$RUNNER_TEMP/test-binaries.json"
-            else
-              echo "The tests did not run."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Delete the Simulator
-        if: always() && env.MOBILE_AGENT_SIM_UDID != ''
-        run: |
-          xcrun simctl shutdown "$MOBILE_AGENT_SIM_UDID" || true
-          xcrun simctl delete "$MOBILE_AGENT_SIM_UDID"
+        with:
+          name: debug-simulator
+          path: ${{ runner.temp }}/debug
+          retention-days: 7
 
   emulator:
-    name: Android emulator (Compose and Expo)
+    name: Android emulator (debug)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
-      # The image's Android SDK, as in ci.yml.
       ANDROID_HOME: /usr/local/lib/android/sdk
-      # The emulator the runner's step boots, the variable that gates the Android tests.
       MOBILE_AGENT_ANDROID_SERIAL: emulator-5554
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Let the runner's user open /dev/kvm for the emulator's acceleration
-        # As benchmarks.yml's harness-emulator does.
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
-      - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent and the fixtures
-        # As in ci.yml and benchmarks.yml. TODO: Socket Firewall does not wrap mise.
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-        with:
-          version: 2026.9.7
-          mise_toml: |
-            [tools]
-            java = "temurin-21"
-            kotlin = { version = "2.4.20", asset_pattern = "kotlin-compiler-*.zip", bin_path = "kotlinc/bin" }
       - name: Install the Android SDK packages
-        # benchmarks.yml's harness-emulator's: the agent takes d8 and R8 from build-tools 37.0.0,
-        # 36.0.0 is the Compose fixture's. The Expo fixture's beside them: build-tools 35.0.0 and the
-        # NDK and CMake React Native compiles its C++ with (fixtures/expo/README.md, Build
-        # (Android)). The emulator package before the build, so that the controller client is
-        # generated from the proto of the emulator the tests run (crates/android/build.rs).
-        # TODO: Socket Firewall does not wrap sdkmanager.
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
-            "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "build-tools;37.0.0" \
-            "ndk;27.1.12297006" "cmake;3.22.1" platform-tools emulator
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" platform-tools emulator
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-      - name: Install Bun for the Expo fixture
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.3"
-      - name: Install Socket Firewall
-        # The Expo fixture's build installs its packages through it; as benchmarks.yml's
-        # harness-emulator installs it.
-        env:
-          SFW_VERSION: "1.15.4"
-          SFW_SHA256: cf9f55b8343e1ef6e6dcccdb09b99c70c0430a22ed7d0079286eccddeaf72670
+      - name: Build the screenshot test
         run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-            "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-linux-x86_64"
-          echo "$SFW_SHA256  $HOME/.local/bin/sfw" | sha256sum -c -
-          chmod +x "$HOME/.local/bin/sfw"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Build the Android agent's jar, which the Android driver's tests deploy
-        run: agent-android/build.sh
-      - name: Build the Compose and Expo fixtures
-        env:
-          # The Expo fixture's native code for the emulator's ABI alone, instead of the four its
-          # gradle.properties names; Gradle takes ORG_GRADLE_PROJECT_ variables over that file.
-          ORG_GRADLE_PROJECT_reactNativeArchitectures: x86_64
-        run: |
-          compose=$(fixtures/compose/build.sh)
-          expo=$(PLATFORM=android fixtures/expo/build.sh)
-          {
-            echo "COMPOSE_APK=$compose"
-            echo "EXPO_APK=$expo"
-          } >> "$GITHUB_ENV"
-      - name: Build the workspace's tests
-        # Before the emulator boots. The build's messages name each test binary's package for
-        # the summary.
-        run: cargo test --workspace --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
-      - name: Run the workspace's tests on an API 36 emulator, the Android tests among them
-        # As benchmarks.yml's harness-emulator boots its emulator, on a Pixel 8 and with the Expo
-        # fixture installed beside the Compose one.
+          mkdir -p "$RUNNER_TEMP/debug"
+          cargo test -p android --test emulator_controller --no-run
+      - name: The screenshot test on an API 36 emulator with swiftshader
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
           target: google_apis
           arch: x86_64
-          # The measured AVD's device, whose display, 1080x2400 at 420 dpi, the Android driver's
-          # tests assume; without a profile avdmanager makes a 320x640 display at 160 dpi.
           profile: pixel_8
-          # Software rendering, and the gRPC controller on, which the emulator tests need.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -grpc 8554 -grpc-use-token
           disable-animations: false
-          # Each line runs in a shell of its own, and the first that fails ends the script.
           script: |
-            adb -s emulator-5554 install -r "$COMPOSE_APK"
-            adb -s emulator-5554 install -r "$EXPO_APK"
-            bash -c 'set -o pipefail; cargo test --workspace --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tests.log"'
-      - name: Write the summary
+            adb -s emulator-5554 exec-out screencap -p > "$RUNNER_TEMP/debug/screencap-before.png"
+            bash -c 'MOBILE_AGENT_DEBUG_DUMP="$RUNNER_TEMP/debug" cargo test -p android --test emulator_controller raw_screenshots_are_full_resolution_and_top_down -- --nocapture || true'
+            adb -s emulator-5554 exec-out screencap -p > "$RUNNER_TEMP/debug/screencap-after.png"
+            adb -s emulator-5554 emu screenrecord screenshot "$RUNNER_TEMP/debug" || true
+            bash -c 'adb -s emulator-5554 shell getprop | grep -iE "gpu|egl|render|hwui|opengl" > "$RUNNER_TEMP/debug/getprop.txt" || true'
+            bash -c 'adb -s emulator-5554 shell dumpsys SurfaceFlinger | head -80 > "$RUNNER_TEMP/debug/surfaceflinger.txt" || true'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
-        run: |
-          {
-            echo "## Device tests: Android emulator"
-            echo
-            if [ -f "$RUNNER_TEMP/tests.log" ]; then
-              scripts/test-summary.sh "$RUNNER_TEMP/tests.log" "$RUNNER_TEMP/test-binaries.json"
-            else
-              echo "The tests did not run."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Shut the emulator down
-        # The runner's step kills the emulator once its script ends, failed or not; this covers
-        # a step cancelled at the job's timeout.
-        if: always()
-        run: |
-          if "$ANDROID_HOME/platform-tools/adb" devices | grep -q '^emulator-5554[[:space:]]'; then
-            "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill
-          fi
+        with:
+          name: debug-emulator
+          path: ${{ runner.temp }}/debug
+          retention-days: 7
