@@ -13,9 +13,10 @@ use std::path::Path;
 
 use serde_json::Value;
 
-const WORKFLOWS: [&str; 2] = [
+const WORKFLOWS: [&str; 3] = [
     ".github/workflows/ci.yml",
     ".github/workflows/benchmarks.yml",
+    ".github/workflows/device-tests.yml",
 ];
 
 /// The text of `path`, relative to the repository root.
