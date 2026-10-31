@@ -1644,3 +1644,16 @@ eval "$(mise env)"   # the Android SDK
 MOBILE_AGENT_SIM_UDID=<udid> MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 \
   cargo test --release -p daemon --test devices -- --nocapture
 ```
+
+`tests/real_apps.rs` drives the default apps of a fresh device the same
+way, one test per finding of the fourth pass on real apps (design D1 of
+`openspec/changes/pass-4-fixes`): Settings, Maps, Calendar and Photos on a
+Simulator, Settings, Clock and Chrome on an emulator, gated by the same
+variables. Each answers the first-launch sheets and permission alerts a
+fresh device shows as a person keeping the defaults would, skips Maps'
+search and Chrome's page when the host reaches no server, asserts the
+replies' fields and the listings, never a number of milliseconds, and
+prints what it saw. A failing test names the finding it reproduced; the
+change's design records each verdict, as found on CI's devices. The
+Simulator is left with the Expo fixture on its Login tab, the emulator's
+apps stopped and its dark theme off.
