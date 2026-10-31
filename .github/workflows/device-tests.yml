@@ -203,13 +203,16 @@ jobs:
         # the summary.
         run: cargo test --workspace --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
       - name: Run the workspace's tests on an API 36 emulator, the Android tests among them
-        # As benchmarks.yml's harness-emulator boots its emulator, with the Expo fixture installed
-        # beside the Compose one.
+        # As benchmarks.yml's harness-emulator boots its emulator, on a Pixel 8 and with the Expo
+        # fixture installed beside the Compose one.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
           target: google_apis
           arch: x86_64
+          # The measured AVD's device, whose display, 1080x2400 at 420 dpi, the Android driver's
+          # tests assume; without a profile avdmanager makes a 320x640 display at 160 dpi.
+          profile: pixel_8
           # Software rendering, and the gRPC controller on, which the emulator tests need.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -grpc 8554 -grpc-use-token
           disable-animations: false

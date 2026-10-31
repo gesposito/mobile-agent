@@ -339,8 +339,8 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
     );
 
     // The emulator: booted by the same pinned runner as the benchmarks', with
-    // its controller on, its serial the gate, both fixtures installed, and
-    // shut down whatever happened.
+    // its controller on, on a Pixel 8, its serial the gate, both fixtures
+    // installed, and shut down whatever happened.
     let emulator = steps(&text, "emulator");
     let runner = benchmarks_text
         .lines()
@@ -349,6 +349,9 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
         .trim();
     let booted = step_with(&emulator, &[runner]);
     assert!(booted.contains("-grpc 8554 -grpc-use-token"), "{booted}");
+    // The measured AVD's display, 1080x2400 at 420 dpi, which the Android
+    // driver's tests assume.
+    assert!(booted.contains("profile: pixel_8\n"), "{booted}");
     for apk in ["$COMPOSE_APK", "$EXPO_APK"] {
         assert!(
             booted.contains(&format!("adb -s emulator-5554 install -r \"{apk}\"")),
