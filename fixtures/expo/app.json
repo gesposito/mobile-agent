@@ -34,7 +34,8 @@
           "motionUsagePermission": false
         }
       ],
-      "./plugins/withInitialTab"
+      "./plugins/withInitialTab",
+      "./plugins/withSceneLifecycle"
     ]
   }
 }

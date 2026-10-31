@@ -20,6 +20,9 @@
 #      exits 0, with the team it builds them.
 #   4. An unknown DESTINATION, and DESTINATION=device for Android, exit with
 #      status 2.
+#   5. The Expo fixture's config plugins' edits of the template's
+#      AppDelegate.swift and Info.plist (fixtures/expo/plugins/test/), with
+#      Node's test runner; skipped when node is not on PATH.
 #
 # Prints ok or FAIL for each check and exits 1 when any check failed.
 set -euo pipefail
@@ -243,6 +246,18 @@ done
 root="$(fresh refused-android)"
 run "$root" expo/build.sh DESTINATION=device PLATFORM=android MOBILE_AGENT_IOS_TEAM="$team"
 expect "expo: DESTINATION=device with PLATFORM=android exits with status 2" status_is 2
+
+# 5. The Expo fixture's config plugins.
+# The runner's report is printed when a test failed.
+plugin_tests_pass() {
+  node --test "$here/expo/plugins/test/plugins.test.js" > "$scratch/plugin-tests" 2>&1 ||
+    { cat "$scratch/plugin-tests" >&2; return 1; }
+}
+if command -v node >/dev/null 2>&1; then
+  expect "expo: the config plugins' edits of the iOS project" plugin_tests_pass
+else
+  printf 'skipped: the Expo config plugins need node on PATH\n'
+fi
 
 if ((failures > 0)); then
   printf '%d of %d checks failed\n' "$failures" "$checks" >&2
