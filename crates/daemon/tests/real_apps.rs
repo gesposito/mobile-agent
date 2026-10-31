@@ -1267,6 +1267,11 @@ fn android_chrome_the_first_run_loads_a_page_and_counts_the_dialogs_it_met() {
         "{serial}: uptime at the start {uptime}; first run answered {answered:?}; {dialogs} \
          not-responding dialogs"
     );
-    assert!(page.ok(), "D9e: the page did not load: {}", page.reply);
+    assert!(
+        page.ok(),
+        "the page's text never reached the listing after {dialogs} not-responding dialogs, so \
+         the first run's dialogs are not the cause: {}",
+        page.reply
+    );
     env.shutdown();
 }
