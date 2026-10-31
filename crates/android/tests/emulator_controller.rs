@@ -310,6 +310,36 @@ fn row_difference(rgb: &[u8], rgba: &[u8]) -> u64 {
         .sum()
 }
 
+/// screencap's RGBA rows, top-down, after the small header it writes first.
+fn screencap(serial: &str, width: usize, height: usize) -> Vec<u8> {
+    let cap = adb(serial).shell("screencap").unwrap();
+    assert!(cap.success(), "{}", cap.stderr_text());
+    let size = width * height * 4;
+    assert!(
+        cap.stdout.len() > size,
+        "screencap wrote {} bytes",
+        cap.stdout.len()
+    );
+    cap.stdout[cap.stdout.len() - size..].to_vec()
+}
+
+/// Mean byte difference of every fourth row of two RGBA screens of `width`,
+/// from row `skip` down.
+fn rgba_difference(a: &[u8], b: &[u8], width: usize, skip: usize) -> f64 {
+    let stride = width * 4;
+    let (mut sum, mut bytes) = (0u64, 0u64);
+    for y in (skip..a.len() / stride).step_by(4) {
+        let row = y * stride..(y + 1) * stride;
+        sum += a[row.clone()]
+            .iter()
+            .zip(&b[row])
+            .map(|(x, y)| u64::from(x.abs_diff(*y)))
+            .sum::<u64>();
+        bytes += stride as u64;
+    }
+    sum as f64 / bytes as f64
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn raw_screenshots_are_full_resolution_and_top_down() {
     let Some(serial) = serial_or_skip("raw_screenshots_are_full_resolution_and_top_down") else {
@@ -318,30 +348,46 @@ async fn raw_screenshots_are_full_resolution_and_top_down() {
     let controller = connect(&serial).await;
     let display = controller.hardware().display;
     let mut took = Vec::new();
-    let mut shot = None;
     for _ in 0..10 {
         let started = Instant::now();
-        shot = Some(controller.screenshot().await.unwrap());
+        let shot = controller.screenshot().await.unwrap();
         took.push(started.elapsed().as_secs_f64() * 1e3);
+        assert_eq!(
+            (shot.width(), shot.height()),
+            (display.width, display.height)
+        );
     }
-    let shot = shot.unwrap();
-    assert_eq!(
-        (shot.width(), shot.height()),
-        (display.width, display.height)
-    );
 
-    // screencap writes a small header, then RGBA rows top-down.
-    let cap = adb(&serial).shell("screencap").unwrap();
-    assert!(cap.success(), "{}", cap.stderr_text());
+    // The screenshot and screencap must show one screen. The app the previous
+    // test left can still be going away when this one starts, the longer
+    // under software rendering, and a screen that changed between the two
+    // reads matches neither way (170.6 top-down against 160.1 bottom-up on
+    // CI's swiftshader emulator, where the same screen held still read 0.0
+    // against 80.1). So screencap reads the screen before and after the
+    // screenshot, and the comparison takes a screenshot between two that
+    // agree.
     let (w, h) = (display.width as usize, display.height as usize);
-    assert!(
-        cap.stdout.len() > w * h * 4,
-        "screencap wrote {} bytes",
-        cap.stdout.len()
-    );
-    let rgba = &cap.stdout[cap.stdout.len() - w * h * 4..];
-
     let skip = FrameHasher::default().status_bar_rows(display.height);
+    let mut still = None;
+    let mut moving = Vec::new();
+    for _ in 0..20 {
+        let before = screencap(&serial, w, h);
+        let shot = controller.screenshot().await.unwrap();
+        let after = screencap(&serial, w, h);
+        let moved = rgba_difference(&before, &after, w, skip as usize);
+        if moved < 1.0 {
+            still = Some((shot, after));
+            break;
+        }
+        moving.push(moved);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let (shot, rgba) = still.unwrap_or_else(|| {
+        panic!(
+            "the screen never held still across a screenshot; screencaps differed by {moving:.1?}"
+        )
+    });
+
     let (mut upright, mut flipped, mut bytes) = (0u64, 0u64, 0u64);
     for y in (skip..display.height).step_by(4) {
         let raw = shot.row(y);
@@ -354,12 +400,14 @@ async fn raw_screenshots_are_full_resolution_and_top_down() {
     let (upright, flipped) = (upright as f64 / bytes as f64, flipped as f64 / bytes as f64);
     eprintln!(
         "getScreenshot {}x{} RGB888 over {} calls: p50 {:.1} ms, p95 {:.1} ms; mean byte \
-         difference from screencap: {upright:.3} read top-down, {flipped:.3} read bottom-up",
+         difference from screencap: {upright:.3} read top-down, {flipped:.3} read bottom-up, \
+         after {} reads of a screen that moved",
         shot.width(),
         shot.height(),
         took.len(),
         percentile(&mut took, 50.0),
-        percentile(&mut took, 95.0)
+        percentile(&mut took, 95.0),
+        moving.len()
     );
     assert!(
         upright < 1.0 || upright * 2.0 < flipped,
