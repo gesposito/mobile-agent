@@ -2,8 +2,8 @@
 // JavaScript as the root component's `initialTab` prop. Prebuild regenerates ios/ and android/,
 // so the native edits live in this config plugin rather than in the generated files. Each edit
 // throws when the code it anchors on is missing, so a template change fails prebuild instead
-// of silently dropping the option.
-const { withAppDelegate, withMainActivity } = require('expo/config-plugins');
+// of silently dropping the option. On iOS the code is React Native's start, which
+// withSceneLifecycle.js moves into the scene delegate: the anchor is the call, wherever it is.
 
 // iOS: `xcrun simctl launch` forwards SIMCTL_CHILD_FIXTURE_INITIAL_TAB to the app's
 // environment as FIXTURE_INITIAL_TAB.
@@ -45,6 +45,8 @@ function addInitialTabToMainActivity(contents) {
 }
 
 function withInitialTab(config) {
+  // Required here, so that the edits above load without the project's packages (test/).
+  const { withAppDelegate, withMainActivity } = require('expo/config-plugins');
   config = withAppDelegate(config, (mod) => {
     if (mod.modResults.language !== 'swift') {
       throw new Error(`withInitialTab: expected a Swift AppDelegate, got ${mod.modResults.language}`);

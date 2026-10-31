@@ -162,6 +162,8 @@ The permission prompt text comes from `NSLocationWhenInUseUsageDescription`, whi
 
 The native entry points pass the value to JavaScript as the root component's `initialTab` prop. The local config plugin `plugins/withInitialTab.js` writes that code into the generated `AppDelegate.swift` and `MainActivity.kt`, so it survives `expo prebuild --clean`. If the Expo template no longer contains the code the plugin edits, prebuild fails instead of dropping the option.
 
+On iOS the app runs UIKit's scene life cycle. iOS 27 stops an app built with the iOS 27 SDK at launch unless it adopts it (Apple's TN3187): on the iOS 27.0 Simulator the fixture built from Expo SDK 57's template, which keeps the application life cycle, trapped in UIKit with SIGTRAP before its first frame. The local config plugin `plugins/withSceneLifecycle.js` declares one scene in `Info.plist`, makes the app delegate provide its React Native factory, and moves the template's start of React Native, with the initial tab, into a scene delegate in `AppDelegate.swift`, a subclass of Expo's `ExpoAppSceneDelegate`, which makes the window from the connecting scene. Expo's own opt-in, `expo-build-properties`' `ios.enableSceneSupport`, starts React Native without initial properties, and SDK 58's template adopts scenes. iOS 26 runs the scene life cycle as well. `node --test plugins/test/plugins.test.js` checks both plugins' edits on the template's `AppDelegate.swift`, and `fixtures/test.sh` runs it.
+
 ## Navigation and state
 
 Only the selected tab's screen is mounted, so the other tabs' content is not in the accessibility tree. Screen state lives in the root component (`App.tsx`) rather than in the screens, so it survives tab switches, as the contract requires:
