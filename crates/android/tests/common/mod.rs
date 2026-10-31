@@ -18,6 +18,34 @@ pub fn serial_or_skip(test: &str) -> Option<String> {
     }
 }
 
+/// The variable that says whether this host holds the tests' wall-clock
+/// bounds, the milliseconds measured on a quiet developer Mac: `off` on a
+/// shared runner, whose load and coalesced timers they were not set for, as
+/// `.github/workflows/device-tests.yml` sets it; unset or `on` elsewhere.
+pub const HOST_GATES_VAR: &str = "MOBILE_AGENT_HOST_GATES";
+
+/// Whether the tests judge their wall-clock bounds on this host.
+pub fn host_gates() -> bool {
+    match std::env::var(HOST_GATES_VAR).as_deref().map(str::trim) {
+        Err(_) | Ok("" | "on") => true,
+        Ok("off") => false,
+        Ok(other) => panic!("{HOST_GATES_VAR} is on or off, not {other:?}"),
+    }
+}
+
+/// Asserts that what `what` took is under `bound` where the host holds the
+/// tests' wall-clock bounds; elsewhere prints it beside the bound.
+#[track_caller]
+pub fn under(what: &str, took: std::time::Duration, bound: std::time::Duration) {
+    if host_gates() {
+        assert!(took < bound, "{what} took {took:?}, not under {bound:?}");
+    } else {
+        eprintln!(
+            "{what} took {took:?}; its bound, {bound:?}, is not judged here ({HOST_GATES_VAR}=off)"
+        );
+    }
+}
+
 /// A name no other test in any run on this host uses: a tag, the process id
 /// and a counter. Safe as a file name and an abstract socket name.
 pub fn unique_name(tag: &str) -> String {

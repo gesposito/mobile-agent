@@ -474,11 +474,7 @@ fn foreign_agent(device: &Device) -> Result<(), Disturbed> {
     let DeployError::Conflict(conflict) = &error else {
         unreachable!("matched above");
     };
-    assert!(
-        started.elapsed() < Duration::from_secs(1),
-        "the conflict took {:?}",
-        started.elapsed()
-    );
+    common::under("the conflict", started.elapsed(), Duration::from_secs(1));
     let holder = conflict.holder.as_ref().expect("the other agent named");
     if holder.pid != Some(theirs.agent.pid) {
         return Err(Disturbed(format!("another holder was named: {holder}")));

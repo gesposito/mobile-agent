@@ -1632,7 +1632,12 @@ them each test prints why it skipped and passes. The Simulator is left
 with the Expo fixture on its Login tab and the SwiftUI fixture stopped; the
 Compose fixture is stopped, and the Android test first waits up to a minute
 for the shared device to have no agent and nothing holding UI automation.
-Each flow prints what it measured.
+Each flow prints what it measured. One bound is wall-clock, measured on a
+quiet developer Mac: the first click's dispatch under 5 ms in
+`the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator`; with
+`MOBILE_AGENT_HOST_GATES=off`, as `.github/workflows/device-tests.yml` sets it
+on GitHub's shared runners, the test prints the dispatch beside its bound
+and asserts the rest.
 
 ```sh
 eval "$(mise env)"   # the Android SDK

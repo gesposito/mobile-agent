@@ -89,10 +89,11 @@ fn tap_before_activation(driver: &SimulatorDriver, udid: &str) -> simulator::Dis
         "dispatched {:?} before activation completed ({wait:?})",
         dispatch.dispatched
     );
-    assert!(
-        dispatch.dispatched - wait < Duration::from_millis(5),
-        "flushed {:?} after the reply; the queue must go out at once",
-        dispatch.dispatched - wait
+    // The queue must go out at once.
+    common::under(
+        "the held tap's flush after the activation reply",
+        dispatch.dispatched - wait,
+        Duration::from_millis(5),
     );
     assert!(
         common::wait_for_change(&stream, &settled, Duration::from_secs(3)).is_some(),
@@ -189,8 +190,16 @@ fn warm_tap_latency() {
         percentile(&completed, 95.0),
         completed[99],
     );
-    assert!(percentile(&dispatched, 95.0) < Duration::from_millis(20));
-    assert!(percentile(&completed, 95.0) < Duration::from_millis(20));
+    common::under(
+        "the warm touch-down's hand-off at p95",
+        percentile(&dispatched, 95.0),
+        Duration::from_millis(20),
+    );
+    common::under(
+        "the warm tap's whole sending at p95",
+        percentile(&completed, 95.0),
+        Duration::from_millis(20),
+    );
 }
 
 #[test]
@@ -283,14 +292,22 @@ fn the_input_session_opens_and_activates_without_input() {
     let again = driver
         .open_input(&udid, Duration::from_secs(5))
         .expect("the open session is kept");
-    assert!(start.elapsed() < Duration::from_millis(50));
+    common::under(
+        "opening the open session again",
+        start.elapsed(),
+        Duration::from_millis(50),
+    );
     assert_eq!(again, status);
 
     // The first input waits for nothing.
     let tap = driver.tap(&udid, expo::BLANK).expect("a tap");
     eprintln!("the first tap after it dispatched in {:?}", tap.dispatched);
     assert_eq!(tap.activation_wait, None, "the session was already active");
-    assert!(tap.dispatched < Duration::from_millis(20), "{tap:?}");
+    common::under(
+        "the first tap's dispatch",
+        tap.dispatched,
+        Duration::from_millis(20),
+    );
 }
 
 /// A session opened without a wait returns at once and activates on its
@@ -310,7 +327,11 @@ fn an_input_session_opened_without_waiting_activates_on_its_own() {
     let returned = start.elapsed();
     eprintln!("open_input without a wait returned in {returned:?}: {status:?}");
     assert_eq!(status.transport, TransportKind::Dtuhid);
-    assert!(returned < Duration::from_millis(500), "{returned:?}");
+    common::under(
+        "open_input without a wait",
+        returned,
+        Duration::from_millis(500),
+    );
     let active = common::wait_for(Duration::from_secs(5), || {
         driver
             .status(&udid)

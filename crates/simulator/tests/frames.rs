@@ -51,8 +51,14 @@ fn frame_stream_during_animation() {
         )
         .expect("the fixture relaunches");
     let during = common::collect(&stream, Duration::from_millis(1500));
+    eprintln!(
+        "{} frames arrived in 1.5 s while the display changed",
+        during.len()
+    );
+    // At least 20 in 1.5 s where the host holds the frame rates.
+    let least = if common::host_gates() { 20 } else { 1 };
     assert!(
-        during.len() >= 20,
+        during.len() >= least,
         "only {} frames arrived while the display changed",
         during.len()
     );
@@ -164,7 +170,9 @@ fn measure(stream: &simulator::FrameStream, length: Duration) -> Window {
 /// the host's endpoint agent took one run from 12 to 24 percent. So the test
 /// waits up to 90 s for the one-minute load average to fall below 8, as the
 /// spikes did before timed steps, measures up to three windows, and passes
-/// when one of them meets the gate; every window is printed.
+/// when one of them meets the gate; every window is printed. On a host that
+/// does not hold the tests' wall-clock bounds it measures one window, which
+/// must hold frames.
 #[test]
 fn frames_sustain_30_fps_under_a_fifth_of_a_core() {
     let Some(udid) = common::gated("frames_sustain_30_fps_under_a_fifth_of_a_core") else {
@@ -184,6 +192,22 @@ fn frames_sustain_30_fps_under_a_fifth_of_a_core() {
         encode: true,
     };
     let stream = driver.frames(&udid, &options).expect("subscribed");
+    if !common::host_gates() {
+        common::collect(&stream, Duration::from_millis(500));
+        let window = measure(&stream, Duration::from_secs(4));
+        eprintln!(
+            "{}; one-minute load average {:.2}; the 28 fps and 20 percent bounds are not \
+             judged here ({}=off)",
+            window.line,
+            common::load_average(),
+            common::HOST_GATES_VARIABLE
+        );
+        assert!(
+            window.fps > 0.0,
+            "no frame arrived while the spinner turned"
+        );
+        return;
+    }
     let load = common::wait_for_quiet_host(8.0, Duration::from_secs(90));
     eprintln!("one-minute load average {load:.2}");
     common::collect(&stream, Duration::from_millis(500));

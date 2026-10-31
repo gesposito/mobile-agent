@@ -60,6 +60,28 @@ fn gate(var: &str, test: &str) -> Option<String> {
     }
 }
 
+/// The variable that says whether this host holds the tests' wall-clock
+/// bounds, the milliseconds measured on a quiet developer Mac: `off` on a
+/// shared runner, whose load and coalesced timers they were not set for, as
+/// `.github/workflows/device-tests.yml` sets it; unset or `on` elsewhere.
+const HOST_GATES_VAR: &str = "MOBILE_AGENT_HOST_GATES";
+
+/// Asserts that what `what` took, in milliseconds, is under `bound` where the
+/// host holds the tests' wall-clock bounds; elsewhere prints it beside the
+/// bound.
+#[track_caller]
+fn under_ms(what: &str, took: f64, bound: f64) {
+    match std::env::var(HOST_GATES_VAR).as_deref().map(str::trim) {
+        Err(_) | Ok("" | "on") => {
+            assert!(took < bound, "{what} took {took} ms, not under {bound} ms");
+        }
+        Ok("off") => eprintln!(
+            "{what} took {took} ms; its bound, {bound} ms, is not judged here ({HOST_GATES_VAR}=off)"
+        ),
+        Ok(other) => panic!("{HOST_GATES_VAR} is on or off, not {other:?}"),
+    }
+}
+
 /// The `mobile-agent` binary, built beside the daemon under test.
 fn cli_bin() -> PathBuf {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
@@ -647,11 +669,7 @@ fn the_swiftui_fixture_is_driven_through_the_cli_on_a_simulator() {
     );
     // Task 8.15: open activated the input session, so the first click did
     // not wait for it.
-    assert!(
-        measured.dispatch < 5.0,
-        "the first click dispatched in {} ms",
-        measured.dispatch
-    );
+    under_ms("the first click's dispatch", measured.dispatch, 5.0);
     let status = env.cli(&["--json", "status"]).data();
     let target = status_of(&status, &udid);
     assert_eq!(target["attached"], true, "{target}");

@@ -292,7 +292,11 @@ fn shell_round_trip() {
         "shell `echo ok` round trip, {} samples: p50 {p50:.2} ms, p95 {p95:.2} ms, max {max:.2} ms",
         samples.len()
     );
-    assert!(p50 < 50.0, "p50 {p50:.2} ms");
+    common::under(
+        "the shell round trip at p50",
+        Duration::from_secs_f64(p50 / 1e3),
+        Duration::from_millis(50),
+    );
 }
 
 /// adbd copies the owner's permission bits to group and other, so 0o750
