@@ -759,7 +759,11 @@ makes one and deletes it on exit, or uses the one `MOBILE_AGENT_SIM_FRESH_UDID`
 names. They install the fixtures from `fixtures/*/build`,
 which `just fixtures-build` produces, or from the bundles named by
 `MOBILE_AGENT_SWIFTUI_APP` and `MOBILE_AGENT_EXPO_APP`. A first boot takes
-about a minute.
+about a minute. A created device runs the runtime of the device
+`MOBILE_AGENT_SIM_UDID` names, not the newest one installed, which may not
+take an iPhone 17: the iOS 27.1 runtime of GitHub's `xcode-27` image takes
+the iPhone Duo alone, and CoreSimulator refuses any other device type on it
+with SimError 403, "Incompatible device".
 
 ## Spec requirements and their tests
 
