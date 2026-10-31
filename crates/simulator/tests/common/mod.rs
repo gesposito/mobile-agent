@@ -134,6 +134,16 @@ pub fn plist_value(file: &Path, key: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// The device `MOBILE_AGENT_SIM_UDID` names, whose runtime the devices the
+/// tests create run: the newest runtime installed may not take an iPhone 17.
+fn tested_device() -> String {
+    std::env::var(UDID_VARIABLE)
+        .ok()
+        .map(|udid| udid.trim().to_string())
+        .filter(|udid| !udid.is_empty())
+        .unwrap_or_else(|| panic!("{UDID_VARIABLE} names the device the tests drive"))
+}
+
 /// A device made for one test, shut down and deleted when dropped.
 pub struct TemporaryDevice<'a> {
     driver: &'a SimulatorDriver,
@@ -143,11 +153,11 @@ pub struct TemporaryDevice<'a> {
 }
 
 impl<'a> TemporaryDevice<'a> {
-    /// An iPhone 17 on the newest iOS runtime.
+    /// An iPhone 17 on the runtime of the device the tests drive.
     pub fn create(driver: &'a SimulatorDriver, label: &str) -> TemporaryDevice<'a> {
         let name = unique(&format!("{DEVICE_PREFIX}-{label}"));
         let device = driver
-            .create_device(&name, "iPhone 17", None)
+            .create_device_like(&name, "iPhone 17", &tested_device())
             .expect("the device is created");
         assert_eq!(device.name, name);
         TemporaryDevice {
@@ -526,8 +536,9 @@ extern "C" fn delete_fresh_device() {
     }
 }
 
-/// An iPhone 17 booted for the first time with both fixtures installed,
-/// shared by the tests of one binary and deleted when it exits.
+/// An iPhone 17 booted for the first time with both fixtures installed, on
+/// the runtime of the device the tests drive, shared by the tests of one
+/// binary and deleted when it exits.
 /// `MOBILE_AGENT_SIM_FRESH_UDID` names an existing one to use instead, which
 /// is then left alone.
 pub fn fresh_device(driver: &SimulatorDriver) -> String {
@@ -545,7 +556,7 @@ pub fn fresh_device(driver: &SimulatorDriver) -> String {
     }
     let name = unique(&format!("{DEVICE_PREFIX}-fresh"));
     let device = driver
-        .create_device(&name, "iPhone 17", None)
+        .create_device_like(&name, "iPhone 17", &tested_device())
         .expect("the fresh device is created");
     *fresh = Some((device.udid.clone(), true));
     // SAFETY: registers a plain function with no captured state.

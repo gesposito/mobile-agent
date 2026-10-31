@@ -47,6 +47,15 @@ impl SimulatorDriver {
         match *self {}
     }
 
+    pub fn create_device_like(
+        &self,
+        _name: &str,
+        _device_type: &str,
+        _like: &str,
+    ) -> Result<DeviceInfo> {
+        match *self {}
+    }
+
     pub fn delete_device(&self, _target: &str) -> Result<()> {
         match *self {}
     }

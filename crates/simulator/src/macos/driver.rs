@@ -127,6 +127,37 @@ impl SimulatorDriver {
         device_type: &str,
         runtime: Option<&str>,
     ) -> Result<DeviceInfo> {
+        self.create_on(name, device_type, |runtimes| {
+            lookup::runtime(runtime, runtimes)
+        })
+    }
+
+    /// Creates a device of `device_type` on the runtime the device `like` (a
+    /// UDID or name) runs, so that it runs the same iOS, with its
+    /// accessibility preferences written before its first boot. The newest
+    /// runtime installed may not take the device type: CoreSimulator refuses
+    /// it with SimError 403, "Incompatible device".
+    pub fn create_device_like(
+        &self,
+        name: &str,
+        device_type: &str,
+        like: &str,
+    ) -> Result<DeviceInfo> {
+        self.gate.clone()?;
+        let devices = self.devices()?;
+        self.create_on(name, device_type, |runtimes| {
+            lookup::runtime_of(like, &devices, runtimes)
+        })
+    }
+
+    /// Creates a device of `device_type` on the runtime `choose` picks from
+    /// the installed ones.
+    fn create_on(
+        &self,
+        name: &str,
+        device_type: &str,
+        choose: impl FnOnce(&[RuntimeInfo]) -> Result<usize>,
+    ) -> Result<DeviceInfo> {
         self.gate.clone()?;
         let types = self.context.device_types()?;
         let type_infos: Vec<DeviceTypeInfo> =
@@ -135,7 +166,7 @@ impl SimulatorDriver {
         let runtimes = self.context.runtimes()?;
         let runtime_infos: Vec<RuntimeInfo> =
             runtimes.iter().map(|r| r.info()).collect::<Result<_>>()?;
-        let runtime = &runtimes[lookup::runtime(runtime, &runtime_infos)?];
+        let runtime = &runtimes[choose(&runtime_infos)?];
 
         let device = self.set.create(device_type, runtime, name)?;
         prefs::write(&device.data_path()?)?;

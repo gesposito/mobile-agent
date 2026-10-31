@@ -1,7 +1,7 @@
 //! Finding a device, runtime or device type from what a caller typed.
 
 use crate::error::{Error, Result};
-use crate::model::{DeviceTypeInfo, RuntimeInfo};
+use crate::model::{DeviceInfo, DeviceTypeInfo, RuntimeInfo};
 use crate::version::Version;
 
 /// The index of the device whose UDID is `target` (in any case), or else of
@@ -59,6 +59,33 @@ pub fn runtime(wanted: Option<&str>, runtimes: &[RuntimeInfo]) -> Result<usize> 
             }
         ))
     })
+}
+
+/// The index of the installed runtime the device `target` (its UDID in any
+/// case, or its unique name) runs, whatever runtime is newer: a device made
+/// like it then runs the iOS it runs.
+pub fn runtime_of(target: &str, devices: &[DeviceInfo], runtimes: &[RuntimeInfo]) -> Result<usize> {
+    let keys: Vec<(String, String)> = devices
+        .iter()
+        .map(|d| (d.udid.clone(), d.name.clone()))
+        .collect();
+    let device = &devices[device(target, &keys)?];
+    device
+        .runtime
+        .as_ref()
+        .and_then(|own| runtimes.iter().position(|r| r.identifier == own.identifier))
+        .ok_or_else(|| {
+            Error::InvalidArgument(format!(
+                "{target} runs no installed runtime{}",
+                device
+                    .runtime
+                    .as_ref()
+                    .map_or_else(String::new, |own| format!(
+                        " ({} is not installed)",
+                        own.name
+                    ))
+            ))
+        })
 }
 
 /// The index of the device type whose name or identifier is `wanted`. The
@@ -173,6 +200,56 @@ mod tests {
             Err(Error::InvalidArgument(message)) if message.contains("iOS 26.5")
         ));
         assert!(matches!(runtime(None, &[]), Err(Error::InvalidArgument(_))));
+    }
+
+    fn device_info(udid: &str, name: &str, runtime: Option<RuntimeInfo>) -> DeviceInfo {
+        DeviceInfo {
+            udid: udid.into(),
+            name: name.into(),
+            state: crate::model::DeviceState::Booted,
+            runtime,
+            device_type: None,
+        }
+    }
+
+    #[test]
+    fn a_device_made_like_another_takes_that_devices_runtime_not_the_newest() {
+        let older = runtime_info(
+            "iOS 27.0",
+            "27.0",
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        );
+        let newer = runtime_info(
+            "iOS 27.1",
+            "27.1",
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-1",
+        );
+        let runtimes = vec![older.clone(), newer];
+        let devices = vec![
+            device_info(
+                "B0647CDD-575F-45E9-9398-F6F5AFF23C1F",
+                "the tested device",
+                Some(older),
+            ),
+            device_info("756DDFC3-A343-4D73-8143-6AAD4E470AB4", "no runtime", None),
+        ];
+        assert_eq!(runtime(None, &runtimes), Ok(1), "27.1 is the newest");
+        assert_eq!(
+            runtime_of("b0647cdd-575f-45e9-9398-f6f5aff23c1f", &devices, &runtimes),
+            Ok(0),
+            "the device runs 27.0"
+        );
+        assert_eq!(runtime_of("the tested device", &devices, &runtimes), Ok(0));
+        assert_eq!(
+            runtime_of("nowhere", &devices, &runtimes),
+            Err(Error::NotFound {
+                target: "nowhere".into()
+            })
+        );
+        assert!(matches!(
+            runtime_of("no runtime", &devices, &runtimes),
+            Err(Error::InvalidArgument(message)) if message.contains("runs no installed runtime")
+        ));
     }
 
     #[test]
