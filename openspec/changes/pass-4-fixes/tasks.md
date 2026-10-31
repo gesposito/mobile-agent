@@ -1,0 +1,32 @@
+# Tasks
+
+Rules that bind every task below (the archived foundation design's Delivery process): research first; measured decisions recorded in design.md; fail-first tests observed red; atomic commits without trailers; comments describe the code, not the diff; every change lands through a pull request with the four CI checks (squash for one commit, rebase for several); device identifiers never in tracked files; one agent at a time; `scripts/check-public.sh` and `openspec validate --all --strict` before each commit.
+
+## 1. Device-backed tests in CI
+
+- [ ] 1.1 The workflow (D1): `.github/workflows/device-tests.yml` provisioning the Simulator and the emulator as `benchmarks.yml` does (the steps shared, or copied with a comment saying which workflow they mirror), running the workspace's tests with the gating variables set, on a weekly schedule off the hour and on dispatch; a first dispatched run green on both runners with the gated tests counted in the summary; the workflow linted (`just lint-workflows`), pinned, `permissions: {}`.
+- [ ] 1.2 The tests on the default apps (D1): `crates/daemon/tests/real_apps.rs`, gated, one test per finding of D2 to D9 on the app that showed it (Settings, Maps, Calendar, Photos; Settings, Clock, Chrome), each asserting the reply's fields and the listing, dismissing first-launch sheets, skipping with a reason when the network is absent; a dispatched run whose per-test verdicts are recorded in D1's "As found": red on CI (the tool's), green on CI and red on this Mac (the host's), with the host's condition.
+
+## 2. The fixes the fakes prove
+
+- [ ] 2.1 The read-back waits for the field (D3): the fake's late last key; failing tests that `type` and `fill` read the field until it holds the text or stops changing and warn `shorter than typed`; the bound measured; the CLI's and the server's lines.
+- [ ] 2.2 A settle that gives up says so (D4): failing tests that the reply carries `settled` and `stoppedAfterMs` and that `--strict` fails `settle_timeout`; the CLI's code table, the server's card and the agent guide.
+- [ ] 2.3 A tap by coordinates is named (D5): failing tests on the fake with a generic container over a labeled button and with a plain text; the line.
+- [ ] 2.4 The listing after a system window closes (D6): the fake's scripted alert; failing tests that the interactive listing right after the dismissal lists the screen and that a settle counts the change.
+- [ ] 2.5 A stale ref names the dialog (D7): failing test on the fake with a system dialog over a rebuilt screen.
+- [ ] 2.6 A text wait prefers the whole text (D8): failing test with "Lisbon" beside "Lisbon Airport (LIS)".
+- [ ] 2.7 A refused launch is retried once (D2): failing test against a fake `simctl` whose first launch answers the refusal; the wait measured on CI's Simulator and this Mac; the reply's line.
+
+## 3. The device findings
+
+- [ ] 3.1 The header cover (D9a): the fixture gains a header holding a control; failing mirror test; Maps' clear button on CI's Simulator the proof.
+- [ ] 3.2 The time picker's overlay (D9b): reproduced on CI's emulator Clock; the decision recorded in D9 with the measurement; the fix or the record.
+- [ ] 3.3 Calendar's kept node (D9c): the full read after the deletion on CI's Simulator; the replica's eviction fixed if it is the replica's, the app's behavior recorded.
+- [ ] 3.4 The list screen under iOS 27 (D9d): the tree read on CI's Simulator compared with iOS 26.5; the fixture or the reader fixed; the harness's list-scroll timed on CI again.
+- [ ] 3.5 The click's change window and Chrome's dialogs (D9e): measured on CI; recorded as the host's or the tool's.
+
+## 4. The record
+
+- [ ] 4.1 `reports/12.5-fourth-pass.md` from the private notes of the fourth pass and the site's runs (counts, failed calls, gaps, what CI sorted), the README's Status and limitations with the known issues that remain and the fixes that landed, `docs/overview.md` and `docs/agent-guide.md` where a line changed.
+- [ ] 4.2 A fifth pass by the demo session on the same nine tasks, the proof of the fixes met, recorded against the fourth.
+- [ ] 4.3 Update the project memory and archive the change with the three delta specs synced; verify `openspec validate pass-4-fixes --strict` passes and every task above is ticked.
