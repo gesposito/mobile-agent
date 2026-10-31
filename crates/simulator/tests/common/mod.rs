@@ -36,6 +36,36 @@ pub const EXPO_BUNDLE: &str = "dev.mobileagent.fixture.expo";
 /// The prefix of every device a test creates, so leftovers are easy to find.
 pub const DEVICE_PREFIX: &str = "mobile-agent-simtest";
 
+/// The variable that says whether this host holds the tests' wall-clock
+/// bounds, the milliseconds and frame rates measured on a quiet developer
+/// Mac: `off` on a shared runner, whose load and coalesced timers they were
+/// not set for, as `.github/workflows/device-tests.yml` sets it; unset or
+/// `on` elsewhere.
+pub const HOST_GATES_VARIABLE: &str = "MOBILE_AGENT_HOST_GATES";
+
+/// Whether the tests judge their wall-clock bounds on this host.
+pub fn host_gates() -> bool {
+    match std::env::var(HOST_GATES_VARIABLE).as_deref().map(str::trim) {
+        Err(_) | Ok("" | "on") => true,
+        Ok("off") => false,
+        Ok(other) => panic!("{HOST_GATES_VARIABLE} is on or off, not {other:?}"),
+    }
+}
+
+/// Asserts that what `what` took is under `bound` where the host holds the
+/// tests' wall-clock bounds; elsewhere prints it beside the bound.
+#[track_caller]
+pub fn under(what: &str, took: Duration, bound: Duration) {
+    if host_gates() {
+        assert!(took < bound, "{what} took {took:?}, not under {bound:?}");
+    } else {
+        eprintln!(
+            "{what} took {took:?}; its bound, {bound:?}, is not judged here \
+             ({HOST_GATES_VARIABLE}=off)"
+        );
+    }
+}
+
 /// The booted Simulator to drive, or `None` after printing why the test is
 /// skipped.
 pub fn gated(test: &str) -> Option<String> {

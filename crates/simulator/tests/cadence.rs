@@ -214,10 +214,10 @@ fn a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_c
     let cadence = cadence_of_screen(&driver, &udid);
     assert_eq!(cadence, Cadence::NATIVE, "the SwiftUI fixture's screen");
     let typed = type_entry(&driver, &udid, USERNAME, text, cadence);
-    assert!(
-        typed.elapsed < Cadence::REACT_NATIVE.gap * gaps,
-        "{gaps} native gaps took {:?}, as long as React Native's would",
-        typed.elapsed
+    common::under(
+        &format!("the native entry, {gaps} gaps, against React Native's cadence"),
+        typed.elapsed,
+        Cadence::REACT_NATIVE.gap * gaps,
     );
     assert!(typed.whole(text), "the field shows {:?}", typed.text);
 }

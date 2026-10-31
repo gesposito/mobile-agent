@@ -363,7 +363,13 @@ cargo test -p android
 The integration tests in `tests/` run when `MOBILE_AGENT_ANDROID_SERIAL` names a
 device on the local adb server. Without it, each test prints
 `skipped <test>: ...` and passes, which is what CI does. The emulator tests
-need an emulator started with `-grpc <port> -grpc-use-token`.
+need an emulator started with `-grpc <port> -grpc-use-token`. Two bounds are
+wall-clock, measured on a quiet developer Mac: the shell round trip under
+50 ms at p50 in `adb_device::shell_round_trip`, and the conflict found in
+under 1 s in `agent_deploy::an_agent_another_host_started_is_a_conflict_until_forced`;
+with `MOBILE_AGENT_HOST_GATES=off`, as `.github/workflows/device-tests.yml`
+sets it on GitHub's shared runners, each prints what it measured beside its
+bound and asserts the rest.
 
 ```sh
 eval "$(mise env)"   # ANDROID_HOME and the SDK tools

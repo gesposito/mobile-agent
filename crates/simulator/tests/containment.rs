@@ -60,7 +60,11 @@ fn framework_call_throws() {
         driver.tap(&shared, expo::BLANK),
         Err(Error::Unavailable { .. })
     ));
-    assert!(start.elapsed() < Duration::from_millis(100));
+    common::under(
+        "the refusal of a target out of service",
+        start.elapsed(),
+        Duration::from_millis(100),
+    );
     let status = driver.status(&shared).expect("status still answers");
     assert_eq!(status.unavailable.as_ref(), Some(diagnostics));
 

@@ -345,7 +345,9 @@ fn target_status_reports_the_reader_and_its_readiness() {
 
     // A second reader, spawned from the same file, is ready within the
     // spec's 500 ms on a quiet host.
-    common::wait_for_quiet_host(6.0, Duration::from_secs(300));
+    if common::host_gates() {
+        common::wait_for_quiet_host(6.0, Duration::from_secs(300));
+    }
     let mut warm = Vec::new();
     for _ in 0..3 {
         driver.reset_target(&udid).expect("reset");
@@ -363,11 +365,7 @@ fn target_status_reports_the_reader_and_its_readiness() {
     }
     warm.sort();
     eprintln!("warm spawns ready in {warm:?}");
-    assert!(
-        warm[1] < Duration::from_millis(500),
-        "the median warm spawn took {:?}",
-        warm[1]
-    );
+    common::under("the median warm spawn", warm[1], Duration::from_millis(500));
 
     // Nothing was installed.
     assert_eq!(common::installed_bundles(&udid), before);

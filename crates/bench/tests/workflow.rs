@@ -280,6 +280,9 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
         workflow.at("concurrency/cancel-in-progress").text(),
         "false"
     );
+    // A shared runner is not the host the tests' millisecond bounds were set
+    // for: both jobs record those measurements without judging them.
+    assert_eq!(workflow.at("env/MOBILE_AGENT_HOST_GATES").text(), "off");
 
     // One job per device, on the runner of the benchmarks' harness job that
     // provisions the same device, bounded as that job is.

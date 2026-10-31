@@ -765,6 +765,26 @@ take an iPhone 17: the iOS 27.1 runtime of GitHub's `xcode-27` image takes
 the iPhone Duo alone, and CoreSimulator refuses any other device type on it
 with SimError 403, "Incompatible device".
 
+Some tests assert wall-clock bounds measured on a quiet developer Mac:
+`containment::framework_call_throws` (a target out of service refuses in
+under 100 ms), `dtuhid::input_before_activation` and
+`dtuhid::the_first_session_of_a_boot_waits_for_dtuhidd_to_start` (the held
+tap goes out under 5 ms after the activation reply),
+`dtuhid::warm_tap_latency` (20 ms at p95),
+`dtuhid::the_input_session_opens_and_activates_without_input` (a second open
+under 50 ms, the first tap's dispatch under 20 ms),
+`dtuhid::an_input_session_opened_without_waiting_activates_on_its_own`
+(under 500 ms), `tree::target_status_reports_the_reader_and_its_readiness`
+(the median warm spawn under 500 ms), `frames::frame_stream_during_animation`
+(20 frames in 1.5 s), `frames::frames_sustain_30_fps_under_a_fifth_of_a_core`
+and `cadence::a_react_native_field_is_typed_at_its_cadence_and_a_native_one_at_the_native_cadence`
+(the native entry quicker than React Native's cadence). With
+`MOBILE_AGENT_HOST_GATES=off`, as `.github/workflows/device-tests.yml` sets it
+on GitHub's shared runners, each prints what it measured beside its bound
+and asserts the rest, the order of events and the fields; the tree and frame
+rate tests then wait for no quiet host, and the frame rate test measures one
+window, which must hold frames.
+
 ## Spec requirements and their tests
 
 | Requirement | Scenario | Tests |
