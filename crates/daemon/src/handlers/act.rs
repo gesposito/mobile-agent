@@ -6260,6 +6260,54 @@ mod tests {
         }
     }
 
+    /// Design D7 of pass-4-fixes: a stale ref without a twin while a dialog
+    /// of system UI holds the screen fails `stale_ref` naming the dialog and
+    /// saying to dismiss it, as Chrome's refs went stale under its dialogs
+    /// on the fourth pass. On the fixture, a ref the Login tab's snapshot
+    /// gave, after a move to the System tab and the location prompt: on iOS
+    /// the prompt is SpringBoard's, whose tree the Simulator's reader reads
+    /// in place of the app's, on Android the permission controller's
+    /// dialog over the app. Once the prompt is answered the ref fails as
+    /// any stale ref without a twin does, naming no dialog.
+    #[test]
+    fn a_stale_ref_without_a_twin_under_a_system_dialog_names_the_dialog() {
+        for (platform, dialog) in [
+            (
+                "ios",
+                "alert \"Allow “FixtureSwiftUI” to use your location?\"",
+            ),
+            ("android", "dialog \"Permission\""),
+        ] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, FIXTURE, &[]);
+            let username = ref_named(&mut target, "Username");
+            click_on(&mut target, "#tab-system").unwrap();
+            click_on(&mut target, "#system-permission").unwrap();
+            let get = json!({"action": "get", "what": "value", "target": username}).to_string();
+            for failed in [
+                click_on(&mut target, &username),
+                fill_in(&mut target, &username, "agent"),
+                super::super::run_on(&mut target, "default", &request(&get)),
+            ] {
+                let failure = failed.unwrap_err();
+                assert_eq!(failure.code, "stale_ref", "{platform}: {}", failure.message);
+                assert!(
+                    failure.message.contains(dialog) && failure.message.contains("dismiss"),
+                    "{platform}: {}",
+                    failure.message
+                );
+            }
+            click_on(&mut target, "#permission-deny").unwrap();
+            let failure = click_on(&mut target, &username).unwrap_err();
+            assert_eq!(failure.code, "stale_ref", "{platform}: {}", failure.message);
+            assert!(
+                !failure.message.contains("dismiss"),
+                "{platform}: {}",
+                failure.message
+            );
+        }
+    }
+
     /// Design D3 of action-verdicts, scenario "A rebuilt field", as the
     /// Simulator showed it: a fill on a map app's search field, by the ref
     /// the snapshot right after `open` gave it, failed `stale_ref`, the tap

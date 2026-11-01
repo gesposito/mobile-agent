@@ -11,7 +11,9 @@
 //! an action or a query names, stands for its twin when the replica holds
 //! one (`Mirror::twin`), the element the app rebuilt in its place, whose
 //! ref the session's refs gain and the reply names in `resolved`
-//! (action-verdicts, design D3); without one it fails `stale_ref`. A
+//! (action-verdicts, design D3); without one it fails `stale_ref`, naming
+//! the dialog of system UI that holds the screen when one does
+//! (pass-4-fixes, design D7). A
 //! selector an action or a query names resolves any element the replica
 //! holds, the first on screen and not covered before the rest, and waits up
 //! to the command's timeout only for one the tree does not hold yet
@@ -157,7 +159,7 @@ pub(crate) fn with_resolved(mut success: Success, resolved: Option<Resolved>) ->
 /// snapshots must have listed, goes to: `reference` while it names its
 /// element, else, once it is stale, its twin's ([`mirror::Mirror::twin`]),
 /// which the session's refs gain, with the resolution. A stale ref without
-/// a twin fails `stale_ref`, as the mirror words it; any other failure to
+/// a twin fails `stale_ref` ([`stale_failure`]); any other failure to
 /// resolve the ref is left to the command, which meets it where it acts.
 fn current(
     target: &mut Attached,
@@ -174,7 +176,7 @@ fn current(
         .twin(reference)
         .and_then(|twin| twin.reference)
     else {
-        return Err(stale.into());
+        return Err(stale_failure(target, stale));
     };
     target.session(session).seen.insert(twin);
     Ok((
@@ -184,6 +186,32 @@ fn current(
             twin,
         }),
     ))
+}
+
+/// The failure of `stale`, a stale ref without a twin: `stale_ref` as the
+/// mirror words it, and while a dialog of system UI holds the screen
+/// (`Mirror::system_dialog`), as a permission alert does, one that names the
+/// dialog and says to dismiss it before a new snapshot, whose refs would be
+/// the dialog's buttons alone: on a Simulator the reader reads system UI's
+/// process while its alert shows, so the app's elements leave the replica,
+/// and on the fourth pass Chrome's refs went stale under its dialogs
+/// (pass-4-fixes, design D7).
+fn stale_failure(target: &Attached, stale: MirrorError) -> Failure {
+    let dialog = target.mirror.system_dialog();
+    let (MirrorError::StaleRef { reference, was, .. }, Some(dialog)) = (&stale, dialog) else {
+        return stale.into();
+    };
+    let what = match was {
+        Some((role, name)) if !name.is_empty() => format!("{role} {name:?}"),
+        Some((role, _)) => role.to_string(),
+        None => "element".to_owned(),
+    };
+    Failure::new(
+        mirror::code::STALE_REF,
+        format!(
+            "{reference} is stale: the {what} it named is not on the screen while {dialog} of system UI stands in front of it; dismiss the dialog first, with one of the buttons a snapshot lists, then take a new snapshot and use its refs"
+        ),
+    )
 }
 
 /// Fails unless `session`'s snapshots of the target listed `reference`.
