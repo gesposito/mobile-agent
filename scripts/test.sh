@@ -2,8 +2,8 @@
 # Checks the repository's own scripts in a scratch directory, without the
 # network: the reports' scrub (reports/scrub.py), the publish scan
 # (scripts/check-public.sh), its scan of the history
-# (scripts/check-history.sh) and the tests' summary
-# (scripts/test-summary.sh).
+# (scripts/check-history.sh), the tests' summary (scripts/test-summary.sh)
+# and CI's change classifier (scripts/ci-changes.sh).
 #
 #   scripts/test.sh
 #
@@ -47,6 +47,13 @@
 #      its crate, and the targets cargo listed as failed, which include a
 #      binary that crashed before its result line; a run without a failure
 #      lists neither.
+#  10. CI's change classifier answers code=false for a diff of documentation
+#      alone, Markdown anywhere, docs/, openspec/, the root's LICENSE and the
+#      issue templates, a path with a space among them, and code=true once
+#      the diff touches anything else: a source file, a report's data, a
+#      workflow, a script, the justfile, a code file deleted or moved into
+#      docs/, and a diff that changes nothing; it names the paths that made
+#      the change code, and fails on a commit that does not exist.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
 # (a machine's model identifier, a sampler's top field, a device identifier,
@@ -541,6 +548,67 @@ expect "a run without a failure lists no failed test or target" \
 |---|---:|---:|---:|---:|---:|
 | core | 1 | 1 | 0 | 0 | 0.3 |
 | Total | 1 | 1 | 0 | 0 | 0.3 |'
+
+# 10. CI's change classifier, over the commits of a repository of its own.
+changes="$scratch/changes"
+git -C "${scratch:?}" init -q changes
+change_commit() {
+  git -C "$changes" add -A
+  git -C "$changes" -c user.name=placeholder -c user.email=placeholder@example.com \
+    commit -q --allow-empty -m "$1"
+}
+documentation=(README.md docs/guide.md "docs/a guide.md" crates/core/README.md reports/run/report.md
+  openspec/changes/placeholder/tasks.md LICENSE .github/ISSUE_TEMPLATE/bug.yml
+  .github/PULL_REQUEST_TEMPLATE.md CHANGELOG.md)
+code=(crates/core/src/lib.rs reports/run/report.json .github/workflows/ci.yml scripts/check.sh justfile
+  docs-tool/LICENSE.rs)
+for path in "${documentation[@]}" "${code[@]}"; do
+  mkdir -p "$(dirname "$changes/$path")"
+  printf 'first\n' > "$changes/$path"
+done
+change_commit "the base"
+base=$(git -C "$changes" rev-parse HEAD)
+# classify <path...>: appends a line to each path from the base, commits and
+# classifies the commit against the base, its answer in out.txt, what it
+# said beside in err.txt and its status in $status.
+classify() {
+  git -C "$changes" checkout -q --detach "$base"
+  local path
+  for path in "$@"; do printf 'second\n' >> "$changes/$path"; done
+  change_commit "a change"
+  classify_head "$base"
+}
+# classify_head <base>: classifies the checkout's HEAD against the base.
+classify_head() {
+  status=0
+  (cd "$changes" && "$root/scripts/ci-changes.sh" "$1" HEAD) > "$scratch/out.txt" 2> "$scratch/err.txt" \
+    || status=$?
+}
+classify "${documentation[@]}"
+expect "the classifier answers code=false for documentation alone" same "$scratch/out.txt" "code=false"
+expect "the classifier succeeds on documentation alone" test "$status" = 0
+for path in "${code[@]}"; do
+  classify README.md "$path"
+  expect "the classifier answers code=true once $path changes" same "$scratch/out.txt" "code=true"
+  expect "the classifier names $path" grep -q -x -F "code: $path" "$scratch/err.txt"
+done
+git -C "$changes" checkout -q --detach "$base"
+git -C "$changes" rm -q crates/core/src/lib.rs
+change_commit "a source file deleted"
+classify_head "$base"
+expect "the classifier answers code=true for a deleted source file" same "$scratch/out.txt" "code=true"
+git -C "$changes" checkout -q --detach "$base"
+git -C "$changes" mv crates/core/src/lib.rs docs/lib.md
+change_commit "a source file moved into docs"
+classify_head "$base"
+expect "the classifier answers code=true for a source file moved into docs/" same "$scratch/out.txt" "code=true"
+git -C "$changes" checkout -q --detach "$base"
+change_commit "nothing"
+classify_head "$base"
+expect "the classifier answers code=true for a diff that changes nothing" same "$scratch/out.txt" "code=true"
+classify_head 0000000000000000000000000000000000000000
+expect "the classifier fails on a commit that does not exist" test "$status" != 0
+expect "the classifier prints no answer for a commit that does not exist" test ! -s "$scratch/out.txt"
 
 if [ "$failures" -gt 0 ]; then
   printf '%s of %s checks failed\n' "$failures" "$checks" >&2
