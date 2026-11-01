@@ -179,6 +179,16 @@ found both tree read paths failing for seconds after a boot without them.
 `create_device` writes them too, so a new device has them before its first
 boot. A booted device's preferences belong to the guest and are left alone.
 
+A launch that CoreSimulator refuses with `NSPOSIXErrorDomain` 3, `ESRCH`,
+"Simulator device failed to launch" with the bundle identifier, is launched
+once more after `LAUNCH_RETRY`, 3 s, and `Launched::retried_after` says so:
+`open --relaunch` right after the app's termination and a press of Home was
+refused ten times in two runs on an iOS 26.5 Simulator under load, and a
+launch 3 s later went through every time; nothing shorter was measured, and
+a freshly created Simulator on CI refused none of ten such launches
+(pass-4-fixes, design D2). A second refusal fails as it came, and no other
+failure of a launch is retried.
+
 ## Tree
 
 `snapshot` reads the tree of whatever owns the foreground and returns a
@@ -822,6 +832,7 @@ window, which must hold frames.
 | Requirement | Scenario | Tests |
 |---|---|---|
 | Simulator discovery and lifecycle | Launch with environment | `lifecycle::launch_with_environment`, `lifecycle::every_simulator_is_listed_with_identifier_name_runtime_and_state`, `lifecycle::a_booted_device_is_left_alone`, `lifecycle::an_unknown_device_is_not_found` |
+| A refused launch is retried once (pass-4-fixes task 2.7, design D2) | A launch right after a termination (a fake of the device's launch call that answers the refusal once: launched once more after 3 s, the wait reported; two refusals failing with the second; another domain or code not launched again) | `macos::driver::tests::a_launch_refused_with_esrch_is_launched_once_more_after_the_wait`; the reply in `crates/daemon/README.md` |
 | No test runner and no per-app build | Fresh Simulator | `tree::fresh_simulator` |
 | No test runner and no per-app build | Spawned helper is reported | `tree::target_status_reports_the_reader_and_its_readiness`, `macos::reader::tests::the_build_embedded_a_reader_for_the_simulator` |
 | Foreground tree read | System alert in front | `tree::a_permission_alert_is_reported_as_system_owned`, `tree::tests::a_system_alert_belongs_to_system_ui` |
