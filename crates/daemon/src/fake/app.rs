@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use mirror::backend::Owner;
 use protocol::snapshot::{
-    Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit, WindowFlags,
+    NodeFlags, Scroll, ScrollAxis, ScrollFlags, ScrollPosition, ScrollRange, ScrollUnit,
+    WindowFlags,
 };
 
 use super::tree::{self, El, Kit, Win};
@@ -413,6 +414,15 @@ enum Board {
     /// with a frame, as Safari's More menu took its items with its last
     /// frame on this session's Simulator, 273 ms after the frame before.
     Menu,
+    /// Labeled elements under a view without a label (pass-4-fixes, task
+    /// 2.3), as the fourth pass met Material's time picker on Clock, whose
+    /// minute chip lay under a view the tree names nothing of, in a
+    /// container that bears an identifier alone: a heading; a container
+    /// with an identifier and no name holding a button and a plain text,
+    /// with a view drawn over both that has no label and takes no input, a
+    /// later sibling on iOS and a view flagged on top on Android; a
+    /// container with an identifier holding nothing; the status line.
+    Overlay,
 }
 
 impl Board {
@@ -440,6 +450,7 @@ impl Board {
             "banner" => Board::Banner,
             "raised" => Board::Raised,
             "menu" => Board::Menu,
+            "overlay" => Board::Overlay,
             _ => Board::Form,
         }
     }
@@ -1729,6 +1740,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Banner => banner_content(kit, forms),
         Board::Raised => raised_content(kit, forms),
         Board::Menu => menu_content(kit, forms),
+        Board::Overlay => overlay_content(kit, forms),
     }
 }
 
@@ -2570,6 +2582,45 @@ fn menu_content(kit: Kit, forms: &Forms) -> Vec<El> {
         content.push(menu);
     }
     content
+}
+
+/// The overlay board (pass-4-fixes, task 2.3): a heading; from 140 to 260
+/// points a container identified `placeholder-id-1` without a name holding
+/// the button `placeholder-button-1`, from 150 to 198, the text
+/// `placeholder-text-1`, from 206 to 250, and over both a view without a
+/// label that takes no input, listed after them and flagged on top on
+/// Android, so that the mirror takes it for drawn over them; from 300 to
+/// 380 a container identified `placeholder-id-3` holding nothing; the
+/// status line.
+fn overlay_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    let over = [20.0, 140.0, 382.0, 260.0];
+    let mut cover = kit.group(over).set(NodeFlags::ENABLED, false);
+    if kit.platform == Platform::Android {
+        cover = cover.with(NodeFlags::ON_TOP);
+    }
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        kit.group(over).id("placeholder-id-1").children([
+            kit.button(
+                "placeholder-id-2",
+                "placeholder-button-1",
+                [36.0, 150.0, 366.0, 198.0],
+            ),
+            kit.text(Some("placeholder-text-1"), [36.0, 206.0, 366.0, 250.0]),
+            cover,
+        ]),
+        kit.group([20.0, 300.0, 382.0, 380.0])
+            .id("placeholder-id-3"),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
 }
 
 /// The banner board's banner, in system UI's window over the app: from 128
