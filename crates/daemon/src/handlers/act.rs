@@ -4692,6 +4692,91 @@ mod tests {
         }
     }
 
+    /// Design D6 of pass-4-fixes, scenario "An alert dismissed": on CI's
+    /// iOS 27.0 Simulator, right after a click on "Don't Allow" closed
+    /// Calendar's location alert, `snapshot -i` listed SpringBoard holding
+    /// nothing, the alert gone and the app not yet active again, and the
+    /// screen only after a settle; the fourth pass met the same on Photos,
+    /// its settle a turn later saying nothing changed. The fixture's System
+    /// tab brings its location prompt up over the tab, which a fake
+    /// Simulator gives as SpringBoard's, holding nothing for a while once a
+    /// tap answered it; the interactive listing right after the click on
+    /// its refusal lists the tab, the app in front, and a settle right after
+    /// names the change, on both platforms.
+    #[test]
+    fn the_listing_right_after_a_system_alert_closes_lists_the_screen_and_a_settle_names_the_change()
+     {
+        for (platform, option) in [
+            ("ios", "FIXTURE_INITIAL_TAB=system"),
+            ("android", "initial_tab=system"),
+        ] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, FIXTURE, &[option]);
+            let run = |target: &mut Attached, line: Value| {
+                super::super::run_on(target, "default", &request(&line.to_string()))
+                    .unwrap_or_else(|failure| panic!("{platform}: {line}: {failure:?}"))
+                    .into_data()
+            };
+            run(
+                &mut target,
+                json!({"action": "click", "target": "#system-permission"}),
+            );
+            let prompt = run(
+                &mut target,
+                json!({"action": "snapshot", "interactive": true}),
+            );
+            let listed = prompt["snapshot"].as_str().unwrap_or_default();
+            assert!(
+                listed.contains("id=permission-deny"),
+                "{platform}: {listed}"
+            );
+            run(
+                &mut target,
+                json!({"action": "click", "target": "#permission-deny"}),
+            );
+            let right_after = run(
+                &mut target,
+                json!({"action": "snapshot", "interactive": true}),
+            );
+            let listed = right_after["snapshot"].as_str().unwrap_or_default();
+            assert_eq!(right_after["origin"], FIXTURE, "{platform}: {listed}");
+            assert!(
+                listed.contains("id=system-permission") && listed.contains("id=tab-login"),
+                "{platform}: right after the alert closed: {listed}"
+            );
+            let settled = run(&mut target, json!({"action": "wait", "settle": true}));
+            assert_ne!(settled["endedBy"], "none", "{platform}: {settled}");
+            // A settle straight after the click waits for the app too.
+            let open = json!({"action": "open", "app": FIXTURE, "env": [option], "relaunch": true});
+            run(&mut target, open);
+            run(
+                &mut target,
+                json!({"action": "click", "target": "#system-permission"}),
+            );
+            run(
+                &mut target,
+                json!({"action": "click", "target": "#permission-deny"}),
+            );
+            let settled = run(&mut target, json!({"action": "wait", "settle": true}));
+            // On iOS the app comes back during the settle, a change of the
+            // tree it counts; on Android its window never left.
+            let returned = platform == "android" || settled["treeChanges"].as_u64() > Some(0);
+            assert!(
+                returned && settled["endedBy"] != "none",
+                "{platform}: {settled}"
+            );
+            let after = run(
+                &mut target,
+                json!({"action": "snapshot", "interactive": true}),
+            );
+            assert_eq!(
+                after["origin"], FIXTURE,
+                "{platform}: {}",
+                after["snapshot"]
+            );
+        }
+    }
+
     /// Design D51, N10 of the fourth production-app run (task 5.4; task 4.7):
     /// on the feed scrolled to its end `get box` on an identifier and on a
     /// text of rows scrolled above failed `element_not_found` after the

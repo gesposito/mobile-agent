@@ -85,6 +85,15 @@ const KEYBOARD_LIMIT: usize = 32;
 /// settle after the launch, which so sees the launcher come back.
 pub(crate) const HOME_RETURN: Duration = Duration::from_millis(150);
 
+/// How long after a tap answered SpringBoard's prompt on a fake Simulator the
+/// app takes the front back (pass-4-fixes, design D6): a model of iOS's
+/// alert dismissal, during which the Simulator's reader reads SpringBoard
+/// holding nothing, the alert gone and the app not yet active, as CI's
+/// iOS 27.0 Simulator showed after Calendar's location alert, not a
+/// measured span; longer than the re-read after the tap and the snapshot's
+/// catch-up after it, which so read SpringBoard.
+pub(crate) const PROMPT_LEAVING: Duration = Duration::from_millis(400);
+
 /// How long after the keyboard came up the placeholder app's layout moves
 /// its submit button above it, as React Native moves a view out of the
 /// keyboard's way once the keyboard has shown. The move shows in no frame
@@ -186,6 +195,9 @@ struct Shared {
     home_due: Mutex<Option<Instant>>,
     /// When the placeholder app's opening menu takes its next step.
     menu_due: Mutex<Option<Instant>>,
+    /// When the app takes the front back from SpringBoard once the prompt a
+    /// tap answered has left.
+    leave_due: Mutex<Option<Instant>>,
     /// Frames the event stream delivered.
     delivered: AtomicU64,
     /// For a fake iPhone, its screenshots: when the captures started and
@@ -375,6 +387,7 @@ impl Shared {
         self.raise(now);
         self.lift(now);
         self.return_home(now);
+        self.leave(now);
         self.unfold(now);
         self.glide_on(now);
         now
@@ -459,6 +472,21 @@ impl Shared {
         }
     }
 
+    /// Gives the app the front back from SpringBoard once the prompt a tap
+    /// answered has left, showing it as a move to another screen.
+    fn leave(&self, now: Instant) {
+        let due = *lock(&self.leave_due);
+        if due.is_none_or(|due| now < due) {
+            return;
+        }
+        *lock(&self.leave_due) = None;
+        let mut device = lock(&self.device);
+        if device.end_leaving() {
+            self.show_after(&device, Change::Screen, Duration::ZERO);
+            self.follow(&device, Duration::ZERO);
+        }
+    }
+
     /// Moves the placeholder app's submit button above the keyboard once
     /// the move is due, showing it as a layout change.
     fn lift(&self, now: Instant) {
@@ -477,10 +505,18 @@ impl Shared {
     /// that is coming up comes up as long after the focus as its slide says,
     /// the placeholder app's layout moves its submit button [`LIFT`] after
     /// the keyboard came up, its opening menu takes its next step as long
-    /// after the step before as the menu says, and the launcher takes the
-    /// front back [`HOME_RETURN`] after a launch it returns from.
+    /// after the step before as the menu says, the launcher takes the
+    /// front back [`HOME_RETURN`] after a launch it returns from, and the
+    /// app [`PROMPT_LEAVING`] after a tap answered SpringBoard's prompt.
     fn follow(&self, device: &Device, delay: Duration) {
         let now = self.target.clock().now();
+        let mut leave = lock(&self.leave_due);
+        *leave = if device.leaving() {
+            leave.or(Some(now + delay + PROMPT_LEAVING))
+        } else {
+            None
+        };
+        drop(leave);
         let mut menu = lock(&self.menu_due);
         *menu = device
             .menu_coming()
@@ -838,6 +874,7 @@ pub(crate) fn attach(
         lift_due: Mutex::new(None),
         home_due: Mutex::new(None),
         menu_due: Mutex::new(None),
+        leave_due: Mutex::new(None),
         delivered: AtomicU64::new(0),
         captures: subscribed.map(|subscribed| Captures {
             from: target.clock().now(),
