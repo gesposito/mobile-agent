@@ -91,6 +91,16 @@ pub const DEFAULT_OVERSCROLL: Duration = Duration::from_millis(500);
 /// acknowledgement at p95 (spike S11).
 pub const DEFAULT_FIRST_FRAME_WAIT: Duration = Duration::from_millis(500);
 
+/// How long after a tap answered a dialog of system UI's the mirror reads
+/// again for the target's application, while the replica holds system UI's
+/// windows alone without the dialog (pass-4-fixes, design D6). On CI's
+/// iOS 27.0 Simulator a listing 0.4 s after the tap on Calendar's location
+/// alert read SpringBoard holding nothing, and the settle after it read the
+/// app within 1.4 s more; the bound leaves room for a loaded runner, and a
+/// dialog of system UI's over its own screen, which no application follows,
+/// costs at most this once.
+pub const DIALOG_LEAVING: Duration = Duration::from_secs(2);
+
 /// The longest a wait blocks between two looks at the mirror's cancel flag,
 /// once it has one ([`Mirror::cancel_on`]), so that a raised flag ends the
 /// wait within this long, but for a read or an input in flight, which runs
@@ -575,6 +585,49 @@ impl Mirror {
         match self.replica.frames_reread() {
             Some(request) => self.read(&request, started),
             None => Ok(()),
+        }
+    }
+
+    /// Reads again until the target's application is back in the replica,
+    /// when the latest tap answered a dialog of system UI's and the replica
+    /// holds system UI's windows alone, without the dialog
+    /// ([`Replica::awaiting_application`]), at most [`DIALOG_LEAVING`] from
+    /// the tap (pass-4-fixes, design D6): the Simulator's reader reads the
+    /// process that owns the foreground, and SpringBoard kept it, holding
+    /// nothing, after its alert left and before the app was active again,
+    /// so that a listing right after the tap listed nothing. A read follows
+    /// each frame change at once, and the windows are read every minimum
+    /// re-read interval otherwise, the app's return showing in no frame
+    /// once the alert's fade has ended. Nothing is read once the target is
+    /// disconnected.
+    pub fn await_application(&mut self) -> Result<(), MirrorError> {
+        let every = self.config.min_reread_interval;
+        loop {
+            self.drain();
+            let Some(tapped) = self.replica.awaiting_application() else {
+                return Ok(());
+            };
+            let now = self.now();
+            let until = tapped + DIALOG_LEAVING;
+            if now >= until || self.replica.disconnected.is_some() {
+                return Ok(());
+            }
+            let due = self
+                .replica
+                .frames_reread()
+                .or_else(|| self.replica.due_reread(now, every));
+            if let Some(request) = due {
+                self.read(&request, now)?;
+                continue;
+            }
+            let wake = self
+                .replica
+                .next_reread(every)
+                .map_or(until, |due| due.min(until))
+                .max(now);
+            if let Some(item) = self.next_item(wake)? {
+                self.replica.apply(item);
+            }
         }
     }
 
@@ -1154,6 +1207,9 @@ impl Mirror {
             _ => None,
         };
         self.replica.note_action(now, stroke);
+        if let Some(at) = at {
+            self.replica.note_tap(at, now);
+        }
         let in_one_piece = ack.accepted && ack.method != Some(TextMethod::KEYS);
         if let (Some(element), true) = (field, in_one_piece) {
             let frames = self.backend.frames.is_some();

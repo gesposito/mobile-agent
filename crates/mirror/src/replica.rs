@@ -29,6 +29,7 @@ use crate::backend::{
 use crate::error::ResyncCause;
 use crate::geometry::{Point, Rect};
 use crate::mirror::MirrorConfig;
+use crate::roles;
 use crate::snapshot::{ElementId, TreeDelta};
 use crate::timestamps::ReadSpan;
 
@@ -149,6 +150,17 @@ pub(crate) struct Edit {
     pub frames: bool,
 }
 
+/// Whether `window` is a dialog or holds one on screen: a modal window, or
+/// an alert or a dialog by its class, as system UI's permission alert in
+/// SpringBoard's window on a Simulator.
+fn holds_dialog(window: &Win) -> bool {
+    window.modal
+        || window.nodes.iter().any(|node| {
+            node.flags.contains(NodeFlags::VISIBLE)
+                && roles::class_role(&node.class).is_some_and(|role| role.is_modal())
+        })
+}
+
 #[derive(Default)]
 struct Changes {
     added: Vec<ElementId>,
@@ -222,6 +234,10 @@ pub(crate) struct Replica {
     /// Tree and window events applied, plus deltas found by reads and moves
     /// found by bounds probes.
     pub tree_changes: u64,
+    /// When the latest input was a tap on a dialog that a window of system
+    /// UI holds, until a read holds a window of the target's application
+    /// (pass-4-fixes, design D6).
+    pub answered: Option<Instant>,
     /// The poll interval of a window that sends no change events on a
     /// target whose frames come slowly and that has a frame source, which
     /// the mirror sets (design D26 of physical-ios): frames that change call
@@ -261,6 +277,7 @@ impl Replica {
             last_stroke: None,
             edit: None,
             tree_changes: 0,
+            answered: None,
             still_poll: None,
             interner: HashMap::new(),
             index: HashMap::new(),
@@ -476,6 +493,37 @@ impl Replica {
                 window.action_pending = true;
             }
         }
+    }
+
+    /// Records whether a tap at `at`, in device points, that the target
+    /// acknowledged at `when` went to a dialog of system UI's: the top-most
+    /// window holding the point, a keyboard's aside, is system UI's and is
+    /// modal or holds an alert or a dialog on screen.
+    pub fn note_tap(&mut self, at: Point, when: Instant) {
+        let window = self.windows.iter().find(|w| {
+            w.kind != WindowType::INPUT_METHOD
+                && Rect::from_pixels(w.bounds, self.scale).contains(at)
+        });
+        let dialog = window.is_some_and(|w| matches!(w.owner, Owner::System(_)) && holds_dialog(w));
+        self.answered = dialog.then_some(when);
+    }
+
+    /// Whether the replica waits for the target's application to come back
+    /// after a tap answered a dialog of system UI's ([`Replica::note_tap`]):
+    /// it holds windows of system UI alone, none of them holding a dialog
+    /// any more, as the Simulator's reader gives SpringBoard holding nothing
+    /// while the alert leaves and before the app is active again, the
+    /// reader reading the process that owns the foreground (pass-4-fixes,
+    /// design D6). The time of the tap when it does.
+    pub fn awaiting_application(&self) -> Option<Instant> {
+        let tapped = self.answered?;
+        let system = |w: &Win| matches!(w.owner, Owner::System(_));
+        let pending = self
+            .windows
+            .iter()
+            .filter(|w| w.kind != WindowType::INPUT_METHOD)
+            .all(|w| system(w) && !holds_dialog(w));
+        pending.then_some(tapped)
     }
 
     /// Whether a window that sends no change events waits for the re-read
@@ -754,6 +802,15 @@ impl Replica {
         next_windows.sort_by_key(|w| std::cmp::Reverse(w.layer));
         self.windows = next_windows;
         self.reindex();
+        // The application is back after a tap answered a dialog of system
+        // UI's.
+        if self
+            .windows
+            .iter()
+            .any(|w| w.owner == Owner::Target && w.kind == WindowType::APPLICATION)
+        {
+            self.answered = None;
+        }
         // An edit ends once a read shows its field's text changed or the
         // field gone, or starts the replica over.
         if let Some(edit) = &self.edit {
