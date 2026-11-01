@@ -377,14 +377,15 @@ app's reaction, which `wait` with `change` collects, that `scroll` answers
 once the content it set gliding has come to rest, at most 3 s after its
 last stroke, so a click can follow it at once (design D6), that a settle right
 after an action waits for its first effect or says nothing changed within
-1 s of it (design D2), and that a wait, a selector's search and `open`'s
+1 s of it (design D2), and one that gives up answers `settled: false` with
+a warning, `stoppedAfterMs` and `reason` (pass-4-fixes, design D4), and that a wait, a selector's search and `open`'s
 launch end at 10 s unless the call passes `timeout` (android-pass-fixes,
 design D1); sessions and `close` with `keep`,
 screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 3,460
-characters in all, 3,578 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,551
+characters in all, 3,669 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
 findings 1 and 4); the one on a click that reports no change is what the
