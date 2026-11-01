@@ -233,8 +233,13 @@ impl Attached {
     /// transition a later read would see the end of: the re-read they call
     /// for runs at once instead (design D3 of profiling), the mirror's own
     /// re-reads keeping the interval. The mirror times both: what arrived
-    /// counts once drained, without reading the tree.
+    /// counts once drained, without reading the tree. First, after a tap
+    /// that answered a dialog of system UI's, while the replica holds
+    /// system UI's windows alone, this waits for the application's window
+    /// to come back (`Mirror::await_application`, pass-4-fixes, design D6),
+    /// on any target.
     pub fn catch_up(&mut self) -> Result<(), MirrorError> {
+        self.mirror.await_application()?;
         if !self.frames {
             return Ok(());
         }
