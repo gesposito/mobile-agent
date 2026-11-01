@@ -4654,6 +4654,44 @@ mod tests {
         }
     }
 
+    /// Design D8 of pass-4-fixes, scenario "A city beside its airport": on
+    /// the fourth pass `wait --text Lisbon` resolved on "Lisbon Airport
+    /// (LIS)", listed above a suggestion named "Lisbon". On the placeholder
+    /// app's places board the wait names "Lisbon", and so does a click by
+    /// the text, which resolves its selector the same way; a text no element
+    /// holds alone still resolves on the first element that contains it.
+    #[test]
+    fn a_text_wait_prefers_the_element_whose_text_is_the_whole_text() {
+        for platform in ["android", "ios"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &["PLACEHOLDER_SCREEN=places"]);
+            let wait = |target: &mut Attached, text: &str| {
+                let line = json!({"action": "wait", "text": text, "timeout": 2000}).to_string();
+                super::super::run_on(target, "default", &request(&line))
+                    .unwrap_or_else(|failure| panic!("{platform}: wait {text}: {failure:?}"))
+                    .data
+            };
+            let city = wait(&mut target, "Lisbon");
+            assert_eq!(city["element"]["name"], "Lisbon", "{platform}: {city}");
+            assert_eq!(
+                city["element"]["id"], "placeholder-id-2",
+                "{platform}: {city}"
+            );
+            let airport = wait(&mut target, "Airport");
+            assert_eq!(
+                airport["element"]["name"], "Lisbon Airport (LIS)",
+                "{platform}: {airport}"
+            );
+            click_on(&mut target, "text=Lisbon")
+                .unwrap_or_else(|failure| panic!("{platform}: {failure:?}"));
+            assert_eq!(
+                text_of(&mut target, "#placeholder-status"),
+                "Tapped placeholder-id-2",
+                "{platform}: the click went to the city"
+            );
+        }
+    }
+
     /// Design D51, N10 of the fourth production-app run (task 5.4; task 4.7):
     /// on the feed scrolled to its end `get box` on an identifier and on a
     /// text of rows scrolled above failed `element_not_found` after the
