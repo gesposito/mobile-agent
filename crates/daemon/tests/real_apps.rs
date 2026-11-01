@@ -435,7 +435,8 @@ fn tap_box(env: &Env, selector: &str) -> Value {
 /// app's termination and a press of Home failed with `NSPOSIXErrorDomain 3`,
 /// ten times across two runs of the fourth pass, a retry 3 s later working
 /// every time. Ten rounds of terminate, Home and `open --relaunch`; a
-/// refusal is counted, and none may stand.
+/// refusal is counted, and none may stand: the driver launches once more
+/// after a refusal, which the reply's `retriedAfterMs` counts.
 #[test]
 fn simulator_settings_a_launch_right_after_terminate_and_home_is_not_refused() {
     let test = "simulator_settings_a_launch_right_after_terminate_and_home_is_not_refused";
@@ -448,6 +449,7 @@ fn simulator_settings_a_launch_right_after_terminate_and_home_is_not_refused() {
     env.run(&["open", PREFERENCES, "--timeout", "30000"]).data();
     let mut refused = Vec::new();
     let mut unsettled = 0;
+    let mut retried = 0;
     for round in 1..=10 {
         simctl(&["terminate", &udid, PREFERENCES]);
         env.run(&["press", "Home"]).data();
@@ -458,12 +460,17 @@ fn simulator_settings_a_launch_right_after_terminate_and_home_is_not_refused() {
                 opened.code(),
                 opened.error()
             ));
-        } else if opened.reply["data"]["settled"] != true {
+            continue;
+        }
+        if opened.reply["data"]["retriedAfterMs"].is_number() {
+            retried += 1;
+        }
+        if opened.reply["data"]["settled"] != true {
             unsettled += 1;
         }
     }
     eprintln!(
-        "{udid}: {} of 10 launches refused, {unsettled} answered unsettled: {refused:#?}",
+        "{udid}: {} of 10 launches refused, {retried} retried after a refusal, {unsettled} answered unsettled: {refused:#?}",
         refused.len()
     );
     assert!(
