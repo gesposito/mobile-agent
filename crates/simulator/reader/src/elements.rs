@@ -100,6 +100,7 @@ pub mod types {
     /// Application (spike S4).
     pub const RUNTIME_WINDOW: u64 = 2;
     pub const GROUP: u64 = 3;
+    pub const TOOLBAR: u64 = 24;
     pub const TABLE: u64 = 26;
     pub const COLLECTION_VIEW: u64 = 32;
     pub const SWITCH: u64 = 40;
@@ -143,6 +144,12 @@ pub const PRESENTATION_CLASS: &str = "UITransitionView";
 /// The class of the view UIKit dims what a sheet covers with. It spans three
 /// screens and, while it takes touches, keeps them from what it covers.
 pub const DIMMING_CLASS: &str = "UIDimmingView";
+
+/// The view UIKit floats a navigation controller's bars in, spanning the
+/// view it floats them over. iOS 26.5 leaves it untyped and types the bar
+/// inside it, at the bar's frame; iOS 27.0 types the container itself a
+/// toolbar named Toolbar ([`bound_floating_bars`]).
+pub const FLOATING_BAR_CLASS: &str = "_UIFloatingBarContainerView";
 
 /// The classes of the containers UIKit draws an alert controller in, which
 /// the runtime types as groups (spike S4), and XCTest's name for an alert.
@@ -291,8 +298,12 @@ pub fn snapshot(read: &Read) -> Snapshot {
     let owner = system_name(&read.owner).map(|name| builder.string(name));
     let pid = read.owner.pid as u32;
 
-    // The keyboard window leaves the application's tree for its own window.
+    // A floating bar container typed a toolbar is bounded by what it draws,
+    // before the alert and the sheet leave the tree with the containers
+    // they hold.
     let mut app = read.root.clone();
+    bound_floating_bars(&mut app, builder.screen);
+    // The keyboard window leaves the application's tree for its own window.
     let mut keyboards = Vec::new();
     while let Some(index) = app.children.iter().position(is_keyboard_window) {
         keyboards.push(take_child(&mut app, index));
@@ -489,6 +500,69 @@ fn drawn_area(
         .or(screen)?;
     let mut area = None;
     collect(window, within, draws, &mut area);
+    area
+}
+
+/// Bounds each floating bar container in `element` that is typed a toolbar
+/// by what it draws ([`floating_bar_area`]). iOS 27.0 types UIKit's
+/// container ([`FLOATING_BAR_CLASS`]) a toolbar named Toolbar, with the
+/// frame of the view it floats the bars over, the screen or a sheet's
+/// content. The mirror cuts what lies under a toolbar's bounds out of view,
+/// so with that frame it would take all of that content for covered, and
+/// the buttons of a navigation bar listed before an empty container too:
+/// on CI's iOS 27.0 Simulator the listings of Settings' list, Calendar's
+/// New Event form and the SwiftUI fixture's List held none of their rows
+/// (design D9d of `pass-4-fixes`). iOS 26.5 leaves the container untyped,
+/// which keeps its frame.
+fn bound_floating_bars(element: &mut Element, screen: Option<[f64; 4]>) {
+    if element.automation_type == Some(types::TOOLBAR)
+        && element.class.as_deref() == Some(FLOATING_BAR_CLASS)
+    {
+        element.frame = floating_bar_area(element, screen);
+    }
+    for child in &mut element.children {
+        bound_floating_bars(child, screen);
+    }
+}
+
+/// The part of the screen a floating bar container draws on, in points: the
+/// union of its outermost descendants on screen that are narrower and
+/// shorter than it, clipped to it, a descent passing through those that
+/// span it along an axis and those without an area. Below the container,
+/// a hosting view of its frame and SwiftUI's views spanning it from the
+/// status bar down, then one without an area, hold the glass views the
+/// bars draw: on Calendar under iOS 27.0, Today's from 28 to 107 points
+/// across and Calendars' and Inbox's from 264 to 374, both 798 to 846
+/// down on an iPhone 17. A descendant wholly off the screen draws nothing
+/// there, nor does what it holds. `None` when the container draws nothing,
+/// as an empty one, whose hosting view holds nothing, does.
+fn floating_bar_area(container: &Element, screen: Option<[f64; 4]>) -> Option<[f64; 4]> {
+    fn collect(element: &Element, within: [f64; 4], area: &mut Option<[f64; 4]>) {
+        for child in &element.children {
+            match child
+                .frame
+                .map(|frame| (frame, intersection(frame, within)))
+            {
+                Some((_, Some(shown)))
+                    if shown[2] < within[2] - EDGE_SLACK && shown[3] < within[3] - EDGE_SLACK =>
+                {
+                    *area = Some(area.map_or(shown, |area| union(area, shown)));
+                }
+                Some(([_, _, width, height], None)) if width > 0.0 && height > 0.0 => {}
+                _ => collect(child, within, area),
+            }
+        }
+    }
+    let frame = container
+        .frame
+        .filter(|[_, _, width, height]| *width > 0.0 && *height > 0.0)
+        .or(screen)?;
+    let within = match screen {
+        Some(screen) => intersection(frame, screen)?,
+        None => frame,
+    };
+    let mut area = None;
+    collect(container, within, &mut area);
     area
 }
 
@@ -3010,6 +3084,176 @@ mod tests {
             Limits::from_params(&SnapshotParams::default()),
             Limits::default()
         );
+    }
+
+    /// The container UIKit floats a navigation controller's bars in, at
+    /// `frame`, typed `automation_type`: iOS 27 types it a toolbar named
+    /// Toolbar, iOS 26.5 leaves it untyped and nameless. It holds a hosting
+    /// view of its frame, then SwiftUI's views spanning the screen below the
+    /// status bar and one with no area, and in that `bars`.
+    fn floating_bar(
+        automation_type: u64,
+        identifier: Option<&str>,
+        frame: [f64; 4],
+        bars: Vec<Element>,
+    ) -> Element {
+        let inherited = |frame, children| {
+            at(
+                with(element(0, "SwiftUI._UIInheritedView"), |e| {
+                    e.children = children
+                }),
+                frame,
+            )
+        };
+        let host = at(
+            with(element(0, "FloatingBarHostingView"), |e| {
+                if !bars.is_empty() {
+                    e.children = vec![inherited(
+                        [0.0, 62.0, 402.0, 812.0],
+                        vec![inherited([0.0, 62.0, 0.0, 0.0], bars)],
+                    )];
+                }
+            }),
+            frame,
+        );
+        at(
+            with(element(automation_type, FLOATING_BAR_CLASS), |e| {
+                e.identifier = identifier.map(str::to_owned);
+                e.label = identifier.map(|_| "Toolbar".to_owned());
+                e.children = vec![host];
+            }),
+            frame,
+        )
+    }
+
+    /// A glass view a floating bar draws at `frame`, holding one button.
+    fn glass(frame: [f64; 4], button: &str, button_frame: [f64; 4]) -> Element {
+        at(
+            with(element(0, "UIPlatformGlassInteractionView"), |e| {
+                e.children = vec![at(
+                    with(element(9, "_UIButtonBarButton"), |e| {
+                        e.identifier = Some(format!("{}-button", button.to_lowercase()));
+                        e.label = Some(button.to_owned());
+                        e.traits = traits::BUTTON;
+                    }),
+                    button_frame,
+                )]
+            }),
+            frame,
+        )
+    }
+
+    /// A screen under iOS 27 as Calendar's read on CI's Simulator: a list
+    /// row, then the floating bar container holding the Today and Inbox
+    /// glass views, an empty container, and a sheet whose content holds an
+    /// empty container of the sheet's frame.
+    fn floating_bars_27() -> Element {
+        let general = at(
+            with(element(9, "SwiftUI.AccessibilityNode"), |e| {
+                e.identifier = Some("general".into());
+                e.label = Some("General".into());
+                e.traits = traits::BUTTON;
+            }),
+            [16.0, 380.33, 370.0, 52.0],
+        );
+        let bars = floating_bar(
+            24,
+            Some("toolbar-main"),
+            [0.0, 0.0, 402.0, 874.0],
+            vec![
+                glass(
+                    [28.0, 798.0, 79.0, 48.0],
+                    "Today",
+                    [33.0, 803.0, 69.0, 38.0],
+                ),
+                glass(
+                    [264.33, 798.0, 109.67, 48.0],
+                    "Inbox",
+                    [322.33, 803.0, 46.67, 38.0],
+                ),
+            ],
+        );
+        let empty = floating_bar(24, Some("toolbar-empty"), [0.0, 0.0, 402.0, 874.0], vec![]);
+        let in_sheet = floating_bar(24, Some("toolbar-sheet"), [0.0, 62.0, 402.0, 812.0], vec![]);
+        let window = with(element(2, "UIWindow"), |e| {
+            e.children = vec![
+                presenting(vec![general, bars, empty]),
+                sheet(
+                    dimming(Some(true)),
+                    [0.0, 62.0, 402.0, 812.0],
+                    vec![in_sheet],
+                ),
+            ]
+        });
+        with(element(1, "UIApplication"), |e| e.children = vec![window])
+    }
+
+    #[test]
+    fn ios_27s_floating_bar_container_is_bounded_by_the_glass_it_draws() {
+        let snapshot = snapshot(&read(floating_bars_27()));
+        assert_eq!(
+            window_ids(&snapshot),
+            [4242 | SHEET_WINDOW, 4242],
+            "the sheet still moves to a window of its own"
+        );
+        // The Today and Inbox glass views, from 28 to 374 points across and
+        // 798 to 846 down, at 3 pixels a point.
+        let bars = by_id(&snapshot, "toolbar-main");
+        assert_eq!(class(&snapshot, bars), "XCUIElementTypeToolbar");
+        assert_eq!(bars.desc.as_deref(), Some("Toolbar"));
+        assert_eq!(bars.bounds, Bounds::new(84, 2394, 1122, 2538));
+        assert!(bars.flags.contains(NodeFlags::VISIBLE));
+        // A container that draws nothing covers nothing, in the sheet too.
+        for empty in ["toolbar-empty", "toolbar-sheet"] {
+            let node = by_id(&snapshot, empty);
+            assert_eq!(node.bounds, Bounds::default(), "{empty}");
+            assert!(!node.flags.contains(NodeFlags::VISIBLE), "{empty}");
+        }
+        // What it holds and what it floats over keep their frames.
+        assert_eq!(
+            by_id(&snapshot, "today-button").bounds,
+            Bounds::new(99, 2409, 306, 2523)
+        );
+        assert_eq!(
+            by_id(&snapshot, "general").bounds,
+            Bounds::new(48, 1141, 1158, 1297)
+        );
+    }
+
+    #[test]
+    fn ios_26s_floating_bar_container_and_the_toolbar_in_it_keep_their_frames() {
+        // iOS 26.5 leaves the container untyped and types the bar inside it,
+        // at the bar's frame, 86 points at the bottom of the screen.
+        let toolbar = at(
+            with(element(24, "SwiftUI._UIInheritedView"), |e| {
+                e.identifier = Some("Toolbar".into());
+                e.label = Some("Toolbar".into());
+                e.children = vec![glass(
+                    [28.0, 798.0, 346.0, 48.0],
+                    "Search",
+                    [28.0, 808.0, 346.0, 28.0],
+                )];
+            }),
+            [0.0, 788.0, 402.0, 86.0],
+        );
+        let container = with(
+            floating_bar(0, None, [0.0, 0.0, 402.0, 874.0], vec![]),
+            |e| e.children[0].children = vec![toolbar],
+        );
+        let root = with(element(1, "UIApplication"), |e| {
+            e.children = vec![with(element(2, "UIWindow"), |e| {
+                e.children = vec![container]
+            })]
+        });
+        let snapshot = snapshot(&read(root));
+        let container = nodes(&snapshot)
+            .into_iter()
+            .find(|node| class(&snapshot, node) == FLOATING_BAR_CLASS)
+            .expect("the container is listed");
+        assert_eq!(container.bounds, Bounds::new(0, 0, 1206, 2622));
+        let toolbar = by_id(&snapshot, "Toolbar");
+        assert_eq!(class(&snapshot, toolbar), "XCUIElementTypeToolbar");
+        assert_eq!(toolbar.bounds, Bounds::new(0, 2364, 1206, 2622));
     }
 
     #[test]
