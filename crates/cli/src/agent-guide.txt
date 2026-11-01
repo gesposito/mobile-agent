@@ -73,7 +73,7 @@ Waiting
   wait --change               the delta once your last snapshot is out of date
   wait --change --frames      a frame change ends it too, for a canvas or map
   wait --settle               no tree or frame change for 200 ms, at most
-                              3000 ms; settled: false names what kept changing
+                              3000 ms, else settled: false, why; --strict fails
   wait --text Welcome         until an element shows it, naming it, alone first
   wait '#spinner' --state hidden   until it is off screen; also visible,
                               enabled, and attached or detached in the tree
