@@ -761,6 +761,10 @@ pub(crate) struct Device {
     /// Whether the launcher takes the front back from the app a launch
     /// brought forward.
     returning: bool,
+    /// Whether SpringBoard keeps the front of an iPhone after a tap answered
+    /// its prompt, holding nothing while the prompt leaves, the app not yet
+    /// active again ([`Device::end_leaving`]).
+    leaving: bool,
 }
 
 impl Device {
@@ -776,6 +780,7 @@ impl Device {
             keys: Keys::Down,
             home_returns: 0,
             returning: false,
+            leaving: false,
         }
     }
 
@@ -1009,6 +1014,7 @@ impl Device {
 
     pub fn launch(&mut self, app: &str, launch: &Launch) -> Result<(), DriverError> {
         let was = self.focused();
+        self.leaving = false;
         let launched = self.launch_app(app, launch);
         self.update_keyboard(was);
         launched
@@ -1088,6 +1094,7 @@ impl Device {
 
     pub fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
         let was = self.focused();
+        self.leaving = false;
         let stopped = self.stop_app(app);
         self.update_keyboard(was);
         stopped
@@ -1177,13 +1184,34 @@ impl Device {
                 }
             }
             Foreground::Fixture(_) => {
+                let ios = self.kit.platform == Platform::Ios;
                 if let Some(fixture) = self.front_fixture() {
+                    let prompted = fixture.prompt;
                     tap_fixture(fixture, hit);
+                    // On iOS the answered prompt leaves before the app is
+                    // active again.
+                    self.leaving = ios && prompted && !fixture.prompt;
                 }
             }
         }
         self.update_keyboard(was);
         *self != before
+    }
+
+    /// Whether SpringBoard keeps the front while the prompt a tap answered
+    /// leaves, the app not yet active again.
+    pub fn leaving(&self) -> bool {
+        self.leaving
+    }
+
+    /// Gives the app back the front once the prompt a tap answered has
+    /// left, as iOS makes the app active again at the end of the alert's
+    /// dismissal, during which the Simulator's reader, which reads the
+    /// process that owns the foreground, read SpringBoard holding nothing
+    /// on CI's iOS 27.0 Simulator after Calendar's location alert
+    /// (pass-4-fixes, design D6); whether it did.
+    pub fn end_leaving(&mut self) -> bool {
+        std::mem::take(&mut self.leaving)
     }
 
     /// Text for the field `target` names, or the focused one, entered as
@@ -1394,6 +1422,8 @@ impl Device {
                 let content = settings(kit, self.wifi);
                 windows.push(kit.app_window(self.settings_id(), "Settings", content));
             }
+            // SpringBoard holds nothing while the prompt leaves.
+            Foreground::Fixture(_) if self.leaving => windows.push(kit.springboard(Vec::new())),
             Foreground::Fixture(app) => {
                 let keyboard = self.keyboard_window(app);
                 fixture_windows(kit, app, &self.fixtures[app], keyboard, &mut windows);
