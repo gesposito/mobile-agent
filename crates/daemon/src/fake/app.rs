@@ -423,6 +423,11 @@ enum Board {
     /// later sibling on iOS and a view flagged on top on Android; a
     /// container with an identifier holding nothing; the status line.
     Overlay,
+    /// A search's suggestions (pass-4-fixes, task 2.6), as the fourth pass
+    /// met Maps' with "Lisbo" in its field: a heading, then the rows
+    /// "Lisbon Airport (LIS)" and "Lisbon" in that order, and the status
+    /// line.
+    Places,
 }
 
 impl Board {
@@ -451,6 +456,7 @@ impl Board {
             "raised" => Board::Raised,
             "menu" => Board::Menu,
             "overlay" => Board::Overlay,
+            "places" => Board::Places,
             _ => Board::Form,
         }
     }
@@ -1741,6 +1747,7 @@ fn placeholder_content(kit: Kit, forms: &Forms) -> Vec<El> {
         Board::Raised => raised_content(kit, forms),
         Board::Menu => menu_content(kit, forms),
         Board::Overlay => overlay_content(kit, forms),
+        Board::Places => places_content(kit, forms),
     }
 }
 
@@ -2615,6 +2622,31 @@ fn overlay_content(kit: Kit, forms: &Forms) -> Vec<El> {
         ]),
         kit.group([20.0, 300.0, 382.0, 380.0])
             .id("placeholder-id-3"),
+        kit.label(
+            Some("placeholder-status"),
+            &forms.status,
+            [20.0, 764.0, 382.0, 784.0],
+        ),
+    ]
+}
+
+/// The places board (pass-4-fixes, task 2.6): a heading; the suggestions
+/// `Lisbon Airport (LIS)`, from 140 to 188 points, and `Lisbon`, from 196
+/// to 244, buttons identified `placeholder-id-1` and `placeholder-id-2`; the
+/// status line.
+fn places_content(kit: Kit, forms: &Forms) -> Vec<El> {
+    vec![
+        kit.heading(
+            "placeholder-heading-1",
+            "placeholder-heading-1",
+            [20.0, 70.0, 382.0, 108.0],
+        ),
+        kit.button(
+            "placeholder-id-1",
+            "Lisbon Airport (LIS)",
+            [20.0, 140.0, 382.0, 188.0],
+        ),
+        kit.button("placeholder-id-2", "Lisbon", [20.0, 196.0, 382.0, 244.0]),
         kit.label(
             Some("placeholder-status"),
             &forms.status,
