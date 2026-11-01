@@ -317,9 +317,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Shut the emulator down
         # The runner's step kills the emulator once its script ends, failed or not; this covers
-        # a step cancelled at the job's timeout.
+        # a step cancelled at the job's timeout. `adb emu kill` talks to the emulator's console on
+        # port 5554, which closes as soon as the runner's step has asked the emulator to stop,
+        # while adb can still list emulator-5554 for the seconds the emulator takes to exit. So
+        # the step kills only an emulator whose console answers, and a kill that fails because
+        # the console closed in between finds the emulator already stopping.
         if: always()
         run: |
-          if "$ANDROID_HOME/platform-tools/adb" devices | grep -q '^emulator-5554[[:space:]]'; then
-            "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill
+          console() { (exec 3<> /dev/tcp/127.0.0.1/5554) 2> /dev/null; }
+          if ! console; then
+            echo "The emulator's console on port 5554 is closed: the runner's step has stopped the emulator."
+          elif ! "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill && console; then
+            echo "::error::adb emu kill failed while the emulator's console still answers"
+            exit 1
           fi
