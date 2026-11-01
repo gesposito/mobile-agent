@@ -5795,6 +5795,71 @@ mod tests {
         }
     }
 
+    /// Design D5 of pass-4-fixes, scenarios "A tap on a plain text" and "A
+    /// tap through a generic container": on the fourth pass a tap by
+    /// coordinates on Clock's time picker answered `hit generic (no ref)`,
+    /// the minute's chip lying under a view without a label, in a container
+    /// that bears an identifier alone, by which the full listing lists it
+    /// and the tap was named. On the placeholder app's overlay board a click
+    /// by coordinates on the button under such a view names the button, its
+    /// ref null while no snapshot of the session listed it and the full
+    /// listing's ref once one did; on the text under the view, the text,
+    /// its ref null; and on the container that holds nothing, the
+    /// container, generic, nothing under the point being labeled.
+    #[test]
+    fn a_click_by_coordinates_names_the_deepest_labeled_element_under_the_point() {
+        for platform in ["android", "ios"] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let screen = ["PLACEHOLDER_SCREEN=overlay"];
+            let (mut target, _) = recorded(&driver, PLACEHOLDER, &screen);
+            let button = click_at(&mut target, 201.0, 174.0).unwrap();
+            assert_eq!(
+                button.data["hit"],
+                json!({"role": "button", "name": "placeholder-button-1", "ref": null}),
+                "{platform}: {}",
+                button.data
+            );
+            assert!(button.warning.is_none(), "{platform}: {:?}", button.warning);
+            let text = click_at(&mut target, 201.0, 228.0).unwrap();
+            assert_eq!(
+                text.data["hit"],
+                json!({"role": "text", "name": "placeholder-text-1", "ref": null}),
+                "{platform}: {}",
+                text.data
+            );
+            let empty = click_at(&mut target, 201.0, 340.0).unwrap();
+            assert_eq!(
+                empty.data["hit"],
+                json!({"role": "generic", "name": "", "ref": null}),
+                "{platform}: {}",
+                empty.data
+            );
+            // The full listing keeps the covered button at 0%, with a ref.
+            let full = super::super::run_on(
+                &mut target,
+                "default",
+                &request(r#"{"action": "snapshot", "interactive": false}"#),
+            )
+            .unwrap()
+            .into_data();
+            let listed = full["refs"]
+                .as_object()
+                .and_then(|refs| {
+                    refs.iter()
+                        .find(|(_, entry)| entry["name"] == "placeholder-button-1")
+                        .map(|(reference, _)| format!("@{reference}"))
+                })
+                .unwrap_or_else(|| panic!("{platform}: no ref in {}", full["snapshot"]));
+            let again = click_at(&mut target, 201.0, 174.0).unwrap();
+            assert_eq!(
+                again.data["hit"],
+                json!({"role": "button", "name": "placeholder-button-1", "ref": listed}),
+                "{platform}: {}",
+                again.data
+            );
+        }
+    }
+
     /// Design D1 of action-verdicts, scenario "A tap that lands elsewhere":
     /// after the snapshot that listed a button, a banner of system UI's comes
     /// down over it in a window of its own, inset from the screen's sides, so
