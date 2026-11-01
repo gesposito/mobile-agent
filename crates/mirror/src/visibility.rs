@@ -230,7 +230,9 @@ pub(crate) enum Landing {
 /// lies under `at`, the top-most element the full listing lists without a
 /// ref that a tap reaches there, chosen among the windows and within one as
 /// those with a ref are, as a plain text or a named image (design D2 of
-/// android-pass-fixes). `None` when neither lies under `at`.
+/// android-pass-fixes), or what lies under it when it is a generic node
+/// without a name ([`Sight::named_under`]). `None` when neither lies under
+/// `at`.
 pub(crate) fn landing(replica: &Replica, view: &View, at: Point) -> Option<Landing> {
     let mut sight = Sight::new(replica, view);
     let holds = |w: usize| Rect::from_pixels(replica.windows[w].bounds, replica.scale).contains(at);
@@ -266,7 +268,7 @@ pub(crate) fn landing(replica: &Replica, view: &View, at: Point) -> Option<Landi
                 && sight.reaches(w, i, at)
         });
         if let Some(i) = found {
-            return Some(Landing::Node(w, i));
+            return Some(Landing::Node(w, sight.named_under(w, i, at)));
         }
     }
     None
@@ -467,6 +469,44 @@ impl<'a> Sight<'a> {
     /// action-verdicts): `at` lies in its bounds inside its visible bounds
     /// before the views drawn over part of it, under none of those views,
     /// and no view covers all of it.
+    /// What names a tap at `at` that landed on node `i` of window `w`, an
+    /// element the full listing lists without a ref (pass-4-fixes, design
+    /// D5): `i`, unless it is a generic node without a name, which the full
+    /// listing lists for its identifier alone and which tells nothing, as
+    /// the container of Material's time picker's minute on Clock, the chip
+    /// it holds lying under a view without a label, answered `hit generic
+    /// (no ref)` on the fourth pass. Then the deepest node of the window
+    /// under `at` that the full listing lists, on screen, inside its scroll
+    /// containers and cut by no modal, whether or not a view drawn over it
+    /// takes the tap, and among the deepest the one drawn last: a labeled
+    /// node under the point, its ancestors included, or `i` when none lies
+    /// deeper.
+    fn named_under(&self, w: usize, i: usize, at: Point) -> usize {
+        let (replica, view) = (self.replica, self.view);
+        let (window, facts) = (&replica.windows[w], &view.windows[w]);
+        if facts[i].role != Role::Generic || !facts[i].name.is_empty() {
+            return i;
+        }
+        let screen = Rect::from_pixels(window.bounds, replica.scale);
+        let mut named = i;
+        for (n, (node, f)) in window.nodes.iter().zip(facts).enumerate() {
+            let under = f.visible
+                && !f.absorbed
+                && f.rect.contains(at)
+                && (f.hidden == Hidden::No || view.drawn_over_whole(w, n))
+                && node.depth >= window.nodes[named].depth
+                && render::listed_in_full(f, node);
+            if under
+                && scrolling(window, facts, node.parent)
+                    .fold(screen, |clip, c| clip.intersect(&facts[c].rect))
+                    .contains(at)
+            {
+                named = n;
+            }
+        }
+        named
+    }
+
     pub(crate) fn reaches(&mut self, w: usize, i: usize, at: Point) -> bool {
         let (replica, view) = (self.replica, self.view);
         let (window, facts) = (&replica.windows[w], &view.windows[w]);
