@@ -865,9 +865,11 @@ mod tests {
     /// Design D3 of real-app-fixes: type's line says what the read-back
     /// found in the field, as fill's does, and how the text went in: what
     /// the field holds, also when it differs from the text typed, which the
-    /// reply's warning names; a secure field's count of masked characters;
-    /// and that nothing was read back, for a field that showed nothing or
-    /// none that had the focus.
+    /// reply's warning names, the line then marked ⚠ rather than ✓ and
+    /// saying `shorter than typed` for the start of the text (pass-4-fixes,
+    /// design D3); a secure field's count of masked characters; and that
+    /// nothing was read back, for a field that showed nothing or none that
+    /// had the focus.
     #[test]
     fn type_says_what_it_read_back_from_the_field() {
         let typed = |text: Value, verified: Value, reason: Value| {
@@ -886,9 +888,17 @@ mod tests {
             line(&typed(
                 json!("exampl"),
                 json!(false),
+                json!("shorter_than_typed")
+            )),
+            "⚠ Done (read back \"exampl\", shorter than typed, typed)\n"
+        );
+        assert_eq!(
+            line(&typed(
+                json!("exmaple.com"),
+                json!(false),
                 json!("text_mismatch")
             )),
-            "✓ Done (read back \"exampl\", typed)\n"
+            "⚠ Done (read back \"exmaple.com\", typed)\n"
         );
         assert_eq!(
             line(&typed(json!("•••••••"), json!("length"), Value::Null)),
