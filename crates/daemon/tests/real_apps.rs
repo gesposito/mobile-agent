@@ -29,12 +29,19 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+#[cfg(target_os = "macos")]
+use simulator::{
+    DriverOptions, ForegroundTree, Lifecycle, SimulatorDriver, Tree, TreeBackend, TreeChoice,
+    TreeOptions,
+};
 use support::{Daemon, TempDir};
 
 const SIM_VAR: &str = "MOBILE_AGENT_SIM_UDID";
 const SERIAL_VAR: &str = "MOBILE_AGENT_ANDROID_SERIAL";
 
 const EXPO: &str = "dev.mobileagent.fixture.expo";
+#[cfg(target_os = "macos")]
+const SWIFTUI: &str = "dev.mobileagent.fixture.swiftui";
 
 /// One test at a time drives the device.
 static DEVICE: Mutex<()> = Mutex::new(());
@@ -511,6 +518,225 @@ fn simulator_settings_lists_its_rows_and_bold_texts_value_follows_its_switch() {
     assert!(
         was.is_some() && after["checked"].as_bool() == was.map(|on| !on),
         "Bold Text's value did not follow its switch: {before} then {after}"
+    );
+    env.shutdown();
+}
+
+/// The Simulator driver's reads of the screen in front, in-process beside
+/// the daemon's: one through the reader and one through the host translator.
+/// The driver exists only on macOS, as does what uses it below.
+#[cfg(target_os = "macos")]
+struct Readers {
+    reader: SimulatorDriver,
+    translator: SimulatorDriver,
+}
+
+#[cfg(target_os = "macos")]
+impl Readers {
+    fn open() -> Readers {
+        let only = |backend| {
+            SimulatorDriver::open_with(DriverOptions {
+                tree: TreeChoice::Only(backend),
+                ..DriverOptions::default()
+            })
+            .expect("the Simulator driver opens")
+        };
+        Readers {
+            reader: only(TreeBackend::Reader),
+            translator: only(TreeBackend::Translator),
+        }
+    }
+}
+
+/// A read's payload, one line per window and per node, two spaces deeper per
+/// level: each node's class, identifier, label, text, frame in points, flags,
+/// children and scroll.
+#[cfg(target_os = "macos")]
+fn payload(tree: &ForegroundTree) -> String {
+    fn line(
+        tree: &ForegroundTree,
+        node: &protocol::snapshot::Node,
+        level: usize,
+        out: &mut String,
+    ) {
+        let [x, y, width, height] = tree.frame(node);
+        out.push_str(&format!(
+            "{:indent$}{} id {:?} desc {:?} text {:?} frame [{x:.1}, {y:.1}, {width:.1}, {height:.1}] flags {:?} children {}{}\n",
+            "",
+            tree.class_of(node),
+            node.res_id,
+            node.desc,
+            node.text,
+            node.flags,
+            node.children.len(),
+            node.scroll.map(|scroll| format!(" scroll {scroll:?}")).unwrap_or_default(),
+            indent = level * 2,
+        ));
+        for child in &node.children {
+            line(tree, child, level + 1, out);
+        }
+    }
+    let mut out = format!(
+        "backend {:?}, degraded {:?}, foreground {:?}, {} nodes, truncated {:?}\n",
+        tree.backend,
+        tree.degraded,
+        tree.foreground.bundle_id,
+        tree.snapshot.node_count,
+        tree.snapshot.truncated
+    );
+    for window in &tree.snapshot.windows {
+        out.push_str(&format!(
+            "window {} kind {:?} layer {} title {:?} modal {} flags {:?}\n",
+            window.id, window.kind, window.layer, window.title, window.modal, window.flags
+        ));
+        if let Some(root) = &window.root {
+            line(tree, root, 1, &mut out);
+        }
+    }
+    out
+}
+
+/// One read of `driver`'s backend, retried for up to 10 s while it fails.
+#[cfg(target_os = "macos")]
+fn read_now(driver: &SimulatorDriver, udid: &str) -> Result<ForegroundTree, String> {
+    let mut last = String::new();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        match driver.snapshot(udid, &TreeOptions::default()) {
+            Ok(tree) => return Ok(tree),
+            Err(error) => last = error.to_string(),
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Err(last)
+}
+
+/// Prints what each stage of a read of the screen in front holds, `screen`
+/// naming it: the raw trees the reader's runtime gives
+/// (`simulator-reader dump`: modal views honoured, then not), the reader's
+/// payload, a second payload 5 s later, the host translator's payload, and
+/// the daemon's listings. Returns the daemon's full and interactive
+/// listings, one after the other.
+#[cfg(target_os = "macos")]
+fn stages(env: &Env, readers: &Readers, udid: &str, screen: &str) -> String {
+    eprintln!("==== {screen}: the reader's payload");
+    let read = read_now(&readers.reader, udid);
+    match &read {
+        Ok(tree) => eprintln!("{}", payload(tree)),
+        Err(error) => eprintln!("the reader's read failed: {error}"),
+    }
+    let path = readers
+        .reader
+        .status(udid)
+        .ok()
+        .and_then(|status| status.tree)
+        .and_then(|tree| tree.reader)
+        .map(|reader| reader.path);
+    eprintln!("==== {screen}: the raw trees (simulator-reader dump)");
+    match path {
+        Some(path) => {
+            let dump = Command::new("xcrun")
+                .args(["simctl", "spawn", udid])
+                .arg(&path)
+                .arg("dump")
+                .output()
+                .expect("simctl runs");
+            eprintln!(
+                "exit {:?}\n{}{}",
+                dump.status.code(),
+                String::from_utf8_lossy(&dump.stdout),
+                String::from_utf8_lossy(&dump.stderr)
+            );
+        }
+        None => eprintln!("no reader was spawned"),
+    }
+    std::thread::sleep(Duration::from_secs(5));
+    eprintln!("==== {screen}: the reader's payload 5 s later");
+    match read_now(&readers.reader, udid) {
+        Ok(tree) => eprintln!("{}", payload(&tree)),
+        Err(error) => eprintln!("the reader's read failed: {error}"),
+    }
+    eprintln!("==== {screen}: the translator's payload");
+    match read_now(&readers.translator, udid) {
+        Ok(tree) => eprintln!("{}", payload(&tree)),
+        Err(error) => eprintln!("the translator's read failed: {error}"),
+    }
+    eprintln!("==== {screen}: the daemon's listings");
+    let full = env.full();
+    let interactive = env.interactive();
+    format!("{full}\n{interactive}")
+}
+
+/// Runs `open` with `args` until it succeeds, three times at most, 5 s
+/// apart: on a Simulator booted minutes before, the first read can fail
+/// while accessibility starts (`no_foreground`), as for
+/// `open_past_first_launch`. The third failure fails the test.
+#[cfg(target_os = "macos")]
+fn open_retrying(env: &Env, args: &[&str]) {
+    let mut all = vec!["open"];
+    all.extend_from_slice(args);
+    all.extend_from_slice(&["--timeout", "30000"]);
+    for attempt in 1..=3 {
+        let opened = env.run(&all);
+        if opened.ok() || attempt == 3 {
+            opened.data();
+            return;
+        }
+        std::thread::sleep(Duration::from_secs(5));
+    }
+}
+
+/// Design D9d, the list screens under iOS 27: CI's Simulator read Settings'
+/// list, the SwiftUI fixture's List and Calendar's New Event form as holding
+/// none of their rows. For each screen the test prints what each stage of
+/// the read holds (`stages`), for a comparison with another iOS, then
+/// asserts that the daemon's listings hold the rows: Settings' General or
+/// Accessibility, the fixture's `row-1`, the form's Title field.
+#[test]
+#[cfg(target_os = "macos")]
+fn simulator_list_screens_list_their_rows() {
+    let test = "simulator_list_screens_list_their_rows";
+    let Some(udid) = gate(SIM_VAR, test) else {
+        return;
+    };
+    let _device = device_lock();
+    let _reset = SimulatorReset::new(&udid, &[PREFERENCES, SWIFTUI, CALENDAR]);
+    let env = Env::start(&udid);
+    let ios = ios_version(&env);
+    let readers = Readers::open();
+    let mut missing = Vec::new();
+
+    open_retrying(&env, &[PREFERENCES]);
+    env.settle();
+    let settings = stages(&env, &readers, &udid, "Settings' list");
+    if !settings.contains("\"General\"") && !settings.contains("\"Accessibility\"") {
+        missing.push("Settings' list: neither General nor Accessibility");
+    }
+
+    open_retrying(&env, &[SWIFTUI, "--env", "FIXTURE_INITIAL_TAB=list"]);
+    env.run(&["wait", "#row-1", "--timeout", "10000"]);
+    env.settle();
+    let list = stages(&env, &readers, &udid, "the SwiftUI fixture's List");
+    if !list.contains("id=row-1") {
+        missing.push("the SwiftUI fixture's List: no row-1");
+    }
+
+    open_past_first_launch(&env, CALENDAR);
+    env.steady("#add-plus-button");
+    tap_box(&env, "#add-plus-button");
+    // The form's title reads "New Event" under iOS 27 and "New" under iOS
+    // 26.5; its Cancel button is in both.
+    env.run(&["wait", "text==Cancel", "--timeout", "15000"])
+        .data();
+    env.settle();
+    let form = stages(&env, &readers, &udid, "Calendar's New Event form");
+    if !form.contains("\"Title\"") {
+        missing.push("Calendar's New Event form: no Title field");
+    }
+
+    assert!(
+        missing.is_empty(),
+        "D9d: under {ios} the listings miss the rows of {missing:#?}"
     );
     env.shutdown();
 }

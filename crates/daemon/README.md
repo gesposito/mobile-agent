@@ -1654,6 +1654,12 @@ fresh device shows as a person keeping the defaults would, skips Maps'
 search and Chrome's page when the host reaches no server, asserts the
 replies' fields and the listings, never a number of milliseconds, and
 prints what it saw. A failing test names the finding it reproduced; the
-change's design records each verdict, as found on CI's devices. The
+change's design records each verdict, as found on CI's devices. One test,
+`simulator_list_screens_list_their_rows`, is also a diagnosis: on Settings'
+list, the SwiftUI fixture's List and Calendar's New Event form it prints
+what each stage of a read holds, the reader runtime's raw trees
+(`simulator-reader dump`), the reader's payload, a second one 5 s later,
+the host translator's payload and the daemon's listings, for a comparison
+across iOS versions, then asserts that the listings hold the rows. The
 Simulator is left with the Expo fixture on its Login tab, the emulator's
 apps stopped and its dark theme off.
