@@ -274,20 +274,15 @@ jobs:
         # sfw is the Socket wrapper itself, so nothing wraps its own install. The npm launcher
         # resolves its binary through the unauthenticated GitHub API, which shared runners exhaust,
         # so fetch the release asset directly, at a pinned release, and check its SHA-256; the
-        # download endpoint is not rate limited.
+        # download endpoint is not rate limited. curl retries any failed attempt, an HTTP error
+        # included, 5 times 15 s apart.
         env:
           SFW_VERSION: "1.15.4"
           SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
         run: |
           mkdir -p "$HOME/.local/bin"
-          for attempt in 1 2 3 4 5; do
-            if curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-                 "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"; then
-              break
-            fi
-            echo "download attempt $attempt failed; retrying in 15 s"
-            sleep 15
-          done
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors -o "$HOME/.local/bin/sfw" \
+            "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"
           echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -378,20 +373,15 @@ jobs:
         # sfw is the Socket wrapper itself, so nothing wraps its own install. The npm launcher
         # resolves its binary through the unauthenticated GitHub API, which shared runners exhaust,
         # so fetch the release asset directly, at a pinned release, and check its SHA-256; the
-        # download endpoint is not rate limited.
+        # download endpoint is not rate limited. curl retries any failed attempt, an HTTP error
+        # included, 5 times 15 s apart.
         env:
           SFW_VERSION: "1.15.4"
           SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
         run: |
           mkdir -p "$HOME/.local/bin"
-          for attempt in 1 2 3 4 5; do
-            if curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
-                 "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"; then
-              break
-            fi
-            echo "download attempt $attempt failed; retrying in 15 s"
-            sleep 15
-          done
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors -o "$HOME/.local/bin/sfw" \
+            "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"
           echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
           chmod +x "$HOME/.local/bin/sfw"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
