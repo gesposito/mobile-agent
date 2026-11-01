@@ -1481,11 +1481,16 @@ impl Mirror {
     /// the replica holds for `Attached` and `Detached`, a keyboard's keys
     /// aside, the first on screen and not covered among them before the
     /// rest, so that a selector an action resolves this way names what a
-    /// tap reaches when it can (rn-app-fixes, design D53).
+    /// tap reaches when it can (rn-app-fixes, design D53). Among those, for
+    /// a text the element's need only contain, the first whose text is the
+    /// whole text comes before the rest ([`Selector::whole`]).
     fn first_match(&self, selector: &Selector, condition: Condition) -> Option<Element> {
         let view = View::build(&self.replica);
         let held = matches!(condition, Condition::Attached | Condition::Detached);
-        let mut out_of_sight = None;
+        // The first match on screen whose text only contains the text, and
+        // the first match out of sight, whole before containing.
+        let mut containing = None;
+        let mut out_of_sight: Option<(bool, Element)> = None;
         for (w, window) in self.replica.windows.iter().enumerate() {
             for (i, node) in window.nodes.iter().enumerate() {
                 let facts = &view.windows[w][i];
@@ -1495,7 +1500,8 @@ impl Mirror {
                 } else {
                     shown
                 };
-                if !listed || (!shown && out_of_sight.is_some()) {
+                let settled = |(whole, _): &(bool, Element)| *whole || containing.is_some();
+                if !listed || (!shown && out_of_sight.as_ref().is_some_and(settled)) {
                     continue;
                 }
                 if condition == Condition::Enabled && !node.flags.contains(NodeFlags::ENABLED) {
@@ -1513,15 +1519,22 @@ impl Mirror {
                     facts.role,
                     reference,
                 ) {
-                    let found = element(window, node, facts, reference);
-                    if shown {
-                        return Some(found);
+                    let whole = selector.whole(&facts.name, facts.value.as_deref());
+                    if shown && whole {
+                        return Some(element(window, node, facts, reference));
                     }
-                    out_of_sight = Some(found);
+                    if shown {
+                        containing.get_or_insert_with(|| element(window, node, facts, reference));
+                    } else if out_of_sight
+                        .as_ref()
+                        .is_none_or(|(first, _)| whole && !first)
+                    {
+                        out_of_sight = Some((whole, element(window, node, facts, reference)));
+                    }
                 }
             }
         }
-        out_of_sight
+        containing.or(out_of_sight.map(|(_, found)| found))
     }
 
     /// A summary of the screen as an interactive snapshot shows it.
