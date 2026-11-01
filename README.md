@@ -225,7 +225,7 @@ $ mobile-agent --json batch --bail 'get text #settings-wifi' 'click @e99' 'snaps
 
 | Code | Meaning |
 |---|---|
-| `stale_ref` | the ref's element is gone, or the mirror was rebuilt since the ref was issued, and the replica holds no twin of it; snapshot again |
+| `stale_ref` | the ref's element is gone, or the mirror was rebuilt since the ref was issued, and the replica holds no twin of it; snapshot again, after dismissing the dialog of system UI the message names when one stands in front |
 | `unknown_ref` | the ref is not from this session's snapshots of the target |
 | `element_covered`, `element_offscreen` | a dialog covers the element, or a view drawn over it on iOS, a bar or the keyboard leaves less than 8 points a side of it (act on the dialog, or scroll the element out from under the view); nothing of the element a tap reaches is in view after a fresh read |
 | `element_not_found`, `wait_timeout` | no element matched within the timeout; the waited-for condition did not hold, or the listing did not change for `wait --change` |

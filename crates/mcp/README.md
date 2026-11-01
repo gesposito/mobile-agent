@@ -365,7 +365,8 @@ within the 512 Codex keeps, what the server drives, that refs come from
 `snapshot`, that replies verify and a failure names its code and what to
 do next, and that `help` holds the guide; then selectors and refs, a ref
 standing for the twin an app rebuilt in its place (action-verdicts, design
-D3), with where a plain text such as a status line is read, since it has
+D3), and failing `stale_ref` without one naming a dialog of system UI in
+front to dismiss first (pass-4-fixes, design D7), with where a plain text such as a status line is read, since it has
 no ref and is in neither the interactive listing nor a change wait's
 delta taken in it (`get`, `wait` with `text`, or `interactive: false`);
 the waits (`change`, `settle`, `text`), saying that a click names the
@@ -382,8 +383,8 @@ design D1); sessions and `close` with `keep`,
 screenshots with `ifChanged`
 and that one right after a click can show the transition the tap set off,
 so `settle` comes first, and the tools served, with the bound and the cap
-of a timeout, which says so when the profile is read-only: 3,404
-characters in all, 3,522 when read-only, under the 4,096 Claude Code
+of a timeout, which says so when the profile is read-only: 3,460
+characters in all, 3,578 when read-only, under the 4,096 Claude Code
 keeps. The two sentences on the plain text and the transition are what the
 acceptance's models worked around (`reports/12.1-mcp-acceptance.md`,
 findings 1 and 4); the one on a click that reports no change is what the

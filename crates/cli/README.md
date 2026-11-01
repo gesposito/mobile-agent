@@ -247,7 +247,10 @@ hit textbox "placeholder-textbox-1", dispatch 0.1 ms, no change in 204
 ms)` on the fake placeholder app's rebuilt board, a `get`'s on a line after
 what it read, `(@e3 now @e5)`, as the reply's `resolved`, `{"stale": "@e3",
 "ref": "@e5"}`, does; the session acts on the twin's ref from then on, and
-a ref without a twin fails with `stale_ref` (action-verdicts, design D3).
+a ref without a twin fails with `stale_ref` (action-verdicts, design D3),
+whose message names the dialog of system UI in front, such as a
+permission alert, and says to dismiss it first when one holds the screen
+(pass-4-fixes, design D7).
 `--json` prints one line in
 agent-browser's envelope, fields in its order, `code` and `warning` only
 when set:
@@ -725,6 +728,7 @@ with hyperfine when it is on `PATH` and timed by the test otherwise.
 | Hits are named without a ref (android-pass-fixes, design D2; pass-4-fixes, design D5) | A tap on a plain text (the line saying `(no ref)` after an element other than the keyboard that the session holds no ref for); A tap through a generic container | `output::tests::a_click_whose_hit_has_no_ref_says_so`, the server's `tools::a_click_answers_with_the_cli_line_and_keeps_its_warning` (a click by selector before a snapshot); the daemon's `handlers::act::tests::a_click_by_coordinates_on_a_plain_text_names_it_without_a_ref` and `handlers::act::tests::a_click_by_coordinates_names_the_deepest_labeled_element_under_the_point` |
 | A text wait prefers the whole text (pass-4-fixes, design D8) | A city beside its airport | the daemon's `handlers::act::tests::a_text_wait_prefers_the_element_whose_text_is_the_whole_text` (the wait, and a click by `text=`, which resolves its selector the same way) |
 | A refused launch is retried once (pass-4-fixes, design D2) | A launch right after a termination (the line naming the wait before the second launch) | `output::tests::an_open_whose_launch_was_retried_says_after_what_wait`; the daemon's `handlers::act::tests::an_open_whose_launch_the_driver_retried_says_after_what_wait` and the simulator's `macos::driver::tests::a_launch_refused_with_esrch_is_launched_once_more_after_the_wait` |
+| A stale ref resolves to its twin (pass-4-fixes, design D7) | A dialog in front (the failure's message, which the CLI prints after `✗` and the server after the code) | the daemon's `handlers::act::tests::a_stale_ref_without_a_twin_under_a_system_dialog_names_the_dialog` |
 
 The timing spans (task 8.9) serve the benchmark harness rather than a
 spec scenario: `spans::a_click_reports_the_first_frame_change_and_the_first_tree_delta`,
