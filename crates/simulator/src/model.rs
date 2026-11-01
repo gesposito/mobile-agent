@@ -120,8 +120,13 @@ impl LaunchOptions {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Launched {
     pub pid: i32,
-    /// From the launch call until CoreSimulator returned the process identifier.
+    /// From the launch call until CoreSimulator returned the process
+    /// identifier, a second launch and the wait before it included.
     pub elapsed: Duration,
+    /// How long the driver waited before it launched the application again,
+    /// once CoreSimulator refused the first launch with
+    /// `NSPOSIXErrorDomain` 3; `None` when the first launch went through.
+    pub retried_after: Option<Duration>,
 }
 
 /// What `boot` did to a device's accessibility preferences.

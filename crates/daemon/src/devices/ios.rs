@@ -66,8 +66,8 @@ use serde_json::{Map, Value, json};
 use super::simulator::{has_focused_field, node_center};
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
-    DriverError, FixedScreen, Image, Launch, Platform, Report, Size, TargetClass, TargetInfo,
-    TargetReport,
+    DriverError, FixedScreen, Image, Launch, Launched, Platform, Report, Size, TargetClass,
+    TargetInfo, TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, INVALID_ARGUMENT, UNKNOWN_KEY};
@@ -635,7 +635,7 @@ impl AppControl for Apps {
     /// Launches `app` with its launch environment through DVT's process
     /// control; a relaunch ends the running instance first, and a running
     /// app keeps its process otherwise.
-    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<Launched, DriverError> {
         let options = LaunchOptions {
             arguments: Vec::new(),
             environment: launch.env.clone(),
@@ -644,7 +644,7 @@ impl AppControl for Apps {
         self.shared
             .driver
             .launch(&self.shared.udid, app, &options)
-            .map(|_| ())
+            .map(|_| Launched::default())
             .map_err(|e| app_error(&e))
     }
 

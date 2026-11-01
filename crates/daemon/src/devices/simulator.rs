@@ -55,8 +55,8 @@ use simulator::{
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, CompatibilityRow, Driver,
-    DriverError, FixedScreen, Image, InputNotes, InputSession, Launch, Platform, Report, Size,
-    TargetClass, TargetInfo, TargetReport,
+    DriverError, FixedScreen, Image, InputNotes, InputSession, Launch, Launched, Platform, Report,
+    Size, TargetClass, TargetInfo, TargetReport,
 };
 use crate::handlers::millis;
 use crate::wire::code::{APP_NOT_FOUND, UNKNOWN_KEY};
@@ -696,14 +696,16 @@ struct Apps {
 }
 
 impl AppControl for Apps {
-    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<Launched, DriverError> {
         let options = LaunchOptions {
             arguments: Vec::new(),
             environment: launch.env.clone(),
             terminate_running: launch.relaunch,
         };
         match self.driver.launch(&self.udid, app, &options) {
-            Ok(_) => Ok(()),
+            Ok(launched) => Ok(Launched {
+                retried_after: launched.retried_after,
+            }),
             Err(failure) if installed(&self.udid, app) == Some(false) => Err(DriverError::new(
                 APP_NOT_FOUND,
                 format!(

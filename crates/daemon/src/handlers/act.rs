@@ -2896,7 +2896,9 @@ mod tests {
     use mirror::backend::{BackendError, Input, InputAck, InputSink};
 
     use super::*;
-    use crate::driver::{AppControl, AttachOptions, Driver, DriverError, Launch, Screen, Size};
+    use crate::driver::{
+        AppControl, AttachOptions, Driver, DriverError, Launch, Launched, Screen, Size,
+    };
     use crate::fake::{FakeDriver, Slide, Typing};
     use crate::wire::Request;
 
@@ -6352,7 +6354,7 @@ mod tests {
             app: &str,
             launch: &Launch,
             deadline: Instant,
-        ) -> Result<(), DriverError> {
+        ) -> Result<Launched, DriverError> {
             self.deadlines.lock().unwrap().push(deadline);
             self.inner.launch(app, launch, deadline)
         }
@@ -6360,6 +6362,56 @@ mod tests {
         fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
             self.inner.terminate(app)
         }
+    }
+
+    /// The apps of a target whose first launch the target refused, the
+    /// driver launching the app again after `wait`, as the Simulator driver
+    /// does once CoreSimulator refused a launch with `NSPOSIXErrorDomain` 3.
+    struct Refused {
+        inner: Box<dyn AppControl>,
+        wait: Option<Duration>,
+    }
+
+    impl AppControl for Refused {
+        fn launch(
+            &mut self,
+            app: &str,
+            launch: &Launch,
+            deadline: Instant,
+        ) -> Result<Launched, DriverError> {
+            self.inner.launch(app, launch, deadline)?;
+            Ok(Launched {
+                retried_after: self.wait.take(),
+            })
+        }
+
+        fn terminate(&mut self, app: &str) -> Result<(), DriverError> {
+            self.inner.terminate(app)
+        }
+    }
+
+    /// Design D2 of pass-4-fixes: an open whose launch the driver made again
+    /// after the target refused the first says so, with the wait before the
+    /// second launch, and one whose launch went through says nothing of it.
+    #[test]
+    fn an_open_whose_launch_the_driver_retried_says_after_what_wait() {
+        let driver = FakeDriver::parse("ios").unwrap();
+        let info = driver.discover().unwrap().remove(0);
+        let mut attachment = driver.attach(&info, &AttachOptions::default()).unwrap();
+        attachment.apps = Box::new(Refused {
+            inner: attachment.apps,
+            wait: Some(Duration::from_secs(3)),
+        });
+        let mut target = Attached::new(&info, attachment, &Arc::new(Mutex::default()));
+        let open = json!({"action": "open", "app": FIXTURE, "relaunch": true}).to_string();
+        let retried = super::super::run_on(&mut target, "default", &request(&open))
+            .unwrap()
+            .into_data();
+        assert_eq!(retried["retriedAfterMs"], 3000.0, "{retried}");
+        let again = super::super::run_on(&mut target, "default", &request(&open))
+            .unwrap()
+            .into_data();
+        assert!(again.get("retriedAfterMs").is_none(), "{again}");
     }
 
     /// Design D1 of android-pass-fixes: `open` launches the app within its

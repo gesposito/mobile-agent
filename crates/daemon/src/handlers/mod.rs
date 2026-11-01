@@ -513,7 +513,10 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     // which waits for the app's first frame, needs on an emulator short of
     // memory (android-pass-fixes, design D1).
     let launching = Instant::now();
-    target.apps.launch(&app, &launch, started + first_wait)?;
+    let mut retried_after = target
+        .apps
+        .launch(&app, &launch, started + first_wait)?
+        .retried_after;
     let launched = Instant::now();
     target.session(session).app = Some(app.clone());
     target.set_app(Some(app.clone()));
@@ -546,7 +549,7 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
         in_front(
             target,
             (&app, &launch, first_wait),
-            (first, shown, settled),
+            (first, shown, settled, &mut retried_after),
             (started, explicit),
         )?
     } else {
@@ -601,6 +604,9 @@ fn open(target: &mut Attached, call: &Call, args: &::wire::Open) -> Outcome {
     });
     if let Some(dialog) = dialog {
         data["alert"] = dialog.into();
+    }
+    if let Some(wait) = retried_after {
+        data["retriedAfterMs"] = millis(wait).into();
     }
     Ok(Success::new(data).warn(warning))
 }
@@ -662,11 +668,17 @@ fn front_of(target: &mut Attached) -> Result<String, Failure> {
 /// it run again; an app still not in front fails with `not_in_front`, naming
 /// it and what is in front. Gives the first tree, when the app's screen
 /// showed and whether it settled, those after the second launch when one
-/// was made.
+/// was made, whose wait before a launch the target refused once sets
+/// `retried_after` when the first launch's did not.
 fn in_front(
     target: &mut Attached,
     (app, launch, wait): (&str, &Launch, Duration),
-    (first, shown, settled): (FirstTree, Option<Instant>, bool),
+    (first, shown, settled, retried_after): (
+        FirstTree,
+        Option<Instant>,
+        bool,
+        &mut Option<Duration>,
+    ),
     (started, explicit): (Instant, Option<Duration>),
 ) -> Result<(FirstTree, Option<Instant>, bool), Failure> {
     if front_of(target)? == app {
@@ -682,7 +694,8 @@ fn in_front(
         Some(total) => started + total,
         None => launching + wait,
     };
-    target.apps.launch(app, &again, launch_deadline)?;
+    let launched = target.apps.launch(app, &again, launch_deadline)?;
+    *retried_after = retried_after.or(launched.retried_after);
     let deadline = match explicit {
         Some(total) => (started + total).min(launching + ACTIVATE_WAIT),
         None => launching + ACTIVATE_WAIT,

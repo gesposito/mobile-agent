@@ -36,8 +36,8 @@ use serde_json::{Map, Value, json};
 
 use crate::driver::{
     AppControl, AttachOptions, Attachment, Capture, CaptureRequest, Driver, DriverError,
-    EmulatorController, Image, Launch, Platform, Report, Screen, Size, TargetClass, TargetInfo,
-    TargetReport,
+    EmulatorController, Image, Launch, Launched, Platform, Report, Screen, Size, TargetClass,
+    TargetInfo, TargetReport,
 };
 use crate::wire::code::{APP_NOT_FOUND, IO_ERROR};
 
@@ -397,8 +397,13 @@ struct Apps {
 }
 
 impl AppControl for Apps {
-    fn launch(&mut self, app: &str, launch: &Launch, deadline: Instant) -> Result<(), DriverError> {
-        launch_on(&self.device, app, launch, deadline)
+    fn launch(
+        &mut self,
+        app: &str,
+        launch: &Launch,
+        deadline: Instant,
+    ) -> Result<Launched, DriverError> {
+        launch_on(&self.device, app, launch, deadline).map(|()| Launched::default())
     }
 
     fn terminate(&mut self, app: &str) -> Result<(), DriverError> {

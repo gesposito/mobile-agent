@@ -205,8 +205,13 @@ pub trait AppControl: Send {
     /// command's own, until which a launch that waits for the app, as
     /// Android's `am start -W` waits for its first frame, waits at most,
     /// failing with `deadline_exceeded` past it (android-pass-fixes, design
-    /// D1).
-    fn launch(&mut self, app: &str, launch: &Launch, deadline: Instant) -> Result<(), DriverError>;
+    /// D1). Says what the launch took beyond the launch itself.
+    fn launch(
+        &mut self,
+        app: &str,
+        launch: &Launch,
+        deadline: Instant,
+    ) -> Result<Launched, DriverError>;
 
     /// Stops `app`.
     fn terminate(&mut self, app: &str) -> Result<(), DriverError>;
@@ -220,6 +225,16 @@ pub struct Launch {
     /// The launch environment on iOS; string extras of the launch intent
     /// on Android, under the same names.
     pub env: Vec<(String, String)>,
+}
+
+/// What a launch took beyond the launch itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Launched {
+    /// How long the driver waited before it launched the app again, once
+    /// the target refused the first launch, as a Simulator refused one
+    /// right after the app's termination (pass-4-fixes, design D2); `None`
+    /// when the first launch went through.
+    pub retried_after: Option<Duration>,
 }
 
 /// Takes screenshots on demand.
