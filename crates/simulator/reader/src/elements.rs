@@ -1049,6 +1049,66 @@ impl Builder {
     }
 }
 
+/// The element tree as the runtime gave it, one line per element, two
+/// spaces deeper per level, for diagnosis: each attribute the read keeps,
+/// before the conversion names, flags or moves anything.
+pub fn outline(root: &Element) -> String {
+    fn number(value: f64) -> f64 {
+        (value * 100.0).round() / 100.0
+    }
+    fn line(element: &Element, level: usize, out: &mut String) {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{:width$}type ", "", width = level * 2);
+        match element.automation_type {
+            Some(value) => {
+                let _ = write!(out, "{value}");
+            }
+            None => out.push('-'),
+        }
+        for (name, value) in [
+            ("class", &element.class),
+            ("id", &element.identifier),
+            ("label", &element.label),
+            ("value", &element.value),
+            ("placeholder", &element.placeholder),
+        ] {
+            if let Some(value) = value {
+                let _ = write!(out, " {name} {value:?}");
+            }
+        }
+        if element.traits != 0 {
+            let _ = write!(out, " traits {:#x}", element.traits);
+        }
+        if let Some([x, y, width, height]) = element.frame {
+            let _ = write!(
+                out,
+                " frame [{}, {}, {}, {}]",
+                number(x),
+                number(y),
+                number(width),
+                number(height)
+            );
+        }
+        if element.modal {
+            out.push_str(" modal");
+        }
+        if let Some(takes) = element.user_interaction {
+            let _ = write!(out, " interaction {takes}");
+        }
+        let _ = write!(out, " children {}", element.children.len());
+        if let Some(count) = element.children_count {
+            let _ = write!(out, " of {count}");
+        }
+        out.push('\n');
+        for child in &element.children {
+            line(child, level + 1, out);
+        }
+    }
+    let mut out = String::new();
+    line(root, 0, &mut out);
+    out
+}
+
 /// The class name a node gets: see the module documentation.
 pub fn class_name(level: u32, element: &Element) -> String {
     let platform = || {
@@ -2949,6 +3009,39 @@ mod tests {
         assert_eq!(
             Limits::from_params(&SnapshotParams::default()),
             Limits::default()
+        );
+    }
+
+    #[test]
+    fn the_outline_shows_each_element_as_the_runtime_gave_it() {
+        let row = at(
+            with(element(75, "UICollectionViewCell"), |e| {
+                e.identifier = Some("row-1".into());
+                e.label = Some("Row 1".into());
+                e.traits = traits::BUTTON;
+            }),
+            [0.0, 62.0, 402.0, 44.33],
+        );
+        let field = with(element(49, "UITextField"), |e| {
+            e.frame = None;
+            e.placeholder = Some("Title".into());
+            e.value = Some("Title".into());
+        });
+        let list = with(element(32, "UICollectionView"), |e| {
+            e.children_count = Some(3);
+            e.children = vec![row, field];
+        });
+        let root = with(element(1, "UIApplication"), |e| {
+            e.label = Some("FixtureSwiftUI".into());
+            e.children_count = Some(1);
+            e.children = vec![list];
+        });
+        assert_eq!(
+            outline(&root),
+            "type 1 class \"UIApplication\" label \"FixtureSwiftUI\" frame [0, 0, 402, 874] children 1 of 1\n\
+             \x20 type 32 class \"UICollectionView\" frame [0, 0, 402, 874] children 2 of 3\n\
+             \x20   type 75 class \"UICollectionViewCell\" id \"row-1\" label \"Row 1\" traits 0x1 frame [0, 62, 402, 44.33] children 0\n\
+             \x20   type 49 class \"UITextField\" value \"Title\" placeholder \"Title\" children 0\n"
         );
     }
 

@@ -428,13 +428,7 @@ impl Runtime {
     /// nodes and the second 228 ms.
     pub fn read(&self, limits: Limits, scale: f64) -> Result<Read, ReadError> {
         self.assert_automation();
-        let Some(pid) = self.primary_pid()? else {
-            return Err(ReadError::new(
-                codes::NO_FOREGROUND,
-                "no application owns the foreground: accessibility is starting, or an application is launching",
-                true,
-            ));
-        };
+        let pid = self.foreground()?;
         let owner: Owner = process::owner(pid);
         let (_element, raw) = self.application_element(pid)?;
 
@@ -469,6 +463,55 @@ impl Runtime {
             limits,
             depth_cut,
         })
+    }
+
+    /// The process that owns the foreground, or `no_foreground`.
+    fn foreground(&self) -> Result<i32, ReadError> {
+        self.primary_pid()?.ok_or_else(|| {
+            ReadError::new(
+                codes::NO_FOREGROUND,
+                "no application owns the foreground: accessibility is starting, or an application is launching",
+                true,
+            )
+        })
+    }
+
+    /// The trees of the process that owns the foreground as the runtime
+    /// gives them, for diagnosis (`simulator-reader dump`): the owner, then
+    /// the snapshot honouring the views the app marks modal and the one
+    /// without, each with its node count and as [`elements::outline`]
+    /// prints it. Neither is converted, and neither asks scroll views or
+    /// dimming views for more.
+    pub fn dump(&self, limits: Limits) -> Result<String, ReadError> {
+        fn count(element: &elements::Element) -> usize {
+            1 + element.children.iter().map(count).sum::<usize>()
+        }
+        self.assert_automation();
+        let pid = self.foreground()?;
+        let owner = process::owner(pid);
+        let (_element, raw) = self.application_element(pid)?;
+        let mut out = format!(
+            "owner pid {pid} bundle {:?} name {:?} system {}\n",
+            owner.bundle_id, owner.name, owner.system
+        );
+        for (title, honour_modal) in [
+            ("honouring modal views", true),
+            ("without honouring modal views", false),
+        ] {
+            let (snapshot, depth_cut) = self.capture(raw, pid, &owner, limits, honour_modal)?;
+            let root = extract::structure(self, &snapshot, limits.max_nodes)?;
+            out.push_str(&format!(
+                "{title}: {} nodes{}\n",
+                count(&root),
+                if depth_cut {
+                    ", at a reduced depth"
+                } else {
+                    ""
+                }
+            ));
+            out.push_str(&elements::outline(&root));
+        }
+        Ok(out)
     }
 
     /// One snapshot of the application element `raw`, of process `pid`

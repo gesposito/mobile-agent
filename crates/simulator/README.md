@@ -60,7 +60,7 @@ reader/            simulator-reader, the tree reader spawned into the guest
       extract.rs   the runtime's snapshot dictionaries to elements
       process.rs   a pid's executable, bundle and whether it is system UI
       server.rs    the device protocol over one connection, reads on a worker
-    main.rs        simulator-reader connect <socket> --token --scale
+    main.rs        simulator-reader connect <socket> --token --scale, or dump
 tests/
   common/          gating, fixtures, temporary devices, simctl and ps helpers
   lifecycle.rs     task 6.1
@@ -204,6 +204,17 @@ a read that hangs for 20 s ends the process (status 70). The reader exits
 when the host shuts it down or its connection ends, so it never outlives the
 driver. Its standard error goes to `simulator-reader-<udid>.log` in the
 same cache directory.
+
+For diagnosis, `simulator-reader dump`, run in a booted Simulator with
+`xcrun simctl spawn <device> <reader> dump` (the path `status` reports),
+prints the raw trees of the process that owns the foreground, the snapshot
+honouring the views the app marks modal and the one without, each element
+with its automation type, platform class, identifier, label, value,
+placeholder, traits, frame and its children delivered of those the runtime
+counts, before any conversion. The daemon's gated test
+`simulator_list_screens_list_their_rows` (`crates/daemon/tests/real_apps.rs`)
+prints it beside the reader's and the translator's payloads and the
+daemon's listings.
 
 A read asserts automation mode, as agent-device does, asks `+[AXElement
 primaryApp]` who owns the foreground, snapshots that process with one
