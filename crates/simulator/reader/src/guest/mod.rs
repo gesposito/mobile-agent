@@ -41,6 +41,8 @@ pub enum Stop {
     Runtime(String),
     /// The host's socket could not be reached.
     Connect(String),
+    /// The read `dump` makes failed.
+    Read(String),
 }
 
 /// Loads the runtime, then connects to the host's socket at `socket` and
@@ -63,4 +65,15 @@ pub fn run(socket: &Path, token: Option<String>, scale: f64) -> Result<Disconnec
         ..AgentConfig::default()
     };
     server::serve(stream, config, worker).map_err(|error| Stop::Connect(error.to_string()))
+}
+
+/// Loads the runtime and returns the raw trees of the process that owns the
+/// foreground, as [`Runtime::dump`] prints them, at the default limits.
+pub fn dump() -> Result<String, Stop> {
+    objc2::rc::autoreleasepool(|_| {
+        let runtime = Runtime::load().map_err(|failure| Stop::Runtime(failure.to_string()))?;
+        runtime
+            .dump(Limits::default())
+            .map_err(|error| Stop::Read(format!("{}: {}", error.code, error.message)))
+    })
 }
