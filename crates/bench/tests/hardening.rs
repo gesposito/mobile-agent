@@ -3,7 +3,9 @@
 //! permissions and each job asks for the least it needs, every action is
 //! pinned to a full commit SHA with its version beside it, no checkout keeps
 //! its credentials, and the tools come from lockfiles or from releases
-//! pinned with their SHA-256; CI lints and audits the workflows. The files
+//! pinned with their SHA-256; CI lints and audits the workflows. Task 3.6 of
+//! `ci-benchmarks`: a checkout fetches the head commit alone unless its job
+//! reads history, and no step waits a fixed time. The files
 //! are read as text, line by line: a job is the block under `jobs:` that
 //! starts at two spaces of indentation, a step the block that starts with
 //! `- ` at six.
@@ -290,4 +292,76 @@ fn dependabot_waits_a_week_and_ci_checks_the_dependencies_with_cargo_deny() {
         "{runs:#?}"
     );
     assert!(read("deny.toml").contains("[licenses.private]\nignore = true\n"));
+}
+
+/// Task 3.6 of `ci-benchmarks`: each checkout fetches the head commit alone,
+/// checkout's default depth of 1, unless its job reads history: the
+/// benchmarks' `resolve`, which resolves any branch, tag or commit, and
+/// their micro jobs, which check the base out from the same clone, fetch
+/// all of it, and CI's classifier fetches a pull request's merge commit with
+/// its two parents. The benchmarks' measuring jobs name their depth.
+#[test]
+fn each_checkout_fetches_the_head_alone_unless_its_job_reads_history() {
+    let depths = [
+        (".github/workflows/ci.yml", "changes", "2"),
+        (".github/workflows/ci.yml", "audit", "1"),
+        (".github/workflows/ci.yml", "linux", "1"),
+        (".github/workflows/ci.yml", "macos-26", "1"),
+        (".github/workflows/ci.yml", "macos-27", "1"),
+        (".github/workflows/benchmarks.yml", "resolve", "0"),
+        (".github/workflows/benchmarks.yml", "micro-linux", "0"),
+        (".github/workflows/benchmarks.yml", "micro-macos", "0"),
+        (".github/workflows/benchmarks.yml", "harness-simulator", "1"),
+        (".github/workflows/benchmarks.yml", "harness-emulator", "1"),
+        (".github/workflows/device-tests.yml", "simulator", "1"),
+        (".github/workflows/device-tests.yml", "emulator", "1"),
+    ];
+    let mut seen = Vec::new();
+    for path in WORKFLOWS {
+        let text = read(path);
+        for (job, lines) in jobs(&text) {
+            for step in steps(&lines) {
+                if !step
+                    .iter()
+                    .any(|line| line.contains("uses: actions/checkout@"))
+                {
+                    continue;
+                }
+                let named = step
+                    .iter()
+                    .find_map(|line| line.trim().strip_prefix("fetch-depth: "));
+                let (_, _, wanted) = depths
+                    .iter()
+                    .find(|(p, j, _)| *p == path && *j == job)
+                    .unwrap_or_else(|| {
+                        panic!("{path}: {job} checks out with no depth listed here")
+                    });
+                assert_eq!(named.unwrap_or("1"), *wanted, "{path}: {job}");
+                if path.ends_with("benchmarks.yml") {
+                    assert!(named.is_some(), "{path}: {job} names its depth");
+                }
+                seen.push((path, job.clone()));
+            }
+        }
+    }
+    assert_eq!(seen.len(), depths.len(), "{seen:?}");
+}
+
+/// Task 3.6 of `ci-benchmarks`: no step sleeps a fixed time; a step waits on
+/// the condition it needs, a Simulator's boot through `simctl bootstatus
+/// -b`, a download through curl's own bounded retries.
+#[test]
+fn no_step_waits_a_fixed_time() {
+    for path in WORKFLOWS {
+        for (number, line) in read(path).lines().enumerate() {
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            let words: Vec<&str> = line.split_whitespace().collect();
+            let fixed = words.windows(2).any(|pair| {
+                pair[0] == "sleep" && pair[1].starts_with(|c: char| c.is_ascii_digit())
+            });
+            assert!(!fixed, "{path}:{}: {line}", number + 1);
+        }
+    }
 }
