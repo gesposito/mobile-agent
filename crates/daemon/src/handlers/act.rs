@@ -5486,12 +5486,46 @@ mod tests {
         assert_eq!(secret.data["text"], "\u{2022}".repeat(7), "{}", secret.data);
     }
 
+    /// Design D3 of pass-4-fixes: on the site's recording run `type
+    /// mobileagent.dev` read the field back as "mobileagent.de" once in
+    /// five, on a loaded host, while the video showed the whole text in it
+    /// by the command's end: the last key landed after the read-back's
+    /// bound, a second after the keys went in. On a fake Simulator whose
+    /// fields show every key but the last once the keys went in, 60 ms
+    /// apart, and the last as long after them as they took to type, 1.38 s
+    /// for these 24 characters, `type` and `fill` read the field until it
+    /// holds the whole text, within the keys' own time and the read-back's
+    /// second: `type` verifies it with no warning, and `fill` takes it
+    /// without entering it again.
+    #[test]
+    fn type_and_fill_read_back_the_whole_text_when_the_last_key_lands_after_the_first_read() {
+        let mut target = login(Typing::Late);
+        click_on(&mut target, "#login-username").unwrap();
+        let typed = type_into(&mut target, None, "mobileagent.dev/docs/cli").unwrap();
+        let data = &typed.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", typed.warning);
+        assert_eq!(data["text"], "mobileagent.dev/docs/cli", "{data}");
+        assert_eq!(typed.warning, None, "{data}");
+        let filled = fill_in(&mut target, "#login-username", "mobileagent.dev/docs/api").unwrap();
+        let data = &filled.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", filled.warning);
+        assert_eq!(data["method"], "keys", "{data}");
+        assert_eq!(data["retried"], false, "{data}: {:?}", filled.warning);
+        assert_eq!(filled.warning, None, "{data}");
+        assert_eq!(
+            held(&mut target, "#login-username"),
+            "mobileagent.dev/docs/api"
+        );
+    }
+
     /// Design D3: Safari's address bar took the demo pass's `type
     /// example.com` as "exampl", and Safari searched for it. A field that
     /// drops keys holds less than `type` typed: the reply says what it
     /// holds, unverified, and a warning names it and advises `fill`; the
     /// text is typed once, since `type` adds to what a field holds and
-    /// typing it again would double it.
+    /// typing it again would double it. What it holds is the start of the
+    /// text, so the reply says it is shorter than typed (design D3 of
+    /// pass-4-fixes), the read-back having read the field to its bound.
     #[test]
     fn type_into_a_field_that_drops_keys_warns_naming_what_it_holds_and_types_once() {
         let driver = FakeDriver::parse("ios")
@@ -5503,13 +5537,20 @@ mod tests {
         let success = type_into(&mut target, None, "example.com").unwrap();
         let data = &success.data;
         assert_eq!(data["verified"], false, "{data}");
-        assert_eq!(data["reason"], "text_mismatch", "{data}");
+        assert_eq!(data["reason"], "shorter_than_typed", "{data}");
         assert_eq!(data["text"], "exampl", "{data}");
         assert_eq!(data["readFrom"], "value", "{data}");
+        assert!(
+            data["readBackMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= millis(READ_BACK_MAX)),
+            "{data}"
+        );
         let warning = success.warning.unwrap_or_default();
         assert!(
             warning.contains("\"exampl\"")
                 && warning.contains("\"example.com\"")
+                && warning.contains("shorter than typed")
                 && warning.contains("fill"),
             "{warning}"
         );

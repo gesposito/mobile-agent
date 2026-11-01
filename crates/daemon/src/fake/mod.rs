@@ -158,10 +158,17 @@ pub enum Typing {
     /// a paste into the field in focus, after the tap that readies it,
     /// leaves the edit menu that tap opened up over the screen.
     Unshifted,
+    /// As [`Typing::Keys`], the keys typed at React Native's cadence, 60 ms
+    /// apart, the field showing every key but the last once they went in
+    /// and the last as long after them as they took to type: an app slower
+    /// than the keys, the case the read-back's bound is built for, as the
+    /// site's recording run read "mobileagent.de" back after `type
+    /// mobileagent.dev` on a loaded host (pass-4-fixes, design D3).
+    Late,
 }
 
 impl Typing {
-    /// Parses `whole`, `keys`, `reorder`, `unshifted` or `max:<n>`.
+    /// Parses `whole`, `keys`, `reorder`, `unshifted`, `late` or `max:<n>`.
     pub fn parse(text: &str) -> Result<Typing, String> {
         let text = text.trim();
         match text {
@@ -169,13 +176,14 @@ impl Typing {
             "keys" => Ok(Typing::Keys),
             "reorder" => Ok(Typing::Reorder),
             "unshifted" => Ok(Typing::Unshifted),
+            "late" => Ok(Typing::Late),
             _ => text
                 .strip_prefix("max:")
                 .and_then(|n| n.parse().ok())
                 .map(Typing::Max)
                 .ok_or_else(|| {
                     format!(
-                        "fake typing {text:?}: use whole, keys, reorder, unshifted or max:<characters>"
+                        "fake typing {text:?}: use whole, keys, reorder, unshifted, late or max:<characters>"
                     )
                 }),
         }
@@ -184,7 +192,10 @@ impl Typing {
     /// Whether text whose method the target may choose is typed key by key
     /// when it is short enough, as a Simulator types it.
     pub fn types_keys(self) -> bool {
-        matches!(self, Typing::Keys | Typing::Reorder | Typing::Unshifted)
+        matches!(
+            self,
+            Typing::Keys | Typing::Reorder | Typing::Unshifted | Typing::Late
+        )
     }
 }
 
@@ -655,6 +666,7 @@ mod tests {
         assert_eq!(Typing::parse(" keys "), Ok(Typing::Keys));
         assert_eq!(Typing::parse("reorder"), Ok(Typing::Reorder));
         assert_eq!(Typing::parse("unshifted"), Ok(Typing::Unshifted));
+        assert_eq!(Typing::parse("late"), Ok(Typing::Late));
         assert_eq!(Typing::parse("max:8"), Ok(Typing::Max(8)));
         for bad in ["", "slow", "max:", "max:-1", "max:eight"] {
             assert!(Typing::parse(bad).is_err(), "{bad:?}");
