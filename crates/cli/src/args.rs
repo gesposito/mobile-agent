@@ -309,7 +309,9 @@ the tree the frames changed and settles again when that read finds it
 changed, so a menu whose items come after a pause in its frames is listed
 whole right after it. endedBy says which signal changed last (tree, frame,
 both or none, after an action nothing within 1 s of it) or timeout, and
-stillChanging what kept changing. wait --change ends once the
+stillChanging what kept changing. A settle that stops at --timeout succeeds
+with settled false, stoppedAfterMs and reason, and a warning; with --strict
+it fails with settle_timeout. wait --change ends once the
 listing in the options of this session's last snapshot changed from what
 that snapshot showed, at once for a change that came before it, and prints
 what moved (endedBy: tree, frame or both) and the delta snapshot --delta
@@ -319,6 +321,7 @@ not describe.
 
 Examples:
   mobile-agent wait --settle
+  mobile-agent wait --settle --strict
   mobile-agent wait --change
   mobile-agent wait --change --frames
   mobile-agent wait @e5
@@ -529,6 +532,9 @@ pub struct WaitArgs {
     /// Settle on tree changes alone, ignoring frames (for video)
     #[arg(long, requires = "settle")]
     pub tree_only: bool,
+    /// With --settle, fail with settle_timeout when the screen did not settle by --timeout, rather than succeed with settled false and a warning
+    #[arg(long, requires = "settle")]
+    pub strict: bool,
     /// Wait until the listing in the options of this session's last snapshot changes, then print the delta
     #[arg(long, conflicts_with_all = ["target", "text", "settle"])]
     pub change: bool,
