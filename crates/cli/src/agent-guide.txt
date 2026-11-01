@@ -52,11 +52,11 @@ Acting
   open com.example.app        launch an app and leave it in front, else fail
                               not_in_front; close stops it and frees the target
   A tap goes to the part of an element you can see, and warns when that is not
-  most of it. Its reply names what it hit, hit button "Sign in", or hit text
-  "Address" (no ref) for one without a ref, warning when that is not what you
-  named. element_covered: less than 8 points of it show from under its cover,
-  named as hints name it, a dialog, a button, disabled or not, a bar or the
-  keyboard; act on a dialog first, or scroll it out from under the view.
+  most of it. Its reply names what it hit, hit button "Sign in", hit text
+  "Address" (no ref) without a ref, the labeled one under a view with no label,
+  warning when that is not what you named. element_covered: less than 8 points
+  show from under its cover, named as hints name it: a dialog, a button, also
+  disabled, a bar or the keyboard; act on a dialog or scroll out from under.
   element_offscreen: none of it in view; close the keyboard or scroll.
   fill's and type's replies say what they read back: verified: text, or
   length for a masked field, from the field's value, a code field's value
