@@ -316,6 +316,20 @@ mirror's conventions (`reader/src/elements.rs`):
   the application's window; so does a system UI sheet. Contacts' New
   Contact sheet and Bluesky's hosting-provider sheet and birth-date dialog
   have this shape;
+- a floating bar container, UIKit's `_UIFloatingBarContainerView`, which
+  iOS 27.0 types a toolbar named Toolbar with the frame of the screen or
+  the sheet it floats a navigation controller's bars over, listed after
+  that content, has what it draws as its bounds: the union of its
+  outermost descendants on screen that are narrower and shorter than it,
+  the glass views of its bars (on Calendar, 28 to 374 points across and
+  798 to 846 down on an iPhone 17), and none when it draws nothing. With
+  the frame the runtime gives it, the mirror, which cuts what lies under a
+  toolbar out of view, would take everything the container floats over
+  for covered: on CI's iOS 27.0 Simulator the listings of Settings' list,
+  Calendar's New Event form and the SwiftUI fixture's List held none of
+  their rows (design D9d of `pass-4-fixes`). iOS 26.5 leaves the container
+  untyped and types the bar inside it, at the bar's frame, and the read
+  keeps both frames;
 - every window says it sends no change events (`emits_events` false), since
   the Simulator sends none (spikes S3 and S4) and the mirror reads it again
   after each action and on a poll; system UI names itself as the `owner` of
