@@ -28,6 +28,7 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
   - [x] Restrict deletions.
   - [x] Require a pull request before merging, with 0 required approvals while there is one maintainer, and "Dismiss stale pull request approvals when new commits are pushed".
   - [x] Require status checks to pass: `Audit`, `Linux`, `macOS (Xcode 26)` and `macOS (Xcode 27)`, with "Require branches to be up to date before merging".
+    The checks are the names of `ci.yml`'s jobs, so a renamed job needs the list changed with it. A pull request that changes documentation alone skips the Linux and macOS jobs by a job-level `if` (`scripts/ci-changes.sh` classifies it), and a skipped job's check passes; a workflow-level path filter would leave the four checks missing and the pull request blocked, and a matrix job skipped this way reports one check under its unexpanded name, which is why the two macOS jobs are two jobs rather than a matrix.
   - [x] Block force pushes.
 - [x] A branch ruleset that keeps disclosure branches from being pushed early, as Astral's does: target `advisory-*` and `internal-*`, rule **Restrict creations**, no bypass. (ruleset `disclosure branches`)
 - [x] A tag ruleset: **Settings > Rules > Rulesets > New ruleset > New tag ruleset**, target all tags (`**`), rules **Restrict updates**, **Restrict deletions** and **Block force pushes**, no bypass. **Restrict creations** joins them with the first release, its bypass the release workflow's deployment alone. (ruleset `tags`)
