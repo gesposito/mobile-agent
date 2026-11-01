@@ -725,6 +725,13 @@ transport.
 
 - Validated: Xcode 27.0 (27A266a), CoreSimulator 1171.7, SimulatorKit 1005.2
   and iOS 26.5 (23F77), where every spike and every integration test ran.
+- iOS 27.0, the runtime of GitHub's `xcode-27` image (Xcode 27.1), runs the
+  integration tests on CI's fresh iPhone 17 (`.github/workflows/device-tests.yml`,
+  design D1 of `openspec/changes/pass-4-fixes`). The tree reads there once
+  the reader bounds the floating bar container iOS 27 types a toolbar
+  (Tree); the tests that still fail there, the first frame and taps judged
+  by frames on a newly booted device, the copy back and the translator on a
+  fresh device, are listed in that design.
 - Xcode 26.x is in the range because the design keeps Indigo as the input for
   its CoreSimulator, which predates 1155.4, and CI builds on it, but nothing
   has run there: input would be touch only, since keys, buttons and text
