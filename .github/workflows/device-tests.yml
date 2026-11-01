@@ -8,7 +8,10 @@ name: Device tests
 # device as benchmarks.yml's harness job for it does, with both fixtures of its
 # platform, sets the variable that gates the device tests, runs
 # `cargo test --workspace --no-fail-fast`, writes the tests' counts per crate
-# to its summary and tears the device down whatever happened.
+# to its summary and tears the device down whatever happened. A dispatch can
+# narrow a run to one job, one package and the tests a filter names, so that
+# an investigation provisions its device and runs one test in minutes; a
+# scheduled run has no inputs and runs everything.
 
 on:
   schedule:
@@ -17,6 +20,23 @@ on:
     # from benchmarks.yml's Sunday run.
     - cron: "23 3 * * 3"
   workflow_dispatch:
+    inputs:
+      tests:
+        description: "A cargo test filter, words separated by spaces: the tests whose names hold one of them (default: every test)"
+        type: string
+        required: false
+      crate:
+        description: "The one package to test, as cargo test -p names it (default: the whole workspace)"
+        type: string
+        required: false
+      runner:
+        description: "The jobs to run: simulator, emulator or both"
+        type: choice
+        options:
+          - simulator
+          - emulator
+          - both
+        default: both
 
 # No permission unless a job asks for one; each job reads the repository's
 # contents (docs/research/open-sourcing.md).
@@ -45,6 +65,7 @@ jobs:
     # (actions/runner-images#14404), with the iOS 27.0 runtime. The image's default
     # Xcode is kept.
     runs-on: xcode-27
+    if: inputs.runner != 'emulator'
     # The Simulator driver's tests boot devices of their own, one per test binary that needs a
     # first boot, each taking minutes on the runner with its install and its deletion: the first
     # run that created them all did not finish its tests within 90 minutes.
@@ -58,6 +79,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Resolve the tests the dispatch asks for
+        # The package and the filter of a dispatch, checked before they become the shell's words in
+        # the steps below; a scheduled run has neither and tests the whole workspace.
+        env:
+          CRATE: ${{ inputs.crate }}
+          TESTS: ${{ inputs.tests }}
+        run: |
+          if ! [[ $CRATE =~ ^[A-Za-z0-9_-]*$ ]]; then
+            echo "::error::crate must be a package name, not $CRATE"
+            exit 1
+          fi
+          if ! [[ $TESTS =~ ^[A-Za-z0-9_:\ ]*$ ]]; then
+            echo "::error::tests must be test names or parts of them separated by spaces, not $TESTS"
+            exit 1
+          fi
+          {
+            if [ -n "$CRATE" ]; then echo "TEST_SCOPE=-p $CRATE"; else echo "TEST_SCOPE=--workspace"; fi
+            echo "TEST_FILTER=$TESTS"
+          } >> "$GITHUB_ENV"
       - name: Install the Rust toolchain from rust-toolchain.toml
         # Its targets include the iOS Simulator's, for the Simulator driver's tree reader.
         run: rustup toolchain install --no-self-update
@@ -109,17 +149,24 @@ jobs:
           xcrun simctl launch "$MOBILE_AGENT_SIM_UDID" dev.mobileagent.fixture.expo
           xcrun simctl list devices "$MOBILE_AGENT_SIM_UDID"
       - name: Run the workspace's tests, the Simulator's among them
-        # The build's messages name each test binary's package for the summary.
+        # The build's messages name each test binary's package for the summary. The scope and the
+        # filter are split into words on purpose.
         run: |
           set -o pipefail
-          cargo test --workspace --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
-          cargo test --workspace --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          # shellcheck disable=SC2086
+          cargo test $TEST_SCOPE --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
+          # shellcheck disable=SC2086
+          cargo test $TEST_SCOPE --no-fail-fast -- $TEST_FILTER 2>&1 | tee "$RUNNER_TEMP/tests.log"
       - name: Write the summary
         if: always()
         run: |
           {
             echo "## Device tests: iOS Simulator"
             echo
+            if [ "$TEST_SCOPE" != "--workspace" ] || [ -n "$TEST_FILTER" ]; then
+              echo "Narrowed by the dispatch: \`cargo test $TEST_SCOPE -- $TEST_FILTER\`"
+              echo
+            fi
             if [ -f "$RUNNER_TEMP/tests.log" ]; then
               scripts/test-summary.sh "$RUNNER_TEMP/tests.log" "$RUNNER_TEMP/test-binaries.json"
             else
@@ -135,6 +182,7 @@ jobs:
   emulator:
     name: Android emulator (Compose and Expo)
     runs-on: ubuntu-latest
+    if: inputs.runner != 'simulator'
     timeout-minutes: 90
     permissions:
       contents: read
@@ -147,6 +195,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Resolve the tests the dispatch asks for
+        # The package and the filter of a dispatch, checked before they become the shell's words in
+        # the steps below; a scheduled run has neither and tests the whole workspace.
+        env:
+          CRATE: ${{ inputs.crate }}
+          TESTS: ${{ inputs.tests }}
+        run: |
+          if ! [[ $CRATE =~ ^[A-Za-z0-9_-]*$ ]]; then
+            echo "::error::crate must be a package name, not $CRATE"
+            exit 1
+          fi
+          if ! [[ $TESTS =~ ^[A-Za-z0-9_:\ ]*$ ]]; then
+            echo "::error::tests must be test names or parts of them separated by spaces, not $TESTS"
+            exit 1
+          fi
+          {
+            if [ -n "$CRATE" ]; then echo "TEST_SCOPE=-p $CRATE"; else echo "TEST_SCOPE=--workspace"; fi
+            echo "TEST_FILTER=$TESTS"
+          } >> "$GITHUB_ENV"
       - name: Let the runner's user open /dev/kvm for the emulator's acceleration
         # As benchmarks.yml's harness-emulator does.
         run: |
@@ -209,8 +276,10 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Build the workspace's tests
         # Before the emulator boots. The build's messages name each test binary's package for
-        # the summary.
-        run: cargo test --workspace --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
+        # the summary. The scope is split into words on purpose.
+        run: |
+          # shellcheck disable=SC2086
+          cargo test $TEST_SCOPE --no-run --message-format=json-render-diagnostics > "$RUNNER_TEMP/test-binaries.json"
       - name: Run the workspace's tests on an API 36 emulator, the Android tests among them
         # As benchmarks.yml's harness-emulator boots its emulator, on a Pixel 8 and with the Expo
         # fixture installed beside the Compose one.
@@ -229,13 +298,17 @@ jobs:
           script: |
             adb -s emulator-5554 install -r "$COMPOSE_APK"
             adb -s emulator-5554 install -r "$EXPO_APK"
-            bash -c 'set -o pipefail; cargo test --workspace --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tests.log"'
+            bash -c 'set -o pipefail; cargo test $TEST_SCOPE --no-fail-fast -- $TEST_FILTER 2>&1 | tee "$RUNNER_TEMP/tests.log"'
       - name: Write the summary
         if: always()
         run: |
           {
             echo "## Device tests: Android emulator"
             echo
+            if [ "$TEST_SCOPE" != "--workspace" ] || [ -n "$TEST_FILTER" ]; then
+              echo "Narrowed by the dispatch: \`cargo test $TEST_SCOPE -- $TEST_FILTER\`"
+              echo
+            fi
             if [ -f "$RUNNER_TEMP/tests.log" ]; then
               scripts/test-summary.sh "$RUNNER_TEMP/tests.log" "$RUNNER_TEMP/test-binaries.json"
             else

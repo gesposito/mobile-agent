@@ -4,10 +4,11 @@
 //! jobs only when the suite asks for them and bounded by 90 minutes, and the
 //! reports kept as artifacts for 90 days. Task 1.1 of `pass-4-fixes`: the
 //! device-backed tests run the same way, on the runners of the benchmarks'
-//! harness jobs (design D1). The workflow files are read with an outline of
-//! YAML's block mappings, enough for their keys: indentation opens a key's
-//! children, a list item holds a value, and a block scalar's lines, more
-//! indented than its key, are skipped; a job's steps are read as text.
+//! harness jobs (design D1), and a dispatch can narrow a run to one job, one
+//! package and a test filter (task 3.4). The workflow files are read with an
+//! outline of YAML's block mappings, enough for their keys: indentation opens
+//! a key's children, a list item holds a value, and a block scalar's lines,
+//! more indented than its key, are skipped; a job's steps are read as text.
 
 use std::fs;
 use std::path::Path;
@@ -313,8 +314,12 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
     let benchmarks_text = read(".github/workflows/benchmarks.yml");
     for job in ["simulator", "emulator"] {
         let steps = steps(&text, job);
-        // The workspace's tests, all of them, past a failure.
-        step_with(&steps, &["cargo test --workspace --no-fail-fast"]);
+        // The tests the dispatch asks for, every test of the workspace on a
+        // schedule, past a failure.
+        step_with(
+            &steps,
+            &["cargo test $TEST_SCOPE --no-fail-fast -- $TEST_FILTER"],
+        );
         // The counts per crate in the summary, whatever happened.
         step_with(
             &steps,
@@ -376,4 +381,61 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
         "emulator-5554"
     );
     step_with(&emulator, &["if: always()", "emu kill"]);
+}
+
+#[test]
+fn a_device_tests_dispatch_picks_its_runners_its_package_and_its_tests() {
+    let workflow = outline(".github/workflows/device-tests.yml");
+    let inputs = workflow.at("on/workflow_dispatch/inputs");
+    assert_eq!(inputs.keys(), ["tests", "crate", "runner"]);
+    for optional in ["tests", "crate"] {
+        let input = inputs.get(optional);
+        assert_eq!(input.get("type").text(), "string", "{optional}");
+        assert_eq!(input.get("required").text(), "false", "{optional}");
+    }
+    let runner = inputs.get("runner");
+    assert_eq!(runner.get("type").text(), "choice");
+    assert_eq!(
+        runner.get("options").items,
+        ["simulator", "emulator", "both"]
+    );
+    assert_eq!(runner.get("default").text(), "both");
+
+    // Each job runs unless the dispatch asks for the other one alone; a
+    // scheduled run has no inputs and runs both.
+    let jobs = workflow.get("jobs");
+    for (job, other) in [("simulator", "emulator"), ("emulator", "simulator")] {
+        assert_eq!(
+            jobs.at(&format!("{job}/if")).text(),
+            format!("inputs.runner != '{other}'"),
+            "{job}"
+        );
+    }
+
+    // The package and the filter reach the shell through the environment,
+    // checked before they become its words: the package as the scope, the
+    // whole workspace without one, and the filter after `--`, every test
+    // without one.
+    let text = read(".github/workflows/device-tests.yml");
+    for job in ["simulator", "emulator"] {
+        let steps = steps(&text, job);
+        let resolve = step_with(&steps, &["TEST_SCOPE=", "TEST_FILTER="]);
+        for wanted in [
+            "CRATE: ${{ inputs.crate }}",
+            "TESTS: ${{ inputs.tests }}",
+            "::error::",
+            "$GITHUB_ENV",
+            "TEST_SCOPE=--workspace",
+            "TEST_SCOPE=-p $CRATE",
+        ] {
+            assert!(resolve.contains(wanted), "{job}: {wanted} in {resolve}");
+        }
+        // The build of the test binaries, whose messages name each binary's
+        // package for the summary, covers the same scope.
+        step_with(&steps, &["cargo test $TEST_SCOPE --no-run"]);
+        assert!(
+            !steps.iter().any(|step| step.contains("--workspace --no")),
+            "{job}: no step tests the whole workspace whatever the dispatch asked"
+        );
+    }
 }
