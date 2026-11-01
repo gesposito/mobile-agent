@@ -688,6 +688,16 @@ fn not_running(error: &Error) -> bool {
     )
 }
 
+/// Launches an application through `launch`, the device's launch call,
+/// `wait` standing in for the pause between two launches; says how long it
+/// waited before launching again, if it did.
+fn launch_with<T>(
+    mut launch: impl FnMut() -> Result<T>,
+    _wait: impl FnOnce(Duration),
+) -> Result<(T, Option<Duration>)> {
+    launch().map(|launched| (launched, None))
+}
+
 /// Whether an install failed with installd's transient IXErrorDomain 2.
 fn transient_install_failure(error: &Error) -> bool {
     matches!(
@@ -790,7 +800,10 @@ impl Lifecycle for SimulatorDriver {
                 }
             }
             let start = Instant::now();
-            let pid = device.launch(bundle_id, &options.arguments, &options.environment)?;
+            let (pid, _) = launch_with(
+                || device.launch(bundle_id, &options.arguments, &options.environment),
+                thread::sleep,
+            )?;
             Ok(Launched {
                 pid,
                 elapsed: start.elapsed(),
@@ -1155,6 +1168,58 @@ mod tests {
         assert!(not_running(&ns_error("NSPOSIXErrorDomain", 3)));
         assert!(!not_running(&ns_error("NSPOSIXErrorDomain", 1)));
         assert!(!not_running(&ns_error("IXErrorDomain", 3)));
+    }
+
+    /// Design D2 of pass-4-fixes: `open --relaunch` right after the app's
+    /// termination and a press of Home was refused with `NSPOSIXErrorDomain`
+    /// 3, "Simulator device failed to launch", ten times in two runs on an
+    /// iOS 26.5 Simulator under load, and a launch 3 s later went through
+    /// every time. A launch call that answers the refusal once is launched
+    /// once more after the wait, which the launch reports; a second refusal
+    /// fails as it came, and no other failure is launched again.
+    #[test]
+    fn a_launch_refused_with_esrch_is_launched_once_more_after_the_wait() {
+        let refusal = || ns_error("NSPOSIXErrorDomain", 3);
+        // A fake of the device's launch call: answers each launch with the
+        // next of `answers`, counting the calls, and records the waits.
+        let fake = |answers: Vec<Result<i32>>| {
+            let calls = std::cell::Cell::new(0);
+            let waits = std::cell::RefCell::new(Vec::new());
+            let mut answers = answers.into_iter();
+            let result = launch_with(
+                || {
+                    calls.set(calls.get() + 1);
+                    answers.next().expect("no launch beyond the answers")
+                },
+                |wait| waits.borrow_mut().push(wait),
+            );
+            (result, calls.get(), waits.into_inner())
+        };
+
+        let (result, calls, waits) = fake(vec![Err(refusal()), Ok(42)]);
+        assert_eq!(
+            result.as_ref().ok(),
+            Some(&(42, Some(Duration::from_secs(3)))),
+            "{result:?}"
+        );
+        assert_eq!((calls, waits), (2, vec![Duration::from_secs(3)]));
+
+        let (result, calls, waits) = fake(vec![Err(refusal()), Err(refusal())]);
+        assert_eq!(result, Err(refusal()));
+        assert_eq!((calls, waits), (2, vec![Duration::from_secs(3)]));
+
+        for other in [
+            ns_error("NSPOSIXErrorDomain", 1),
+            ns_error("FBSOpenApplicationServiceErrorDomain", 3),
+        ] {
+            let (result, calls, waits) = fake(vec![Err(other.clone()), Ok(42)]);
+            assert_eq!(result, Err(other));
+            assert_eq!((calls, waits), (1, Vec::new()));
+        }
+
+        let (result, calls, waits) = fake(vec![Ok(42)]);
+        assert_eq!(result, Ok((42, None)));
+        assert_eq!((calls, waits), (1, Vec::new()));
     }
 
     #[test]
