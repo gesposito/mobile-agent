@@ -5,7 +5,10 @@
 //! reports kept as artifacts for 90 days. Task 1.1 of `pass-4-fixes`: the
 //! device-backed tests run the same way, on the runners of the benchmarks'
 //! harness jobs (design D1), and a dispatch can narrow a run to one job, one
-//! package and a test filter (task 3.4). The workflow files are read with an
+//! package and a test filter (task 3.4). Task 3.6 of `ci-benchmarks`: a
+//! change to documentation alone skips CI's Linux and macOS jobs, whose
+//! checks keep reporting, and the device tests' emulator teardown passes
+//! once the runner's step has stopped the emulator. The workflow files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
 //! more indented than its key, are skipped; a job's steps are read as text.
@@ -380,7 +383,25 @@ fn the_device_tests_run_on_fresh_devices_on_a_schedule_or_a_dispatch_with_their_
         jobs.at("emulator/env/MOBILE_AGENT_ANDROID_SERIAL").text(),
         "emulator-5554"
     );
-    step_with(&emulator, &["if: always()", "emu kill"]);
+    // The runner's step stops the emulator when its script ends, and adb can
+    // still list emulator-5554 once the console `emu kill` talks to has
+    // closed: the teardown kills only an emulator whose console on port 5554
+    // answers, and a kill that fails because the console closed in between
+    // passes.
+    let teardown = step_with(&emulator, &["if: always()", "emu kill"]);
+    assert!(
+        teardown.contains("(exec 3<> /dev/tcp/127.0.0.1/5554)"),
+        "{teardown}"
+    );
+    assert!(teardown.contains("if ! console; then"), "{teardown}");
+    assert!(
+        teardown.contains(
+            "elif ! \"$ANDROID_HOME/platform-tools/adb\" -s emulator-5554 emu kill && console; then"
+        ),
+        "{teardown}"
+    );
+    assert!(teardown.contains("exit 1\n"), "{teardown}");
+    assert!(!teardown.contains(" devices "), "{teardown}");
 }
 
 #[test]
@@ -438,4 +459,122 @@ fn a_device_tests_dispatch_picks_its_runners_its_package_and_its_tests() {
             "{job}: no step tests the whole workspace whatever the dispatch asked"
         );
     }
+}
+
+/// Task 3.6 of `ci-benchmarks`: a change to documentation alone skips CI's
+/// Linux and macOS jobs at the job level, so that their checks, which the
+/// ruleset `main` requires, report skipped, which passes them, rather than
+/// missing, as a workflow-level path filter would leave them. A first job
+/// classifies the change; the heavy jobs run unless it answered
+/// documentation alone, so that a classifier that failed runs them; Audit
+/// runs on every change and holds the documentation's own checks.
+#[test]
+fn a_change_to_documentation_alone_skips_the_heavy_ci_jobs_and_keeps_their_checks_reporting() {
+    let ci = outline(".github/workflows/ci.yml");
+    let jobs = ci.get("jobs");
+    assert_eq!(
+        jobs.keys(),
+        ["changes", "audit", "linux", "macos-26", "macos-27"]
+    );
+    let text = read(".github/workflows/ci.yml");
+
+    // The classifier: quick, reading the contents alone, on a pull request's
+    // merge commit and its two parents; a push to main and a dispatch always
+    // count as code.
+    let changes = jobs.get("changes");
+    assert_eq!(changes.get("runs-on").text(), "ubuntu-latest");
+    assert_eq!(changes.get("timeout-minutes").text(), "5");
+    assert_eq!(changes.at("permissions/contents").text(), "read");
+    assert_eq!(
+        changes.at("outputs/code").text(),
+        "${{ steps.classify.outputs.code }}"
+    );
+    let classifier = steps(&text, "changes");
+    let checkout = step_with(&classifier, &["uses: actions/checkout@"]);
+    for wanted in [
+        "if: github.event_name == 'pull_request'",
+        "fetch-depth: 2\n",
+    ] {
+        assert!(checkout.contains(wanted), "{wanted} in {checkout}");
+    }
+    let classify = step_with(&classifier, &["id: classify"]);
+    for wanted in [
+        "EVENT: ${{ github.event_name }}",
+        "scripts/ci-changes.sh HEAD^1 HEAD >> \"$GITHUB_OUTPUT\"",
+        "echo \"code=true\" >> \"$GITHUB_OUTPUT\"",
+    ] {
+        assert!(classify.contains(wanted), "{wanted} in {classify}");
+    }
+
+    // The required checks are the jobs' names, one job each: a job's `if` is
+    // evaluated before its matrix expands, so a skipped matrix job would
+    // report one check under its unexpanded name and leave the legs' checks
+    // missing.
+    let names: Vec<&str> = ["audit", "linux", "macos-26", "macos-27"]
+        .iter()
+        .map(|job| jobs.at(&format!("{job}/name")).text())
+        .collect();
+    assert_eq!(
+        names,
+        ["Audit", "Linux", "macOS (Xcode 26)", "macOS (Xcode 27)"]
+    );
+    for job in ["changes", "audit", "linux", "macos-26", "macos-27"] {
+        assert!(
+            !jobs.get(job).keys().contains(&"strategy"),
+            "{job} has no matrix"
+        );
+    }
+    for job in ["linux", "macos-26", "macos-27"] {
+        let heavy = jobs.get(job);
+        assert_eq!(heavy.get("needs").text(), "changes", "{job}");
+        assert_eq!(
+            heavy.get("if").text(),
+            "${{ !cancelled() && needs.changes.outputs.code != 'false' }}",
+            "{job}"
+        );
+    }
+
+    // The two macOS jobs run the same steps, each on its image with its
+    // Xcode.
+    let macos = steps(&text, "macos-26");
+    assert!(macos.len() > 5, "{macos:#?}");
+    // The blank line between the jobs aside.
+    let trimmed = |steps: &[String]| -> Vec<String> {
+        steps
+            .iter()
+            .map(|step| step.trim_end().to_owned())
+            .collect()
+    };
+    assert_eq!(trimmed(&macos), trimmed(&steps(&text, "macos-27")));
+    for (job, runner, xcode) in [
+        ("macos-26", "macos-26", "26"),
+        ("macos-27", "xcode-27", "27"),
+    ] {
+        let leg = jobs.get(job);
+        assert_eq!(leg.get("runs-on").text(), runner, "{job}");
+        assert_eq!(leg.at("env/XCODE_MAJOR").text(), xcode, "{job}");
+        assert_eq!(leg.get("timeout-minutes").text(), "30", "{job}");
+    }
+    step_with(&macos, &["just validate", "FIXTURES: expo,swiftui"]);
+
+    // Audit runs on every change, and with it the checks a change to the
+    // documentation needs: the publish scan and the OpenSpec validation, the
+    // commands of the justfile's recipes.
+    let audit = jobs.get("audit");
+    for key in ["needs", "if"] {
+        assert!(!audit.keys().contains(&key), "audit has no {key}");
+    }
+    let audit_steps = steps(&text, "audit");
+    step_with(&audit_steps, &["npm ci --prefix .github/tools"]);
+    step_with(&audit_steps, &["run: scripts/check-public.sh"]);
+    step_with(&audit_steps, &["run: openspec validate --all --strict"]);
+    let justfile = read("justfile");
+    assert!(
+        justfile.contains("\ncheck-public:\n    scripts/check-public.sh\n"),
+        "just check-public runs the script"
+    );
+    assert!(
+        justfile.contains("\nopenspec-validate:\n    openspec validate --all --strict\n"),
+        "just openspec-validate runs the validation"
+    );
 }
