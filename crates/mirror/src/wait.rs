@@ -103,6 +103,22 @@ impl Selector {
             && self.role.is_none_or(|r| r == role)
             && self.reference.is_none_or(|r| element_ref == Some(r))
     }
+
+    /// Whether a matching element with this name and value holds a text
+    /// that this selector's text, when the element's text need only contain
+    /// it, is the whole of, case and the whitespace around either aside: a
+    /// wait for the text prefers such an element to one whose text merely
+    /// contains it, as `wait --text Lisbon` resolved on "Lisbon Airport
+    /// (LIS)" listed above "Lisbon" on the fourth pass (pass-4-fixes,
+    /// design D8). True for any other selector.
+    pub(crate) fn whole(&self, name: &str, value: Option<&str>) -> bool {
+        let Some(text) = self.text.as_deref().filter(|_| !self.exact) else {
+            return true;
+        };
+        let text = text.trim().to_lowercase();
+        let holds = |shown: &str| shown.trim().to_lowercase() == text;
+        holds(name) || value.is_some_and(holds)
+    }
 }
 
 /// What a wait waits for.
