@@ -219,6 +219,69 @@ fn a_settle_that_times_out_names_the_signal_still_changing() {
     );
 }
 
+/// Design D4 of pass-4-fixes: a settle that stops at its timeout while
+/// the fixture's Anim tab keeps its frames changing succeeds, exit status
+/// 0, with a warning, `settled: false`, how long it waited before it
+/// stopped and why; with `--strict` it fails `settle_timeout`, its data
+/// kept. A screen that settles succeeds with `--strict` too, and
+/// `--strict` without `--settle` is a usage error.
+#[test]
+fn a_settle_that_gives_up_says_after_how_long_and_why_and_fails_settle_timeout_with_strict() {
+    let env = TestEnv::start("android");
+    env.cli(&["open", APP]).ok();
+    env.cli(&["click", "#tab-anim"]).ok();
+    let gave_up = env
+        .cli(&["--json", "wait", "--settle", "--timeout", "800"])
+        .ok()
+        .json();
+    let data = &gave_up["data"];
+    assert_eq!(data["settled"], false, "{gave_up}");
+    let stopped = ms(data, "stoppedAfterMs");
+    assert!(
+        stopped >= 800.0 && stopped == ms(data, "elapsedMs"),
+        "{gave_up}"
+    );
+    assert_eq!(data["reason"], "frames_kept_changing", "{gave_up}");
+    assert!(
+        gave_up["warning"]
+            .as_str()
+            .is_some_and(|warning| warning.contains("did not settle within 800 ms")),
+        "{gave_up}"
+    );
+    let strict = env
+        .cli(&["--json", "wait", "--settle", "--timeout", "800", "--strict"])
+        .failed()
+        .json();
+    assert_eq!(strict["success"], false, "{strict}");
+    assert_eq!(strict["code"], "settle_timeout", "{strict}");
+    assert_eq!(strict["data"]["settled"], false, "{strict}");
+    assert_eq!(strict["data"]["reason"], "frames_kept_changing", "{strict}");
+    assert!(
+        strict["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("did not settle within 800 ms")),
+        "{strict}"
+    );
+    let human = env
+        .cli(&["wait", "--settle", "--timeout", "800", "--strict"])
+        .failed();
+    assert!(
+        human.stdout.is_empty() && human.stderr.starts_with("✗ the screen did not settle"),
+        "{}{}",
+        human.stdout,
+        human.stderr
+    );
+    env.cli(&["click", "#tab-login"]).ok();
+    let settled = env
+        .cli(&["--json", "wait", "--settle", "--strict"])
+        .ok()
+        .json();
+    assert_eq!(settled["data"]["settled"], true, "{settled}");
+    assert!(settled["data"].get("stoppedAfterMs").is_none(), "{settled}");
+    assert!(settled["data"].get("reason").is_none(), "{settled}");
+    env.cli(&["wait", "--strict"]).failed();
+}
+
 #[test]
 fn a_settle_on_a_screen_already_quiet_ended_on_nothing() {
     let env = TestEnv::start("android");
