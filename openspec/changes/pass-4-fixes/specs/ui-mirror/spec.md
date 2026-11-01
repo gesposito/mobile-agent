@@ -20,7 +20,7 @@ A bar or a pinned header SHALL cover what lies within its bounds whatever its pl
 ## ADDED Requirements
 
 ### Requirement: A listing after a system window closes
-When a system window leaves the replica, the mirror SHALL read the application's windows again before the next listing, so that the interactive listing lists what the screen shows and never a cover that is gone, and a settle right after SHALL count the change.
+When a tap answers a dialog of system UI's and the replica then holds system UI's windows alone, without the dialog, the mirror SHALL read the application's windows again before the next listing, until they are back or a bound passes, so that the interactive listing lists what the screen shows rather than what system UI left, and a settle right after SHALL count the change.
 
 #### Scenario: An alert dismissed
 - **WHEN** a permission alert is dismissed over an app's first screen

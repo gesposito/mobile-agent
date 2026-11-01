@@ -733,6 +733,22 @@ wait for that re-read, at most the minimum interval plus 100 ms. Targets
 without frames, and targets whose windows all send change events, never
 wait; a warm snapshot of a still screen is served from the replica.
 
+A tap that answers a dialog of system UI's, a permission alert, is followed
+by more: the Simulator's reader reads the process that owns the foreground,
+and SpringBoard keeps it for a while after its alert has gone, holding
+nothing, before the app is active again. On CI's iOS 27.0 Simulator
+`snapshot -i` right after "Don't Allow" on Calendar's location alert listed
+SpringBoard with no interactive element, and the app's screen only after a
+settle (pass-4-fixes, design D6). So while the replica holds system UI's
+windows alone, none holding a dialog, after such a tap, the catch-up first
+reads again until the application's window is back
+(`Mirror::await_application`): at once after each frame change, every
+minimum interval otherwise, at most 2 s after the tap. A settle on the
+Simulator reads the tree its frames changed once it settled, through the
+catch-up, so it counts the app's return as a change of the tree. On
+Android the dialog has a window of its own above the app's, which stays,
+and nothing waits.
+
 Frames that kept changing past the minimum interval, as an animation's, a
 video's or a focused field's blinking cursor's do, are no transition whose
 end a later read would show, so a tree read does not wait for them (design
@@ -1527,7 +1543,8 @@ Worked around here without changing `crates/mirror`:
   meanwhile, so the worker waits for that re-read before a tree read
   (`Attached::catch_up`), timing it with the mirror's timestamps, or asks
   for it at once (`Mirror::reread_now`) on frames that kept changing past
-  the interval.
+  the interval; after a tap that answered a dialog of system UI's it first
+  waits for the application's window (`Mirror::await_application`).
 - `testing::FakeTarget` runs on a fake clock and its tap reactions are
   fixed per identifier; the fake driver adds a real-time adapter and a
   stateful device model. Its `inputs()` copies the whole history, so the
@@ -1594,6 +1611,7 @@ Worked around here without changing `crates/mirror`:
 | Queries reach elements out of view (design D51) | Box of a row scrolled above | `handlers::act::tests::get_and_a_wait_for_presence_resolve_a_row_scrolled_above_at_once_and_say_it_is_out_of_view`, `handlers::act::tests::only_an_element_the_tree_does_not_hold_is_not_found_and_a_wait_for_one_in_view_still_waits` |
 | Selectors resolve covered elements (design D53) | Click by text on a covered element | `handlers::act::tests::a_click_by_text_on_a_text_a_button_covers_whole_is_refused_naming_it_at_once`, `handlers::act::tests::a_click_by_identifier_on_a_control_a_view_holds_whole_is_refused_at_once` (naming the footer as the hint does, design D57), `handlers::act::tests::a_fill_by_identifier_on_a_field_behind_a_dialog_is_refused_naming_it_at_once`, `handlers::act::tests::a_selector_on_an_element_the_tree_does_not_hold_waits_its_timeout` |
 | Text entry verification (design D56) | Refill with the keyboard up | `handlers::act::tests::a_code_field_showing_a_placeholder_value_is_read_back_through_its_name_in_both_keyboard_states`, `handlers::act::tests::a_value_shows_the_entry_only_when_it_changed_with_it_and_is_no_placeholder`; on a throwaway code field on the Simulator in both keyboard states, the record of task 7.2 of rn-app-fixes |
+| A listing after a system window closes, spec `ui-mirror` (pass-4-fixes task 2.4, design D6) | An alert dismissed (the fixture's System tab, its location prompt, on both platforms: the interactive listing right after the click on its refusal lists the tab, the app in front, where a fake Simulator gives SpringBoard holding nothing for 400 ms; a settle right after it, and one straight after the click, names the change) | `handlers::act::tests::the_listing_right_after_a_system_alert_closes_lists_the_screen_and_a_settle_names_the_change` |
 | Snapshot content, spec `ui-mirror` (design D55) | Edit menu up (`fill` closing the menu its paste left up) | `handlers::act::tests::a_fill_whose_paste_lands_nothing_dismisses_the_edit_menu_it_left_up`, `fake::app::tests::fields_take_text_as_their_typing_mode_says`; the rest of the row in `crates/mirror/README.md` |
 | Snapshot content, spec `ui-mirror` (design D52) | Hardware keyboard connected | `handlers::act::tests::a_fill_on_ios_with_a_hardware_keyboard_types_once_the_field_has_the_focus`, `handlers::act::tests::fill_by_the_identifier_of_a_node_that_brings_up_a_keyboard_drawing_nothing_types_at_once`, on a fake whose keyboard window draws nothing (`Slide::Hidden`); the waits ending at the focus once such a window was seen, until a keyboard with keys is (design D57), `handlers::act::tests::after_a_keyboard_drawing_no_keys_the_keyboard_waits_end_at_the_focus` on a fake whose number pad brings up no window (`Slide::HiddenPad`) and `handlers::act::tests::a_keyboard_with_keys_seen_again_puts_the_keyboard_waits_back`; the rest of the row in `crates/mirror/README.md` |
 | Text entry, spec `ios-device-driver` (task 5.3 of physical-ios) | (fill names text set through a physical iPhone's runner, not a paste) | `handlers::act::tests::a_fill_on_an_iphone_says_it_set_the_text_rather_than_pasted_it`; the CLI's `help::the_agent_guide_says_where_a_physical_iphone_differs` |
