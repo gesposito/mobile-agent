@@ -737,7 +737,10 @@ the reasons in this order, each with advice:
   `Attached` and `Detached`, among every element the replica holds, in view
   or not, a keyboard's keys aside, as a query looks for one (rn-app-fixes,
   design D51), the first on screen and not covered given before the rest, as
-  an action's selector resolves through it (design D53). A timeout fails
+  an action's selector resolves through it (design D53), and among those, for
+  text the name or value need only contain, the first whose name or value is
+  the text alone, case and the whitespace around it aside, before one that
+  only contains it (pass-4-fixes, design D8). A timeout fails
   with `wait_timeout` and a summary of an interactive snapshot. Its first
   look takes in what arrived and leaves a read that is due for later while
   the replica is current by the mirror's own rules: no read of every window

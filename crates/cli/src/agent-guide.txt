@@ -74,7 +74,7 @@ Waiting
   wait --change --frames      a frame change ends it too, for a canvas or map
   wait --settle               no tree or frame change for 200 ms, at most
                               3000 ms; settled: false names what kept changing
-  wait --text Welcome         until an element shows the text, naming it
+  wait --text Welcome         until an element shows it, naming it, alone first
   wait '#spinner' --state hidden   until it is off screen; also visible,
                               enabled, and attached or detached in the tree
   wait 500                    fixed milliseconds, a last resort
