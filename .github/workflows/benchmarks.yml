@@ -225,6 +225,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
+          # As micro-linux's: the base is checked out from this history into a worktree of its own.
           fetch-depth: 0
           persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
@@ -301,6 +302,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
+          # Head alone: the harness builds and measures head, and its report's provenance reads
+          # head's sha and status, no history.
+          fetch-depth: 1
           persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
@@ -404,6 +408,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.head }}
+          # Head alone: the harness builds and measures head, and its report's provenance reads
+          # head's sha and status, no history.
+          fetch-depth: 1
           persist-credentials: false
       - name: Let the runner's user open /dev/kvm for the emulator's acceleration
         run: |
