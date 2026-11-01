@@ -68,14 +68,7 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
         "devices" => devices(data, out),
         "status" => status(data, out),
         "diff_snapshot" => diff(data, out),
-        "open" => {
-            let _ = writeln!(
-                out,
-                "✓ Opened {} on {}",
-                str_of(data, "opened"),
-                str_of(data, "target")
-            );
-        }
+        "open" => opened(data, out),
         "close" => match data.get("app").and_then(Value::as_str) {
             Some(app) if data["kept"] == Value::Bool(true) => {
                 let _ = writeln!(
@@ -155,6 +148,22 @@ fn human_success(action: &str, data: &Value, out: &mut String) {
             let _ = writeln!(out, "✓ Done");
         }
     }
+}
+
+/// An open: `✓ Opened com.apple.Maps on <target>`, followed by `(retried
+/// the refused launch after 3000 ms)` when the target refused the first
+/// launch and the driver launched the app again after that wait
+/// (pass-4-fixes, design D2).
+fn opened(data: &Value, out: &mut String) {
+    let mut line = format!(
+        "✓ Opened {} on {}",
+        str_of(data, "opened"),
+        str_of(data, "target")
+    );
+    if let Some(wait) = data["retriedAfterMs"].as_f64() {
+        let _ = write!(line, " (retried the refused launch after {wait:.0} ms)");
+    }
+    let _ = writeln!(out, "{line}");
 }
 
 /// What `get value` prints (real-app-fixes, design D5): the value, else a
@@ -957,6 +966,31 @@ mod tests {
         assert_eq!(
             human("screenshot", &shot).0,
             "✓ Screenshot saved to /tmp/shot.jpg (460x1000 of a 402x874-point screen)\n"
+        );
+    }
+
+    /// Design D2 of pass-4-fixes: an open whose first launch the target
+    /// refused says that the driver launched the app again and after what
+    /// wait; one whose first launch went through says nothing of it.
+    #[test]
+    fn an_open_whose_launch_was_retried_says_after_what_wait() {
+        let opened = |retried: Option<f64>| {
+            let mut data = json!({
+                "opened": "com.apple.Maps", "target": "placeholder-udid", "settled": true,
+                "elapsedMs": 4210.5, "firstTreeMs": 3890.25,
+            });
+            if let Some(ms) = retried {
+                data["retriedAfterMs"] = ms.into();
+            }
+            human("open", &ok(data)).0
+        };
+        assert_eq!(
+            opened(None),
+            "✓ Opened com.apple.Maps on placeholder-udid\n"
+        );
+        assert_eq!(
+            opened(Some(3000.0)),
+            "✓ Opened com.apple.Maps on placeholder-udid (retried the refused launch after 3000 ms)\n"
         );
     }
 

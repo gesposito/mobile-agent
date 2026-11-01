@@ -53,8 +53,8 @@ use super::tree::{self, Win};
 use super::{FakeRunner, Timing, Typing};
 use crate::devices::ios::{self as device, Facts};
 use crate::driver::{
-    AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Platform,
-    Report, Size, TargetReport,
+    AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Launched,
+    Platform, Report, Size, TargetReport,
 };
 
 /// How often the event stream looks for items while it waits.
@@ -1080,7 +1080,7 @@ impl Clock for Part {
 }
 
 impl AppControl for Part {
-    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<(), DriverError> {
+    fn launch(&mut self, app: &str, launch: &Launch, _: Instant) -> Result<Launched, DriverError> {
         self.shared.sync();
         let mut device = lock(&self.shared.device);
         let starts = launch.relaunch || !device.runs(app);
@@ -1108,7 +1108,7 @@ impl AppControl for Part {
             self.shared.show(&device, Change::Screen);
         }
         self.shared.follow(&device, self.shared.latency);
-        Ok(())
+        Ok(Launched::default())
     }
 
     fn terminate(&mut self, app: &str) -> Result<(), DriverError> {

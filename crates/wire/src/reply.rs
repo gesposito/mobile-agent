@@ -233,6 +233,12 @@ pub struct Open {
     /// …"`; absent when none stands in front.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert: Option<String>,
+    /// How long the driver waited before it launched the app again, once
+    /// the target refused the first launch, as a Simulator refuses one with
+    /// `NSPOSIXErrorDomain` 3 right after the app's termination; absent when
+    /// the first launch went through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retried_after_ms: Option<f64>,
 }
 
 /// `snapshot`: the listing, or its delta, and what reading it cost.

@@ -688,14 +688,38 @@ fn not_running(error: &Error) -> bool {
     )
 }
 
-/// Launches an application through `launch`, the device's launch call,
-/// `wait` standing in for the pause between two launches; says how long it
-/// waited before launching again, if it did.
+/// How long the driver waits before it launches an application again once
+/// CoreSimulator refused the launch ([`refused_launch`]): `open --relaunch`
+/// right after the app's termination and a press of Home was refused ten
+/// times in two runs on an iOS 26.5 Simulator under load (pass-4-fixes,
+/// design D2), and a launch 3 s later went through every time; nothing
+/// shorter was measured. A freshly created Simulator on CI refused none of
+/// ten such launches.
+const LAUNCH_RETRY: Duration = Duration::from_secs(3);
+
+/// Whether CoreSimulator refused to launch an application:
+/// `NSPOSIXErrorDomain` 3, `ESRCH`, which the launch call answers as
+/// "Simulator device failed to launch" with the bundle identifier.
+fn refused_launch(error: &Error) -> bool {
+    not_running(error)
+}
+
+/// Launches an application through `launch`, the device's launch call, and
+/// once more after [`LAUNCH_RETRY`], which `wait` waits, when CoreSimulator
+/// refused the first launch ([`refused_launch`]); a second refusal fails
+/// as it came, and no other failure is launched again. Says how long it
+/// waited before the second launch, if it made one.
 fn launch_with<T>(
     mut launch: impl FnMut() -> Result<T>,
-    _wait: impl FnOnce(Duration),
+    wait: impl FnOnce(Duration),
 ) -> Result<(T, Option<Duration>)> {
-    launch().map(|launched| (launched, None))
+    match launch() {
+        Err(error) if refused_launch(&error) => {
+            wait(LAUNCH_RETRY);
+            launch().map(|launched| (launched, Some(LAUNCH_RETRY)))
+        }
+        result => result.map(|launched| (launched, None)),
+    }
 }
 
 /// Whether an install failed with installd's transient IXErrorDomain 2.
@@ -800,13 +824,14 @@ impl Lifecycle for SimulatorDriver {
                 }
             }
             let start = Instant::now();
-            let (pid, _) = launch_with(
+            let (pid, retried_after) = launch_with(
                 || device.launch(bundle_id, &options.arguments, &options.environment),
                 thread::sleep,
             )?;
             Ok(Launched {
                 pid,
                 elapsed: start.elapsed(),
+                retried_after,
             })
         })
     }
