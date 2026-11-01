@@ -3,6 +3,16 @@ name: CI
 # Validation only: build, lint, test and validate on every push to main and
 # every pull request. The benchmarks live in benchmarks.yml, which runs on a
 # schedule or on demand and never per push or pull request.
+#
+# The ruleset `main` requires the checks Audit, Linux, macOS (Xcode 26) and
+# macOS (Xcode 27) to be present and green. A pull request that changes
+# documentation alone, as scripts/ci-changes.sh classifies it, skips the
+# Linux and macOS jobs by their `if`: a skipped job reports its check as
+# skipped, which passes a required check, where a workflow-level path filter
+# would leave the checks missing and the pull request blocked. A job's `if`
+# is evaluated before a matrix expands, so a skipped matrix job would report
+# one check under its unexpanded name; the two macOS jobs are therefore two
+# jobs with the same steps rather than a matrix. Audit runs on every change.
 on:
   push:
     branches: [main]
@@ -21,6 +31,34 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          # The pull request's merge commit and its two parents, the base branch's tip and the head.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify the change as code or documentation alone
+        id: classify
+        # A push to main and a dispatch always count as code: main's runs are what the others are
+        # compared with.
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            scripts/ci-changes.sh HEAD^1 HEAD >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   audit:
     name: Audit
     runs-on: ubuntu-latest
@@ -69,9 +107,25 @@ jobs:
         run: cargo deny check advisories licenses bans sources
       - name: Check the Android agent's host tests' dependencies, a workspace of their own
         run: cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources
+      - name: Check that no tracked file holds what must never be published
+        # just check-public's command. The Linux and macOS jobs run it again in just validate;
+        # here it covers a change to documentation alone, which skips them.
+        run: scripts/check-public.sh
+      - name: Install the OpenSpec CLI
+        # From .github/tools' lockfile, as the Linux and macOS jobs install it.
+        run: |
+          npm ci --prefix .github/tools --no-audit --no-fund
+          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Validate the OpenSpec changes and specs in strict mode
+        # just openspec-validate's command, run here for the same reason as the publish scan.
+        run: openspec validate --all --strict
 
   linux:
     name: Linux
+    needs: changes
+    # Skipped for documentation alone; run when the classifier failed, so that its failure never
+    # skips a required check.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -147,37 +201,30 @@ jobs:
           FIXTURES: compose
         run: just validate
 
-  macos:
-    name: macOS (Xcode ${{ matrix.xcode }})
-    runs-on: ${{ matrix.runner }}
+  macos-26:
+    name: macOS (Xcode 26)
+    needs: changes
+    # As the linux job's.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - xcode: "26"
-            runner: macos-26
-          # Xcode 27 ships only on the xcode-27 preview image (actions/runner-images#14404).
-          - xcode: "27"
-            runner: xcode-27
+    env:
+      XCODE_MAJOR: "26"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Select Xcode ${{ matrix.xcode }}
+      - name: Select Xcode ${{ env.XCODE_MAJOR }}
         id: xcode
-        env:
-          XCODE_MAJOR: ${{ matrix.xcode }}
-          RUNNER_LABEL: ${{ matrix.runner }}
         run: |
           # Keep the image default when it is already this major, else pick the newest Xcode_<major>*.app.
           current=$(xcodebuild -version | sed -n '1s/^Xcode //p')
           if [ "${current%%.*}" != "$XCODE_MAJOR" ]; then
             app=$(find /Applications -maxdepth 1 -name "Xcode_${XCODE_MAJOR}*.app" | sort -V | tail -n 1)
             if [ -z "$app" ]; then
-              echo "::warning::Xcode $XCODE_MAJOR is not installed on $RUNNER_LABEL; skipping"
+              echo "::warning::Xcode $XCODE_MAJOR is not installed on this image; skipping"
               echo "available=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -188,7 +235,7 @@ jobs:
       - if: steps.xcode.outputs.available == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          # Same paths as the linux job; the key adds the Xcode major so the legs never share target/.
+          # Same paths as the linux job; the key adds the Xcode major so the two jobs never share target/.
           path: |
             ~/.cargo/bin/
             ~/.cargo/.crates.toml
@@ -197,7 +244,111 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-xcode${{ matrix.xcode }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-xcode${{ env.XCODE_MAJOR }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        if: steps.xcode.outputs.available == 'true'
+        run: rustup toolchain install --no-self-update
+      - name: Add the iOS Simulator target for the Simulator driver's tree reader
+        if: steps.xcode.outputs.available == 'true'
+        # crates/simulator/build.rs cross-compiles reader/ for it; see crates/simulator/README.md.
+        run: rustup target add aarch64-apple-ios-sim
+      - name: Install just and the OpenSpec CLI
+        if: steps.xcode.outputs.available == 'true'
+        # As on Linux: just at a pinned version, locked, and OpenSpec from .github/tools' lockfile.
+        run: |
+          cargo install just@1.58.0 --locked
+          npm ci --prefix .github/tools --no-audit --no-fund
+          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Install Bun for the Expo fixture
+        if: steps.xcode.outputs.available == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.3"
+      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
+        if: steps.xcode.outputs.available == 'true'
+        # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
+        # TODO: Socket Firewall does not wrap Homebrew.
+        run: brew install jpeg-turbo
+      - name: Install Socket Firewall
+        if: steps.xcode.outputs.available == 'true'
+        # sfw is the Socket wrapper itself, so nothing wraps its own install. The npm launcher
+        # resolves its binary through the unauthenticated GitHub API, which shared runners exhaust,
+        # so fetch the release asset directly, at a pinned release, and check its SHA-256; the
+        # download endpoint is not rate limited.
+        env:
+          SFW_VERSION: "1.15.4"
+          SFW_SHA256: 1b705ea7c399727ee41aa93f63e0469d2c3787c50e1dd8842cb8ff5ceec9eb99
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 -o "$HOME/.local/bin/sfw" \
+                 "https://github.com/SocketDev/sfw-free/releases/download/v$SFW_VERSION/sfw-free-macos-arm64"; then
+              break
+            fi
+            echo "download attempt $attempt failed; retrying in 15 s"
+            sleep 15
+          done
+          echo "$SFW_SHA256  $HOME/.local/bin/sfw" | shasum -a 256 -c -
+          chmod +x "$HOME/.local/bin/sfw"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          file "$HOME/.local/bin/sfw"
+      - name: just validate
+        if: steps.xcode.outputs.available == 'true'
+        env:
+          # macOS builds the Apple-side fixtures, and builds and tests the iPhone driver (crates/ios, on
+          # its fake device) and the runner's crate (agent-ios, on the host); their device tests skip
+          # without MOBILE_AGENT_IOS_UDID, so nothing runs against a phone. Without MOBILE_AGENT_IOS_TEAM
+          # the fixtures' device builds skip; SKIP_AGENT_BUILD skips the iOS runner's signed bundle and
+          # the Android agent, which the Linux job builds with the Compose fixture.
+          FIXTURES: expo,swiftui
+          SKIP_AGENT_BUILD: "1"
+        run: just validate
+
+  macos-27:
+    name: macOS (Xcode 27)
+    needs: changes
+    # As the linux job's.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    # Xcode 27 ships only on the xcode-27 preview image (actions/runner-images#14404).
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      XCODE_MAJOR: "27"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select Xcode ${{ env.XCODE_MAJOR }}
+        id: xcode
+        run: |
+          # Keep the image default when it is already this major, else pick the newest Xcode_<major>*.app.
+          current=$(xcodebuild -version | sed -n '1s/^Xcode //p')
+          if [ "${current%%.*}" != "$XCODE_MAJOR" ]; then
+            app=$(find /Applications -maxdepth 1 -name "Xcode_${XCODE_MAJOR}*.app" | sort -V | tail -n 1)
+            if [ -z "$app" ]; then
+              echo "::warning::Xcode $XCODE_MAJOR is not installed on this image; skipping"
+              echo "available=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sudo xcode-select -s "$app/Contents/Developer"
+          fi
+          xcodebuild -version
+          echo "available=true" >> "$GITHUB_OUTPUT"
+      - if: steps.xcode.outputs.available == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Same paths as the linux job; the key adds the Xcode major so the two jobs never share target/.
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-xcode${{ env.XCODE_MAJOR }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install the Rust toolchain from rust-toolchain.toml
         if: steps.xcode.outputs.available == 'true'
         run: rustup toolchain install --no-self-update
