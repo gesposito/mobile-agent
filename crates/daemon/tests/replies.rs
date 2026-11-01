@@ -169,6 +169,21 @@ fn every_action_s_reply_on_a_fake_target_parses_into_its_reply_type() {
         "stroke_too_short"
     );
     assert_eq!(short["data"]["stroke"], 2.0, "{short}");
+    // A settle that stops at its timeout says after how long and why
+    // (pass-4-fixes, design D4).
+    success!(
+        ask(json!({"action": "click", "target": "#tab-anim"})),
+        reply::Click
+    );
+    let gave_up = success!(
+        ask(json!({"action": "wait", "settle": true, "timeout": 400})),
+        reply::Wait
+    );
+    assert_eq!(
+        gave_up["data"]["reason"], "frames_kept_changing",
+        "{gave_up}"
+    );
+    assert!(gave_up["data"]["stoppedAfterMs"].is_number(), "{gave_up}");
 
     let claimed = failure!(
         ask(json!({"action": "snapshot", "session": "bob"})),

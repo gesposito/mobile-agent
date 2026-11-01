@@ -474,6 +474,16 @@ pub struct Wait {
     /// For `settle`, what kept changing: `tree`, `frame`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub still_changing: Option<Vec<String>>,
+    /// For a `settle` that stopped at its timeout, `settled` false, how
+    /// long it waited before it stopped; absent when it settled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_after_ms: Option<f64>,
+    /// For a `settle` that stopped at its timeout, why:
+    /// `frames_kept_changing`, `tree_kept_changing`,
+    /// `tree_and_frames_kept_changing` or `screen_kept_changing`; absent
+    /// when it settled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// For `settle` within a second of the session's last input, that
     /// input's action, `click`, `fill`, `type`, `press`, `swipe` or
     /// `scroll`, whose first effect the settle waited for; `endedBy` is

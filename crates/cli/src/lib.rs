@@ -18,6 +18,7 @@ use std::path::Path;
 
 use clap::Parser;
 use clap::error::ErrorKind;
+use serde_json::Value;
 
 use crate::client::{Failure, Reply};
 use crate::code::{DOCTOR_FAILED, INVALID_CONFIG, UNKNOWN_COMMAND};
@@ -36,6 +37,9 @@ pub mod code {
     pub const DAEMON_TIMEOUT: &str = "daemon_timeout";
     /// A doctor check failed.
     pub const DOCTOR_FAILED: &str = "doctor_failed";
+    /// `wait --settle --strict` stopped at its timeout, the screen still
+    /// changing (pass-4-fixes, design D4).
+    pub const SETTLE_TIMEOUT: &str = "settle_timeout";
 }
 
 /// The guide `help agent` prints: under 120 lines, for an agent's prompt.
@@ -188,7 +192,30 @@ pub(crate) fn execute(command: &args::Command, settings: &Settings, cwd: &Path) 
     let action = request.command.action().to_owned();
     let reply =
         client::call(&settings.endpoint, &request::line(&request)).unwrap_or_else(Reply::failed);
-    (action, reply)
+    let strict = matches!(command, args::Command::Wait(wait) if wait.strict);
+    (action, if strict { strictly(reply) } else { reply })
+}
+
+/// The reply of `wait --settle --strict` (pass-4-fixes, design D4): a
+/// settle that stopped at its timeout, which the daemon answers as a
+/// success with `settled: false` and a warning, fails with
+/// `settle_timeout`, the warning its message and its data kept, so that a
+/// script tells it by the exit status; any other reply as it came.
+fn strictly(reply: Reply) -> Reply {
+    if !reply.success || reply.data["settled"] != Value::Bool(false) {
+        return reply;
+    }
+    let message = reply
+        .warning
+        .clone()
+        .unwrap_or_else(|| "the screen did not settle within the wait's timeout".to_owned());
+    Reply {
+        success: false,
+        error: Some(message),
+        code: Some(code::SETTLE_TIMEOUT.to_owned()),
+        warning: None,
+        ..reply
+    }
 }
 
 /// Runs the CLI with `args`, the program name first, and returns the exit
