@@ -50,7 +50,7 @@ use protocol::message::{Rotation, TextMethod};
 
 use super::app::{self, Device, Entry};
 use super::tree::{self, Win};
-use super::{FakeRunner, Timing, Typing};
+use super::{FakeRunner, Lists, Timing, Typing};
 use crate::devices::ios::{self as device, Facts};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Launched,
@@ -195,8 +195,8 @@ struct Shared {
     /// The reads of the tree the target was asked for, counted with those
     /// of the other targets of the driver that attached it.
     reads: Arc<AtomicUsize>,
-    /// Whether a stroke that lifts moving glides the list on.
-    fling: bool,
+    /// How the list moves under a stroke.
+    lists: Lists,
     /// The glide under way, if any.
     glide: Mutex<Option<Glide>>,
     /// How the fields take text whose method the target may choose.
@@ -828,8 +828,9 @@ impl Report for DeviceReport {
 /// itself as the physical iOS driver reports an iPhone; `timing` says when
 /// its frames start, how late each change shows after the input or launch
 /// that caused it, how long a launch splash lasts, when its input session
-/// activates and how long detaching it takes. With `fling`, a stroke whose
-/// finger lifts moving glides the list on; `typing` says how its fields take
+/// activates and how long detaching it takes. `lists` says how far a stroke
+/// carries the list and whether one whose finger lifts moving glides it on;
+/// `typing` says how its fields take
 /// text whose method the target may choose. With `keyboard`, its keyboard
 /// stays up over every screen of the fixture apps. From `driver` it takes a
 /// fake iPhone's runner and the count each read of its tree adds to.
@@ -837,7 +838,7 @@ pub(crate) fn attach(
     platform: Platform,
     frames: Frames,
     timing: Timing,
-    fling: bool,
+    lists: Lists,
     typing: Typing,
     keyboard: bool,
     driver: FromDriver,
@@ -883,7 +884,7 @@ pub(crate) fn attach(
         stop,
         read_cost,
         reads,
-        fling,
+        lists,
         glide: Mutex::new(None),
         typing,
         keyboard_due: Mutex::new(None),
@@ -1045,7 +1046,7 @@ impl InputSink for Part {
                 // The list scrolls up and down, so the finger's speed along
                 // that axis is its release velocity; the glide follows the
                 // stroke as it shows, after the latency.
-                if self.shared.fling && *release == Release::Moving {
+                if self.shared.lists.fling && *release == Release::Moving {
                     let speed = (from.y - to.y).abs() / duration.as_secs_f64();
                     let platform = device.kit.platform;
                     let distance = app::glide(platform, speed) * (from.y - to.y).signum();
@@ -1060,7 +1061,9 @@ impl InputSink for Part {
                         });
                     }
                 }
-                device.swipe((from.x, from.y), (to.x, to.y), 0.0)
+                // A list that goes on past the finger, as iOS 27.0's did.
+                let past = f64::from(self.shared.lists.carry) / 100.0 - 1.0;
+                device.swipe((from.x, from.y), (to.x, to.y), past * (from.y - to.y).abs())
             }
             Input::Key { code, meta } => device.key(*code, *meta),
             Input::Text { text, node, method } => {
@@ -1239,7 +1242,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1290,7 +1293,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1304,7 +1307,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1348,7 +1351,7 @@ mod tests {
             Platform::Ios,
             polled,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1394,7 +1397,7 @@ mod tests {
             Platform::Ios,
             Frames::Stream,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1430,7 +1433,7 @@ mod tests {
                 latency,
                 ..Timing::default()
             },
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1486,7 +1489,7 @@ mod tests {
                 frame_delay: Duration::from_millis(150),
                 ..Timing::default()
             },
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1506,7 +1509,7 @@ mod tests {
             Platform::Android,
             Frames::Stream,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),

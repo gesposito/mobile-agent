@@ -4367,6 +4367,78 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
+    /// `scroll down 600 --until` `#row-{row}` on the fixture's List of a
+    /// fake of `platform` whose list a stroke carries `carry` hundredths of
+    /// a point for each point of the finger: the reply, and how many
+    /// strokes went the other way.
+    fn scroll_to_row(platform: &str, carry: u32, row: u32) -> (Outcome, usize) {
+        let driver = FakeDriver::parse(platform).unwrap().with_carry(carry);
+        let tab = if platform == "android" {
+            "initial_tab=list"
+        } else {
+            "FIXTURE_INITIAL_TAB=list"
+        };
+        let (mut target, sent) = recorded(&driver, FIXTURE, &[tab]);
+        let until = format!("#row-{row}");
+        let found = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": until, "timeout": 60000}),
+        );
+        let back = sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, input)| matches!(input, Input::Swipe { from, to, .. } if to.y > from.y))
+            .count();
+        (found, back)
+    }
+
+    /// Design D10 of pass-4-fixes: on CI's iOS 27.0 Simulator a 600-point
+    /// stroke whose finger came to rest carried the SwiftUI fixture's List
+    /// 1,200 to 1,900 points, more than the 810 or so it shows, so a row
+    /// could pass between two looks, and `scroll --until` found `row-100` in
+    /// 1 run of 4, going on to the list's end. On the fake's list, which a
+    /// stroke carries three times as far as the finger, the scroll finds
+    /// rows 100 and 200 mostly in view on both platforms; on the list a
+    /// stroke carries as far as the finger it takes the strokes it took, none
+    /// the other way.
+    #[test]
+    fn scroll_until_finds_a_row_a_stroke_carried_farther_than_the_list_shows() {
+        for platform in ["ios", "android"] {
+            for row in [100, 200] {
+                let (found, back) = scroll_to_row(platform, 300, row);
+                let data = found
+                    .unwrap_or_else(|failure| {
+                        panic!(
+                            "{platform} row-{row}: {} {:?}",
+                            failure.message, failure.data
+                        )
+                    })
+                    .data;
+                assert!(
+                    data["visible"].as_f64().is_some_and(|v| v >= 0.5),
+                    "{platform} row-{row}: {data}"
+                );
+                eprintln!(
+                    "{platform} row-{row}, carried three times the finger: {} strokes, {back} \
+                     back",
+                    data["strokes"]
+                );
+            }
+        }
+        for (platform, row, strokes) in [
+            ("ios", 100, 8),
+            ("ios", 200, 16),
+            ("android", 100, 7),
+            ("android", 200, 15),
+        ] {
+            let (found, back) = scroll_to_row(platform, 100, row);
+            let data = found.unwrap().data;
+            assert_eq!(data["strokes"], strokes, "{platform} row-{row}: {data}");
+            assert_eq!(back, 0, "{platform} row-{row}: {data}");
+        }
+    }
+
     /// Design D46 (task 4.4; task 3.7's N5): the third production-app run's
     /// `scroll --until` gave up, the content having stopped moving, "after 3
     /// strokes of 300 points down", and nothing in the reply said where the
