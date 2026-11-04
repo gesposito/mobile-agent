@@ -2817,8 +2817,8 @@ fn in_view(seen: &Visibility) -> String {
 /// stopped after strokes that went the other way, which its reply did not
 /// say (rn-app-fixes, design D46).
 ///
-/// Strokes are sized by how far they carry the content (pass-4-fixes,
-/// design D10): two looks that share elements of the scroll container
+/// On iOS strokes are sized by how far they carry the content
+/// (pass-4-fixes, design D10): two looks that share elements of the scroll container
 /// ([`Mirror::scroll_content`]) measure how far the content moved for each
 /// point of the finger, never taken below 1, and the next strokes are that
 /// much shorter, as on CI's iOS 27.0 Simulator, where a stroke whose finger
@@ -2862,12 +2862,17 @@ fn scroll_until(
         check_stroke(platform, step, amount, longest)?;
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
         let viewport = target.mirror.scroll_viewport(area.center(), vertical);
-        let content = target.mirror.scroll_content(area.center(), vertical);
-        let shown = viewport
-            .map(|viewport| extent(&viewport, vertical))
-            .filter(|&shown| shown > 0.0)
-            .unwrap_or_else(|| extent(&area, vertical));
-        carriage.look(content, found.is_some(), changed, shown, vertical);
+        // Measured where a stroke was seen carrying the content past the
+        // finger, iOS 27.0's Simulator; Android's lists follow the finger,
+        // and a software-rendered emulator's looks can lag the stroke.
+        if platform == Platform::Ios {
+            let content = target.mirror.scroll_content(area.center(), vertical);
+            let shown = viewport
+                .map(|viewport| extent(&viewport, vertical))
+                .filter(|&shown| shown > 0.0)
+                .unwrap_or_else(|| extent(&area, vertical));
+            carriage.look(content, found.is_some(), changed, shown, vertical);
+        }
         let reach = carriage.shorter(search_stroke(step, viewport, area, vertical, slop), slop);
         if let (Some(Next::Stop), Some(element), Some(seen)) = (next, &found, &seen) {
             if let Some(reference) = element.reference {
@@ -4568,33 +4573,27 @@ mod tests {
     /// 1,200 to 1,900 points, more than the 810 or so it shows, so a row
     /// could pass between two looks, and `scroll --until` found `row-100` in
     /// 1 run of 4, going on to the list's end. On the fake's list, which a
-    /// stroke carries three times as far as the finger, the scroll finds
-    /// rows 100 and 200 mostly in view on both platforms; on the list a
-    /// stroke carries as far as the finger it takes the strokes it took, none
-    /// the other way.
+    /// stroke carries three times as far as the finger, a fake Simulator's
+    /// scroll finds rows 100 and 200 mostly in view; on the list a stroke
+    /// carries as far as the finger it takes the strokes it took on both
+    /// platforms, none the other way, Android measuring nothing.
     #[test]
     fn scroll_until_finds_a_row_a_stroke_carried_farther_than_the_list_shows() {
-        for platform in ["ios", "android"] {
-            for row in [100, 200] {
-                let (found, back) = scroll_to_row(platform, 300, row);
-                let data = found
-                    .unwrap_or_else(|failure| {
-                        panic!(
-                            "{platform} row-{row}: {} {:?}",
-                            failure.message, failure.data
-                        )
-                    })
-                    .data;
-                assert!(
-                    data["visible"].as_f64().is_some_and(|v| v >= 0.5),
-                    "{platform} row-{row}: {data}"
-                );
-                eprintln!(
-                    "{platform} row-{row}, carried three times the finger: {} strokes, {back} \
-                     back",
-                    data["strokes"]
-                );
-            }
+        for row in [100, 200] {
+            let (found, back) = scroll_to_row("ios", 300, row);
+            let data = found
+                .unwrap_or_else(|failure| {
+                    panic!("ios row-{row}: {} {:?}", failure.message, failure.data)
+                })
+                .data;
+            assert!(
+                data["visible"].as_f64().is_some_and(|v| v >= 0.5),
+                "ios row-{row}: {data}"
+            );
+            eprintln!(
+                "ios row-{row}, carried three times the finger: {} strokes, {back} back",
+                data["strokes"]
+            );
         }
         for (platform, row, strokes) in [
             ("ios", 100, 8),
