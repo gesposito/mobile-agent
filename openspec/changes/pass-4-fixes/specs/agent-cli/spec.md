@@ -3,14 +3,14 @@
 ## MODIFIED Requirements
 
 ### Requirement: Typed text is read back
-`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text or two consecutive reads agree, within a bound, SHALL say what it read in its line, SHALL warn `shorter than typed` when the read-back is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again; with no focused field it SHALL say the text was not read back.
+`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text, within a bound of the keys' own time plus a margin, SHALL say what it read in its line, SHALL warn `shorter than typed`, with the reason `shorter_than_typed`, when the read-back at the bound is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again, its line then not ticking; with no focused field it SHALL say the text was not read back.
 
 #### Scenario: Keys dropped
-- **WHEN** `type example.com` reaches the field as `exampl`
-- **THEN** the reply says it read back `exampl` and warns that the field differs from the text, advising `fill`
+- **WHEN** `type example.com` reaches the field as `exampl` and the field holds no more by the bound
+- **THEN** the reply says it read back `exampl` and warns that it is shorter than typed, advising `fill`
 
 #### Scenario: The last key lands late
-- **WHEN** the field holds all but the last character when the first read-back is taken
+- **WHEN** the field holds all but the last character when the first read-back is taken, and the last within the bound
 - **THEN** the read-back is taken again and the reply says it read back the whole text
 
 ### Requirement: A settle waits for the input's effect
