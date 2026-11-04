@@ -1494,15 +1494,26 @@ fn android_settings_a_click_on_dark_theme_reports_the_change_it_made() {
 }
 
 /// Opens Clock's new alarm and puts its time picker in keyboard mode, with
-/// its boxes at rest; returns the full listing.
+/// its boxes at rest; returns the full listing. The picker opens in the mode
+/// it was last left in, the dial on a fresh device.
 fn clock_time_picker_in_keyboard_mode(env: &Env) -> String {
     env.run(&["open", CLOCK, "--timeout", "30000"]).data();
     env.run(&["click", "#tab_menu_alarm"]).data();
     env.steady("text==Add alarm");
     env.run(&["click", "text==Add alarm"]).data();
     env.steady("#material_timepicker_ok_button");
-    env.run(&["click", "#material_timepicker_mode_button"])
-        .data();
+    let keyboard = env.run(&[
+        "wait",
+        "#material_textinput_timepicker",
+        "--state",
+        "attached",
+        "--timeout",
+        "1000",
+    ]);
+    if !keyboard.ok() {
+        env.run(&["click", "#material_timepicker_mode_button"])
+            .data();
+    }
     env.run(&[
         "wait",
         "#material_textinput_timepicker",
@@ -1560,6 +1571,24 @@ fn android_clock_the_time_pickers_minute_is_reachable_by_a_ref() {
          no ref for the minute:\n{interactive}",
         clicked.code(),
         clicked.error()
+    );
+    // The chip gives way to the minute's field, which takes the focus.
+    env.settle();
+    let after = env.full();
+    let focused = after
+        .lines()
+        .skip_while(|line| !line.contains("id=material_minute_text_input"))
+        .skip(1)
+        .take_while(|line| !line.contains("id=material_clock_period_toggle"))
+        .any(|line| line.contains("textbox [focused"));
+    eprintln!(
+        "{serial}: the click on the minute's ref {reference}: {}; the minute's field has the focus \
+         after it: {focused}",
+        if clicked.ok() { "done" } else { clicked.code() }
+    );
+    assert!(
+        !clicked.ok() || focused,
+        "the click on the minute's chip did not give the minute's field the focus:\n{after}"
     );
     let _ = env.run(&["click", "#material_timepicker_cancel_button"]);
     env.shutdown();

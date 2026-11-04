@@ -1,0 +1,40 @@
+{
+  "description": "A Material time picker in keyboard mode on Android, synthetic, in the shape this change's task 3.2 recorded from a clock app's new alarm on the API 36 emulator (pass-4-fixes, design D9b): the hour's input and the minute's input are each a view holding the input's layout, which the agent flags drawn on top, and the input's chip. The hour's layout holds its field, which has the focus, and its label; the minute's layout holds an empty frame, where its field lies hidden while the chip shows, and its label, and the minute's chip, which takes taps, lies under it. Neither layout takes a touch, and a tap at the minute chip's point reached the chip, which gave the minute the focus. Then the period's toggle and the dialog's buttons. Placeholder names. Android points, scale 2.625.",
+  "backend": {"name": "android-agent", "fallback": false},
+  "scale": 2.625,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 411.43, 914.29], "flags": ["active", "focused"], "events": true,
+      "root": {"class": "android.widget.FrameLayout", "bounds": [24, 330.67, 387.43, 610.67], "children": [
+        {"class": "android.widget.LinearLayout", "id": "placeholder-content", "bounds": [24, 330.67, 387.43, 610.67], "children": [
+          {"class": "android.widget.TextView", "id": "placeholder-title", "text": "Placeholder title", "bounds": [48, 354.67, 160, 374.67]},
+          {"class": "android.widget.LinearLayout", "id": "placeholder-input", "bounds": [65.52, 401.52, 345.9, 507.43], "children": [
+            {"class": "android.widget.FrameLayout", "id": "placeholder-hour-input", "bounds": [65.52, 409.52, 161.52, 507.43], "children": [
+              {"class": "android.widget.LinearLayout", "bounds": [65.52, 409.52, 161.52, 507.43], "flags": ["on_top"], "children": [
+                {"class": "android.widget.FrameLayout", "bounds": [65.52, 409.52, 161.52, 489.52], "children": [
+                  {"class": "android.widget.EditText", "text": "06", "bounds": [65.52, 409.52, 161.52, 489.52], "flags": ["clickable", "focusable", "focused", "editable"]}
+                ]},
+                {"class": "android.widget.TextView", "id": "placeholder-hour-label", "text": "Placeholder hour", "bounds": [65.52, 489.52, 92.95, 507.43]}
+              ]}
+            ]},
+            {"class": "android.widget.TextView", "text": ":", "bounds": [161.52, 409.52, 185.52, 489.52]},
+            {"class": "android.widget.FrameLayout", "id": "placeholder-minute-input", "bounds": [185.52, 409.52, 281.52, 507.43], "children": [
+              {"class": "android.widget.LinearLayout", "bounds": [185.52, 409.52, 281.52, 507.43], "flags": ["on_top"], "children": [
+                {"class": "android.widget.FrameLayout", "bounds": [185.52, 409.52, 281.52, 489.52]},
+                {"class": "android.widget.TextView", "id": "placeholder-minute-label", "text": "Placeholder minute", "bounds": [185.52, 489.52, 224.38, 507.43]}
+              ]},
+              {"class": "android.view.View", "id": "placeholder-minute-chip", "desc": "Placeholder 0 minutes", "text": "00", "bounds": [185.52, 409.52, 281.52, 489.52], "flags": ["clickable", "focusable", "checkable"]}
+            ]},
+            {"class": "android.widget.LinearLayout", "id": "placeholder-period", "desc": "Placeholder period", "bounds": [293.71, 401.52, 345.9, 497.52], "children": [
+              {"class": "android.widget.CompoundButton", "id": "placeholder-am", "text": "AM", "bounds": [293.71, 401.52, 345.9, 449.52], "flags": ["clickable", "focusable", "checkable"]},
+              {"class": "android.widget.CompoundButton", "id": "placeholder-pm", "text": "PM", "bounds": [293.71, 448.38, 345.9, 496.38], "flags": ["clickable", "focusable", "checkable", "checked"]}
+            ]}
+          ]},
+          {"class": "android.widget.Button", "id": "placeholder-cancel", "text": "Cancel", "bounds": [216, 538.67, 288, 586.67], "flags": ["clickable", "focusable"]},
+          {"class": "android.widget.Button", "id": "placeholder-ok", "text": "OK", "bounds": [298, 538.67, 362, 586.67], "flags": ["clickable", "focusable"]}
+        ]}
+      ]}
+    }
+  ]
+}
