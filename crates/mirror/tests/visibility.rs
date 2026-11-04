@@ -1071,3 +1071,53 @@ fn a_point_outside_every_scroll_container_has_none() {
     ]));
     assert_eq!(form.scroll_viewport(Point::new(204.0, 224.0), true), None);
 }
+
+/// Pass-4-fixes D10: what a scroll container holds whole names each element
+/// by what it is, so that two looks at the same rows share them however the
+/// replica paired the reads. On CI's emulator the Expo fixture's list came
+/// back with every row under a new identity between two looks the content
+/// joined, and `scroll --until` took the stroke for one that carried the
+/// rows past what the list showed. Here the view that holds the rows is read
+/// again under another class, so its rows are not paired with the first
+/// read's; the same rows at the same places are the same content.
+#[test]
+fn what_a_list_holds_whole_names_its_rows_by_what_they_are_across_reads() {
+    let before = Screen::load("list");
+    let mut after = before.clone();
+    after.0["windows"][1]["root"]["children"][0]["children"][1]["children"][0]["class"] =
+        json!("android.widget.LinearLayout");
+    let target = FakeTarget::new(before.read());
+    target.at(ms(100), Step::Show(after.read()));
+    target.at(
+        ms(100),
+        Step::Event(EventPayload::Tree(TreeChange {
+            change: TreeChangeKind::CONTENT,
+            window: 1,
+            path: vec![0],
+        })),
+    );
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let at = Point::new(204.0, 456.0);
+    let first = mirror
+        .snapshot(&SnapshotOptions::interactive())
+        .unwrap()
+        .by_identifier("row-3")
+        .expect("row-3 is listed")
+        .id;
+    let looked = mirror.scroll_content(at, true);
+    mirror.run_until(target.instant(ms(200))).unwrap();
+    let again = mirror
+        .snapshot(&SnapshotOptions::interactive())
+        .unwrap()
+        .by_identifier("row-3")
+        .expect("row-3 is listed")
+        .id;
+    assert_ne!(first, again, "the second read gave the rows new identities");
+    let relooked = mirror.scroll_content(at, true);
+    assert_eq!(
+        looked.len(),
+        16,
+        "the rows the list shows whole: {looked:?}"
+    );
+    assert_eq!(looked, relooked);
+}
