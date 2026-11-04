@@ -176,6 +176,13 @@ const BRING_IN_SPEED: f64 = 400.0;
 /// farther than the finger.
 const REACH: f64 = 0.75;
 
+/// The shortest stroke back a scroll that looks for an element takes toward
+/// the content a stroke carried past what the container showed, in points:
+/// it halves its stroke back while the content it comes to shares nothing
+/// with the look before that stroke, and goes on from where it is once its
+/// stroke would be shorter (pass-4-fixes, design D10).
+const SHORTEST_BACK: f64 = 50.0;
+
 /// Edges within half a point of each other meet.
 const EDGE: f64 = 0.5;
 
@@ -2809,6 +2816,20 @@ fn in_view(seen: &Visibility) -> String {
 /// what moved after it ([`after_stroke`]): the third production-app run's scroll
 /// stopped after strokes that went the other way, which its reply did not
 /// say (rn-app-fixes, design D46).
+///
+/// Strokes are sized by how far they carry the content (pass-4-fixes,
+/// design D10): two looks that share elements of the scroll container
+/// ([`Mirror::scroll_content`]) measure how far the content moved for each
+/// point of the finger, never taken below 1, and the next strokes are that
+/// much shorter, as on CI's iOS 27.0 Simulator, where a stroke whose finger
+/// came to rest still carried the fixture's List 2 to 3.2 times as far. A
+/// stroke after which the container shares nothing with the look before
+/// it, the element not on screen at either, carried the content past what
+/// the container showed: the scroll strokes back by half that stroke, and
+/// by half again while it shares nothing with that look, then goes on with
+/// strokes no longer than the content they carry lets the container show.
+///
+/// [`Mirror::scroll_content`]: mirror::Mirror::scroll_content
 fn scroll_until(
     target: &mut Attached,
     call: &Call,
@@ -2828,6 +2849,7 @@ fn scroll_until(
     // Where the element was when the last stroke went, and whether the
     // screen changed after it.
     let (mut was, mut changed) = (None, false);
+    let mut carriage = Carriage::default();
     loop {
         target.catch_up()?;
         let found = aim::on_screen(target, session, &aim)?;
@@ -2839,13 +2861,14 @@ fn scroll_until(
         let step = amount.max(1.0).min(longest);
         check_stroke(platform, step, amount, longest)?;
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
-        let reach = search_stroke(
-            step,
-            target.mirror.scroll_viewport(area.center(), vertical),
-            area,
-            vertical,
-            slop,
-        );
+        let viewport = target.mirror.scroll_viewport(area.center(), vertical);
+        let content = target.mirror.scroll_content(area.center(), vertical);
+        let shown = viewport
+            .map(|viewport| extent(&viewport, vertical))
+            .filter(|&shown| shown > 0.0)
+            .unwrap_or_else(|| extent(&area, vertical));
+        carriage.look(content, found.is_some(), changed, shown, vertical);
+        let reach = carriage.shorter(search_stroke(step, viewport, area, vertical, slop), slop);
         if let (Some(Next::Stop), Some(element), Some(seen)) = (next, &found, &seen) {
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
@@ -2914,10 +2937,15 @@ fn scroll_until(
             );
             return Err(Failure::new(code::ELEMENT_NOT_FOUND, message).with_data(data));
         }
-        let (finger, length, duration) = match next {
-            Some(Next::Stroke { finger, length }) => (finger, length, bring_in_duration(length)),
+        let (finger, length, duration) = match (next, carriage.back) {
+            (Some(Next::Stroke { finger, length }), _) => {
+                let length = carriage.shorter(length, slop);
+                (finger, length, bring_in_duration(length))
+            }
+            (_, Some(back)) => (direction, back, SWIPE_DURATION),
             _ => (direction.opposite(), reach, SWIPE_DURATION),
         };
+        let searching = !matches!(next, Some(Next::Stroke { .. }));
         let revision = target.mirror.revision();
         let (from, to) = stroke(area, finger, length);
         let outcome = target.mirror.act(&Action::Swipe {
@@ -2932,6 +2960,7 @@ fn scroll_until(
         strokes += 1;
         last = Some((from, to));
         was = found.as_ref().map(|element| element.bounds);
+        carriage.stroked(searching.then_some(length));
         target.mirror.settle(&SettleOptions {
             max: UNTIL_SETTLE.min(deadline.saturating_duration_since(Instant::now())),
             ..SettleOptions::default()
@@ -2948,6 +2977,115 @@ fn scroll_until(
             still += 1;
         }
     }
+}
+
+/// What a scroll that looks for an element knows of how far its strokes
+/// carry the content of the scroll container they move (pass-4-fixes,
+/// design D10; see [`scroll_until`]).
+struct Carriage {
+    /// How far the content moves for each point of the finger, as two looks
+    /// that shared an element measured it after a stroke looking for the
+    /// element, 1 at least.
+    per_point: f64,
+    /// What the container held at the look before the last stroke.
+    before: Vec<(ElementId, Rect)>,
+    /// What it held at the last look that shares content with every look
+    /// before it, while the scroll strokes back toward it.
+    anchor: Vec<(ElementId, Rect)>,
+    /// The length of the next stroke back, while the scroll looks for the
+    /// content a stroke carried past what the container showed.
+    back: Option<f64>,
+    /// The length of the last stroke when it looked for the element, rather
+    /// than bring it in.
+    searched: Option<f64>,
+}
+
+impl Default for Carriage {
+    fn default() -> Carriage {
+        Carriage {
+            per_point: 1.0,
+            before: Vec::new(),
+            anchor: Vec::new(),
+            back: None,
+            searched: None,
+        }
+    }
+}
+
+impl Carriage {
+    /// Takes in what the container holds now, `content`, after the last
+    /// stroke, which `changed` the screen or not, the element on screen or
+    /// not (`found`), the container showing `shown` points along the axis.
+    fn look(
+        &mut self,
+        content: Vec<(ElementId, Rect)>,
+        found: bool,
+        changed: bool,
+        shown: f64,
+        vertical: bool,
+    ) {
+        let before = std::mem::take(&mut self.before);
+        let mut passed = false;
+        if let (Some(length), true) = (self.searched, changed) {
+            match moved(&before, &content, vertical) {
+                Some(moved) if moved >= 1.0 => self.per_point = (moved / length).max(1.0),
+                None if self.back.is_none()
+                    && !found
+                    && !before.is_empty()
+                    && !content.is_empty() =>
+                {
+                    // The stroke carried the content past what the
+                    // container showed, farther than it shows.
+                    self.per_point = self.per_point.max(shown / length);
+                    self.anchor = before.clone();
+                    self.back = Some(length / 2.0);
+                    passed = true;
+                }
+                _ => {}
+            }
+        }
+        if let (Some(back), false) = (self.back, passed) {
+            if found || !changed || moved(&self.anchor, &content, vertical).is_some() {
+                self.back = None;
+            } else if moved(&before, &content, vertical).is_none() {
+                // The stroke back carried the content past what the
+                // container showed too.
+                self.back = (back / 2.0 >= SHORTEST_BACK).then_some(back / 2.0);
+            }
+        }
+        self.before = content;
+    }
+
+    /// Notes the stroke just sent, `searched` its length when it looked for
+    /// the element.
+    fn stroked(&mut self, searched: Option<f64>) {
+        self.searched = searched;
+    }
+
+    /// A stroke of `length` points, a platform taking `slop` of them before
+    /// the content moves, shortened to carry the content as far as `length`
+    /// points of the finger would carry it as far as the finger.
+    fn shorter(&self, length: f64, slop: f64) -> f64 {
+        ((length - slop).max(0.0) / self.per_point + slop).min(length)
+    }
+}
+
+/// How far the elements two looks at a scroll container, `was` and `now`,
+/// both hold moved along the vertical axis, or the horizontal one: the
+/// farthest any of them did, in points; `None` when they hold none in
+/// common.
+fn moved(was: &[(ElementId, Rect)], now: &[(ElementId, Rect)], vertical: bool) -> Option<f64> {
+    now.iter()
+        .filter_map(|(id, rect)| {
+            was.iter().find(|(old, _)| old == id).map(|(_, old)| {
+                if vertical {
+                    (rect.top - old.top).abs()
+                } else {
+                    (rect.left - old.left).abs()
+                }
+            })
+        })
+        .reduce(f64::max)
 }
 
 /// What moved after a scroll's last stroke, as its failure says it: the

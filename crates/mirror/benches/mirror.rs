@@ -555,8 +555,8 @@ fn snapshots(group: &mut Group<'_>, fixtures: [&Fixture; 4]) {
 }
 
 /// What the replica tells without reading the target: how much of a row is
-/// in view, the scroll container under a point and what of the screen the
-/// windows above the app leave.
+/// in view, the scroll container under a point and what it holds whole, and
+/// what of the screen the windows above the app leave.
 fn views(group: &mut Group<'_>, list: &Fixture) {
     reused(
         group,
@@ -586,6 +586,14 @@ fn views(group: &mut Group<'_>, list: &Fixture) {
         || warm(&list.read, true),
         |(_, mirror)| mirror.scroll_viewport(Point::new(204.0, 456.0), true),
         |_, viewport, _| assert_eq!(viewport, Some(Rect::new(0.0, 72.0, 408.0, 840.0))),
+    );
+    reused(
+        group,
+        "scroll_content",
+        "list",
+        || warm(&list.read, true),
+        |(_, mirror)| mirror.scroll_content(Point::new(204.0, 456.0), true),
+        |_, content, _| assert_eq!(content.len(), 16, "the rows the list shows whole"),
     );
     let typing = list
         .screen
