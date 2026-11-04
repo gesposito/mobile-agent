@@ -22,6 +22,7 @@
 
 mod support;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -1711,7 +1712,10 @@ fn scroll_until_runs(
 fn report_until_runs(device: &str, runs: &[UntilRun]) {
     for run in runs {
         let data = &run.reply;
-        eprintln!(
+        // Past the harness's capture, so that a passing run's log holds
+        // the strokes too.
+        let _ = writeln!(
+            std::io::stderr(),
             "{device} {} row-{}: {} strokes {} in {:.0} ms, visible {}, amount {}{}",
             run.app,
             run.row,
