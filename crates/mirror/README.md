@@ -372,7 +372,14 @@ also counts).
   a node with an area is judged, since Android gives a node scrolled out of
   its list bounds clipped to nothing: those rows keep counting in their
   list's hint under the tab bar drawn over the list's bottom, which hides
-  only what lies wholly under it.
+  only what lies wholly under it. A view drawn over others that takes no
+  touch, nothing in it clickable, long-clickable or scrollable, hides
+  nothing either, since Android hands a touch no view in it takes to the
+  views under it (pass-4-fixes, design D9b): a Material time picker in
+  keyboard mode lays the minute input's layout, holding its label and its
+  hidden field, over the minute's chip, and a tap at the chip's point gave
+  the minute the focus on the API 36 emulator while `click` on its ref was
+  refused as lying under the overlay (`timepicker-keyboard-android`).
 - On iOS the order is what tells (rn-app-fixes, design D31): XCTest lists a
   view's subviews in the order UIKit draws them and reports no occlusion,
   so in a tree from XCTest's snapshot (a window rooted at an
@@ -846,6 +853,7 @@ apps, in device points with the scale beside them:
 | `bluesky-language` | Bluesky's language selector: 16 rows as labelled `Other`s over static text, 10 in the viewport |
 | `bluesky-typeahead` | Bluesky's search screen with the keyboard up and its typeahead flagged `modal` over the Explore page, the header a sibling outside it (names replaced) |
 | `bluesky-typeahead-android` | the same screen on Android: the typeahead an `AbsListView` flagged `on_top` over the Explore page, both with the same bounds, the header and the tab bar flagged too, rows scrolled out of the page clipped to nothing (names replaced) |
+| `timepicker-keyboard-android` | a Material time picker in keyboard mode on Android, in the shape task 3.2 of pass-4-fixes recorded from a clock app's new alarm on the API 36 emulator (design D9b): each of the hour's and the minute's inputs a view holding the input's layout, flagged `on_top`, holding its field and its label, and the input's chip; the hour's field has the focus, the minute's is hidden under its layout's empty frame while its chip shows |
 | `consent-ios` | a React Native consent screen on iOS in XCTest's classes, no flags (rn-app-fixes, design D31): a footer listed after the scroll view, holding Accept and continue over the heading the content is scrolled to (placeholder names) |
 | `create-ios` | a React Native create screen on iOS: a floating button listed after the list, over its last row and partly over the row before (placeholder names) |
 | `feed-ios` | a React Native feed on iOS: a sticky header listed after the list, over the post scrolled under it, the first post above the screen (placeholder names) |
@@ -1036,4 +1044,5 @@ cargo test -p mirror
 | (task 10.22, a view marked modal inside its window) | (what it covers is cut, what lies outside it stays) | `interactive::a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it`, `interactive::acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code`, and in the Simulator's reader `elements::tests::a_read_honouring_modal_views_that_left_children_out_was_pruned`, `elements::tests::the_view_a_pruned_read_kept_is_marked_modal_in_the_whole_read`, `elements::tests::a_kept_view_that_moved_between_the_reads_is_found_by_what_it_holds`, `elements::tests::nothing_is_marked_when_the_reads_disagree` |
 | (task 10.25, the keyboard over an Android app) | (a floating toolbar cuts no list it does not span) | `visibility::gboard_s_floating_toolbar_leaves_the_rows_beside_and_below_it_in_view`, and in the Android agent the checks of `agent-android/unit-test/KeyboardAreaTest.kt` |
 | (task 10.28, a view drawn over its siblings on Android) | (what it covers is cut when it shows something; a node without an area is not judged) | `interactive::a_view_drawn_over_its_siblings_on_android_hides_what_it_covers`, `interactive::acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code`, `interactive::a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint`, `interactive::a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing`, and in the Android agent the checks of `agent-android/unit-test/StackingTest.kt` |
+| (pass-4-fixes 3.2, design D9b: a view drawn over its siblings that takes no touch) | (it hides nothing, the chip under it listed in view and tapped at its centre) | `interactive::a_view_drawn_on_top_that_takes_no_touch_leaves_the_chip_under_it_reachable_on_android`; on an emulator, `real_apps::android_clock_the_time_pickers_minute_is_reachable_by_a_ref` |
 | (task 10.32, where a stroke may come down) | (the area less the system and keyboard windows above its window, or above the window in front) | `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area`, `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
