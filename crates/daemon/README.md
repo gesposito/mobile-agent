@@ -351,8 +351,11 @@ shows of it when it is longer. Strokes are sized by how far they carry the
 content, not the finger alone (pass-4-fixes, design D10): on CI's iOS 27.0
 Simulator a 600-point stroke whose finger came to rest still carried the
 SwiftUI fixture's List of 52-point rows 1,200 to 1,900 points, where it
-shows about 810, and `--until row-100` found the row in 1 run of 4. At each
-look the scroll notes what the container holds whole
+shows about 810, and `--until row-100` found the row in 1 run of 4. On iOS
+(an Android list follows the finger, and CI's software-rendered emulator
+read looks that lagged the stroke, which the measure took for strokes
+carrying the list two to three times as far, so it measures nothing there)
+at each look the scroll notes what the container holds whole
 (`Mirror::scroll_content`), each element by its identifier, else its role
 and name, not the replica's identity, which a read can give anew, as the
 emulator's Expo list's rows came back between two looks; two looks that
