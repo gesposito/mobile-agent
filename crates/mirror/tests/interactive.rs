@@ -1564,6 +1564,36 @@ fn a_view_drawn_on_top_that_takes_no_touch_leaves_the_chip_under_it_reachable_on
     assert_eq!(target.inputs().len(), 1);
 }
 
+/// Pass-4-fixes D9a (task 3.1), on iOS 27.0: the same place card, with its
+/// fixed header and the place's view each in a plain view of its own frame,
+/// the place's view holding its scroll view of the card's frame, as CI's
+/// Simulator read it, where the share and close buttons still read covered
+/// by the place's header. The header's own buttons are listed in view.
+#[test]
+fn a_cards_fixed_header_keeps_its_buttons_over_content_wrapped_in_views_of_its_frame_on_ios() {
+    let mut screen = Screen::load("card-header-ios");
+    let content = &mut screen.0["windows"][0]["root"]["children"][0]["children"][1]["children"][1]
+        ["children"][1];
+    let children = content["children"].as_array().unwrap().clone();
+    let wrap = |child: &serde_json::Value| json!({"class": "XCUIElementTypeOther", "bounds": child["bounds"].clone(), "children": [child.clone()]});
+    content["children"] = json!([wrap(&children[0]), wrap(&children[3])]);
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in ["placeholder-card-share", "placeholder-card-close"] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins
