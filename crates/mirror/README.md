@@ -414,13 +414,15 @@ also counts).
   the list it is drawn over, and the rows the list scrolled up past its top
   lie in the header's frame, where the production-app run found a 44-point row
   at 2 points still listed. A sibling that holds a scroll view of its own
-  frame, as a view controller's view holds its scroll view, counts as
-  scrolling for the header it covers none of, so the controls the header
+  frame, through views of that frame, as a view controller's view holds its
+  scroll view, counts as scrolling for the header it covers none of, so the controls the header
   holds stay reachable (pass-4-fixes, design D9a): a map app's place card
   lists its fixed header, holding the card's share and close buttons, before
   the view of the card's content, whose scroll view starts with a header of
   the place's own spanning the card's width, and counted both buttons under
-  it while a tap at their point reached them (`card-header-ios`). A tab bar listed after a list covers the rows
+  it while a tap at their point reached them (`card-header-ios`); iOS 27.0
+  puts the header and the place's view each in a plain view of its own
+  frame. A tab bar listed after a list covers the rows
   wholly under it, as on Android. React Native's accessibility lists a view
   that draws something, as a footer's background, as a node that holds
   nothing, what the view lays out listed after it as its siblings, top to
