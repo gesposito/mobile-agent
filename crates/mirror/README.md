@@ -728,7 +728,11 @@ the reasons in this order, each with advice:
 - `scroll_content` tells, the same way, what that container holds wholly
   inside its visible bounds (pass-4-fixes, design D10): each node below it
   on screen and not covered, with a ref or a name, by what it is, its
-  identifier, else its role and its name, and with its bounds. Not by its
+  identifier, else its role and its name, and with its bounds, but for the
+  scroll indicators UIKit lists inside the view they scroll, named and
+  at a frame that does not move with the content, which made two looks at
+  the Expo list on CI's iOS 27.0 share an element where the content had
+  not joined. Not by its
   identity: the replica gives a node a new one when its parent is not paired
   with the last read's, and on CI's emulator the Expo fixture's rows came
   back so between two looks the content joined. The daemon measures from two looks that share an element how far
