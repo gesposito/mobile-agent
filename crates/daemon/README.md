@@ -353,8 +353,12 @@ Simulator a 600-point stroke whose finger came to rest still carried the
 SwiftUI fixture's List of 52-point rows 1,200 to 1,900 points, where it
 shows about 810, and `--until row-100` found the row in 1 run of 4. At each
 look the scroll notes what the container holds whole
-(`Mirror::scroll_content`); two looks that share an element measure how far
-the content moved for each point of the finger, at least 1, and the
+(`Mirror::scroll_content`), each element by its identifier, else its role
+and name, not the replica's identity, which a read can give anew, as the
+emulator's Expo list's rows came back between two looks; two looks that
+share an element, among what each holds once (every Expo row holds a
+chevron named alike), measure how far the content moved for each point of
+the finger, at least 1, and the
 strokes after them, those that bring an element in included, are that much
 shorter. A stroke after which the container shares nothing with the look
 before it, the element on screen at neither, carried the content past what
