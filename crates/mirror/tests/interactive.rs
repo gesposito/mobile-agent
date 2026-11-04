@@ -1452,6 +1452,83 @@ fn a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios() {
     assert_eq!(target.inputs().len(), 2);
 }
 
+/// Pass-4-fixes D9a (task 3.1): a context menu read while it comes in, as
+/// the site's recording run met a map app's recent place: `click` on the
+/// menu's Clear was refused as lying under the header, while a screenshot
+/// showed it in plain view and a tap at its point hit it. The menu's glass
+/// group view, listed after the view that holds the menu's list, holds
+/// nothing yet, and the list's frame runs far past the menu. Both menu items
+/// are listed in view, and a tap on Clear lands at its centre.
+#[test]
+fn a_context_menu_read_while_it_comes_in_lists_its_items_in_view_on_ios() {
+    let (target, mut mirror) = mirror_on("context-menu-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in ["placeholder-share", "placeholder-clear"] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert!(element.reference.is_some(), "{id}:\n{}", listing.text);
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    let clear = listing.by_identifier("placeholder-clear").unwrap();
+    let at = tap_on(&mut mirror, clear.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (108.67 + 358.67) / 2.0).abs() < 0.01
+            && (at.y - (768.67 + 810.67) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Pass-4-fixes D9a (task 3.1): a place card whose fixed header holds its
+/// share and close buttons, listed before the place's view of the card's
+/// frame, whose scroll view starts with a header of the place's own spanning
+/// the card's width. The listing counted both buttons under the place's
+/// header, and `click` on the close button was refused, while a tap at its
+/// point closed the card. The header's own buttons are listed in view, and
+/// a tap on the close button lands at its centre; the place's content is
+/// listed as before.
+#[test]
+fn a_cards_fixed_header_keeps_its_own_buttons_over_the_content_listed_after_it_on_ios() {
+    let (target, mut mirror) = mirror_on("card-header-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in [
+        "placeholder-card-share",
+        "placeholder-card-close",
+        "placeholder-directions",
+        "placeholder-download",
+    ] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert!(element.reference.is_some(), "{id}:\n{}", listing.text);
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    for id in ["placeholder-card-share", "placeholder-card-close"] {
+        let element = listing.by_identifier(id).unwrap();
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    let close = listing.by_identifier("placeholder-card-close").unwrap();
+    let at = tap_on(&mut mirror, close.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (336.33 + 378.67) / 2.0).abs() < 0.01
+            && (at.y - (503.67 + 546.0) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins

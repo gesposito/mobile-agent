@@ -761,13 +761,19 @@ fn maps_with(env: &Env, text: &str) -> String {
     env.interactive()
 }
 
-/// Design D9a on the Simulator's Maps, the header cover: the search field's
-/// clear button was refused as lying under the header while it showed in
-/// plain view and a tap at its point hit `button "Clear"`. A click on it
-/// clears the field.
+/// Design D9a on the Simulator's Maps, the controls a header holds: in the
+/// site's recording run `click` on the Clear of a recent place's menu was
+/// refused as lying under the header while the menu showed it in plain view,
+/// and the place card's close button was counted under the card's own
+/// header, a tap at either's point reaching it. With "Lisbon" in the search
+/// field a click on its clear button empties it; the place card that the
+/// search's Enter opens closes by a click on its close button; and a click
+/// on the Clear of the recent place's menu, right after the menu was
+/// opened, clears the place. A part whose screen does not come, as without
+/// the network, is skipped with the reason.
 #[test]
-fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() {
-    let test = "simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header";
+fn simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered() {
+    let test = "simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered";
     let Some(udid) = gate(SIM_VAR, test) else {
         return;
     };
@@ -783,7 +789,7 @@ fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() 
     let clicked = env.run(&["click", &clear]);
     assert!(
         clicked.ok(),
-        "D9a: the click on the clear button {clear} failed {}: {}",
+        "D9a: the click on the search field's clear button {clear} failed {}: {}",
         clicked.code(),
         clicked.error()
     );
@@ -794,6 +800,66 @@ fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() 
             .unwrap_or_default()
             .contains("Lisbon"),
         "the clear button left the field holding {value}"
+    );
+    if !network(test) {
+        env.shutdown();
+        return;
+    }
+
+    // The place card, opened by the search's Enter.
+    env.run(&["fill", "#MapsSearchTextField", "Lisbon"]).data();
+    env.run(&["press", "Enter"]).data();
+    let card = env.run(&["wait", "#ActionRowItemTypeDirections", "--timeout", "20000"]);
+    if !card.ok() {
+        eprintln!("{udid}: skipped the place card and the menu: no place card came for Lisbon");
+        env.shutdown();
+        return;
+    }
+    env.settle();
+    let full = env.full();
+    let close = ref_with(&full, "id=CardButtonTypeClose")
+        .unwrap_or_else(|| panic!("setup: the place card has no close button:\n{full}"));
+    let closed = env.run(&["click", &close]);
+    assert!(
+        closed.ok(),
+        "D9a: the click on the place card's close button {close} failed {}: {}\n{full}",
+        closed.code(),
+        closed.error()
+    );
+    env.settle();
+
+    // The recent place's menu, its Clear clicked as soon as it is open: the
+    // search closed, Maps lists the place among its recents once relaunched.
+    let results = env.interactive();
+    if let Some(search_close) = results
+        .lines()
+        .find(|line| line.contains("- button \"Close\" [ref=e"))
+        .and_then(line_ref)
+    {
+        env.run(&["click", &search_close]);
+        env.settle();
+    }
+    env.run(&["open", MAPS, "--relaunch", "--timeout", "30000"]);
+    env.settle();
+    let home = env.interactive();
+    let more = home
+        .lines()
+        .skip_while(|line| !line.contains("id=RecentsSection"))
+        .find(|line| line.contains("\"More\" [") && line.contains("ref=e"))
+        .and_then(line_ref);
+    let Some(more) = more else {
+        eprintln!("{udid}: skipped the menu: no recent place with a More button:\n{home}");
+        env.shutdown();
+        return;
+    };
+    env.run(&["click", &more]).data();
+    let cleared = env.run(&["click", "#ClearButton", "--timeout", "5000"]);
+    assert!(
+        cleared.ok(),
+        "D9a: the click on the Clear of the recent place's menu, right after it opened, failed \
+         {}: {}",
+        cleared.code(),
+        cleared.error()
     );
     env.shutdown();
 }
