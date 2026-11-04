@@ -711,8 +711,24 @@ fn method_name(method: Option<TextMethod>) -> Value {
 /// or set text into again as soon as a frame changes after its last read,
 /// until a read shows the field's text changed, and other windows, and a
 /// field typed into, no sooner than its minimum interval after their last
-/// read.
+/// read. Keys get the time they took to type on top ([`read_bound`]).
 const READ_BACK_MAX: Duration = Duration::from_secs(1);
+
+/// How long after an entry that took `took` and went in by `method` a
+/// read-back reads a field that does not show the text: [`READ_BACK_MAX`],
+/// and for keys the time they took on top, since an app that takes keys
+/// more slowly than they go in shows the last of them later the longer they
+/// took, as on the site's recording run `type mobileagent.dev` read
+/// "mobileagent.de" back once in five on a loaded host, where the keys go
+/// one after the other and take longer the more the host is loaded
+/// (pass-4-fixes, design D3).
+fn read_bound(took: Duration, method: Option<TextMethod>) -> Duration {
+    if method == Some(TextMethod::KEYS) {
+        READ_BACK_MAX + took
+    } else {
+        READ_BACK_MAX
+    }
+}
 
 /// How long after an entry typed as keys a field must still show the text
 /// before `fill` takes it: an app that owns its field's value, as a
@@ -1064,11 +1080,13 @@ enum ReadBack {
         held: Option<String>,
     },
     /// It showed other text, `held`, `None` for none, read from `from`, until
-    /// the read-back's bound, `after` the entry.
+    /// the read-back's bound, `after` the entry; `short` when that text is
+    /// the start of what keys would have left in the field ([`shorter`]).
     Other {
         held: Option<String>,
         from: Source,
         after: Duration,
+        short: bool,
     },
     /// It showed nothing to read back, neither a value nor anything below
     /// it, and the read-back stopped looking `after` the entry.
@@ -1092,6 +1110,36 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
     let changed = (rereads && stamps.last_frame_change.is_some_and(|at| at > read.started))
         || stamps.last_tree_change.is_some_and(|at| at > read.finished);
     now >= hold && !changed
+}
+
+/// Whether `held`, what a field shows, is the start of `expected` and
+/// shorter than it, each character the expected one or a mask character,
+/// as a secure field shows its own.
+fn starts(held: &str, expected: &str) -> bool {
+    held.chars().count() < expected.chars().count()
+        && held
+            .chars()
+            .zip(expected.chars())
+            .all(|(shown, typed)| shown == typed || MASKS.contains(&shown))
+}
+
+/// Whether a field reading `reading` after keys `text` placed as `placed`
+/// shows the start of what the keys would have left, as when the last keys
+/// have not landed: the start of the text, in place of what the field held,
+/// or after `before`, its name and value before the entry, for keys `type`
+/// placed after what it held; for a field read through its name, the part
+/// of its name the entry changed, separators left out.
+fn shorter(reading: &Reading, text: &str, placed: Placed, before: (&str, Option<&str>)) -> bool {
+    match reading {
+        Reading::Own(value) => {
+            let value = value.as_deref().unwrap_or_default();
+            let after = format!("{}{text}", before.1.unwrap_or_default());
+            starts(value, text) || (placed == Placed::After && starts(value, &after))
+        }
+        Reading::Below(below) => starts(below, text),
+        Reading::Name(name) => starts(&spelled(&held_in_name(name, before.0)), &spelled(text)),
+        Reading::Nothing => false,
+    }
 }
 
 /// What a fill reads back: the field a ref names, with what identifies it
@@ -1218,13 +1266,16 @@ fn follow_field(
     }
 }
 
-/// Reads back `field` after an entry by `method` that ended at `entered`,
-/// from what it shows ([`reading`]): until the field shows `text` and has
-/// held it since the hold after that method ends ([`hold_after`]), which
-/// after text that went in in one piece takes the first read that shows it,
-/// or until it has shown other text up to [`READ_BACK_MAX`] after the entry,
-/// the mirror reading it again as reads fall due meanwhile. What the field
-/// shows at the bound stands. A field that shows nothing to read back once
+/// Reads back `field` after an entry by `method` that took `took` and ended
+/// at `entered`, from what it shows ([`reading`]): until the field shows
+/// `text` and has held it since the hold after that method ends
+/// ([`hold_after`]), which after text that went in in one piece takes the
+/// first read that shows it, or until it has shown other text up to the
+/// read-back's bound after the entry, [`READ_BACK_MAX`] and for keys the
+/// time they took ([`read_bound`]), the mirror reading it again as reads
+/// fall due meanwhile. What the field shows at the bound stands, said to be
+/// shorter than the keys would have left when it is their start
+/// ([`shorter`]). A field that shows nothing to read back once
 /// the screen has held still since a settle's quiet window after the entry
 /// ([`READ_BACK_HOLD`]) is unreadable. `before` is the field's name and
 /// value in the reading compared with, as the emptying left them or before
@@ -1236,12 +1287,12 @@ fn read_back(
     target: &mut Attached,
     field: &Field,
     text: &str,
-    (entered, method, placed): (Instant, Option<TextMethod>, Placed),
+    (entered, took, method, placed): (Instant, Duration, Option<TextMethod>, Placed),
     before: (&str, Option<&str>),
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
     let quiet = entered + READ_BACK_HOLD;
-    let deadline = entered + READ_BACK_MAX;
+    let deadline = entered + read_bound(took, method);
     loop {
         let Some(element) = field.element(target)? else {
             return Ok(ReadBack::Gone);
@@ -1284,11 +1335,13 @@ fn read_back(
             (None, Reading::Nothing) if now >= deadline || held(&stamps, quiet, now, rereads) => {
                 return Ok(ReadBack::Unreadable { after });
             }
-            (None, _) if now >= deadline => {
+            (None, reading) if now >= deadline => {
+                let keys = method == Some(TextMethod::KEYS);
                 return Ok(ReadBack::Other {
                     held: held_now,
                     from,
                     after,
+                    short: keys && shorter(&reading, text, placed, before),
                 });
             }
             _ => {}
@@ -1949,14 +2002,22 @@ fn fill_into(
         keys_into = None;
     }
     let before = (before.0.as_str(), before.1.as_deref());
+    let entering = Instant::now();
     let first = enter(target, keys_into, text, TextMethod::AUTO)?;
     let entered = Instant::now();
+    let took = entered - entering;
     if text.is_empty() && platform == Platform::Android {
         return Ok(filled(given, text, reference, first, Check::Skipped, false).warn(note(None)));
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let read = read_back(target, &field, text, (entered, first, Placed::Over), before)?;
+    let read = read_back(
+        target,
+        &field,
+        text,
+        (entered, took, first, Placed::Over),
+        before,
+    )?;
     let value = match read {
         ReadBack::Shown {
             shown, from, after, ..
@@ -1979,6 +2040,7 @@ fn fill_into(
     follow_field(target, session, &mut field, (named, &mut *resolved));
     let into = if follows { field.reference() } else { None };
     reference = field.reference();
+    let entering = Instant::now();
     let second = match enter(target, into, text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
@@ -1990,6 +2052,7 @@ fn fill_into(
         }
     };
     let entered = Instant::now();
+    let took = entered - entering;
     let second_by = entered_by(class, second);
     let again = || {
         let it = second_by.replacen("the text", "it", 1);
@@ -2002,7 +2065,7 @@ fn fill_into(
         target,
         &field,
         text,
-        (entered, second, Placed::Over),
+        (entered, took, second, Placed::Over),
         before,
     )?;
     close_edit_menu(target, &field)?;
@@ -2041,12 +2104,18 @@ fn fill_into(
 /// field in the tree has the focus (real-app-fixes, design D3).
 const NO_FOCUSED_FIELD: &str = "no_focused_field";
 
+/// Why `type` did not verify its text, as its reply's `reason` says: the
+/// field holds the start of what the keys would have left, at the
+/// read-back's bound (pass-4-fixes, design D3).
+const SHORTER_THAN_TYPED: &str = "shorter_than_typed";
+
 /// A type's reply (real-app-fixes, design D3): the text as the request gave
 /// it, under `typed`; the field's ref, null for the focused field and for a
 /// node holding none; the method the keys went in by; and what the
 /// read-back of the field found, as `fill`'s reply has it: `text`, what the
 /// field holds; `verified`, how it showed the text added to what it held,
 /// `false` when it showed other text or nothing (`reason`: `text_mismatch`,
+/// `shorter_than_typed` for the start of what the keys would have left,
 /// `no_value_to_read`), and null when it was not read back (`reason`:
 /// `no_focused_field` when no field in the tree had the focus); `readFrom`;
 /// `readBackMs`.
@@ -2070,11 +2139,20 @@ fn typed(
             Value::Null,
             Some(*after),
         ),
-        Some(ReadBack::Other { held, from, after }) => (
+        Some(ReadBack::Other {
+            held,
+            from,
+            after,
+            short,
+        }) => (
             held.clone(),
             Value::Bool(false),
             Value::from(from.name()),
-            Value::from(TEXT_MISMATCH),
+            Value::from(if *short {
+                SHORTER_THAN_TYPED
+            } else {
+                TEXT_MISMATCH
+            }),
             Some(*after),
         ),
         Some(ReadBack::Unreadable { after }) => (
@@ -2173,12 +2251,14 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
             .unwrap_or_default(),
         None => Default::default(),
     };
+    let entering = Instant::now();
     let outcome = target.mirror.act(&Action::Text {
         text: text.clone(),
         into,
         method: TextMethod::KEYS,
     })?;
     let entered = Instant::now();
+    let took = entered - entering;
     if !outcome.accepted {
         return Err(rejected(
             "text; type takes a text field or the focused field",
@@ -2202,11 +2282,21 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
         target,
         &field,
         &text,
-        (entered, method, Placed::After),
+        (entered, took, method, Placed::After),
         before,
     )?;
     let warning = match &read {
         ReadBack::Shown { .. } => None,
+        ReadBack::Other {
+            held,
+            after,
+            short: true,
+            ..
+        } => Some(format!(
+            "{given} holds {} where type typed {text:?}, shorter than typed: no more of the text showed within {:.0} ms of the keys, a key lost or the field limiting its length; type adds to what a field holds, so it does not type again: fill the field to replace what it holds",
+            described(held.as_deref()),
+            millis(*after)
+        )),
         ReadBack::Other { held, .. } => Some(format!(
             "{given} holds {} where type typed {text:?}: a key was lost, or the field limits or formats its text; type adds to what a field holds, so it does not type again: fill the field to replace what it holds",
             described(held.as_deref())

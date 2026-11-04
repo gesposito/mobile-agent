@@ -249,21 +249,29 @@ fn fill(data: &Value, out: &mut String) {
 
 /// A type's read-back and entry, as fill's line says them (real-app-fixes,
 /// design D3): `✓ Done (read back "example.com", typed)` with what the field
-/// holds once the keys went in, also when it differs from the text typed,
-/// which the reply's warning names; the count of a secure field's masked
+/// holds once the keys went in; when that differs from the text typed,
+/// which the reply's warning names, the line is marked ⚠ rather than ✓,
+/// and says `shorter than typed` after it for the start of the text
+/// (pass-4-fixes, design D3); the count of a secure field's masked
 /// characters; `nothing to read back` for a field that showed nothing, and
 /// `not read back` for one the read-back did not read, as when no field had
 /// the focus; the twin a stale ref stood for first, as fill's line has it.
 fn typed(data: &Value, out: &mut String) {
-    let read = match (&data["verified"], data["text"].as_str()) {
+    let (verified, held) = (&data["verified"], data["text"].as_str());
+    let read = match (verified, held) {
         (Value::String(shown), Some(held)) if shown == "length" => masked(held),
         (_, Some(held)) => format!("read back {held:?}"),
         (Value::Bool(false), None) => "nothing to read back".to_owned(),
         _ => "not read back".to_owned(),
     };
     let mut parts: Vec<String> = resolution(data).into_iter().chain([read]).collect();
+    if str_of(data, "reason") == "shorter_than_typed" {
+        parts.push("shorter than typed".to_owned());
+    }
     entry(data, &mut parts);
-    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+    let differs = *verified == Value::Bool(false) && held.is_some();
+    let mark = if differs { "⚠" } else { "✓" };
+    let _ = writeln!(out, "{mark} Done ({})", parts.join(", "));
 }
 
 /// A read-back of `shown`, a secure field's text, by its count of masked

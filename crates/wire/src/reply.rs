@@ -661,7 +661,8 @@ pub struct TypeText {
     /// Where the read-back took what the field holds from: `value`,
     /// `descendants` or `name`.
     pub read_from: Option<String>,
-    /// `text_mismatch` or `no_value_to_read` when `verified` is false;
+    /// `text_mismatch`, `shorter_than_typed` for the start of what the keys
+    /// would have left, or `no_value_to_read` when `verified` is false;
     /// `no_focused_field` when no field in the tree had the focus.
     pub reason: Option<String>,
     pub read_back_ms: Option<f64>,
