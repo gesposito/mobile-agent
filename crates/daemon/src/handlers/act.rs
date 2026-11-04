@@ -2988,10 +2988,10 @@ struct Carriage {
     /// element, 1 at least.
     per_point: f64,
     /// What the container held at the look before the last stroke.
-    before: Vec<(ElementId, Rect)>,
+    before: Vec<(String, Rect)>,
     /// What it held at the last look that shares content with every look
     /// before it, while the scroll strokes back toward it.
-    anchor: Vec<(ElementId, Rect)>,
+    anchor: Vec<(String, Rect)>,
     /// The length of the next stroke back, while the scroll looks for the
     /// content a stroke carried past what the container showed.
     back: Option<f64>,
@@ -3018,7 +3018,7 @@ impl Carriage {
     /// not (`found`), the container showing `shown` points along the axis.
     fn look(
         &mut self,
-        content: Vec<(ElementId, Rect)>,
+        content: Vec<(String, Rect)>,
         found: bool,
         changed: bool,
         shown: f64,
@@ -3073,11 +3073,17 @@ impl Carriage {
 /// How far the elements two looks at a scroll container, `was` and `now`,
 /// both hold moved along the vertical axis, or the horizontal one: the
 /// farthest any of them did, in points; `None` when they hold none in
-/// common.
-fn moved(was: &[(ElementId, Rect)], now: &[(ElementId, Rect)], vertical: bool) -> Option<f64> {
+/// common. Only what each look holds once counts, as a row's identifier
+/// does, since what repeats, as the chevron the Expo fixture draws in every
+/// row, cannot say which of its copies is which.
+fn moved(was: &[(String, Rect)], now: &[(String, Rect)], vertical: bool) -> Option<f64> {
+    let once = |look: &[(String, Rect)], what: &str| {
+        look.iter().filter(|(other, _)| other == what).count() == 1
+    };
     now.iter()
-        .filter_map(|(id, rect)| {
-            was.iter().find(|(old, _)| old == id).map(|(_, old)| {
+        .filter(|(what, _)| once(now, what) && once(was, what))
+        .filter_map(|(what, rect)| {
+            was.iter().find(|(old, _)| old == what).map(|(_, old)| {
                 if vertical {
                     (rect.top - old.top).abs()
                 } else {
@@ -4503,6 +4509,32 @@ mod tests {
         }
         let bottom = data["element"]["bounds"][3].as_f64().unwrap_or_default();
         assert!(bottom <= 708.0, "above the disabled button: {data}");
+    }
+
+    /// Design D10 of pass-4-fixes: on CI's emulator the Expo fixture's rows
+    /// each hold a chevron named alike, and a look paired one row's chevron
+    /// with another's, so that `scroll --until` measured strokes carrying the
+    /// list several times as far as they did and made them a few points
+    /// long. Only what each look holds once measures the move: rows that
+    /// moved 96 points measure 96.
+    #[test]
+    fn what_repeats_in_a_list_does_not_measure_how_far_it_moved() {
+        let row = |n: u32, top: f64| {
+            [
+                (format!("row-{n}"), Rect::new(0.0, top, 408.0, top + 48.0)),
+                (
+                    "text \u{203a}".to_owned(),
+                    Rect::new(380.0, top + 12.0, 400.0, top + 36.0),
+                ),
+            ]
+        };
+        let was: Vec<(String, Rect)> = (1..=10)
+            .flat_map(|n| row(n, 72.0 + 48.0 * f64::from(n - 1)))
+            .collect();
+        let now: Vec<(String, Rect)> = (3..=12)
+            .flat_map(|n| row(n, 72.0 + 48.0 * f64::from(n - 1) - 96.0))
+            .collect();
+        assert_eq!(moved(&was, &now, true), Some(96.0));
     }
 
     /// `scroll down 600 --until` `#row-{row}` on the fixture's List of a

@@ -40,7 +40,7 @@ use protocol::snapshot::{Scroll, ScrollAxis, ScrollFlags, WindowFlags, WindowTyp
 use crate::geometry::{Point, Rect};
 use crate::render;
 use crate::replica::{Replica, Win};
-use crate::snapshot::{Direction, ElementId, Role};
+use crate::snapshot::{Direction, Role};
 use crate::view::{self, Cover, CoverName, Facts, Hidden, View};
 
 /// How much of an element is in view.
@@ -906,16 +906,19 @@ fn scroller_node_at(
 }
 
 /// What the scroll container [`scroller_at`] finds holds wholly inside what
-/// it shows: the identity and the bounds of each node below it on screen,
-/// not covered, with a ref or a name, in pre-order (pass-4-fixes, design
-/// D10). Two looks that share none of them saw no content in common. Empty
-/// when no such container holds `at`.
+/// it shows: each node below it on screen, not covered, with a ref or a
+/// name, by what it is, its identifier, else its role and its name, with its
+/// bounds, in pre-order (pass-4-fixes, design D10). Two looks that share none
+/// of them saw no content in common. What it is, not its identity, since the
+/// replica gives a node a new identity when its parent is not paired with
+/// the last read's, as CI's emulator read the Expo fixture's rows between two
+/// looks the content joined. Empty when no such container holds `at`.
 pub(crate) fn scroller_content_at(
     replica: &Replica,
     view: &View,
     at: Point,
     vertical: bool,
-) -> Vec<(ElementId, Rect)> {
+) -> Vec<(String, Rect)> {
     let Some((w, c)) = scroller_node_at(replica, view, at, vertical) else {
         return Vec::new();
     };
@@ -933,7 +936,13 @@ pub(crate) fn scroller_content_at(
                 && (f.bears_ref || !f.name.is_empty())
                 && holds_rect(&shown, &f.rect)
         })
-        .map(|(node, f)| (node.element, f.rect))
+        .map(|(node, f)| {
+            let what = match node.identifier.as_deref() {
+                Some(identifier) if !identifier.is_empty() => identifier.to_owned(),
+                _ => format!("{} {}", f.role, f.name),
+            };
+            (what, f.rect)
+        })
         .collect()
 }
 

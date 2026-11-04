@@ -964,12 +964,13 @@ impl Mirror {
     /// What the scroll container [`Mirror::scroll_viewport`] finds at `at`
     /// holds wholly inside what it shows, as the replica has it now, without
     /// reading the target: each element on screen and not covered below it
-    /// with a ref or a name, by identity, with its bounds in points, in
-    /// document order. A scroll that looks for an element tells from two
-    /// such looks how far a stroke carried the content, and whether it
-    /// carried it past what the container showed (pass-4-fixes, design D10).
-    /// Empty when no such container holds `at`.
-    pub fn scroll_content(&self, at: Point, vertical: bool) -> Vec<(ElementId, Rect)> {
+    /// with a ref or a name, by what it is, its identifier, else its role and
+    /// its name, rather than its identity, which a read can give anew, with
+    /// its bounds in points, in document order. A scroll that looks for an
+    /// element tells from two such looks how far a stroke carried the
+    /// content, and whether it carried it past what the container showed
+    /// (pass-4-fixes, design D10). Empty when no such container holds `at`.
+    pub fn scroll_content(&self, at: Point, vertical: bool) -> Vec<(String, Rect)> {
         let view = View::build(&self.replica);
         visibility::scroller_content_at(&self.replica, &view, at, vertical)
     }
