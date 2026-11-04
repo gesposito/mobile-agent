@@ -1529,6 +1529,41 @@ fn a_cards_fixed_header_keeps_its_own_buttons_over_the_content_listed_after_it_o
     assert_eq!(target.inputs().len(), 1);
 }
 
+/// Pass-4-fixes D9b (task 3.2): a clock app's Material time picker in
+/// keyboard mode on the API 36 emulator: the minute's chip lies under the
+/// minute input's layout, which the agent flags drawn on top and which
+/// holds the input's label and an empty frame, the minute's field hidden
+/// while the chip shows. `click` on the chip's ref was refused as lying
+/// under the overlay, while a tap at its point reached the chip and gave
+/// the minute the focus: the layout takes no touch, and Android hands a
+/// touch a view does not take to the views under it. The chip is listed in
+/// view and a tap on it lands at its centre; the hour's field, inside the
+/// hour's layout, is listed as before.
+#[test]
+fn a_view_drawn_on_top_that_takes_no_touch_leaves_the_chip_under_it_reachable_on_android() {
+    let (target, mut mirror) = mirror_on("timepicker-keyboard-android");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    let chip = listing
+        .by_identifier("placeholder-minute-chip")
+        .unwrap_or_else(|| panic!("the minute's chip is listed:\n{}", listing.text));
+    assert!(chip.reference.is_some(), "{}", listing.text);
+    assert_eq!(chip.visible, None, "wholly in view:\n{}", listing.text);
+    assert_eq!(mirror.covered_by(chip.id), None);
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    assert!(
+        listing.text.contains("- textbox [focused, ref="),
+        "the hour's field:\n{}",
+        listing.text
+    );
+    let at = tap_on(&mut mirror, chip.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (185.52 + 281.52) / 2.0).abs() < 0.01
+            && (at.y - (409.52 + 489.52) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins
