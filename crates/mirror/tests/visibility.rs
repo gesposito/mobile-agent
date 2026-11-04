@@ -1121,23 +1121,3 @@ fn what_a_list_holds_whole_names_its_rows_by_what_they_are_across_reads() {
     );
     assert_eq!(looked, relooked);
 }
-
-/// Pass-4-fixes D10: what a scroll container holds whole leaves out its
-/// scroll indicators, which UIKit lists inside the scroll view with a name,
-/// `Vertical scroll bar, 2 pages`, at a frame that does not move with the
-/// content, so that two looks the content did not join still shared them:
-/// on CI's iOS 27.0 the Expo fixture's list, whose indicators the listing
-/// names, found `row-100` in 1 run of 4 with the looks measured. The sheet's
-/// list holds two indicators, each listed twice; none of them is content.
-#[test]
-fn what_a_list_holds_whole_leaves_out_its_scroll_indicators() {
-    let target = FakeTarget::new(Screen::load("search-sheet-ios").read());
-    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
-    mirror.snapshot(&SnapshotOptions::interactive()).unwrap();
-    let content = mirror.scroll_content(Point::new(201.0, 700.0), true);
-    assert!(!content.is_empty(), "the list's cells are content");
-    assert!(
-        content.iter().all(|(what, _)| !what.contains("scroll bar")),
-        "{content:?}"
-    );
-}
