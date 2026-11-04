@@ -908,7 +908,8 @@ fn scroller_node_at(
 /// What the scroll container [`scroller_at`] finds holds wholly inside what
 /// it shows: each node below it on screen, not covered, with a ref or a
 /// name, by what it is, its identifier, else its role and its name, with its
-/// bounds, in pre-order (pass-4-fixes, design D10). Two looks that share none
+/// bounds, in pre-order, its scroll indicators left out (pass-4-fixes, design
+/// D10). Two looks that share none
 /// of them saw no content in common. What it is, not its identity, since the
 /// replica gives a node a new identity when its parent is not paired with
 /// the last read's, as CI's emulator read the Expo fixture's rows between two
@@ -925,10 +926,21 @@ pub(crate) fn scroller_content_at(
     let shown = Sight::new(replica, view).shows(w, c);
     let (window, facts) = (&replica.windows[w], &view.windows[w]);
     let depth = window.nodes[c].depth;
+    // A scroll indicator, which UIKit lists with a name inside the view it
+    // scrolls at a frame that does not move with the content, is none of
+    // the content, and neither is what it holds.
+    let mut indicator: Option<u32> = None;
     window.nodes[c + 1..]
         .iter()
         .zip(&facts[c + 1..])
         .take_while(|(node, _)| node.depth > depth)
+        .filter(|(node, _)| {
+            if indicator.is_some_and(|at| node.depth > at) {
+                return false;
+            }
+            indicator = (&*node.class == view::SCROLL_INDICATOR).then_some(node.depth);
+            indicator.is_none()
+        })
         .filter(|(_, f)| {
             f.visible
                 && f.hidden == Hidden::No

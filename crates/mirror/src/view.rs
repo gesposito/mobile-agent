@@ -1200,7 +1200,7 @@ fn over_part_of_a_list(
 /// The class of a scroll view's indicator in XCTest's tree, its frame a
 /// 30-point hit area along the view's edge that UIKit draws as a bar a few
 /// points thick while the view scrolls (physical-ios, design D26).
-const SCROLL_INDICATOR: &str = "_UIScrollViewScrollIndicator";
+pub(crate) const SCROLL_INDICATOR: &str = "_UIScrollViewScrollIndicator";
 
 /// The classes of the bars UIKit draws over the content its controllers
 /// lay out under them, which XCTest lists before or after that content.
