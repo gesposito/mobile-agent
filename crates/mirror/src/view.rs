@@ -839,8 +839,14 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mu
 /// only when it has an area, since Android clips a node's bounds to its
 /// ancestors' and leaves one scrolled out of its list with none, so that the
 /// rows below a list keep counting in its hint under a tab bar drawn over
-/// its bottom. Records the view as the cover of what it hid, and of what it
-/// overlaps without holding.
+/// its bottom. A view that takes no touch, nothing in it, itself or below
+/// it, clickable, long-clickable or scrollable ([`takes_touches`]), hides
+/// nothing: Android hands a touch that no view in it takes to the views
+/// under it, as a Material time picker's minute input lies over its chip in
+/// keyboard mode, holding its label and its hidden field, and a tap at the
+/// chip's point gave the minute the focus (pass-4-fixes, design D9b).
+/// Records the view as the cover of what it hid, and of what it overlaps
+/// without holding.
 fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     let mut stack = Vec::new();
@@ -852,7 +858,12 @@ fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &m
         let shows = showing(window, &facts[w]);
         for s in 0..window.nodes.len() {
             let f = &facts[w][s];
-            if !on_top(s) || !shows[s] || !f.visible || f.hidden != Hidden::No {
+            if !on_top(s)
+                || !shows[s]
+                || !f.visible
+                || f.hidden != Hidden::No
+                || !takes_touches(window, s)
+            {
                 continue;
             }
             let Some(parent) = window.nodes[s].parent else {
@@ -880,6 +891,24 @@ fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &m
             );
         }
     }
+}
+
+/// Whether node `s` of `window` or a node below it takes a touch, as Android
+/// dispatches one: clickable, long-clickable or scrollable, enabled or not,
+/// since a disabled clickable view consumes the touch it does not act on.
+fn takes_touches(window: &Win, s: usize) -> bool {
+    let depth = window.nodes[s].depth;
+    std::iter::once(&window.nodes[s])
+        .chain(
+            window.nodes[s + 1..]
+                .iter()
+                .take_while(|node| node.depth > depth),
+        )
+        .any(|node| {
+            node.flags.contains(NodeFlags::CLICKABLE)
+                || node.flags.contains(NodeFlags::LONG_CLICKABLE)
+                || node.flags.contains(NodeFlags::SCROLLABLE)
+        })
 }
 
 /// Records that `cover` covers its node, whole or in part.
