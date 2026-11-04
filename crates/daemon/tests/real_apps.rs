@@ -1200,7 +1200,10 @@ fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
     env.run(&["wait", &format!("text={title}"), "--timeout", "15000"])
         .data();
     env.settle();
-    env.run(&[
+    // On iOS 27.0 the event lies partly under the day's floating toolbar
+    // at 23:00, which no scroll moves it out from under; the click taps the
+    // part in view.
+    let scrolled = env.run(&[
         "scroll",
         "down",
         "400",
@@ -1208,8 +1211,13 @@ fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
         &format!("text={title}"),
         "--timeout",
         "30000",
-    ])
-    .data();
+    ]);
+    if !scrolled.ok() {
+        report!(
+            "{udid}: the scroll to the event stopped, {}; the click taps what of it is in view",
+            scrolled.error()
+        );
+    }
     env.run(&["click", &format!("text={title}")]).data();
     env.run(&["wait", "text==Delete Event", "--timeout", "15000"])
         .data();
