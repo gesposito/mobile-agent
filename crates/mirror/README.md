@@ -716,6 +716,15 @@ the reasons in this order, each with advice:
   it gets. The daemon bounds each stroke of `scroll --until` that looks
   for its element to three quarters of their extent along the axis, so
   that no element passes through them between two looks.
+- `scroll_content` tells, the same way, what that container holds wholly
+  inside its visible bounds (pass-4-fixes, design D10): each node below it
+  on screen and not covered, with a ref or a name, by identity and with its
+  bounds. The daemon measures from two looks that share an element how far
+  a stroke carried the content for each point of the finger, and takes two
+  that share none, the element at neither, for a stroke that carried the
+  content past what the container showed. It costs what `scroll_viewport`
+  does, a view of the replica (7.1 µs against 6.8 µs on the benchmarks'
+  list).
 - `scroll_container_in` tells, the same way, what shows of the scroll
   container that shows the most of an area (rn-app-fixes, design D41):
   among the nodes on screen and not covered that scroll along the axis, in

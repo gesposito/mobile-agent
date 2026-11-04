@@ -347,7 +347,24 @@ scroll's axis (`Mirror::scroll_viewport`; the scrolled area stands for a
 container the replica does not have), plus the platform's tap threshold,
 since the content moves only once the finger has gone that far. At one look
 at least the element then shows whole, or a quarter of what the container
-shows of it when it is longer. Mostly in view means its centre inside the
+shows of it when it is longer. Strokes are sized by how far they carry the
+content, not the finger alone (pass-4-fixes, design D10): on CI's iOS 27.0
+Simulator a 600-point stroke whose finger came to rest still carried the
+SwiftUI fixture's List of 52-point rows 1,200 to 1,900 points, where it
+shows about 810, and `--until row-100` found the row in 1 run of 4. At each
+look the scroll notes what the container holds whole
+(`Mirror::scroll_content`); two looks that share an element measure how far
+the content moved for each point of the finger, at least 1, and the
+strokes after them, those that bring an element in included, are that much
+shorter. A stroke after which the container shares nothing with the look
+before it, the element on screen at neither, carried the content past what
+the container showed: the next stroke goes back by half its length, and by
+half again while a stroke back shares nothing with the look before it, down
+to 50 points, until a look shares something with the look before the stroke
+that carried the content past, or shows the element; the strokes on are no
+longer than the measure lets the container show. On a list the content
+follows the finger, as on iOS 26.5 and the emulator, nothing changes: the
+same strokes, none back. Mostly in view means its centre inside the
 visible bounds the mirror gives it (`Mirror::visibility`: its window,
 clipped by the scroll containers around it, less the system and keyboard
 windows above it and the tab bars and toolbars drawn over them) and at
@@ -1438,7 +1455,10 @@ list of 85 rows moved on for on the Simulator (action-verdicts, task 3.4);
 a tap on the list while it glides stops it there and reaches nothing under
 it, as a gliding list took a tap on the Simulator, and a stroke catches it.
 A stroke that comes to rest before the finger lifts, and every stroke
-without the flag, moves the list as far as the finger. With `--fake-typing keys` the
+without the flag, moves the list as far as the finger, or, on a fake made
+with `FakeDriver::with_carry` in the daemon's tests, that many hundredths
+of a point for each point of the finger, as iOS 27.0's lists went on past a
+finger that came to rest (pass-4-fixes, design D10). With `--fake-typing keys` the
 fixture's fields take a `fill` of up to 32 characters key by key and report
 the method `keys`, as a Simulator does, and longer text whole as a paste,
 `direct`; with `reorder` they take those keys out of order, each from the
@@ -1613,6 +1633,7 @@ Worked around here without changing `crates/mirror`:
 | (task 10.14, overscroll without frames) | (a click right after the settle that follows a stroke to the end of a list opens the row) | the mirror's `settle::without_frames_a_stroke_that_pulls_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_stroke_that_leaves_a_list_at_its_end_holds_the_wait_for_the_overscroll`, `settle::without_frames_a_fling_into_a_list_s_end_holds_the_wait_from_its_last_change` and their controls; against an emulator on the agent path, `devices::the_bench_s_list_scroll_flow_opens_the_last_row_on_the_agent_path` |
 | (task 10.15, `scroll --until` stops once the element is mostly in view) | (a sliver of the element on screen does not stop the scroll; `visible` in the reply) | `handlers::act::tests::a_scroll_that_looks_for_an_element_stops_once_it_is_mostly_in_view`, `handlers::act::tests::a_partly_shown_element_is_brought_in_by_one_stroke_no_longer_than_the_step`, `handlers::act::tests::no_stroke_brings_in_an_element_the_scroll_s_axis_does_not_cut_off`, `handlers::act::tests::a_stroke_that_brings_an_element_in_moves_the_finger_at_most_400_points_a_second`; the mirror's `visibility::*`; the CLI's `commands::scroll_until_stops_only_once_the_element_is_mostly_in_view`, `commands::scroll_until_fails_when_its_axis_cannot_bring_a_partly_shown_element_in` and `commands::a_click_on_an_element_mostly_out_of_view_warns`; against an emulator on both of its paths, `devices::scroll_until_stops_only_once_the_row_is_mostly_in_view_on_an_emulator` |
 | (task 10.16, `scroll --until` does not carry its element past unseen) | (every stroke comes to rest before the finger lifts; a stroke that looks for the element goes at most three quarters of what the list shows; fake lists that fling) | `handlers::act::tests::a_stroke_that_looks_for_an_element_goes_at_most_three_quarters_of_what_its_list_shows`, `fake::app::tests::a_list_glides_on_as_far_as_its_platform_flings_it`, `fake::app::tests::a_swipe_moves_the_list_by_the_finger_and_the_glide`, `server::tests::flags_override_the_environment_and_zero_disables_the_idle_exit`; the mirror's `visibility::*` and `settle::a_stroke_reaches_the_target_released_as_the_action_says`; the CLI's `commands::scroll_until_finds_a_row_that_a_flinging_stroke_would_carry_through_the_list` and `commands::scroll_until_strokes_come_to_rest_so_a_row_stops_where_they_aim`; against devices, `devices::scroll_until_finds_a_mid_list_row_on_an_emulator` and `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` |
+| (pass-4-fixes task 3.3, design D10: a stroke that carries the content farther than the finger) | (strokes sized by what two looks measure; a stroke that carried the content past what the list showed is followed by strokes back until the looks join; a list the content of which follows the finger takes the same strokes) | `handlers::act::tests::scroll_until_finds_a_row_a_stroke_carried_farther_than_the_list_shows`, on a fake whose list a stroke carries three times as far as the finger; on devices, `devices::scroll_until_finds_a_mid_list_row_on_a_simulator` and `devices::scroll_until_finds_a_mid_list_row_on_an_emulator` |
 | (task 10.23, `fill` reads the field back) | (keys a field takes out of order are pasted over; a field that keeps other text fails with `text_mismatch`; secure fields by length; text that shows late; empty fills; the Simulator's empty fill and direct text; fake fields that take text as a Simulator types it) | `handlers::act::tests::a_fill_whose_keys_a_field_takes_out_of_order_pastes_the_text`, `handlers::act::tests::a_fill_that_a_field_cuts_short_fails_naming_what_the_field_holds`, `handlers::act::tests::a_secure_field_is_read_back_by_the_number_of_its_characters`, `handlers::act::tests::a_fill_replies_once_the_field_shows_its_text`, `handlers::act::tests::an_empty_fill_reads_the_field_back_empty_except_on_android`, `handlers::act::tests::a_field_shows_the_text_exactly_as_its_mask_or_as_an_empty_placeholder`, `devices::simulator::tests::an_empty_text_deletes_what_the_field_held`, `devices::simulator::tests::keys_are_typed_direct_text_is_pasted_and_a_paste_reads_as_direct_setting`, `fake::app::tests::fields_take_text_as_their_typing_mode_says`, `fake::realtime::tests::text_is_typed_as_the_simulator_types_it_only_under_a_typing_mode_that_types_keys`, `fake::tests::typing_modes_are_named_whole_keys_reorder_unshifted_or_max_with_a_length`; the CLI's `commands::fill_reads_the_field_back_and_pastes_text_whose_keys_went_in_out_of_order`, `errors::a_fill_whose_field_keeps_other_text_fails_with_text_mismatch` |
 | (task 10.30, the hold only after keys) | (text set or pasted in one piece taken at the first read that shows it, typed text after the 200 ms hold, on either platform; the text entered again after other text not held) | `handlers::act::tests::a_fill_whose_text_went_in_in_one_piece_takes_the_first_read_that_shows_it`, `handlers::act::tests::a_fill_typed_as_keys_takes_the_text_once_the_field_has_held_it_200_ms`, `handlers::act::tests::a_fill_that_enters_its_text_again_in_one_piece_takes_the_first_read_that_shows_it` |
 | (task 10.32, scroll strokes keep off the keyboard) | (strokes through what the system bars and the keyboard leave of the screen and of a list partly under it; `covered_by_keyboard` before any stroke; the fake's keyboard takes a stroke for glide typing) | `handlers::act::tests::a_scroll_of_the_screen_strokes_above_the_keyboard`, `handlers::act::tests::a_scroll_inside_a_list_partly_under_the_keyboard_strokes_through_what_shows_of_it`, `handlers::act::tests::a_scroll_inside_an_element_the_keyboard_covers_fails_naming_the_keyboard`, `fake::app::tests::a_stroke_that_comes_down_on_the_keyboard_types_and_moves_nothing`; the mirror's `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area` and `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |
