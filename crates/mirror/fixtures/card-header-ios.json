@@ -1,0 +1,54 @@
+{
+  "description": "A place card of a UIKit app on iOS 26 at half height, synthetic, in the shape this change's task 3.1 recorded on the Simulator's iOS 26.5 runtime from a map app's place card (pass-4-fixes, design D9a): over the map, a transition view spanning the window holds a dimming view without a name and the card's frame, 8,488.33 386 by 377.67 points, holding the grabber and the card's content view. The content view lists, in order, the card's fixed header, 69 points tall, holding the card's share and close buttons at its corners and its title, which shows once the card scrolls; two plain views of the card's frame holding nothing; and the place's view, of the card's frame too, holding a scroll view of its frame whose content starts with the place's own header, a view named after the place that spans the card's width while it draws its title and region in the middle, then the place's actions. A tap at the close button's point closes the card. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeMap", "desc": "Placeholder map", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "XCUIElementTypeStaticText", "id": "placeholder-feature", "desc": "Placeholder feature", "bounds": [186, 339.33, 216, 369.33]}
+            ]},
+            {"class": "XCUIElementTypeButton", "id": "placeholder-modes", "desc": "Placeholder modes", "bounds": [338, 382.33, 386, 430.33], "flags": ["clickable"]}
+          ]},
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874]},
+            {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+              {"class": "XCUIElementTypeButton", "id": "placeholder-grabber", "desc": "Placeholder grabber", "bounds": [155, 483.67, 247, 507.67], "flags": ["clickable"]},
+              {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866], "children": [
+                {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 557.46], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 557.46], "children": [
+                    {"class": "XCUIElementTypeOther", "id": "placeholder-card-header", "bounds": [23.33, 503.67, 378.67, 546], "children": [
+                      {"class": "XCUIElementTypeButton", "id": "placeholder-card-share", "desc": "Placeholder share", "bounds": [23.33, 503.67, 65.67, 546], "flags": ["clickable"]},
+                      {"class": "XCUIElementTypeButton", "id": "placeholder-card-close", "desc": "Placeholder close", "bounds": [336.33, 503.67, 378.67, 546], "flags": ["clickable"]},
+                      {"class": "XCUIElementTypeStaticText", "id": "placeholder-card-title", "desc": "Placeholder", "bounds": [170.92, 521, 231.42, 544]}
+                    ]}
+                  ]}
+                ]},
+                {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866]},
+                {"class": "XCUIElementTypeOther", "bounds": [8, 488.33, 394, 866]},
+                {"class": "XCUIElementTypeOther", "id": "placeholder-place", "bounds": [8, 488.33, 394, 866], "children": [
+                  {"class": "XCUIElementTypeScrollView", "id": "placeholder-place-scroll", "bounds": [8, 488.33, 394, 866], "flags": ["scrollable"], "children": [
+                    {"class": "XCUIElementTypeOther", "id": "placeholder-place-stack", "bounds": [8, 488.33, 394, 1797.72], "children": [
+                      {"class": "XCUIElementTypeOther", "id": "placeholder-place-header", "desc": "Placeholder, Placeholder region", "bounds": [8, 488.33, 394, 546.58], "children": [
+                        {"class": "XCUIElementTypeStaticText", "id": "placeholder-place-title", "desc": "Placeholder", "bounds": [170.92, 505.33, 231.42, 528.33]},
+                        {"class": "XCUIElementTypeOther", "id": "placeholder-place-region", "bounds": [179.58, 529.33, 222.42, 546.58]}
+                      ]},
+                      {"class": "XCUIElementTypeOther", "id": "placeholder-place-actions", "bounds": [23.33, 565.67, 378.67, 616.67], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "placeholder-directions", "desc": "Placeholder directions", "bounds": [23.33, 565.67, 197.33, 616.67], "flags": ["clickable"]},
+                        {"class": "XCUIElementTypeButton", "id": "placeholder-download", "desc": "Placeholder download", "bounds": [204.67, 565.67, 378.67, 616.67], "flags": ["clickable"]}
+                      ]}
+                    ]}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}
