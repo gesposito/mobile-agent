@@ -757,6 +757,29 @@ fn simulator_list_screens_list_their_rows() {
     env.shutdown();
 }
 
+/// What the Simulator's reader runtime reads of the screen in front, its
+/// raw trees with modal views honoured and not (`simulator-reader dump`,
+/// from the path `status` names), for a failure to show the shape it met.
+fn reader_dump(env: &Env, udid: &str) -> String {
+    let status = env.run(&["status"]);
+    let path = status.reply["data"]["targets"]
+        .as_array()
+        .and_then(|targets| {
+            targets
+                .iter()
+                .find_map(|target| target["driver"]["reader"]["path"].as_str())
+        })
+        .map(str::to_owned);
+    let Some(path) = path else {
+        return "(status names no reader)".to_owned();
+    };
+    Command::new("xcrun")
+        .args(["simctl", "spawn", udid, &path, "dump"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_else(|error| format!("(the dump did not run: {error})"))
+}
+
 /// Maps opened past its first launch with its search field's ref, and `text`
 /// in the field. Its suggestions need the network.
 fn maps_with(env: &Env, text: &str) -> String {
@@ -831,9 +854,11 @@ fn simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered() {
     let closed = env.run(&["click", &close]);
     assert!(
         closed.ok(),
-        "D9a: the click on the place card's close button {close} failed {}: {}\n{full}",
+        "D9a: the click on the place card's close button {close} failed {}: {}\n{full}\n\nthe \
+         reader's raw trees:\n{}",
         closed.code(),
-        closed.error()
+        closed.error(),
+        reader_dump(&env, &udid)
     );
     env.settle();
 
