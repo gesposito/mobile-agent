@@ -406,7 +406,14 @@ also counts).
   sibling covering none of it (D38): React Native lists its header before
   the list it is drawn over, and the rows the list scrolled up past its top
   lie in the header's frame, where the production-app run found a 44-point row
-  at 2 points still listed. A tab bar listed after a list covers the rows
+  at 2 points still listed. A sibling that holds a scroll view of its own
+  frame, as a view controller's view holds its scroll view, counts as
+  scrolling for the header it covers none of, so the controls the header
+  holds stay reachable (pass-4-fixes, design D9a): a map app's place card
+  lists its fixed header, holding the card's share and close buttons, before
+  the view of the card's content, whose scroll view starts with a header of
+  the place's own spanning the card's width, and counted both buttons under
+  it while a tap at their point reached them (`card-header-ios`). A tab bar listed after a list covers the rows
   wholly under it, as on Android. React Native's accessibility lists a view
   that draws something, as a footer's background, as a node that holds
   nothing, what the view lays out listed after it as its siblings, top to
@@ -418,7 +425,13 @@ also counts).
   container, as a background listed after a list would, covers none of it.
   On the fourth production-app run's creation tab the scroll view runs on to
   the bottom of the screen under the footer, whose view held nothing, and
-  a tap on a control's strip under it opened nothing (`create-rn-ios`). An alert's static text is spared too
+  a tap on a control's strip under it opened nothing (`create-rn-ios`). The
+  container counts as far as it lies within the sibling: a UIKit context
+  menu lists its glass group view after the view holding its list, holding
+  nothing while the menu comes in, over the menu's frame, while the list's
+  frame runs 874 points down, far past the menu, and a click on the menu's
+  Clear right after it opened was refused as lying under the header
+  (pass-4-fixes, design D9a; `context-menu-ios`). An alert's static text is spared too
   (design D26 of physical-ios): UIKit's alert controller
   draws nothing over its title and message, while XCTest lists the scroll
   indicators of the scroll view that holds them after them, their
@@ -841,6 +854,8 @@ apps, in device points with the scale beside them:
 | `edit-menu-ios` | the SwiftUI fixture's Login tab with iOS's edit menu up over its username field, which holds "agent", the keyboard up, read by the in-guest reader on an iPhone 17 (D55): the menu (Paste, Select, Select All, AutoFill) in the text effects window, the application's second window, whose node the reader bounds by what it draws, the menu's list, 121 to 165 points down, over the password field; keys trimmed to four |
 | `floating-toolbar-ios` | a UIKit list screen on iOS 26 in the shape spike S14 recorded on the Simulator (real-app-fixes, design D2): a layout container listing a navigation bar, a transition view holding a collection view whose rows, 370 by 52 points, lie on screen from 293.33 points down, and a plain container spanning the window, listed after the transition view, holding a plain host of the same frame that holds the floating bottom toolbar, 86 points at the screen's bottom, with its search field (placeholder names) |
 | `search-sheet-ios` | a UIKit map screen on iOS 26 with its sheet at half height, in the shape spike S14 recorded (D2): the map and the overlay holding its buttons in one transition view, the sheet in a second one listed after it, both spanning the window; the sheet's content view lists the search bar's view, 73 points tall, then a plain view holding a named list of the content view's frame whose first cell starts 73 points lower, under the search bar's band (placeholder names) |
+| `card-header-ios` | a UIKit place card on iOS 26 at half height, in the shape task 3.1 of pass-4-fixes recorded on the Simulator (design D9a): the card's fixed header, holding its share and close buttons and its title, listed before two plain views and the view of the card's content, all of the card's frame, whose scroll view starts with a header of the place's own spanning the card's width |
+| `context-menu-ios` | a UIKit context menu on iOS 26 read while it comes in, in the shape task 3.1 of pass-4-fixes recorded on the Simulator (design D9a): the menu's list view holds a plain view of the menu's frame, holding a background and a list whose frame runs 874 points down with the menu's two items, then the menu's glass group view of the menu's frame, holding nothing yet |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -971,6 +986,7 @@ cargo test -p mirror
 | | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so`, `controls::a_row_without_a_selected_node_lists_no_tabs` (rn-app-fixes 3.4, design D40) |
 | | Control under a disabled button | `interactive::a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows`; partly under it, `interactive::a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it` (rn-app-fixes 3.1, design D38), on the tab as the second production-app run read it, its list ending above the tab bar |
 | | Control behind a header listed first | `interactive::a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it`, `interactive::a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it`, `interactive::acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header` (D38) |
+| | (pass-4-fixes 3.1, design D9a: the controls a header holds) | a card's fixed header listed before the view of its content, `interactive::a_cards_fixed_header_keeps_its_own_buttons_over_the_content_listed_after_it_on_ios`; a context menu read while it comes in, `interactive::a_context_menu_read_while_it_comes_in_lists_its_items_in_view_on_ios`; on a Simulator, `real_apps::simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered` |
 | | Elements under the keyboard | `interactive::what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_how_much_shows`, `interactive::a_tap_on_a_button_partly_under_the_keyboard_lands_on_what_shows_or_is_refused_naming_it` (rn-app-fixes 3.2, design D38) |
 | | Ref across a label change | `controls::a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place`, `controls::a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android`; the fill by that ref in the daemon, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (rn-app-fixes 3.3, design D39) |
 | | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
