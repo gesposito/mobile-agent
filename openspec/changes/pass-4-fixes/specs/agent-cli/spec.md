@@ -58,3 +58,17 @@ A click's reply SHALL name the element the tap landed on whether or not the sess
 #### Scenario: A city beside its airport
 - **WHEN** a wait for `Lisbon` runs while the screen lists `Lisbon Airport (LIS)` above `Lisbon`
 - **THEN** the wait resolves on `Lisbon`
+
+### Requirement: A scroll that looks for an element sizes its strokes by what they carry
+On iOS, `scroll --until` SHALL shorten its strokes by how far two looks at the scroll container that share an element measured the content moving for each point of the finger, never lengthening them, so that a list whose content follows the finger takes the strokes it took before; on Android, whose lists follow the finger, it SHALL measure nothing.
+
+#### Scenario: A list that goes on past the finger
+- **WHEN** on a Simulator each stroke whose finger comes to rest carries a list three times as far as the finger and `scroll --until` looks for a row in its middle
+- **THEN** once two looks share a row the strokes are a third as long, and the scroll stops with the row mostly in view
+
+### Requirement: A scroll strokes back after carrying its element past
+On iOS, after a stroke that carried the content past everything the scroll container showed, the element at neither look, `scroll --until` SHALL stroke back by halves until a look shares an element with the look before that stroke or shows the element, with no fixed sleep.
+
+#### Scenario: A row carried past between two looks
+- **WHEN** a stroke carries a list farther than it shows and the sought row passes between the look before it and the look after it
+- **THEN** the scroll strokes back, finds the row and stops with it mostly in view, where it ran to the list's end before
