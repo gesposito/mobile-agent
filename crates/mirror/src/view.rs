@@ -1138,7 +1138,12 @@ fn scrolling_nodes(window: &Win, facts: &[Facts]) -> Vec<usize> {
 /// list would (rn-app-fixes, design D48). On the creation tab of the fourth
 /// production-app run the footer's view, which React Native's accessibility
 /// lists holding nothing, its tabs after it, lies over the lower part of a
-/// scroll view that runs on to the bottom of the screen.
+/// scroll view that runs on to the bottom of the screen. The container is
+/// taken as far as it lies within `e`, which holds it: a UIKit context menu
+/// lists its glass group view after the view holding its list, holding
+/// nothing for the moment the menu takes to come in, over the menu's whole
+/// frame, while the list's frame runs 874 points down, far past the menu
+/// (pass-4-fixes, design D9a).
 fn over_part_of_a_list(
     window: &Win,
     facts: &[Facts],
@@ -1156,9 +1161,9 @@ fn over_part_of_a_list(
         return false;
     }
     lists.iter().any(|&c| {
-        let list = &facts[c].rect;
+        let list = facts[c].rect.intersect(&facts[e].rect);
         list.overlaps(&f.rect)
-            && !within(list, &f.rect, slack)
+            && !within(&list, &f.rect, slack)
             && std::iter::successors(Some(c), |&a| window.nodes[a].parent).any(|a| a == e)
     })
 }
@@ -1177,15 +1182,32 @@ const BAR_CLASSES: [&str; 3] = [
 ];
 
 /// Whether node `h` of `window`, listed before its sibling `c`, is a header
-/// the app pins across `c`'s top: `c` scrolls and `h` does not, and `h`
-/// spans `c`'s width from an edge at or above `c`'s top to one at or below
-/// it, short of `c`'s bottom. A React Native header listed before its list
-/// is drawn over what the list scrolls up past its top, which XCTest's
-/// whole frames put in the header's frame.
+/// the app pins across `c`'s top: `c` scrolls, or holds a scroll view of its
+/// own frame ([`holds_its_scroller`]), and `h` does not, and `h` spans `c`'s
+/// width from an edge at or above `c`'s top to one at or below it, short of
+/// `c`'s bottom. A React Native header listed before its list is drawn over
+/// what the list scrolls up past its top, which XCTest's whole frames put in
+/// the header's frame; a UIKit card's fixed header, holding the card's share
+/// and close buttons, is listed before the view of the card's content, whose
+/// scroll view starts with a header of its own spanning the card's width
+/// (pass-4-fixes, design D9a).
 fn pinned_over(window: &Win, facts: &[Facts], h: usize, c: usize, slack: f64) -> bool {
-    scrolls(&window.nodes[c], &facts[c])
+    (scrolls(&window.nodes[c], &facts[c]) || holds_its_scroller(window, facts, c, slack))
         && !scrolls(&window.nodes[h], &facts[h])
         && across_top(&facts[h].rect, &facts[c].rect, slack)
+}
+
+/// Whether node `c` of `window` holds a child that scrolls ([`scrolls`])
+/// with `c`'s own frame, to within `slack`, as a view controller's view holds
+/// its scroll view, `facts` being the window's.
+fn holds_its_scroller(window: &Win, facts: &[Facts], c: usize, slack: f64) -> bool {
+    let frame = &facts[c].rect;
+    window.nodes[c].children.iter().any(|&k| {
+        let rect = &facts[k].rect;
+        scrolls(&window.nodes[k], &facts[k])
+            && within(rect, frame, slack)
+            && within(frame, rect, slack)
+    })
 }
 
 /// Hides, in a tree whose order is its drawing order ([`drawn_in_order`]),
