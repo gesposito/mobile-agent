@@ -1667,7 +1667,17 @@ fn scroll_until_runs(
     for &app in apps {
         for &row in rows {
             for _ in 0..MID_LIST_RUNS {
-                env.on(device, &["open", "--relaunch", "--", app]).data();
+                // A device booted moments before can answer `no_foreground`
+                // while accessibility starts, as CI's Simulator did when this
+                // test ran first: the open is tried three times, 5 s apart.
+                for attempt in 1..=3 {
+                    let opened = env.on(device, &["open", "--relaunch", "--", app]);
+                    if opened.code == Some(0) || attempt == 3 {
+                        opened.data();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_secs(5));
+                }
                 env.on(
                     device,
                     &["click", "--timeout", "10000", "--", "id=tab-list"],
