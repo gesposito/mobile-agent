@@ -15,14 +15,18 @@
 //! run that is not a dry run then publishes them in the `release`
 //! environment's gate, its publish job alone writing; task 3.4: the npm
 //! packages are packed from the attested tarballs and published with npm's
-//! trusted publishing from the `release` environment. The workflow
-//! files are read with an
+//! trusted publishing from the `release` environment; task 3.3: the crates
+//! too, with crates.io's, every crate of the workspace after its
+//! dependencies. The workflow files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
 //! more indented than its key, are skipped; a job's steps are read as text.
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
+
+use serde_json::{Value, json};
 
 /// One key of a block mapping, its value on the same line, if any, and its
 /// children: keys more indented beneath it, or list items.
@@ -634,7 +638,8 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
             "gate",
             "publish",
             "npm-package",
-            "publish-npm"
+            "publish-npm",
+            "publish-crates"
         ]
     );
     let matrix: Vec<String> = RELEASE_TARGETS
@@ -986,5 +991,185 @@ fn the_release_workflow_packs_the_npm_packages_from_the_attested_tarballs_and_pu
     // Trusted publishing alone: no npm token anywhere in the workflow.
     for token in ["NPM_TOKEN", "NODE_AUTH_TOKEN", "_authToken", "secrets."] {
         assert!(!text.contains(token), "release.yml names {token}");
+    }
+}
+
+/// The crates the publish-crates job publishes, in its order: the lines of
+/// its `CRATES` block, one name each.
+fn release_crates(text: &str) -> Vec<String> {
+    let header = "      CRATES: |\n";
+    let at = text
+        .find(header)
+        .expect("release.yml lists the crates under CRATES");
+    text[at + header.len()..]
+        .lines()
+        .take_while(|line| line.starts_with("        ") && !line.trim().is_empty())
+        .map(|line| line.trim().to_owned())
+        .collect()
+}
+
+/// Task 3.3 of `alpha-release` (design D6): the publish-crates job publishes
+/// the crates after the release is published, so that crates.io never holds
+/// a version the release lacks, in the `release` environment, whose
+/// reviewer approves it, with crates.io's trusted publishing:
+/// `rust-lang/crates-io-auth-action` exchanges the job's OIDC token for a
+/// crates.io token that lasts 30 minutes, and no other token exists. Each
+/// crate, in the order of its list, is published with `cargo publish
+/// --locked` unless crates.io's API holds its version already, so that a
+/// run that stopped halfway can be run again, and the job's summary names
+/// each crate's outcome. A dry run, outside the environment and without the
+/// exchange, packages and verifies every crate at once with `cargo publish
+/// --dry-run --workspace --locked`, which builds each against the others'
+/// packages, as a crate's own dry run cannot when its dependencies' version
+/// is not on crates.io yet. The toolchain is rust-toolchain.toml's, and
+/// nothing is cached.
+#[test]
+fn the_release_workflow_publishes_the_crates_after_the_release_with_crates_io_trusted_publishing() {
+    let workflow = outline(".github/workflows/release.yml");
+    let text = read(".github/workflows/release.yml");
+    let job = workflow.at("jobs/publish-crates");
+    assert_eq!(job.get("needs").text(), "[publish, verify]");
+    assert_eq!(
+        job.get("if").text(),
+        "${{ !cancelled() && needs.verify.result == 'success' && (inputs.dry_run || needs.publish.result == 'success') }}"
+    );
+    // The release environment's reviewer approves a run that publishes; a dry run has no environment.
+    assert_eq!(
+        job.get("environment").text(),
+        "${{ !inputs.dry_run && 'release' || '' }}"
+    );
+    assert_eq!(job.get("runs-on").text(), "ubuntu-latest");
+    let scope = |key: &str| -> String {
+        let value = job.at(&format!("permissions/{key}")).text();
+        value.split(" #").next().unwrap_or(value).trim().to_owned()
+    };
+    assert_eq!(job.get("permissions").keys(), ["contents", "id-token"]);
+    assert_eq!(scope("contents"), "read");
+    assert_eq!(scope("id-token"), "write");
+    assert_eq!(job.at("env/DRY_RUN").text(), "${{ inputs.dry_run }}");
+    assert_eq!(
+        release_crates(&text),
+        [
+            "mobile-agent-protocol",
+            "mobile-agent-wire",
+            "mobile-agent-simulator-reader",
+            "mobile-agent-mirror",
+            "mobile-agent-ios-runner",
+            "mobile-agent-android",
+            "mobile-agent-simulator",
+            "mobile-agent-ios",
+            "mobile-agent-daemon",
+            "mobile-agent",
+            "mobile-agent-mcp",
+        ]
+    );
+
+    let publishing = steps(&text, "publish-crates");
+    let position = |wanted: &[&str]| -> usize {
+        let step = step_with(&publishing, wanted);
+        publishing.iter().position(|s| s == step).unwrap()
+    };
+    let checkout = position(&["uses: actions/checkout@"]);
+    assert!(
+        publishing[checkout].contains("persist-credentials: false"),
+        "{}",
+        publishing[checkout]
+    );
+    let toolchain = position(&["rustup toolchain install --no-self-update"]);
+    let dry_run = position(&["run: cargo publish --dry-run --workspace --locked\n"]);
+    assert!(
+        publishing[dry_run].contains("if: inputs.dry_run\n"),
+        "{}",
+        publishing[dry_run]
+    );
+    let auth = position(&["uses: rust-lang/crates-io-auth-action@"]);
+    for wanted in ["id: auth\n", "if: ${{ !inputs.dry_run }}\n"] {
+        assert!(
+            publishing[auth].contains(wanted),
+            "{wanted} in {}",
+            publishing[auth]
+        );
+    }
+    let publish = position(&["cargo publish --locked -p \"$crate\""]);
+    assert!(
+        checkout < toolchain && toolchain < dry_run && dry_run < auth && auth < publish,
+        "{checkout} {toolchain} {dry_run} {auth} {publish}"
+    );
+    let published = &publishing[publish];
+    for wanted in [
+        "CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}\n",
+        "cargo metadata",
+        "https://crates.io/api/v1/crates/$1/$version",
+        "200)",
+        "404)",
+        "if [ \"$DRY_RUN\" = true ]; then",
+        "\"$VERSION\"",
+        "GITHUB_STEP_SUMMARY",
+    ] {
+        assert!(published.contains(wanted), "{wanted} in {published}");
+    }
+    // Every crate verified by its build before it goes up.
+    assert!(
+        !text.contains("--no-verify"),
+        "release.yml skips a verification"
+    );
+    // The exchanged token alone: none stored in the repository's secrets.
+    assert_eq!(
+        text.matches("CARGO_REGISTRY_TOKEN").count(),
+        1,
+        "the token reaches the publish step alone"
+    );
+}
+
+/// Task 3.3 of `alpha-release` (design D6): the publish-crates job's list
+/// names every package of the workspace that publishes, each after the
+/// workspace packages it depends on: its normal and build dependencies and
+/// the dev-dependencies that carry a version, which Cargo keeps in the
+/// package, so crates.io has to hold them first; a dev-dependency with a
+/// path alone is left out of the package. Read from `cargo metadata`, so
+/// that a crate added to the workspace, or a dependency added between two,
+/// fails here rather than in the release's run, after the release.
+#[test]
+fn the_release_workflow_publishes_every_crate_of_the_workspace_after_its_dependencies() {
+    let listed = release_crates(&read(".github/workflows/release.yml"));
+    let output = Command::new(env!("CARGO"))
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .arg("--manifest-path")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml"))
+        .output()
+        .expect("cargo metadata runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let packages = metadata["packages"].as_array().unwrap();
+    // cargo metadata gives `publish = false` as an empty list.
+    let mut publishing: Vec<&str> = packages
+        .iter()
+        .filter(|package| package["publish"] != json!([]))
+        .map(|package| package["name"].as_str().unwrap())
+        .collect();
+    publishing.sort_unstable();
+    let mut sorted: Vec<&str> = listed.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    assert_eq!(sorted, publishing, "the list is the workspace's crates");
+    for (at, name) in listed.iter().enumerate() {
+        let package = packages
+            .iter()
+            .find(|package| package["name"] == name.as_str())
+            .unwrap();
+        for dependency in package["dependencies"].as_array().unwrap() {
+            let dependency_name = dependency["name"].as_str().unwrap();
+            let in_workspace = dependency["path"].is_string();
+            let packaged = dependency["kind"] != "dev" || dependency["req"] != "*";
+            if in_workspace && packaged && dependency_name != name {
+                assert!(
+                    listed[..at].iter().any(|before| before == dependency_name),
+                    "{name} depends on {dependency_name}, which the list does not publish before it: {listed:?}"
+                );
+            }
+        }
     }
 }

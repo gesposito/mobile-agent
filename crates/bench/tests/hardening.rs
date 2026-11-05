@@ -10,7 +10,8 @@
 //! build job writing an OIDC token and attestations alone; task 2.1: and its
 //! publish job the repository's contents, for the release and its tag, with
 //! no other job writing them; task 3.4: and its publish-npm job an OIDC
-//! token, for npm. The files
+//! token, for npm; task 3.3: and its publish-crates job one, for crates.io.
+//! The files
 //! are read as text, line by line: a job is the block under `jobs:` that
 //! starts at two spaces of indentation, a step the block that starts with
 //! `- ` at six.
@@ -30,9 +31,10 @@ const WORKFLOWS: [&str; 4] = [
 /// The only write scopes any job is granted: the release's build job mints
 /// an OIDC token for Sigstore and stores the attestations it signs, its
 /// publish job, after the `release` environment's gate, creates the release
-/// and with it the tag, and its publish-npm job mints the OIDC token that
-/// npm's trusted publishing exchanges and its provenance is signed with.
-const WRITES: [(&str, &str, &str); 4] = [
+/// and with it the tag, its publish-npm job mints the OIDC token that npm's
+/// trusted publishing exchanges and its provenance is signed with, and its
+/// publish-crates job the one crates.io's trusted publishing exchanges.
+const WRITES: [(&str, &str, &str); 5] = [
     (".github/workflows/release.yml", "build", "id-token: write"),
     (
         ".github/workflows/release.yml",
@@ -47,6 +49,11 @@ const WRITES: [(&str, &str, &str); 4] = [
     (
         ".github/workflows/release.yml",
         "publish-npm",
+        "id-token: write",
+    ),
+    (
+        ".github/workflows/release.yml",
+        "publish-crates",
         "id-token: write",
     ),
 ];
@@ -221,7 +228,12 @@ fn tools_come_from_lockfiles_or_from_releases_pinned_with_their_sha_256() {
         for (job, lines) in jobs(&text) {
             for step in steps(&lines) {
                 let body = step.join("\n");
-                if body.contains("curl ") {
+                // A query whose body goes to /dev/null, for its status
+                // alone, downloads nothing to check.
+                let downloads = step
+                    .iter()
+                    .any(|line| line.contains("curl ") && !line.contains("-o /dev/null"));
+                if downloads {
                     assert!(
                         body.contains("sha256sum -c") || body.contains("shasum -a 256 -c"),
                         "{path}: {job} downloads without checking the SHA-256:\n{body}"
@@ -355,6 +367,7 @@ fn each_checkout_fetches_the_head_alone_unless_its_job_reads_history() {
         (".github/workflows/release.yml", "build", "1"),
         (".github/workflows/release.yml", "publish", "1"),
         (".github/workflows/release.yml", "npm-package", "1"),
+        (".github/workflows/release.yml", "publish-crates", "1"),
     ];
     let mut seen = Vec::new();
     for path in WORKFLOWS {
