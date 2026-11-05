@@ -4,8 +4,7 @@ The changes to mobile-agent, newest first, by release and, within a release, by 
 
 ## Unreleased
 
-## 0.1.0-alpha.1 — unreleased
-
+## 0.1.0-alpha.1 — 2026-11-05
 The first pre-release: `mobile-agent`, `mobile-agent-daemon` and `mobile-agent-mcp` for Macs with Apple silicon and for x86_64 and aarch64 Linux, with every change since the first commit. Experimental: the drivers use private Apple Simulator frameworks, Apple's developer services on an iPhone and hidden Android APIs, and the command-line and MCP interfaces may change between alphas.
 
 - **alpha-release** (`openspec/changes/alpha-release/`): the first pre-release, on GitHub Releases. `.github/workflows/release.yml`, on a dispatch naming the version, builds the Android agent's jar once and the three binaries per target, on GitHub's `xcode-27` image for Apple silicon and on Ubuntu 22.04 for x86_64 and aarch64 Linux, packs them with the notices and their SHA-256 sums, attests each tarball and its binaries with build provenance and verifies them on each target's runner; a run that is not a dry run then waits for the `release` environment's reviewer, and its publish job creates the draft pre-release `v<version>` on the dispatched commit with the tarballs, their sums and the notices and publishes it, which creates the tag, a tag ruleset admitting a `v*` tag only on a commit deployed to `release`; releases are immutable. `mobile-agent --version` prints the release and the commit it was built from, and the README's Install says how to download, verify and install the binaries. The record is `docs/research/alpha-release.md` and the change's design.
