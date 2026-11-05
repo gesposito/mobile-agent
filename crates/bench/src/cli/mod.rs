@@ -670,7 +670,7 @@ impl Adapter for CliAdapter {
         let version = process::run(&mut command, self.config.command_timeout)
             .ok()
             .filter(|finished| finished.status.success())
-            .and_then(|finished| version_from(&finished.stdout));
+            .and_then(|finished| cli_version(&finished.stdout));
         self.path = Some(path);
         Detection::Available { version }
     }
@@ -1129,6 +1129,21 @@ fn file_safe(id: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The version `mobile-agent --version` prints after the tool's name: the
+/// release, or `local`, and the commit in parentheses, such as
+/// `0.1.0-alpha.1 (36ac84f96428)`; another tool's line as the baselines
+/// read theirs.
+fn cli_version(output: &str) -> Option<String> {
+    let line = output
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    match line.strip_prefix(TOOL).map(str::trim) {
+        Some(version) if !version.is_empty() => Some(version.to_owned()),
+        _ => version_from(line),
+    }
 }
 
 #[cfg(test)]
