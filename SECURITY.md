@@ -14,7 +14,13 @@ Say what is affected (the daemon, the CLI, the Android agent, the iPhone runner,
 
 ## Supported versions
 
-Nothing is released yet: the `main` branch is the one supported version, and a fix lands there.
+A fix lands on `main` and goes out in the next pre-release; a published release never changes, since releases are immutable.
+
+| Version | Supported |
+|---|---|
+| `main` | yes |
+| `0.1.0-alpha.x`, the latest alpha | yes, through the next alpha |
+| an earlier `0.1.0-alpha.x` | no: upgrade to the latest |
 
 ## Scope
 
