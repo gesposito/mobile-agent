@@ -8,10 +8,11 @@
 //! directory of its own under the outer one, so an unchanged reader costs a
 //! fingerprint check. `MOBILE_AGENT_READER` names a prebuilt reader to embed
 //! instead. Without the `reader` feature, or when the host cannot build it
-//! (not macOS, or the target's standard library is missing), the crate
-//! embeds nothing and tree reads use the host translator, the degraded
-//! fallback; a host that cannot build it prints a warning. A reader that
-//! fails to compile fails the build.
+//! (not macOS, the target's standard library missing, or no `reader/` in the
+//! crate's directory, as in its package from crates.io, which leaves out the
+//! reader's package), the crate embeds nothing and tree reads use the host
+//! translator, the degraded fallback; a host that cannot build it prints a
+//! warning. A reader that fails to compile fails the build.
 
 use std::env;
 use std::fs;
@@ -79,6 +80,13 @@ fn main() {
 
 /// Builds the reader and returns the path of the binary.
 fn build(manifest_dir: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+    if !manifest_dir.join("reader/Cargo.toml").is_file() {
+        return Err(format!(
+            "the reader's sources, reader/, are not in the crate's directory, as in its package \
+             from crates.io; build from a checkout of the repository, or set \
+             MOBILE_AGENT_READER to a {BINARY} built there for {TARGET}"
+        ));
+    }
     let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let sysroot = Command::new(&rustc)
         .args(["--print", "sysroot"])
