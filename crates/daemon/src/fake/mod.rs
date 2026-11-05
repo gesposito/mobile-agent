@@ -42,7 +42,9 @@
 //! stroke whose finger lifts moving, as far and as long as the platform's
 //! fling carries it, a tap on the list while it glides stopping it and
 //! reaching nothing under it; without it, and after a stroke whose finger
-//! comes to rest, the list moves as far as the finger. A typing mode
+//! comes to rest, the list moves as far as the finger, or as far as
+//! [`FakeDriver::with_carry`] says, as iOS 27.0's lists went on after a
+//! stroke whose finger came to rest (pass-4-fixes, design D10). A typing mode
 //! (`MOBILE_AGENT_FAKE_TYPING`) says how the fixture's fields take text
 //! whose method the target may choose, as `fill` sends it, which they
 //! otherwise take whole, as the Android agent sets it (see [`Typing`]). With
@@ -135,6 +137,26 @@ pub enum Slide {
     HiddenPad,
 }
 
+/// How a fake's fixture list moves under a stroke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Lists {
+    /// Whether a stroke whose finger lifts moving glides the list on, as
+    /// far and as long as the platform's fling carries it.
+    pub fling: bool,
+    /// How far a stroke carries the list, in hundredths of a point for each
+    /// point the finger goes: 100 for as far as the finger.
+    pub carry: u32,
+}
+
+impl Default for Lists {
+    fn default() -> Lists {
+        Lists {
+            fling: false,
+            carry: 100,
+        }
+    }
+}
+
 /// How fake targets' fields take text whose method the target may choose.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Typing {
@@ -158,10 +180,17 @@ pub enum Typing {
     /// a paste into the field in focus, after the tap that readies it,
     /// leaves the edit menu that tap opened up over the screen.
     Unshifted,
+    /// As [`Typing::Keys`], the keys typed at React Native's cadence, 60 ms
+    /// apart, the field showing every key but the last once they went in
+    /// and the last as long after them as they took to type: an app slower
+    /// than the keys, the case the read-back's bound is built for, as the
+    /// site's recording run read "mobileagent.de" back after `type
+    /// mobileagent.dev` on a loaded host (pass-4-fixes, design D3).
+    Late,
 }
 
 impl Typing {
-    /// Parses `whole`, `keys`, `reorder`, `unshifted` or `max:<n>`.
+    /// Parses `whole`, `keys`, `reorder`, `unshifted`, `late` or `max:<n>`.
     pub fn parse(text: &str) -> Result<Typing, String> {
         let text = text.trim();
         match text {
@@ -169,13 +198,14 @@ impl Typing {
             "keys" => Ok(Typing::Keys),
             "reorder" => Ok(Typing::Reorder),
             "unshifted" => Ok(Typing::Unshifted),
+            "late" => Ok(Typing::Late),
             _ => text
                 .strip_prefix("max:")
                 .and_then(|n| n.parse().ok())
                 .map(Typing::Max)
                 .ok_or_else(|| {
                     format!(
-                        "fake typing {text:?}: use whole, keys, reorder, unshifted or max:<characters>"
+                        "fake typing {text:?}: use whole, keys, reorder, unshifted, late or max:<characters>"
                     )
                 }),
         }
@@ -184,7 +214,10 @@ impl Typing {
     /// Whether text whose method the target may choose is typed key by key
     /// when it is short enough, as a Simulator types it.
     pub fn types_keys(self) -> bool {
-        matches!(self, Typing::Keys | Typing::Reorder | Typing::Unshifted)
+        matches!(
+            self,
+            Typing::Keys | Typing::Reorder | Typing::Unshifted | Typing::Late
+        )
     }
 }
 
@@ -300,8 +333,8 @@ pub struct FakeDriver {
     timing: Timing,
     /// Whether fake emulators take the controller's path, with frames.
     controller: EmulatorController,
-    /// Whether a stroke whose finger lifts moving glides the list on.
-    fling: bool,
+    /// How the fixture's list moves under a stroke.
+    lists: Lists,
     /// How the fields take text whose method the target may choose.
     typing: Typing,
     /// Whether the keyboard stays up over every fixture screen.
@@ -399,7 +432,7 @@ impl FakeDriver {
             targets,
             timing: Timing::default(),
             controller: EmulatorController::Auto,
-            fling: false,
+            lists: Lists::default(),
             typing: Typing::Whole,
             keyboard: false,
             device_frames: true,
@@ -454,7 +487,17 @@ impl FakeDriver {
     /// platform's fling carries it, a tap on the list while it glides
     /// stopping it.
     pub fn with_fling(mut self, fling: bool) -> FakeDriver {
-        self.fling = fling;
+        self.lists.fling = fling;
+        self
+    }
+
+    /// These targets, their fixture's list carried `percent` hundredths of
+    /// a point by each point a stroke's finger goes, rather than as far as
+    /// the finger: on CI's iOS 27.0 Simulator a 600-point stroke whose finger
+    /// came to rest carried the SwiftUI fixture's List 1,200 to 1,900
+    /// points (pass-4-fixes, design D10).
+    pub fn with_carry(mut self, percent: u32) -> FakeDriver {
+        self.lists.carry = percent;
         self
     }
 
@@ -627,7 +670,7 @@ impl Driver for FakeDriver {
             target.platform,
             frames,
             self.timing,
-            self.fling,
+            self.lists,
             self.typing,
             self.keyboard,
             FromDriver {
@@ -655,6 +698,7 @@ mod tests {
         assert_eq!(Typing::parse(" keys "), Ok(Typing::Keys));
         assert_eq!(Typing::parse("reorder"), Ok(Typing::Reorder));
         assert_eq!(Typing::parse("unshifted"), Ok(Typing::Unshifted));
+        assert_eq!(Typing::parse("late"), Ok(Typing::Late));
         assert_eq!(Typing::parse("max:8"), Ok(Typing::Max(8)));
         for bad in ["", "slow", "max:", "max:-1", "max:eight"] {
             assert!(Typing::parse(bad).is_err(), "{bad:?}");

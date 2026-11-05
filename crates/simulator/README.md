@@ -737,7 +737,7 @@ transport.
   and iOS 26.5 (23F77), where every spike and every integration test ran.
 - iOS 27.0, the runtime of GitHub's `xcode-27` image (Xcode 27.1), runs the
   integration tests on CI's fresh iPhone 17 (`.github/workflows/device-tests.yml`,
-  design D1 of `openspec/changes/pass-4-fixes`). The tree reads there once
+  design D1 of `openspec/changes/archive/2026-11-05-pass-4-fixes`). The tree reads there once
   the reader bounds the floating bar container iOS 27 types a toolbar
   (Tree); the tests that still fail there, the first frame and taps judged
   by frames on a newly booted device, the copy back and the translator on a

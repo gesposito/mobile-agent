@@ -839,8 +839,14 @@ fn cover_by_modal_views(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mu
 /// only when it has an area, since Android clips a node's bounds to its
 /// ancestors' and leaves one scrolled out of its list with none, so that the
 /// rows below a list keep counting in its hint under a tab bar drawn over
-/// its bottom. Records the view as the cover of what it hid, and of what it
-/// overlaps without holding.
+/// its bottom. A view that takes no touch, nothing in it, itself or below
+/// it, clickable, long-clickable or scrollable ([`takes_touches`]), hides
+/// nothing: Android hands a touch that no view in it takes to the views
+/// under it, as a Material time picker's minute input lies over its chip in
+/// keyboard mode, holding its label and its hidden field, and a tap at the
+/// chip's point gave the minute the focus (pass-4-fixes, design D9b).
+/// Records the view as the cover of what it hid, and of what it overlaps
+/// without holding.
 fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &mut Covers) {
     let slack = pixel(replica);
     let mut stack = Vec::new();
@@ -852,7 +858,12 @@ fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &m
         let shows = showing(window, &facts[w]);
         for s in 0..window.nodes.len() {
             let f = &facts[w][s];
-            if !on_top(s) || !shows[s] || !f.visible || f.hidden != Hidden::No {
+            if !on_top(s)
+                || !shows[s]
+                || !f.visible
+                || f.hidden != Hidden::No
+                || !takes_touches(window, s)
+            {
                 continue;
             }
             let Some(parent) = window.nodes[s].parent else {
@@ -880,6 +891,24 @@ fn cover_by_views_on_top(replica: &Replica, facts: &mut [Vec<Facts>], covers: &m
             );
         }
     }
+}
+
+/// Whether node `s` of `window` or a node below it takes a touch, as Android
+/// dispatches one: clickable, long-clickable or scrollable, enabled or not,
+/// since a disabled clickable view consumes the touch it does not act on.
+fn takes_touches(window: &Win, s: usize) -> bool {
+    let depth = window.nodes[s].depth;
+    std::iter::once(&window.nodes[s])
+        .chain(
+            window.nodes[s + 1..]
+                .iter()
+                .take_while(|node| node.depth > depth),
+        )
+        .any(|node| {
+            node.flags.contains(NodeFlags::CLICKABLE)
+                || node.flags.contains(NodeFlags::LONG_CLICKABLE)
+                || node.flags.contains(NodeFlags::SCROLLABLE)
+        })
 }
 
 /// Records that `cover` covers its node, whole or in part.
@@ -1138,7 +1167,12 @@ fn scrolling_nodes(window: &Win, facts: &[Facts]) -> Vec<usize> {
 /// list would (rn-app-fixes, design D48). On the creation tab of the fourth
 /// production-app run the footer's view, which React Native's accessibility
 /// lists holding nothing, its tabs after it, lies over the lower part of a
-/// scroll view that runs on to the bottom of the screen.
+/// scroll view that runs on to the bottom of the screen. The container is
+/// taken as far as it lies within `e`, which holds it: a UIKit context menu
+/// lists its glass group view after the view holding its list, holding
+/// nothing for the moment the menu takes to come in, over the menu's whole
+/// frame, while the list's frame runs 874 points down, far past the menu
+/// (pass-4-fixes, design D9a).
 fn over_part_of_a_list(
     window: &Win,
     facts: &[Facts],
@@ -1156,9 +1190,9 @@ fn over_part_of_a_list(
         return false;
     }
     lists.iter().any(|&c| {
-        let list = &facts[c].rect;
+        let list = facts[c].rect.intersect(&facts[e].rect);
         list.overlaps(&f.rect)
-            && !within(list, &f.rect, slack)
+            && !within(&list, &f.rect, slack)
             && std::iter::successors(Some(c), |&a| window.nodes[a].parent).any(|a| a == e)
     })
 }
@@ -1177,15 +1211,45 @@ const BAR_CLASSES: [&str; 3] = [
 ];
 
 /// Whether node `h` of `window`, listed before its sibling `c`, is a header
-/// the app pins across `c`'s top: `c` scrolls and `h` does not, and `h`
-/// spans `c`'s width from an edge at or above `c`'s top to one at or below
-/// it, short of `c`'s bottom. A React Native header listed before its list
-/// is drawn over what the list scrolls up past its top, which XCTest's
-/// whole frames put in the header's frame.
+/// the app pins across `c`'s top: `c` scrolls, or holds a scroll view of its
+/// own frame through views of that frame ([`holds_its_scroller`]), and `h`
+/// does not, and `h` spans `c`'s width from an edge at or above `c`'s top to
+/// one at or below it, short of `c`'s bottom. A React Native header listed
+/// before its list is drawn over what the list scrolls up past its top,
+/// which XCTest's whole frames put in the header's frame; a UIKit card's
+/// fixed header, holding the card's share and close buttons, is listed
+/// before the view of the card's content, whose scroll view starts with a
+/// header of its own spanning the card's width (pass-4-fixes, design D9a).
 fn pinned_over(window: &Win, facts: &[Facts], h: usize, c: usize, slack: f64) -> bool {
-    scrolls(&window.nodes[c], &facts[c])
+    (scrolls(&window.nodes[c], &facts[c]) || holds_its_scroller(window, facts, c, slack))
         && !scrolls(&window.nodes[h], &facts[h])
         && across_top(&facts[h].rect, &facts[c].rect, slack)
+}
+
+/// Whether node `c` of `window` holds a node that scrolls ([`scrolls`]) of
+/// `c`'s own frame, to within `slack`, through nodes of that frame, as a view
+/// controller's view holds its scroll view, on iOS 27.0 inside one more view
+/// of the card's frame (pass-4-fixes, design D9a), `facts` being the
+/// window's.
+fn holds_its_scroller(window: &Win, facts: &[Facts], c: usize, slack: f64) -> bool {
+    let frame = &facts[c].rect;
+    let same = |k: &usize| {
+        let rect = &facts[*k].rect;
+        within(rect, frame, slack) && within(frame, rect, slack)
+    };
+    let mut stack: Vec<usize> = window.nodes[c]
+        .children
+        .iter()
+        .copied()
+        .filter(same)
+        .collect();
+    while let Some(k) = stack.pop() {
+        if scrolls(&window.nodes[k], &facts[k]) {
+            return true;
+        }
+        stack.extend(window.nodes[k].children.iter().copied().filter(same));
+    }
+    false
 }
 
 /// Hides, in a tree whose order is its drawing order ([`drawn_in_order`]),

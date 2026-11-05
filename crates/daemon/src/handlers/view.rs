@@ -446,13 +446,32 @@ fn reads_the_tree_it_settled(target: &Attached) -> bool {
     target.frames && target.mirror.config().slow_frames.is_none()
 }
 
+/// Why a settle that stopped at its maximum stopped, as its reply's
+/// `reason` says: what kept changing in its last quiet window, or the
+/// screen when the settle names neither signal (pass-4-fixes, design D4).
+fn gave_up(still: &[Signal]) -> &'static str {
+    match (
+        still.contains(&Signal::Tree),
+        still.contains(&Signal::Frames),
+    ) {
+        (true, true) => "tree_and_frames_kept_changing",
+        (true, false) => "tree_kept_changing",
+        (false, true) => "frames_kept_changing",
+        (false, false) => "screen_kept_changing",
+    }
+}
+
 /// `wait` with `settle`, after the session's last input when it came less
 /// than [`EFFECT_WAIT`] ago, whose first effect the wait waits for
 /// ([`settle_after`]): the reply names the input's action in `input`, and
 /// in `endedBy` the signal that changed last since the input, `none` when
 /// nothing changed within a second of it (design D2 of action-verdicts);
 /// without such an input, the signal the settle ended on, as the quiet
-/// window counted it.
+/// window counted it. A settle that stopped at its maximum succeeds, with
+/// a warning, as a spinner that keeps turning is no failure for a model,
+/// and says so to a script beside `settled: false`: `stoppedAfterMs`, how
+/// long it waited, and `reason`, what kept changing ([`gave_up`];
+/// pass-4-fixes, design D4); the CLI's `wait --settle --strict` fails it.
 fn settle(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
     let max = settle_max(&args.timeout)?;
     let quiet = Duration::from_millis(arg("quiet", &args.quiet)?);
@@ -494,6 +513,10 @@ fn settle(target: &mut Attached, call: &Call, args: &::wire::Wait) -> Outcome {
     });
     if let Some(input) = input {
         data["input"] = input.action.into();
+    }
+    if !settled.settled {
+        data["stoppedAfterMs"] = millis(settled.elapsed).into();
+        data["reason"] = gave_up(&settled.still_changing).into();
     }
     Ok(Success::new(data).warn(warning))
 }

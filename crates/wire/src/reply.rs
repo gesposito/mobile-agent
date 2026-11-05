@@ -474,6 +474,16 @@ pub struct Wait {
     /// For `settle`, what kept changing: `tree`, `frame`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub still_changing: Option<Vec<String>>,
+    /// For a `settle` that stopped at its timeout, `settled` false, how
+    /// long it waited before it stopped; absent when it settled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_after_ms: Option<f64>,
+    /// For a `settle` that stopped at its timeout, why:
+    /// `frames_kept_changing`, `tree_kept_changing`,
+    /// `tree_and_frames_kept_changing` or `screen_kept_changing`; absent
+    /// when it settled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// For `settle` within a second of the session's last input, that
     /// input's action, `click`, `fill`, `type`, `press`, `swipe` or
     /// `scroll`, whose first effect the settle waited for; `endedBy` is
@@ -651,7 +661,8 @@ pub struct TypeText {
     /// Where the read-back took what the field holds from: `value`,
     /// `descendants` or `name`.
     pub read_from: Option<String>,
-    /// `text_mismatch` or `no_value_to_read` when `verified` is false;
+    /// `text_mismatch`, `shorter_than_typed` for the start of what the keys
+    /// would have left, or `no_value_to_read` when `verified` is false;
     /// `no_focused_field` when no field in the tree had the focus.
     pub reason: Option<String>,
     pub read_back_ms: Option<f64>,

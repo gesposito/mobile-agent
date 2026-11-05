@@ -50,7 +50,7 @@ use protocol::message::{Rotation, TextMethod};
 
 use super::app::{self, Device, Entry};
 use super::tree::{self, Win};
-use super::{FakeRunner, Timing, Typing};
+use super::{FakeRunner, Lists, Timing, Typing};
 use crate::devices::ios::{self as device, Facts};
 use crate::driver::{
     AppControl, Attachment, DriverError, FixedScreen, InputNotes, InputSession, Launch, Launched,
@@ -76,6 +76,22 @@ const APP_WINDOW: u32 = 1;
 /// The longest text that typing modes which type keys type key by key, as
 /// the Simulator driver's `TextMethod::Auto` does; longer text is pasted.
 const KEYBOARD_LIMIT: usize = 32;
+
+/// The pause between two keys the fields take under [`Typing::Late`]:
+/// React Native's cadence, at which the Simulator driver types the fields
+/// of a React Native screen (`simulator::Cadence::REACT_NATIVE`).
+const LATE_KEY_GAP: Duration = Duration::from_millis(60);
+
+/// How long the keys of `text`, entered as `method` asks, take to type under
+/// `typing`: [`LATE_KEY_GAP`] between two keys under [`Typing::Late`] when
+/// they go in as keys, nothing otherwise.
+fn typing_time(method: TextMethod, text: &str, typing: Typing) -> Duration {
+    let keys = text.chars().count().saturating_sub(1);
+    match entry(method, text, typing) {
+        Entry::Keys { .. } if typing == Typing::Late => LATE_KEY_GAP * keys as u32,
+        _ => Duration::ZERO,
+    }
+}
 
 /// How long after a launch that brought a running app forward from the
 /// launcher the launcher takes the front back, when the device's home
@@ -179,8 +195,8 @@ struct Shared {
     /// The reads of the tree the target was asked for, counted with those
     /// of the other targets of the driver that attached it.
     reads: Arc<AtomicUsize>,
-    /// Whether a stroke that lifts moving glides the list on.
-    fling: bool,
+    /// How the list moves under a stroke.
+    lists: Lists,
     /// The glide under way, if any.
     glide: Mutex<Option<Glide>>,
     /// How the fields take text whose method the target may choose.
@@ -812,8 +828,9 @@ impl Report for DeviceReport {
 /// itself as the physical iOS driver reports an iPhone; `timing` says when
 /// its frames start, how late each change shows after the input or launch
 /// that caused it, how long a launch splash lasts, when its input session
-/// activates and how long detaching it takes. With `fling`, a stroke whose
-/// finger lifts moving glides the list on; `typing` says how its fields take
+/// activates and how long detaching it takes. `lists` says how far a stroke
+/// carries the list and whether one whose finger lifts moving glides it on;
+/// `typing` says how its fields take
 /// text whose method the target may choose. With `keyboard`, its keyboard
 /// stays up over every screen of the fixture apps. From `driver` it takes a
 /// fake iPhone's runner and the count each read of its tree adds to.
@@ -821,7 +838,7 @@ pub(crate) fn attach(
     platform: Platform,
     frames: Frames,
     timing: Timing,
-    fling: bool,
+    lists: Lists,
     typing: Typing,
     keyboard: bool,
     driver: FromDriver,
@@ -867,7 +884,7 @@ pub(crate) fn attach(
         stop,
         read_cost,
         reads,
-        fling,
+        lists,
         glide: Mutex::new(None),
         typing,
         keyboard_due: Mutex::new(None),
@@ -987,6 +1004,10 @@ impl InputSink for Part {
         if let Some(wait) = self.shared.enter_session() {
             std::thread::sleep(wait);
         }
+        // Keys take their time to type, as the Simulator driver types them.
+        if let Input::Text { text, method, .. } = input {
+            std::thread::sleep(typing_time(*method, text, self.shared.typing));
+        }
         let now = self.shared.sync();
         if let Some(lost) = self.shared.lost() {
             return Err(lost);
@@ -1025,7 +1046,7 @@ impl InputSink for Part {
                 // The list scrolls up and down, so the finger's speed along
                 // that axis is its release velocity; the glide follows the
                 // stroke as it shows, after the latency.
-                if self.shared.fling && *release == Release::Moving {
+                if self.shared.lists.fling && *release == Release::Moving {
                     let speed = (from.y - to.y).abs() / duration.as_secs_f64();
                     let platform = device.kit.platform;
                     let distance = app::glide(platform, speed) * (from.y - to.y).signum();
@@ -1040,7 +1061,9 @@ impl InputSink for Part {
                         });
                     }
                 }
-                device.swipe((from.x, from.y), (to.x, to.y), 0.0)
+                // A list that goes on past the finger, as iOS 27.0's did.
+                let past = f64::from(self.shared.lists.carry) / 100.0 - 1.0;
+                device.swipe((from.x, from.y), (to.x, to.y), past * (from.y - to.y).abs())
             }
             Input::Key { code, meta } => device.key(*code, *meta),
             Input::Text { text, node, method } => {
@@ -1051,13 +1074,41 @@ impl InputSink for Part {
                     Entry::Whole => TextMethod::DIRECT,
                 });
                 let field = node.map(|n| tree::identifier_of(&device.windows(), n.window, n.node));
-                let taken = match field {
-                    Some(None) => None,
-                    Some(Some(id)) => device.text(Some(&id), text, entry, typing),
-                    None => device.text(None, text, entry, typing),
+                let typed = typing_time(*method, text, typing);
+                // Under the late typing mode the field shows every key but
+                // the last once they went in, and the last as long after
+                // them as they took to type.
+                let last = text.char_indices().last().filter(|_| !typed.is_zero());
+                let (taken, changed) = match (field, last) {
+                    (Some(None), _) => (None, false),
+                    (field, Some((at, _))) => {
+                        let id = field.flatten();
+                        let shown = device.text(id.as_deref(), &text[..at], entry, typing);
+                        if shown.is_some() {
+                            let change = if device.screen() == before {
+                                Change::Content
+                            } else {
+                                Change::Screen
+                            };
+                            self.shared.show(&device, change);
+                            let rest = Entry::Keys { replace: false };
+                            device.text(id.as_deref(), &text[at..], rest, typing);
+                            let late = self.shared.latency + typed;
+                            self.shared.show_after(&device, Change::Content, late);
+                        }
+                        (shown, false)
+                    }
+                    (Some(Some(id)), None) => {
+                        let taken = device.text(Some(&id), text, entry, typing);
+                        (taken, taken.unwrap_or(false))
+                    }
+                    (None, None) => {
+                        let taken = device.text(None, text, entry, typing);
+                        (taken, taken.unwrap_or(false))
+                    }
                 };
                 ack.accepted = taken.is_some();
-                taken.unwrap_or(false)
+                changed
             }
         };
         if changed {
@@ -1191,7 +1242,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1242,7 +1293,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1256,7 +1307,7 @@ mod tests {
             Platform::Ios,
             Frames::None,
             timing,
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1300,7 +1351,7 @@ mod tests {
             Platform::Ios,
             polled,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1346,7 +1397,7 @@ mod tests {
             Platform::Ios,
             Frames::Stream,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1382,7 +1433,7 @@ mod tests {
                 latency,
                 ..Timing::default()
             },
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1438,7 +1489,7 @@ mod tests {
                 frame_delay: Duration::from_millis(150),
                 ..Timing::default()
             },
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),
@@ -1458,7 +1509,7 @@ mod tests {
             Platform::Android,
             Frames::Stream,
             Timing::default(),
-            false,
+            Lists::default(),
             Typing::Whole,
             false,
             FromDriver::default(),

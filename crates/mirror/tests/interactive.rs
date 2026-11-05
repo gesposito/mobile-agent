@@ -1452,6 +1452,148 @@ fn a_list_whose_frame_runs_under_a_search_bar_hides_none_of_the_bar_on_ios() {
     assert_eq!(target.inputs().len(), 2);
 }
 
+/// Pass-4-fixes D9a (task 3.1): a context menu read while it comes in, as
+/// the site's recording run met a map app's recent place: `click` on the
+/// menu's Clear was refused as lying under the header, while a screenshot
+/// showed it in plain view and a tap at its point hit it. The menu's glass
+/// group view, listed after the view that holds the menu's list, holds
+/// nothing yet, and the list's frame runs far past the menu. Both menu items
+/// are listed in view, and a tap on Clear lands at its centre.
+#[test]
+fn a_context_menu_read_while_it_comes_in_lists_its_items_in_view_on_ios() {
+    let (target, mut mirror) = mirror_on("context-menu-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in ["placeholder-share", "placeholder-clear"] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert!(element.reference.is_some(), "{id}:\n{}", listing.text);
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    let clear = listing.by_identifier("placeholder-clear").unwrap();
+    let at = tap_on(&mut mirror, clear.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (108.67 + 358.67) / 2.0).abs() < 0.01
+            && (at.y - (768.67 + 810.67) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Pass-4-fixes D9a (task 3.1): a place card whose fixed header holds its
+/// share and close buttons, listed before the place's view of the card's
+/// frame, whose scroll view starts with a header of the place's own spanning
+/// the card's width. The listing counted both buttons under the place's
+/// header, and `click` on the close button was refused, while a tap at its
+/// point closed the card. The header's own buttons are listed in view, and
+/// a tap on the close button lands at its centre; the place's content is
+/// listed as before.
+#[test]
+fn a_cards_fixed_header_keeps_its_own_buttons_over_the_content_listed_after_it_on_ios() {
+    let (target, mut mirror) = mirror_on("card-header-ios");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in [
+        "placeholder-card-share",
+        "placeholder-card-close",
+        "placeholder-directions",
+        "placeholder-download",
+    ] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert!(element.reference.is_some(), "{id}:\n{}", listing.text);
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    for id in ["placeholder-card-share", "placeholder-card-close"] {
+        let element = listing.by_identifier(id).unwrap();
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    let close = listing.by_identifier("placeholder-card-close").unwrap();
+    let at = tap_on(&mut mirror, close.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (336.33 + 378.67) / 2.0).abs() < 0.01
+            && (at.y - (503.67 + 546.0) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Pass-4-fixes D9b (task 3.2): a clock app's Material time picker in
+/// keyboard mode on the API 36 emulator: the minute's chip lies under the
+/// minute input's layout, which the agent flags drawn on top and which
+/// holds the input's label and an empty frame, the minute's field hidden
+/// while the chip shows. `click` on the chip's ref was refused as lying
+/// under the overlay, while a tap at its point reached the chip and gave
+/// the minute the focus: the layout takes no touch, and Android hands a
+/// touch a view does not take to the views under it. The chip is listed in
+/// view and a tap on it lands at its centre; the hour's field, inside the
+/// hour's layout, is listed as before.
+#[test]
+fn a_view_drawn_on_top_that_takes_no_touch_leaves_the_chip_under_it_reachable_on_android() {
+    let (target, mut mirror) = mirror_on("timepicker-keyboard-android");
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    let chip = listing
+        .by_identifier("placeholder-minute-chip")
+        .unwrap_or_else(|| panic!("the minute's chip is listed:\n{}", listing.text));
+    assert!(chip.reference.is_some(), "{}", listing.text);
+    assert_eq!(chip.visible, None, "wholly in view:\n{}", listing.text);
+    assert_eq!(mirror.covered_by(chip.id), None);
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+    assert!(
+        listing.text.contains("- textbox [focused, ref="),
+        "the hour's field:\n{}",
+        listing.text
+    );
+    let at = tap_on(&mut mirror, chip.reference.unwrap()).unwrap();
+    assert!(
+        (at.x - (185.52 + 281.52) / 2.0).abs() < 0.01
+            && (at.y - (409.52 + 489.52) / 2.0).abs() < 0.01,
+        "{at}"
+    );
+    assert_eq!(target.inputs().len(), 1);
+}
+
+/// Pass-4-fixes D9a (task 3.1), on iOS 27.0: the same place card, with its
+/// fixed header and the place's view each in a plain view of its own frame,
+/// the place's view holding its scroll view of the card's frame, as CI's
+/// Simulator read it, where the share and close buttons still read covered
+/// by the place's header. The header's own buttons are listed in view.
+#[test]
+fn a_cards_fixed_header_keeps_its_buttons_over_content_wrapped_in_views_of_its_frame_on_ios() {
+    let mut screen = Screen::load("card-header-ios");
+    let content = &mut screen.0["windows"][0]["root"]["children"][0]["children"][1]["children"][1]
+        ["children"][1];
+    let children = content["children"].as_array().unwrap().clone();
+    let wrap = |child: &serde_json::Value| json!({"class": "XCUIElementTypeOther", "bounds": child["bounds"].clone(), "children": [child.clone()]});
+    content["children"] = json!([wrap(&children[0]), wrap(&children[3])]);
+    let target = FakeTarget::new(screen.read());
+    let mut mirror = Mirror::new(target.backend(), MirrorConfig::default());
+    let listing = mirror.snapshot(&interactive()).unwrap();
+    for id in ["placeholder-card-share", "placeholder-card-close"] {
+        let element = listing
+            .by_identifier(id)
+            .unwrap_or_else(|| panic!("{id} is listed:\n{}", listing.text));
+        assert_eq!(
+            element.visible, None,
+            "{id} is wholly in view:\n{}",
+            listing.text
+        );
+        assert_eq!(mirror.covered_by(element.id), None, "{id}");
+    }
+    assert!(!listing.text.contains("under the"), "{}", listing.text);
+}
+
 /// The organizations list of section 3 of the masked listings as the third
 /// production-app run met it (task 3.7, N7): the header is listed after the
 /// view that holds the list rather than before the list, so it pins

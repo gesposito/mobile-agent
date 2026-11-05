@@ -249,21 +249,29 @@ fn fill(data: &Value, out: &mut String) {
 
 /// A type's read-back and entry, as fill's line says them (real-app-fixes,
 /// design D3): `✓ Done (read back "example.com", typed)` with what the field
-/// holds once the keys went in, also when it differs from the text typed,
-/// which the reply's warning names; the count of a secure field's masked
+/// holds once the keys went in; when that differs from the text typed,
+/// which the reply's warning names, the line is marked ⚠ rather than ✓,
+/// and says `shorter than typed` after it for the start of the text
+/// (pass-4-fixes, design D3); the count of a secure field's masked
 /// characters; `nothing to read back` for a field that showed nothing, and
 /// `not read back` for one the read-back did not read, as when no field had
 /// the focus; the twin a stale ref stood for first, as fill's line has it.
 fn typed(data: &Value, out: &mut String) {
-    let read = match (&data["verified"], data["text"].as_str()) {
+    let (verified, held) = (&data["verified"], data["text"].as_str());
+    let read = match (verified, held) {
         (Value::String(shown), Some(held)) if shown == "length" => masked(held),
         (_, Some(held)) => format!("read back {held:?}"),
         (Value::Bool(false), None) => "nothing to read back".to_owned(),
         _ => "not read back".to_owned(),
     };
     let mut parts: Vec<String> = resolution(data).into_iter().chain([read]).collect();
+    if str_of(data, "reason") == "shorter_than_typed" {
+        parts.push("shorter than typed".to_owned());
+    }
     entry(data, &mut parts);
-    let _ = writeln!(out, "✓ Done ({})", parts.join(", "));
+    let differs = *verified == Value::Bool(false) && held.is_some();
+    let mark = if differs { "⚠" } else { "✓" };
+    let _ = writeln!(out, "{mark} Done ({})", parts.join(", "));
 }
 
 /// A read-back of `shown`, a secure field's text, by its count of masked
@@ -865,9 +873,11 @@ mod tests {
     /// Design D3 of real-app-fixes: type's line says what the read-back
     /// found in the field, as fill's does, and how the text went in: what
     /// the field holds, also when it differs from the text typed, which the
-    /// reply's warning names; a secure field's count of masked characters;
-    /// and that nothing was read back, for a field that showed nothing or
-    /// none that had the focus.
+    /// reply's warning names, the line then marked ⚠ rather than ✓ and
+    /// saying `shorter than typed` for the start of the text (pass-4-fixes,
+    /// design D3); a secure field's count of masked characters; and that
+    /// nothing was read back, for a field that showed nothing or none that
+    /// had the focus.
     #[test]
     fn type_says_what_it_read_back_from_the_field() {
         let typed = |text: Value, verified: Value, reason: Value| {
@@ -886,9 +896,17 @@ mod tests {
             line(&typed(
                 json!("exampl"),
                 json!(false),
+                json!("shorter_than_typed")
+            )),
+            "⚠ Done (read back \"exampl\", shorter than typed, typed)\n"
+        );
+        assert_eq!(
+            line(&typed(
+                json!("exmaple.com"),
+                json!(false),
                 json!("text_mismatch")
             )),
-            "✓ Done (read back \"exampl\", typed)\n"
+            "⚠ Done (read back \"exmaple.com\", typed)\n"
         );
         assert_eq!(
             line(&typed(json!("•••••••"), json!("length"), Value::Null)),

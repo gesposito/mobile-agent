@@ -1,0 +1,45 @@
+{
+  "description": "A context menu of a UIKit app on iOS 26 as the Simulator's reader read it within a second of the tap that opened it, synthetic, in the shape this change's task 3.1 recorded on the iOS 26.5 runtime from a map app's recent place (pass-4-fixes, design D9a): the window holds the menu's container alone, the app's views behind it cut by the menu as a modal view. The menu's list view holds a plain view of the menu's frame, 108.67,716.67 250 by 104 points, holding a background without a name and a list whose frame runs 874 points down, far past the menu, its two cells inside the menu, and the scroll bars of a list of one page; then the menu's glass group view, listed after it with the menu's frame, holds nothing yet. Once the menu has come in the glass group view holds its material's views. Placeholder names. Simulator windows send no change events. iOS points, scale 3.",
+  "backend": {"name": "simulator-reader", "fallback": false},
+  "scale": 3,
+  "windows": [
+    {
+      "id": 1, "kind": "application", "layer": 0, "package": "dev.mobileagent.placeholder", "title": "Placeholder",
+      "bounds": [0, 0, 402, 874], "flags": ["active", "focused"], "events": false,
+      "root": {"class": "XCUIElementTypeApplication", "desc": "Placeholder", "bounds": [0, 0, 402, 874], "children": [
+        {"class": "XCUIElementTypeWindow", "bounds": [0, 0, 402, 874], "children": [
+          {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+            {"class": "XCUIElementTypeOther", "bounds": [0, 0, 402, 874], "children": [
+              {"class": "XCUIElementTypeOther", "bounds": [108.67, 716.67, 358.67, 820.67], "children": [
+                {"class": "XCUIElementTypeOther", "bounds": [108.67, 716.67, 358.67, 820.67], "children": [
+                  {"class": "XCUIElementTypeOther", "bounds": [108.67, 716.67, 358.67, 820.67], "children": [
+                    {"class": "XCUIElementTypeOther", "bounds": [108.67, 716.67, 358.67, 820.67]},
+                    {"class": "XCUIElementTypeCollectionView", "bounds": [108.67, 716.67, 358.67, 1590.67], "flags": ["scrollable"], "children": [
+                      {"class": "XCUIElementTypeCell", "bounds": [108.67, 726.67, 358.67, 768.67], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "placeholder-share", "desc": "Placeholder share", "bounds": [108.67, 726.67, 358.67, 768.67], "flags": ["clickable"], "children": [
+                          {"class": "XCUIElementTypeImage", "id": "placeholder-share-icon", "desc": "Placeholder share", "bounds": [139.33, 735.67, 158.33, 757.67]}
+                        ]}
+                      ]},
+                      {"class": "XCUIElementTypeCell", "bounds": [108.67, 768.67, 358.67, 810.67], "children": [
+                        {"class": "XCUIElementTypeButton", "id": "placeholder-clear", "desc": "Placeholder clear", "bounds": [108.67, 768.67, 358.67, 810.67], "flags": ["clickable"], "children": [
+                          {"class": "XCUIElementTypeImage", "id": "placeholder-clear-icon", "desc": "Placeholder remove", "bounds": [139, 780.33, 158.67, 799.33]}
+                        ]}
+                      ]},
+                      {"class": "_UIScrollViewScrollIndicator", "desc": "Vertical scroll bar, 1 page", "text": "0%", "bounds": [325.67, 746.67, 355.67, 790.67], "children": [
+                        {"class": "XCUIElementTypeOther", "bounds": [352.67, 749.67, 355.67, 787.67]}
+                      ]},
+                      {"class": "_UIScrollViewScrollIndicator", "desc": "Horizontal scroll bar, 1 page", "text": "0%", "bounds": [108.67, 757.67, 340, 787.67], "children": [
+                        {"class": "XCUIElementTypeOther", "bounds": [111.67, 784.67, 337, 787.67]}
+                      ]}
+                    ]}
+                  ]},
+                  {"class": "XCUIElementTypeOther", "bounds": [108.67, 716.67, 358.67, 820.67]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    }
+  ]
+}

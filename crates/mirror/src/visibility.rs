@@ -869,6 +869,17 @@ pub(crate) fn scroller_at(
     at: Point,
     vertical: bool,
 ) -> Option<Rect> {
+    let (w, c) = scroller_node_at(replica, view, at, vertical)?;
+    Some(Sight::new(replica, view).shows(w, c))
+}
+
+/// The scroll container [`scroller_at`] finds, by window and node.
+fn scroller_node_at(
+    replica: &Replica,
+    view: &View,
+    at: Point,
+    vertical: bool,
+) -> Option<(usize, usize)> {
     let axis = if vertical {
         ScrollAxis::VERTICAL
     } else {
@@ -878,18 +889,61 @@ pub(crate) fn scroller_at(
         let facts = &view.windows[w];
         // Nodes come in pre-order, so the last one that holds the point is
         // the innermost, or one drawn over it.
-        let c = (0..window.nodes.len()).rev().find(|&c| {
-            let (node, f) = (&window.nodes[c], &facts[c]);
+        (0..window.nodes.len())
+            .rev()
+            .find(|&c| {
+                let (node, f) = (&window.nodes[c], &facts[c]);
+                f.visible
+                    && f.hidden == Hidden::No
+                    && view::scrolls(node, f)
+                    && node.scroll.is_none_or(|scroll| {
+                        scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN
+                    })
+                    && f.rect.contains(at)
+            })
+            .map(|c| (w, c))
+    })
+}
+
+/// What the scroll container [`scroller_at`] finds holds wholly inside what
+/// it shows: each node below it on screen, not covered, with a ref or a
+/// name, by what it is, its identifier, else its role and its name, with its
+/// bounds, in pre-order (pass-4-fixes, design D10). Two looks that share none
+/// of them saw no content in common. What it is, not its identity, since the
+/// replica gives a node a new identity when its parent is not paired with
+/// the last read's, as CI's emulator read the Expo fixture's rows between two
+/// looks the content joined. Empty when no such container holds `at`.
+pub(crate) fn scroller_content_at(
+    replica: &Replica,
+    view: &View,
+    at: Point,
+    vertical: bool,
+) -> Vec<(String, Rect)> {
+    let Some((w, c)) = scroller_node_at(replica, view, at, vertical) else {
+        return Vec::new();
+    };
+    let shown = Sight::new(replica, view).shows(w, c);
+    let (window, facts) = (&replica.windows[w], &view.windows[w]);
+    let depth = window.nodes[c].depth;
+    window.nodes[c + 1..]
+        .iter()
+        .zip(&facts[c + 1..])
+        .take_while(|(node, _)| node.depth > depth)
+        .filter(|(_, f)| {
             f.visible
                 && f.hidden == Hidden::No
-                && view::scrolls(node, f)
-                && node
-                    .scroll
-                    .is_none_or(|scroll| scroll.axis == axis || scroll.axis == ScrollAxis::UNKNOWN)
-                && f.rect.contains(at)
-        })?;
-        Some(Sight::new(replica, view).shows(w, c))
-    })
+                && !f.absorbed
+                && (f.bears_ref || !f.name.is_empty())
+                && holds_rect(&shown, &f.rect)
+        })
+        .map(|(node, f)| {
+            let what = match node.identifier.as_deref() {
+                Some(identifier) if !identifier.is_empty() => identifier.to_owned(),
+                _ => format!("{} {}", f.role, f.name),
+            };
+            (what, f.rect)
+        })
+        .collect()
 }
 
 /// What shows of the scroll container that shows the most of `area`, in

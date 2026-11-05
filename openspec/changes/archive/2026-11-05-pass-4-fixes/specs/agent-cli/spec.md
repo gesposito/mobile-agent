@@ -3,14 +3,14 @@
 ## MODIFIED Requirements
 
 ### Requirement: Typed text is read back
-`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text or two consecutive reads agree, within a bound, SHALL say what it read in its line, SHALL warn `shorter than typed` when the read-back is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again; with no focused field it SHALL say the text was not read back.
+`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text, within a bound of the keys' own time plus a margin, SHALL say what it read in its line, SHALL warn `shorter than typed`, with the reason `shorter_than_typed`, when the read-back at the bound is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again, its line then not ticking; with no focused field it SHALL say the text was not read back.
 
 #### Scenario: Keys dropped
-- **WHEN** `type example.com` reaches the field as `exampl`
-- **THEN** the reply says it read back `exampl` and warns that the field differs from the text, advising `fill`
+- **WHEN** `type example.com` reaches the field as `exampl` and the field holds no more by the bound
+- **THEN** the reply says it read back `exampl` and warns that it is shorter than typed, advising `fill`
 
 #### Scenario: The last key lands late
-- **WHEN** the field holds all but the last character when the first read-back is taken
+- **WHEN** the field holds all but the last character when the first read-back is taken, and the last within the bound
 - **THEN** the read-back is taken again and the reply says it read back the whole text
 
 ### Requirement: A settle waits for the input's effect
@@ -58,3 +58,17 @@ A click's reply SHALL name the element the tap landed on whether or not the sess
 #### Scenario: A city beside its airport
 - **WHEN** a wait for `Lisbon` runs while the screen lists `Lisbon Airport (LIS)` above `Lisbon`
 - **THEN** the wait resolves on `Lisbon`
+
+### Requirement: A scroll that looks for an element sizes its strokes by what they carry
+On iOS, `scroll --until` SHALL shorten its strokes by how far two looks at the scroll container that share an element measured the content moving for each point of the finger, never lengthening them, so that a list whose content follows the finger takes the strokes it took before; on Android, whose lists follow the finger, it SHALL measure nothing.
+
+#### Scenario: A list that goes on past the finger
+- **WHEN** on a Simulator each stroke whose finger comes to rest carries a list three times as far as the finger and `scroll --until` looks for a row in its middle
+- **THEN** once two looks share a row the strokes are a third as long, and the scroll stops with the row mostly in view
+
+### Requirement: A scroll strokes back after carrying its element past
+On iOS, after a stroke that carried the content past everything the scroll container showed, the element at neither look, `scroll --until` SHALL stroke back by halves until a look shares an element with the look before that stroke or shows the element, with no fixed sleep.
+
+#### Scenario: A row carried past between two looks
+- **WHEN** a stroke carries a list farther than it shows and the sought row passes between the look before it and the look after it
+- **THEN** the scroll strokes back, finds the row and stops with it mostly in view, where it ran to the list's end before

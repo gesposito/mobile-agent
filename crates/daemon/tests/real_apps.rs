@@ -36,6 +36,15 @@ use simulator::{
 };
 use support::{Daemon, TempDir};
 
+/// `eprintln!` past the test harness's capture, which leaves a passing
+/// test's output out of a run's log: the lines that say what a test
+/// measured, which a CI run shows whether the test passed or failed.
+macro_rules! report {
+    ($($arg:tt)*) => {{
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 const SIM_VAR: &str = "MOBILE_AGENT_SIM_UDID";
 const SERIAL_VAR: &str = "MOBILE_AGENT_ANDROID_SERIAL";
 
@@ -748,6 +757,29 @@ fn simulator_list_screens_list_their_rows() {
     env.shutdown();
 }
 
+/// What the Simulator's reader runtime reads of the screen in front, its
+/// raw trees with modal views honoured and not (`simulator-reader dump`,
+/// from the path `status` names), for a failure to show the shape it met.
+fn reader_dump(env: &Env, udid: &str) -> String {
+    let status = env.run(&["status"]);
+    let path = status.reply["data"]["targets"]
+        .as_array()
+        .and_then(|targets| {
+            targets
+                .iter()
+                .find_map(|target| target["driver"]["reader"]["path"].as_str())
+        })
+        .map(str::to_owned);
+    let Some(path) = path else {
+        return "(status names no reader)".to_owned();
+    };
+    Command::new("xcrun")
+        .args(["simctl", "spawn", udid, &path, "dump"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_else(|error| format!("(the dump did not run: {error})"))
+}
+
 /// Maps opened past its first launch with its search field's ref, and `text`
 /// in the field. Its suggestions need the network.
 fn maps_with(env: &Env, text: &str) -> String {
@@ -761,13 +793,19 @@ fn maps_with(env: &Env, text: &str) -> String {
     env.interactive()
 }
 
-/// Design D9a on the Simulator's Maps, the header cover: the search field's
-/// clear button was refused as lying under the header while it showed in
-/// plain view and a tap at its point hit `button "Clear"`. A click on it
-/// clears the field.
+/// Design D9a on the Simulator's Maps, the controls a header holds: in the
+/// site's recording run `click` on the Clear of a recent place's menu was
+/// refused as lying under the header while the menu showed it in plain view,
+/// and the place card's close button was counted under the card's own
+/// header, a tap at either's point reaching it. With "Lisbon" in the search
+/// field a click on its clear button empties it; the place card that the
+/// search's Enter opens closes by a click on its close button; and a click
+/// on the Clear of the recent place's menu, right after the menu was
+/// opened, clears the place. A part whose screen does not come, as without
+/// the network, is skipped with the reason.
 #[test]
-fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() {
-    let test = "simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header";
+fn simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered() {
+    let test = "simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered";
     let Some(udid) = gate(SIM_VAR, test) else {
         return;
     };
@@ -783,7 +821,7 @@ fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() 
     let clicked = env.run(&["click", &clear]);
     assert!(
         clicked.ok(),
-        "D9a: the click on the clear button {clear} failed {}: {}",
+        "D9a: the click on the search field's clear button {clear} failed {}: {}",
         clicked.code(),
         clicked.error()
     );
@@ -794,6 +832,68 @@ fn simulator_maps_the_search_fields_clear_button_is_not_covered_by_its_header() 
             .unwrap_or_default()
             .contains("Lisbon"),
         "the clear button left the field holding {value}"
+    );
+    if !network(test) {
+        env.shutdown();
+        return;
+    }
+
+    // The place card, opened by the search's Enter.
+    env.run(&["fill", "#MapsSearchTextField", "Lisbon"]).data();
+    env.run(&["press", "Enter"]).data();
+    let card = env.run(&["wait", "#ActionRowItemTypeDirections", "--timeout", "20000"]);
+    if !card.ok() {
+        eprintln!("{udid}: skipped the place card and the menu: no place card came for Lisbon");
+        env.shutdown();
+        return;
+    }
+    env.settle();
+    let full = env.full();
+    let close = ref_with(&full, "id=CardButtonTypeClose")
+        .unwrap_or_else(|| panic!("setup: the place card has no close button:\n{full}"));
+    let closed = env.run(&["click", &close]);
+    assert!(
+        closed.ok(),
+        "D9a: the click on the place card's close button {close} failed {}: {}\n{full}\n\nthe \
+         reader's raw trees:\n{}",
+        closed.code(),
+        closed.error(),
+        reader_dump(&env, &udid)
+    );
+    env.settle();
+
+    // The recent place's menu, its Clear clicked as soon as it is open: the
+    // search closed, Maps lists the place among its recents once relaunched.
+    let results = env.interactive();
+    if let Some(search_close) = results
+        .lines()
+        .find(|line| line.contains("- button \"Close\" [ref=e"))
+        .and_then(line_ref)
+    {
+        env.run(&["click", &search_close]);
+        env.settle();
+    }
+    env.run(&["open", MAPS, "--relaunch", "--timeout", "30000"]);
+    env.settle();
+    let home = env.interactive();
+    let more = home
+        .lines()
+        .skip_while(|line| !line.contains("id=RecentsSection"))
+        .find(|line| line.contains("\"More\" [") && line.contains("ref=e"))
+        .and_then(line_ref);
+    let Some(more) = more else {
+        eprintln!("{udid}: skipped the menu: no recent place with a More button:\n{home}");
+        env.shutdown();
+        return;
+    };
+    env.run(&["click", &more]).data();
+    let cleared = env.run(&["click", "#ClearButton", "--timeout", "5000"]);
+    assert!(
+        cleared.ok(),
+        "D9a: the click on the Clear of the recent place's menu, right after it opened, failed \
+         {}: {}",
+        cleared.code(),
+        cleared.error()
     );
     env.shutdown();
 }
@@ -927,19 +1027,29 @@ fn simulator_photos_the_listing_right_after_an_alert_closes_lists_the_screen() {
     env.shutdown();
 }
 
-/// The value `get value` reads from `selector`, empty when it has none.
+/// What `selector` shows: the value `get value` reads, or its text when it
+/// has none, as a picker wheel's selected row names it on iOS 26.5; empty
+/// when it is not there.
 fn value_of(env: &Env, selector: &str) -> String {
     let reply = env.run(&["get", "value", selector]);
     if !reply.ok() {
         return String::new();
     }
-    reply.data()["value"]
+    let value = reply.data()["value"]
         .as_str()
         .unwrap_or_default()
-        .to_owned()
+        .to_owned();
+    if !value.is_empty() {
+        return value;
+    }
+    let text = env.run(&["get", "text", selector]);
+    if !text.ok() {
+        return String::new();
+    }
+    text.data()["text"].as_str().unwrap_or_default().to_owned()
 }
 
-/// Turns the picker wheel `wheel` (a ref) until its value starts with
+/// Turns the picker wheel `wheel` (a ref) until what it shows starts with
 /// `wanted`, a short stroke at a time, reading it after each.
 fn turn_wheel(env: &Env, wheel: &str, wanted: &str, later: impl Fn(&str) -> bool) -> bool {
     let found = env.run(&["get", "box", wheel]).data();
@@ -970,11 +1080,41 @@ fn turn_wheel(env: &Env, wheel: &str, wanted: &str, later: impl Fn(&str) -> bool
     value_of(env, wheel).starts_with(wanted)
 }
 
+/// Whether a listing line's name is a time of day: `16:00`, `4 PM` or
+/// `4:00 PM`, as the start's time is named, and not the picker holding it,
+/// whose value holds the date beside the time.
+fn names_a_time(line: &str) -> bool {
+    let Some(name) = line.split('"').nth(1) else {
+        return false;
+    };
+    let line = name;
+    let bytes = line.as_bytes();
+    let clock = bytes
+        .windows(3)
+        .any(|w| w[0].is_ascii_digit() && w[1] == b':' && w[2].is_ascii_digit());
+    (clock || line.ends_with(" AM") || line.ends_with(" PM")) && !line.contains(',')
+}
+
+/// Tomorrow's date as Calendar's week strip names its day, `Thursday,
+/// November 5`, from the host's clock, which a Simulator shares.
+fn tomorrow_label() -> String {
+    Command::new("date")
+        .args(["-v+1d", "+%A, %B %-d"])
+        .env("LC_ALL", "C")
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .unwrap_or_default()
+}
+
 /// Design D9c on the Simulator's Calendar, a deleted event's kept node: after
 /// an event running past midnight was deleted, a node for it stayed in the
-/// tree that no scroll reached. An event from 23:00 to midnight is added and
-/// deleted; when the daemon's listing still holds it, a second daemon's
-/// fresh read tells the replica's node, the tool's, from the app's.
+/// tree that no scroll reached. On tomorrow's page, where the site's run had
+/// its event, an event from 23:00 to midnight is added, its start's hour
+/// turned on the start's wheels, which iOS 26.5 shows below the start's
+/// time and iOS 27 behind the one button that names the start and the end,
+/// then deleted. When the daemon still holds a node for it, a second
+/// daemon's fresh read tells the replica's node, the tool's, from the app's,
+/// which the listing keeps out of view.
 #[test]
 fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
     let test = "simulator_calendar_a_deleted_event_past_midnight_leaves_no_node";
@@ -984,45 +1124,62 @@ fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
     let _device = device_lock();
     let _reset = SimulatorReset::new(&udid, &[CALENDAR]);
     let env = Env::start(&udid);
+    let ios = ios_version(&env);
     open_past_first_launch(&env, CALENDAR);
+    // Calendar can come back on a screen it kept, an event's details among
+    // them, which its back button leaves for the day's page.
+    for _ in 0..3 {
+        if env
+            .run(&["wait", "#add-plus-button", "--timeout", "5000"])
+            .ok()
+        {
+            break;
+        }
+        env.run(&["click", "#BackButton"]);
+        env.settle();
+    }
     env.steady("#add-plus-button");
+    let tomorrow = tomorrow_label();
+    let day = env.run(&["click", &format!("text={tomorrow}")]);
+    report!("{udid}: tomorrow's page, {tomorrow}: {}", day.ok());
+    env.settle();
     tap_box(&env, "#add-plus-button");
-    env.run(&["wait", "text==New Event", "--timeout", "15000"])
+    // The sheet's title is "New" on iOS 26.5 and "New Event" on iOS 27;
+    // both have Cancel.
+    env.run(&["wait", "text==Cancel", "--timeout", "15000"])
         .data();
     env.settle();
-    let sheet = env.full();
+    let mut sheet = env.full();
     let title = format!("placeholder-event-{}", std::process::id());
-    // Under iOS 27 the sheet's form, a list, reads empty, as Settings' list
-    // does (design D9d), and the event cannot be added there.
     let field = ref_with(&sheet, "\"Title\"").unwrap_or_else(|| {
-        panic!(
-            "D9d before D9c: Calendar's New Event form lists none of its rows under {}, so no \
-             event can be added:\n{sheet}",
-            ios_version(&env)
-        )
+        panic!("setup: Calendar's new event form lists no Title field under {ios}:\n{sheet}")
     });
     env.run(&["fill", &field, &title]).data();
-    // The start's time: the row after "Starts" holds a date and a time.
+    // iOS 27 shows the start and the end as one button, which opens them.
+    if let Some(collapsed) = ref_with(&sheet, "id=date-time-collapsed-button") {
+        env.run(&["click", &collapsed]).data();
+        env.settle();
+        sheet = env.full();
+        eprintln!("{udid}: the form after the collapsed date and time opened:\n{sheet}");
+    }
+    // The start's time: the first control after "Starts" that names a time.
     let starts = sheet
         .lines()
         .skip_while(|line| !line.contains("Starts"))
-        .filter(|line| line.contains("ref=e") && (line.contains(" AM") || line.contains(" PM")))
+        .filter(|line| line.contains("ref=e") && !line.contains("Starts") && names_a_time(line))
         .find_map(line_ref)
-        .unwrap_or_else(|| panic!("setup: no start time in:\n{sheet}"));
+        .unwrap_or_else(|| panic!("setup: no start time under {ios} in:\n{sheet}"));
     env.run(&["click", &starts]).data();
     env.settle();
     let picker = env.full();
-    // The wheels and their values: the hour's reads "10 o'clock", the
-    // period's "PM"; a date wheel may come first.
+    // The wheels and what they show: the hour's "16 o'clock" or "4 o'clock",
+    // the period's "PM" on a 12-hour clock; a date wheel may come first.
     let wheels: Vec<(String, String)> = picker
         .lines()
         .filter(|line| line.contains("- combobox") && line.contains("ref=e"))
         .filter_map(|line| {
-            let value = line
-                .rsplit_once("]: ")
-                .map_or("", |(_, value)| value)
-                .trim();
-            line_ref(line).map(|reference| (reference, value.to_owned()))
+            let reference = line_ref(line)?;
+            Some((reference.clone(), value_of(&env, &reference)))
         })
         .collect();
     let hour = |value: &str| -> u32 {
@@ -1039,35 +1196,96 @@ fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
         .iter()
         .find(|(_, value)| value == "AM" || value == "PM");
     eprintln!("{udid}: the start's wheels {wheels:?}");
-    let set = hour_wheel
-        .is_some_and(|(wheel, _)| turn_wheel(&env, wheel, "11", |now| hour(now) % 12 < 11))
-        && period_wheel
-            .is_none_or(|(wheel, _)| turn_wheel(&env, wheel, "PM", |now| now.starts_with("AM")));
+    let set = match (hour_wheel, period_wheel) {
+        (Some((wheel, _)), Some((period, _))) => {
+            turn_wheel(&env, wheel, "11", |now| hour(now) % 12 < 11)
+                && turn_wheel(&env, period, "PM", |now| now.starts_with("AM"))
+        }
+        (Some((wheel, _)), None) => turn_wheel(&env, wheel, "23", |now| hour(now) < 23),
+        _ => false,
+    };
     let after = env.full();
     assert!(
         set,
-        "setup: the start's wheels did not reach 11 PM:\n{picker}\n\nnow:\n{after}"
+        "setup: the start's wheels did not reach 23:00 under {ios}:\n{picker}\n\nnow:\n{after}"
     );
-    let save = after
-        .lines()
-        .find(|line| line.contains(" \"Add\" [") && !line.contains("add-plus-button"))
-        .and_then(line_ref)
-        .unwrap_or_else(|| panic!("setup: no Add in:\n{after}"));
+    let save = ref_with(&after, "id=add-button")
+        .or_else(|| {
+            after
+                .lines()
+                .find(|line| {
+                    (line.contains(" \"Add\" [") || line.contains(" \"Done\" ["))
+                        && !line.contains("add-plus-button")
+                        && !line.contains("disabled")
+                })
+                .and_then(line_ref)
+        })
+        .unwrap_or_else(|| panic!("setup: no Add or Done in:\n{after}"));
     tap_box(&env, &save);
     env.run(&["wait", &format!("text={title}"), "--timeout", "15000"])
         .data();
+    env.settle();
+    // On iOS 27.0 the event lies partly under the day's floating toolbar
+    // at 23:00, which no scroll moves it out from under; the click taps the
+    // part in view.
+    let scrolled = env.run(&[
+        "scroll",
+        "down",
+        "400",
+        "--until",
+        &format!("text={title}"),
+        "--timeout",
+        "30000",
+    ]);
+    if !scrolled.ok() {
+        report!(
+            "{udid}: the scroll to the event stopped, {}; the click taps what of it is in view",
+            scrolled.error()
+        );
+    }
     env.run(&["click", &format!("text={title}")]).data();
     env.run(&["wait", "text==Delete Event", "--timeout", "15000"])
         .data();
     env.run(&["click", "text==Delete Event"]).data();
     env.settle();
     let confirm = env.interactive();
-    if let Some(delete) = ref_named(&confirm, "Delete Event") {
+    if let Some(delete) =
+        ref_with(&confirm, "id=delete-alert-button").or_else(|| ref_named(&confirm, "Delete Event"))
+    {
         env.run(&["click", &delete]).data();
     }
     env.settle();
-    let kept = env.full().contains(&title);
-    let gone = env.run(&[
+    // A node for the event, whether or not a listing shows it.
+    let held = |env: &Env| {
+        env.run(&[
+            "wait",
+            &format!("text={title}"),
+            "--state",
+            "attached",
+            "--timeout",
+            "3000",
+        ])
+    };
+    let kept = held(&env);
+    let listed = env.full().contains(&title);
+    report!(
+        "{udid}: after the deletion the daemon holds a node for the event: {}{}; the full listing \
+         lists it: {listed}",
+        kept.ok(),
+        if kept.ok() {
+            format!(", {}", kept.reply["data"]["element"])
+        } else {
+            String::new()
+        }
+    );
+    if !kept.ok() {
+        env.shutdown();
+        return;
+    }
+    // A node the app has since dropped leaves the replica at its next read,
+    // a poll of a still window at the latest.
+    let since = Instant::now();
+    let left = env.run(&[
         "wait",
         &format!("text={title}"),
         "--state",
@@ -1075,25 +1293,24 @@ fn simulator_calendar_a_deleted_event_past_midnight_leaves_no_node() {
         "--timeout",
         "10000",
     ]);
-    eprintln!(
-        "{udid}: after the deletion the listing holds the event: {kept}; it left the tree: {}",
-        gone.ok()
+    report!(
+        "{udid}: the node left the daemon's replica: {}, after {} ms",
+        left.ok(),
+        since.elapsed().as_millis()
     );
-    if !kept && gone.ok() {
-        env.shutdown();
+    env.shutdown();
+    if left.ok() {
         return;
     }
-    env.shutdown();
     let fresh = Env::start(&udid);
-    let read = fresh.full();
-    let in_app = read.contains(&title);
-    eprintln!("{udid}: a fresh daemon's read holds the event: {in_app}");
+    let in_app = held(&fresh).ok();
+    report!("{udid}: a fresh daemon's read holds the node too: {in_app}");
     assert!(
         in_app,
         "D9c: the replica kept the deleted event's node, which a fresh read does not hold"
     );
-    eprintln!(
-        "{udid}: the app keeps a node for the deleted event, which is the app's, not the tool's"
+    report!(
+        "{udid}: Calendar keeps a node for the deleted event, which is the app's, not the tool's"
     );
     fresh.shutdown();
 }
@@ -1155,7 +1372,7 @@ fn simulator_photos_a_tap_reports_the_change_it_made() {
         .run(&["click", &format!("{x:.0}"), &format!("{y:.0}")])
         .data();
     let settled = env.settle();
-    eprintln!(
+    report!(
         "{udid}: the tap on {button} at ({x:.0}, {y:.0}), hit {}: frameChangeMs {}, treeDeltaMs \
          {}, watchedMs {}; the settle after it: settled {}, endedBy {}",
         clicked["hit"],
@@ -1296,9 +1513,11 @@ fn android_settings_a_click_on_dark_theme_reports_the_change_it_made() {
         flipped,
         "setup: the click on {switch} did not turn the dark theme on: {clicked}"
     );
-    eprintln!(
+    report!(
         "{serial}: the click on Dark theme: frameChangeMs {}, treeDeltaMs {}, watchedMs {}",
-        clicked["frameChangeMs"], clicked["treeDeltaMs"], clicked["watchedMs"]
+        clicked["frameChangeMs"],
+        clicked["treeDeltaMs"],
+        clicked["watchedMs"]
     );
     assert!(
         clicked["frameChangeMs"].is_number() || clicked["treeDeltaMs"].is_number(),
@@ -1308,15 +1527,26 @@ fn android_settings_a_click_on_dark_theme_reports_the_change_it_made() {
 }
 
 /// Opens Clock's new alarm and puts its time picker in keyboard mode, with
-/// its boxes at rest; returns the full listing.
+/// its boxes at rest; returns the full listing. The picker opens in the mode
+/// it was last left in, the dial on a fresh device.
 fn clock_time_picker_in_keyboard_mode(env: &Env) -> String {
     env.run(&["open", CLOCK, "--timeout", "30000"]).data();
     env.run(&["click", "#tab_menu_alarm"]).data();
     env.steady("text==Add alarm");
     env.run(&["click", "text==Add alarm"]).data();
     env.steady("#material_timepicker_ok_button");
-    env.run(&["click", "#material_timepicker_mode_button"])
-        .data();
+    let keyboard = env.run(&[
+        "wait",
+        "#material_textinput_timepicker",
+        "--state",
+        "attached",
+        "--timeout",
+        "1000",
+    ]);
+    if !keyboard.ok() {
+        env.run(&["click", "#material_timepicker_mode_button"])
+            .data();
+    }
     env.run(&[
         "wait",
         "#material_textinput_timepicker",
@@ -1374,6 +1604,24 @@ fn android_clock_the_time_pickers_minute_is_reachable_by_a_ref() {
          no ref for the minute:\n{interactive}",
         clicked.code(),
         clicked.error()
+    );
+    // The chip gives way to the minute's field, which takes the focus.
+    env.settle();
+    let after = env.full();
+    let focused = after
+        .lines()
+        .skip_while(|line| !line.contains("id=material_minute_text_input"))
+        .skip(1)
+        .take_while(|line| !line.contains("id=material_clock_period_toggle"))
+        .any(|line| line.contains("textbox [focused"));
+    eprintln!(
+        "{serial}: the click on the minute's ref {reference}: {}; the minute's field has the focus \
+         after it: {focused}",
+        if clicked.ok() { "done" } else { clicked.code() }
+    );
+    assert!(
+        !clicked.ok() || focused,
+        "the click on the minute's chip did not give the minute's field the focus:\n{after}"
     );
     let _ = env.run(&["click", "#material_timepicker_cancel_button"]);
     env.shutdown();
@@ -1433,7 +1681,7 @@ fn android_chrome_the_first_run_loads_a_page_and_counts_the_dialogs_it_met() {
     }
     let _reset = AndroidReset::new(&device, &[CHROME]);
     let uptime = shell(&device, "cat /proc/uptime");
-    eprintln!("{serial}: uptime {uptime} (seconds since boot, idle)");
+    report!("{serial}: uptime {uptime} (seconds since boot, idle)");
     let env = Env::start(&serial);
     env.run(&["open", CHROME, "--timeout", "60000"]).data();
     let mut dialogs = 0;
@@ -1496,7 +1744,7 @@ fn android_chrome_the_first_run_loads_a_page_and_counts_the_dialogs_it_met() {
     env.run(&["fill", "#url_bar", "example.com"]).data();
     env.run(&["press", "Enter"]).data();
     let page = env.run(&["wait", "--text", "Example Domain", "--timeout", "30000"]);
-    eprintln!(
+    report!(
         "{serial}: uptime at the start {uptime}; first run answered {answered:?}; {dialogs} \
          not-responding dialogs"
     );

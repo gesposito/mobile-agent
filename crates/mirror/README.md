@@ -372,7 +372,14 @@ also counts).
   a node with an area is judged, since Android gives a node scrolled out of
   its list bounds clipped to nothing: those rows keep counting in their
   list's hint under the tab bar drawn over the list's bottom, which hides
-  only what lies wholly under it.
+  only what lies wholly under it. A view drawn over others that takes no
+  touch, nothing in it clickable, long-clickable or scrollable, hides
+  nothing either, since Android hands a touch no view in it takes to the
+  views under it (pass-4-fixes, design D9b): a Material time picker in
+  keyboard mode lays the minute input's layout, holding its label and its
+  hidden field, over the minute's chip, and a tap at the chip's point gave
+  the minute the focus on the API 36 emulator while `click` on its ref was
+  refused as lying under the overlay (`timepicker-keyboard-android`).
 - On iOS the order is what tells (rn-app-fixes, design D31): XCTest lists a
   view's subviews in the order UIKit draws them and reports no occlusion,
   so in a tree from XCTest's snapshot (a window rooted at an
@@ -406,7 +413,16 @@ also counts).
   sibling covering none of it (D38): React Native lists its header before
   the list it is drawn over, and the rows the list scrolled up past its top
   lie in the header's frame, where the production-app run found a 44-point row
-  at 2 points still listed. A tab bar listed after a list covers the rows
+  at 2 points still listed. A sibling that holds a scroll view of its own
+  frame, through views of that frame, as a view controller's view holds its
+  scroll view, counts as scrolling for the header it covers none of, so the controls the header
+  holds stay reachable (pass-4-fixes, design D9a): a map app's place card
+  lists its fixed header, holding the card's share and close buttons, before
+  the view of the card's content, whose scroll view starts with a header of
+  the place's own spanning the card's width, and counted both buttons under
+  it while a tap at their point reached them (`card-header-ios`); iOS 27.0
+  puts the header and the place's view each in a plain view of its own
+  frame. A tab bar listed after a list covers the rows
   wholly under it, as on Android. React Native's accessibility lists a view
   that draws something, as a footer's background, as a node that holds
   nothing, what the view lays out listed after it as its siblings, top to
@@ -418,7 +434,13 @@ also counts).
   container, as a background listed after a list would, covers none of it.
   On the fourth production-app run's creation tab the scroll view runs on to
   the bottom of the screen under the footer, whose view held nothing, and
-  a tap on a control's strip under it opened nothing (`create-rn-ios`). An alert's static text is spared too
+  a tap on a control's strip under it opened nothing (`create-rn-ios`). The
+  container counts as far as it lies within the sibling: a UIKit context
+  menu lists its glass group view after the view holding its list, holding
+  nothing while the menu comes in, over the menu's frame, while the list's
+  frame runs 874 points down, far past the menu, and a click on the menu's
+  Clear right after it opened was refused as lying under the header
+  (pass-4-fixes, design D9a; `context-menu-ios`). An alert's static text is spared too
   (design D26 of physical-ios): UIKit's alert controller
   draws nothing over its title and message, while XCTest lists the scroll
   indicators of the scroll view that holds them after them, their
@@ -703,6 +725,18 @@ the reasons in this order, each with advice:
   it gets. The daemon bounds each stroke of `scroll --until` that looks
   for its element to three quarters of their extent along the axis, so
   that no element passes through them between two looks.
+- `scroll_content` tells, the same way, what that container holds wholly
+  inside its visible bounds (pass-4-fixes, design D10): each node below it
+  on screen and not covered, with a ref or a name, by what it is, its
+  identifier, else its role and its name, and with its bounds. Not by its
+  identity: the replica gives a node a new one when its parent is not paired
+  with the last read's, and on CI's emulator the Expo fixture's rows came
+  back so between two looks the content joined. The daemon measures from two looks that share an element how far
+  a stroke carried the content for each point of the finger, and takes two
+  that share none, the element at neither, for a stroke that carried the
+  content past what the container showed. It costs what `scroll_viewport`
+  does, a view of the replica (7.6 µs against 6.8 µs on the benchmarks'
+  list).
 - `scroll_container_in` tells, the same way, what shows of the scroll
   container that shows the most of an area (rn-app-fixes, design D41):
   among the nodes on screen and not covered that scroll along the axis, in
@@ -824,6 +858,7 @@ apps, in device points with the scale beside them:
 | `bluesky-language` | Bluesky's language selector: 16 rows as labelled `Other`s over static text, 10 in the viewport |
 | `bluesky-typeahead` | Bluesky's search screen with the keyboard up and its typeahead flagged `modal` over the Explore page, the header a sibling outside it (names replaced) |
 | `bluesky-typeahead-android` | the same screen on Android: the typeahead an `AbsListView` flagged `on_top` over the Explore page, both with the same bounds, the header and the tab bar flagged too, rows scrolled out of the page clipped to nothing (names replaced) |
+| `timepicker-keyboard-android` | a Material time picker in keyboard mode on Android, in the shape task 3.2 of pass-4-fixes recorded from a clock app's new alarm on the API 36 emulator (design D9b): each of the hour's and the minute's inputs a view holding the input's layout, flagged `on_top`, holding its field and its label, and the input's chip; the hour's field has the focus, the minute's is hidden under its layout's empty frame while its chip shows |
 | `consent-ios` | a React Native consent screen on iOS in XCTest's classes, no flags (rn-app-fixes, design D31): a footer listed after the scroll view, holding Accept and continue over the heading the content is scrolled to (placeholder names) |
 | `create-ios` | a React Native create screen on iOS: a floating button listed after the list, over its last row and partly over the row before (placeholder names) |
 | `feed-ios` | a React Native feed on iOS: a sticky header listed after the list, over the post scrolled under it, the first post above the screen (placeholder names) |
@@ -841,6 +876,8 @@ apps, in device points with the scale beside them:
 | `edit-menu-ios` | the SwiftUI fixture's Login tab with iOS's edit menu up over its username field, which holds "agent", the keyboard up, read by the in-guest reader on an iPhone 17 (D55): the menu (Paste, Select, Select All, AutoFill) in the text effects window, the application's second window, whose node the reader bounds by what it draws, the menu's list, 121 to 165 points down, over the password field; keys trimmed to four |
 | `floating-toolbar-ios` | a UIKit list screen on iOS 26 in the shape spike S14 recorded on the Simulator (real-app-fixes, design D2): a layout container listing a navigation bar, a transition view holding a collection view whose rows, 370 by 52 points, lie on screen from 293.33 points down, and a plain container spanning the window, listed after the transition view, holding a plain host of the same frame that holds the floating bottom toolbar, 86 points at the screen's bottom, with its search field (placeholder names) |
 | `search-sheet-ios` | a UIKit map screen on iOS 26 with its sheet at half height, in the shape spike S14 recorded (D2): the map and the overlay holding its buttons in one transition view, the sheet in a second one listed after it, both spanning the window; the sheet's content view lists the search bar's view, 73 points tall, then a plain view holding a named list of the content view's frame whose first cell starts 73 points lower, under the search bar's band (placeholder names) |
+| `card-header-ios` | a UIKit place card on iOS 26 at half height, in the shape task 3.1 of pass-4-fixes recorded on the Simulator (design D9a): the card's fixed header, holding its share and close buttons and its title, listed before two plain views and the view of the card's content, all of the card's frame, whose scroll view starts with a header of the place's own spanning the card's width |
+| `context-menu-ios` | a UIKit context menu on iOS 26 read while it comes in, in the shape task 3.1 of pass-4-fixes recorded on the Simulator (design D9a): the menu's list view holds a plain view of the menu's frame, holding a background and a list whose frame runs 874 points down with the menu's two items, then the menu's glass group view of the menu's frame, holding nothing yet |
 | `events-typing` | keystrokes into the login fields, one event each |
 | `events-gap` | typing with event 2 lost in transit |
 | `events-resync` | the driver reporting the stream out of sync and resynchronized |
@@ -971,6 +1008,7 @@ cargo test -p mirror
 | | Selected tab keeps its ref | `controls::a_tab_gets_a_ref_whether_selected_or_not_and_the_selected_one_says_so`, `controls::a_row_without_a_selected_node_lists_no_tabs` (rn-app-fixes 3.4, design D40) |
 | | Control under a disabled button | `interactive::a_disabled_view_drawn_after_a_control_on_ios_hides_it_whatever_it_shows`; partly under it, `interactive::a_tap_on_a_control_under_a_disabled_button_lands_on_the_part_below_it` (rn-app-fixes 3.1, design D38), on the tab as the second production-app run read it, its list ending above the tab bar |
 | | Control behind a header listed first | `interactive::a_header_listed_before_its_list_on_ios_hides_the_rows_scrolled_up_behind_it`, `interactive::a_navigation_bar_listed_before_the_content_on_ios_hides_what_lies_in_it`, `interactive::acting_on_a_row_behind_a_header_listed_before_its_list_fails_naming_the_header` (D38) |
+| | (pass-4-fixes 3.1, design D9a: the controls a header holds) | a card's fixed header listed before the view of its content, `interactive::a_cards_fixed_header_keeps_its_own_buttons_over_the_content_listed_after_it_on_ios`; a context menu read while it comes in, `interactive::a_context_menu_read_while_it_comes_in_lists_its_items_in_view_on_ios`; on a Simulator, `real_apps::simulator_maps_the_controls_its_headers_and_menus_hold_are_not_covered` |
 | | Elements under the keyboard | `interactive::what_lies_under_the_keyboard_is_left_out_and_what_lies_partly_under_it_says_how_much_shows`, `interactive::a_tap_on_a_button_partly_under_the_keyboard_lands_on_what_shows_or_is_refused_naming_it` (rn-app-fixes 3.2, design D38) |
 | | Ref across a label change | `controls::a_field_keeps_its_ref_when_its_name_and_its_view_change_in_place`, `controls::a_control_named_by_its_text_keeps_its_ref_when_the_text_changes_in_place_on_android`; the fill by that ref in the daemon, `handlers::act::tests::a_fill_by_ref_of_a_field_whose_label_changes_reads_it_back` (rn-app-fixes 3.3, design D39) |
 | | (rn-app-fixes 1.5: a checkbox with its state; a text, a scroll bar and a heading listed once) | `controls::a_checkbox_react_native_announces_in_its_value_lists_as_a_checkbox_with_its_state`, `interactive::a_text_a_scroll_bar_and_a_heading_that_repeat_themselves_are_listed_once`, and the unit test `roles::tests::react_native_s_checkbox_value_says_whether_it_is_checked` |
@@ -1011,4 +1049,5 @@ cargo test -p mirror
 | (task 10.22, a view marked modal inside its window) | (what it covers is cut, what lies outside it stays) | `interactive::a_view_marked_modal_hides_what_it_covers_and_keeps_what_lies_outside_it`, `interactive::acting_on_an_element_a_view_marked_modal_covers_fails_with_its_code`, and in the Simulator's reader `elements::tests::a_read_honouring_modal_views_that_left_children_out_was_pruned`, `elements::tests::the_view_a_pruned_read_kept_is_marked_modal_in_the_whole_read`, `elements::tests::a_kept_view_that_moved_between_the_reads_is_found_by_what_it_holds`, `elements::tests::nothing_is_marked_when_the_reads_disagree` |
 | (task 10.25, the keyboard over an Android app) | (a floating toolbar cuts no list it does not span) | `visibility::gboard_s_floating_toolbar_leaves_the_rows_beside_and_below_it_in_view`, and in the Android agent the checks of `agent-android/unit-test/KeyboardAreaTest.kt` |
 | (task 10.28, a view drawn over its siblings on Android) | (what it covers is cut when it shows something; a node without an area is not judged) | `interactive::a_view_drawn_over_its_siblings_on_android_hides_what_it_covers`, `interactive::acting_on_an_element_a_view_drawn_over_it_covers_fails_with_its_code`, `interactive::a_bar_drawn_over_a_page_hides_what_lies_wholly_under_it_and_leaves_the_page_its_hint`, `interactive::a_view_drawn_over_its_siblings_that_shows_nothing_hides_nothing`, and in the Android agent the checks of `agent-android/unit-test/StackingTest.kt` |
+| (pass-4-fixes 3.2, design D9b: a view drawn over its siblings that takes no touch) | (it hides nothing, the chip under it listed in view and tapped at its centre) | `interactive::a_view_drawn_on_top_that_takes_no_touch_leaves_the_chip_under_it_reachable_on_android`; on an emulator, `real_apps::android_clock_the_time_pickers_minute_is_reachable_by_a_ref` |
 | (task 10.32, where a stroke may come down) | (the area less the system and keyboard windows above its window, or above the window in front) | `visibility::a_stroke_goes_through_what_the_system_bars_and_the_keyboard_leave_of_its_area`, `visibility::the_screen_loses_what_the_windows_above_the_one_in_front_cover` |

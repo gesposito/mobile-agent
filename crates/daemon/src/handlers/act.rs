@@ -176,6 +176,13 @@ const BRING_IN_SPEED: f64 = 400.0;
 /// farther than the finger.
 const REACH: f64 = 0.75;
 
+/// The shortest stroke back a scroll that looks for an element takes toward
+/// the content a stroke carried past what the container showed, in points:
+/// it halves its stroke back while the content it comes to shares nothing
+/// with the look before that stroke, and goes on from where it is once its
+/// stroke would be shorter (pass-4-fixes, design D10).
+const SHORTEST_BACK: f64 = 50.0;
+
 /// Edges within half a point of each other meet.
 const EDGE: f64 = 0.5;
 
@@ -711,8 +718,24 @@ fn method_name(method: Option<TextMethod>) -> Value {
 /// or set text into again as soon as a frame changes after its last read,
 /// until a read shows the field's text changed, and other windows, and a
 /// field typed into, no sooner than its minimum interval after their last
-/// read.
+/// read. Keys get the time they took to type on top ([`read_bound`]).
 const READ_BACK_MAX: Duration = Duration::from_secs(1);
+
+/// How long after an entry that took `took` and went in by `method` a
+/// read-back reads a field that does not show the text: [`READ_BACK_MAX`],
+/// and for keys the time they took on top, since an app that takes keys
+/// more slowly than they go in shows the last of them later the longer they
+/// took, as on the site's recording run `type mobileagent.dev` read
+/// "mobileagent.de" back once in five on a loaded host, where the keys go
+/// one after the other and take longer the more the host is loaded
+/// (pass-4-fixes, design D3).
+fn read_bound(took: Duration, method: Option<TextMethod>) -> Duration {
+    if method == Some(TextMethod::KEYS) {
+        READ_BACK_MAX + took
+    } else {
+        READ_BACK_MAX
+    }
+}
 
 /// How long after an entry typed as keys a field must still show the text
 /// before `fill` takes it: an app that owns its field's value, as a
@@ -1064,11 +1087,13 @@ enum ReadBack {
         held: Option<String>,
     },
     /// It showed other text, `held`, `None` for none, read from `from`, until
-    /// the read-back's bound, `after` the entry.
+    /// the read-back's bound, `after` the entry; `short` when that text is
+    /// the start of what keys would have left in the field ([`shorter`]).
     Other {
         held: Option<String>,
         from: Source,
         after: Duration,
+        short: bool,
     },
     /// It showed nothing to read back, neither a value nor anything below
     /// it, and the read-back stopped looking `after` the entry.
@@ -1092,6 +1117,36 @@ fn held(stamps: &Timestamps, hold: Instant, now: Instant, rereads: bool) -> bool
     let changed = (rereads && stamps.last_frame_change.is_some_and(|at| at > read.started))
         || stamps.last_tree_change.is_some_and(|at| at > read.finished);
     now >= hold && !changed
+}
+
+/// Whether `held`, what a field shows, is the start of `expected` and
+/// shorter than it, each character the expected one or a mask character,
+/// as a secure field shows its own.
+fn starts(held: &str, expected: &str) -> bool {
+    held.chars().count() < expected.chars().count()
+        && held
+            .chars()
+            .zip(expected.chars())
+            .all(|(shown, typed)| shown == typed || MASKS.contains(&shown))
+}
+
+/// Whether a field reading `reading` after keys `text` placed as `placed`
+/// shows the start of what the keys would have left, as when the last keys
+/// have not landed: the start of the text, in place of what the field held,
+/// or after `before`, its name and value before the entry, for keys `type`
+/// placed after what it held; for a field read through its name, the part
+/// of its name the entry changed, separators left out.
+fn shorter(reading: &Reading, text: &str, placed: Placed, before: (&str, Option<&str>)) -> bool {
+    match reading {
+        Reading::Own(value) => {
+            let value = value.as_deref().unwrap_or_default();
+            let after = format!("{}{text}", before.1.unwrap_or_default());
+            starts(value, text) || (placed == Placed::After && starts(value, &after))
+        }
+        Reading::Below(below) => starts(below, text),
+        Reading::Name(name) => starts(&spelled(&held_in_name(name, before.0)), &spelled(text)),
+        Reading::Nothing => false,
+    }
 }
 
 /// What a fill reads back: the field a ref names, with what identifies it
@@ -1218,13 +1273,16 @@ fn follow_field(
     }
 }
 
-/// Reads back `field` after an entry by `method` that ended at `entered`,
-/// from what it shows ([`reading`]): until the field shows `text` and has
-/// held it since the hold after that method ends ([`hold_after`]), which
-/// after text that went in in one piece takes the first read that shows it,
-/// or until it has shown other text up to [`READ_BACK_MAX`] after the entry,
-/// the mirror reading it again as reads fall due meanwhile. What the field
-/// shows at the bound stands. A field that shows nothing to read back once
+/// Reads back `field` after an entry by `method` that took `took` and ended
+/// at `entered`, from what it shows ([`reading`]): until the field shows
+/// `text` and has held it since the hold after that method ends
+/// ([`hold_after`]), which after text that went in in one piece takes the
+/// first read that shows it, or until it has shown other text up to the
+/// read-back's bound after the entry, [`READ_BACK_MAX`] and for keys the
+/// time they took ([`read_bound`]), the mirror reading it again as reads
+/// fall due meanwhile. What the field shows at the bound stands, said to be
+/// shorter than the keys would have left when it is their start
+/// ([`shorter`]). A field that shows nothing to read back once
 /// the screen has held still since a settle's quiet window after the entry
 /// ([`READ_BACK_HOLD`]) is unreadable. `before` is the field's name and
 /// value in the reading compared with, as the emptying left them or before
@@ -1236,12 +1294,12 @@ fn read_back(
     target: &mut Attached,
     field: &Field,
     text: &str,
-    (entered, method, placed): (Instant, Option<TextMethod>, Placed),
+    (entered, took, method, placed): (Instant, Duration, Option<TextMethod>, Placed),
     before: (&str, Option<&str>),
 ) -> Result<ReadBack, Failure> {
     let hold = entered + hold_after(method);
     let quiet = entered + READ_BACK_HOLD;
-    let deadline = entered + READ_BACK_MAX;
+    let deadline = entered + read_bound(took, method);
     loop {
         let Some(element) = field.element(target)? else {
             return Ok(ReadBack::Gone);
@@ -1284,11 +1342,13 @@ fn read_back(
             (None, Reading::Nothing) if now >= deadline || held(&stamps, quiet, now, rereads) => {
                 return Ok(ReadBack::Unreadable { after });
             }
-            (None, _) if now >= deadline => {
+            (None, reading) if now >= deadline => {
+                let keys = method == Some(TextMethod::KEYS);
                 return Ok(ReadBack::Other {
                     held: held_now,
                     from,
                     after,
+                    short: keys && shorter(&reading, text, placed, before),
                 });
             }
             _ => {}
@@ -1949,14 +2009,22 @@ fn fill_into(
         keys_into = None;
     }
     let before = (before.0.as_str(), before.1.as_deref());
+    let entering = Instant::now();
     let first = enter(target, keys_into, text, TextMethod::AUTO)?;
     let entered = Instant::now();
+    let took = entered - entering;
     if text.is_empty() && platform == Platform::Android {
         return Ok(filled(given, text, reference, first, Check::Skipped, false).warn(note(None)));
     }
     let gone =
         |by: &str| format!("{given} left the screen after fill {by}, so it could not be read back");
-    let read = read_back(target, &field, text, (entered, first, Placed::Over), before)?;
+    let read = read_back(
+        target,
+        &field,
+        text,
+        (entered, took, first, Placed::Over),
+        before,
+    )?;
     let value = match read {
         ReadBack::Shown {
             shown, from, after, ..
@@ -1979,6 +2047,7 @@ fn fill_into(
     follow_field(target, session, &mut field, (named, &mut *resolved));
     let into = if follows { field.reference() } else { None };
     reference = field.reference();
+    let entering = Instant::now();
     let second = match enter(target, into, text, TextMethod::DIRECT) {
         Ok(second) => second,
         Err(failure) => {
@@ -1990,6 +2059,7 @@ fn fill_into(
         }
     };
     let entered = Instant::now();
+    let took = entered - entering;
     let second_by = entered_by(class, second);
     let again = || {
         let it = second_by.replacen("the text", "it", 1);
@@ -2002,7 +2072,7 @@ fn fill_into(
         target,
         &field,
         text,
-        (entered, second, Placed::Over),
+        (entered, took, second, Placed::Over),
         before,
     )?;
     close_edit_menu(target, &field)?;
@@ -2041,12 +2111,18 @@ fn fill_into(
 /// field in the tree has the focus (real-app-fixes, design D3).
 const NO_FOCUSED_FIELD: &str = "no_focused_field";
 
+/// Why `type` did not verify its text, as its reply's `reason` says: the
+/// field holds the start of what the keys would have left, at the
+/// read-back's bound (pass-4-fixes, design D3).
+const SHORTER_THAN_TYPED: &str = "shorter_than_typed";
+
 /// A type's reply (real-app-fixes, design D3): the text as the request gave
 /// it, under `typed`; the field's ref, null for the focused field and for a
 /// node holding none; the method the keys went in by; and what the
 /// read-back of the field found, as `fill`'s reply has it: `text`, what the
 /// field holds; `verified`, how it showed the text added to what it held,
 /// `false` when it showed other text or nothing (`reason`: `text_mismatch`,
+/// `shorter_than_typed` for the start of what the keys would have left,
 /// `no_value_to_read`), and null when it was not read back (`reason`:
 /// `no_focused_field` when no field in the tree had the focus); `readFrom`;
 /// `readBackMs`.
@@ -2070,11 +2146,20 @@ fn typed(
             Value::Null,
             Some(*after),
         ),
-        Some(ReadBack::Other { held, from, after }) => (
+        Some(ReadBack::Other {
+            held,
+            from,
+            after,
+            short,
+        }) => (
             held.clone(),
             Value::Bool(false),
             Value::from(from.name()),
-            Value::from(TEXT_MISMATCH),
+            Value::from(if *short {
+                SHORTER_THAN_TYPED
+            } else {
+                TEXT_MISMATCH
+            }),
             Some(*after),
         ),
         Some(ReadBack::Unreadable { after }) => (
@@ -2173,12 +2258,14 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
             .unwrap_or_default(),
         None => Default::default(),
     };
+    let entering = Instant::now();
     let outcome = target.mirror.act(&Action::Text {
         text: text.clone(),
         into,
         method: TextMethod::KEYS,
     })?;
     let entered = Instant::now();
+    let took = entered - entering;
     if !outcome.accepted {
         return Err(rejected(
             "text; type takes a text field or the focused field",
@@ -2202,11 +2289,21 @@ pub(super) fn type_text(target: &mut Attached, call: &Call, args: &::wire::TypeT
         target,
         &field,
         &text,
-        (entered, method, Placed::After),
+        (entered, took, method, Placed::After),
         before,
     )?;
     let warning = match &read {
         ReadBack::Shown { .. } => None,
+        ReadBack::Other {
+            held,
+            after,
+            short: true,
+            ..
+        } => Some(format!(
+            "{given} holds {} where type typed {text:?}, shorter than typed: no more of the text showed within {:.0} ms of the keys, a key lost or the field limiting its length; type adds to what a field holds, so it does not type again: fill the field to replace what it holds",
+            described(held.as_deref()),
+            millis(*after)
+        )),
         ReadBack::Other { held, .. } => Some(format!(
             "{given} holds {} where type typed {text:?}: a key was lost, or the field limits or formats its text; type adds to what a field holds, so it does not type again: fill the field to replace what it holds",
             described(held.as_deref())
@@ -2719,6 +2816,20 @@ fn in_view(seen: &Visibility) -> String {
 /// what moved after it ([`after_stroke`]): the third production-app run's scroll
 /// stopped after strokes that went the other way, which its reply did not
 /// say (rn-app-fixes, design D46).
+///
+/// On iOS strokes are sized by how far they carry the content
+/// (pass-4-fixes, design D10): two looks that share elements of the scroll container
+/// ([`Mirror::scroll_content`]) measure how far the content moved for each
+/// point of the finger, never taken below 1, and the next strokes are that
+/// much shorter, as on CI's iOS 27.0 Simulator, where a stroke whose finger
+/// came to rest still carried the fixture's List 2 to 3.2 times as far. A
+/// stroke after which the container shares nothing with the look before
+/// it, the element not on screen at either, carried the content past what
+/// the container showed: the scroll strokes back by half that stroke, and
+/// by half again while it shares nothing with that look, then goes on with
+/// strokes no longer than the content they carry lets the container show.
+///
+/// [`Mirror::scroll_content`]: mirror::Mirror::scroll_content
 fn scroll_until(
     target: &mut Attached,
     call: &Call,
@@ -2738,6 +2849,7 @@ fn scroll_until(
     // Where the element was when the last stroke went, and whether the
     // screen changed after it.
     let (mut was, mut changed) = (None, false);
+    let mut carriage = Carriage::default();
     loop {
         target.catch_up()?;
         let found = aim::on_screen(target, session, &aim)?;
@@ -2749,13 +2861,19 @@ fn scroll_until(
         let step = amount.max(1.0).min(longest);
         check_stroke(platform, step, amount, longest)?;
         let next = seen.map(|seen| decide(&seen, vertical, step, slop));
-        let reach = search_stroke(
-            step,
-            target.mirror.scroll_viewport(area.center(), vertical),
-            area,
-            vertical,
-            slop,
-        );
+        let viewport = target.mirror.scroll_viewport(area.center(), vertical);
+        // Measured where a stroke was seen carrying the content past the
+        // finger, iOS 27.0's Simulator; Android's lists follow the finger,
+        // and a software-rendered emulator's looks can lag the stroke.
+        if platform == Platform::Ios {
+            let content = target.mirror.scroll_content(area.center(), vertical);
+            let shown = viewport
+                .map(|viewport| extent(&viewport, vertical))
+                .filter(|&shown| shown > 0.0)
+                .unwrap_or_else(|| extent(&area, vertical));
+            carriage.look(content, found.is_some(), changed, shown, vertical);
+        }
+        let reach = carriage.shorter(search_stroke(step, viewport, area, vertical, slop), slop);
         if let (Some(Next::Stop), Some(element), Some(seen)) = (next, &found, &seen) {
             if let Some(reference) = element.reference {
                 target.session(session).seen.insert(reference);
@@ -2824,10 +2942,15 @@ fn scroll_until(
             );
             return Err(Failure::new(code::ELEMENT_NOT_FOUND, message).with_data(data));
         }
-        let (finger, length, duration) = match next {
-            Some(Next::Stroke { finger, length }) => (finger, length, bring_in_duration(length)),
+        let (finger, length, duration) = match (next, carriage.back) {
+            (Some(Next::Stroke { finger, length }), _) => {
+                let length = carriage.shorter(length, slop);
+                (finger, length, bring_in_duration(length))
+            }
+            (_, Some(back)) => (direction, back, SWIPE_DURATION),
             _ => (direction.opposite(), reach, SWIPE_DURATION),
         };
+        let searching = !matches!(next, Some(Next::Stroke { .. }));
         let revision = target.mirror.revision();
         let (from, to) = stroke(area, finger, length);
         let outcome = target.mirror.act(&Action::Swipe {
@@ -2842,6 +2965,7 @@ fn scroll_until(
         strokes += 1;
         last = Some((from, to));
         was = found.as_ref().map(|element| element.bounds);
+        carriage.stroked(searching.then_some(length));
         target.mirror.settle(&SettleOptions {
             max: UNTIL_SETTLE.min(deadline.saturating_duration_since(Instant::now())),
             ..SettleOptions::default()
@@ -2858,6 +2982,121 @@ fn scroll_until(
             still += 1;
         }
     }
+}
+
+/// What a scroll that looks for an element knows of how far its strokes
+/// carry the content of the scroll container they move (pass-4-fixes,
+/// design D10; see [`scroll_until`]).
+struct Carriage {
+    /// How far the content moves for each point of the finger, as two looks
+    /// that shared an element measured it after a stroke looking for the
+    /// element, 1 at least.
+    per_point: f64,
+    /// What the container held at the look before the last stroke.
+    before: Vec<(String, Rect)>,
+    /// What it held at the last look that shares content with every look
+    /// before it, while the scroll strokes back toward it.
+    anchor: Vec<(String, Rect)>,
+    /// The length of the next stroke back, while the scroll looks for the
+    /// content a stroke carried past what the container showed.
+    back: Option<f64>,
+    /// The length of the last stroke when it looked for the element, rather
+    /// than bring it in.
+    searched: Option<f64>,
+}
+
+impl Default for Carriage {
+    fn default() -> Carriage {
+        Carriage {
+            per_point: 1.0,
+            before: Vec::new(),
+            anchor: Vec::new(),
+            back: None,
+            searched: None,
+        }
+    }
+}
+
+impl Carriage {
+    /// Takes in what the container holds now, `content`, after the last
+    /// stroke, which `changed` the screen or not, the element on screen or
+    /// not (`found`), the container showing `shown` points along the axis.
+    fn look(
+        &mut self,
+        content: Vec<(String, Rect)>,
+        found: bool,
+        changed: bool,
+        shown: f64,
+        vertical: bool,
+    ) {
+        let before = std::mem::take(&mut self.before);
+        let mut passed = false;
+        if let (Some(length), true) = (self.searched, changed) {
+            match moved(&before, &content, vertical) {
+                Some(moved) if moved >= 1.0 => self.per_point = (moved / length).max(1.0),
+                None if self.back.is_none()
+                    && !found
+                    && !before.is_empty()
+                    && !content.is_empty() =>
+                {
+                    // The stroke carried the content past what the
+                    // container showed, farther than it shows.
+                    self.per_point = self.per_point.max(shown / length);
+                    self.anchor = before.clone();
+                    self.back = Some(length / 2.0);
+                    passed = true;
+                }
+                _ => {}
+            }
+        }
+        if let (Some(back), false) = (self.back, passed) {
+            if found || !changed || moved(&self.anchor, &content, vertical).is_some() {
+                self.back = None;
+            } else if moved(&before, &content, vertical).is_none() {
+                // The stroke back carried the content past what the
+                // container showed too.
+                self.back = (back / 2.0 >= SHORTEST_BACK).then_some(back / 2.0);
+            }
+        }
+        self.before = content;
+    }
+
+    /// Notes the stroke just sent, `searched` its length when it looked for
+    /// the element.
+    fn stroked(&mut self, searched: Option<f64>) {
+        self.searched = searched;
+    }
+
+    /// A stroke of `length` points, a platform taking `slop` of them before
+    /// the content moves, shortened to carry the content as far as `length`
+    /// points of the finger would carry it as far as the finger.
+    fn shorter(&self, length: f64, slop: f64) -> f64 {
+        ((length - slop).max(0.0) / self.per_point + slop).min(length)
+    }
+}
+
+/// How far the elements two looks at a scroll container, `was` and `now`,
+/// both hold moved along the vertical axis, or the horizontal one: the
+/// farthest any of them did, in points; `None` when they hold none in
+/// common. Only what each look holds once counts, as a row's identifier
+/// does, since what repeats, as the chevron the Expo fixture draws in every
+/// row, cannot say which of its copies is which.
+fn moved(was: &[(String, Rect)], now: &[(String, Rect)], vertical: bool) -> Option<f64> {
+    let once = |look: &[(String, Rect)], what: &str| {
+        look.iter().filter(|(other, _)| other == what).count() == 1
+    };
+    now.iter()
+        .filter(|(what, _)| once(now, what) && once(was, what))
+        .filter_map(|(what, rect)| {
+            was.iter().find(|(old, _)| old == what).map(|(_, old)| {
+                if vertical {
+                    (rect.top - old.top).abs()
+                } else {
+                    (rect.left - old.left).abs()
+                }
+            })
+        })
+        .reduce(f64::max)
 }
 
 /// What moved after a scroll's last stroke, as its failure says it: the
@@ -4277,6 +4516,98 @@ mod tests {
         assert!(bottom <= 708.0, "above the disabled button: {data}");
     }
 
+    /// Design D10 of pass-4-fixes: on CI's emulator the Expo fixture's rows
+    /// each hold a chevron named alike, and a look paired one row's chevron
+    /// with another's, so that `scroll --until` measured strokes carrying the
+    /// list several times as far as they did and made them a few points
+    /// long. Only what each look holds once measures the move: rows that
+    /// moved 96 points measure 96.
+    #[test]
+    fn what_repeats_in_a_list_does_not_measure_how_far_it_moved() {
+        let row = |n: u32, top: f64| {
+            [
+                (format!("row-{n}"), Rect::new(0.0, top, 408.0, top + 48.0)),
+                (
+                    "text \u{203a}".to_owned(),
+                    Rect::new(380.0, top + 12.0, 400.0, top + 36.0),
+                ),
+            ]
+        };
+        let was: Vec<(String, Rect)> = (1..=10)
+            .flat_map(|n| row(n, 72.0 + 48.0 * f64::from(n - 1)))
+            .collect();
+        let now: Vec<(String, Rect)> = (3..=12)
+            .flat_map(|n| row(n, 72.0 + 48.0 * f64::from(n - 1) - 96.0))
+            .collect();
+        assert_eq!(moved(&was, &now, true), Some(96.0));
+    }
+
+    /// `scroll down 600 --until` `#row-{row}` on the fixture's List of a
+    /// fake of `platform` whose list a stroke carries `carry` hundredths of
+    /// a point for each point of the finger: the reply, and how many
+    /// strokes went the other way.
+    fn scroll_to_row(platform: &str, carry: u32, row: u32) -> (Outcome, usize) {
+        let driver = FakeDriver::parse(platform).unwrap().with_carry(carry);
+        let tab = if platform == "android" {
+            "initial_tab=list"
+        } else {
+            "FIXTURE_INITIAL_TAB=list"
+        };
+        let (mut target, sent) = recorded(&driver, FIXTURE, &[tab]);
+        let until = format!("#row-{row}");
+        let found = scroll_with(
+            &mut target,
+            json!({"direction": "down", "amount": 600, "until": until, "timeout": 60000}),
+        );
+        let back = sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, input)| matches!(input, Input::Swipe { from, to, .. } if to.y > from.y))
+            .count();
+        (found, back)
+    }
+
+    /// Design D10 of pass-4-fixes: on CI's iOS 27.0 Simulator a 600-point
+    /// stroke whose finger came to rest carried the SwiftUI fixture's List
+    /// 1,200 to 1,900 points, more than the 810 or so it shows, so a row
+    /// could pass between two looks, and `scroll --until` found `row-100` in
+    /// 1 run of 4, going on to the list's end. On the fake's list, which a
+    /// stroke carries three times as far as the finger, a fake Simulator's
+    /// scroll finds rows 100 and 200 mostly in view; on the list a stroke
+    /// carries as far as the finger it takes the strokes it took on both
+    /// platforms, none the other way, Android measuring nothing.
+    #[test]
+    fn scroll_until_finds_a_row_a_stroke_carried_farther_than_the_list_shows() {
+        for row in [100, 200] {
+            let (found, back) = scroll_to_row("ios", 300, row);
+            let data = found
+                .unwrap_or_else(|failure| {
+                    panic!("ios row-{row}: {} {:?}", failure.message, failure.data)
+                })
+                .data;
+            assert!(
+                data["visible"].as_f64().is_some_and(|v| v >= 0.5),
+                "ios row-{row}: {data}"
+            );
+            eprintln!(
+                "ios row-{row}, carried three times the finger: {} strokes, {back} back",
+                data["strokes"]
+            );
+        }
+        for (platform, row, strokes) in [
+            ("ios", 100, 8),
+            ("ios", 200, 16),
+            ("android", 100, 7),
+            ("android", 200, 15),
+        ] {
+            let (found, back) = scroll_to_row(platform, 100, row);
+            let data = found.unwrap().data;
+            assert_eq!(data["strokes"], strokes, "{platform} row-{row}: {data}");
+            assert_eq!(back, 0, "{platform} row-{row}: {data}");
+        }
+    }
+
     /// Design D46 (task 4.4; task 3.7's N5): the third production-app run's
     /// `scroll --until` gave up, the content having stopped moving, "after 3
     /// strokes of 300 points down", and nothing in the reply said where the
@@ -5486,12 +5817,46 @@ mod tests {
         assert_eq!(secret.data["text"], "\u{2022}".repeat(7), "{}", secret.data);
     }
 
+    /// Design D3 of pass-4-fixes: on the site's recording run `type
+    /// mobileagent.dev` read the field back as "mobileagent.de" once in
+    /// five, on a loaded host, while the video showed the whole text in it
+    /// by the command's end: the last key landed after the read-back's
+    /// bound, a second after the keys went in. On a fake Simulator whose
+    /// fields show every key but the last once the keys went in, 60 ms
+    /// apart, and the last as long after them as they took to type, 1.38 s
+    /// for these 24 characters, `type` and `fill` read the field until it
+    /// holds the whole text, within the keys' own time and the read-back's
+    /// second: `type` verifies it with no warning, and `fill` takes it
+    /// without entering it again.
+    #[test]
+    fn type_and_fill_read_back_the_whole_text_when_the_last_key_lands_after_the_first_read() {
+        let mut target = login(Typing::Late);
+        click_on(&mut target, "#login-username").unwrap();
+        let typed = type_into(&mut target, None, "mobileagent.dev/docs/cli").unwrap();
+        let data = &typed.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", typed.warning);
+        assert_eq!(data["text"], "mobileagent.dev/docs/cli", "{data}");
+        assert_eq!(typed.warning, None, "{data}");
+        let filled = fill_in(&mut target, "#login-username", "mobileagent.dev/docs/api").unwrap();
+        let data = &filled.data;
+        assert_eq!(data["verified"], "text", "{data}: {:?}", filled.warning);
+        assert_eq!(data["method"], "keys", "{data}");
+        assert_eq!(data["retried"], false, "{data}: {:?}", filled.warning);
+        assert_eq!(filled.warning, None, "{data}");
+        assert_eq!(
+            held(&mut target, "#login-username"),
+            "mobileagent.dev/docs/api"
+        );
+    }
+
     /// Design D3: Safari's address bar took the demo pass's `type
     /// example.com` as "exampl", and Safari searched for it. A field that
     /// drops keys holds less than `type` typed: the reply says what it
     /// holds, unverified, and a warning names it and advises `fill`; the
     /// text is typed once, since `type` adds to what a field holds and
-    /// typing it again would double it.
+    /// typing it again would double it. What it holds is the start of the
+    /// text, so the reply says it is shorter than typed (design D3 of
+    /// pass-4-fixes), the read-back having read the field to its bound.
     #[test]
     fn type_into_a_field_that_drops_keys_warns_naming_what_it_holds_and_types_once() {
         let driver = FakeDriver::parse("ios")
@@ -5503,13 +5868,20 @@ mod tests {
         let success = type_into(&mut target, None, "example.com").unwrap();
         let data = &success.data;
         assert_eq!(data["verified"], false, "{data}");
-        assert_eq!(data["reason"], "text_mismatch", "{data}");
+        assert_eq!(data["reason"], "shorter_than_typed", "{data}");
         assert_eq!(data["text"], "exampl", "{data}");
         assert_eq!(data["readFrom"], "value", "{data}");
+        assert!(
+            data["readBackMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= millis(READ_BACK_MAX)),
+            "{data}"
+        );
         let warning = success.warning.unwrap_or_default();
         assert!(
             warning.contains("\"exampl\"")
                 && warning.contains("\"example.com\"")
+                && warning.contains("shorter than typed")
                 && warning.contains("fill"),
             "{warning}"
         );
@@ -6257,6 +6629,54 @@ mod tests {
                     failure.message
                 );
             }
+        }
+    }
+
+    /// Design D7 of pass-4-fixes: a stale ref without a twin while a dialog
+    /// of system UI holds the screen fails `stale_ref` naming the dialog and
+    /// saying to dismiss it, as Chrome's refs went stale under its dialogs
+    /// on the fourth pass. On the fixture, a ref the Login tab's snapshot
+    /// gave, after a move to the System tab and the location prompt: on iOS
+    /// the prompt is SpringBoard's, whose tree the Simulator's reader reads
+    /// in place of the app's, on Android the permission controller's
+    /// dialog over the app. Once the prompt is answered the ref fails as
+    /// any stale ref without a twin does, naming no dialog.
+    #[test]
+    fn a_stale_ref_without_a_twin_under_a_system_dialog_names_the_dialog() {
+        for (platform, dialog) in [
+            (
+                "ios",
+                "alert \"Allow “FixtureSwiftUI” to use your location?\"",
+            ),
+            ("android", "dialog \"Permission\""),
+        ] {
+            let driver = FakeDriver::parse(platform).unwrap();
+            let (mut target, _) = recorded(&driver, FIXTURE, &[]);
+            let username = ref_named(&mut target, "Username");
+            click_on(&mut target, "#tab-system").unwrap();
+            click_on(&mut target, "#system-permission").unwrap();
+            let get = json!({"action": "get", "what": "value", "target": username}).to_string();
+            for failed in [
+                click_on(&mut target, &username),
+                fill_in(&mut target, &username, "agent"),
+                super::super::run_on(&mut target, "default", &request(&get)),
+            ] {
+                let failure = failed.unwrap_err();
+                assert_eq!(failure.code, "stale_ref", "{platform}: {}", failure.message);
+                assert!(
+                    failure.message.contains(dialog) && failure.message.contains("dismiss"),
+                    "{platform}: {}",
+                    failure.message
+                );
+            }
+            click_on(&mut target, "#permission-deny").unwrap();
+            let failure = click_on(&mut target, &username).unwrap_err();
+            assert_eq!(failure.code, "stale_ref", "{platform}: {}", failure.message);
+            assert!(
+                !failure.message.contains("dismiss"),
+                "{platform}: {}",
+                failure.message
+            );
         }
     }
 
