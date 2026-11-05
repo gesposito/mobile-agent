@@ -19,8 +19,8 @@ bench = false
 # conversion into it, which the host translator shares. build.rs builds the
 # reader's binary for the Simulator (README.md, Building).
 [dependencies]
-protocol = { version = "0.1.0", path = "../protocol" }
-simulator-reader = { version = "0.1.0", path = "reader" }
+protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+simulator-reader = { version = "0.1.0-alpha.1", path = "reader" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"

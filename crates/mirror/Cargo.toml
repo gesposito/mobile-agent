@@ -16,7 +16,7 @@ workspace = true
 bench = false
 
 [dependencies]
-protocol = { version = "0.1.0", path = "../protocol" }
+protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }
