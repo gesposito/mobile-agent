@@ -10,15 +10,17 @@ name: Release
 # sum beside it, attests the tarball and the binaries with build provenance
 # and keeps both as an artifact for 90 days; a job per target then downloads
 # every tarball, verifies its attestation and its sum and runs its own
-# target's binaries. A dry run, the default, stops there. Otherwise the
-# publish job, in the release environment, whose reviewer approves it, and
-# the one job that writes, creates the pre-release v<version> on the
-# dispatched commit as a draft, with the changelog's section for the version
-# as its notes, the tarballs, their sums and the notices, then publishes it,
-# which creates the tag; it refuses a version other than the workspace's,
-# which the daemon and the server print, and a changelog without the
-# version's dated section (scripts/release-notes.sh), as the first job does
-# before anything is built. No job uses a cache.
+# target's binaries. A dry run, the default, stops there. Otherwise the gate
+# job, in the release environment, waits for its reviewer's approval and
+# ends the commit's deployment to release with success, which the tag
+# ruleset requires before a v* tag is created; then the publish job, the one
+# job that writes, creates the pre-release v<version> on the dispatched
+# commit as a draft, with the changelog's section for the version as its
+# notes, the tarballs, their sums and the notices, and publishes it, which
+# creates the tag. It refuses a version other than the workspace's, which
+# the daemon and the server print, and a changelog without the version's
+# dated section (scripts/release-notes.sh), as the first job does before
+# anything is built. No job uses a cache.
 on:
   workflow_dispatch:
     inputs:
@@ -292,17 +294,30 @@ jobs:
           ./mobile-agent-daemon --version
           ./mobile-agent-mcp --version
 
-  publish:
-    name: Publish
+  gate:
+    name: Release gate
     needs: [build, verify]
     if: inputs.dry_run == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The environment's reviewer approves this job, from main alone; its success ends the commit's
+    # deployment to release, which the tag ruleset requires before a v* tag is created. The publish
+    # job is not in the environment: a tag created while its own deployment was in progress was
+    # refused, "Missing successful active release deployment" (docs/maintaining.md, At the first
+    # release).
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy the commit to release
+        run: echo "The release environment's reviewer approved v$VERSION on $GITHUB_SHA"
+
+  publish:
+    name: Publish
+    needs: gate
+    if: inputs.dry_run == false
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The environment's reviewer approves the job before it starts, and the tag ruleset lets a v*
-    # tag be created only on a commit deployed to it (docs/maintaining.md, At the first release).
-    environment:
-      name: release
-      url: ${{ steps.publish.outputs.url }}
     permissions:
       contents: write # to create the release, and with it the tag
     env:
@@ -352,7 +367,6 @@ jobs:
       - name: Publish the release, which creates the tag
         run: gh release edit "$TAG" --draft=false -R "$GITHUB_REPOSITORY"
       - name: Check the tag and the release
-        id: publish
         run: |
           tagged=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
           if [ "$tagged" != "$GITHUB_SHA" ]; then
@@ -367,7 +381,6 @@ jobs:
             echo "::error::the release $TAG is draft $draft and pre-release $prerelease with $assets assets"
             exit 1
           fi
-          echo "url=$url" >> "$GITHUB_OUTPUT"
           {
             echo "## $TAG"
             echo
