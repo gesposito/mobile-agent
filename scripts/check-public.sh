@@ -9,8 +9,9 @@
 #   - the values of the private terms file, in any case, when the file is
 #     present: MOBILE_AGENT_PRIVATE_TERMS names it, or else it is the
 #     maintainer's copy outside the repository; the maintainer's name may
-#     stand in LICENSE's copyright line and the owners' handles in
-#     .github/CODEOWNERS, nowhere else;
+#     stand in LICENSE's copyright line, the owners' handles in
+#     .github/CODEOWNERS and the owner's handle in the repository's own
+#     name, <owner>/mobile-agent, nowhere else;
 #   - gitleaks' rules for credentials, over a copy of the tracked files, when
 #     gitleaks is installed, with .gitleaks.toml's allowances.
 #
@@ -100,7 +101,7 @@ if [ -f "$terms" ]; then
       rest=${hit#*:}
       line=${rest%%:*}
       text=${rest#*:}
-      if ! public_term_exempt "$path" "$text"; then
+      if ! public_term_exempt "$path" "$text" "$term"; then
         printf '%s:%s: private term on line %s of %s\n' "$path" "$line" "$number" "$shown" >> "$findings"
       fi
     done < "$scratch/hits"

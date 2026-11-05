@@ -10,7 +10,8 @@
 #   - the same blobs, in any case, against the values of the private terms
 #     file when it is present (MOBILE_AGENT_PRIVATE_TERMS names it, or else it
 #     is the maintainer's copy outside the repository), LICENSE's copyright
-#     line and CODEOWNERS' owners aside;
+#     line, CODEOWNERS' owners and the owner in the repository's own name,
+#     <owner>/mobile-agent, aside, as scripts/check-public.sh does;
 #   - every path a commit holds, and every commit message, against the
 #     patterns and the private terms;
 #   - every commit with gitleaks, when it is installed, with .gitleaks.toml.
@@ -116,6 +117,9 @@ scan_text() {
         for my $term (@terms) {
           next if index($lower, $term->[1]) < 0;
           next if exempt($at, $text);
+          # The owner in the name of this repository, the term nowhere else.
+          (my $rest = $lower) =~ s{(?<![a-z0-9-])\Q$term->[1]\E/mobile-agent(?![a-z0-9_-])}{}g;
+          next if index($rest, $term->[1]) < 0;
           print "${label}private term on line $term->[0] of $shown$suffix\n";
         }
       }
