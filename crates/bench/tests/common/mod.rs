@@ -248,6 +248,23 @@ pub fn mobile_agent() -> PathBuf {
     .clone()
 }
 
+/// What [`mobile_agent`]'s `--version` prints after the name: the release,
+/// or local, and the commit (crates/cli/build.rs), the version a report
+/// records for it.
+pub fn mobile_agent_version() -> String {
+    let printed = Command::new(mobile_agent())
+        .arg("--version")
+        .output()
+        .expect("mobile-agent runs");
+    let printed = String::from_utf8_lossy(&printed.stdout);
+    let version = printed
+        .trim()
+        .strip_prefix("mobile-agent ")
+        .unwrap_or_else(|| panic!("--version printed {printed:?}"));
+    assert!(version.contains(" ("), "{version}");
+    version.to_owned()
+}
+
 /// The daemon beside [`mobile_agent`].
 pub fn mobile_agent_daemon() -> PathBuf {
     mobile_agent().with_file_name("mobile-agent-daemon")
