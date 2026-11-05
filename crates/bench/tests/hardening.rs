@@ -7,7 +7,9 @@
 //! `ci-benchmarks`: a checkout fetches the head commit alone unless its job
 //! reads history, and no step waits a fixed time. Task 1.2 of
 //! `alpha-release`: the release workflow is held to the same rules, its
-//! build job alone writing, an OIDC token and attestations. The files
+//! build job writing an OIDC token and attestations alone; task 2.1: and its
+//! publish job the repository's contents, for the release and its tag, with
+//! no other job writing them. The files
 //! are read as text, line by line: a job is the block under `jobs:` that
 //! starts at two spaces of indentation, a step the block that starts with
 //! `- ` at six.
@@ -25,13 +27,20 @@ const WORKFLOWS: [&str; 4] = [
 ];
 
 /// The only write scopes any job is granted: the release's build job mints
-/// an OIDC token for Sigstore and stores the attestations it signs.
-const WRITES: [(&str, &str, &str); 2] = [
+/// an OIDC token for Sigstore and stores the attestations it signs, and its
+/// publish job, in the `release` environment, creates the release and with
+/// it the tag.
+const WRITES: [(&str, &str, &str); 3] = [
     (".github/workflows/release.yml", "build", "id-token: write"),
     (
         ".github/workflows/release.yml",
         "build",
         "attestations: write",
+    ),
+    (
+        ".github/workflows/release.yml",
+        "publish",
+        "contents: write",
     ),
 ];
 
@@ -124,8 +133,10 @@ fn every_workflow_starts_without_permissions_and_each_job_asks_for_the_least_it_
                 // The scope without the comment that explains it.
                 .map(|line| line.split(" #").next().unwrap_or(line).trim())
                 .collect();
+            // Every job reads the contents, the one that writes them included.
+            let writes_contents = WRITES.contains(&(path, job.as_str(), "contents: write"));
             assert!(
-                granted.contains(&"contents: read"),
+                granted.contains(&"contents: read") != writes_contents,
                 "{path}: {job} {granted:?}"
             );
             for permission in &granted {
@@ -335,6 +346,7 @@ fn each_checkout_fetches_the_head_alone_unless_its_job_reads_history() {
         (".github/workflows/device-tests.yml", "emulator", "1"),
         (".github/workflows/release.yml", "jar", "1"),
         (".github/workflows/release.yml", "build", "1"),
+        (".github/workflows/release.yml", "publish", "1"),
     ];
     let mut seen = Vec::new();
     for path in WORKFLOWS {
