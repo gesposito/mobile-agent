@@ -11,7 +11,9 @@
 //! once the runner's step has stopped the emulator. Task 1.2 of
 //! `alpha-release`: the release workflow, dispatched with a version and in
 //! dry-run mode by default, builds the binaries per target, attests and keeps
-//! them, and verifies each download, with no cache (design D2). The workflow
+//! them, and verifies each download, with no cache (design D2); task 2.1: a
+//! run that is not a dry run then publishes them in the `release`
+//! environment, the job alone that writes. The workflow
 //! files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
@@ -621,7 +623,7 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
     );
 
     let jobs = workflow.get("jobs");
-    assert_eq!(jobs.keys(), ["jar", "build", "verify"]);
+    assert_eq!(jobs.keys(), ["jar", "build", "verify", "publish"]);
     let matrix: Vec<String> = RELEASE_TARGETS
         .iter()
         .map(|(target, runner)| format!("{{ target: {target}, runner: {runner} }}"))
@@ -690,13 +692,20 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
         "THIRD-PARTY-NOTICES.md",
         "shasum -a 256",
         "SHA256SUMS",
+        // The tarball's own sum, beside it, which the release carries.
+        "> \"$name.tar.gz.sha256\"",
     ] {
         assert!(pack.contains(wanted), "{wanted} in {pack}");
     }
     let attest = step_with(&build, &["uses: actions/attest@"]);
     assert!(attest.contains("subject-path:"), "{attest}");
     let upload = step_with(&build, &["uses: actions/upload-artifact@"]);
-    for wanted in ["retention-days: 90", "if-no-files-found: error"] {
+    for wanted in [
+        "retention-days: 90",
+        "if-no-files-found: error",
+        "${{ env.NAME }}.tar.gz\n",
+        "${{ env.NAME }}.tar.gz.sha256\n",
+    ] {
         assert!(upload.contains(wanted), "{wanted} in {upload}");
     }
     let verify = steps(&text, "verify");
@@ -715,6 +724,11 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
     ] {
         assert!(attested.contains(wanted), "{wanted} in {attested}");
     }
+    // Every tarball's sum is checked beside its attestation.
+    assert!(
+        attested.contains("shasum -a 256 -c \"$tarball.sha256\""),
+        "{attested}"
+    );
     let ran = step_with(&verify, &["./mobile-agent --version"]);
     assert!(ran.contains("shasum -a 256 -c SHA256SUMS"), "{ran}");
 
@@ -727,4 +741,99 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
             assert_eq!(value, "false", "{line}");
         }
     }
+}
+
+/// Task 2.1 of `alpha-release` (design D2): a run that is not a dry run
+/// publishes, after every target is built and verified, in a job of its own
+/// in the `release` environment, the one job of the workflow that writes and
+/// with no cache: it refuses a version other than the workspace's or a
+/// changelog without the version's dated section before it touches
+/// anything, creates a draft pre-release for `v<version>` on the dispatched
+/// commit with the changelog's section as its notes, the three tarballs,
+/// their sums and the notices, then publishes it, which creates the tag, and
+/// reads the tag and the release back. The first job makes the same check
+/// when the run publishes, so that a refused version builds nothing.
+#[test]
+fn the_release_workflow_publishes_a_draft_pre_release_in_the_release_environment_unless_a_dry_run()
+{
+    let workflow = outline(".github/workflows/release.yml");
+    let publish = workflow.at("jobs/publish");
+    assert_eq!(publish.get("needs").text(), "[build, verify]");
+    assert_eq!(publish.get("if").text(), "inputs.dry_run == false");
+    assert_eq!(publish.get("runs-on").text(), "ubuntu-latest");
+    assert_eq!(publish.at("environment/name").text(), "release");
+    assert_eq!(
+        publish.at("environment/url").text(),
+        "${{ steps.publish.outputs.url }}"
+    );
+    // contents: write alone, to create the release and with it the tag.
+    assert_eq!(publish.get("permissions").keys(), ["contents"]);
+    let contents = publish.at("permissions/contents").text();
+    assert_eq!(contents.split(" #").next().unwrap().trim(), "write");
+
+    let text = read(".github/workflows/release.yml");
+    let publishing = steps(&text, "publish");
+    let position = |wanted: &[&str]| -> usize {
+        let step = step_with(&publishing, wanted);
+        publishing.iter().position(|s| s == step).unwrap()
+    };
+    let checkout = position(&["uses: actions/checkout@"]);
+    let check = position(&["scripts/release-notes.sh \"$VERSION\" > \"$RUNNER_TEMP/notes.md\""]);
+    let download = position(&[
+        "uses: actions/download-artifact@",
+        "pattern: mobile-agent-*",
+    ]);
+    let draft =
+        position(&["gh release create \"$TAG\" --draft --prerelease --target \"$GITHUB_SHA\""]);
+    let undraft = position(&["gh release edit \"$TAG\" --draft=false"]);
+    let read_back = position(&["git ls-remote", "isPrerelease"]);
+    assert!(
+        checkout < check
+            && check < download
+            && download < draft
+            && draft < undraft
+            && undraft < read_back,
+        "{checkout} {check} {download} {draft} {undraft} {read_back}"
+    );
+    assert!(
+        text.contains("TAG: v${{ inputs.version }}\n"),
+        "the tag is v<version>"
+    );
+    let assets = &publishing[download + 1..=draft].join("");
+    let created = &publishing[draft];
+    for wanted in [
+        "--title \"mobile-agent $VERSION\"",
+        "--notes-file \"$RUNNER_TEMP/notes.md\"",
+        "mobile-agent-*.tar.gz mobile-agent-*.tar.gz.sha256",
+        "THIRD-PARTY-NOTICES.md",
+    ] {
+        assert!(created.contains(wanted), "{wanted} in {created}");
+    }
+    // Three tarballs and their three sums, checked before they go up; a
+    // release or a tag the version already has is refused.
+    for wanted in [
+        "shasum -a 256 -c",
+        "!= 3",
+        "git ls-remote",
+        "gh release view \"$TAG\"",
+    ] {
+        assert!(assets.contains(wanted), "{wanted} in {assets}");
+    }
+    // The tag read back is the dispatched commit's.
+    assert!(
+        publishing[read_back].contains("\"$GITHUB_SHA\""),
+        "{}",
+        publishing[read_back]
+    );
+    let url = step_with(&publishing, &["GITHUB_OUTPUT"]);
+    assert!(url.contains("id: publish"), "{url}");
+
+    // The first job refuses the same before any build, when the run publishes.
+    let jar = steps(&text, "jar");
+    let early = step_with(&jar, &["scripts/release-notes.sh \"$VERSION\" > /dev/null"]);
+    assert!(early.contains("DRY_RUN: ${{ inputs.dry_run }}"), "{early}");
+    assert!(
+        !text.contains("no publishing job"),
+        "release.yml still refuses to publish"
+    );
 }
