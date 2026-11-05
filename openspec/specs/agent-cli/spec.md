@@ -176,7 +176,7 @@ Requests and replies SHALL be built from the shared types whose schemas the CLI,
 - **THEN** it builds the request and reads the reply through the shared types, the same schemas for all three
 
 ### Requirement: Typed text is read back
-`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text, within a bound of the keys' own time plus a margin, SHALL say what it read in its line, SHALL warn `shorter than typed`, with the reason `shorter_than_typed`, when the read-back at the bound is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again, its line then not ticking; with no focused field it SHALL say the text was not read back.
+`type` SHALL read the focused field back after entering the text, as `fill` does, until the field holds the text or a bound of the keys' own time plus a margin passes, and SHALL say what it read; it SHALL warn `shorter than typed` (reason `shorter_than_typed`) when the read-back at the bound is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again or ticking; with no focused field it SHALL say the text was not read back.
 
 #### Scenario: Keys dropped
 - **WHEN** `type example.com` reaches the field as `exampl` and the field holds no more by the bound
