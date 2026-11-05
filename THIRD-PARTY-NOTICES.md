@@ -276,7 +276,7 @@ limitations under the License.
 
 ### Apache License 2.0
 
-Used by [aws-lc-sys 0.45.0](https://crates.io/crates/aws-lc-sys), [rmcp-macros 3.5.1](https://crates.io/crates/rmcp-macros), [rmcp 3.5.1](https://crates.io/crates/rmcp), [sync_wrapper 1.0.2](https://crates.io/crates/sync_wrapper).
+Used by [aws-lc-sys 0.45.0](https://crates.io/crates/aws-lc-sys), [rmcp-macros 3.8.0](https://crates.io/crates/rmcp-macros), [rmcp 3.8.0](https://crates.io/crates/rmcp), [sync_wrapper 1.0.2](https://crates.io/crates/sync_wrapper).
 
 ```text
 Apache License
@@ -1164,7 +1164,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### MIT License
 
-Used by [plist 1.10.1](https://crates.io/crates/plist).
+Used by [plist 1.10.3](https://crates.io/crates/plist).
 
 ```text
 Copyright (c) 2015 Edward Barnard
@@ -2940,7 +2940,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### MIT License
 
-Used by [tokio-stream 0.1.19](https://crates.io/crates/tokio-stream), [tokio-util 0.7.19](https://crates.io/crates/tokio-util), [tokio 1.53.3](https://crates.io/crates/tokio).
+Used by [tokio-stream 0.1.19](https://crates.io/crates/tokio-stream), [tokio-util 0.7.19](https://crates.io/crates/tokio-util), [tokio 1.54.1](https://crates.io/crates/tokio).
 
 ```text
 MIT License

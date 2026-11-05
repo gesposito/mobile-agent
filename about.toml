@@ -24,5 +24,7 @@ targets = [
 # Build tools and test-only crates are in no binary.
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
-# The workspace's own crates are this repository's, under its LICENSE.
-private = { ignore = true }
+# The workspace's own crates are this repository's, under its LICENSE: those
+# not published, and those published to crates.io alone, which is how
+# Cargo.toml's `publish` names it.
+private = { ignore = true, registries = ["crates-io"] }

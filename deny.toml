@@ -50,7 +50,8 @@ allow = [
 ]
 confidence-threshold = 0.8
 
-# The workspace's own crates are not published.
+# The workspace's unpublished crates, the benchmark harness and the Android
+# agent's host tests, are not checked; the published ones are, under MIT.
 [licenses.private]
 ignore = true
 

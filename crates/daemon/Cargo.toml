@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 readme = "README.md"
+repository.workspace = true
 publish.workspace = true
 
 # The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.

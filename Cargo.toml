@@ -13,10 +13,10 @@ version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
-# The binaries are released on GitHub (.github/workflows/release.yml); no crate
-# is published to crates.io yet, where task 3.1 of alpha-release adds
-# `repository` beside it (docs/research/alpha-release.md).
-publish = false
+repository = "https://github.com/gesposito/mobile-agent"
+# crates.io alone, the registry about.toml names, so that cargo-about leaves
+# the workspace's own crates out of the third-party notices.
+publish = ["crates-io"]
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

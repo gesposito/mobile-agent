@@ -6,7 +6,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 readme = "README.md"
-publish.workspace = true
+repository.workspace = true
+# Not published to crates.io: the harness runs in a checkout of this
+# repository, where it drives the fixture apps built from fixtures/, compares
+# the microbenchmarks with reports/micro/baseline.json and, for --ab, builds
+# another ref of the repository, none of which is in its package; no
+# published crate depends on it.
+publish = false
 
 # The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
