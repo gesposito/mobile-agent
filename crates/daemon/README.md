@@ -1718,7 +1718,7 @@ MOBILE_AGENT_SIM_UDID=<udid> MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 \
 `tests/real_apps.rs` drives the default apps of a fresh device the same
 way, one test per finding of the pass on real apps of 2026-10-30
 (`reports/12.5-fourth-pass.md`; design D1 of
-`openspec/changes/pass-4-fixes`): Settings, Maps, Calendar and Photos on a
+`openspec/changes/archive/2026-11-05-pass-4-fixes`): Settings, Maps, Calendar and Photos on a
 Simulator, Settings, Clock and Chrome on an emulator, gated by the same
 variables. Each answers the first-launch sheets and permission alerts a
 fresh device shows as a person keeping the defaults would, skips Maps'

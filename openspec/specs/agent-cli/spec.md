@@ -176,11 +176,15 @@ Requests and replies SHALL be built from the shared types whose schemas the CLI,
 - **THEN** it builds the request and reads the reply through the shared types, the same schemas for all three
 
 ### Requirement: Typed text is read back
-`type` SHALL read the focused field back after entering the text, as `fill` does, SHALL say what it read in its line, and SHALL warn naming what the field holds when it differs, without entering the text again; with no focused field it SHALL say the text was not read back.
+`type` SHALL read the focused field back after entering the text, as `fill` does, reading until the field holds the text, within a bound of the keys' own time plus a margin, SHALL say what it read in its line, SHALL warn `shorter than typed`, with the reason `shorter_than_typed`, when the read-back at the bound is a prefix of the text, and SHALL warn naming what the field holds when it differs otherwise, without entering the text again, its line then not ticking; with no focused field it SHALL say the text was not read back.
 
 #### Scenario: Keys dropped
-- **WHEN** `type example.com` reaches the field as `exampl`
-- **THEN** the reply says it read back `exampl` and warns that the field differs from the text, advising `fill`
+- **WHEN** `type example.com` reaches the field as `exampl` and the field holds no more by the bound
+- **THEN** the reply says it read back `exampl` and warns that it is shorter than typed, advising `fill`
+
+#### Scenario: The last key lands late
+- **WHEN** the field holds all but the last character when the first read-back is taken, and the last within the bound
+- **THEN** the read-back is taken again and the reply says it read back the whole text
 
 ### Requirement: Replies name what the screen holds
 A wait's timeout summary SHALL issue the refs it prints to the session; `get value` on a switch SHALL return its state and SHALL say `no value` for an element without one; `wait --text` SHALL name the element it found; `open` SHALL return when a system alert comes in front of the app, naming the alert.
@@ -208,7 +212,7 @@ A click SHALL name the element the tap landed on as the replica held it at dispa
 - **THEN** the app comes to the front, or `open` fails naming what is in front
 
 ### Requirement: A settle waits for the input's effect
-A settle requested within a second of the session's last input SHALL wait for that input's first effect before it counts quiet, and SHALL say when none came; a settle on a target whose windows send no change events SHALL read the tree its frames changed before it ends, and SHALL count a change that read finds.
+A settle requested within a second of the session's last input SHALL wait for that input's first effect before it counts quiet, and SHALL say when none came; a settle on a target whose windows send no change events SHALL read the tree its frames changed before it ends; a settle that stops at its timeout SHALL say `settled: false` with how long it waited and why, exiting as a success unless `--strict` makes it fail `settle_timeout`.
 
 #### Scenario: A settle right after a press
 - **WHEN** `wait --settle` follows a press whose effect comes 300 ms later
@@ -218,6 +222,10 @@ A settle requested within a second of the session's last input SHALL wait for th
 - **WHEN** `wait --settle` follows a tap whose menu takes its items with a frame after a pause longer than the quiet window, on a target whose windows send no change events
 - **THEN** the settle ends once the tree holds the items, and the listing right after names them
 
+#### Scenario: A settle that gives up
+- **WHEN** `wait --settle` stops at its timeout because frames kept changing
+- **THEN** the reply says `settled: false` with the time waited, the line warns, the exit is a success, and with `--strict` the call fails `settle_timeout`
+
 ### Requirement: A scroll answers at rest
 A plain scroll SHALL answer once the screen has come to rest after its last stroke, within a bound, and SHALL say how long the content moved on.
 
@@ -226,11 +234,15 @@ A plain scroll SHALL answer once the screen has come to rest after its last stro
 - **THEN** the scroll answers once the list has come to rest, saying how long it moved on, and the click lands on the row the listing then shows
 
 ### Requirement: A stale ref resolves to its twin
-A stale ref whose element has a twin in the replica, by identifier and role, else by name, role and bounds, SHALL resolve to the twin and say so, and SHALL fail `stale_ref` without one.
+A stale ref whose element has a twin in the replica, by identifier and role, else by name, role and bounds, SHALL resolve to the twin and say so, and SHALL fail `stale_ref` without one, naming the system dialog in front when one holds the screen.
 
 #### Scenario: A rebuilt field
 - **WHEN** the app rebuilds a field's node after the snapshot that listed it
 - **THEN** a fill on its old ref acts on the rebuilt field and the reply names the new ref
+
+#### Scenario: A dialog in front
+- **WHEN** a stale ref has no twin while a system dialog is in front
+- **THEN** the failure names the dialog and says to dismiss it
 
 ### Requirement: A delta prints as listing lines
 A delta snapshot's changes SHALL print as listing lines in the human output while `--json` keeps the delta object.
@@ -240,8 +252,33 @@ A delta snapshot's changes SHALL print as listing lines in the human output whil
 - **THEN** the human output prints them as listing lines, and with `--json` the reply keeps the delta object
 
 ### Requirement: Hits are named without a ref
-A click's reply SHALL name the element the tap landed on whether or not the session holds a ref for it, the ref null and the line saying so when none, so that a tap by coordinates or on a plain text says what it landed on.
+A click's reply SHALL name the element the tap landed on whether or not the session holds a ref for it, the ref null and the line saying so when none: the deepest node under the point with a name, an identifier or a role other than generic, else the nearest labeled ancestor, else the text under the point, `generic` only when nothing under the point is labeled.
 
 #### Scenario: A tap on a plain text
 - **WHEN** a click by coordinates lands on a text the interactive listing does not give a ref
 - **THEN** the reply names the text with `ref` null and the line says `(no ref)`
+
+#### Scenario: A tap through a generic container
+- **WHEN** a click by coordinates lands on a generic container drawn over a labeled button
+- **THEN** the reply names the button
+
+### Requirement: A text wait prefers the whole text
+`wait --text` SHALL prefer an element whose text is the sought text, case and surrounding whitespace aside, over one whose text merely contains it, keeping the listing's order among equals, and SHALL still resolve on a containing text when no element holds the text alone.
+
+#### Scenario: A city beside its airport
+- **WHEN** a wait for `Lisbon` runs while the screen lists `Lisbon Airport (LIS)` above `Lisbon`
+- **THEN** the wait resolves on `Lisbon`
+
+### Requirement: A scroll that looks for an element sizes its strokes by what they carry
+On iOS, `scroll --until` SHALL shorten its strokes by how far two looks at the scroll container that share an element measured the content moving for each point of the finger, never lengthening them, so that a list whose content follows the finger takes the strokes it took before; on Android, whose lists follow the finger, it SHALL measure nothing.
+
+#### Scenario: A list that goes on past the finger
+- **WHEN** on a Simulator each stroke whose finger comes to rest carries a list three times as far as the finger and `scroll --until` looks for a row in its middle
+- **THEN** once two looks share a row the strokes are a third as long, and the scroll stops with the row mostly in view
+
+### Requirement: A scroll strokes back after carrying its element past
+On iOS, after a stroke that carried the content past everything the scroll container showed, the element at neither look, `scroll --until` SHALL stroke back by halves until a look shares an element with the look before that stroke or shows the element, with no fixed sleep.
+
+#### Scenario: A row carried past between two looks
+- **WHEN** a stroke carries a list farther than it shows and the sought row passes between the look before it and the look after it
+- **THEN** the scroll strokes back, finds the row and stops with it mostly in view, where it ran to the list's end before
