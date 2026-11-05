@@ -4,6 +4,8 @@ The changes to mobile-agent, newest first, by release and, within a release, by 
 
 ## Unreleased
 
+- **alpha-release** (`openspec/changes/alpha-release/`): the packages renamed for crates.io, where none is published yet: `mobile-agent` for the CLI, `mobile-agent-ios-runner` for the iPhone's runner and `mobile-agent-<name>` for the rest, so `cargo build -p mobile-agent-daemon` replaces `-p daemon`; the libraries and binaries keep their names. The benchmark harness is never published. A build from the packages embeds neither the Android agent nor the Simulator reader and finds libjpeg-turbo through `TURBOJPEG_LIB_DIR` (the README's Crates), and its `mobile-agent --version` prints the package's version and commit.
+
 ## 0.1.0-alpha.1 — 2026-11-05
 The first pre-release: `mobile-agent`, `mobile-agent-daemon` and `mobile-agent-mcp` for Macs with Apple silicon and for x86_64 and aarch64 Linux, with every change since the first commit. Experimental: the drivers use private Apple Simulator frameworks, Apple's developer services on an iPhone and hidden Android APIs, and the command-line and MCP interfaces may change between alphas.
 

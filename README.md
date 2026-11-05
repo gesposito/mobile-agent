@@ -77,6 +77,27 @@ export PATH="$PWD/target/release:$PATH"    # the CLI starts the daemon it finds 
 - The Simulator's tree reader is cross-compiled for `aarch64-apple-ios-sim` during the build and embedded in the daemon, behind the `reader` feature of `crates/simulator`, which is on by default. The daemon spawns it into each booted Simulator it attaches. Without that Rust target the build warns and embeds no reader, and tree reads fall back to the slower host translator, marked degraded; `doctor` shows which one a build has.
 - Contributors: every dependency install goes through Socket Firewall. Install it with `npm i -g sfw`, then prefix installs with it: `sfw cargo fetch`, `sfw cargo add`, `sfw cargo install just`, `sfw npm install -g @fission-ai/openspec`. `just validate` runs the checks a change must pass: build, clippy with warnings denied, format check, the publish scan (`just check-public`: no machine path, device identifier, team id, email, host model or private term in a tracked file, and gitleaks' rules when it is installed), the workflows' lint and audit (actionlint and zizmor, when installed), the dependencies' check (`cargo deny`, when installed), tests, the checks of the repository's own scripts, the agent build, the iPhone runner's build, the Kotlin codec cross-check, the fixture scripts' checks with fake build tools, the fixture builds (with the SwiftUI and Expo fixtures' device builds when `MOBILE_AGENT_IOS_TEAM` is set) and `openspec validate`. The tests that need a Simulator, an emulator or an iPhone skip unless their environment names one (`crates/daemon/README.md`, `crates/simulator/README.md`, `crates/ios/README.md`).
 
+## Crates
+
+The workspace's packages carry the names they take on crates.io, where none is published yet; each library keeps the short name the code imports, and each binary its name.
+
+| Package | Directory | Library | What it holds |
+|---|---|---|---|
+| `mobile-agent` | `crates/cli` | `cli` | the CLI, binary `mobile-agent` |
+| `mobile-agent-daemon` | `crates/daemon` | `daemon` | the daemon, binary `mobile-agent-daemon` |
+| `mobile-agent-mcp` | `crates/mcp` | none | the MCP server, binary `mobile-agent-mcp` |
+| `mobile-agent-wire` | `crates/wire` | `wire` | the daemon's requests and replies as types |
+| `mobile-agent-protocol` | `crates/protocol` | `protocol` | the device protocol between the daemon and the device agents |
+| `mobile-agent-mirror` | `crates/mirror` | `mirror` | the live UI replica of a target |
+| `mobile-agent-android` | `crates/android` | `android` | the Android driver |
+| `mobile-agent-simulator` | `crates/simulator` | `simulator` | the iOS Simulator driver |
+| `mobile-agent-simulator-reader` | `crates/simulator/reader` | `simulator_reader` | the Simulator's tree reader, binary `simulator-reader`, and the tree conversion the iPhone's runner shares |
+| `mobile-agent-ios` | `crates/ios` | `ios` | the physical iPhone driver |
+| `mobile-agent-ios-runner` | `agent-ios` | `agent_ios` | the iPhone runner's agent, which `agent-ios/build.sh` links into the signed runner |
+| `mobile-agent-bench` | `crates/bench` | `bench` | the benchmark harness, binary `mobile-agent-bench`; never published (`publish = false`), since it runs in a checkout |
+
+A build of the packages, as `cargo install mobile-agent-daemon` makes from crates.io, has three differences from a checkout's: the daemon embeds no Android agent, whose sources are outside its package, and deploys one only from the jar `MOBILE_AGENT_JAR` names; the Simulator driver embeds no tree reader, a package of its own, and reads trees through the host translator unless `MOBILE_AGENT_READER` names a reader built in a checkout; and on macOS libjpeg-turbo is found only where `TURBOJPEG_LIB_DIR` and `TURBOJPEG_INCLUDE_DIR` name it, since `.cargo/config.toml` is the checkout's (`crates/simulator/README.md`, From the crate's package; `crates/daemon/README.md`). Every release daemon embeds the agent, and the Mac's also the reader and libjpeg-turbo (Install).
+
 ## Quick start
 
 The daemon attaches to targets that are already running; it boots nothing. For Android, put the SDK's tools on `PATH`, start an adb server, and start an emulator with its gRPC control endpoint, whose port is the console port plus 3000, or connect a device with USB debugging on and its prompt accepted:
