@@ -183,12 +183,12 @@ fn a_run_measures_mobile_agent_on_a_fake_emulator_and_the_baselines_beside_it() 
         (
             mobile_agent.role,
             mobile_agent.status,
-            mobile_agent.version.as_deref()
+            mobile_agent.version.clone()
         ),
         (
             Role::UnderTest,
             ToolStatus::Available,
-            Some(env!("CARGO_PKG_VERSION"))
+            Some(common::mobile_agent_version())
         )
     );
     assert_measured_as_planned(&report, &target, &[Fixture::Expo]);

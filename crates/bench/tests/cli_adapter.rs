@@ -89,11 +89,11 @@ fn every_listed_primitive_appears_through_the_cli_adapter_on_a_fake_emulator() {
     );
     let tool = &report.provenance.tools[0];
     assert_eq!(
-        (tool.name.as_str(), tool.role, tool.version.as_deref()),
+        (tool.name.as_str(), tool.role, tool.version.clone()),
         (
             "mobile-agent",
             Role::UnderTest,
-            Some(env!("CARGO_PKG_VERSION"))
+            Some(common::mobile_agent_version())
         )
     );
     let measured = [
