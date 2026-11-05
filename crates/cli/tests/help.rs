@@ -330,3 +330,32 @@ fn help_for_an_unknown_topic_fails_with_a_code() {
     let reply = env.cli(&["--json", "help", "frobnicate"]).failed().json();
     assert_eq!(reply["code"], "unknown_command", "{reply}");
 }
+
+/// Task 1.2 of `alpha-release` (design D3): `--version` prints the release
+/// the build was made for and the commit it was built from, the first 12
+/// digits of its hash. The release workflow names the release in
+/// `MOBILE_AGENT_RELEASE` at build time; a local build prints `local`, and
+/// the commit when the source is a git checkout.
+#[test]
+fn version_prints_the_release_and_the_commit() {
+    let release = option_env!("MOBILE_AGENT_RELEASE")
+        .filter(|release| !release.is_empty())
+        .unwrap_or("local");
+    let head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+    let expected = match &head {
+        Some(sha) => format!("mobile-agent {release} ({})\n", &sha[..12]),
+        None => format!("mobile-agent {release}\n"),
+    };
+    let env = TestEnv::new("android");
+    for flag in ["--version", "-V"] {
+        let run = env.cli(&[flag]).ok();
+        assert_eq!(run.stdout, expected, "{flag}");
+    }
+    assert!(!env.socket().exists(), "--version starts no daemon");
+}
