@@ -256,6 +256,9 @@ fn the_rates_reach_both_outputs_through_the_binary() {
     let harness = provenance.rows.iter().find(|r| r[0] == "Harness").unwrap();
     assert_eq!(
         harness[1],
-        "bench 0.1.0, 50 iterations after 3 warm-up, 0 retries"
+        format!(
+            "bench {}, 50 iterations after 3 warm-up, 0 retries",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
