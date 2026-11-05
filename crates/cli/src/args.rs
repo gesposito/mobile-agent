@@ -21,7 +21,8 @@ Examples:
 #[derive(Parser, Debug)]
 #[command(
     name = "mobile-agent",
-    version,
+    // The release and the commit, from build.rs.
+    version = env!("MOBILE_AGENT_VERSION"),
     about = "Drive Android devices, emulators and iOS Simulators through a live UI mirror, with agent-browser's grammar.",
     disable_help_subcommand = true,
     after_help = EXAMPLES
