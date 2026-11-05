@@ -2,7 +2,7 @@
 
 mobile-agent drives Android devices, Android emulators, iOS Simulators and physical iPhones for AI agents, and is designed around the latency of each tap-and-observe step. A daemon keeps a live mirror of every attached screen (its windows, accessibility tree and latest frame), updates it from the platform's change events and frame callbacks, and answers snapshots, waits and settle checks from that mirror instead of reading the device and sleeping on every request. On Android, a single-dex agent pushed over adb runs as the shell user under `app_process` and holds the device's UI automation role: no APK is installed and no instrumentation runs. On the iOS Simulator the driver works from the host: input goes through the Simulator's dtuhidd HID service, frames come from the display's IOSurface, and the accessibility tree comes from a Rust reader that the daemon spawns into the Simulator, with no XCTest runner and nothing installed. A physical iPhone's tree can be read only from an XCTest runner, so there a Rust runner built in this repository, started through the phone's test manager and kept for the session, serves the tree and text entry over the same device protocol, while the driver does the rest from the host: input through the developer disk image's dtuhidd, frames from screenshots it polls, and the phone's services over a CoreDevice tunnel it opens in its own process, without root or a helper. The `mobile-agent` CLI follows agent-browser's command grammar, `@eN` refs and JSON envelope, so prompts and skills written for agent-browser carry over where devices have the same concepts, and the `mobile-agent-mcp` server gives an MCP client the same tools, refs and replies (Agent surfaces).
 
-**Status.** Experimental and pre-release: alphas of the three binaries are released on GitHub for Macs with Apple silicon and for Linux and packed for npm as `@mobileagent/cli` (Install), nothing is published to crates.io yet, and `main` is the version CI builds and tests on macOS and Linux; the command-line and MCP interfaces may change between alphas. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
+**Status.** Experimental and pre-release: alphas of the three binaries are released on GitHub for Macs with Apple silicon and for Linux and packed for npm as `@mobileagent/cli` (Install), its crates are on crates.io (Crates), and `main` is the version CI builds and tests on macOS and Linux; the command-line and MCP interfaces may change between alphas. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
 
 ## Supported platforms
 
@@ -65,7 +65,7 @@ mobile-agent --version                     # mobile-agent 0.1.0-alpha.1 (<the co
 - On the Mac, the Simulator and iPhone drivers need Xcode 26 or 27, selected with `xcode-select`, with an iOS Simulator runtime (Supported platforms); the Mac's binaries are built on GitHub's `xcode-27` image, with its Xcode 27, and the daemon carries the Simulator reader and the Android agent. A physical iPhone also needs the runner, built and signed for a development team from a checkout of the same version and named by an absolute path in `MOBILE_AGENT_IOS_RUNNER_APP` (Quick start; `agent-ios/README.md`). Android needs the SDK's `platform-tools` (Quick start).
 - Linux hosts drive Android only: the Simulator and iPhone drivers are stubs there (Supported platforms).
 
-**crates.io.** Once the crates are published, `cargo install mobile-agent mobile-agent-daemon mobile-agent-mcp` builds the three from their packages, which lack the Android agent, the Simulator reader and the checkout's libjpeg-turbo settings (Crates).
+**crates.io.** `cargo install mobile-agent@0.1.0-alpha.1 mobile-agent-daemon@0.1.0-alpha.1 mobile-agent-mcp@0.1.0-alpha.1` builds the three from their packages, each version named, since Cargo picks a pre-release only when its version is named; the packages lack the Android agent, the Simulator reader and the checkout's libjpeg-turbo settings (Crates).
 
 ## Build
 
@@ -93,7 +93,7 @@ export PATH="$PWD/target/release:$PATH"    # the CLI starts the daemon it finds 
 
 ## Crates
 
-The workspace's packages carry the names they take on crates.io, where none is published yet; each library keeps the short name the code imports, and each binary its name.
+The workspace's packages carry the names they have on crates.io, where `0.1.0-alpha.1` is the first version and the release workflow publishes the next ones after their release; each library keeps the short name the code imports, and each binary its name.
 
 | Package | Directory | Library | What it holds |
 |---|---|---|---|
