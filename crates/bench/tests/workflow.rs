@@ -13,7 +13,9 @@
 //! dry-run mode by default, builds the binaries per target, attests and keeps
 //! them, and verifies each download, with no cache (design D2); task 2.1: a
 //! run that is not a dry run then publishes them in the `release`
-//! environment's gate, its publish job alone writing. The workflow
+//! environment's gate, its publish job alone writing; task 3.4: the npm
+//! packages are packed from the attested tarballs and published with npm's
+//! trusted publishing from the `release` environment. The workflow
 //! files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
@@ -623,7 +625,18 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
     );
 
     let jobs = workflow.get("jobs");
-    assert_eq!(jobs.keys(), ["jar", "build", "verify", "gate", "publish"]);
+    assert_eq!(
+        jobs.keys(),
+        [
+            "jar",
+            "build",
+            "verify",
+            "gate",
+            "publish",
+            "npm-package",
+            "publish-npm"
+        ]
+    );
     let matrix: Vec<String> = RELEASE_TARGETS
         .iter()
         .map(|(target, runner)| format!("{{ target: {target}, runner: {runner} }}"))
@@ -849,4 +862,129 @@ fn the_release_workflow_publishes_a_draft_pre_release_after_the_release_gate_unl
         !text.contains("no publishing job"),
         "release.yml still refuses to publish"
     );
+}
+
+/// Task 3.4 of `alpha-release` (design D7): once every target is built and
+/// verified, the npm-package job downloads the three tarballs, verifies
+/// their attestations and sums again and packs the four npm packages from
+/// them with `npm/pack.sh`, which builds nothing and checks each package's
+/// list, and keeps them as an artifact with their sums. The publish-npm job
+/// publishes them after the release is published, in the `release`
+/// environment, whose reviewer approves it, with an OIDC token for npm's
+/// trusted publishing and provenance and no npm token, the platform
+/// packages first and the launcher last, under the prerelease's tag; a dry
+/// run publishes with `--dry-run`, outside the environment, without the gate
+/// or the release. Neither job uses a cache, and the second checks out
+/// nothing.
+#[test]
+fn the_release_workflow_packs_the_npm_packages_from_the_attested_tarballs_and_publishes_them_with_trusted_publishing()
+ {
+    let workflow = outline(".github/workflows/release.yml");
+    let text = read(".github/workflows/release.yml");
+    // The scope without the comment that explains it.
+    let scope = |job: &Node, key: &str| -> String {
+        let value = job.at(&format!("permissions/{key}")).text();
+        value.split(" #").next().unwrap_or(value).trim().to_owned()
+    };
+    let node = |steps: &[String]| {
+        let setup = step_with(steps, &["uses: actions/setup-node@"]);
+        for wanted in ["node-version: 24.22.1\n", "package-manager-cache: false\n"] {
+            assert!(setup.contains(wanted), "{wanted} in {setup}");
+        }
+        assert!(!setup.contains("registry-url"), "{setup}");
+    };
+
+    let package = workflow.at("jobs/npm-package");
+    assert_eq!(package.get("needs").text(), "[build, verify]");
+    assert!(
+        !package.keys().contains(&"if"),
+        "a dry run packs too: {:?}",
+        package.keys()
+    );
+    assert_eq!(package.get("runs-on").text(), "ubuntu-latest");
+    assert_eq!(
+        package.get("permissions").keys(),
+        ["contents", "attestations"]
+    );
+    assert_eq!(scope(package, "contents"), "read");
+    assert_eq!(scope(package, "attestations"), "read");
+    let packing = steps(&text, "npm-package");
+    step_with(&packing, &["uses: actions/checkout@"]);
+    node(&packing);
+    step_with(
+        &packing,
+        &[
+            "uses: actions/download-artifact@",
+            "pattern: mobile-agent-*",
+        ],
+    );
+    let attested = step_with(&packing, &["gh attestation verify"]);
+    for wanted in [
+        "--signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/release.yml\"",
+        "--source-digest \"$GITHUB_SHA\"",
+        "--deny-self-hosted-runners",
+        "shasum -a 256 -c \"$tarball.sha256\"",
+        "!= 3",
+    ] {
+        assert!(attested.contains(wanted), "{wanted} in {attested}");
+    }
+    let packed = step_with(&packing, &["npm/pack.sh \"$VERSION\""]);
+    assert!(packed.contains("GITHUB_STEP_SUMMARY"), "{packed}");
+    let kept = step_with(
+        &packing,
+        &["uses: actions/upload-artifact@", "name: npm-packages"],
+    );
+    for wanted in [
+        "retention-days: 90",
+        "if-no-files-found: error",
+        "/npm/*.tgz\n",
+        "/npm/SHA256SUMS\n",
+    ] {
+        assert!(kept.contains(wanted), "{wanted} in {kept}");
+    }
+
+    let publish = workflow.at("jobs/publish-npm");
+    assert_eq!(publish.get("needs").text(), "[publish, npm-package]");
+    assert_eq!(
+        publish.get("if").text(),
+        "${{ !cancelled() && needs.npm-package.result == 'success' && (inputs.dry_run || needs.publish.result == 'success') }}"
+    );
+    // The release environment's reviewer approves a run that publishes; a dry run has no environment.
+    assert_eq!(
+        publish.get("environment").text(),
+        "${{ !inputs.dry_run && 'release' || '' }}"
+    );
+    assert_eq!(publish.get("runs-on").text(), "ubuntu-latest");
+    assert_eq!(publish.get("permissions").keys(), ["contents", "id-token"]);
+    assert_eq!(scope(publish, "contents"), "read");
+    assert_eq!(scope(publish, "id-token"), "write");
+    assert_eq!(publish.at("env/DRY_RUN").text(), "${{ inputs.dry_run }}");
+    let publishing = steps(&text, "publish-npm");
+    assert!(
+        !publishing
+            .iter()
+            .any(|step| step.contains("uses: actions/checkout@")),
+        "publish-npm checks out nothing"
+    );
+    node(&publishing);
+    step_with(
+        &publishing,
+        &["uses: actions/download-artifact@", "name: npm-packages"],
+    );
+    let npm = step_with(&publishing, &["npm publish"]);
+    for wanted in [
+        "shasum -a 256 -c SHA256SUMS",
+        "for package in cli-darwin-arm64 cli-linux-x64 cli-linux-arm64 cli; do",
+        "--provenance --access public --tag \"$tag\"",
+        "if [ \"$DRY_RUN\" = true ]; then",
+        "--dry-run",
+        "npm view",
+        "11.5.1",
+    ] {
+        assert!(npm.contains(wanted), "{wanted} in {npm}");
+    }
+    // Trusted publishing alone: no npm token anywhere in the workflow.
+    for token in ["NPM_TOKEN", "NODE_AUTH_TOKEN", "_authToken", "secrets."] {
+        assert!(!text.contains(token), "release.yml names {token}");
+    }
 }
