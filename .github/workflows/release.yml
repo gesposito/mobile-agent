@@ -407,9 +407,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Node 24.22.1, whose npm is 11.19.1
-        # The image's default Node, 22, carries npm 10; npm's trusted publishing needs 11.5.1 or
-        # newer, and the packages are packed with the npm that publishes them. 24.22.1 is in the
-        # image's tool cache. No cache.
+        # npm's trusted publishing needs npm 11.5.1 or newer, which Ubuntu 24.04's default Node, 22,
+        # lacks, and the packages are packed with the npm that publishes them. setup-node takes
+        # 24.22.1 from the image's tool cache, or else from GitHub's actions/node-versions. No cache.
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.22.1
