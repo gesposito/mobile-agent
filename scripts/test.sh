@@ -31,9 +31,10 @@
 #   6. It refuses a value of the private terms file in any case, naming the
 #      term by its line in the list and never printing it, except in
 #      LICENSE's copyright line, in CODEOWNERS' owners and as the owner in the
-#      repository's own name, <owner>/mobile-agent, in a line that holds the
-#      term nowhere else; without the file it says so and checks the patterns
-#      alone, and a list it is pointed at that does not exist is an error.
+#      repository's own name, <owner>/mobile-agent, a term inside that owner's
+#      handle included, in a line that holds the term nowhere else; without
+#      the file it says so and checks the patterns alone, and a list it is
+#      pointed at that does not exist is an error.
 #   7. With gitleaks installed, it refuses a credential gitleaks knows, and
 #      .gitleaks.toml's placeholder token passes in its own file only.
 #   8. The history scan (scripts/check-history.sh) passes a clean history and
@@ -331,24 +332,30 @@ expect "LICENSE's other lines may not" grep -q -F 'LICENSE:4: private term' "$sc
 expect "CODEOWNERS' comments may not" grep -q -F '.github/CODEOWNERS:2: private term' "$scratch/out.txt"
 unstage LICENSE .github/CODEOWNERS
 
-# The repository's own name, where the owner is a term: in a URL and as gh's
-# -R, but not beside the term elsewhere or as part of another name.
+# The repository's own name, where the owner is a term and holds another:
+# in a URL, as gh's -R and in a list item, but not beside either term
+# elsewhere or as part of another name.
+printf '# placeholder terms\nplaceholder-private-value\nprivate-value\n' > "$scratch/owner-terms.txt"
 cat > "$repo/install.md" <<'EOF'
 See https://github.com/Placeholder-Private-Value/mobile-agent/releases.
 gh attestation verify mobile-agent.tar.gz -R placeholder-private-value/mobile-agent
+- `gh release verify v1 -R placeholder-private-value/mobile-agent`, signed by placeholder-private-value/mobile-agent/.github/workflows/release.yml.
 EOF
 git -C "$repo" add install.md
-scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
-expect "the owner in the repository's own name passes" test "$status" = 0
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/owner-terms.txt"
+expect "the owner in the repository's own name passes, a term inside the handle included" test "$status" = 0
 cat > "$repo/install.md" <<'EOF'
 gh release download -R placeholder-private-value/mobile-agent, by placeholder-private-value.
 See placeholder-private-value/mobile-agent-other.
 Built by xplaceholder-private-value/mobile-agent.
+- From placeholder-private-value/mobile-agent, for the private-value.
 EOF
-scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
-expect "the term beside the repository's name is refused" grep -q -F 'install.md:1: private term' "$scratch/out.txt"
-expect "the term in another repository's name is refused" grep -q -F 'install.md:2: private term' "$scratch/out.txt"
-expect "the term inside another owner's name is refused" grep -q -F 'install.md:3: private term' "$scratch/out.txt"
+scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/owner-terms.txt"
+expect "the term beside the repository's name is refused" grep -q -F 'install.md:1: private term on line 2' "$scratch/out.txt"
+expect "the term in another repository's name is refused" grep -q -F 'install.md:2: private term on line 2' "$scratch/out.txt"
+expect "the term inside another owner's name is refused" grep -q -F 'install.md:3: private term on line 2' "$scratch/out.txt"
+expect "the term inside the handle is refused outside the repository's name" \
+  grep -q -F 'install.md:4: private term on line 3' "$scratch/out.txt"
 unstage install.md
 
 # 7. gitleaks, when installed.
@@ -425,12 +432,13 @@ expect "the history scan never prints the term" \
   bash -c '! grep -q -i placeholder-private-value "$1"' _ "$scratch/out.txt"
 
 git -C "$history" reset -q --hard HEAD~2
-printf 'gh release download -R Placeholder-Private-Value/mobile-agent\n' > "$history/old.md"
+printf -- '- gh release download -R Placeholder-Private-Value/mobile-agent\n' > "$history/old.md"
 commit "docs: the repository's name, placeholder-private-value/mobile-agent"
 printf 'gh release download\n' > "$history/old.md"
 commit "docs: the line without the repository's name"
-history_scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/private-terms.txt"
-expect "the owner in the repository's own name passes in an old blob and a message" test "$status" = 0
+history_scan MOBILE_AGENT_PRIVATE_TERMS="$scratch/owner-terms.txt"
+expect "the owner in the repository's own name passes in an old blob and a message, a term inside the handle included" \
+  test "$status" = 0
 
 git -C "$history" reset -q --hard HEAD~2
 printf 'more\n' >> "$history/notes.md"
