@@ -1,0 +1,281 @@
+name: Release
+
+# The release of the three binaries, mobile-agent, mobile-agent-daemon and
+# mobile-agent-mcp, on a dispatch naming the version (design D2 of the
+# alpha-release change; docs/research/alpha-release.md). The Android agent's
+# jar is built once, so that every target's daemon embeds the same one; each
+# target's job builds the binaries for the version, packs them with the
+# third-party notices and their SHA-256 sums into
+# mobile-agent-<version>-<target>.tar.gz, attests the tarball and the
+# binaries with build provenance and keeps the tarball as an artifact for 90
+# days; a job per target then downloads every tarball, verifies its
+# attestation and runs its own target's binaries. Nothing here publishes,
+# tags or releases: a dispatch with dry_run false is refused. No job uses a
+# cache.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version, a semantic version without the v, such as 0.1.0-alpha.1, or 0.0.0-dryrun for a rehearsal"
+        type: string
+        required: true
+      dry_run:
+        description: "Build, attest and verify the binaries without publishing them"
+        type: boolean
+        default: true
+
+# No permission unless a job asks for one (docs/research/open-sourcing.md).
+permissions: {}
+
+concurrency:
+  # One release at a time: a second dispatch waits, and none is cancelled halfway.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  jar:
+    name: Android agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # The image's Android SDK, as in ci.yml.
+      ANDROID_HOME: /usr/local/lib/android/sdk
+    steps:
+      - name: Check the version and the mode
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if ! [[ $VERSION =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version must be a semantic version without the v, such as 0.1.0-alpha.1, not $VERSION"
+            exit 1
+          fi
+          if [ "$DRY_RUN" != true ]; then
+            echo "::error::this workflow has no publishing job: dispatch it with dry_run true"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install JDK 21 and Kotlin 2.4.20 for the Android agent
+        # As in ci.yml's Linux job, without its cache. TODO: Socket Firewall does not wrap mise.
+        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          version: 2026.9.7
+          cache: false
+          mise_toml: |
+            [tools]
+            java = "temurin-21"
+            kotlin = { version = "2.4.20", asset_pattern = "kotlin-compiler-*.zip", bin_path = "kotlinc/bin" }
+      - name: Check that the pinned JDK and Kotlin come first on PATH
+        # build.sh takes the Kotlin behind kotlinc on PATH.
+        run: |
+          java -version 2>&1 | grep '"21\.'
+          kotlinc -version 2>&1 | grep 'kotlinc-jvm 2\.4\.20 '
+      - name: Install the Android SDK packages
+        # The agent compiles against android-36 and takes d8 and R8 from the newest build-tools,
+        # 37.0.0. TODO: Socket Firewall does not wrap sdkmanager.
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;37.0.0"
+      - name: Build the Android agent
+        run: agent-android/build.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-android-jar
+          path: agent-android/dist/mobile-agent-android.jar
+          if-no-files-found: error
+          retention-days: 90
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: jar
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Mac with Xcode on the image of ci.yml's Xcode 27 job, whose Xcode builds the
+        # Simulator reader; Linux on both architectures on the oldest Ubuntu GitHub hosts, for
+        # hosts that drive Android alone, whose binaries need its glibc, 2.35, or newer.
+        include:
+          - { target: aarch64-apple-darwin, runner: xcode-27 }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
+    permissions:
+      contents: read
+      id-token: write # the OIDC token whose identity Sigstore certifies for the attestation
+      attestations: write # to store the attestation in the repository
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the Xcode the Simulator reader is built with
+        if: runner.os == 'macOS'
+        # The image's default, which ci.yml's Xcode 27 job keeps; the Simulator driver needs Xcode
+        # 27's CoreSimulator (crates/simulator/README.md, Compatibility).
+        run: |
+          xcodebuild -version
+          version=$(xcodebuild -version | sed -n '1s/^Xcode //p')
+          if [ "${version%%.*}" != 27 ]; then
+            echo "::error::the image's default Xcode is $version, not Xcode 27"
+            exit 1
+          fi
+          {
+            echo "## Xcode"
+            echo
+            echo '```'
+            xcodebuild -version
+            echo "iOS Simulator SDK $(xcrun --sdk iphonesimulator --show-sdk-version)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        # Its targets include the iOS Simulator's, for the Simulator driver's tree reader.
+        run: rustup toolchain install --no-self-update
+      - name: Install libjpeg-turbo for the Simulator driver's frame encoder
+        if: runner.os == 'macOS'
+        # crates/simulator links libturbojpeg statically from Homebrew; see .cargo/config.toml.
+        # TODO: Socket Firewall does not wrap Homebrew.
+        run: brew install jpeg-turbo
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-android-jar
+          path: ${{ runner.temp }}/jar
+      - name: Build mobile-agent, its daemon and the MCP server
+        env:
+          # The version --version prints, beside the commit (crates/cli/build.rs).
+          MOBILE_AGENT_RELEASE: ${{ inputs.version }}
+          # The jar of the jar job, which every target's daemon embeds.
+          MOBILE_AGENT_JAR: ${{ runner.temp }}/jar/mobile-agent-android.jar
+          # The vendored emulator controller proto rather than whichever one the runner's SDK
+          # ships, so that every target's daemon is built from the same (crates/android/build.rs).
+          MOBILE_AGENT_EMULATOR_PROTO: ${{ github.workspace }}/crates/android/proto/emulator_controller.proto
+        run: cargo build --release --locked --target "$TARGET" -p cli -p daemon -p mcp
+      - name: Check the binaries
+        # The Mac's daemon embeds the Simulator reader and links libjpeg-turbo statically, so it
+        # needs nothing from Homebrew; the Linux binaries link the system's libc alone.
+        run: |
+          dir="target/$TARGET/release"
+          file "$dir/mobile-agent" "$dir/mobile-agent-daemon" "$dir/mobile-agent-mcp"
+          "$dir/mobile-agent" --version
+          if [ "$RUNNER_OS" = macOS ]; then
+            reader="$dir/simulator-reader-target/aarch64-apple-ios-sim/release/simulator-reader"
+            test -x "$reader"
+            otool -l "$reader" | grep -A 4 LC_BUILD_VERSION
+            otool -L "$dir/mobile-agent-daemon"
+            if otool -L "$dir/mobile-agent-daemon" | grep -q /opt/homebrew; then
+              echo "::error::the daemon links a library from Homebrew"
+              exit 1
+            fi
+          else
+            ldd "$dir/mobile-agent-daemon"
+          fi
+      - name: Pack the binaries, the notices and their SHA-256 sums
+        run: |
+          name="mobile-agent-$VERSION-$TARGET"
+          mkdir -p "$RUNNER_TEMP/dist/$name"
+          cp "target/$TARGET/release/mobile-agent" "target/$TARGET/release/mobile-agent-daemon" \
+            "target/$TARGET/release/mobile-agent-mcp" THIRD-PARTY-NOTICES.md "$RUNNER_TEMP/dist/$name/"
+          cd "$RUNNER_TEMP/dist"
+          (cd "$name" && shasum -a 256 mobile-agent mobile-agent-daemon mobile-agent-mcp THIRD-PARTY-NOTICES.md > SHA256SUMS)
+          tar -czf "$name.tar.gz" "$name"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          {
+            echo "## $name.tar.gz"
+            echo
+            echo "| File | Bytes |"
+            echo "|---|---|"
+            for file in "$name.tar.gz" "$name"/*; do
+              echo "| $file | $(wc -c < "$file" | tr -d ' ') |"
+            done
+            echo
+            echo '```'
+            shasum -a 256 "$name.tar.gz"
+            cat "$name/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the tarball and the binaries
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/dist/${{ env.NAME }}.tar.gz
+            ${{ runner.temp }}/dist/${{ env.NAME }}/mobile-agent
+            ${{ runner.temp }}/dist/${{ env.NAME }}/mobile-agent-daemon
+            ${{ runner.temp }}/dist/${{ env.NAME }}/mobile-agent-mcp
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ runner.temp }}/dist/${{ env.NAME }}.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+
+  verify:
+    name: Verify ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The build job's targets, each on the runner that built it.
+        include:
+          - { target: aarch64-apple-darwin, runner: xcode-27 }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify fetches them through the API
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mobile-agent-*
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+      - name: Verify the attestations of every tarball and of this target's binaries
+        # Signed by this workflow in this repository from the dispatched commit, on a
+        # GitHub-hosted runner.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/dist"
+          ls -l
+          verify() {
+            gh attestation verify "$1" -R "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          }
+          tarballs=0
+          for tarball in mobile-agent-*.tar.gz; do
+            verify "$tarball"
+            tarballs=$((tarballs + 1))
+          done
+          if [ "$tarballs" != 3 ]; then
+            echo "::error::$tarballs tarballs downloaded, not 3"
+            exit 1
+          fi
+          name="mobile-agent-$VERSION-$TARGET"
+          tar -xzf "$name.tar.gz"
+          for bin in mobile-agent mobile-agent-daemon mobile-agent-mcp; do
+            verify "$name/$bin"
+          done
+      - name: Check the sums and run this target's binaries
+        run: |
+          cd "$RUNNER_TEMP/dist/mobile-agent-$VERSION-$TARGET"
+          shasum -a 256 -c SHA256SUMS
+          expected="mobile-agent $VERSION (${GITHUB_SHA:0:12})"
+          printed=$(./mobile-agent --version)
+          if [ "$printed" != "$expected" ]; then
+            echo "::error::mobile-agent --version printed '$printed', not '$expected'"
+            exit 1
+          fi
+          echo "$printed"
+          ./mobile-agent-daemon --version
+          ./mobile-agent-mcp --version
