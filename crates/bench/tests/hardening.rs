@@ -9,7 +9,8 @@
 //! `alpha-release`: the release workflow is held to the same rules, its
 //! build job writing an OIDC token and attestations alone; task 2.1: and its
 //! publish job the repository's contents, for the release and its tag, with
-//! no other job writing them. The files
+//! no other job writing them; task 3.4: and its publish-npm job an OIDC
+//! token, for npm. The files
 //! are read as text, line by line: a job is the block under `jobs:` that
 //! starts at two spaces of indentation, a step the block that starts with
 //! `- ` at six.
@@ -27,10 +28,11 @@ const WORKFLOWS: [&str; 4] = [
 ];
 
 /// The only write scopes any job is granted: the release's build job mints
-/// an OIDC token for Sigstore and stores the attestations it signs, and its
-/// publish job, in the `release` environment, creates the release and with
-/// it the tag.
-const WRITES: [(&str, &str, &str); 3] = [
+/// an OIDC token for Sigstore and stores the attestations it signs, its
+/// publish job, after the `release` environment's gate, creates the release
+/// and with it the tag, and its publish-npm job mints the OIDC token that
+/// npm's trusted publishing exchanges and its provenance is signed with.
+const WRITES: [(&str, &str, &str); 4] = [
     (".github/workflows/release.yml", "build", "id-token: write"),
     (
         ".github/workflows/release.yml",
@@ -41,6 +43,11 @@ const WRITES: [(&str, &str, &str); 3] = [
         ".github/workflows/release.yml",
         "publish",
         "contents: write",
+    ),
+    (
+        ".github/workflows/release.yml",
+        "publish-npm",
+        "id-token: write",
     ),
 ];
 
@@ -347,6 +354,7 @@ fn each_checkout_fetches_the_head_alone_unless_its_job_reads_history() {
         (".github/workflows/release.yml", "jar", "1"),
         (".github/workflows/release.yml", "build", "1"),
         (".github/workflows/release.yml", "publish", "1"),
+        (".github/workflows/release.yml", "npm-package", "1"),
     ];
     let mut seen = Vec::new();
     for path in WORKFLOWS {
