@@ -12,7 +12,7 @@
 //! fixtures installed (the Simulator driver's tests' setup):
 //!
 //! ```sh
-//! MOBILE_AGENT_SIM_UDID=<udid> cargo test -p ios --test tree -- --ignored --nocapture record
+//! MOBILE_AGENT_SIM_UDID=<udid> cargo test -p mobile-agent-ios --test tree -- --ignored --nocapture record
 //! ```
 
 #![cfg(target_os = "macos")]

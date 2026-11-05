@@ -1,4 +1,5 @@
-//! Builds the in-guest reader (`reader/`, package `simulator-reader`) for
+//! Builds the in-guest reader (`reader/`, package
+//! `mobile-agent-simulator-reader`, binary `simulator-reader`) for
 //! `aarch64-apple-ios-sim`, so the crate can embed it: the driver writes it
 //! to the host's cache and spawns it into each booted Simulator (design D6).
 //! Nothing is built on the machine that runs the driver.
@@ -18,7 +19,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const TARGET: &str = "aarch64-apple-ios-sim";
-const PACKAGE: &str = "simulator-reader";
+const PACKAGE: &str = "mobile-agent-simulator-reader";
+const BINARY: &str = "simulator-reader";
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("set by cargo"));
@@ -47,8 +49,8 @@ fn main() {
         build(&manifest_dir, &out_dir)
     };
 
-    let binary = out_dir.join(PACKAGE);
-    let missing = out_dir.join(format!("{PACKAGE}-missing.txt"));
+    let binary = out_dir.join(BINARY);
+    let missing = out_dir.join(format!("{BINARY}-missing.txt"));
     match outcome {
         Ok(built) => {
             fs::copy(&built, &binary)
@@ -95,12 +97,12 @@ fn build(manifest_dir: &Path, out_dir: &Path) -> Result<PathBuf, String> {
     let target_dir = out_dir
         .ancestors()
         .nth(3)
-        .map(|profile| profile.join(format!("{PACKAGE}-target")))
+        .map(|profile| profile.join(format!("{BINARY}-target")))
         .unwrap_or_else(|| out_dir.join("reader-target"));
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let output = Command::new(cargo)
         .args(["build", "--release", "--offline", "--locked"])
-        .args(["--package", PACKAGE, "--bin", PACKAGE, "--target", TARGET])
+        .args(["--package", PACKAGE, "--bin", BINARY, "--target", TARGET])
         .arg("--manifest-path")
         .arg(manifest_dir.join("reader/Cargo.toml"))
         .arg("--target-dir")
@@ -121,5 +123,5 @@ fn build(manifest_dir: &Path, out_dir: &Path) -> Result<PathBuf, String> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    Ok(target_dir.join(TARGET).join("release").join(PACKAGE))
+    Ok(target_dir.join(TARGET).join("release").join(BINARY))
 }

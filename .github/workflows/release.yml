@@ -167,7 +167,7 @@ jobs:
           # The vendored emulator controller proto rather than whichever one the runner's SDK
           # ships, so that every target's daemon is built from the same (crates/android/build.rs).
           MOBILE_AGENT_EMULATOR_PROTO: ${{ github.workspace }}/crates/android/proto/emulator_controller.proto
-        run: cargo build --release --locked --target "$TARGET" -p cli -p daemon -p mcp
+        run: cargo build --release --locked --target "$TARGET" -p mobile-agent -p mobile-agent-daemon -p mobile-agent-mcp
       - name: Check the binaries
         # The Mac's daemon embeds the Simulator reader and links libjpeg-turbo statically, so it
         # needs nothing from Homebrew; the Linux binaries link the system's libc alone.

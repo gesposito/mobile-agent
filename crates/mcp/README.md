@@ -1,4 +1,4 @@
-# mcp
+# mobile-agent-mcp
 
 `mobile-agent-mcp`, the Model Context Protocol server of spec `mcp-server`
 (design D1, D2): a stdio server an agent client starts, which gives a model
@@ -14,7 +14,7 @@ and `config.rs` (the settings file). Its tools' input schemas are the
 request structs of `crates/wire`, with the `schema` feature on.
 
 ```sh
-cargo build --release -p mcp -p daemon    # mobile-agent-mcp and mobile-agent-daemon, side by side
+cargo build --release -p mobile-agent-mcp -p mobile-agent-daemon    # mobile-agent-mcp and mobile-agent-daemon, side by side
 ```
 
 ## Layout

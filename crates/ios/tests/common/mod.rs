@@ -11,7 +11,7 @@
 //!
 //! ```sh
 //! MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
-//!   MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app cargo test -p ios
+//!   MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app cargo test -p mobile-agent-ios
 //! ```
 //!
 //! Neither value enters a tracked file, and no test prints them.

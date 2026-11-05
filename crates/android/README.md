@@ -1,4 +1,4 @@
-# android
+# mobile-agent-android
 
 Host-side Android driver (design D11). So far it holds:
 
@@ -12,9 +12,9 @@ Host-side Android driver (design D11). So far it holds:
   selection and the status report (task 5.5).
 - `benches/`: the microbenchmark of the emulator frame hash, `FrameHasher::key`
   of a synthetic 540x1200 frame (design D14 of the `microbenchmarks` change).
-  `cargo bench -p android -- --noplot` runs it, which needs no device. The
-  library sets `bench = false`, so its test harness never sees criterion's
-  flags. `just micro` runs it with the other suites against
+  `cargo bench -p mobile-agent-android -- --noplot` runs it, which needs no
+  device. The library sets `bench = false`, so its test harness never sees
+  criterion's flags. `just micro` runs it with the other suites against
   `reports/micro/baseline.json`.
 
 ## adb client
@@ -357,7 +357,7 @@ the SDK file over it and record the new SHA here.
 Unit tests need no device:
 
 ```sh
-cargo test -p android
+cargo test -p mobile-agent-android
 ```
 
 The integration tests in `tests/` run when `MOBILE_AGENT_ANDROID_SERIAL` names a
@@ -373,7 +373,7 @@ bound and asserts the rest.
 
 ```sh
 eval "$(mise env)"   # ANDROID_HOME and the SDK tools
-MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test -p android -- --nocapture
+MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test -p mobile-agent-android -- --nocapture
 ```
 
 What the adb integration tests do on the device:
@@ -417,7 +417,7 @@ What the agent session tests (`tests/agent_session.rs`) do on the device:
 and run on a quiet device:
 
 ```sh
-MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --release -p android \
+MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --release -p mobile-agent-android \
   --test measure -- --ignored --nocapture
 ```
 

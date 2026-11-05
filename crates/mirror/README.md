@@ -1,4 +1,4 @@
-# mirror
+# mobile-agent-mirror
 
 The live UI replica (spec `ui-mirror`, design D5 and D8): one target's
 windows, accessibility tree and latest frame, kept current from what the
@@ -44,7 +44,7 @@ benches/        microbenchmarks of pump, snapshot, visibility, scroll_viewport, 
                 and grid-rn on the fake target (design D14 of the microbenchmarks change), each
                 printing beside criterion's timing the allocations and bytes of a call, which
                 three verified calls must agree on; run them with
-                `cargo bench -p mirror -- --noplot [filter]` (the library sets bench = false, so
+                `cargo bench -p mobile-agent-mirror -- --noplot [filter]` (the library sets bench = false, so
                 its built-in bench harness never sees criterion's options), or with every suite
                 against the committed baseline through `just micro` (reports/micro/README.md)
 tests/          one file per task: replica, refs, interactive, settle, waits, diff, resync, frames,
@@ -898,7 +898,7 @@ optional explicit `seq`), `drop`,
 `frame`, `out_of_sync`, `resynced`, `backend_changed` or `reconnected`.
 
 ```sh
-cargo test -p mirror
+cargo test -p mobile-agent-mirror
 ```
 
 ## Interpretations of the spec

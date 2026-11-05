@@ -1,4 +1,4 @@
-# daemon
+# mobile-agent-daemon
 
 The host daemon of design D1 and spec `agent-cli`: one process per user
 holds every device connection, keeps a mirror (`crates/mirror`) per attached
@@ -65,7 +65,7 @@ benches/        daemon.rs, the microbenchmarks of design D14 of the microbenchma
                 profiling)
 ```
 
-`cargo bench -p daemon -- --noplot [filter]` runs the benchmarks with
+`cargo bench -p mobile-agent-daemon -- --noplot [filter]` runs the benchmarks with
 criterion's default settings, about 10 s each, after a setup that starts a
 daemon on a fake target, brings it to the Big tab and stops it once the
 socket benchmark is done, then another on a fake Simulator, brought to the
@@ -1689,7 +1689,7 @@ through this daemon, on fake targets with the device drivers off
 (`MOBILE_AGENT_DRIVERS=none`).
 
 ```sh
-cargo test -p daemon
+cargo test -p mobile-agent-daemon
 ```
 
 `tests/devices.rs` drives real targets through the built `mobile-agent`
@@ -1712,7 +1712,7 @@ and asserts the rest.
 ```sh
 eval "$(mise env)"   # the Android SDK
 MOBILE_AGENT_SIM_UDID=<udid> MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 \
-  cargo test --release -p daemon --test devices -- --nocapture
+  cargo test --release -p mobile-agent-daemon --test devices -- --nocapture
 ```
 
 `tests/real_apps.rs` drives the default apps of a fresh device the same

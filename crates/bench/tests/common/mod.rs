@@ -236,13 +236,24 @@ pub fn mobile_agent() -> PathBuf {
             .expect("the harness binary lives in a directory");
         let mut cargo = Command::new(env!("CARGO"));
         cargo
-            .args(["build", "--quiet", "-p", "cli", "-p", "daemon", "--bins"])
+            .args([
+                "build",
+                "--quiet",
+                "-p",
+                "mobile-agent",
+                "-p",
+                "mobile-agent-daemon",
+                "--bins",
+            ])
             .current_dir(env!("CARGO_MANIFEST_DIR"));
         if dir.file_name().is_some_and(|name| name == "release") {
             cargo.arg("--release");
         }
         let status = cargo.status().expect("cargo runs");
-        assert!(status.success(), "cargo build -p cli -p daemon failed");
+        assert!(
+            status.success(),
+            "cargo build -p mobile-agent -p mobile-agent-daemon failed"
+        );
         dir.join("mobile-agent")
     })
     .clone()

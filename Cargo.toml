@@ -4,6 +4,10 @@
 members = ["crates/*", "crates/simulator/reader", "agent-ios"]
 resolver = "3"
 
+# Each package is named for crates.io, `mobile-agent` for the CLI and
+# `mobile-agent-<name>` for the rest, while its library keeps the short name
+# the code imports (`daemon`, `mirror`, `protocol`, ...) and its binaries keep
+# theirs.
 [workspace.package]
 version = "0.1.0-alpha.1"
 edition = "2024"
@@ -24,7 +28,7 @@ correctness = { level = "deny", priority = -1 }
 # Unoptimized, a 460x1000 frame took about 230 ms instead of 3, so debug
 # builds, `cargo test` included, would stream at 4 fps using a whole core. The
 # fallback encoder also drops the overflow checks release builds drop.
-[profile.dev.package.simulator]
+[profile.dev.package.mobile-agent-simulator]
 opt-level = 3
 
 [profile.dev.package.jpeg-encoder]

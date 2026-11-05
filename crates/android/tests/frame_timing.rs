@@ -2,7 +2,7 @@
 //! ignored by default and run with
 //!
 //! ```sh
-//! MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --release -p android \
+//! MOBILE_AGENT_ANDROID_SERIAL=emulator-5554 cargo test --release -p mobile-agent-android \
 //!   --test frame_timing -- --ignored --nocapture --test-threads 1
 //! ```
 //!

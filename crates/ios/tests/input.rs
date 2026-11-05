@@ -11,7 +11,7 @@
 //! The fixture must be installed.
 //! `input_series` is the measurement, run on a quiet host; it checks the taps
 //! with frames and the swipe with screenshots, so it needs no runner:
-//! `cargo test -p ios --test input -- --ignored --nocapture input_series`.
+//! `cargo test -p mobile-agent-ios --test input -- --ignored --nocapture input_series`.
 
 #![cfg(target_os = "macos")]
 

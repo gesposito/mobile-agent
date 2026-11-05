@@ -337,7 +337,7 @@ pub fn daemon_executable(given: Option<&Path>) -> Result<PathBuf, Failure> {
     Err(Failure::new(
         DAEMON_UNAVAILABLE,
         format!(
-            "cannot find {DAEMON} beside mobile-agent or on PATH; build it with cargo build -p daemon, or set MOBILE_AGENT_DAEMON_BIN"
+            "cannot find {DAEMON} beside mobile-agent or on PATH; build it with cargo build -p mobile-agent-daemon, or set MOBILE_AGENT_DAEMON_BIN"
         ),
     ))
 }

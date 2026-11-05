@@ -1,5 +1,5 @@
 [package]
-name = "simulator"
+name = "mobile-agent-simulator"
 description = "mobile-agent's iOS Simulator driver, entirely from the host: the lifecycle, input through dtuhidd, frames from the display and the tree from an in-guest reader"
 version.workspace = true
 edition.workspace = true
@@ -13,14 +13,15 @@ workspace = true
 
 # The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "simulator"
 bench = false
 
 # The tree payload is the protocol's snapshot; the reader's library holds the
 # conversion into it, which the host translator shares. build.rs builds the
 # reader's binary for the Simulator (README.md, Building).
 [dependencies]
-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
-simulator-reader = { version = "0.1.0-alpha.1", path = "reader" }
+mobile-agent-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+mobile-agent-simulator-reader = { version = "0.1.0-alpha.1", path = "reader" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
@@ -58,7 +59,7 @@ fault-injection = []
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }
-simulator = { path = ".", default-features = false, features = ["fault-injection"] }
+mobile-agent-simulator = { path = ".", default-features = false, features = ["fault-injection"] }
 
 # The microbenchmarks of the frame pipeline (benches/frames.rs), run by mobile-agent-bench micro; criterion's own harness is off.
 [[bench]]

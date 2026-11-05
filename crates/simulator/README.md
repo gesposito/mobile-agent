@@ -1,4 +1,4 @@
-# simulator
+# mobile-agent-simulator
 
 Drives iOS Simulators entirely from the host (design D6, D7 and D12, spec
 `simulator-driver`): the lifecycle through CoreSimulator, input through
@@ -77,7 +77,7 @@ benches/
   frames.rs        the frame pipeline's microbenchmarks (design D14)
 ```
 
-`cargo bench -p simulator -- --noplot [filter]` runs the benchmarks, which
+`cargo bench -p mobile-agent-simulator -- --noplot [filter]` runs the benchmarks, which
 need no Simulator. The library sets `bench = false`, so its test harness
 never sees criterion's flags. `just micro` runs them with the other suites
 against `reports/micro/baseline.json` (design D14 to D16 of the
@@ -97,7 +97,7 @@ The binary does not load libturbojpeg at run time.
 On a host without libjpeg-turbo, build the pure-Rust fallback instead:
 
 ```sh
-cargo build -p simulator --no-default-features --features jpeg-encoder,reader
+cargo build -p mobile-agent-simulator --no-default-features --features jpeg-encoder,reader
 ```
 
 With both features, jpeg-encoder takes over if turbojpeg cannot start. The
@@ -107,8 +107,9 @@ and even `cargo test` has to hold 30 fps.
 
 ### The reader
 
-The tree reader, `reader/` (package `simulator-reader`, a workspace member),
-is built for `aarch64-apple-ios-sim` and embedded in this crate, so nothing
+The tree reader, `reader/` (package `mobile-agent-simulator-reader`, binary
+`simulator-reader`, a workspace member), is built for
+`aarch64-apple-ios-sim` and embedded in this crate, so nothing
 is compiled on the machine that runs the driver. `build.rs` runs a nested
 `cargo build --release --offline --locked` of it for that target, in
 `target/<profile>/simulator-reader-target/`, which leaves an unchanged
@@ -769,7 +770,7 @@ the driver makes with the image it lives in and where it was validated:
 
 ## Tests
 
-`cargo test -p simulator` runs the unit tests. They need macOS with Xcode,
+`cargo test -p mobile-agent-simulator` runs the unit tests. They need macOS with Xcode,
 since some load CoreSimulator, but no Simulator. On other hosts only the
 platform-neutral unit tests run: the tests in `src/macos/` and the
 integration tests in `tests/` (each file `#![cfg(target_os = "macos")]`)
@@ -781,7 +782,7 @@ it skipped and passes. To run them, name a booted iPhone 17 Simulator with
 both fixtures installed and the Expo fixture on its Login tab:
 
 ```sh
-MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
+MOBILE_AGENT_SIM_UDID=<udid> cargo test -p mobile-agent-simulator
 ```
 
 The tree tests use the SwiftUI fixture on the same Simulator and put the

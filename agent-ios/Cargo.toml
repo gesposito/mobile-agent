@@ -1,5 +1,5 @@
 [package]
-name = "agent-ios"
+name = "mobile-agent-ios-runner"
 description = "The iOS runner's agent: the device protocol served from inside an XCTest bundle on a physical iPhone"
 version.workspace = true
 edition.workspace = true
@@ -17,6 +17,7 @@ workspace = true
 # workspace's. The library holds no benchmark; its libtest bench harness,
 # which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "agent_ios"
 crate-type = ["staticlib", "rlib"]
 bench = false
 
@@ -24,6 +25,6 @@ bench = false
 # (`simulator_reader::elements`); the shim hands XCTest's snapshot over as JSON.
 [dependencies]
 libc = "0.2"
-protocol = { version = "0.1.0-alpha.1", path = "../crates/protocol" }
+mobile-agent-protocol = { version = "0.1.0-alpha.1", path = "../crates/protocol" }
+mobile-agent-simulator-reader = { version = "0.1.0-alpha.1", path = "../crates/simulator/reader" }
 serde_json = "1.0.151"
-simulator-reader = { version = "0.1.0-alpha.1", path = "../crates/simulator/reader" }

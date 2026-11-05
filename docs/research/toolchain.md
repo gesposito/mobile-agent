@@ -52,8 +52,8 @@ The new code is 0.7 to 2.8 % faster at p50, and every checksum the measurements 
 ## A bump
 
 1. `rustup toolchain install <version> --profile minimal --component clippy --component rustfmt --target aarch64-apple-ios-sim --no-self-update`.
-2. Change `channel` in `rust-toolchain.toml` and fix what the new lints find, preferring the fix to an `#[allow]`, in three places: `just lint`; the reader for its own target, which `just lint` checks only for the host, with `cargo clippy --release -p simulator-reader --target aarch64-apple-ios-sim --all-targets -- -D warnings`; and `agent-android/host-tests`, its own workspace, with `cargo clippy --manifest-path agent-android/host-tests/Cargo.toml --all-targets -- -D warnings`.
-3. When pixel code changes, time it under the old and the new toolchain with the ignored measurements `pipeline::tests::measure_the_frame_pipeline` (`-p simulator --no-default-features --features jpeg-encoder`) and `session::controller::tests::measure_the_rgb_resize` (`-p android`), each run as `cargo +<version> test --release --lib <test> -- --ignored --nocapture` on a quiet machine.
+2. Change `channel` in `rust-toolchain.toml` and fix what the new lints find, preferring the fix to an `#[allow]`, in three places: `just lint`; the reader for its own target, which `just lint` checks only for the host, with `cargo clippy --release -p mobile-agent-simulator-reader --target aarch64-apple-ios-sim --all-targets -- -D warnings`; and `agent-android/host-tests`, its own workspace, with `cargo clippy --manifest-path agent-android/host-tests/Cargo.toml --all-targets -- -D warnings`.
+3. When pixel code changes, time it under the old and the new toolchain with the ignored measurements `pipeline::tests::measure_the_frame_pipeline` (`-p mobile-agent-simulator --no-default-features --features jpeg-encoder`) and `session::controller::tests::measure_the_rgb_resize` (`-p mobile-agent-android`), each run as `cargo +<version> test --release --lib <test> -- --ignored --nocapture` on a quiet machine.
 4. `just validate`, then CI.
 
 ## Sources

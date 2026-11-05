@@ -1,5 +1,5 @@
 [package]
-name = "daemon"
+name = "mobile-agent-daemon"
 description = "The mobile-agent daemon: one process that holds every device connection and a mirror per attached target, and answers the CLI"
 version.workspace = true
 edition.workspace = true
@@ -10,6 +10,7 @@ publish.workspace = true
 
 # The library and the binary hold no benchmark; their libtest bench harnesses, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "daemon"
 bench = false
 
 [[bin]]
@@ -21,16 +22,16 @@ bench = false
 workspace = true
 
 [dependencies]
-agent-ios = { version = "0.1.0-alpha.1", path = "../../agent-ios" }
-android = { version = "0.1.0-alpha.1", path = "../android" }
 base64 = "0.23.1"
-ios = { version = "0.1.0-alpha.1", path = "../ios" }
 libc = "0.2"
-mirror = { version = "0.1.0-alpha.1", path = "../mirror" }
-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+mobile-agent-android = { version = "0.1.0-alpha.1", path = "../android" }
+mobile-agent-ios = { version = "0.1.0-alpha.1", path = "../ios" }
+mobile-agent-ios-runner = { version = "0.1.0-alpha.1", path = "../../agent-ios" }
+mobile-agent-mirror = { version = "0.1.0-alpha.1", path = "../mirror" }
+mobile-agent-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+mobile-agent-simulator = { version = "0.1.0-alpha.1", path = "../simulator" }
+mobile-agent-wire = { version = "0.1.0-alpha.1", path = "../wire" }
 serde_json = "1.0.151"
-simulator = { version = "0.1.0-alpha.1", path = "../simulator" }
-wire = { version = "0.1.0-alpha.1", path = "../wire" }
 
 [build-dependencies]
 xxhash-rust = { version = "0.8.18", features = ["xxh3"] }

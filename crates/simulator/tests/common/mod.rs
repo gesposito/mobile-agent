@@ -6,7 +6,7 @@
 //! both fixtures installed and on the Expo fixture's Login tab:
 //!
 //! ```sh
-//! MOBILE_AGENT_SIM_UDID=<udid> cargo test -p simulator
+//! MOBILE_AGENT_SIM_UDID=<udid> cargo test -p mobile-agent-simulator
 //! ```
 //!
 //! Tests that create their own devices install the fixtures from

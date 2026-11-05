@@ -1,4 +1,4 @@
-# agent-ios
+# mobile-agent-ios-runner
 
 The resident runner for a physical iPhone (design D20 to D22, spec
 `ios-device-driver`): a Rust static library and an Objective-C shim linked
@@ -18,7 +18,7 @@ host's `dtuhidd`. It replaces spike S10's throwaway runner
 ```
 agent-ios/
   VERSION          the runner's version: its hello's (build.rs) and the bundle's (build.sh)
-  Cargo.toml       crate agent-ios: a static library for aarch64-apple-ios, an rlib for the host's tests
+  Cargo.toml       package mobile-agent-ios-runner, library agent_ios: a static library for aarch64-apple-ios, an rlib for the host's tests
   build.rs         VERSION into the crate as AGENT_IOS_VERSION
   build.sh         builds and signs dist/MobileAgentRunner-Runner.app, no xcodebuild project
   shim/
@@ -85,9 +85,9 @@ just agent-ios-build        # the same, skipped without the team or the iPhoneOS
 
 `build.sh` runs four steps:
 
-1. **The agent.** `cargo build --release --locked -p agent-ios --target
-   aarch64-apple-ios` with `IPHONEOS_DEPLOYMENT_TARGET=17.0`: the static
-   library `libagent_ios.a`.
+1. **The agent.** `cargo build --release --locked -p mobile-agent-ios-runner
+   --target aarch64-apple-ios` with `IPHONEOS_DEPLOYMENT_TARGET=17.0`: the
+   static library `libagent_ios.a`.
 2. **One image.** The iPhoneOS SDK's `clang` compiles `shim/Runner.m` with
    ARC and links it with the library by `clang -bundle` into the test
    bundle's `MH_BUNDLE`, 3.7 MB stripped, linking `@rpath/XCTest.framework`
@@ -373,7 +373,8 @@ screenshot]`, `UIScreen`'s scale.
 
 ## Tests
 
-`cargo test -p agent-ios` runs the host's tests, which need no device:
+`cargo test -p mobile-agent-ios-runner` runs the host's tests, which need no
+device:
 
 - `server`: the hello's name, version and capabilities; requests answered
   through the handler and its failures; `busy` for a request during
@@ -400,11 +401,11 @@ installed and the runner built:
 ```sh
 export MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team>
 export MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app
-cargo test -p ios                    # runner.rs, tree.rs, input.rs among them
-cargo test -p ios --test tree -- --ignored --nocapture tree_series
-cargo test -p ios --test input -- --ignored --nocapture runner_input_series
+cargo test -p mobile-agent-ios                    # runner.rs, tree.rs, input.rs among them
+cargo test -p mobile-agent-ios --test tree -- --ignored --nocapture tree_series
+cargo test -p mobile-agent-ios --test input -- --ignored --nocapture runner_input_series
 # the Simulator's listings tree.rs compares with, on a booted Simulator with both fixtures
-MOBILE_AGENT_SIM_UDID=<udid> cargo test -p ios --test tree -- --ignored --nocapture record
+MOBILE_AGENT_SIM_UDID=<udid> cargo test -p mobile-agent-ios --test tree -- --ignored --nocapture record
 ```
 
 `MOBILE_AGENT_IOS_RUNNER_APP` names the bundle an attach installs when the

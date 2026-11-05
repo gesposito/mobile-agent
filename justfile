@@ -85,17 +85,17 @@ fixtures-build:
 # Run the benchmark harness in release mode, passing arguments through
 [positional-arguments]
 bench *args:
-    cargo run -p bench --release -- "$@"
+    cargo run -p mobile-agent-bench --release -- "$@"
 
 # Run the host microbenchmarks on a quiet host and compare them with reports/micro/baseline.json, passing arguments through
 [positional-arguments]
 micro *args:
-    cargo run -p bench --release -- micro "$@"
+    cargo run -p mobile-agent-bench --release -- micro "$@"
 
 # Compare the host microbenchmarks of the checkout with those of another ref, both built and run here in alternating rounds, passing further arguments through
 [positional-arguments]
 bench-ab base *args:
-    cargo run -p bench --release -- micro --ab "$@"
+    cargo run -p mobile-agent-bench --release -- micro --ab "$@"
 
 # Validate every active OpenSpec change and the main specs in strict mode
 openspec-validate:

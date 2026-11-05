@@ -1,11 +1,11 @@
-# bench
+# mobile-agent-bench
 
 The benchmark harness of design decision D10 and the `benchmark-harness` spec. It measures the spec's primitives through adapters, one per tool, writes a JSON report and a markdown summary from the same data, judges the latency gates, and runs the same flows through Maestro, maestro-runner and agent-device, and on a physical iPhone through WebDriverAgent with Appium's XCUITest driver, for comparison.
 
 The binary is `mobile-agent-bench`; `just bench <arguments>` runs it in release mode. Its `run` measures `mobile-agent` through the CLI adapter on the targets `--target` names, or, with `--fake`, the scripted fake adapter described below, by the full plan of a measured host or the reduced plan of a CI runner (see "The CI plan and the ratios"). Its `micro`, which `just micro <arguments>` runs, times the host-side paths without a device and compares them with a committed baseline, or, with `--ab <ref>`, which `just bench-ab <ref>` runs, with another ref built and run on the same host (see "Microbenchmarks"). Its `trend` sets a report beside the previous scheduled run's in CI (see "Against the previous scheduled run").
 
 ```sh
-cargo build --release -p cli -p daemon -p bench       # mobile-agent, its daemon and the bench, side by side
+cargo build --release -p mobile-agent -p mobile-agent-daemon -p mobile-agent-bench       # mobile-agent, its daemon and the bench, side by side
 target/release/mobile-agent-bench run --target emulator-5554 --out reports/emulator
 target/release/mobile-agent-bench run --target <UDID> --cli target/release/mobile-agent --out reports/simulator
 target/release/mobile-agent-bench run --target emulator-5554 --flow list-scroll --no-baselines --out reports/list-scroll
@@ -352,7 +352,7 @@ just micro --threshold 10 --out target/micro  # a looser threshold, the reports 
 just micro --wait 60 --save-baseline          # refresh the baseline from a quiet run of every suite
 just bench-ab main --wait 60                  # the checkout against main, both built and run here
 just bench-ab v0.1.0 --rounds 5 --filter mirror/  # five rounds each, the mirror's benchmarks only
-cargo bench -p mirror -- --noplot pump        # one suite on its own, with criterion's output only
+cargo bench -p mobile-agent-mirror -- --noplot pump        # one suite on its own, with criterion's output only
 ```
 
 | Flag | Default | Meaning |

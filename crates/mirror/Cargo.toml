@@ -1,5 +1,5 @@
 [package]
-name = "mirror"
+name = "mobile-agent-mirror"
 description = "The live UI replica of one target: its windows, accessibility tree and latest frame, and the listings, waits and settle checks answered from them"
 version.workspace = true
 edition.workspace = true
@@ -13,10 +13,11 @@ workspace = true
 
 # The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "mirror"
 bench = false
 
 [dependencies]
-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+mobile-agent-protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }

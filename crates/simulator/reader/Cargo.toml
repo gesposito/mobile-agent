@@ -1,5 +1,5 @@
 [package]
-name = "simulator-reader"
+name = "mobile-agent-simulator-reader"
 description = "The accessibility tree reader the Simulator driver spawns inside an iOS Simulator"
 version.workspace = true
 edition.workspace = true
@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-protocol = { version = "0.1.0-alpha.1", path = "../../protocol" }
+mobile-agent-protocol = { version = "0.1.0-alpha.1", path = "../../protocol" }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 libc = "0.2"
@@ -20,6 +20,7 @@ objc2-foundation = "0.3.2"
 
 # The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "simulator_reader"
 bench = false
 
 [[bin]]
