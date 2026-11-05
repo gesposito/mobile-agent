@@ -13,7 +13,7 @@
 //! dry-run mode by default, builds the binaries per target, attests and keeps
 //! them, and verifies each download, with no cache (design D2); task 2.1: a
 //! run that is not a dry run then publishes them in the `release`
-//! environment, the job alone that writes. The workflow
+//! environment's gate, its publish job alone writing. The workflow
 //! files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
@@ -623,7 +623,7 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
     );
 
     let jobs = workflow.get("jobs");
-    assert_eq!(jobs.keys(), ["jar", "build", "verify", "publish"]);
+    assert_eq!(jobs.keys(), ["jar", "build", "verify", "gate", "publish"]);
     let matrix: Vec<String> = RELEASE_TARGETS
         .iter()
         .map(|(target, runner)| format!("{{ target: {target}, runner: {runner} }}"))
@@ -744,34 +744,47 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
 }
 
 /// Task 2.1 of `alpha-release` (design D2): a run that is not a dry run
-/// publishes, after every target is built and verified, in a job of its own
-/// in the `release` environment, the one job of the workflow that writes and
-/// with no cache: it refuses a version other than the workspace's or a
-/// changelog without the version's dated section before it touches
+/// publishes once every target is built and verified and the `release`
+/// environment's reviewer has approved its gate, a job that does nothing
+/// else and so ends the commit's deployment to `release` with success, which
+/// the tag ruleset requires before a `v*` tag, a deployment in progress
+/// being refused. The publish job after it, the one job of the workflow that
+/// writes and with no cache, refuses a version other than the workspace's or
+/// a changelog without the version's dated section before it touches
 /// anything, creates a draft pre-release for `v<version>` on the dispatched
 /// commit with the changelog's section as its notes, the three tarballs,
 /// their sums and the notices, then publishes it, which creates the tag, and
 /// reads the tag and the release back. The first job makes the same check
 /// when the run publishes, so that a refused version builds nothing.
 #[test]
-fn the_release_workflow_publishes_a_draft_pre_release_in_the_release_environment_unless_a_dry_run()
-{
+fn the_release_workflow_publishes_a_draft_pre_release_after_the_release_gate_unless_a_dry_run() {
     let workflow = outline(".github/workflows/release.yml");
+    let gate = workflow.at("jobs/gate");
+    assert_eq!(gate.get("needs").text(), "[build, verify]");
+    assert_eq!(gate.get("if").text(), "inputs.dry_run == false");
+    assert_eq!(gate.get("environment").text(), "release");
+    assert_eq!(gate.get("permissions").keys(), ["contents"]);
+    assert_eq!(gate.at("permissions/contents").text(), "read");
+    let text = read(".github/workflows/release.yml");
+    let gating = steps(&text, "gate");
+    assert_eq!(gating.len(), 1, "{gating:#?}");
+    assert!(gating[0].contains("run: echo "), "{}", gating[0]);
+
     let publish = workflow.at("jobs/publish");
-    assert_eq!(publish.get("needs").text(), "[build, verify]");
+    assert_eq!(publish.get("needs").text(), "gate");
     assert_eq!(publish.get("if").text(), "inputs.dry_run == false");
     assert_eq!(publish.get("runs-on").text(), "ubuntu-latest");
-    assert_eq!(publish.at("environment/name").text(), "release");
-    assert_eq!(
-        publish.at("environment/url").text(),
-        "${{ steps.publish.outputs.url }}"
+    // Its own deployment would be in progress when it creates the tag.
+    assert!(
+        !publish.keys().contains(&"environment"),
+        "{:?}",
+        publish.keys()
     );
     // contents: write alone, to create the release and with it the tag.
     assert_eq!(publish.get("permissions").keys(), ["contents"]);
     let contents = publish.at("permissions/contents").text();
     assert_eq!(contents.split(" #").next().unwrap().trim(), "write");
 
-    let text = read(".github/workflows/release.yml");
     let publishing = steps(&text, "publish");
     let position = |wanted: &[&str]| -> usize {
         let step = step_with(&publishing, wanted);
@@ -825,8 +838,8 @@ fn the_release_workflow_publishes_a_draft_pre_release_in_the_release_environment
         "{}",
         publishing[read_back]
     );
-    let url = step_with(&publishing, &["GITHUB_OUTPUT"]);
-    assert!(url.contains("id: publish"), "{url}");
+    let summary = step_with(&publishing, &["GITHUB_STEP_SUMMARY"]);
+    assert!(summary.contains("isPrerelease"), "{summary}");
 
     // The first job refuses the same before any build, when the run publishes.
     let jar = steps(&text, "jar");
