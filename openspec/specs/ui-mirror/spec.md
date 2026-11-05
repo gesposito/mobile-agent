@@ -42,7 +42,7 @@ A snapshot SHALL list elements with role, accessible name, test identifier when 
 - **THEN** visible actionable elements are listed with refs and a hint states that three actionable items are off-screen below
 
 ### Requirement: A node drawn over its sibling covers it
-On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, as a view the platform lists for the background it draws.
+On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, the container taken as far as it lies within that sibling, as a view the platform lists for the background it draws. On Android, where a touch that no view takes goes to the views under it, a node drawn over its siblings that takes no touch, nothing in it clickable, long-clickable or scrollable, SHALL cut nothing.
 
 #### Scenario: Heading under a fixed footer on iOS
 - **WHEN** a consent screen's heading lies within the bounds of an "Accept and continue" button drawn after it in a fixed footer
@@ -52,8 +52,16 @@ On a platform whose tree order is its drawing order, a node drawn after a siblin
 - **WHEN** a control lies within the bounds of a disabled button drawn after it
 - **THEN** the control is cut from the interactive listing, and an action on it fails with `element_covered` naming the button
 
+#### Scenario: A menu read while it comes in
+- **WHEN** a context menu is read while its glass view, listed after the view that holds the menu's list, holds nothing, the list's frame running far past the menu
+- **THEN** the menu's items are listed in view and a click on one lands at its centre
+
+#### Scenario: A chip under its input's layout on Android
+- **WHEN** a time picker's minute chip lies under the minute input's layout, drawn on top, which holds the input's label and its hidden field and nothing that takes a touch
+- **THEN** the chip is listed in view and a click on its ref lands at its centre
+
 ### Requirement: Bars, headers and system windows as covers
-A bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order; every other system window presented over the application, the edit menu among them, SHALL cover what it draws and nothing more.
+A bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order, except the controls it holds itself, which stay reachable, a header pinned across a sibling that scrolls, or holds a scroll view of its own frame through views of that frame, being drawn over that sibling, which covers none of it; every other system window presented over the application, the edit menu among them, SHALL cover what it draws and nothing more.
 
 #### Scenario: Card under a sticky header
 - **WHEN** a list scrolls a card under a header drawn after the list
@@ -62,6 +70,10 @@ A bar or a pinned header SHALL cover what lies within its bounds whatever its pl
 #### Scenario: Control behind a header listed first
 - **WHEN** a navigation bar or a pinned header is listed before the content it is drawn over and a control lies within its bounds
 - **THEN** the control is cut from the interactive listing and an action on it fails with `element_covered` naming the bar
+
+#### Scenario: A button the header holds
+- **WHEN** a card's fixed header holding a close button is listed before the view of the card's content, whose scroll view starts with a header of its own spanning the card's width
+- **THEN** the close button is listed in view and a click on it answers with the button hit
 
 ### Requirement: The keyboard covers what lies under it
 The keyboard window SHALL cover what lies under it, an element wholly under it left out of the interactive listing with the keyboard named, an element partly under it listed with its visible fraction; a keyboard window that draws no keys, as under a hardware keyboard, SHALL cover nothing beyond what it draws and SHALL count as no keyboard.
@@ -246,3 +258,10 @@ An element whose bounds lie within its window's and the screen's bounds and that
 #### Scenario: A collection view's rows
 - **WHEN** a screen holds a scroll container whose content is taller than its frame and whose first rows lie within the frame
 - **THEN** those rows are listed with their refs and marked in view, and the rows below the frame are counted as scrolled away
+
+### Requirement: A listing after a system window closes
+When a tap answers a dialog of system UI's and the replica then holds system UI's windows alone, without the dialog, the mirror SHALL read the application's windows again before the next listing, until they are back or a bound passes, so that the interactive listing lists what the screen shows rather than what system UI left, and a settle right after SHALL count the change.
+
+#### Scenario: An alert dismissed
+- **WHEN** a permission alert is dismissed over an app's first screen
+- **THEN** the next interactive listing lists the screen's controls and a settle right after names the change
