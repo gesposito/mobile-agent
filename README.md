@@ -2,7 +2,7 @@
 
 mobile-agent drives Android devices, Android emulators, iOS Simulators and physical iPhones for AI agents, and is designed around the latency of each tap-and-observe step. A daemon keeps a live mirror of every attached screen (its windows, accessibility tree and latest frame), updates it from the platform's change events and frame callbacks, and answers snapshots, waits and settle checks from that mirror instead of reading the device and sleeping on every request. On Android, a single-dex agent pushed over adb runs as the shell user under `app_process` and holds the device's UI automation role: no APK is installed and no instrumentation runs. On the iOS Simulator the driver works from the host: input goes through the Simulator's dtuhidd HID service, frames come from the display's IOSurface, and the accessibility tree comes from a Rust reader that the daemon spawns into the Simulator, with no XCTest runner and nothing installed. A physical iPhone's tree can be read only from an XCTest runner, so there a Rust runner built in this repository, started through the phone's test manager and kept for the session, serves the tree and text entry over the same device protocol, while the driver does the rest from the host: input through the developer disk image's dtuhidd, frames from screenshots it polls, and the phone's services over a CoreDevice tunnel it opens in its own process, without root or a helper. The `mobile-agent` CLI follows agent-browser's command grammar, `@eN` refs and JSON envelope, so prompts and skills written for agent-browser carry over where devices have the same concepts, and the `mobile-agent-mcp` server gives an MCP client the same tools, refs and replies (Agent surfaces).
 
-**Status.** Experimental and pre-release: alphas of the three binaries are released on GitHub for Macs with Apple silicon and for Linux (Install), nothing is published to crates.io yet, and `main` is the version CI builds and tests on macOS and Linux; the command-line and MCP interfaces may change between alphas. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
+**Status.** Experimental and pre-release: alphas of the three binaries are released on GitHub for Macs with Apple silicon and for Linux and packed for npm as `@mobileagent/cli` (Install), nothing is published to crates.io yet, and `main` is the version CI builds and tests on macOS and Linux; the command-line and MCP interfaces may change between alphas. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
 
 ## Supported platforms
 
@@ -23,7 +23,19 @@ CI (`.github/workflows/ci.yml`) validates and runs no benchmark; the benchmarks 
 
 Experimental, pre-release: the drivers use private Apple Simulator frameworks, Apple's developer services on an iPhone and hidden Android APIs; the command-line and MCP interfaces may change between alphas.
 
-Each pre-release on the [releases page](https://github.com/gesposito/mobile-agent/releases) holds a tarball per target, `mobile-agent-<version>-<target>.tar.gz`, with `mobile-agent`, `mobile-agent-daemon`, `mobile-agent-mcp`, `THIRD-PARTY-NOTICES.md` and the four files' `SHA256SUMS`, and beside it the tarball's own sum, `<tarball>.sha256`. The tarball and its three binaries carry an attestation of the release workflow's run that built them (`.github/workflows/release.yml`), and the release is immutable: its tag and assets cannot change.
+Three ways, the first for an MCP client: npm, the release's tarballs, or crates.io.
+
+**npm.** `@mobileagent/cli` gives the three commands through a small launcher and installs the binaries of the host's target from one platform package, `@mobileagent/cli-darwin-arm64`, `-linux-x64` or `-linux-arm64`, as an optional dependency, with no install script; the binaries are the release's tarballs' (below), and from the second version on npm the release workflow publishes the packages with npm's provenance (`npm/cli/README.md`). It needs Node 22 or newer on the targets below. The package has three commands, so `npx` takes it with `--package` and the command by its name, and `npx mobile-agent-mcp` alone would fetch an unrelated package of that name; `@alpha` is the newest alpha, and `@mobileagent/cli@<version>` keeps one:
+
+```sh
+claude mcp add --transport stdio mobile-agent -- npx -y --package=@mobileagent/cli@alpha mobile-agent-mcp   # Claude Code
+npx -y --package=@mobileagent/cli@alpha mobile-agent --version   # mobile-agent <version> (<the commit's first 12 digits>)
+npm install --global @mobileagent/cli@alpha                      # mobile-agent, mobile-agent-daemon and mobile-agent-mcp on PATH
+```
+
+Codex's, Claude Desktop's and Cursor's entries are in Agent surfaces. On another host, or when optional dependencies are omitted, a command prints the supported platforms and exits 1.
+
+**The release's tarballs.** Each pre-release on the [releases page](https://github.com/gesposito/mobile-agent/releases) holds a tarball per target, `mobile-agent-<version>-<target>.tar.gz`, with `mobile-agent`, `mobile-agent-daemon`, `mobile-agent-mcp`, `THIRD-PARTY-NOTICES.md` and the four files' `SHA256SUMS`, and beside it the tarball's own sum, `<tarball>.sha256`. The tarball and its three binaries carry an attestation of the release workflow's run that built them (`.github/workflows/release.yml`), and the release is immutable: its tag and assets cannot change.
 
 | Target | Host | Drives |
 |---|---|---|
@@ -52,6 +64,8 @@ mobile-agent --version                     # mobile-agent 0.1.0-alpha.1 (<the co
 - The binaries are signed ad hoc by the linker, not notarized. A browser marks what it downloads as quarantined, and macOS may then refuse to run them; `gh`, as above, and `curl -LO https://github.com/gesposito/mobile-agent/releases/download/v$version/$name.tar.gz` mark nothing.
 - On the Mac, the Simulator and iPhone drivers need Xcode 26 or 27, selected with `xcode-select`, with an iOS Simulator runtime (Supported platforms); the Mac's binaries are built on GitHub's `xcode-27` image, with its Xcode 27, and the daemon carries the Simulator reader and the Android agent. A physical iPhone also needs the runner, built and signed for a development team from a checkout of the same version and named by an absolute path in `MOBILE_AGENT_IOS_RUNNER_APP` (Quick start; `agent-ios/README.md`). Android needs the SDK's `platform-tools` (Quick start).
 - Linux hosts drive Android only: the Simulator and iPhone drivers are stubs there (Supported platforms).
+
+**crates.io.** Once the crates are published, `cargo install mobile-agent mobile-agent-daemon mobile-agent-mcp` builds the three from their packages, which lack the Android agent, the Simulator reader and the checkout's libjpeg-turbo settings (Crates).
 
 ## Build
 
@@ -307,7 +321,7 @@ Two surfaces drive the same daemon, and a session one of them leaves is where th
 - **The CLI**, `mobile-agent`, for a shell, a script, a harness and the skills written for agent-browser: it follows that tool's grammar, `@eN` refs and JSON envelope, one process per command at about 5 ms (Agent guide; `crates/cli/README.md`).
 - **The MCP server**, `mobile-agent-mcp`, for a client that calls tools over the Model Context Protocol, Claude Code, Claude Desktop, Codex or Cursor: a stdio server the client starts, with one tool per action an agent drives, 17 with `help`, under agent-browser's names where the concepts match (`snapshot`, `click`, `fill`, `type`, `press`, `swipe`, `scroll`, `screenshot`, `wait`, `get`, `open`, `close`) and the daemon's elsewhere (`devices`, `status`, `doctor`, `diff_snapshot`), input schemas from the request types, results as the CLI prints them, the same refs, codes and sessions, and the agent guide behind its `help` tool. It starts the daemon beside itself on the first call, as the CLI does, acts in a session of its own and releases its target with the app running when it exits (`crates/mcp/README.md`).
 
-Take the CLI where the agent runs commands, the server where the client speaks MCP and would otherwise wrap the CLI in a shell tool. Both come out of `cargo build --release`, and the server takes the CLI's environment (`MOBILE_AGENT_SOCKET_DIR`, `MOBILE_AGENT_DRIVERS` for a phone, the settings file) from the entry that starts it.
+Take the CLI where the agent runs commands, the server where the client speaks MCP and would otherwise wrap the CLI in a shell tool. Both come out of `cargo build --release`, the release's tarballs and the npm package (Install), and the server takes the CLI's environment (`MOBILE_AGENT_SOCKET_DIR`, `MOBILE_AGENT_DRIVERS` for a phone, the settings file) from the entry that starts it.
 
 **Claude Code.** `claude mcp add --transport stdio mobile-agent -- /path/to/target/release/mobile-agent-mcp`, with `--scope project` for a `.mcp.json` the repository shares, or the entry in a JSON file passed as `--mcp-config`, the form the acceptance used:
 
@@ -315,9 +329,15 @@ Take the CLI where the agent runs commands, the server where the client speaks M
 {"mcpServers": {"mobile-agent": {"command": "/path/to/target/release/mobile-agent-mcp", "env": {"MOBILE_AGENT_DRIVERS": "simulator"}}}}
 ```
 
+From npm (Install), `npx` starts the server, the binary's path left to the platform package: `claude mcp add --transport stdio mobile-agent -- npx -y --package=@mobileagent/cli@alpha mobile-agent-mcp`, or in the JSON:
+
+```json
+{"mcpServers": {"mobile-agent": {"command": "npx", "args": ["-y", "--package=@mobileagent/cli@alpha", "mobile-agent-mcp"]}}}
+```
+
 The permission rule for every tool of the server is `mcp__mobile-agent__*`, which print mode (`claude -p --allowedTools`) needs, since it cannot ask.
 
-**Claude Desktop.** The same entry under `mcpServers` in `claude_desktop_config.json` (Settings, Developer, Edit Config), with the binary's full path, since the app does not read a shell's `PATH`:
+**Claude Desktop.** The same entry under `mcpServers` in `claude_desktop_config.json` (Settings, Developer, Edit Config), with the binary's full path, since the app does not read a shell's `PATH`, or the `npx` entry above with `npx`'s full path (`command -v npx`):
 
 ```json
 {"mcpServers": {"mobile-agent": {"command": "/path/to/target/release/mobile-agent-mcp", "args": [], "env": {}}}}
@@ -331,9 +351,11 @@ command = "/path/to/target/release/mobile-agent-mcp"
 default_tools_approval_mode = "approve"   # "writes" asks before each acting tool in the interactive client
 ```
 
+From npm, `command = "npx"` and `args = ["-y", "--package=@mobileagent/cli@alpha", "mobile-agent-mcp"]` in place of the path.
+
 Codex gives a call 60 s, which the server's bound of 55 s stays under, and shows the model a result's `structuredContent` alone when there is one, so leave `--structured` off there (`docs/research/agent-surfaces.md`, How the clients consume servers).
 
-**Cursor.** The same JSON as Claude Code's in the project's `.cursor/mcp.json` or in `~/.cursor/mcp.json`.
+**Cursor.** The same JSON as Claude Code's, either form, in the project's `.cursor/mcp.json` or in `~/.cursor/mcp.json`.
 
 The server's flags, each in `crates/mcp/README.md`:
 

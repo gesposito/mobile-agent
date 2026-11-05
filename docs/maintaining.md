@@ -66,5 +66,23 @@ Paths start from the repository's **Settings** tab; "Rules" and "Actions" sit un
 - [ ] Optional: in the same environment, untick **Allow administrators to bypass configured protection rules**, so that no one starts the gate without the review. The REST API has no field for it, and it reads `"can_admins_bypass": true`.
 - [x] Artifact attestations for the binaries: the release workflow's build job attests each tarball and its binaries (design D2 of `openspec/changes/alpha-release`).
 - [ ] Trusted publishing on crates.io for each crate published, after its first manual publish (`docs/research/open-sourcing.md`, What a first release will need).
+- [ ] npm, the organisation: on npmjs.com, signed in with two-factor authentication, the avatar's menu, **Add Organization**, named `mobileagent`, on the free plan, for public packages. The four packages are `@mobileagent/cli` and `@mobileagent/cli-darwin-arm64`, `-linux-x64` and `-linux-arm64` (design D7 of `openspec/changes/alpha-release`).
+- [ ] npm, the first publish, by hand: a trusted publisher can be added only to a package that exists. In an empty directory, from a checkout of `main`, with the version of a published release and npm prompting for the second factor at each publish:
+  ```sh
+  version=0.1.0-alpha.1
+  mkdir dist npm
+  gh release download "v$version" -R gesposito/mobile-agent -D dist -p '*.tar.gz' -p '*.tar.gz.sha256'
+  for tarball in dist/*.tar.gz; do
+    gh attestation verify "$tarball" -R gesposito/mobile-agent --signer-workflow gesposito/mobile-agent/.github/workflows/release.yml
+  done
+  <checkout>/npm/pack.sh "$version" dist npm      # the four packages, each listing exactly its files
+  npm login
+  for package in cli-darwin-arm64 cli-linux-x64 cli-linux-arm64 cli; do
+    npm publish "./npm/mobileagent-$package-$version.tgz" --access public --tag alpha
+  done
+  npm logout
+  ```
+  - `npm view @mobileagent/cli dist-tags` names the version under `alpha`, and `npx -y --package=@mobileagent/cli@alpha mobile-agent --version` prints it on a host with no checkout.
+- [ ] npm, a trusted publisher per package, within the 48 hours before the release run that publishes to npm next, since one that has not published by then expires: on npmjs.com, each package's **Settings > Trusted publishing > GitHub Actions**, Organization or user and Repository the two halves of `gesposito/mobile-agent`, Workflow filename `release.yml`, Environment name `release`, and under **Allowed actions** `npm publish` ticked, which configurations created after 2026-09-03 leave off. The same from npm 11.15.0 or newer: `npm trust github @mobileagent/<package> --repo gesposito/mobile-agent --file release.yml --env release --allow-publish --yes` for each of the four. Then, once the run has published, each package's **Settings > Publishing access > Require two-factor authentication and disallow tokens**, which leaves trusted publishing working.
 
-A release, once the items above are ticked: the version in `Cargo.toml`'s `[workspace.package]` and its section in `CHANGELOG.md` headed `## <version> — <YYYY-MM-DD>`, the day of the release, on `main` through a pull request; then **Actions > Release > Run workflow** on `main` with the version and **dry_run** unticked, or `gh workflow run release.yml --ref main -f version=<version> -f dry_run=false`. Once every target is built and verified, the run waits on its **Release gate**: **Review deployments**, tick `release`, **Approve and deploy**. The publish job then creates the pre-release and its tag `v<version>`; a version other than the workspace's, or a section that is missing, undated or empty, is refused before anything is built.
+A release, once the items above are ticked: the version in `Cargo.toml`'s `[workspace.package]` and its section in `CHANGELOG.md` headed `## <version> — <YYYY-MM-DD>`, the day of the release, on `main` through a pull request; then **Actions > Release > Run workflow** on `main` with the version and **dry_run** unticked, or `gh workflow run release.yml --ref main -f version=<version> -f dry_run=false`. Once every target is built and verified, the run waits on its **Release gate**: **Review deployments**, tick `release`, **Approve and deploy**. The publish job then creates the pre-release and its tag `v<version>`; a version other than the workspace's, or a section that is missing, undated or empty, is refused before anything is built. Once the release is published, **Publish to npm** waits on `release` too, a second **Review deployments**, then publishes the four npm packages the run packed from its tarballs, with provenance, under the prerelease's tag; a package whose version npm holds already is skipped, so **Re-run failed jobs** finishes a run that stopped halfway.
