@@ -27,6 +27,11 @@ name: Release
 # publish-npm job publishes them after the release, in the release
 # environment, with npm's trusted publishing and provenance and no npm
 # token; a dry run publishes them with --dry-run, outside the environment.
+# The publish-crates job publishes the crates to crates.io after the
+# release too, in the same environment, with crates.io's trusted publishing
+# and no crates.io token, each after the crates it depends on, skipping a
+# version crates.io holds; a dry run packages and verifies them all at once
+# with cargo publish --dry-run --workspace, outside the environment.
 # No job uses a cache.
 on:
   workflow_dispatch:
@@ -474,9 +479,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The release environment's reviewer approves a run that publishes, a second approval after the
-    # gate's, from main alone, and each package's trusted publisher on npm names the environment, so
-    # that no job outside it can publish; a dry run has no environment, no deployment and nothing to
-    # approve.
+    # gate's, which publish-crates, waiting on the environment at the same time, shares, from main
+    # alone, and each package's trusted publisher on npm names the environment, so that no job
+    # outside it can publish; a dry run has no environment, no deployment and nothing to approve.
     environment: ${{ !inputs.dry_run && 'release' || '' }}
     permissions:
       contents: read
@@ -525,4 +530,106 @@ jobs:
             fi
             npm publish "./mobileagent-$package-$VERSION.tgz" --provenance --access public --tag "$tag" "${flags[@]}"
             echo "- \`$name@$VERSION\` under \`$tag\`${flags:+, a dry run}" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [publish, verify]
+    # After the release is published, so that crates.io never holds a version the release lacks; a
+    # dry run, which has no gate and no release, packages and verifies the crates and uploads none.
+    if: ${{ !cancelled() && needs.verify.result == 'success' && (inputs.dry_run || needs.publish.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # As for publish-npm: the release environment's reviewer approves a run that publishes, from main
+    # alone, and each crate's trusted publisher on crates.io names the environment, so that no job
+    # outside it can publish. This job and publish-npm wait on the environment at the same time,
+    # once the release is published, and one review approves both. A dry run has no environment, no
+    # deployment and nothing to approve.
+    environment: ${{ !inputs.dry_run && 'release' || '' }}
+    permissions:
+      contents: read
+      id-token: write # the OIDC token crates.io's trusted publishing exchanges for a publish token
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+      # Each crate after the workspace's crates it depends on, which the workflow tests check against
+      # cargo metadata (crates/bench/tests/workflow.rs); mobile-agent-bench does not publish.
+      CRATES: |
+        mobile-agent-protocol
+        mobile-agent-wire
+        mobile-agent-simulator-reader
+        mobile-agent-mirror
+        mobile-agent-ios-runner
+        mobile-agent-android
+        mobile-agent-simulator
+        mobile-agent-ios
+        mobile-agent-daemon
+        mobile-agent
+        mobile-agent-mcp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        # cargo publish builds each crate from its package before it uploads it. No cache.
+        run: rustup toolchain install --no-self-update
+      - name: Package and verify every crate together, a dry run
+        # A crate's own dry run looks its dependencies up on crates.io, which holds none at a version
+        # not published yet; the workspace's dry run builds each crate's package against the others'
+        # packages instead.
+        if: inputs.dry_run
+        run: cargo publish --dry-run --workspace --locked
+      - name: Exchange the job's OIDC token for a crates.io token
+        # crates.io answers with a token that publishes new versions of every crate whose trusted
+        # publisher names this repository, release.yml and the release environment, for 30 minutes;
+        # the action's post step revokes it when the job ends.
+        if: ${{ !inputs.dry_run }}
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish the crates in order, each unless crates.io holds its version already
+        # cargo publish verifies a crate by building its package against the crates before it, now on
+        # crates.io, and waits for the index to list it. A version crates.io holds is skipped, so that
+        # Re-run failed jobs finishes a run that stopped halfway; a dry run publishes none.
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          mapfile -t crates < <(printf '%s' "$CRATES")
+          version=$(cargo metadata --format-version 1 --no-deps --locked | jq -r \
+            '[.packages[] | select(.publish != []) | .version] | unique | if length == 1 then .[0] else error("the crates have several versions") end')
+          if [ "$DRY_RUN" != true ] && [ "$version" != "$VERSION" ]; then
+            echo "::error::the crates are at $version, not at the release's version, $VERSION"
+            exit 1
+          fi
+          published() {
+            # crates.io's API answers 200 for a version it holds and 404 for one it does not, and its
+            # crawler policy asks for a user agent that names the client.
+            status=$(curl -sS --retry 3 -o /dev/null -w '%{http_code}' \
+              -A "mobile-agent release workflow ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY)" \
+              "https://crates.io/api/v1/crates/$1/$version")
+            case $status in
+              200) return 0 ;;
+              404) return 1 ;;
+              *) echo "::error::crates.io's API answered '$status' for $1 $version" && exit 1 ;;
+            esac
+          }
+          {
+            echo "## crates.io"
+            echo
+            if [ "$DRY_RUN" = true ]; then
+              echo "A dry run on $GITHUB_SHA: \`cargo publish --dry-run --workspace --locked\` packaged and verified the crates at the workspace's version, $version, and uploaded none."
+            else
+              echo "Version $version on $GITHUB_SHA."
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for crate in "${crates[@]}"; do
+            if published "$crate"; then
+              outcome="on crates.io already: skipped"
+            elif [ "$DRY_RUN" = true ]; then
+              outcome="not on crates.io: a run that publishes publishes it"
+            else
+              cargo publish --locked -p "$crate"
+              outcome=published
+            fi
+            echo "$crate $version: $outcome"
+            echo "- \`$crate@$version\`: $outcome" >> "$GITHUB_STEP_SUMMARY"
           done
