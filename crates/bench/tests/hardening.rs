@@ -5,7 +5,9 @@
 //! its credentials, and the tools come from lockfiles or from releases
 //! pinned with their SHA-256; CI lints and audits the workflows. Task 3.6 of
 //! `ci-benchmarks`: a checkout fetches the head commit alone unless its job
-//! reads history, and no step waits a fixed time. The files
+//! reads history, and no step waits a fixed time. Task 1.2 of
+//! `alpha-release`: the release workflow is held to the same rules, its
+//! build job alone writing, an OIDC token and attestations. The files
 //! are read as text, line by line: a job is the block under `jobs:` that
 //! starts at two spaces of indentation, a step the block that starts with
 //! `- ` at six.
@@ -15,10 +17,22 @@ use std::path::Path;
 
 use serde_json::Value;
 
-const WORKFLOWS: [&str; 3] = [
+const WORKFLOWS: [&str; 4] = [
     ".github/workflows/ci.yml",
     ".github/workflows/benchmarks.yml",
     ".github/workflows/device-tests.yml",
+    ".github/workflows/release.yml",
+];
+
+/// The only write scopes any job is granted: the release's build job mints
+/// an OIDC token for Sigstore and stores the attestations it signs.
+const WRITES: [(&str, &str, &str); 2] = [
+    (".github/workflows/release.yml", "build", "id-token: write"),
+    (
+        ".github/workflows/release.yml",
+        "build",
+        "attestations: write",
+    ),
 ];
 
 /// The text of `path`, relative to the repository root.
@@ -116,9 +130,13 @@ fn every_workflow_starts_without_permissions_and_each_job_asks_for_the_least_it_
             );
             for permission in &granted {
                 assert!(
-                    permission.ends_with(": read"),
+                    permission.ends_with(": read")
+                        || WRITES.contains(&(path, job.as_str(), *permission)),
                     "{path}: {job} grants {permission}"
                 );
+            }
+            for (_, _, write) in WRITES.iter().filter(|(p, j, _)| *p == path && j == job) {
+                assert!(granted.contains(write), "{path}: {job} {granted:?}");
             }
             // A job that reads this repository's workflow runs and their
             // artifacts through the API needs the actions scope, and only it.
@@ -315,6 +333,8 @@ fn each_checkout_fetches_the_head_alone_unless_its_job_reads_history() {
         (".github/workflows/benchmarks.yml", "harness-emulator", "1"),
         (".github/workflows/device-tests.yml", "simulator", "1"),
         (".github/workflows/device-tests.yml", "emulator", "1"),
+        (".github/workflows/release.yml", "jar", "1"),
+        (".github/workflows/release.yml", "build", "1"),
     ];
     let mut seen = Vec::new();
     for path in WORKFLOWS {
