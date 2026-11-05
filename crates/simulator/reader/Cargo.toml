@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-protocol = { version = "0.1.0", path = "../../protocol" }
+protocol = { version = "0.1.0-alpha.1", path = "../../protocol" }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 libc = "0.2"

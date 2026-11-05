@@ -21,16 +21,16 @@ bench = false
 workspace = true
 
 [dependencies]
-agent-ios = { version = "0.1.0", path = "../../agent-ios" }
-android = { version = "0.1.0", path = "../android" }
+agent-ios = { version = "0.1.0-alpha.1", path = "../../agent-ios" }
+android = { version = "0.1.0-alpha.1", path = "../android" }
 base64 = "0.23.1"
-ios = { version = "0.1.0", path = "../ios" }
+ios = { version = "0.1.0-alpha.1", path = "../ios" }
 libc = "0.2"
-mirror = { version = "0.1.0", path = "../mirror" }
-protocol = { version = "0.1.0", path = "../protocol" }
+mirror = { version = "0.1.0-alpha.1", path = "../mirror" }
+protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
 serde_json = "1.0.151"
-simulator = { version = "0.1.0", path = "../simulator" }
-wire = { version = "0.1.0", path = "../wire" }
+simulator = { version = "0.1.0-alpha.1", path = "../simulator" }
+wire = { version = "0.1.0-alpha.1", path = "../wire" }
 
 [build-dependencies]
 xxhash-rust = { version = "0.8.18", features = ["xxh3"] }

@@ -16,8 +16,8 @@ publish.workspace = true
 [dependencies]
 plist = "1.10.1"
 png = "0.18.1"
-protocol = { version = "0.1.0", path = "../protocol" }
-simulator = { version = "0.1.0", path = "../simulator", default-features = false, features = ["jpeg-encoder"] }
+protocol = { version = "0.1.0-alpha.1", path = "../protocol" }
+simulator = { version = "0.1.0-alpha.1", path = "../simulator", default-features = false, features = ["jpeg-encoder"] }
 
 [lints]
 workspace = true
@@ -30,8 +30,8 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "time", "sync", "ma
 # through the mirror beside the Simulator reader's, which the Simulator
 # driver records with its reader.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-agent-ios = { version = "0.1.0", path = "../../agent-ios" }
+agent-ios = { version = "0.1.0-alpha.1", path = "../../agent-ios" }
 libc = "0.2"
-mirror = { version = "0.1.0", path = "../mirror" }
+mirror = { version = "0.1.0-alpha.1", path = "../mirror" }
 ns-keyed-archive = "0.1.5"
-simulator = { version = "0.1.0", path = "../simulator", default-features = false, features = ["jpeg-encoder", "reader"] }
+simulator = { version = "0.1.0-alpha.1", path = "../simulator", default-features = false, features = ["jpeg-encoder", "reader"] }
