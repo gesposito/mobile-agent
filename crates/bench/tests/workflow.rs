@@ -8,7 +8,11 @@
 //! package and a test filter (task 3.4). Task 3.6 of `ci-benchmarks`: a
 //! change to documentation alone skips CI's Linux and macOS jobs, whose
 //! checks keep reporting, and the device tests' emulator teardown passes
-//! once the runner's step has stopped the emulator. The workflow files are read with an
+//! once the runner's step has stopped the emulator. Task 1.2 of
+//! `alpha-release`: the release workflow, dispatched with a version and in
+//! dry-run mode by default, builds the binaries per target, attests and keeps
+//! them, and verifies each download, with no cache (design D2). The workflow
+//! files are read with an
 //! outline of YAML's block mappings, enough for their keys: indentation opens
 //! a key's children, a list item holds a value, and a block scalar's lines,
 //! more indented than its key, are skipped; a job's steps are read as text.
@@ -577,4 +581,150 @@ fn a_change_to_documentation_alone_skips_the_heavy_ci_jobs_and_keeps_their_check
         justfile.contains("\nopenspec-validate:\n    openspec validate --all --strict\n"),
         "just openspec-validate runs the validation"
     );
+}
+
+/// The targets of the release, each with the runner that builds it and
+/// runs its binaries: the Mac with Xcode on the image of CI's Xcode 27 job,
+/// and both Linux architectures on the oldest Ubuntu GitHub hosts, whose
+/// glibc the binaries then need at least (docs/research/alpha-release.md).
+const RELEASE_TARGETS: [(&str, &str); 3] = [
+    ("aarch64-apple-darwin", "xcode-27"),
+    ("x86_64-unknown-linux-gnu", "ubuntu-22.04"),
+    ("aarch64-unknown-linux-gnu", "ubuntu-22.04-arm"),
+];
+
+/// Task 1.2 of `alpha-release` (design D2): the release workflow runs on a
+/// dispatch alone, naming the version and in dry-run mode unless told
+/// otherwise, one run at a time and never cancelled; the Android agent's
+/// jar is built once for every daemon, and each target's job builds the
+/// three binaries for the version, packs them with the notices and their
+/// SHA-256 sums, attests them and keeps them for 90 days; a job per target
+/// then downloads every tarball, verifies its attestation and runs its own
+/// binaries. No job uses a cache.
+#[test]
+fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch() {
+    let workflow = outline(".github/workflows/release.yml");
+    assert_eq!(workflow.get("on").keys(), ["workflow_dispatch"]);
+    let inputs = workflow.at("on/workflow_dispatch/inputs");
+    assert_eq!(inputs.keys(), ["version", "dry_run"]);
+    assert_eq!(inputs.at("version/type").text(), "string");
+    assert_eq!(inputs.at("version/required").text(), "true");
+    assert_eq!(inputs.at("dry_run/type").text(), "boolean");
+    assert_eq!(inputs.at("dry_run/default").text(), "true");
+    assert_eq!(
+        workflow.at("concurrency/group").text(),
+        "${{ github.workflow }}"
+    );
+    assert_eq!(
+        workflow.at("concurrency/cancel-in-progress").text(),
+        "false"
+    );
+
+    let jobs = workflow.get("jobs");
+    assert_eq!(jobs.keys(), ["jar", "build", "verify"]);
+    let matrix: Vec<String> = RELEASE_TARGETS
+        .iter()
+        .map(|(target, runner)| format!("{{ target: {target}, runner: {runner} }}"))
+        .collect();
+    for (job, needs) in [("build", "jar"), ("verify", "build")] {
+        let job = jobs.get(job);
+        assert_eq!(job.get("needs").text(), needs, "{}", job.key);
+        assert_eq!(
+            job.get("runs-on").text(),
+            "${{ matrix.runner }}",
+            "{}",
+            job.key
+        );
+        assert_eq!(job.at("strategy/fail-fast").text(), "false", "{}", job.key);
+        assert_eq!(
+            job.at("strategy/matrix/include").items,
+            matrix,
+            "{}",
+            job.key
+        );
+    }
+    // The Mac's binaries carry the Simulator reader built by the Xcode of
+    // CI's Xcode 27 job.
+    let ci = outline(".github/workflows/ci.yml");
+    assert_eq!(RELEASE_TARGETS[0].1, ci.at("jobs/macos-27/runs-on").text());
+    // Attesting needs an OIDC token and the attestations scope, on the
+    // build job alone; verify reads.
+    // The scope without the comment that explains it.
+    let scope = |path: &str| -> String {
+        let value = jobs.at(path).text();
+        value.split(" #").next().unwrap_or(value).trim().to_owned()
+    };
+    assert_eq!(scope("build/permissions/id-token"), "write");
+    assert_eq!(scope("build/permissions/attestations"), "write");
+    assert_eq!(scope("verify/permissions/attestations"), "read");
+
+    let text = read(".github/workflows/release.yml");
+    // The jar: built once, from agent-android, and handed to each build.
+    let jar = steps(&text, "jar");
+    step_with(&jar, &["run: agent-android/build.sh"]);
+    step_with(
+        &jar,
+        &["uses: actions/upload-artifact@", "name: agent-android-jar"],
+    );
+    let build = steps(&text, "build");
+    step_with(
+        &build,
+        &[
+            "uses: actions/download-artifact@",
+            "name: agent-android-jar",
+        ],
+    );
+    // The version reaches the CLI through the environment, never inline.
+    let compile = step_with(&build, &["cargo build --release --locked"]);
+    for wanted in [
+        "-p cli -p daemon -p mcp",
+        "--target \"$TARGET\"",
+        "MOBILE_AGENT_RELEASE: ${{ inputs.version }}",
+        "MOBILE_AGENT_JAR:",
+    ] {
+        assert!(compile.contains(wanted), "{wanted} in {compile}");
+    }
+    let pack = step_with(&build, &["tar -czf"]);
+    for wanted in [
+        "mobile-agent-$VERSION-$TARGET",
+        "THIRD-PARTY-NOTICES.md",
+        "shasum -a 256",
+        "SHA256SUMS",
+    ] {
+        assert!(pack.contains(wanted), "{wanted} in {pack}");
+    }
+    let attest = step_with(&build, &["uses: actions/attest@"]);
+    assert!(attest.contains("subject-path:"), "{attest}");
+    let upload = step_with(&build, &["uses: actions/upload-artifact@"]);
+    for wanted in ["retention-days: 90", "if-no-files-found: error"] {
+        assert!(upload.contains(wanted), "{wanted} in {upload}");
+    }
+    let verify = steps(&text, "verify");
+    step_with(
+        &verify,
+        &[
+            "uses: actions/download-artifact@",
+            "pattern: mobile-agent-*",
+        ],
+    );
+    let attested = step_with(&verify, &["gh attestation verify"]);
+    for wanted in [
+        "--signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/release.yml\"",
+        "--source-digest \"$GITHUB_SHA\"",
+        "--deny-self-hosted-runners",
+    ] {
+        assert!(attested.contains(wanted), "{wanted} in {attested}");
+    }
+    let ran = step_with(&verify, &["./mobile-agent --version"]);
+    assert!(ran.contains("shasum -a 256 -c SHA256SUMS"), "{ran}");
+
+    // No cache: none of the cache actions, and every tool's own cache off.
+    for cache in ["actions/cache", "rust-cache", "cache-dependency-path"] {
+        assert!(!text.contains(cache), "release.yml uses {cache}");
+    }
+    for line in text.lines() {
+        if let Some(value) = line.trim().strip_prefix("cache: ") {
+            assert_eq!(value, "false", "{line}");
+        }
+    }
 }
