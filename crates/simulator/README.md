@@ -137,6 +137,29 @@ is for `aarch64-apple-ios` too, where the physical iPhone's runner
 snapshot call stays the Simulator's, since the runner's sandbox refuses it
 on a device (design D21 of `physical-ios`).
 
+### From the crate's package
+
+A build of the crate's package, the one crates.io serves, which `cargo
+install mobile-agent-daemon` makes, differs from a checkout's in two ways.
+It reads no `.cargo/config.toml` of this repository, so on macOS it finds
+libjpeg-turbo only where the environment names it; without that,
+`turbojpeg-sys` fails with "TURBOJPEG_SOURCE is set to 'explicit', but
+TURBOJPEG_LIB_DIR is not set":
+
+```sh
+brew install jpeg-turbo
+TURBOJPEG_LIB_DIR="$(brew --prefix jpeg-turbo)/lib" \
+TURBOJPEG_INCLUDE_DIR="$(brew --prefix jpeg-turbo)/include" \
+TURBOJPEG_STATIC=1 cargo install mobile-agent-daemon
+```
+
+And the package leaves out `reader/`, a package of its own
+(`mobile-agent-simulator-reader`, whose library this crate depends on), so
+such a build embeds no reader and reads trees through the host translator,
+unless `MOBILE_AGENT_READER` names a reader built in a checkout; `doctor`
+says which. The release's daemon for `aarch64-apple-darwin` carries the
+reader (the top README, Install).
+
 ### Hosts other than macOS
 
 On other hosts, such as the Linux CI job, the crate builds without its

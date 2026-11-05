@@ -6,8 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// The agent version this driver deploys: `agent-android/VERSION`, which
-/// `build.sh` compiles into the agent's banner and hello.
-pub const AGENT_VERSION: &str = include_str!("../../../../agent-android/VERSION").trim_ascii();
+/// `build.sh` compiles into the agent's banner and hello, read through the
+/// crate's `AGENT_VERSION`, a link to it that the crate's package holds as a
+/// copy of the file.
+pub const AGENT_VERSION: &str = include_str!("../../AGENT_VERSION").trim_ascii();
 
 /// The name every agent build puts before its version in its hello.
 pub const AGENT_NAME: &str = "mobile-agent-android";

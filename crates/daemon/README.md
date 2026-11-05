@@ -19,13 +19,19 @@ with neither the source tree nor `MOBILE_AGENT_JAR`. The build fails, with
 the script's output, when the jar cannot be built; `MOBILE_AGENT_JAR` at
 build time embeds a prebuilt jar instead, and `SKIP_AGENT_BUILD=1` embeds
 none (the CI jobs without the Android SDK set it), leaving a daemon that
-deploys an agent only from the jar `MOBILE_AGENT_JAR` names at run time.
-`MOBILE_AGENT_JAR` at run time takes precedence over the embedded jar, for
-development. The library holds the server, the target registry, the driver
-contract, the device drivers (the Simulator driver of `crates/simulator`,
-the physical iPhone driver of `crates/ios` and the Android driver of
-`crates/android` behind the mirror's backend traits) and the fake driver
-every test without a device runs on.
+deploys an agent only from the jar `MOBILE_AGENT_JAR` names at run time. So
+does a build of the crate's package, the one crates.io serves, which
+`cargo install mobile-agent-daemon` makes: the package cannot hold
+`agent-android`, outside the crate, so `build.rs` warns and embeds none, and
+the same build embeds no Simulator reader (`crates/simulator/README.md`,
+From the crate's package); every release daemon carries the agent, and the
+Mac's the reader too (the top README, Install). `MOBILE_AGENT_JAR` at run
+time takes precedence over the embedded jar, for development. The library
+holds the server, the target registry, the driver contract, the device
+drivers (the Simulator driver of `crates/simulator`, the physical iPhone
+driver of `crates/ios` and the Android driver of `crates/android` behind the
+mirror's backend traits) and the fake driver every test without a device
+runs on.
 
 ## Layout
 

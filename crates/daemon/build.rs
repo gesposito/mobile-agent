@@ -6,7 +6,9 @@
 //! other profiles never share its `out/` and `dist/`, and the source tree is
 //! left alone. `MOBILE_AGENT_JAR` names a prebuilt jar to embed instead;
 //! `SKIP_AGENT_BUILD=1` embeds none, for hosts without the Android SDK and a
-//! Kotlin compiler, and the daemon then refuses to deploy an agent unless
+//! Kotlin compiler, and so does a build without `../../agent-android`, as of
+//! the crate's package from crates.io, which cannot hold the agent's
+//! sources; the daemon then refuses to deploy an agent unless
 //! `MOBILE_AGENT_JAR` names one at run time. Any other failure to produce
 //! the jar fails the build, with the script's output.
 
@@ -52,6 +54,14 @@ fn main() {
             println!(
                 "cargo:warning=SKIP_AGENT_BUILD=1: this daemon embeds no Android agent and \
                  deploys one only from the jar MOBILE_AGENT_JAR names at run time"
+            );
+            Vec::new()
+        }
+        None if !agent.join("build.sh").is_file() => {
+            println!(
+                "cargo:warning=the Android agent's sources, ../../agent-android, are not there, \
+                 as in the crate's package from crates.io: this daemon embeds no Android agent \
+                 and deploys one only from the jar MOBILE_AGENT_JAR names at run time"
             );
             Vec::new()
         }
