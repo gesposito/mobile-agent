@@ -4,7 +4,7 @@
 //! starts over, ending the runner process the pull left behind (S10 saw it
 //! outlive the pull).
 //!
-//! `cargo test -p ios --test containment -- --ignored --nocapture`: the test
+//! `cargo test -p mobile-agent-ios --test containment -- --ignored --nocapture`: the test
 //! says on standard error when to pull the cable and when to plug it back,
 //! and waits up to ten minutes for each.
 

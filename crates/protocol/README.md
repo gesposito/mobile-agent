@@ -1,4 +1,4 @@
-# protocol
+# mobile-agent-protocol
 
 The wire protocol between the host daemon and every device agent (design D4,
 spec `device-protocol`): the message schema, framing, the handshake and
@@ -27,7 +27,7 @@ tests/           one file per task: schema, framing, handshake, events, liveness
 benches/         codec.rs: microbenchmarks of the codec and the framing; support/: their seeded inputs and the counting allocator
 ```
 
-`cargo bench -p protocol -- --noplot [filter]` runs the benchmarks of design
+`cargo bench -p mobile-agent-protocol -- --noplot [filter]` runs the benchmarks of design
 D14 of the `microbenchmarks` change with criterion's default settings, about
 10 s each, and prints each one's allocations per iteration as
 `allocations <id> <allocations> <bytes>`. A number that goes into a report
@@ -327,8 +327,8 @@ windows (`request_snapshot_evict`), one evicting windows by id
 `agent-android/codec-test/Samples.kt` builds the same values in Kotlin.
 
 ```sh
-cargo test -p protocol                                   # includes the golden checks
-PROTOCOL_UPDATE_GOLDEN=1 cargo test -p protocol --test golden   # rewrite golden/ after a deliberate change
+cargo test -p mobile-agent-protocol                                   # includes the golden checks
+PROTOCOL_UPDATE_GOLDEN=1 cargo test -p mobile-agent-protocol --test golden   # rewrite golden/ after a deliberate change
 agent-android/codec-test.sh --write-golden               # Kotlin checks on the host JVM and a device; rewrites golden/kotlin/
 agent-android/codec-test.sh --host-only                  # the host JVM only
 ```

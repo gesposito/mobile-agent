@@ -679,7 +679,7 @@ fn the_release_workflow_builds_attests_and_verifies_the_binaries_on_a_dispatch()
     // The version reaches the CLI through the environment, never inline.
     let compile = step_with(&build, &["cargo build --release --locked"]);
     for wanted in [
-        "-p cli -p daemon -p mcp",
+        "-p mobile-agent -p mobile-agent-daemon -p mobile-agent-mcp",
         "--target \"$TARGET\"",
         "MOBILE_AGENT_RELEASE: ${{ inputs.version }}",
         "MOBILE_AGENT_JAR:",

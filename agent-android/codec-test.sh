@@ -16,7 +16,8 @@
 #      every Kotlin sample must encode to the frame the Rust crate wrote, byte
 #      for byte, and every Rust frame must decode and encode back to itself.
 #      With --write-golden it also writes the Kotlin frames to
-#      crates/protocol/golden/kotlin, which `cargo test -p protocol` decodes.
+#      crates/protocol/golden/kotlin, which
+#      `cargo test -p mobile-agent-protocol` decodes.
 #      It then runs each check of unit-test/, such as KeyboardAreaTestKt.
 #   4. Unless --host-only, the jar and the golden frames are pushed to a fresh
 #      directory under /data/local/tmp on the only connected device, or the one

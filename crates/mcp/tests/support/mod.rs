@@ -58,7 +58,7 @@ pub fn daemon_bin() -> PathBuf {
                 "build",
                 "--quiet",
                 "-p",
-                "daemon",
+                "mobile-agent-daemon",
                 "--bin",
                 "mobile-agent-daemon",
             ])
@@ -67,7 +67,10 @@ pub fn daemon_bin() -> PathBuf {
             cargo.arg("--release");
         }
         let status = cargo.status().expect("cargo runs");
-        assert!(status.success(), "cargo build -p daemon failed");
+        assert!(
+            status.success(),
+            "cargo build -p mobile-agent-daemon failed"
+        );
         dir.join("mobile-agent-daemon")
     })
     .clone()
@@ -83,13 +86,20 @@ pub fn cli_bin() -> PathBuf {
             .expect("the server lives in a directory");
         let mut cargo = Command::new(env!("CARGO"));
         cargo
-            .args(["build", "--quiet", "-p", "cli", "--bin", "mobile-agent"])
+            .args([
+                "build",
+                "--quiet",
+                "-p",
+                "mobile-agent",
+                "--bin",
+                "mobile-agent",
+            ])
             .current_dir(env!("CARGO_MANIFEST_DIR"));
         if dir.file_name().is_some_and(|name| name == "release") {
             cargo.arg("--release");
         }
         let status = cargo.status().expect("cargo runs");
-        assert!(status.success(), "cargo build -p cli failed");
+        assert!(status.success(), "cargo build -p mobile-agent failed");
         dir.join("mobile-agent")
     })
     .clone()

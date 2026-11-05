@@ -126,7 +126,7 @@ fn the_fixture_is_installed_launched_with_an_environment_found_running_and_termi
 }
 
 /// One series of installs of the fixture, timed, with the host's load before
-/// and after: `cargo test -p ios --test lifecycle -- --ignored --nocapture`.
+/// and after: `cargo test -p mobile-agent-ios --test lifecycle -- --ignored --nocapture`.
 #[test]
 #[ignore = "a measurement, run on a quiet host"]
 fn install_series() {

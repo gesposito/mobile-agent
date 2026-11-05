@@ -93,7 +93,7 @@ mkdir -p "$out" "$(dirname "$app")"
 
 log "cargo: agent-ios $version for aarch64-apple-ios, iOS $deployment"
 IPHONEOS_DEPLOYMENT_TARGET="$deployment" cargo build --release --locked \
-  --manifest-path "$here/Cargo.toml" -p agent-ios --target aarch64-apple-ios >&2
+  --manifest-path "$here/Cargo.toml" -p mobile-agent-ios-runner --target aarch64-apple-ios >&2
 library="${CARGO_TARGET_DIR:-$root/target}/aarch64-apple-ios/release/libagent_ios.a"
 [[ -f $library ]] || die "cargo produced no $library"
 

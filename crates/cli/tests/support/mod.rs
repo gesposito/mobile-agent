@@ -39,7 +39,7 @@ pub fn daemon_bin() -> PathBuf {
                 "build",
                 "--quiet",
                 "-p",
-                "daemon",
+                "mobile-agent-daemon",
                 "--bin",
                 "mobile-agent-daemon",
             ])
@@ -48,7 +48,10 @@ pub fn daemon_bin() -> PathBuf {
             cargo.arg("--release");
         }
         let status = cargo.status().expect("cargo runs");
-        assert!(status.success(), "cargo build -p daemon failed");
+        assert!(
+            status.success(),
+            "cargo build -p mobile-agent-daemon failed"
+        );
         dir.join("mobile-agent-daemon")
     })
     .clone()

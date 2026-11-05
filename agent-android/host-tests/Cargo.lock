@@ -12,8 +12,8 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 name = "agent-android-host-tests"
 version = "0.0.0"
 dependencies = [
+ "mobile-agent-protocol",
  "png",
- "protocol",
 ]
 
 [[package]]
@@ -98,6 +98,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-agent-protocol"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "minicbor",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -117,13 +124,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "protocol"
-version = "0.1.0-alpha.1"
-dependencies = [
- "minicbor",
 ]
 
 [[package]]

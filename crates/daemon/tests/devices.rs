@@ -92,13 +92,20 @@ fn cli_bin() -> PathBuf {
             .expect("the daemon lives in a directory");
         let mut cargo = Command::new(env!("CARGO"));
         cargo
-            .args(["build", "--quiet", "-p", "cli", "--bin", "mobile-agent"])
+            .args([
+                "build",
+                "--quiet",
+                "-p",
+                "mobile-agent",
+                "--bin",
+                "mobile-agent",
+            ])
             .current_dir(env!("CARGO_MANIFEST_DIR"));
         if dir.file_name().is_some_and(|name| name == "release") {
             cargo.arg("--release");
         }
         let status = cargo.status().expect("cargo runs");
-        assert!(status.success(), "cargo build -p cli failed");
+        assert!(status.success(), "cargo build -p mobile-agent failed");
         dir.join("mobile-agent")
     })
     .clone()

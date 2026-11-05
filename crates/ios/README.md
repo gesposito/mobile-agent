@@ -1,4 +1,4 @@
-# ios
+# mobile-agent-ios
 
 Drives a physical iPhone over USB from the host (design D18 to D25, spec
 `ios-device-driver`): discovery and readiness over usbmuxd and lockdown,
@@ -720,7 +720,7 @@ range and the table below, which `ios::call_sites()` returns for `doctor`:
 
 ## Tests
 
-`cargo test -p ios` runs the unit tests, which need no device. Recorded
+`cargo test -p mobile-agent-ios` runs the unit tests, which need no device. Recorded
 values stand in for one: usbmuxd's `ListDevices` reply recorded from the
 phone (its serial numbers replaced) and fed through `idevice`'s own parser
 over a fake usbmuxd socket, lockdown's values and the image mounter's
@@ -782,18 +782,18 @@ agent-ios/build.sh                            # prints the runner bundle's path,
 DESTINATION=device fixtures/swiftui/build.sh  # prints the fixture's device build, signed for the team
 MOBILE_AGENT_IOS_UDID=<udid> MOBILE_AGENT_IOS_TEAM=<team> \
   MOBILE_AGENT_IOS_RUNNER_APP=agent-ios/dist/MobileAgentRunner-Runner.app \
-  MOBILE_AGENT_IOS_SWIFTUI_APP=<path to FixtureSwiftUI.app> cargo test -p ios
+  MOBILE_AGENT_IOS_SWIFTUI_APP=<path to FixtureSwiftUI.app> cargo test -p mobile-agent-ios
 # measurements, on a quiet host (each waits for the guard)
-cargo test -p ios --test lifecycle -- --ignored --nocapture install_series
-cargo test -p ios --test frames -- --ignored --nocapture frames_series
-cargo test -p ios --test input -- --ignored --nocapture input_series
+cargo test -p mobile-agent-ios --test lifecycle -- --ignored --nocapture install_series
+cargo test -p mobile-agent-ios --test frames -- --ignored --nocapture frames_series
+cargo test -p mobile-agent-ios --test input -- --ignored --nocapture input_series
 # with someone at the phone
-cargo test -p ios --test input -- --ignored --nocapture the_lock_button
-cargo test -p ios --test containment -- --ignored --nocapture
+cargo test -p mobile-agent-ios --test input -- --ignored --nocapture the_lock_button
+cargo test -p mobile-agent-ios --test containment -- --ignored --nocapture
 # task 9.7's device check, once the phone was restarted
-cargo test -p ios --test input -- --ignored --nocapture one_hundred_twenty_emptying_fills_in_one_session
+cargo test -p mobile-agent-ios --test input -- --ignored --nocapture one_hundred_twenty_emptying_fills_in_one_session
 # task 9.8's device check
-cargo test -p ios --test frames -- --ignored --nocapture a_dvt_connection_closed_mid_session_is_opened_again
+cargo test -p mobile-agent-ios --test frames -- --ignored --nocapture a_dvt_connection_closed_mid_session_is_opened_again
 ```
 
 The tests ask for the runner `agent-ios` builds, by its version

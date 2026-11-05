@@ -170,7 +170,7 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install --no-self-update
       - name: Build the runner
-        run: cargo build --release -p bench
+        run: cargo build --release -p mobile-agent-bench
       - name: Compare base with head
         id: micro
         env:
@@ -236,7 +236,7 @@ jobs:
         # TODO: Socket Firewall does not wrap Homebrew.
         run: brew install jpeg-turbo
       - name: Build the runner
-        run: cargo build --release -p bench
+        run: cargo build --release -p mobile-agent-bench
       - name: Compare base with head
         id: micro
         env:
@@ -312,7 +312,7 @@ jobs:
         # TODO: Socket Firewall does not wrap Homebrew.
         run: brew install jpeg-turbo
       - name: Build mobile-agent, its daemon and the harness
-        run: cargo build --release -p cli -p daemon -p bench
+        run: cargo build --release -p mobile-agent -p mobile-agent-daemon -p mobile-agent-bench
       - name: Build the SwiftUI fixture
         run: |
           xcodebuild -version
@@ -436,7 +436,7 @@ jobs:
             "platforms;android-36" "build-tools;36.0.0" "build-tools;37.0.0" platform-tools
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
       - name: Build mobile-agent, its daemon with the Android agent, and the harness
-        run: cargo build --release -p cli -p daemon -p bench
+        run: cargo build --release -p mobile-agent -p mobile-agent-daemon -p mobile-agent-bench
       - name: Build the Compose fixture
         run: |
           apk=$(fixtures/compose/build.sh)

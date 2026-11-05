@@ -1,4 +1,4 @@
-# cli
+# mobile-agent
 
 `mobile-agent`, the command line of spec `agent-cli` (design D1 and D9): a
 thin client of the daemon in `crates/daemon` that speaks agent-browser's
@@ -12,7 +12,7 @@ actions, refs and replies to a client that calls tools, through this
 crate's library, so the agent guide holds for either.
 
 ```sh
-cargo build --release -p cli -p daemon    # mobile-agent and mobile-agent-daemon, side by side
+cargo build --release -p mobile-agent -p mobile-agent-daemon    # mobile-agent and mobile-agent-daemon, side by side
 target/release/mobile-agent help agent    # the guide for an agent's prompt
 ```
 
@@ -638,7 +638,7 @@ running daemon on a fake target, the daemon's reply included, so it bounds
 that overhead from above:
 
 ```sh
-cargo build --release -p cli -p daemon
+cargo build --release -p mobile-agent -p mobile-agent-daemon
 export MOBILE_AGENT_SOCKET_DIR="$(mktemp -d)" MOBILE_AGENT_FAKE_TARGETS=android
 target/release/mobile-agent status > /dev/null    # starts the daemon
 hyperfine --warmup 5 --runs 300 -N --export-json overhead.json 'target/release/mobile-agent status'
@@ -818,5 +818,5 @@ or emulator running on the host never shows up in their listings, and
 doctor asks neither the host's Xcode nor its adb.
 
 ```sh
-cargo test -p cli     # builds mobile-agent-daemon through cargo when it is missing
+cargo test -p mobile-agent     # builds mobile-agent-daemon through cargo when it is missing
 ```

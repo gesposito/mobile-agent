@@ -6,7 +6,7 @@
 //! tap lands on `row-1`, at (187.5, 46) points on the iPhone SE (3rd
 //! generation), and the fixture is launched again afterwards.
 //! `frames_series` is the measurement, run on a quiet host:
-//! `cargo test -p ios --test frames -- --ignored --nocapture frames_series`;
+//! `cargo test -p mobile-agent-ios --test frames -- --ignored --nocapture frames_series`;
 //! `a_dvt_connection_closed_mid_session_is_opened_again` is task 9.8's
 //! device check, the same way.
 

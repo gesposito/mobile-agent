@@ -1,5 +1,5 @@
 [package]
-name = "protocol"
+name = "mobile-agent-protocol"
 description = "The wire protocol between the mobile-agent daemon and every device agent: the message schema, the framing and the handshake"
 version.workspace = true
 edition.workspace = true
@@ -13,6 +13,7 @@ workspace = true
 
 # The library holds no benchmark; its libtest bench harness, which cargo bench runs first, would refuse criterion's flags such as --noplot.
 [lib]
+name = "protocol"
 bench = false
 
 [dependencies]

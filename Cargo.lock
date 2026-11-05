@@ -9,16 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "agent-ios"
-version = "0.1.0-alpha.1"
-dependencies = [
- "libc",
- "protocol",
- "serde_json",
- "simulator-reader",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -34,24 +24,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5a7d05ea6aea7e9e64d25b9156ba2fee3fdd659e34e41063cd2fc7cd020d7f4"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "android"
-version = "0.1.0-alpha.1"
-dependencies = [
- "criterion",
- "jpeg-encoder",
- "miniz_oxide 0.9.1",
- "mirror",
- "prost",
- "protoc-bin-vendored",
- "protocol",
- "tokio",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -187,18 +159,6 @@ name = "base64"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
-
-[[package]]
-name = "bench"
-version = "0.1.0-alpha.1"
-dependencies = [
- "clap",
- "idevice",
- "serde",
- "serde_json",
- "tokio",
- "wire",
-]
 
 [[package]]
 name = "bitflags"
@@ -350,16 +310,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "cli"
-version = "0.1.0-alpha.1"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
- "wire",
-]
-
-[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -470,24 +420,6 @@ checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
  "typenum",
-]
-
-[[package]]
-name = "daemon"
-version = "0.1.0-alpha.1"
-dependencies = [
- "agent-ios",
- "android",
- "base64 0.23.1",
- "criterion",
- "ios",
- "libc",
- "mirror",
- "protocol",
- "serde_json",
- "simulator",
- "wire",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -1017,22 +949,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ios"
-version = "0.1.0-alpha.1"
-dependencies = [
- "agent-ios",
- "idevice",
- "libc",
- "mirror",
- "ns-keyed-archive",
- "plist",
- "png",
- "protocol",
- "simulator",
- "tokio",
-]
-
-[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1126,20 +1042,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
-name = "mcp"
-version = "0.1.0-alpha.1"
-dependencies = [
- "base64 0.23.1",
- "clap",
- "cli",
- "criterion",
- "rmcp",
- "serde_json",
- "tokio",
- "wire",
-]
-
-[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1207,11 +1109,156 @@ dependencies = [
 ]
 
 [[package]]
-name = "mirror"
+name = "mobile-agent"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "clap",
+ "mobile-agent-wire",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mobile-agent-android"
 version = "0.1.0-alpha.1"
 dependencies = [
  "criterion",
- "protocol",
+ "jpeg-encoder",
+ "miniz_oxide 0.9.1",
+ "mobile-agent-mirror",
+ "mobile-agent-protocol",
+ "prost",
+ "protoc-bin-vendored",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "mobile-agent-bench"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "clap",
+ "idevice",
+ "mobile-agent-wire",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "mobile-agent-daemon"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "base64 0.23.1",
+ "criterion",
+ "libc",
+ "mobile-agent-android",
+ "mobile-agent-ios",
+ "mobile-agent-ios-runner",
+ "mobile-agent-mirror",
+ "mobile-agent-protocol",
+ "mobile-agent-simulator",
+ "mobile-agent-wire",
+ "serde_json",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "mobile-agent-ios"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "idevice",
+ "libc",
+ "mobile-agent-ios-runner",
+ "mobile-agent-mirror",
+ "mobile-agent-protocol",
+ "mobile-agent-simulator",
+ "ns-keyed-archive",
+ "plist",
+ "png",
+ "tokio",
+]
+
+[[package]]
+name = "mobile-agent-ios-runner"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "libc",
+ "mobile-agent-protocol",
+ "mobile-agent-simulator-reader",
+ "serde_json",
+]
+
+[[package]]
+name = "mobile-agent-mcp"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "base64 0.23.1",
+ "clap",
+ "criterion",
+ "mobile-agent",
+ "mobile-agent-wire",
+ "rmcp",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "mobile-agent-mirror"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "criterion",
+ "mobile-agent-protocol",
+ "serde_json",
+]
+
+[[package]]
+name = "mobile-agent-protocol"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "criterion",
+ "minicbor",
+]
+
+[[package]]
+name = "mobile-agent-simulator"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "block2",
+ "criterion",
+ "dispatch2",
+ "jpeg-encoder",
+ "libc",
+ "mobile-agent-protocol",
+ "mobile-agent-simulator",
+ "mobile-agent-simulator-reader",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-io-surface",
+ "turbojpeg",
+]
+
+[[package]]
+name = "mobile-agent-simulator-reader"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "libc",
+ "mobile-agent-protocol",
+ "objc2",
+ "objc2-foundation",
+]
+
+[[package]]
+name = "mobile-agent-wire"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "mobile-agent-wire",
+ "schemars",
+ "serde",
  "serde_json",
 ]
 
@@ -1619,14 +1666,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 
 [[package]]
-name = "protocol"
-version = "0.1.0-alpha.1"
-dependencies = [
- "criterion",
- "minicbor",
-]
-
-[[package]]
 name = "pulldown-cmark"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2013,35 +2052,6 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
-
-[[package]]
-name = "simulator"
-version = "0.1.0-alpha.1"
-dependencies = [
- "block2",
- "criterion",
- "dispatch2",
- "jpeg-encoder",
- "libc",
- "objc2",
- "objc2-core-foundation",
- "objc2-foundation",
- "objc2-io-surface",
- "protocol",
- "simulator",
- "simulator-reader",
- "turbojpeg",
-]
-
-[[package]]
-name = "simulator-reader"
-version = "0.1.0-alpha.1"
-dependencies = [
- "libc",
- "objc2",
- "objc2-foundation",
- "protocol",
-]
 
 [[package]]
 name = "slab"
@@ -2752,16 +2762,6 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "wire"
-version = "0.1.0-alpha.1"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "wire",
-]
 
 [[package]]
 name = "wit-bindgen"

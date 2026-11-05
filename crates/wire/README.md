@@ -1,4 +1,4 @@
-# wire
+# mobile-agent-wire
 
 The daemon's requests and replies as types (design D3 of the `mcp-server`
 change): the envelope of a request line, one struct of parameters per
@@ -118,7 +118,7 @@ the test until its type gains it.
 
 ## Schemas
 
-`cargo test -p wire` builds the crate with the feature, through its
+`cargo test -p mobile-agent-wire` builds the crate with the feature, through its
 dev-dependency on itself, and `tests/schemas.rs` checks each action's
 request schema: an object at the root without `anyOf`, `oneOf` or `allOf`,
 which Claude's API refuses there, whose properties are the action's
