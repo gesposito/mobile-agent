@@ -42,7 +42,7 @@ A snapshot SHALL list elements with role, accessible name, test identifier when 
 - **THEN** visible actionable elements are listed with refs and a hint states that three actionable items are off-screen below
 
 ### Requirement: A node drawn over its sibling covers it
-On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, the container taken as far as it lies within that sibling, as a view the platform lists for the background it draws. On Android, where a touch that no view takes goes to the views under it, a node drawn over its siblings that takes no touch, nothing in it clickable, long-clickable or scrollable, SHALL cut nothing.
+On a platform whose tree order is its drawing order, a node drawn after a sibling it overlaps SHALL cut what that sibling holds within its bounds from the interactive listing when it shows something or is a control, enabled or not, or when it holds and names nothing and lies over part of a scroll container the sibling holds, the container taken as far as it lies within that sibling, as a view the platform lists for the background it draws.
 
 #### Scenario: Heading under a fixed footer on iOS
 - **WHEN** a consent screen's heading lies within the bounds of an "Accept and continue" button drawn after it in a fixed footer
@@ -56,10 +56,12 @@ On a platform whose tree order is its drawing order, a node drawn after a siblin
 - **WHEN** a context menu is read while its glass view, listed after the view that holds the menu's list, holds nothing, the list's frame running far past the menu
 - **THEN** the menu's items are listed in view and a click on one lands at its centre
 
+### Requirement: A node that takes no touch covers nothing on Android
+On Android, where a touch that no view takes goes to the views under it, a node drawn over its siblings that takes no touch, nothing in it clickable, long-clickable or scrollable, SHALL cut nothing from the interactive listing, so that a control under such a view stays reachable.
+
 #### Scenario: A chip under its input's layout on Android
 - **WHEN** a time picker's minute chip lies under the minute input's layout, drawn on top, which holds the input's label and its hidden field and nothing that takes a touch
 - **THEN** the chip is listed in view and a click on its ref lands at its centre
-
 ### Requirement: Bars, headers and system windows as covers
 A bar or a pinned header SHALL cover what lies within its bounds whatever its place in the order, except the controls it holds itself, which stay reachable, a header pinned across a sibling that scrolls, or holds a scroll view of its own frame through views of that frame, being drawn over that sibling, which covers none of it; every other system window presented over the application, the edit menu among them, SHALL cover what it draws and nothing more.
 
