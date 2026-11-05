@@ -2,8 +2,9 @@
 # Checks the repository's own scripts in a scratch directory, without the
 # network: the reports' scrub (reports/scrub.py), the publish scan
 # (scripts/check-public.sh), its scan of the history
-# (scripts/check-history.sh), the tests' summary (scripts/test-summary.sh)
-# and CI's change classifier (scripts/ci-changes.sh).
+# (scripts/check-history.sh), the tests' summary (scripts/test-summary.sh),
+# CI's change classifier (scripts/ci-changes.sh) and the release notes
+# (scripts/release-notes.sh).
 #
 #   scripts/test.sh
 #
@@ -54,6 +55,11 @@
 #      workflow, a script, the justfile, a code file deleted or moved into
 #      docs/, and a diff that changes nothing; it names the paths that made
 #      the change code, and fails on a commit that does not exist.
+#  11. The release notes (scripts/release-notes.sh) are the changelog's section
+#      for the version, between its dated heading and the next, without the
+#      blank lines around it, a later version that shares its prefix aside;
+#      they refuse a version other than the workspace's, a section that is
+#      missing, undated or empty, and no version at all.
 #
 # The values below are placeholders, and the shapes the publish scan refuses
 # (a machine's model identifier, a sampler's top field, a device identifier,
@@ -609,6 +615,100 @@ expect "the classifier answers code=true for a diff that changes nothing" same "
 classify_head 0000000000000000000000000000000000000000
 expect "the classifier fails on a commit that does not exist" test "$status" != 0
 expect "the classifier prints no answer for a commit that does not exist" test ! -s "$scratch/out.txt"
+
+# 11. The release notes, in a directory of their own.
+notes="$scratch/notes"
+mkdir -p "$notes"
+# workspace_version <version>: a workspace's Cargo.toml whose
+# [workspace.package] has the version, below another table's version.
+workspace_version() {
+  cat > "$notes/Cargo.toml" <<EOF
+[workspace]
+members = ["crates/*"]
+
+[workspace.metadata.placeholder]
+version = "9.9.9"
+
+[workspace.package]
+version = "$1"
+edition = "2024"
+EOF
+}
+# changelog <heading>: a changelog whose section for 0.1.0-alpha.1 has the
+# heading, below a later alpha whose version starts with the same text and
+# above a dated change.
+changelog() {
+  cat > "$notes/CHANGELOG.md" <<EOF
+# Changelog
+
+The changes, newest first.
+
+## Unreleased
+
+- **placeholder-next**: not released yet.
+
+## 0.1.0-alpha.10 — 2026-12-01
+
+- **placeholder-later**: a later alpha.
+
+$1
+
+The first alpha, by change:
+
+- **placeholder-change** (\`openspec/changes/archive/placeholder/\`): what it did.
+- **placeholder-other**: what else.
+
+## 2026-10-15: placeholder-old
+
+An older change.
+EOF
+}
+# release_notes [version]: runs the script in the directory, its notes in
+# out.txt, what it said beside in err.txt and its status in $status.
+release_notes() {
+  status=0
+  (cd "$notes" && "$root/scripts/release-notes.sh" "$@") > "$scratch/out.txt" 2> "$scratch/err.txt" \
+    || status=$?
+}
+workspace_version 0.1.0-alpha.1
+changelog "## 0.1.0-alpha.1 — 2026-11-06"
+release_notes 0.1.0-alpha.1
+expect "the release notes succeed for the workspace's version and a dated section" test "$status" = 0
+expect "the release notes are the version's section without its heading or the blank lines around it" \
+  same "$scratch/out.txt" "The first alpha, by change:
+
+- **placeholder-change** (\`openspec/changes/archive/placeholder/\`): what it did.
+- **placeholder-other**: what else."
+release_notes 0.1.0-alpha.10
+expect "the release notes refuse a version other than the workspace's" test "$status" = 1
+expect "the refusal names both versions" \
+  grep -q -F "0.1.0-alpha.10 is not the workspace's, 0.1.0-alpha.1" "$scratch/err.txt"
+expect "a refusal prints no notes" test ! -s "$scratch/out.txt"
+changelog "## 0.1.0-alpha.1 — unreleased"
+release_notes 0.1.0-alpha.1
+expect "the release notes refuse an undated section" test "$status" = 1
+expect "the refusal of an undated section names the heading it wants" \
+  grep -q -F "## 0.1.0-alpha.1 — <YYYY-MM-DD>" "$scratch/err.txt"
+workspace_version 0.1.0-alpha.2
+release_notes 0.1.0-alpha.2
+expect "the release notes refuse a version the changelog has no section for" test "$status" = 1
+expect "the refusal of a missing section names the heading" \
+  grep -q -F "no section headed ## 0.1.0-alpha.2" "$scratch/err.txt"
+workspace_version 0.1.0-alpha.1
+cat > "$notes/CHANGELOG.md" <<EOF
+# Changelog
+
+## 0.1.0-alpha.1 — 2026-11-06
+
+## 2026-10-15: placeholder-old
+
+An older change.
+EOF
+release_notes 0.1.0-alpha.1
+expect "the release notes refuse an empty section" test "$status" = 1
+expect "the refusal of an empty section says so" grep -q -F "is empty" "$scratch/err.txt"
+release_notes
+expect "the release notes without a version are a usage error" test "$status" = 2
 
 if [ "$failures" -gt 0 ]; then
   printf '%s of %s checks failed\n' "$failures" "$checks" >&2
