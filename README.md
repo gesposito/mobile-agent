@@ -2,7 +2,7 @@
 
 mobile-agent drives Android devices, Android emulators, iOS Simulators and physical iPhones for AI agents, and is designed around the latency of each tap-and-observe step. A daemon keeps a live mirror of every attached screen (its windows, accessibility tree and latest frame), updates it from the platform's change events and frame callbacks, and answers snapshots, waits and settle checks from that mirror instead of reading the device and sleeping on every request. On Android, a single-dex agent pushed over adb runs as the shell user under `app_process` and holds the device's UI automation role: no APK is installed and no instrumentation runs. On the iOS Simulator the driver works from the host: input goes through the Simulator's dtuhidd HID service, frames come from the display's IOSurface, and the accessibility tree comes from a Rust reader that the daemon spawns into the Simulator, with no XCTest runner and nothing installed. A physical iPhone's tree can be read only from an XCTest runner, so there a Rust runner built in this repository, started through the phone's test manager and kept for the session, serves the tree and text entry over the same device protocol, while the driver does the rest from the host: input through the developer disk image's dtuhidd, frames from screenshots it polls, and the phone's services over a CoreDevice tunnel it opens in its own process, without root or a helper. The `mobile-agent` CLI follows agent-browser's command grammar, `@eN` refs and JSON envelope, so prompts and skills written for agent-browser carry over where devices have the same concepts, and the `mobile-agent-mcp` server gives an MCP client the same tools, refs and replies (Agent surfaces).
 
-**Status.** Experimental and pre-release: nothing is published to crates.io or as a binary yet, so mobile-agent is built from source (Build), and `main` is the version CI builds and tests on macOS and Linux. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
+**Status.** Experimental and pre-release: alphas of the three binaries are released on GitHub for Macs with Apple silicon and for Linux (Install), nothing is published to crates.io yet, and `main` is the version CI builds and tests on macOS and Linux; the command-line and MCP interfaces may change between alphas. The drivers rely on private Apple and hidden Android interfaces, which makes this development tooling, never something to ship inside an app (Status and limitations). It is under the MIT License (`LICENSE`, `THIRD-PARTY-NOTICES.md`); `CONTRIBUTING.md` says how a change is made and checked, `SECURITY.md` how to report a vulnerability, and `CHANGELOG.md` what has changed.
 
 ## Supported platforms
 
@@ -19,7 +19,43 @@ mobile-agent drives Android devices, Android emulators, iOS Simulators and physi
 
 CI (`.github/workflows/ci.yml`) validates and runs no benchmark; the benchmarks have a workflow of their own, which never runs per push (How measurements are made), and so do the device-backed tests, `.github/workflows/device-tests.yml`, weekly and on dispatch, which can narrow a run to one job, one package and a test filter: the workspace's tests on a fresh iPhone 17 Simulator of the `xcode-27` image and on an API 36 emulator on Linux, with the fixtures installed, the gating variables set and `MOBILE_AGENT_HOST_GATES=off`, under which the tests' millisecond bounds, measured on a quiet developer Mac, are printed rather than judged (design D1 of `openspec/changes/archive/2026-11-05-pass-4-fixes`). `ci.yml` runs `just validate` in three jobs: Linux, which also builds the Android agent and the Compose fixture; macOS with Xcode 26 on GitHub's `macos-26` image; and macOS with Xcode 27 on its `xcode-27` image. A fourth, Audit, lints the workflows with actionlint, audits them with zizmor, its online audits included, checks the dependencies' advisories, licenses, bans and sources with cargo-deny (`deny.toml`), and runs the publish scan and `openspec validate --all --strict`. Before them, a job classifies a pull request with `scripts/ci-changes.sh`: one that changes documentation alone, Markdown anywhere, `docs/`, `openspec/`, the licenses and the issue templates, runs Audit alone, the Linux and macOS jobs skipped by their `if`, so that their required checks read skipped, which passes them; a push to `main` and a dispatch run every job. Every job starts without permissions and reads only what it needs, every action is pinned to a full commit SHA, no checkout keeps its credentials, and the tools come from lockfiles or from releases pinned with their SHA-256 (`docs/research/open-sourcing.md`). Each macOS job keeps the image's default Xcode when it has that major version and otherwise selects the newest `Xcode_<major>*.app`. The macOS jobs build and test the iPhone driver (`crates/ios`, on its fake device) and the runner's crate (`agent-ios`, on the host); nothing runs against a phone, the device tests skipping without `MOBILE_AGENT_IOS_UDID`, and the signed runner bundle is not built there, since `just agent-ios-build` skips with `SKIP_AGENT_BUILD=1` or without `MOBILE_AGENT_IOS_TEAM`, as `just agent-build` skips the Android agent with `SKIP_AGENT_BUILD=1`. The spikes and every measurement ran on Xcode 27.0 with CoreSimulator 1171.7 and iOS 26.5, and so did the Simulator integration tests, which the device tests also run on the `xcode-27` image's iOS 27.0. Nothing has run on Xcode 26, where input would be touch only, through the older Indigo transport (`crates/simulator/README.md`, Compatibility).
 
+## Install
+
+Experimental, pre-release: the drivers use private Apple Simulator frameworks, Apple's developer services on an iPhone and hidden Android APIs; the command-line and MCP interfaces may change between alphas.
+
+Each pre-release on the [releases page](https://github.com/gesposito/mobile-agent/releases) holds a tarball per target, `mobile-agent-<version>-<target>.tar.gz`, with `mobile-agent`, `mobile-agent-daemon`, `mobile-agent-mcp`, `THIRD-PARTY-NOTICES.md` and the four files' `SHA256SUMS`, and beside it the tarball's own sum, `<tarball>.sha256`. The tarball and its three binaries carry an attestation of the release workflow's run that built them (`.github/workflows/release.yml`), and the release is immutable: its tag and assets cannot change.
+
+| Target | Host | Drives |
+|---|---|---|
+| `aarch64-apple-darwin` | a Mac with Apple silicon | iOS Simulators and physical iPhones, through Xcode with an iOS Simulator runtime, and Android |
+| `x86_64-unknown-linux-gnu` | x86_64 Linux with glibc 2.35 or newer | Android only |
+| `aarch64-unknown-linux-gnu` | aarch64 Linux with glibc 2.35 or newer | Android only |
+
+With GitHub's CLI, `gh`, signed in:
+
+```sh
+version=0.1.0-alpha.1
+target=aarch64-apple-darwin                # or x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+name="mobile-agent-$version-$target"
+gh release download "v$version" -R gesposito/mobile-agent -p "$name.tar.gz" -p "$name.tar.gz.sha256"
+gh attestation verify "$name.tar.gz" -R gesposito/mobile-agent   # built by this repository's release workflow
+shasum -a 256 -c "$name.tar.gz.sha256"     # sha256sum -c on a Linux without shasum
+tar -xzf "$name.tar.gz"
+(cd "$name" && shasum -a 256 -c SHA256SUMS)
+mkdir -p ~/.local/bin
+cp "$name/mobile-agent" "$name/mobile-agent-daemon" "$name/mobile-agent-mcp" ~/.local/bin/
+export PATH="$HOME/.local/bin:$PATH"       # and in the shell's profile; the CLI starts the daemon it finds beside itself
+mobile-agent --version                     # mobile-agent 0.1.0-alpha.1 (<the commit's first 12 digits>)
+```
+
+- `gh release verify "v$version" -R gesposito/mobile-agent` checks that the release is immutable and carries its attestation, and `gh release verify-asset "v$version" "$name.tar.gz" -R gesposito/mobile-agent` that the tarball is the one it holds. `gh attestation verify` also takes each binary, and `--signer-workflow gesposito/mobile-agent/.github/workflows/release.yml` and `--source-digest <commit>` narrow who signed it.
+- The binaries are signed ad hoc by the linker, not notarized. A browser marks what it downloads as quarantined, and macOS may then refuse to run them; `gh`, as above, and `curl -LO https://github.com/gesposito/mobile-agent/releases/download/v$version/$name.tar.gz` mark nothing.
+- On the Mac, the Simulator and iPhone drivers need Xcode 26 or 27, selected with `xcode-select`, with an iOS Simulator runtime (Supported platforms); the Mac's binaries are built on GitHub's `xcode-27` image, with its Xcode 27, and the daemon carries the Simulator reader and the Android agent. A physical iPhone also needs the runner, built and signed for a development team from a checkout of the same version and named by an absolute path in `MOBILE_AGENT_IOS_RUNNER_APP` (Quick start; `agent-ios/README.md`). Android needs the SDK's `platform-tools` (Quick start).
+- Linux hosts drive Android only: the Simulator and iPhone drivers are stubs there (Supported platforms).
+
 ## Build
+
+The alternative to Install: the three binaries built from a checkout, for `main` between alphas, a change of your own or a target the releases do not carry.
 
 Requirements:
 
