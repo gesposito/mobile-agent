@@ -88,6 +88,8 @@ terms=$(public_terms_file)
 shown=${terms/#"$HOME"/\$HOME}
 if [ -f "$terms" ]; then
   number=0
+  # The exemption reads the list again for the repository's owner; nothing writes it.
+  # shellcheck disable=SC2094
   while IFS= read -r term || [ -n "$term" ]; do
     number=$((number + 1))
     term=${term%$'\r'}
@@ -101,7 +103,7 @@ if [ -f "$terms" ]; then
       rest=${hit#*:}
       line=${rest%%:*}
       text=${rest#*:}
-      if ! public_term_exempt "$path" "$text" "$term"; then
+      if ! public_term_exempt "$path" "$text" "$term" "$terms"; then
         printf '%s:%s: private term on line %s of %s\n' "$path" "$line" "$number" "$shown" >> "$findings"
       fi
     done < "$scratch/hits"

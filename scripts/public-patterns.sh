@@ -89,19 +89,26 @@ public_terms_file() {
   fi
 }
 
-# public_term_exempt <path> <text> <term>: whether a line may hold the
-# private term, which only the maintainer's name in LICENSE's copyright line,
-# the owners' handles in CODEOWNERS and, in any file, the owner's handle in
-# the repository's own name, <owner>/mobile-agent, as its URL and gh's -R
-# spell it, may, the line holding the term nowhere else.
+# public_term_exempt <path> <text> <term> <terms file>: whether a line may
+# hold the private term, which only the maintainer's name in LICENSE's
+# copyright line, the owners' handles in CODEOWNERS and, in any file, the
+# repository's own name, <owner>/mobile-agent, as its URL and gh's -R spell
+# it, may, its owner being a term of the file: the term may stand there,
+# inside the owner's handle too, and nowhere else in the line.
 public_term_exempt() {
   case $1 in
     LICENSE) [[ $2 =~ ^Copyright\ \(c\)\ [0-9]{4}\  ]] && return 0 ;;
     .github/CODEOWNERS) [[ $2 =~ ^[^#[:space:]][^[:space:]]*([[:space:]]+@[A-Za-z0-9][A-Za-z0-9/-]*)+[[:space:]]*$ ]] && return 0 ;;
   esac
   perl -e '
-    my ($text, $term) = map { lc } @ARGV;
-    $text =~ s{(?<![a-z0-9-])\Q$term\E/mobile-agent(?![a-z0-9_-])}{}g;
+    my ($text, $term, $list) = map { lc } @ARGV;
+    open my $terms, "<", $ARGV[2] or exit 1;
+    while (my $owner = <$terms>) {
+      $owner =~ s/\r?\n\z//;
+      next if $owner eq "" || $owner =~ /^#/;
+      $owner = lc $owner;
+      $text =~ s{(?<![a-z0-9-])\Q$owner\E/mobile-agent(?![a-z0-9_-])}{}g;
+    }
     exit(index($text, $term) < 0 ? 0 : 1);
-  ' "$2" "$3"
+  ' -- "$2" "$3" "$4"
 }

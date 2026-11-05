@@ -117,8 +117,9 @@ scan_text() {
         for my $term (@terms) {
           next if index($lower, $term->[1]) < 0;
           next if exempt($at, $text);
-          # The owner in the name of this repository, the term nowhere else.
-          (my $rest = $lower) =~ s{(?<![a-z0-9-])\Q$term->[1]\E/mobile-agent(?![a-z0-9_-])}{}g;
+          # The name of this repository, its owner a term, the term nowhere else.
+          my $rest = $lower;
+          $rest =~ s{(?<![a-z0-9-])\Q$_->[1]\E/mobile-agent(?![a-z0-9_-])}{}g for @terms;
           next if index($rest, $term->[1]) < 0;
           print "${label}private term on line $term->[0] of $shown$suffix\n";
         }
