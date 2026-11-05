@@ -20,7 +20,14 @@ name: Release
 # creates the tag. It refuses a version other than the workspace's, which
 # the daemon and the server print, and a changelog without the version's
 # dated section (scripts/release-notes.sh), as the first job does before
-# anything is built. No job uses a cache.
+# anything is built. The npm-package job, once every target is verified,
+# verifies the tarballs again and packs the four npm packages from them
+# (npm/pack.sh, design D7): one per target holding its binaries and
+# @mobileagent/cli, the launcher whose optional dependencies they are. The
+# publish-npm job publishes them after the release, in the release
+# environment, with npm's trusted publishing and provenance and no npm
+# token; a dry run publishes them with --dry-run, outside the environment.
+# No job uses a cache.
 on:
   workflow_dispatch:
     inputs:
@@ -386,3 +393,136 @@ jobs:
             echo
             echo "[$TAG]($url) on $GITHUB_SHA, a pre-release."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  npm-package:
+    name: npm packages
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify fetches them through the API
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node 24.22.1, whose npm is 11.19.1
+        # The image's default Node, 22, carries npm 10; npm's trusted publishing needs 11.5.1 or
+        # newer, and the packages are packed with the npm that publishes them. 24.22.1 is in the
+        # image's tool cache. No cache.
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mobile-agent-*
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+      - name: Verify the attestations and the sums of every tarball again
+        # As the verify jobs do: signed by this workflow in this repository from the dispatched
+        # commit, on a GitHub-hosted runner.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/dist"
+          ls -l
+          tarballs=0
+          for tarball in mobile-agent-*.tar.gz; do
+            gh attestation verify "$tarball" -R "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+            shasum -a 256 -c "$tarball.sha256"
+            tarballs=$((tarballs + 1))
+          done
+          if [ "$tarballs" != 3 ]; then
+            echo "::error::$tarballs tarballs downloaded, not 3"
+            exit 1
+          fi
+      - name: Pack the four npm packages from the tarballs
+        # npm/pack.sh builds nothing: each platform package holds its tarball's binaries and
+        # notices, the launcher's optional dependencies name them at the version, and each package
+        # has to list exactly its files in npm pack --dry-run.
+        run: |
+          npm --version
+          npm/pack.sh "$VERSION" "$RUNNER_TEMP/dist" "$RUNNER_TEMP/npm" > "$RUNNER_TEMP/npm-lists.txt"
+          cat "$RUNNER_TEMP/npm-lists.txt" "$RUNNER_TEMP/npm/SHA256SUMS"
+          {
+            echo "## npm packages"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/npm-lists.txt"
+            echo
+            cat "$RUNNER_TEMP/npm/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-packages
+          path: |
+            ${{ runner.temp }}/npm/*.tgz
+            ${{ runner.temp }}/npm/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-npm:
+    name: Publish to npm
+    needs: [publish, npm-package]
+    # After the release is published, so that npm never holds a version the release lacks; a dry
+    # run, which has no gate and no release, publishes with --dry-run.
+    if: ${{ !cancelled() && needs.npm-package.result == 'success' && (inputs.dry_run || needs.publish.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The release environment's reviewer approves a run that publishes, a second approval after the
+    # gate's, from main alone, and each package's trusted publisher on npm names the environment, so
+    # that no job outside it can publish; a dry run has no environment, no deployment and nothing to
+    # approve.
+    environment: ${{ !inputs.dry_run && 'release' || '' }}
+    permissions:
+      contents: read
+      id-token: write # the OIDC token npm's trusted publishing exchanges and the provenance is signed with
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Install Node 24.22.1, whose npm is 11.19.1
+        # As in the npm-package job. No cache.
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/npm
+      - name: Publish the platform packages, then the launcher, with provenance
+        # npm's trusted publishing exchanges the job's OIDC token for one that publishes these
+        # packages alone, so the job has no npm token. npm 11 refuses a prerelease without a tag:
+        # a prerelease goes under its first identifier, alpha for 0.1.0-alpha.2, and a release
+        # under latest. A version npm holds already is skipped, so that a run that stopped halfway
+        # can be run again.
+        run: |
+          cd "$RUNNER_TEMP/npm"
+          ls -l
+          shasum -a 256 -c SHA256SUMS
+          npm=$(npm --version)
+          if [ "$(printf '%s\n' 11.5.1 "$npm" | sort -V | head -n 1)" != 11.5.1 ]; then
+            echo "::error::npm $npm is older than 11.5.1, which npm's trusted publishing needs"
+            exit 1
+          fi
+          case $VERSION in
+            *-*) tag=${VERSION#*-} && tag=${tag%%.*} ;;
+            *) tag=latest ;;
+          esac
+          flags=()
+          if [ "$DRY_RUN" = true ]; then
+            flags+=(--dry-run)
+          fi
+          for package in cli-darwin-arm64 cli-linux-x64 cli-linux-arm64 cli; do
+            name="@mobileagent/$package"
+            if [ "$(npm view "$name@$VERSION" version 2> /dev/null)" = "$VERSION" ]; then
+              echo "$name@$VERSION is on npm already: skipped"
+              continue
+            fi
+            npm publish "./mobileagent-$package-$VERSION.tgz" --provenance --access public --tag "$tag" "${flags[@]}"
+            echo "- \`$name@$VERSION\` under \`$tag\`${flags:+, a dry run}" >> "$GITHUB_STEP_SUMMARY"
+          done
