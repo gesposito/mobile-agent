@@ -1,0 +1,25 @@
+{
+  "name": "@mobileagent/cli-darwin-arm64",
+  "version": "0.1.0-alpha.1",
+  "description": "The mobile-agent, mobile-agent-daemon and mobile-agent-mcp binaries for macOS on Apple silicon (aarch64-apple-darwin), from the release's attested tarball, which @mobileagent/cli installs on such a host. Experimental, pre-release.",
+  "homepage": "https://github.com/gesposito/mobile-agent#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gesposito/mobile-agent.git",
+    "directory": "npm/cli-darwin-arm64"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/mobile-agent",
+    "bin/mobile-agent-daemon",
+    "bin/mobile-agent-mcp",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "preferUnplugged": true
+}

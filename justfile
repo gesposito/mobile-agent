@@ -62,6 +62,10 @@ lint-workflows:
 scripts-test:
     scripts/test.sh
 
+# Check the npm packages' launcher, manifests and pack script (npm/) with Node's test runner, skipped when Node is not installed
+npm-test:
+    if command -v node >/dev/null 2>&1; then node --test npm/test/*.test.js; else echo "node not present, skipping"; fi
+
 # Build the Android agent, skipping with SKIP_AGENT_BUILD=1 or when agent-android/build.sh is absent
 agent-build:
     if [ "${SKIP_AGENT_BUILD:-}" = "1" ]; then echo "SKIP_AGENT_BUILD=1, skipping the Android agent build"; elif [ -f agent-android/build.sh ]; then agent-android/build.sh; else echo "agent-android/build.sh not present, skipping"; fi
@@ -101,5 +105,5 @@ bench-ab base *args:
 openspec-validate:
     openspec validate --all --strict
 
-# Run build, lint, fmt-check, check-public, lint-workflows, deny, test, scripts-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
-validate: build lint fmt-check check-public lint-workflows deny test scripts-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate
+# Run build, lint, fmt-check, check-public, lint-workflows, deny, test, scripts-test, npm-test, agent-build, agent-ios-build, codec-test, fixtures-test, fixtures-build and openspec-validate, stopping at the first failure
+validate: build lint fmt-check check-public lint-workflows deny test scripts-test npm-test agent-build agent-ios-build codec-test fixtures-test fixtures-build openspec-validate

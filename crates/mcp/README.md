@@ -56,7 +56,26 @@ benches/
 ## Running
 
 The client starts the binary and speaks MCP on its standard input and
-output. The command line:
+output: a path to it, a build's or a release tarball's, or, from npm,
+`npx` with the package that holds it, `@mobileagent/cli`, whose launcher
+runs the binary of the host's platform package (the README's Install and
+Agent surfaces, which give each client's entry). The package has three
+commands, so `npx` takes it with `--package`; `npx mobile-agent-mcp` alone
+would fetch an unrelated package of that name:
+
+```sh
+claude mcp add --transport stdio mobile-agent -- npx -y --package=@mobileagent/cli@alpha mobile-agent-mcp
+```
+
+```json
+{"mcpServers": {"mobile-agent": {"command": "npx", "args": ["-y", "--package=@mobileagent/cli@alpha", "mobile-agent-mcp"]}}}
+```
+
+Its flags follow `mobile-agent-mcp` in the arguments. The launcher passes
+the standard streams through, forwards SIGINT, SIGTERM and SIGHUP to the
+server and exits with its status, so the ways out of Sessions and exit
+are the same, and the daemon the server starts is the one beside the
+binary in the platform package. The command line:
 
 | Flag | Default | What it sets |
 |---|---|---|

@@ -1,0 +1,37 @@
+{
+  "name": "@mobileagent/cli",
+  "version": "0.1.0-alpha.1",
+  "description": "mobile-agent drives Android devices and emulators, iOS Simulators and iPhones for AI agents: the mobile-agent command line, its daemon and the mobile-agent-mcp server. Experimental, pre-release: the drivers use private Apple Simulator frameworks, Apple's developer services on an iPhone and hidden Android APIs; the command-line and MCP interfaces may change between alphas.",
+  "keywords": [
+    "mcp",
+    "ios-simulator",
+    "android",
+    "mobile-automation",
+    "ai-agents"
+  ],
+  "homepage": "https://github.com/gesposito/mobile-agent#readme",
+  "bugs": "https://github.com/gesposito/mobile-agent/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gesposito/mobile-agent.git",
+    "directory": "npm/cli"
+  },
+  "bin": {
+    "mobile-agent": "bin/mobile-agent.js",
+    "mobile-agent-daemon": "bin/mobile-agent-daemon.js",
+    "mobile-agent-mcp": "bin/mobile-agent-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "shim.js"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "optionalDependencies": {
+    "@mobileagent/cli-darwin-arm64": "0.1.0-alpha.1",
+    "@mobileagent/cli-linux-x64": "0.1.0-alpha.1",
+    "@mobileagent/cli-linux-arm64": "0.1.0-alpha.1"
+  }
+}
