@@ -106,7 +106,7 @@ jobs:
       - name: Check the dependencies' advisories, licenses, bans and sources
         run: cargo deny check advisories licenses bans sources
       - name: Check the Android agent's host tests' dependencies, a workspace of their own
-        run: cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources
+        run: cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered -A advisory-not-detected advisories licenses bans sources
       - name: Check that no tracked file holds what must never be published
         # just check-public's command. The Linux and macOS jobs run it again in just validate;
         # here it covers a change to documentation alone, which skips them.
