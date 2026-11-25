@@ -20,7 +20,13 @@ all-features = true
 # fails the check, as does a yanked version; an exception goes into `ignore`
 # with its reason.
 yanked = "deny"
-ignore = []
+ignore = [
+  # chrono is unmaintained and has no maintained release; it comes only
+  # through rmcp, schemars and idevice, none of which has a release without
+  # it. The entry goes once they have one. The Android agent's host tests'
+  # graph holds no chrono, so their check allows `advisory-not-detected`.
+  { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained, comes only through rmcp, schemars and idevice, which have no release without it" },
+]
 
 [licenses]
 # Each license some dependency needs, allowed on purpose. Most crates are
