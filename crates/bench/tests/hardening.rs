@@ -335,7 +335,7 @@ fn dependabot_waits_a_week_and_ci_checks_the_dependencies_with_cargo_deny() {
     );
     assert!(
         runs.contains(
-            &"cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered advisories licenses bans sources"
+            &"cargo deny --manifest-path agent-android/host-tests/Cargo.toml check -A license-not-encountered -A advisory-not-detected advisories licenses bans sources"
         ),
         "{runs:#?}"
     );
